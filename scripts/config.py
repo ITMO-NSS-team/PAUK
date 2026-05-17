@@ -1,6 +1,9 @@
-"""Общая конфигурация проекта"""
+"""Общая конфигурация проекта."""
 
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 # --- Файловая система ---------------------------------------------------
 
@@ -9,37 +12,54 @@ DATA_DIR = ROOT_DIR / "data"
 DB_PATH = DATA_DIR / "itmo_research_opensource.db"
 PDF_DIR = DATA_DIR / "pdfs"
 
+load_dotenv(ROOT_DIR / ".env")
+
 
 # --- OpenAlex API --------------------------------------------------------
 
 OPENALEX_WORKS_URL = "https://api.openalex.org/works"
 OPENALEX_AUTHORS_URL = "https://api.openalex.org/authors"
-OPENALEX_API_KEY = "JqvcQC7jsVmM3giPeVibBo"
-USER_AGENT = "ITMO-Research-Monitor/1.0 (pyrolusilicate@gmail.com)"
+OPENALEX_API_KEY = os.getenv("OPENALEX_API_KEY", "")
+
+USER_AGENT_EMAIL = os.getenv("USER_AGENT_EMAIL", "anonymous@example.com")
+USER_AGENT = f"ITMO-Research-Monitor/1.0 ({USER_AGENT_EMAIL})"
+
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/130.0.0.0 Safari/537.36"
+)
+
 REQUEST_DELAY = 0.1
 
 
 # --- ИТМО как организация -----------------------------------------------
 
-# Используется populate_publications.py для фильтрации работ, аффилированных с ИТМО.
+# Используется populate_publications.py для фильтрации работ ИТМО.
 ITMO_ROR_ID = "04txgxn49"
 ITMO_NAMES = ["ITMO University", "ITMO"]
 
 
 # --- Загрузка авторов ---------------------------------------------------
 
-# Размер in-memory LRU-кэша для запросов к OpenAlex /authors.
 AUTHORS_CACHE_CAPACITY = 2000
 AFFILIATION_SEPARATOR = " \n "
 
 
 # --- Скачивание PDF ------------------------------------------------------
 
-# Сколько публикаций обрабатывать за один запуск fetch_papers.py.
 FETCH_BATCH_SIZE = 10
-
-# Таймаут на один HTTP-запрос (секунды).
 DOWNLOAD_TIMEOUT = 30
+
+
+# --- LLM-классификация ссылок --------------------------------------------
+
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+LLM_MODEL = os.getenv("LLM_MODEL", "openai/gpt-4o-mini")
+
+CLASSIFY_BATCH_SIZE = 50
 
 
 # --- Извлечение ссылок на репозитории ------------------------------------
@@ -56,8 +76,9 @@ SUPPORTED_HOSTS = [
     "osf.io",
 ]
 
+# Сколько символов с каждой стороны URL сохраняется в repo_links.context.
 CONTEXT_RADIUS = 200
 
-# Знаки препинания, которые часто стоят сразу после URL в тексте; срезаются
-# перед сохранением, чтобы не таскать их внутри URL.
+# Знаки препинания, которые часто стоят сразу после URL; срезаются перед
+# сохранением, чтобы не таскать их внутри URL.
 URL_TRAILING_PUNCT = ".,;:!?)]}>\"'"

@@ -6,5 +6,6 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "pymupdf>=1.27.2.3",
+    "python-dotenv>=1.2.2",
     "requests>=2.34.2",
 ]

@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS publications (
     authors          TEXT,
     affiliation      TEXT,
     pdf_url          TEXT,
-    pdf_local_path   TEXT
+    pdf_local_path   TEXT,
+    abstract         TEXT
 );
 
 CREATE TABLE IF NOT EXISTS persons_itmo (
@@ -84,6 +85,8 @@ CREATE TABLE IF NOT EXISTS repo_links (
     context        TEXT,
     page_number    INTEGER,
     is_relevant    BOOLEAN,
+    llm_confidence REAL,
+    llm_reason     TEXT,
     extracted_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (publication_id) REFERENCES publications(id) ON DELETE CASCADE
 );

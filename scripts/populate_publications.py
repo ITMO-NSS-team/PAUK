@@ -105,9 +105,9 @@ class PublicationsIngestor:
     # --- Запросы к OpenAlex ---------------------------------------------
 
     def _api_params(self, extra: dict | None = None) -> dict:
-        """Базовые параметры запроса плюс API-ключ, если он настроен."""
+        """Базовые параметры запроса плюс API-ключ, если он задан в .env."""
         params = dict(extra or {})
-        if OPENALEX_API_KEY and OPENALEX_API_KEY != "REPLACE_ME":
+        if OPENALEX_API_KEY:
             params["api_key"] = OPENALEX_API_KEY
         return params
 
@@ -138,6 +138,10 @@ class PublicationsIngestor:
                 response = self.session.get(OPENALEX_WORKS_URL, params=params)
                 self.api_stats["works_requests"] += 1
                 self.api_stats["total_requests"] += 1
+                if response.status_code == 429:
+                    print(f"  страница {page}: 429, sleep 60 сек и повтор")
+                    time.sleep(60)
+                    continue
                 response.raise_for_status()
             except requests.RequestException as exc:
                 print(f"  запрос упал: {exc}")
@@ -160,8 +164,12 @@ class PublicationsIngestor:
         print(f"Получено работ: {len(all_papers)}")
         return all_papers
 
-    def fetch_openalex_author(self, author_id: str) -> dict | None:
-        """Возвращает полную карточку автора из /authors, используя LRU-кэш."""
+    def fetch_openalex_author(self, author_id: str, retries: int = 3) -> dict | None:
+        """Возвращает полную карточку автора из /authors, используя LRU-кэш.
+
+        При 429 ждёт минуту и повторяет, но не более ``retries`` раз — иначе
+        получили бы бесконечный цикл на устойчивом rate-limit.
+        """
         if not author_id or author_id == "None":
             return None
         cached = self.authors_cache.get(author_id)
@@ -183,10 +191,10 @@ class PublicationsIngestor:
             data = response.json()
             self.authors_cache.put(author_id, data)
             return data
-        if response.status_code == 429:
-            print("  OpenAlex вернул 429 (rate limit), sleep 60 секунд")
+        if response.status_code == 429 and retries > 0:
+            print(f"  OpenAlex 429 для {author_id}, sleep 60 сек (осталось попыток: {retries - 1})")
             time.sleep(60)
-            return self.fetch_openalex_author(author_id)
+            return self.fetch_openalex_author(author_id, retries - 1)
         return None
 
     # --- Вспомогательные методы -----------------------------------------

@@ -1,85 +1,90 @@
-# PAUK
+# PAUK — мониторинг публикаций ИТМО
 
-1. Вытягивает из [OpenAlex](https://openalex.org) все публикации сотрудников
-   ИТМО за заданный период.
-2. Скачивает open-access PDF каждой публикации.
-3. Сканирует эти PDF на ссылки, ведущие в репозитории с кодом
-   (GitHub, GitLab, Hugging Face, Zenodo и т.п.).
-4. Хранит всё это в одном локальном SQLite-файле.
+Пайплайн, который для каждой публикации сотрудников ИТМО ищет ссылку на
+репозиторий с кодом, выложенный самими авторами:
 
-Конечная цель: по каждой статье ИТМО понять, выкладывали ли авторы код к
-ней и где он лежит.
+`OpenAlex -> SQLite -> PDF + Abstract -> regex -> LLM -> publications.code_url`
 
-## Структура проекта
-
-```
-PAUK/
-├── README.md
-├── pyproject.toml
-├── uv.lock
-├── .python-version        # Python 3.12
-├── .gitignore
-├── scripts/               # шаги пайплайна
-│   ├── config.py          # пути, эндпоинты API, общие константы
-│   ├── init_db.py
-│   ├── populate_publications.py
-│   ├── fetch_papers.py
-│   └── extract_repo_links.py
-└── data/                  # не отслеживается git
-    ├── itmo_research_opensource.db    # SQLite-файл с базой
-    └── pdfs/                          # скачанные PDF, по одному на публикацию
-```
+Подробный отчёт о решении (мотивация, схема БД, метрики, известные
+ограничения) — в [REPORT.md](REPORT.md).
 
 ## Установка
 
-Проект использует [uv](https://docs.astral.sh/uv/) для управления
-окружением и зависимостями.
-
 ```bash
-# Развернуть зависимости из pyproject.toml + uv.lock в .venv/
 uv sync
-
-# Проверить, что окружение собралось
-uv run python -c "import fitz, requests; print('ok')"
-```
-
-### API-ключ OpenAlex
-
-Скрипты `scripts/populate_publications.py` и `scripts/fetch_papers.py`
-ходят в API OpenAlex.
-```python
-# scripts/config.py
-OPENALEX_API_KEY = "REPLACE_ME"
+cp .env.example .env
+# отредактировать .env
 ```
 
 ## Запуск пайплайна
 
-Четыре скрипта в `scripts/` рассчитаны на запуск в этом порядке, из корня
-проекта:
+Скрипты запускаются из корня проекта **в этом порядке**:
 
 ```bash
 # 1. Создать схему SQLite (идемпотентно).
 uv run python scripts/init_db.py
 
-# 2. Залить публикации ИТМО за период в БД.
+# 2. Загрузить публикации ИТМО из OpenAlex за период.
 uv run python scripts/populate_publications.py \
     --start-date 2025-01-01 --end-date 2026-05-01
 
-# 3. По каждой публикации спросить у OpenAlex OA PDF и скачать его.
-uv run python scripts/fetch_papers.py --limit 10
+# 3. По каждой публикации забрать абстракт и (если доступно) скачать PDF.
+uv run python scripts/fetch_papers.py --limit 50
 
-# 4. Прогнать скачанные PDF через регулярки и собрать кандидатные ссылки.
+# 4. Извлечь кандидатные ссылки на репозитории из PDF и абстрактов.
 uv run python scripts/extract_repo_links.py
+
+# 5. Прогнать кандидатов через LLM: репозиторий авторов или чужой?
+uv run python scripts/classify_repo_links.py --limit 200
+
+# 6. Прокинуть подтверждённые ссылки в publications.has_code/code_url.
+uv run python scripts/sync_publications.py
 ```
 
-## База данных
+Шаги 3 и 5 принимают `--limit`, чтобы обрабатывать порциями. Все шаги
+идемпотентны: повторный запуск не сломает уже сохранённые данные.
 
-| Таблица        | Что хранит                                                      |
-| -------------- | ---------------------------------------------------------------- |
-| `publications` | Одна строка на работу из OpenAlex; метаданные + `pdf_url` + `pdf_local_path` + `has_code` + `code_url`. |
-| `repo_links`   | Одна строка на **кандидатный** URL, найденный в PDF: хост, окружающий текст, номер страницы, флаг `is_relevant`. |
-| `persons_itmo`, `persons_external`, `publication_authors` | Авторы и их связь с публикациями, отдельно сотрудники ИТМО и внешние. |
-| `departments`, `publication_departments` | Зарезервированы под будущий шаг — связку статей с подразделениями ИТМО. |
+## Структура
 
-Поле `repo_links.is_relevant` пока всегда `NULL`. На этом этапе пайплайн
-просто собирает все URL, чей хост похож на репозиторный.
+```
+PAUK/
+├── scripts/
+│   ├── config.py                # пути, эндпоинты, загрузка .env
+│   ├── init_db.py
+│   ├── populate_publications.py
+│   ├── fetch_papers.py
+│   ├── extract_repo_links.py
+│   ├── classify_repo_links.py
+│   └── sync_publications.py
+├── data/                        # .gitignore
+│   ├── itmo_research_opensource.db
+│   └── pdfs/
+├── .env                         # .gitignore
+├── .env.example                 # шаблон для .env
+├── README.md
+└── REPORT.md                    # подробный отчёт о решении
+```
+
+## Чтение результата из БД
+
+`publications.code_url` хранит **JSON-массив** подтверждённых LLM ссылок,
+отсортированный от максимальной уверенности к минимальной (если найдено
+несколько репо к одной статье).
+
+```python
+import json
+import sqlite3
+
+conn = sqlite3.connect("data/itmo_research_opensource.db")
+rows = conn.execute(
+    "SELECT id, title, code_url FROM publications WHERE has_code = 1"
+)
+for pub_id, title, code_url_json in rows:
+    urls = json.loads(code_url_json)
+    print(f"{pub_id}: {title}")
+    for url in urls:
+        print(f"  {url}")
+```
+
+Полный список кандидатов с контекстами и причинами вердикта LLM лежит
+в таблице `repo_links` — оттуда удобно смотреть пограничные случаи.

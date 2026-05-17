@@ -6,9 +6,13 @@ __pycache__/
 
 data/
 
+.env
+
 .DS_Store
 
 .vscode/
 .idea/
 *.swp
 *.swo
+
+logs/
