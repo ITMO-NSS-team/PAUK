@@ -12,6 +12,11 @@ DATA_DIR = ROOT_DIR / "data"
 DB_PATH = DATA_DIR / "itmo_research_opensource.db"
 PDF_DIR = DATA_DIR / "pdfs"
 
+
+def pdf_path_for(publication_id: str) -> Path:
+    """Локальный путь до PDF этой публикации (соглашение: data/pdfs/{id}.pdf)."""
+    return PDF_DIR / f"{publication_id}.pdf"
+
 load_dotenv(ROOT_DIR / ".env")
 
 
@@ -49,7 +54,7 @@ AFFILIATION_SEPARATOR = " \n "
 # --- Скачивание PDF ------------------------------------------------------
 
 FETCH_BATCH_SIZE = 10
-DOWNLOAD_TIMEOUT = 30
+DOWNLOAD_TIMEOUT = 60
 
 
 # --- LLM-классификация ссылок --------------------------------------------
@@ -77,7 +82,7 @@ SUPPORTED_HOSTS = [
 ]
 
 # Сколько символов с каждой стороны URL сохраняется в repo_links.context.
-CONTEXT_RADIUS = 200
+CONTEXT_RADIUS = 400
 
 # Знаки препинания, которые часто стоят сразу после URL; срезаются перед
 # сохранением, чтобы не таскать их внутри URL.

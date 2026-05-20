@@ -171,17 +171,6 @@ def set_pdf_url(conn: sqlite3.Connection, publication_id: str, value: str) -> No
     conn.commit()
 
 
-def set_pdf_local_path(
-    conn: sqlite3.Connection, publication_id: str, path: Path
-) -> None:
-    """Сохраняет путь до локально скачанного PDF."""
-    conn.execute(
-        "UPDATE publications SET pdf_local_path = ? WHERE id = ?",
-        (str(path), publication_id),
-    )
-    conn.commit()
-
-
 def set_abstract(conn: sqlite3.Connection, publication_id: str, value: str) -> None:
     """Сохраняет реконструированный абстракт (или пустую строку как маркер «нет»)."""
     conn.execute(
@@ -193,16 +182,17 @@ def set_abstract(conn: sqlite3.Connection, publication_id: str, value: str) -> N
 def fetch_failed_pdf_publications(
     conn: sqlite3.Connection,
 ) -> list[tuple[str, str]]:
-    """Публикации, у которых pdf_url есть, но файл так и не скачался."""
+    """Публикации, у которых pdf_url есть, но файл так и не лежит локально.
+
+    Проверка существования файла идёт в Python — мы больше не храним
+    pdf_local_path в БД (путь детерминирован: data/pdfs/{id}.pdf).
+    """
     cur = conn.cursor()
     cur.execute(
-        """
-        SELECT id, pdf_url FROM publications
-        WHERE pdf_url IS NOT NULL AND pdf_url != ''
-          AND pdf_local_path IS NULL
-        """
+        "SELECT id, pdf_url FROM publications "
+        "WHERE pdf_url IS NOT NULL AND pdf_url != ''"
     )
-    return cur.fetchall()
+    return [(pid, url) for pid, url in cur.fetchall() if not pdf_path_for(pid).exists()]
 
 
 def run_initial(conn: sqlite3.Connection, limit: int) -> None:
@@ -253,14 +243,12 @@ def run_initial(conn: sqlite3.Connection, limit: int) -> None:
             else:
                 set_pdf_url(conn, pub_id, data["pdf_url"])
                 print(f"  pdf_url: {data['pdf_url']}")
-                dest = PDF_DIR / f"{pub_id}.pdf"
+                dest = pdf_path_for(pub_id)
                 if dest.exists():
-                    set_pdf_local_path(conn, pub_id, dest)
                     stats["pdf_already"] += 1
-                    print("  файл уже скачан, обновляю путь в БД")
+                    print("  файл уже скачан")
                 elif download_pdf(browser_session, data["pdf_url"], dest):
                     size_kb = dest.stat().st_size // 1024
-                    set_pdf_local_path(conn, pub_id, dest)
                     stats["pdf_downloaded"] += 1
                     print(f"  PDF скачан ({size_kb} КБ)")
                 else:
@@ -294,10 +282,9 @@ def run_retry_failed(conn: sqlite3.Connection) -> None:
     for index, (pub_id, pdf_url) in enumerate(pubs, 1):
         print(f"[{index}/{len(pubs)}] {pub_id} | {pdf_url[:80]}")
         stats["checked"] += 1
-        dest = PDF_DIR / f"{pub_id}.pdf"
+        dest = pdf_path_for(pub_id)
         if download_pdf(browser_session, pdf_url, dest):
             size_kb = dest.stat().st_size // 1024
-            set_pdf_local_path(conn, pub_id, dest)
             stats["downloaded"] += 1
             print(f"  PDF скачан ({size_kb} КБ)")
         else:
@@ -328,9 +315,9 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help=(
             "Не обогащать новые публикации, а перекачать только те, у которых "
-            "pdf_url был успешно получен, но сам файл не скачался "
-            "(pdf_url != '' AND pdf_local_path IS NULL). Использует браузерный "
-            "User-Agent, что обходит большую часть anti-bot блокировок."
+            "pdf_url был успешно получен, но файл локально отсутствует. "
+            "Использует браузерный User-Agent, что обходит большую часть "
+            "anti-bot блокировок."
         ),
     )
     return parser.parse_args()

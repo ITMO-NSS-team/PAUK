@@ -23,7 +23,6 @@ CREATE TABLE IF NOT EXISTS publications (
     authors          TEXT,
     affiliation      TEXT,
     pdf_url          TEXT,
-    pdf_local_path   TEXT,
     abstract         TEXT
 );
 
