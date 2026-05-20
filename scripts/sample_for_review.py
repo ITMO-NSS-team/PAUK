@@ -22,20 +22,21 @@ import random
 import sqlite3
 from pathlib import Path
 
-from config import DB_PATH, ROOT_DIR
+from config import DB_PATH, ROOT_DIR, pdf_path_for
 
-MATERIAL_FILTERS = {
-    "pdf": "(pdf_local_path IS NOT NULL AND pdf_local_path != '')",
-    "abstract": "(abstract IS NOT NULL AND abstract != '')",
-    "both": (
-        "(pdf_local_path IS NOT NULL AND pdf_local_path != '')"
-        " AND (abstract IS NOT NULL AND abstract != '')"
-    ),
-    "all": (
-        "(pdf_local_path IS NOT NULL AND pdf_local_path != '')"
-        " OR (abstract IS NOT NULL AND abstract != '')"
-    ),
-}
+
+MATERIAL_CHOICES = ["pdf", "abstract", "both", "all"]
+
+
+def matches_material(has_pdf: bool, has_abstract: bool, material: str) -> bool:
+    """Подходит ли публикация под фильтр --material."""
+    if material == "pdf":
+        return has_pdf
+    if material == "abstract":
+        return has_abstract
+    if material == "both":
+        return has_pdf and has_abstract
+    return has_pdf or has_abstract  # all
 
 
 def parse_args() -> argparse.Namespace:
@@ -50,7 +51,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--material",
-        choices=list(MATERIAL_FILTERS.keys()),
+        choices=MATERIAL_CHOICES,
         default="all",
         help=(
             "Из каких публикаций брать выборку: "
@@ -103,28 +104,32 @@ def parse_args() -> argparse.Namespace:
 def fetch_pools(
     conn: sqlite3.Connection, material: str
 ) -> tuple[list[str], list[str], list[str]]:
-    """Делит публикации с материалом на три непересекающиеся группы:
+    """Делит подходящие публикации на три непересекающиеся группы:
 
     confirmed — has_code = 1 (есть хотя бы одна подтверждённая ссылка);
     rejected  — есть кандидаты, но все is_relevant = 0;
     plain     — материал есть, кандидатов вообще не нашлось.
 
     Параметр ``material`` (pdf / abstract / both / all) сужает пул
-    публикаций по тому, какой материал у них есть.
+    публикаций по тому, какой материал у них есть. Проверка PDF идёт по
+    файловой системе (data/pdfs/{id}.pdf), потому что колонки
+    pdf_local_path в БД больше нет.
     """
-    where = MATERIAL_FILTERS[material]
     cur = conn.cursor()
     cur.execute(
-        f"""
-        SELECT id, has_code,
+        """
+        SELECT id, abstract, has_code,
                (SELECT COUNT(*) FROM repo_links r WHERE r.publication_id = p.id) AS n_candidates
         FROM publications p
-        WHERE {where}
         """
     )
 
     confirmed, rejected, plain = [], [], []
-    for pub_id, has_code, n in cur.fetchall():
+    for pub_id, abstract, has_code, n in cur.fetchall():
+        has_pdf = pdf_path_for(pub_id).exists()
+        has_abstract = bool(abstract) and abstract != ""
+        if not matches_material(has_pdf, has_abstract, material):
+            continue
         if has_code == 1:
             confirmed.append(pub_id)
         elif n > 0:
@@ -189,7 +194,7 @@ def make_record(conn: sqlite3.Connection, pub_id: str) -> dict:
     cur.execute(
         """
         SELECT id, title, doi, openalex_url, authors, abstract,
-               pdf_url, pdf_local_path, has_code, code_url
+               pdf_url, has_code, code_url
         FROM publications WHERE id = ?
         """,
         (pub_id,),
@@ -197,12 +202,13 @@ def make_record(conn: sqlite3.Connection, pub_id: str) -> dict:
     row = cur.fetchone()
 
     abstract = row[5] or ""
-    code_url_raw = row[9]
+    code_url_raw = row[8]
     try:
         code_url_parsed = json.loads(code_url_raw) if code_url_raw else None
     except (TypeError, json.JSONDecodeError):
         code_url_parsed = code_url_raw
 
+    pdf_path = pdf_path_for(row[0])
     record = {
         "publication_id": row[0],
         "title": row[1],
@@ -211,8 +217,8 @@ def make_record(conn: sqlite3.Connection, pub_id: str) -> dict:
         "authors": row[4],
         "abstract_preview": abstract[:500],
         "pdf_url": row[6],
-        "pdf_local_path": row[7],
-        "current_has_code": row[8],
+        "pdf_local_path": str(pdf_path) if pdf_path.exists() else None,
+        "current_has_code": row[7],
         "current_code_url": code_url_parsed,
         "candidates": [],
         "manual_review": {

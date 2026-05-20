@@ -28,14 +28,16 @@ from config import (
     DB_PATH,
     SUPPORTED_HOSTS,
     URL_TRAILING_PUNCT,
+    pdf_path_for,
 )
 
-# (?<![\w.]) - перед хостом не должно быть буквы/цифры/точки,
-# иначе "notgithub.com/foo" совпадёт начиная с середины строки.
+# (?<![\w.]) — перед хостом не должно быть буквы/цифры/точки, иначе
+# "notgithub.com/foo" совпадёт с середины. В негативный класс path добавлены
+# < и >, чтобы не съедать LaTeX-разметку вида "<Name>".
 URL_PATTERN = re.compile(
     r"(?<![\w.])(?:https?://)?(?:www\.)?("
     + "|".join(re.escape(host) for host in SUPPORTED_HOSTS)
-    + r')(/[^\s)\]}>"\']+)',
+    + r')(/[^\s<>)\]}"\']+)',
     re.IGNORECASE,
 )
 
@@ -43,6 +45,71 @@ URL_PATTERN = re.compile(
 HYPHEN_LINEBREAK = re.compile(r"(?<=\w)-\n\s*(?=\w)")
 # Перенос строки внутри URL без дефиса: "huggingface.co/dat\nasets/..." -> "huggingface.co/datasets/...".
 URL_LINEBREAK = re.compile(r"(?<=[\w/.\-?&=#%])\n\s*(?=[\w/])")
+
+
+SENTENCE_START_TAIL = re.compile(r"\.(?:[A-Z][a-z]+[\w-]*|\d+(?:\.\d+)*)$")
+
+# Хосты, у которых каноническая ссылка на репо — host/user/repo.
+# Всё, что после второго сегмента пути (`/pull/69`, `/tree/main`,
+# `/blob/...`, `/issues/...`), это навигация внутри одного и того же
+# репозитория и должна сворачиваться в корень при дедупликации.
+REPO_ROOT_HOSTS = {
+    "github.com",
+    "gitlab.com",
+    "bitbucket.org",
+    "codeberg.org",
+    "gitee.com",
+    "huggingface.co",
+}
+
+
+def split_at_embedded_url(url: str) -> str:
+    """Отрезает второй вложенный http(s):// в URL (типичная склейка
+    ссылки и сноски в PDF, вроде ``...repo3https://github.com/...``)."""
+    positions = [
+        pos for pos in (url.find("http://", 1), url.find("https://", 1)) if pos > 0
+    ]
+    if positions:
+        return url[: min(positions)]
+    return url
+
+
+def canonicalize_repo_url(url: str) -> str:
+    """Для github/gitlab/bitbucket/codeberg/gitee/huggingface сворачивает URL
+    к ``https://host/user/repo``. Отрезает /pull/N, /tree/branch, /blob/...,
+    /issues/N, а также хвостовой .git. Для остальных хостов возвращает URL
+    без изменений (Zenodo, Figshare, OSF имеют другие схемы путей)."""
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return url
+    host = parsed.netloc.lower()
+    bare_host = host[4:] if host.startswith("www.") else host
+    if bare_host not in REPO_ROOT_HOSTS:
+        return url
+    segments = [seg for seg in parsed.path.split("/") if seg]
+    if len(segments) < 2:
+        return url
+    repo = segments[1].removesuffix(".git")
+    return f"https://{bare_host}/{segments[0]}/{repo}"
+
+
+def clean_url_tail(url: str) -> str:
+    """Канонизирует найденный URL:
+
+    1. Срезает хвостовую пунктуацию.
+    2. Срезает прилипшее начало следующего предложения (``.Word``, ``.4.1``).
+    3. Разрезает склеенные через сноску ссылки (``repo3https://...``).
+    4. Добавляет схему https:// если её нет.
+    5. Сворачивает GitHub/HF/GitLab и т.п. до корня репо (host/user/repo).
+    """
+    url = SENTENCE_START_TAIL.sub("", url.rstrip(URL_TRAILING_PUNCT))
+    url = split_at_embedded_url(url)
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    url = canonicalize_repo_url(url)
+    return url
+
 
 # Источник кандидата — в логах и для диагностики.
 SOURCE_TEXT = "pdf_text"
@@ -81,7 +148,7 @@ def find_urls_in_text(text: str) -> list[tuple[str, str, int, int]]:
     found: list[tuple[str, str, int, int]] = []
     for match in URL_PATTERN.finditer(text):
         host = match.group(1).lower()
-        url = match.group(0).rstrip(URL_TRAILING_PUNCT)
+        url = clean_url_tail(match.group(0))
         found.append((url, host, match.start(), match.end()))
     return found
 
@@ -115,7 +182,7 @@ def extract_from_pdf_page(page: fitz.Page) -> list[tuple[str, str, str, str]]:
         host = host_matches(uri)
         if not host:
             continue
-        url = uri.rstrip(URL_TRAILING_PUNCT)
+        url = clean_url_tail(uri)
 
         # Контекст: видимый текст под прямоугольником ссылки + окружение в
         # полном тексте страницы. Если ничего не нашлось — берём сам URL.
@@ -173,8 +240,8 @@ def deduplicate(
 ) -> list[tuple[str, str, str, int | None, str]]:
     """Оставляет только одну запись на URL внутри одной публикации.
 
-    Приоритет источников: pdf_text > pdf_annotation > abstract — у текста
-    наиболее полезный окружающий контекст для LLM, у аннотации — обычно
+    Приоритет источников: pdf_text > pdf_annotation > abstract - у текста
+    наиболее полезный окружающий контекст для LLM, у аннотации - обычно
     лишь подпись «here»/«link», а абстракт даёт меньше всего.
     """
     priority = {SOURCE_TEXT: 0, SOURCE_ANNOT: 1, SOURCE_ABSTRACT: 2}
@@ -188,14 +255,19 @@ def deduplicate(
 
 def fetch_processable_publications(
     conn: sqlite3.Connection,
-) -> list[tuple[str, str | None, str | None]]:
-    """Возвращает публикации, у которых есть либо локальный PDF, либо абстракт."""
+) -> list[tuple[str, str | None]]:
+    """Возвращает (id, abstract) для публикаций, по которым есть что парсить.
+
+    Сейчас критерий — pdf_url или abstract не пустые. Наличие самого PDF
+    проверяется отдельно через pdf_path_for(id).exists() в main, потому что
+    локальный путь в БД не хранится.
+    """
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT id, pdf_local_path, abstract
+        SELECT id, abstract
         FROM publications
-        WHERE (pdf_local_path IS NOT NULL AND pdf_local_path != '')
+        WHERE (pdf_url IS NOT NULL AND pdf_url != '')
            OR (abstract IS NOT NULL AND abstract != '')
         """
     )
@@ -209,7 +281,7 @@ def save_links(
 ) -> None:
     """Полностью заменяет строки repo_links для одной публикации новым набором.
 
-    Поле source в БД пока не хранится — оно полезно только для логов
+    Поле source в БД пока не хранится - оно полезно только для логов
     текущего запуска. Если позже понадобится, добавим колонку.
     """
     cur = conn.cursor()
@@ -242,16 +314,13 @@ def main() -> None:
         pubs_with_links = 0
         per_source = {SOURCE_TEXT: 0, SOURCE_ANNOT: 0, SOURCE_ABSTRACT: 0}
 
-        for index, (pub_id, pdf_path_str, abstract) in enumerate(rows, 1):
+        for index, (pub_id, abstract) in enumerate(rows, 1):
             print(f"[{index}/{len(rows)}] {pub_id}")
 
             links: list[tuple[str, str, str, int | None, str]] = []
-            if pdf_path_str:
-                pdf_path = Path(pdf_path_str)
-                if pdf_path.exists():
-                    links = extract_from_pdf(pdf_path)
-                else:
-                    print(f"  файл не найден: {pdf_path}")
+            pdf_path = pdf_path_for(pub_id)
+            if pdf_path.exists():
+                links = extract_from_pdf(pdf_path)
             if not links and abstract:
                 links = extract_from_abstract(abstract)
 
