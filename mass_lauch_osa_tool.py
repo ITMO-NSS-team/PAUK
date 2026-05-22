@@ -1,8 +1,9 @@
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 DEFAULT_CONFIG = {"model": "openai/gpt-4o", "no_fork": True, "no_pull_request": True}
-
+MAX_WORKERS = 5
 
 def build_arguments(url: str, config: dict[str, str] | None = None):
     args = [sys.executable, "-m", "osa_tool.run", "-r", url]
@@ -38,16 +39,23 @@ def build_arguments(url: str, config: dict[str, str] | None = None):
     return args
 
 
+def process_url(url: str):
+    """Функция-обертка для запуска одного процесса."""
+    try:
+        subprocess.run(
+            build_arguments(url=url.strip(), config=DEFAULT_CONFIG),
+            check=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"Ошибка при обработке {url}: {e}")
+
 def main():
     with open("links.txt") as file:
-        line = file.readline()
-        while line:
-            subprocess.run(
-                build_arguments(url=line.replace("\n", ""), config=DEFAULT_CONFIG),
-                check=True,
-                text=True,
-            )
-            line = file.readline()
+        urls = [line.strip() for line in file if line.strip()]
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        executor.map(process_url, urls)
 
 
 if __name__ == "__main__":
