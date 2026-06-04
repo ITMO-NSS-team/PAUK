@@ -37,6 +37,7 @@ from config import (
     PDF_DIR,
     REQUEST_DELAY,
     USER_AGENT,
+    pdf_path_for,
 )
 
 PDF_MAGIC = b"%PDF"
