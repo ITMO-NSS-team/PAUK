@@ -1,16 +1,4 @@
-"""Интерактивное демо для PAUK: визуализация связей по лабораториям ИТМО.
-
-Три вкладки:
-  1) «Лаборатория» — карточка одной из выбранных лаб: счётчики, список репо,
-     граф авторы ↔ публикации ↔ репозитории.
-  2) «Сравнение» — параллельные метрики и Sankey-диаграмма потоков
-     «автор → публикация → репо» для всех выбранных лаб.
-  3) «Сеть» — единый граф всех авторов и репо обеих лаб, в нём видны
-     общие соавторы и пересечения экосистем.
-
-Запуск из корня проекта:
-    uv run streamlit run app.py
-"""
+"""Интерактивное демо для PAUK: визуализация связей по лабораториям ИТМО."""
 
 import sqlite3
 from pathlib import Path
@@ -20,8 +8,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-ROOT_DIR = Path(__file__).resolve().parent
-DB_PATH = ROOT_DIR / "data" / "itmo_research_opensource.db"
+ROOT_DIR = Path(__file__).resolve().parent.parent
+DB_PATH = ROOT_DIR / "data" / "itmo_opensource.db"
 
 
 LABS: dict[str, dict] = {

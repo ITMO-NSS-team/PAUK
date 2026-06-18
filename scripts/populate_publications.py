@@ -1,19 +1,3 @@
-"""Загружает публикации сотрудников ИТМО из OpenAlex в локальную БД.
-
-Для каждой работы за период [--start-date, --end-date],
-аффилированной с ИТМО (определяется по ROR ID и набору известных названий
-организации), скрипт заполняет таблицы publications, persons_itmo,
-persons_external и publication_authors.
-
-Авторы дедуплицируются по их display_name и известным альтернативам.
-In-memory LRU-кэш не даёт лишний раз дёрнуть OpenAlex /authors за одним и
-тем же автором в рамках одного запуска.
-
-Запускать из корня проекта:
-    uv run python scripts/populate_publications.py \\
-        --start-date 2025-01-01 --end-date 2026-05-01
-"""
-
 import argparse
 import json
 import sqlite3
@@ -23,7 +7,6 @@ from typing import Any
 
 import requests
 from config import (
-    AFFILIATION_SEPARATOR,
     AUTHORS_CACHE_CAPACITY,
     DB_PATH,
     ITMO_NAMES,
@@ -34,6 +17,8 @@ from config import (
     REQUEST_DELAY,
     USER_AGENT,
 )
+
+AFFILIATION_SEPARATOR = " \n "
 
 
 class LRUCache:
@@ -167,7 +152,7 @@ class PublicationsIngestor:
     def fetch_openalex_author(self, author_id: str, retries: int = 3) -> dict | None:
         """Возвращает полную карточку автора из /authors, используя LRU-кэш.
 
-        При 429 ждёт минуту и повторяет, но не более ``retries`` раз — иначе
+        При 429 ждёт минуту и повторяет, но не более ``retries`` раз - иначе
         получили бы бесконечный цикл на устойчивом rate-limit.
         """
         if not author_id or author_id == "None":
@@ -389,7 +374,7 @@ class PublicationsIngestor:
             print(f"  [{index}/{total}] {work_id} уже есть в БД, пропуск")
             return
 
-        title = work.get("title", "No title")
+        title = work.get("title") or "No title"
         title_preview = title[:60] + "..." if len(title) > 60 else title
         print(f"  [{index}/{total}] {work_id} | {title_preview}")
 

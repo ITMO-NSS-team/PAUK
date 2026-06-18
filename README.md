@@ -1,11 +1,4 @@
-# PAUK — мониторинг публикаций ИТМО
-
-Пайплайн, который для каждой публикации сотрудников ИТМО ищет ссылку на
-репозиторий с кодом, выложенный самими авторами:
-
-`OpenAlex -> SQLite -> PDF + Abstract -> regex -> LLM -> publications.code_url`
-
-Подробный отчёт о решении в [REPORT.md](REPORT.md).
+# PAUK - мониторинг публикаций
 
 ## Установка
 
@@ -17,105 +10,62 @@ cp .env.example .env
 
 ## Запуск пайплайна
 
-Самый простой вариант — один скрипт, который вызовет все шаги по очереди:
+Один скрипт по всем шагам:
 
 ```bash
 ./run_pipeline.sh
-# или с логом всего вывода:
+# или с логом:
 ./run_pipeline.sh 2>&1 | tee logs/pipeline.log
 ```
 
-Параметры (даты, лимиты) задаются переменными в начале `run_pipeline.sh`.
+Даты и лимиты задаются переменными в начале `run_pipeline.sh`.
 
-Если нужно прогнать шаги по отдельности (например, перезапустить только
-один этап):
+Шаги по отдельности (все идемпотентны - повторный запуск дорабатывает
+только новое):
 
 ```bash
-# 1. Создать схему SQLite (идемпотентно).
+# 1. Схема единой БД.
 uv run python scripts/init_db.py
 
-# 2. Загрузить публикации ИТМО из OpenAlex за период.
+# 2. Публикации ИТМО из OpenAlex + авторы (persons_itmo / persons_external).
 uv run python scripts/populate_publications.py \
-    --start-date 2025-01-01 --end-date 2026-05-01
+    --start-date 2024-05-01 --end-date 2026-06-15
 
-# 3. По каждой публикации забрать абстракт и (если доступно) скачать PDF.
-uv run python scripts/fetch_papers.py --limit 2000
-# Доскачать упавшие из-за anti-bot с браузерным User-Agent:
-uv run python scripts/fetch_papers.py --retry-failed
+# 3. GitHub-часть: abstract+PDF -> ссылки на код (repo_links) -> вердикт LLM.
+uv run python scripts/find_code_links.py
 
-# 4. Извлечь кандидатные ссылки на репозитории из PDF и абстрактов.
-uv run python scripts/extract_repo_links.py
+# 4. LLM-разметка департаментов ИТМО по аффилиациям -> persons_itmo.department.
+uv run python scripts/enrich_departments.py
 
-# 5. Прогнать кандидатов через LLM: репозиторий авторов или чужой
-uv run python scripts/classify_repo_links.py --limit 5000
+# 5. Русские ФИО (транслитерация name_en) -> persons_itmo.*_ru.
+uv run python scripts/enrich_persons_ru.py
 
-# 6. Прокинуть подтверждённые ссылки в publications.has_code/code_url.
-uv run python scripts/sync_publications.py
+# 6. Чистый слой repositories + github_departments (GitHub API, split user/org).
+uv run python scripts/build_repositories.py
+
+# 7. Чистка дублей + производные связи (has_code, *_departments).
+uv run python scripts/finalize.py        # --dry-run чтобы только посмотреть dedup
 ```
 
-Шаги 3 и 5 принимают `--limit`, чтобы обрабатывать порциями. Все шаги
-идемпотентны: повторный запуск не сломает уже сохранённые данные.
+## Схема БД
 
-## Оценка качества
+Базовые сущности и связи:
 
-Случайная выборка публикаций для ручной разметки:
+| Таблица                   | Назначение                                                        |
+|---------------------------|------------------------------------------------------------------|
+| `publications`            | Публикации (+ `has_code`, `code_url`, `pdf_url`, `abstract`)      |
+| `persons_itmo`            | Сотрудники ИТМО (+ `department`, `github`)                        |
+| `persons_external`        | Внешние соавторы                                                  |
+| `publication_authors`     | Авторство (публикация ↔ человек)                                  |
+| `departments`             | Департаменты ИТМО (`name_en` + `name_variants`)                   |
+| `publication_departments` | Публикация ↔ департамент (через департаменты её ИТМО-авторов)     |
+| `github_departments`      | **GitHub-организации** (лаборатории): login, name, описание       |
+| `repositories`            | Чистый слой репозиториев + метаданные GitHub                     |
+| `repository_persons`      | Репозиторий ↔ человек (`owner` / `contributor`)                  |
+| `repository_departments`  | Репозиторий ↔ департамент ИТМО                                    |
+| `repository_publications` | Репозиторий ↔ публикация                                          |
+| `repo_links`              | Staging: все кандидатные ссылки + вердикт LLM (доказательная база)|
 
-```bash
-uv run python scripts/sample_for_review.py
-```
+## Конфигурация
 
-По умолчанию 80 публикаций (с гарантией >= 5 подтверждённых и >= 5
-отклонённых, остальное случайно из всех с материалом), результат —
-в `evaluation/sample.jsonl`. Инструкция по разметке и формулы метрик
-в [evaluation/README.md](evaluation/README.md).
-
-## Структура
-
-```
-PAUK/
-├── run_pipeline.sh              # запустить все шаги по очереди
-├── scripts/
-│   ├── config.py                # пути, эндпоинты, загрузка .env
-│   ├── init_db.py
-│   ├── populate_publications.py
-│   ├── fetch_papers.py
-│   ├── extract_repo_links.py
-│   ├── classify_repo_links.py
-│   ├── sync_publications.py
-│   └── sample_for_review.py
-├── evaluation/
-│   ├── README.md
-│   ├── sample.jsonl             # .gitignore
-│   └── classify_dump.jsonl
-├── data/                        # .gitignore
-│   ├── itmo_research_opensource.db
-│   └── pdfs/
-├── .env                         # .gitignore
-├── .env.example                 # шаблон для .env
-├── README.md
-└── REPORT.md
-```
-
-## Чтение результата из БД
-
-`publications.code_url` хранит **JSON-массив** подтверждённых LLM ссылок,
-отсортированный от максимальной уверенности к минимальной (если найдено
-несколько репо к одной статье).
-
-```python
-import json
-import sqlite3
-
-conn = sqlite3.connect("data/itmo_research_opensource.db")
-rows = conn.execute(
-    "SELECT id, title, code_url FROM publications WHERE has_code = 1"
-)
-for pub_id, title, code_url_json in rows:
-    urls = json.loads(code_url_json)
-    print(f"{pub_id}: {title}")
-    for url in urls:
-        print(f"  {url}")
-```
-
-Полный список кандидатов с контекстами и причинами вердикта LLM лежит
-в таблице `repo_links` — оттуда удобно смотреть пограничные случаи.
+Путь БД можно переопределить переменной окружения `PAUK_DB_PATH`. Остальные ключи - в `.env`.

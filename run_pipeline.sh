@@ -1,26 +1,15 @@
 #!/usr/bin/env bash
-#
-# Запускает все шаги пайплайна по порядку.
-#
-# Использование:
-#   ./run_pipeline.sh                                # обычный запуск
-#   ./run_pipeline.sh 2>&1 | tee logs/pipeline.log   # с логом всего вывода
-#
-# Параметры для populate_publications.py меняются здесь, остальные шаги
-# параметров не требуют.
+# ./run_pipeline.sh 2>&1 | tee logs/pipeline.log
 
 set -euo pipefail
 
-START_DATE="2025-01-01"
-END_DATE="2026-06-03"
-FETCH_LIMIT="10000"
-CLASSIFY_LIMIT="10000"
+START_DATE="2024-05-01"
+END_DATE="2026-06-15"
 
 cd "$(dirname "$0")"
 
 run_step() {
-    local n="$1"
-    local title="$2"
+    local n="$1" title="$2"
     shift 2
     echo
     echo "================================================================"
@@ -29,21 +18,23 @@ run_step() {
     "$@"
 }
 
-run_step "1/6" "init_db" \
+run_step "1/7" "init_db" \
     uv run python scripts/init_db.py
 
-run_step "2/6" "populate_publications ($START_DATE -> $END_DATE)" \
-    uv run python scripts/populate_publications.py \
-        --start-date "$START_DATE" --end-date "$END_DATE"
+run_step "2/7" "populate_publications ($START_DATE -> $END_DATE)" \
+    uv run python scripts/populate_publications.py --start-date "$START_DATE" --end-date "$END_DATE"
 
-run_step "3/6" "fetch_papers (--limit $FETCH_LIMIT)" \
-    uv run python scripts/fetch_papers.py --limit "$FETCH_LIMIT"
+run_step "3/7" "find_code_links" \
+    uv run python scripts/find_code_links.py
 
-run_step "4/6" "extract_repo_links" \
-    uv run python scripts/extract_repo_links.py
+run_step "4/7" "enrich_departments" \
+    uv run python scripts/enrich_departments.py
 
-run_step "5/6" "classify_repo_links (--limit $CLASSIFY_LIMIT)" \
-    uv run python scripts/classify_repo_links.py --limit "$CLASSIFY_LIMIT"
+run_step "5/7" "enrich_persons_ru" \
+    uv run python scripts/enrich_persons_ru.py
 
-run_step "6/6" "sync_publications" \
-    uv run python scripts/sync_publications.py
+run_step "6/7" "build_repositories" \
+    uv run python scripts/build_repositories.py
+
+run_step "7/7" "finalize" \
+    uv run python scripts/finalize.py
