@@ -64,3 +64,16 @@ LLM_RATE_LIMIT_SLEEP = 30                        # пауза при 429 от Op
 # --- Извлечение ссылок ---------------------------------------------------
 
 CONTEXT_RADIUS = 400         # символов вокруг URL в repo_links.context
+
+
+# --- ORCID / профили ----------------------------------------------------
+
+USER_AGENT_EMAIL = os.getenv("USER_AGENT_EMAIL", "anonymous@example.com")
+PROFILES_DB_PATH = DATA_DIR / "person_profiles.db"
+ORCID_PUBLIC_API = "https://pub.orcid.org/v3.0"
+ORCID_REQUEST_DELAY = 0.1
+
+# --- GitHub-harvest ------------------------------------------------------
+
+GITHUB_REQUEST_DELAY = 0.1
+GITHUB_COMMIT_PAGES = 3          # страниц коммитов на репо
