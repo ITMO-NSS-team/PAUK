@@ -36,14 +36,19 @@ run_step "2/6" "populate_publications ($START_DATE -> $END_DATE)" \
     uv run python scripts/populate_publications.py \
         --start-date "$START_DATE" --end-date "$END_DATE"
 
-run_step "3/6" "fetch_papers (--limit $FETCH_LIMIT)" \
+run_step "3/7" "fetch_papers (--limit $FETCH_LIMIT)" \
     uv run python scripts/fetch_papers.py --limit "$FETCH_LIMIT"
 
-run_step "4/6" "extract_repo_links" \
+# Дозагрузка недостающих PDF из S3-зеркала препринтов. Без S3-кредов в
+# .env шаг завершается сразу без изменений.
+run_step "4/7" "fetch_pdfs_s3 (дозагрузка недостающих PDF)" \
+    uv run python scripts/fetch_pdfs_s3.py
+
+run_step "5/7" "extract_repo_links" \
     uv run python scripts/extract_repo_links.py
 
-run_step "5/6" "classify_repo_links (--limit $CLASSIFY_LIMIT)" \
+run_step "6/7" "classify_repo_links (--limit $CLASSIFY_LIMIT)" \
     uv run python scripts/classify_repo_links.py --limit "$CLASSIFY_LIMIT"
 
-run_step "6/6" "sync_publications" \
+run_step "7/7" "sync_publications" \
     uv run python scripts/sync_publications.py

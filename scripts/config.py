@@ -67,6 +67,29 @@ LLM_MODEL = os.getenv("LLM_MODEL", "openai/gpt-4o-mini")
 CLASSIFY_BATCH_SIZE = 50
 
 
+# --- S3-источник PDF (внешнее зеркало препринтов) ------------------------
+
+# Внешнее S3-совместимое хранилище (MinIO) с PDF/MD препринтов arXiv,
+# bioRxiv и medRxiv. Используется fetch_pdfs_s3.py как дополнительный
+# источник PDF для публикаций, которым не хватило файла из OpenAlex.
+# Креды и эндпоинт берутся из .env (в репозиторий не коммитятся).
+S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL", "")
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "")
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "")
+S3_REGION = os.getenv("S3_REGION", "us-east-1")
+
+# Раскладка ключей в хранилище (см. разведку структуры бакетов):
+#   arXiv:    bucket 'articles',  key 'article/{arxiv_id}.pdf'
+#   bioRxiv:  bucket 'biorxiv',   key 'article/biorxiv/{doi}v{ver}.pdf'
+#   medRxiv:  bucket 'medrxiv',   key 'article/medrxiv/{doi}v{ver}.pdf'
+S3_ARXIV_BUCKET = "articles"
+S3_ARXIV_PREFIX = "article/"
+S3_BIORXIV_BUCKET = "biorxiv"
+S3_BIORXIV_PREFIX = "article/biorxiv/"
+S3_MEDRXIV_BUCKET = "medrxiv"
+S3_MEDRXIV_PREFIX = "article/medrxiv/"
+
+
 # --- Извлечение ссылок на репозитории ------------------------------------
 
 SUPPORTED_HOSTS = [
