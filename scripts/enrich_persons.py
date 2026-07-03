@@ -1,21 +1,23 @@
 import argparse
 import json
+import re
 import sqlite3
 import time
 
 import requests
 from config import (
     DB_PATH,
+    HTTP_TIMEOUT,
     OPENALEX_API_KEY,
     OPENALEX_AUTHORS_URL,
     ORCID_PUBLIC_API,
     ORCID_REQUEST_DELAY,
-    PROFILES_DB_PATH,
+    RATE_LIMIT_SLEEP,
     REQUEST_DELAY,
+    SQLITE_TIMEOUT,
     USER_AGENT,
     USER_AGENT_EMAIL,
 )
-from find_github_via_orcid import extract_from_person
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS person_profiles (
@@ -25,7 +27,7 @@ CREATE TABLE IF NOT EXISTS person_profiles (
     openalex_url       TEXT,
     orcid              TEXT,
     scopus_id          TEXT,
-    researcher_id      TEXT,   -- Web of Science ResearcherID (из ORCID)
+    researcher_id      TEXT,   -- Web of Science ResearcherID (ORCID)
     twitter            TEXT,   -- из OpenAlex ids, если привязан к ORCID
     wikipedia          TEXT,
     linkedin           TEXT,
@@ -44,29 +46,16 @@ CREATE TABLE IF NOT EXISTS person_profiles (
     external_ids       TEXT,   -- JSON [{type, value, url}]  (ORCID)
     keywords           TEXT,   -- JSON [str]  (ORCID)
     biography          TEXT,
-    emails             TEXT,   -- JSON [str]  публичные email (ORCID, редко)
+    emails             TEXT,   -- JSON [str]  публичные email 
     other_names        TEXT,   -- JSON [str]  credit-name + other-names (ORCID)
     has_github         INTEGER DEFAULT 0,
-    github_urls        TEXT,   -- JSON [str], дубль для удобства
+    github_urls        TEXT,   -- JSON [str],
     status             TEXT,   -- enriched | no_orcid | orcid_error
     enriched_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS github_findings (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    person_id    TEXT NOT NULL,
-    name_en      TEXT,
-    orcid        TEXT,
-    github_login TEXT,
-    github_url   TEXT,
-    source       TEXT,
-    found_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(person_id, github_url)
-);
-
 CREATE INDEX IF NOT EXISTS idx_profiles_status   ON person_profiles(status);
 CREATE INDEX IF NOT EXISTS idx_profiles_github   ON person_profiles(has_github);
-CREATE INDEX IF NOT EXISTS idx_findings_pid      ON github_findings(person_id);
 """
 
 TOPICS_LIMIT = 8
@@ -75,6 +64,64 @@ TOPICS_LIMIT = 8
 def _tail_id(url: str | None) -> str | None:
     """Последний сегмент URL - для orcid/openalex/ror id."""
     return url.rstrip("/").split("/")[-1] if url else None
+
+
+GITHUB_RESERVED = {
+    "about", "apps", "collections", "customer-stories", "explore", "features",
+    "issues", "join", "login", "marketplace", "new", "notifications", "orgs",
+    "pricing", "pulls", "search", "settings", "sponsors", "topics", "trending",
+}
+_GITHUB_PROFILE_RE = re.compile(r"github\.com/([A-Za-z0-9][A-Za-z0-9-]{0,38})", re.IGNORECASE)
+_GITHUB_PAGES_RE = re.compile(r"\b([A-Za-z0-9][A-Za-z0-9-]{0,38})\.github\.io", re.IGNORECASE)
+
+
+def _logins_in(text: str) -> list[str]:
+    """Достаёт логины GitHub из произвольного текста."""
+    found: list[str] = []
+    for pattern in (_GITHUB_PROFILE_RE, _GITHUB_PAGES_RE):
+        for match in pattern.finditer(text or ""):
+            login = match.group(1).rstrip("-")
+            if login and login.lower() not in GITHUB_RESERVED:
+                found.append(login)
+    seen, unique = set(), []
+    for login in found:
+        if login.lower() not in seen:
+            seen.add(login.lower())
+            unique.append(login)
+    return unique
+
+
+def extract_from_person(person: dict) -> tuple[list[dict], list[dict]]:
+    """Из ORCID/person: github-логины (findings) + researcher-urls."""
+    researcher_urls: list[dict] = []
+    sources: list[tuple[str, str]] = []
+
+    for entry in (person.get("researcher-urls") or {}).get("researcher-url", []):
+        name = entry.get("url-name")
+        url = (entry.get("url") or {}).get("value")
+        if url:
+            researcher_urls.append({"name": name, "url": url})
+            sources.append((url, f"researcher-url:{name}" if name else "researcher-url"))
+
+    for entry in (person.get("external-identifiers") or {}).get("external-identifier", []):
+        url = (entry.get("external-id-url") or {}).get("value") or ""
+        value = entry.get("external-id-value") or ""
+        sources.append((f"{url} {value}", "external-id"))
+
+    for entry in (person.get("keywords") or {}).get("keyword", []):
+        if entry.get("content"):
+            sources.append((entry["content"], "keyword"))
+
+    bio = (person.get("biography") or {}).get("content")
+    if bio:
+        sources.append((bio, "biography"))
+
+    findings: dict[str, dict] = {}
+    for text, source in sources:
+        for login in _logins_in(text):
+            findings.setdefault(login.lower(), {
+                "login": login, "url": f"https://github.com/{login}", "source": source})
+    return list(findings.values()), researcher_urls
 
 
 def parse_openalex_author(a: dict) -> dict:
@@ -233,7 +280,7 @@ class PersonEnricher:
 
     def _get_json(self, url, params=None, headers=None, retries=3):
         try:
-            resp = self.session.get(url, params=params, headers=headers, timeout=30)
+            resp = self.session.get(url, params=params, headers=headers, timeout=HTTP_TIMEOUT)
         except requests.RequestException as exc:
             print(f"  запрос упал {url}: {exc}")
             return None
@@ -243,8 +290,8 @@ class PersonEnricher:
             except ValueError:
                 return None
         if resp.status_code == 429 and retries > 0:
-            print(f"  429 для {url}, sleep 60 сек (осталось попыток: {retries - 1})")
-            time.sleep(60)
+            print(f"  429 для {url}, sleep {RATE_LIMIT_SLEEP} сек (осталось попыток: {retries - 1})")
+            time.sleep(RATE_LIMIT_SLEEP)
             return self._get_json(url, params, headers, retries - 1)
         if resp.status_code != 404:
             print(f"  {resp.status_code} для {url}")
@@ -325,31 +372,30 @@ class PersonEnricher:
                 status,
             ),
         )
-        out.execute("DELETE FROM github_findings WHERE person_id = ?", (person_id,))
-        orcid = (orc or {}).get("orcid")
-        for g in github:
-            out.execute(
-                """
-                INSERT OR IGNORE INTO github_findings
-                    (person_id, name_en, orcid, github_login, github_url, source)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (person_id, name_en, orcid, g["login"], g["url"], g["source"]),
-            )
 
     # --- Драйвер ---------------------------------------------------------
 
     def run(self) -> None:
-        out = sqlite3.connect(self.out_db, timeout=30)
+        out = sqlite3.connect(self.out_db, timeout=SQLITE_TIMEOUT)
         out.executescript(SCHEMA_SQL)
         for col in ("emails", "other_names"):
             try:
                 out.execute(f"ALTER TABLE person_profiles ADD COLUMN {col} TEXT")
             except sqlite3.OperationalError:
                 pass
-        done = {r[0] for r in out.execute("SELECT person_id FROM person_profiles")}
+        self.crossref = {}
+        try:
+            self.crossref = {pid: orc for pid, orc in out.execute(
+                "SELECT person_id, orcid FROM crossref_orcid")}
+        except sqlite3.OperationalError:
+            pass
+        reprocess = {pid for (pid,) in out.execute(
+            "SELECT person_id FROM person_profiles WHERE status = 'no_orcid'")
+        } & set(self.crossref)
+        done = {r[0] for r in out.execute(
+            "SELECT person_id FROM person_profiles")} - reprocess
 
-        src = sqlite3.connect(self.source_db, timeout=30)
+        src = sqlite3.connect(self.source_db, timeout=SQLITE_TIMEOUT)
         people = self._load_people(src, done)
         src.close()
 
@@ -364,7 +410,7 @@ class PersonEnricher:
                 time.sleep(REQUEST_DELAY)
                 oa = parse_openalex_author(author) if author else {}
 
-                orcid = _tail_id((author or {}).get("orcid"))
+                orcid = _tail_id((author or {}).get("orcid")) or self.crossref.get(person_id)
                 orc, github, status = {}, [], "no_orcid"
                 if orcid:
                     record = self.fetch_record(orcid)
@@ -424,7 +470,7 @@ def parse_args() -> argparse.Namespace:
                         help="Пересобрать всех заново, а не только новых.")
     parser.add_argument("--source-db", default=str(DB_PATH),
                         help="Путь к исходной БД с persons_itmo.")
-    parser.add_argument("--out-db", default=str(PROFILES_DB_PATH),
+    parser.add_argument("--out-db", default=str(DB_PATH),
                         help="Путь к БД для результатов.")
     return parser.parse_args()
 

@@ -11,7 +11,9 @@ from config import (
     GITHUB_COMMIT_PAGES,
     GITHUB_REQUEST_DELAY,
     GITHUB_TOKEN,
-    PROFILES_DB_PATH,
+    HTTP_TIMEOUT,
+    MAX_ACCOUNT_REPO_PAGES,
+    SQLITE_TIMEOUT,
     USER_AGENT,
 )
 
@@ -85,7 +87,7 @@ class GitHubClient:
         url = path if path.startswith("http") else f"{GITHUB_API_URL}{path}"
         self.calls += 1
         try:
-            resp = self.session.get(url, params=params, timeout=30)
+            resp = self.session.get(url, params=params, timeout=HTTP_TIMEOUT)
         except requests.RequestException as exc:
             print(f"  запрос упал {url}: {exc}")
             return None
@@ -115,24 +117,33 @@ class GitHubClient:
 
 
 class GitHubHarvester:
-    """Тянет с GitHub кандидатов-логины и сигналы по авторским репозиториям."""
+    """Тянет с GitHub кандидатов-логины и сигналы по авторским репозиториям.
 
-    def __init__(self, source_db, out_db, limit, refresh, commit_pages) -> None:
+    Режимы сидов:
+      repos (по умолчанию) — подтверждённые авторские репо из repo_links.
+      accounts: репозитории ИТМО-организаций и уже подтверждённых
+                 личных аккаунтов.
+    """
+
+    def __init__(self, source_db, out_db, limit, refresh, commit_pages,
+                 mode="repos", max_repos_per_account=30) -> None:
         self.source_db = source_db
         self.out_db = out_db
         self.limit = limit
         self.refresh = refresh
         self.commit_pages = commit_pages
+        self.mode = mode
+        self.max_repos_per_account = max_repos_per_account
         self.gh = GitHubClient()
         self.profile_cache: dict[str, dict | None] = {}
         self.stats = {"repos": 0, "candidates": 0, "owners": 0,
-                      "contributors": 0, "skipped_bots": 0}
+                      "contributors": 0, "skipped_bots": 0, "seeds": 0}
 
-    # --- Вход ------------------------------------------------------------
+    # --- Вход: режим repos -------------------------------------------------
 
     def load_repos(self, done_urls: set[str]) -> list[tuple[str, list[str]]]:
         """Подтверждённые github-репо: [(repo_url, [publication_id, ...])]."""
-        conn = sqlite3.connect(self.source_db, timeout=30)
+        conn = sqlite3.connect(self.source_db, timeout=SQLITE_TIMEOUT)
         rows = conn.execute(
             """
             SELECT url, publication_id FROM repo_links
@@ -156,6 +167,42 @@ class GitHubHarvester:
             if self.limit and len(repos) >= self.limit:
                 break
         return repos
+
+    # --- Вход: режим accounts (соцграф) -------------------------------------
+
+    def load_seeds(self) -> list[tuple[str, str]]:
+        """Сиды: сначала ИТМО-организации, затем подтверждённые личные аккаунты."""
+        conn = sqlite3.connect(self.source_db, timeout=SQLITE_TIMEOUT)
+        orgs = [r[0] for r in conn.execute("SELECT github_login FROM github_departments")]
+        users = [r[0] for r in conn.execute(
+            "SELECT DISTINCT github FROM persons_itmo WHERE github > ''")]
+        conn.close()
+        seen, seeds = set(), []
+        for login, kind in [(o, "org") for o in orgs] + [(u, "user") for u in users]:
+            if login and login.lower() not in seen:
+                seen.add(login.lower())
+                seeds.append((login, kind))
+        if self.limit:
+            seeds = seeds[: self.limit]
+        return seeds
+
+    def list_owned_repos(self, owner: str) -> list[str]:
+        """Публичные не-форк репозитории аккаунта (url), свежие первыми."""
+        urls = []
+        for page in range(1, MAX_ACCOUNT_REPO_PAGES + 1):
+            data = self.gh.get(
+                f"/users/{owner}/repos",
+                params={"per_page": 100, "page": page, "type": "owner", "sort": "updated"},
+            )
+            time.sleep(GITHUB_REQUEST_DELAY)
+            if not data:
+                break
+            for r in data:
+                if not r.get("fork") and r.get("html_url"):
+                    urls.append(r["html_url"])
+            if len(data) < 100 or len(urls) >= self.max_repos_per_account:
+                break
+        return urls[: self.max_repos_per_account]
 
     # --- Сбор по одному репо --------------------------------------------
 
@@ -286,26 +333,17 @@ class GitHubHarvester:
             print("GITHUB_TOKEN не задан в .env — лимит 60 запросов/час. "
                   "Создай токен: https://github.com/settings/tokens")
 
-        out = sqlite3.connect(self.out_db, timeout=30)
+        out = sqlite3.connect(self.out_db, timeout=SQLITE_TIMEOUT)
         out.executescript(SCHEMA_SQL)
         done = {r[0] for r in out.execute("SELECT DISTINCT repo_url FROM github_candidates")}
 
-        repos = self.load_repos(done)
         print(f"Источник:  {self.source_db}")
         print(f"Результат: {self.out_db}")
-        print(f"К обработке репозиториев: {len(repos)} (уже собрано: {len(done)})\n")
-
         try:
-            for i, (repo_url, pubs) in enumerate(repos, 1):
-                self.stats["repos"] += 1
-                candidates = self.harvest_repo(repo_url, pubs)
-                self.stats["candidates"] += len(candidates)
-                self.save(out, repo_url, candidates)
-                logins = ", ".join(c["github_login"] for c in candidates) or "—"
-                print(f"  [{i}/{len(repos)}] {repo_url:55}  {logins}")
-                if self.stats["repos"] % 10 == 0:
-                    out.commit()
-            out.commit()
+            if self.mode == "accounts":
+                self._run_accounts(out, done)
+            else:
+                self._run_repos(out, done)
         except KeyboardInterrupt:
             print("\nПрервано пользователем.")
             out.commit()
@@ -313,10 +351,44 @@ class GitHubHarvester:
             self.print_summary()
             out.close()
 
+    def _run_repos(self, out: sqlite3.Connection, done: set[str]) -> None:
+        repos = self.load_repos(done)
+        print(f"К обработке репозиториев: {len(repos)} (уже собрано: {len(done)})\n")
+        for i, (repo_url, pubs) in enumerate(repos, 1):
+            self.stats["repos"] += 1
+            candidates = self.harvest_repo(repo_url, pubs)
+            self.stats["candidates"] += len(candidates)
+            self.save(out, repo_url, candidates)
+            logins = ", ".join(c["github_login"] for c in candidates) or "—"
+            print(f"  [{i}/{len(repos)}] {repo_url:55}  {logins}")
+            if self.stats["repos"] % 10 == 0:
+                out.commit()
+        out.commit()
+
+    def _run_accounts(self, out: sqlite3.Connection, done: set[str]) -> None:
+        seeds = self.load_seeds()
+        print(f"Сидов: {len(seeds)} (ИТМО-организации + подтверждённые аккаунты)\n")
+        for i, (login, kind) in enumerate(seeds, 1):
+            self.stats["seeds"] += 1
+            repos = self.list_owned_repos(login)
+            fresh = [u for u in repos if self.refresh or u not in done]
+            print(f"  [{i}/{len(seeds)}] {kind:4} {login:24} репо:{len(repos):3} новых:{len(fresh)}")
+            for repo_url in fresh:
+                candidates = self.harvest_repo(repo_url, [])
+                self.stats["repos"] += 1
+                self.stats["candidates"] += len(candidates)
+                self.save(out, repo_url, candidates)
+                done.add(repo_url)
+                if self.stats["repos"] % 20 == 0:
+                    out.commit()
+        out.commit()
+
     def print_summary(self) -> None:
         print()
         print("Итог сбора кандидатов с GitHub")
         print("-" * 40)
+        if self.mode == "accounts":
+            print(f"  Сидов обработано:        {self.stats['seeds']}")
         print(f"  Репозиториев обработано: {self.stats['repos']}")
         print(f"  Кандидатов собрано:      {self.stats['candidates']}")
         print(f"    из них owner:          {self.stats['owners']}")
@@ -327,17 +399,21 @@ class GitHubHarvester:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Собирает кандидатов-логины и сигналы с GitHub по авторским репо."
+        description="Собирает кандидатов-логины и сигналы с GitHub (репо или соцграф)."
     )
+    parser.add_argument("--mode", choices=("repos", "accounts"), default="repos",
+                        help="repos — по авторским репо; accounts — по соцграфу аккаунтов.")
     parser.add_argument("--limit", type=int, default=None,
-                        help="Сколько репозиториев обработать за запуск.")
+                        help="Сколько репозиториев/сидов обработать за запуск.")
     parser.add_argument("--refresh", action="store_true",
-                        help="Пересобрать все репозитории заново.")
+                        help="Пересобрать всё заново.")
     parser.add_argument("--commit-pages", type=int, default=GITHUB_COMMIT_PAGES,
                         help="Страниц коммитов на репо; 0 — не трогать коммиты.")
+    parser.add_argument("--max-repos-per-account", type=int, default=30,
+                        help="[accounts] Сколько репо брать с одного аккаунта/орги.")
     parser.add_argument("--source-db", default=str(DB_PATH),
-                        help="БД с repo_links/publications.")
-    parser.add_argument("--out-db", default=str(PROFILES_DB_PATH),
+                        help="БД с repo_links/publications/persons_itmo.")
+    parser.add_argument("--out-db", default=str(DB_PATH),
                         help="БД для результатов.")
     return parser.parse_args()
 
@@ -350,6 +426,8 @@ def main() -> None:
         limit=args.limit,
         refresh=args.refresh,
         commit_pages=args.commit_pages,
+        mode=args.mode,
+        max_repos_per_account=args.max_repos_per_account,
     ).run()
 
 

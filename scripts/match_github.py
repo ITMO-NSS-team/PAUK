@@ -5,7 +5,7 @@ import sqlite3
 import unicodedata
 from difflib import SequenceMatcher
 
-from config import DB_PATH, PROFILES_DB_PATH
+from config import DB_PATH, SQLITE_TIMEOUT
 
 NAME_EXACT = 0.999
 NAME_FUZZY = 0.86
@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS github_matches (
     signals      TEXT,   -- JSON [str]
     evidence     TEXT,   -- JSON {email, name_pair, name_sim}
     decision     TEXT,   -- matched | review | rejected
+    confidence   TEXT,   -- high | probable (сила привязки аккаунт<->человек)
     repos        TEXT,   -- JSON [repo_url]
     matched_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(person_id, github_login)
@@ -89,10 +90,10 @@ def jloads(s, default):
 
 
 def load_persons(main: sqlite3.Connection, prof: sqlite3.Connection):
-    """person_id -> {names:set, emails:set, name_en}. + индекс email -> person_id."""
+    """person_id -> {names:set, emails:set, name_en, github}. + индекс email -> person_id."""
     persons: dict[str, dict] = {}
-    for pid, name_en, variants, email in main.execute(
-        "SELECT id, name_en, name_variants, email FROM persons_itmo"
+    for pid, name_en, variants, email, github in main.execute(
+        "SELECT id, name_en, name_variants, email, github FROM persons_itmo"
     ):
         names = {norm_name(name_en)} if name_en else set()
         for v in jloads(variants, []):
@@ -101,7 +102,7 @@ def load_persons(main: sqlite3.Connection, prof: sqlite3.Connection):
         toks = norm_name(name_en).split()
         surname = toks[-1] if toks and len(toks[-1]) >= 4 else None
         persons[pid] = {"names": {n for n in names if n}, "emails": {e for e in emails if e},
-                        "name_en": name_en, "surname": surname}
+                        "name_en": name_en, "surname": surname, "github": github}
 
     for pid, emails_j, other_j in prof.execute(
         "SELECT person_id, emails, other_names FROM person_profiles"
@@ -136,21 +137,27 @@ def load_pub_authors(main: sqlite3.Connection) -> dict[str, set[str]]:
     return bridge
 
 
-def load_candidates(prof: sqlite3.Connection) -> dict[str, dict]:
+def repo_owner(url: str | None) -> str | None:
+    m = re.search(r"github\.com/([^/]+)/", url or "")
+    return m.group(1).lower() if m else None
+
+
+def load_candidates(prof: sqlite3.Connection, itmo_orgs: set[str]) -> dict[str, dict]:
     """github_login -> агрегат по всем его репозиториям."""
     logins: dict[str, dict] = {}
     rows = prof.execute(
         """
         SELECT github_login, github_url, source, repo_url, publication_ids,
-               gh_name, gh_email, gh_company, gh_location, commit_emails, commit_names
+               gh_name, gh_email, gh_company, gh_location, gh_bio, commit_emails, commit_names
         FROM github_candidates
         """
     ).fetchall()
     for (login, url, source, repo_url, pub_ids_j, gh_name, gh_email,
-         gh_company, gh_location, commit_emails_j, commit_names_j) in rows:
+         gh_company, gh_location, gh_bio, commit_emails_j, commit_names_j) in rows:
         c = logins.setdefault(login, {
             "login": login, "url": url, "names": set(), "emails": set(),
-            "itmo_text": False, "pub_ids": set(), "repos": set(), "is_owner": False,
+            "itmo_text": False, "org_itmo": False,
+            "pub_ids": set(), "repos": set(), "is_owner": False,
         })
         c["url"] = url or c["url"]
         c["repos"].add(repo_url)
@@ -165,9 +172,11 @@ def load_candidates(prof: sqlite3.Connection) -> dict[str, dict]:
             ee = norm_email(e)
             if ee:
                 c["emails"].add(ee)
-        blob = f"{gh_company or ''} {gh_location or ''}".lower()
+        blob = f"{gh_company or ''} {gh_location or ''} {gh_bio or ''}".lower()
         if "itmo" in blob or "saint petersburg" in blob or "sankt" in blob:
             c["itmo_text"] = True
+        if repo_owner(repo_url) in itmo_orgs:
+            c["org_itmo"] = True
     return logins
 
 
@@ -201,10 +210,12 @@ def score_person(cand: dict, person: dict, email_hit: bool):
         signals.append("login_surname")
     if cand["is_owner"]:
         signals.append("owner")
+    if cand["org_itmo"]:
+        signals.append("org_itmo")
 
     weights = {"email_exact": 1.0, "name_exact": 0.6, "name_fuzzy": 0.4,
                "itmo_profile": 0.2, "itmo_email": 0.3, "login_surname": 0.3,
-               "owner": 0.3}
+               "owner": 0.3, "org_itmo": 0.3}
     score = min(1.0, sum(weights[s] for s in signals))
     return score, signals, evidence
 
@@ -213,7 +224,7 @@ def decide(signals: list[str], in_bridge: bool) -> str:
     if "email_exact" in signals:
         return "matched"
     corrob = any(s in signals for s in
-                 ("itmo_profile", "itmo_email", "login_surname", "owner"))
+                 ("itmo_profile", "itmo_email", "login_surname", "owner", "org_itmo"))
     if "name_exact" in signals:
         if in_bridge:
             return "matched"
@@ -271,20 +282,22 @@ def match_login(login, cand, persons, email_index, name_index, bridge):
 
 
 def save_match(prof, login, cand, pid, persons, score, signals, evidence, decision):
+    strong = ("email_exact", "login_surname", "owner")
+    conf = "high" if evidence.get("in_bridge") or any(s in signals for s in strong) else "probable"
     prof.execute(
         """
         INSERT OR REPLACE INTO github_matches
             (person_id, person_name, github_login, github_url, score,
-             signals, evidence, decision, repos)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             signals, evidence, decision, confidence, repos)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (pid, persons[pid]["name_en"], login, cand["url"], score,
          json.dumps(signals), json.dumps(evidence, ensure_ascii=False),
-         decision, json.dumps(sorted(cand["repos"]))),
+         decision, conf, json.dumps(sorted(cand["repos"]))),
     )
 
 
-def apply_to_main(main, login, cand, pid):
+def apply_to_main(main, login, cand, pid, repo_id_by_url):
     """Проставляет github персоне и repository_persons (только role owner/contributor)."""
     main.execute(
         "UPDATE persons_itmo SET github = ? WHERE id = ? AND (github IS NULL OR github = '')",
@@ -292,11 +305,11 @@ def apply_to_main(main, login, cand, pid):
     )
     role = "owner" if cand["is_owner"] else "contributor"
     for repo_url in cand["repos"]:
-        row = main.execute("SELECT id FROM repositories WHERE url = ?", (repo_url,)).fetchone()
-        if row:
+        repo_id = repo_id_by_url.get(repo_url)
+        if repo_id:
             main.execute(
                 "INSERT OR IGNORE INTO repository_persons (repository_id, person_id, role) VALUES (?, ?, ?)",
-                (row[0], pid, role),
+                (repo_id, pid, role),
             )
 
 
@@ -304,14 +317,20 @@ def apply_to_main(main, login, cand, pid):
 
 
 def run(apply: bool) -> None:
-    main = sqlite3.connect(DB_PATH, timeout=30)
+    main = sqlite3.connect(DB_PATH, timeout=SQLITE_TIMEOUT)
     main.execute("PRAGMA foreign_keys = ON")
-    prof = sqlite3.connect(PROFILES_DB_PATH, timeout=30)
+    prof = sqlite3.connect(DB_PATH, timeout=SQLITE_TIMEOUT)
     prof.executescript(SCHEMA_SQL)
+    try:
+        prof.execute("ALTER TABLE github_matches ADD COLUMN confidence TEXT")
+    except sqlite3.OperationalError:
+        pass
 
     persons, email_index, name_index = load_persons(main, prof)
     bridge = load_pub_authors(main)
-    logins = load_candidates(prof)
+    itmo_orgs = {r[0].lower() for r in main.execute("SELECT github_login FROM github_departments")}
+    logins = load_candidates(prof, itmo_orgs)
+    repo_id_by_url = dict(main.execute("SELECT url, id FROM repositories"))
 
     print(f"Кандидатов-логинов: {len(logins)}; персон ИТМО: {len(persons)}\n")
     stats = {"matched": 0, "review": 0, "rejected": 0, "no_target": 0, "new_github": 0}
@@ -329,12 +348,11 @@ def run(apply: bool) -> None:
             already = persons[pid]["name_en"]
             print(f"  [{decision}] {login:22} -> {already:28} {','.join(signals)}")
             if apply:
-                had = main.execute(
-                    "SELECT github FROM persons_itmo WHERE id = ?", (pid,)
-                ).fetchone()
-                if not (had and had[0]):
+                if not persons[pid]["github"]:
                     stats["new_github"] += 1
-                apply_to_main(main, login, cand, pid)
+                    persons[pid]["github"] = login  # держим кэш свежим на случай второго
+                                                     # логина той же персоны в этом прогоне
+                apply_to_main(main, login, cand, pid, repo_id_by_url)
         elif decision == "review":
             print(f"  [review ] {login:22} -> {persons[pid]['name_en']:28} {evidence.get('name_sim')}")
 
