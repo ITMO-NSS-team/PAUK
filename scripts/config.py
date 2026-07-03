@@ -39,6 +39,9 @@ BROWSER_USER_AGENT = (
 )
 REQUEST_DELAY = 0.1
 DOWNLOAD_TIMEOUT = 60
+HTTP_TIMEOUT = 30
+SQLITE_TIMEOUT = 30              # секунд ожидания снятия блокировки БД
+RATE_LIMIT_SLEEP = 60            # пауза при 429 от OpenAlex/ORCID
 
 # --- ИТМО как организация ------------------------------------------------
 
@@ -65,11 +68,9 @@ LLM_RATE_LIMIT_SLEEP = 30                        # пауза при 429 от Op
 
 CONTEXT_RADIUS = 400         # символов вокруг URL в repo_links.context
 
-
 # --- ORCID / профили ----------------------------------------------------
 
 USER_AGENT_EMAIL = os.getenv("USER_AGENT_EMAIL", "anonymous@example.com")
-PROFILES_DB_PATH = DATA_DIR / "person_profiles.db"
 ORCID_PUBLIC_API = "https://pub.orcid.org/v3.0"
 ORCID_REQUEST_DELAY = 0.1
 
@@ -77,3 +78,22 @@ ORCID_REQUEST_DELAY = 0.1
 
 GITHUB_REQUEST_DELAY = 0.1
 GITHUB_COMMIT_PAGES = 3          # страниц коммитов на репо
+MAX_ACCOUNT_REPO_PAGES = 10
+
+# --- OpenReview ----------------------------------------------------------
+
+OPENREVIEW_USERNAME = os.getenv("OPENREVIEW_USERNAME", "")
+OPENREVIEW_PASSWORD = os.getenv("OPENREVIEW_PASSWORD", "")
+OPENREVIEW_API_URL = "https://api.openreview.net"
+OPENREVIEW_REQUEST_DELAY = 0.2
+OPENREVIEW_RATE_LIMIT_SLEEP = 10
+
+# --- Crossref (добор ORCID) -----------------------------------------------
+
+CROSSREF_REQUEST_DELAY = 0.15
+CROSSREF_TIMEOUT = 20
+
+# --- Скрейпинг личных/лаб-страниц -----------------------------------------
+
+PAGE_SCRAPE_REQUEST_DELAY = 0.2
+PAGE_SCRAPE_TIMEOUT = 12
