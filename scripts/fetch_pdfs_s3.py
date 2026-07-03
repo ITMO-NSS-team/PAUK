@@ -20,6 +20,7 @@ data/pdfs/{id}.pdf, скрипт пытается найти PDF в хранил
 Запускать из корня проекта:
     uv run python scripts/fetch_pdfs_s3.py --limit 500
     uv run python scripts/fetch_pdfs_s3.py --dry-run     # только отчёт о матчах
+    uv run python scripts/fetch_pdfs_s3.py --coverage    # % корпуса в зеркале, по годам
 """
 
 import argparse
@@ -189,6 +190,27 @@ def fetch_targets(conn: sqlite3.Connection) -> list[tuple[str, str | None, str |
     ]
 
 
+def fetch_addressable(
+    conn: sqlite3.Connection,
+) -> list[tuple[str, str | None, str | None, int | None]]:
+    """(id, doi, pdf_url, year) для всех публикаций с DOI или arXiv-ссылкой.
+
+    В отличие от fetch_targets, наличие локального PDF не учитывается — это
+    срез для отчёта о покрытии корпуса зеркалом, а не для дозагрузки.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, doi, pdf_url,
+               COALESCE(year, CAST(substr(publication_date, 1, 4) AS INTEGER)) AS yr
+        FROM publications
+        WHERE (doi IS NOT NULL AND doi != '')
+           OR (pdf_url LIKE '%arxiv.org%')
+        """
+    )
+    return cur.fetchall()
+
+
 def set_pdf_url(conn: sqlite3.Connection, publication_id: str, value: str) -> None:
     """Проставляет источник PDF (s3://...) там, где раньше стоял маркер «нет OA»."""
     conn.execute(
@@ -251,6 +273,48 @@ def run(conn: sqlite3.Connection, limit: int, dry_run: bool) -> None:
     )
 
 
+def pct(part: int, whole: int) -> str:
+    """Доля в процентах или '—', если знаменатель нулевой."""
+    return f"{100 * part / whole:.1f}%" if whole else "—"
+
+
+def run_coverage(conn: sqlite3.Connection) -> None:
+    """Отчёт: какая доля корпуса покрыта S3-зеркалом, включая разбивку по годам.
+
+    Корпус НЕ ограничивается охватом зеркала — покрытие просто измеряется как
+    метрика. Реальные обращения к S3 идут только для препринтов (bioRxiv/
+    medRxiv/arXiv); журнальные DOI отсеиваются без сетевых вызовов.
+    """
+    s3 = make_s3_client()
+    total_pubs = conn.execute("SELECT COUNT(*) FROM publications").fetchone()[0]
+    rows = fetch_addressable(conn)
+
+    matched = 0
+    by_year: dict[object, list[int]] = {}
+    for _pid, doi, pdf_url, year in rows:
+        slot = by_year.setdefault(year if year is not None else "—", [0, 0])
+        slot[1] += 1
+        if resolve(s3, normalize_doi(doi), pdf_url):
+            matched += 1
+            slot[0] += 1
+
+    addressable = len(rows)
+    print(f"Всего публикаций в БД:          {total_pubs}")
+    print(
+        f"С идентификатором (DOI/arXiv):  {addressable} ({pct(addressable, total_pubs)} корпуса)"
+    )
+    print(
+        f"Найдено в S3-зеркале:           {matched}"
+        f" ({pct(matched, total_pubs)} корпуса, {pct(matched, addressable)} адресуемых)"
+    )
+
+    print("\nПокрытие по годам (в S3 / с идентификатором):")
+    print(f"  {'Год':>6} {'Идентиф.':>9} {'В S3':>6} {'Покрытие':>9}")
+    for year in sorted(by_year, key=lambda k: (isinstance(k, str), k)):
+        found, addr = by_year[year]
+        print(f"  {str(year):>6} {addr:>9} {found:>6} {pct(found, addr):>9}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Дозагружает недостающие PDF из внешнего S3-зеркала препринтов."
@@ -266,6 +330,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Только отчёт о матчах, без скачивания и записи в БД.",
     )
+    parser.add_argument(
+        "--coverage",
+        action="store_true",
+        help="Отчёт о покрытии корпуса зеркалом (по годам), без скачивания.",
+    )
     return parser.parse_args()
 
 
@@ -274,10 +343,13 @@ def main() -> None:
     if not S3_ENDPOINT_URL:
         print("S3_ENDPOINT_URL не задан в .env — источник отключён, выхожу.")
         return
-    PDF_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     try:
-        run(conn, limit=args.limit, dry_run=args.dry_run)
+        if args.coverage:
+            run_coverage(conn)
+        else:
+            PDF_DIR.mkdir(parents=True, exist_ok=True)
+            run(conn, limit=args.limit, dry_run=args.dry_run)
     finally:
         conn.close()
 
