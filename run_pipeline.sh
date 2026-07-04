@@ -3,8 +3,8 @@
 
 set -euo pipefail
 
-START_DATE="2024-05-01"
-END_DATE="2026-06-15"
+START_DATE="2020-01-01"
+END_DATE="2026-07-04"
 
 cd "$(dirname "$0")"
 
@@ -18,23 +18,26 @@ run_step() {
     "$@"
 }
 
-run_step "1/7" "init_db" \
+run_step "1/8" "init_db" \
     uv run python scripts/init_db.py
 
-run_step "2/7" "populate_publications ($START_DATE -> $END_DATE)" \
+run_step "2/8" "populate_publications ($START_DATE -> $END_DATE)" \
     uv run python scripts/populate_publications.py --start-date "$START_DATE" --end-date "$END_DATE"
 
-run_step "3/7" "find_code_links" \
+run_step "3/8" "find_code_links" \
     uv run python scripts/find_code_links.py
 
-run_step "4/7" "enrich_departments" \
+run_step "4/8" "enrich_departments" \
     uv run python scripts/enrich_departments.py
 
-run_step "5/7" "enrich_persons_ru" \
+run_step "5/8" "enrich_persons_ru" \
     uv run python scripts/enrich_persons_ru.py
 
-run_step "6/7" "build_repositories" \
+run_step "6/8" "build_repositories" \
     uv run python scripts/build_repositories.py
 
-run_step "7/7" "finalize" \
+run_step "7/8" "finalize" \
     uv run python scripts/finalize.py
+
+run_step "8/8" "export_graph (данные для визуализации)" \
+    uv run python visualization/export_graph.py

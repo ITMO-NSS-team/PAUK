@@ -59,6 +59,8 @@ PERSONS_RU_MODEL = "openai/gpt-4o-mini"          # транслитерация 
 PERSONS_RU_CHUNK_SIZE = 50
 PERSONS_RU_SLEEP_BETWEEN_CHUNKS = 0.3
 
+LLM_RATE_LIMIT_SLEEP = 30                        # пауза при 429 от OpenRouter
+
 # --- Извлечение ссылок ---------------------------------------------------
 
 CONTEXT_RADIUS = 400         # символов вокруг URL в repo_links.context

@@ -1,9 +1,12 @@
 import argparse
 import json
+import logging
 import re
 import sqlite3
 
 from config import DB_PATH
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -73,7 +76,7 @@ def dedup_departments(conn: sqlite3.Connection, dry_run: bool) -> int:
             continue
         canonical = max(members, key=lambda d: (len(depts[d]["variants"]), d))
         for loser in (d for d in members if d != canonical):
-            print(f"Слияние департаментов: «{depts[loser]['name_en']}» → «{depts[canonical]['name_en']}»")
+            logger.info("Слияние департаментов: «%s» → «%s»", depts[loser]["name_en"], depts[canonical]["name_en"])
             if not dry_run:
                 merge_department(cur, loser, canonical, depts)
             merged += 1
@@ -119,7 +122,7 @@ def dedup_persons(conn: sqlite3.Connection, dry_run: bool) -> int:
         canonical = max(rows, key=lambda r: (bool(r[3]), len(load_variants(r[2])), r[0]))
         canon_id = canonical[0]
         for loser in (r for r in rows if r[0] != canon_id):
-            print(f"Слияние персон «{canonical[1]}»: {loser[0]} → {canon_id}")
+            logger.info("Слияние персон «%s»: %s → %s", canonical[1], loser[0], canon_id)
             if not dry_run:
                 merge_person(cur, loser[0], canon_id)
             merged += 1
@@ -171,7 +174,7 @@ def dedup_repositories(conn: sqlite3.Connection, dry_run: bool) -> int:
         twin = next((v for v, vn in zip(valid, valid_norm) if u != v and (u.startswith(v) or un.startswith(vn))), None)
         if not twin:
             continue
-        print(f"Удаляю репо-склейку {url} (двойник {twin})")
+        logger.info("Удаляю репо-склейку %s (двойник %s)", url, twin)
         if not dry_run:
             cur.execute(
                 "UPDATE repo_links SET is_relevant = 0, "
@@ -255,13 +258,14 @@ def print_summary(conn: sqlite3.Connection) -> None:
     cur = conn.cursor()
     total = cur.execute("SELECT COUNT(*) FROM publications").fetchone()[0]
     with_code = cur.execute("SELECT COUNT(*) FROM publications WHERE has_code = 1").fetchone()[0]
-    print()
-    print(f"Публикаций всего:                      {total}")
-    if total:
-        print(f"С подтверждённым репо (has_code=1):     {with_code} ({with_code / total * 100:.1f}%)")
-    print(f"Репозиториев:                           {cur.execute('SELECT COUNT(*) FROM repositories').fetchone()[0]}")
-    print(f"GitHub-организаций:                     {cur.execute('SELECT COUNT(*) FROM github_departments').fetchone()[0]}")
-    print(f"Департаментов ИТМО:                     {cur.execute('SELECT COUNT(*) FROM departments').fetchone()[0]}")
+    repos = cur.execute("SELECT COUNT(*) FROM repositories").fetchone()[0]
+    gh_depts = cur.execute("SELECT COUNT(*) FROM github_departments").fetchone()[0]
+    depts = cur.execute("SELECT COUNT(*) FROM departments").fetchone()[0]
+    code_pct = f" ({with_code / total * 100:.1f}%)" if total else ""
+    logger.info(
+        "Публикаций: %d, с репо: %d%s | Репозиториев: %d | GitHub-орг: %d | Департаментов: %d",
+        total, with_code, code_pct, repos, gh_depts, depts,
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -271,22 +275,23 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     args = parse_args()
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.execute("PRAGMA foreign_keys = ON")
     try:
-        print("=== dedup ===")
+        logger.info("=== dedup ===")
         d = dedup_departments(conn, args.dry_run)
         p = dedup_persons(conn, args.dry_run)
         r = dedup_repositories(conn, args.dry_run)
         prefix = "[dry-run] " if args.dry_run else ""
-        print(f"{prefix}департаментов слито: {d}, персон: {p}, репо-склеек удалено: {r}")
+        logger.info("%sдепартаментов слито: %d, персон: %d, репо-склеек удалено: %d", prefix, d, p, r)
         if args.dry_run:
             return
-        print("\n=== sync ===")
-        print(f"[1/3] has_code: {sync_publications_code(conn)} публикаций")
-        print(f"[2/3] publication_departments: {sync_publication_departments(conn)} связей")
-        print(f"[3/3] repository_departments: {sync_repository_departments(conn)} связей")
+        logger.info("=== sync ===")
+        logger.info("[1/3] has_code: %d публикаций", sync_publications_code(conn))
+        logger.info("[2/3] publication_departments: %d связей", sync_publication_departments(conn))
+        logger.info("[3/3] repository_departments: %d связей", sync_repository_departments(conn))
         print_summary(conn)
     finally:
         conn.close()

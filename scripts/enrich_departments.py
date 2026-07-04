@@ -1,8 +1,11 @@
 import json
+import logging
 import re
 import sqlite3
 import time
 import uuid
+
+logger = logging.getLogger(__name__)
 
 from config import (
     DB_PATH,
@@ -245,19 +248,20 @@ def fetch_persons_without_department(conn: sqlite3.Connection) -> list[tuple[str
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.execute("PRAGMA foreign_keys = ON")
     cur = conn.cursor()
     try:
         persons = fetch_persons_without_department(conn)
         if not persons:
-            print("Все люди с аффилиацией уже размечены департаментами.")
+            logger.info("Все люди с аффилиацией уже размечены департаментами.")
             return
 
         chunks = [persons[i : i + DEPT_CHUNK_SIZE] for i in range(0, len(persons), DEPT_CHUNK_SIZE)]
-        print(
-            f"Размечаю {len(persons)} человек через {DEPT_MODEL} "
-            f"({len(chunks)} чанков по {DEPT_CHUNK_SIZE})"
+        logger.info(
+            "Размечаю %d человек через %s (%d чанков по %d)",
+            len(persons), DEPT_MODEL, len(chunks), DEPT_CHUNK_SIZE,
         )
         stats = {"updated": 0, "no_dept": 0, "failed_chunks": 0, "new_depts_start": 0}
         stats["new_depts_start"] = cur.execute(
@@ -266,7 +270,7 @@ def main() -> None:
 
         for idx, chunk in enumerate(chunks, 1):
             departments = load_departments(cur)
-            print(f"[чанк {idx}/{len(chunks)}] {len(chunk)} чел., депов в базе: {len(departments)}")
+            logger.info("[чанк %d/%d] %d чел., депов в базе: %d", idx, len(chunks), len(chunk), len(departments))
             result = call_llm(chunk, departments)
             if result is None:
                 stats["failed_chunks"] += 1
@@ -295,11 +299,10 @@ def main() -> None:
             cur.execute("SELECT COUNT(*) FROM departments").fetchone()[0]
             - stats["new_depts_start"]
         )
-        print()
-        print(f"Размечено людей:          {stats['updated']}")
-        print(f"Без департамента (метка): {stats['no_dept']}")
-        print(f"Новых департаментов:      {new_depts}")
-        print(f"Чанков с ошибкой:         {stats['failed_chunks']}")
+        logger.info(
+            "Размечено: %d, без департамента: %d, новых депов: %d, чанков с ошибкой: %d",
+            stats["updated"], stats["no_dept"], new_depts, stats["failed_chunks"],
+        )
     finally:
         conn.commit()
         conn.close()

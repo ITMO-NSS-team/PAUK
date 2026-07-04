@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import re
 import sqlite3
 import time
@@ -15,6 +16,8 @@ from config import (
     REQUEST_DELAY,
 )
 
+
+logger = logging.getLogger(__name__)
 
 # --- Идентификаторы и разбор URL ----------------------------------------
 
@@ -51,22 +54,28 @@ def normalize_person_name(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip().lower()
 
 
-def find_itmo_person_by_name(cur: sqlite3.Cursor, full_name: str) -> str | None:
-    """Ищет persons_itmo по name_en или name_variants (после нормализации имени)."""
-    norm = normalize_person_name(full_name)
-    if not norm or len(norm.split()) < 2:
-        return None  # одно слово — слишком ненадёжно
+def build_person_name_cache(cur: sqlite3.Cursor) -> dict[str, str]:
+    """Один раз строит словарь {norm_name: person_id} по name_en и name_variants."""
+    cache: dict[str, str] = {}
     cur.execute("SELECT id, name_en, name_variants FROM persons_itmo")
     for pid, name_en, variants_raw in cur.fetchall():
-        if normalize_person_name(name_en) == norm:
-            return pid
+        if name_en:
+            cache.setdefault(normalize_person_name(name_en), pid)
         try:
             variants = json.loads(variants_raw) if variants_raw else []
         except (TypeError, ValueError):
             variants = []
-        if any(normalize_person_name(v) == norm for v in variants):
-            return pid
-    return None
+        for v in variants:
+            cache.setdefault(normalize_person_name(v), pid)
+    return cache
+
+
+def find_itmo_person_by_name(cache: dict[str, str], full_name: str) -> str | None:
+    """Ищет persons_itmo по заранее построенному кэшу нормализованных имён."""
+    norm = normalize_person_name(full_name)
+    if not norm or len(norm.split()) < 2:
+        return None
+    return cache.get(norm)
 
 
 # --- GitHub API ----------------------------------------------------------
@@ -87,7 +96,7 @@ class GitHubClient:
         try:
             resp = self.session.get(url, params=params, timeout=DOWNLOAD_TIMEOUT)
         except requests.RequestException as exc:
-            print(f"  GitHub запрос упал: {exc}")
+            logger.warning("GitHub запрос упал: %s", exc)
             return None
 
         # Исчерпан лимит - ждём до сброса (но не вечно).
@@ -95,7 +104,7 @@ class GitHubClient:
             reset = int(resp.headers.get("X-RateLimit-Reset", "0"))
             wait = max(0, reset - int(time.time())) + 2
             if wait > 0 and wait <= 3600:
-                print(f"  GitHub rate-limit, ждём {wait} сек до сброса")
+                logger.info("GitHub rate-limit, ждём %d сек до сброса", wait)
                 time.sleep(wait)
                 return self.get(path, params)
         return resp
@@ -105,7 +114,7 @@ class GitHubClient:
         if resp is not None and resp.status_code == 200:
             return resp.json()
         if resp is not None and resp.status_code == 404:
-            print(f"  репозиторий {owner}/{repo} не найден (404)")
+            logger.warning("репозиторий %s/%s не найден (404)", owner, repo)
         return None
 
     def has_readme(self, owner: str, repo: str) -> bool:
@@ -163,13 +172,14 @@ def upsert_github_department(cur: sqlite3.Cursor, owner_obj: dict, gh: GitHubCli
 
 
 def link_owner_person(
-    cur: sqlite3.Cursor, repo_id: str, owner_obj: dict, gh: GitHubClient
+    cur: sqlite3.Cursor, repo_id: str, owner_obj: dict, gh: GitHubClient,
+    person_cache: dict[str, str],
 ) -> None:
     """Для владельца-человека пытается привязать его к persons_itmo."""
     login = owner_obj["login"]
     details = gh.user(login) or {}
     full_name = details.get("name") or ""
-    person_id = find_itmo_person_by_name(cur, full_name) if full_name else None
+    person_id = find_itmo_person_by_name(person_cache, full_name) if full_name else None
     if not person_id:
         return
     # Проставляем github человеку (если ещё не стоит) и связь owner.
@@ -281,21 +291,23 @@ def fetch_confirmed_repos(conn: sqlite3.Connection) -> list[tuple[str, list[str]
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.execute("PRAGMA foreign_keys = ON")
     cur = conn.cursor()
     gh = GitHubClient()
 
     if not GITHUB_TOKEN:
-        print("GITHUB_TOKEN не задан - лимит 60 запросов/час, большие объёмы упрутся в rate-limit.\n")
+        logger.warning("GITHUB_TOKEN не задан - лимит 60 запросов/час, большие объёмы упрутся в rate-limit.")
 
     try:
         repos = fetch_confirmed_repos(conn)
         if not repos:
-            print("Нет новых подтверждённых репозиториев для обработки.")
+            logger.info("Нет новых подтверждённых репозиториев для обработки.")
             return
 
-        print(f"Обрабатываю {len(repos)} репозиториев")
+        logger.info("Обрабатываю %d репозиториев", len(repos))
+        person_cache = build_person_name_cache(cur)
         stats = {"created": 0, "orgs": 0, "users": 0, "owner_linked": 0}
 
         for index, (url, pub_ids) in enumerate(repos, 1):
@@ -305,7 +317,7 @@ def main() -> None:
             owner, name = parsed
             repo_id = repo_id_for(url)
 
-            print(f"[{index}/{len(repos)}] {owner}/{name}")
+            logger.info("[%d/%d] %s/%s", index, len(repos), owner, name)
             meta = gh.repo(owner, name)
             if meta is None:
                 # репо удалён/приватный - всё равно сохраняем минимальную строку
@@ -343,7 +355,7 @@ def main() -> None:
                     "SELECT COUNT(*) FROM repository_persons WHERE repository_id=? AND role='owner'",
                     (repo_id,),
                 ).fetchone()[0]
-                link_owner_person(cur, repo_id, owner_obj, gh)
+                link_owner_person(cur, repo_id, owner_obj, gh, person_cache)
                 after = cur.execute(
                     "SELECT COUNT(*) FROM repository_persons WHERE repository_id=? AND role='owner'",
                     (repo_id,),
@@ -357,11 +369,10 @@ def main() -> None:
             conn.commit()
             time.sleep(REQUEST_DELAY)
 
-        print()
-        print(f"Репозиториев создано:        {stats['created']}")
-        print(f"Владельцев-организаций:      {stats['orgs']}")
-        print(f"Владельцев-людей:            {stats['users']}")
-        print(f"Привязано к persons_itmo:    {stats['owner_linked']}")
+        logger.info(
+            "Готово — создано: %d, орг: %d, user: %d, привязано к persons_itmo: %d",
+            stats["created"], stats["orgs"], stats["users"], stats["owner_linked"],
+        )
     finally:
         conn.commit()
         conn.close()

@@ -1,5 +1,9 @@
+import logging
 import sqlite3
+
 from config import DB_PATH
+
+logger = logging.getLogger(__name__)
 
 
 SCHEMA_SQL = """
@@ -194,15 +198,13 @@ def table_summary(conn: sqlite3.Connection) -> list[tuple[str, int]]:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     try:
         create_schema(conn)
-        print(f"База данных готова: {DB_PATH}\n")
-        print(f"{'Таблица':<26} {'Строк':>10}")
-        print("-" * 38)
-        for name, count in table_summary(conn):
-            print(f"{name:<26} {count:>10}")
+        rows = "\n".join(f"  {name:<24} {count:>10}" for name, count in table_summary(conn))
+        logger.info("База данных готова: %s\n%s", DB_PATH, rows)
     finally:
         conn.close()
 

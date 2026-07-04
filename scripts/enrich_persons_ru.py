@@ -1,7 +1,10 @@
 import ast
 import json
+import logging
 import sqlite3
 import time
+
+logger = logging.getLogger(__name__)
 
 from config import (
     DB_PATH,
@@ -77,20 +80,21 @@ def fetch_persons_without_ru(conn: sqlite3.Connection) -> list[tuple]:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     conn = sqlite3.connect(DB_PATH, timeout=30)
     cur = conn.cursor()
     try:
         persons = fetch_persons_without_ru(conn)
         if not persons:
-            print("Все сотрудники уже обогащены русскими ФИО.")
+            logger.info("Все сотрудники уже обогащены русскими ФИО.")
             return
 
         chunks = [persons[i : i + CHUNK_SIZE] for i in range(0, len(persons), CHUNK_SIZE)]
-        print(f"Обогащаю {len(persons)} человек через {MODEL} ({len(chunks)} чанков по {CHUNK_SIZE})")
+        logger.info("Обогащаю %d человек через %s (%d чанков по %d)", len(persons), MODEL, len(chunks), CHUNK_SIZE)
         stats = {"filled": 0, "empty": 0, "failed_chunks": 0}
 
         for idx, chunk in enumerate(chunks, 1):
-            print(f"[чанк {idx}/{len(chunks)}] {len(chunk)} чел.")
+            logger.info("[чанк %d/%d] %d чел.", idx, len(chunks), len(chunk))
             result = call_llm(chunk)
             if result is None:
                 stats["failed_chunks"] += 1
@@ -112,10 +116,10 @@ def main() -> None:
             conn.commit()
             time.sleep(SLEEP_BETWEEN_CHUNKS)
 
-        print()
-        print(f"Заполнено ФИО:            {stats['filled']}")
-        print(f"Осталось пустыми:         {stats['empty']}")
-        print(f"Чанков с ошибкой:         {stats['failed_chunks']}")
+        logger.info(
+            "Заполнено ФИО: %d, пустых: %d, чанков с ошибкой: %d",
+            stats["filled"], stats["empty"], stats["failed_chunks"],
+        )
     finally:
         conn.commit()
         conn.close()

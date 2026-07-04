@@ -1,3 +1,4 @@
+import logging
 import re
 import sqlite3
 import time
@@ -20,6 +21,8 @@ from config import (
     pdf_path_for,
 )
 from llm import chat_json
+
+logger = logging.getLogger(__name__)
 
 PDF_MAGIC = b"%PDF"
 URL_TRAILING_PUNCT = ".,;:!?)]}>\"'"
@@ -52,10 +55,10 @@ def fetch_paper_data(session: requests.Session, openalex_id: str) -> dict | None
             timeout=DOWNLOAD_TIMEOUT,
         )
     except requests.RequestException as exc:
-        print(f"  ошибка запроса к OpenAlex: {exc}")
+        logger.warning("ошибка запроса к OpenAlex: %s", exc)
         return None
     if response.status_code != 200:
-        print(f"  OpenAlex вернул HTTP {response.status_code}")
+        logger.warning("OpenAlex вернул HTTP %d", response.status_code)
         return None
     data = response.json()
     pdf_url = None
@@ -76,10 +79,10 @@ def download_pdf(session: requests.Session, pdf_url: str, dest: Path) -> bool:
     try:
         response = session.get(pdf_url, timeout=DOWNLOAD_TIMEOUT, stream=True, allow_redirects=True)
     except requests.RequestException as exc:
-        print(f"  ошибка скачивания: {exc}")
+        logger.warning("ошибка скачивания: %s", exc)
         return False
     if response.status_code != 200:
-        print(f"  HTTP {response.status_code} при скачивании")
+        logger.warning("HTTP %d при скачивании", response.status_code)
         return False
     try:
         with dest.open("wb") as handle:
@@ -87,12 +90,12 @@ def download_pdf(session: requests.Session, pdf_url: str, dest: Path) -> bool:
                 if chunk:
                     handle.write(chunk)
     except requests.RequestException as exc:
-        print(f"  поток оборвался: {exc}")
+        logger.warning("поток оборвался: %s", exc)
         dest.unlink(missing_ok=True)
         return False
     with dest.open("rb") as handle:
         if handle.read(4) != PDF_MAGIC:
-            print(f"  файл не PDF (Content-Type: {response.headers.get('Content-Type', '?')})")
+            logger.warning("файл не PDF (Content-Type: %s)", response.headers.get("Content-Type", "?"))
             dest.unlink(missing_ok=True)
             return False
     return True
@@ -110,13 +113,13 @@ def run_fetch(conn: sqlite3.Connection) -> None:
         "SELECT id, pdf_url, abstract FROM publications WHERE pdf_url IS NULL OR abstract IS NULL"
     ).fetchall()
     if not pubs:
-        print("Материал уже собран по всем публикациям.")
+        logger.info("Материал уже собран по всем публикациям.")
         return
 
-    print(f"[fetch] обрабатываю {len(pubs)} публикаций")
+    logger.info("[fetch] обрабатываю %d публикаций", len(pubs))
     downloaded = 0
     for index, (pub_id, current_pdf_url, current_abstract) in enumerate(pubs, 1):
-        print(f"[fetch {index}/{len(pubs)}] {pub_id}")
+        logger.info("[fetch %d/%d] %s", index, len(pubs), pub_id)
         data = fetch_paper_data(api_session, pub_id)
         if data is None:
             time.sleep(REQUEST_DELAY)
@@ -129,10 +132,10 @@ def run_fetch(conn: sqlite3.Connection) -> None:
             dest = pdf_path_for(pub_id)
             if data["pdf_url"] and not dest.exists() and download_pdf(browser_session, data["pdf_url"], dest):
                 downloaded += 1
-                print(f"  PDF скачан ({dest.stat().st_size // 1024} КБ)")
+                logger.info("  PDF скачан (%d КБ)", dest.stat().st_size // 1024)
         conn.commit()
         time.sleep(REQUEST_DELAY)
-    print(f"[fetch] PDF скачано: {downloaded}")
+    logger.info("[fetch] PDF скачано: %d", downloaded)
 
 
 
@@ -227,7 +230,7 @@ def extract_from_pdf(pdf_path: Path) -> list[tuple[str, str, int | None, str]]:
     try:
         doc = fitz.open(pdf_path)
     except Exception as exc:
-        print(f"  не удалось открыть PDF: {exc}")
+        logger.warning("не удалось открыть PDF: %s", exc)
         return []
     results = []
     for page_num, page in enumerate(doc, 1):
@@ -268,10 +271,10 @@ def run_extract(conn: sqlite3.Connection) -> None:
         """
     ).fetchall()
     if not rows:
-        print("[extract] нет публикаций с материалом.")
+        logger.info("[extract] нет публикаций с материалом.")
         return
 
-    print(f"[extract] обрабатываю {len(rows)} публикаций")
+    logger.info("[extract] обрабатываю %d публикаций", len(rows))
     total = 0
     for index, (pub_id, abstract) in enumerate(rows, 1):
         links = []
@@ -290,8 +293,8 @@ def run_extract(conn: sqlite3.Connection) -> None:
         conn.commit()
         total += len(links)
         if links:
-            print(f"[extract {index}/{len(rows)}] {pub_id}: {len(links)} ссылок")
-    print(f"[extract] всего ссылок: {total}")
+            logger.info("[extract %d/%d] %s: %d ссылок", index, len(rows), pub_id, len(links))
+    logger.info("[extract] всего ссылок: %d", total)
 
 
 
@@ -351,10 +354,10 @@ def run_classify(conn: sqlite3.Connection) -> None:
         """
     ).fetchall()
     if not rows:
-        print("[classify] нет неклассифицированных ссылок.")
+        logger.info("[classify] нет неклассифицированных ссылок.")
         return
 
-    print(f"[classify] {len(rows)} ссылок через {CLASSIFY_MODEL}")
+    logger.info("[classify] %d ссылок через %s", len(rows), CLASSIFY_MODEL)
     yes = no = failed = 0
     for index, (link_id, pub_id, url, context, page, title, authors) in enumerate(rows, 1):
         prompt = build_prompt(title, authors, url, context, page)
@@ -376,12 +379,13 @@ def run_classify(conn: sqlite3.Connection) -> None:
         conn.commit()
         yes += is_relevant
         no += not is_relevant
-        print(f"[classify {index}/{len(rows)}] {url[:60]} -> {'ДА' if is_relevant else 'нет'}")
+        logger.info("[classify %d/%d] %s -> %s", index, len(rows), url[:60], "ДА" if is_relevant else "нет")
         time.sleep(REQUEST_DELAY)
-    print(f"[classify] авторских: {yes}, чужих: {no}, не удалось: {failed}")
+    logger.info("[classify] авторских: %d, чужих: %d, не удалось: %d", yes, no, failed)
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     conn = sqlite3.connect(DB_PATH, timeout=30)
     try:
         run_fetch(conn)

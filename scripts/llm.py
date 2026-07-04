@@ -1,8 +1,11 @@
 import json
+import logging
 import time
 
 import requests
-from config import DOWNLOAD_TIMEOUT, OPENROUTER_API_KEY, OPENROUTER_URL
+from config import DOWNLOAD_TIMEOUT, LLM_RATE_LIMIT_SLEEP, OPENROUTER_API_KEY, OPENROUTER_URL
+
+logger = logging.getLogger(__name__)
 
 
 def chat_json(model: str, messages: list[dict], timeout: int = DOWNLOAD_TIMEOUT) -> dict | None:
@@ -12,7 +15,7 @@ def chat_json(model: str, messages: list[dict], timeout: int = DOWNLOAD_TIMEOUT)
     content (reasoning-модели иногда так делают) или невалидном JSON.
     """
     if not OPENROUTER_API_KEY:
-        print("  OPENROUTER_API_KEY не задан в .env")
+        logger.error("OPENROUTER_API_KEY не задан в .env")
         return None
     try:
         response = requests.post(
@@ -30,23 +33,23 @@ def chat_json(model: str, messages: list[dict], timeout: int = DOWNLOAD_TIMEOUT)
             timeout=timeout,
         )
     except requests.RequestException as exc:
-        print(f" Ошибка запроса к OpenRouter: {exc}")
+        logger.warning("Ошибка запроса к OpenRouter: %s", exc)
         return None
 
     if response.status_code == 429:
-        print(" OpenRouter 429 (rate limit), пауза 30 секунд")
-        time.sleep(30)
+        logger.warning("OpenRouter 429 (rate limit), пауза %d сек", LLM_RATE_LIMIT_SLEEP)
+        time.sleep(LLM_RATE_LIMIT_SLEEP)
         return None
     if response.status_code != 200:
-        print(f" OpenRouter HTTP {response.status_code}: {response.text[:200]}")
+        logger.warning("OpenRouter HTTP %d: %s", response.status_code, response.text[:200])
         return None
 
     try:
         content = response.json()["choices"][0]["message"].get("content")
         if not content or not content.strip():
-            print("  пустой content в ответе модели")
+            logger.warning("пустой content в ответе модели")
             return None
         return json.loads(content)
     except (KeyError, IndexError, TypeError, json.JSONDecodeError, ValueError) as exc:
-        print(f"  не смог распарсить ответ модели: {exc}")
+        logger.warning("не смог распарсить ответ модели: %s", exc)
         return None
