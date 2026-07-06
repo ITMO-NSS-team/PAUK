@@ -1,89 +1,66 @@
-"""Общая конфигурация проекта."""
-
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-# --- Файловая система ---------------------------------------------------
+# --- Пути ---------------------------------------------------------------
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT_DIR / "data"
-DB_PATH = DATA_DIR / "itmo_research_opensource.db"
+DB_PATH = Path(os.environ.get("PAUK_DB_PATH", DATA_DIR / "itmo_opensource.db"))
 PDF_DIR = DATA_DIR / "pdfs"
 
 
 def pdf_path_for(publication_id: str) -> Path:
-    """Локальный путь до PDF этой публикации (соглашение: data/pdfs/{id}.pdf)."""
     return PDF_DIR / f"{publication_id}.pdf"
+
 
 load_dotenv(ROOT_DIR / ".env")
 
+# --- Ключи (.env) -------------------------------------------------------
 
-# --- OpenAlex API --------------------------------------------------------
+OPENALEX_API_KEY = os.getenv("OPENALEX_API_KEY", "")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+
+# --- Эндпоинты ----------------------------------------------------------
 
 OPENALEX_WORKS_URL = "https://api.openalex.org/works"
 OPENALEX_AUTHORS_URL = "https://api.openalex.org/authors"
-OPENALEX_API_KEY = os.getenv("OPENALEX_API_KEY", "")
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+GITHUB_API_URL = "https://api.github.com"
 
-USER_AGENT_EMAIL = os.getenv("USER_AGENT_EMAIL", "anonymous@example.com")
-USER_AGENT = f"ITMO-Research-Monitor/1.0 ({USER_AGENT_EMAIL})"
+# --- HTTP ---------------------------------------------------------------
 
+USER_AGENT = "ITMO-Research-Monitor/1.0 (cake@gmail.com)"
 BROWSER_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/130.0.0.0 Safari/537.36"
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 )
-
 REQUEST_DELAY = 0.1
-
-
-# --- ИТМО как организация -----------------------------------------------
-
-# Используется populate_publications.py для фильтрации работ ИТМО.
-ITMO_ROR_ID = "04txgxn49"
-ITMO_NAMES = ["ITMO University", "ITMO"]
-
-
-# --- Загрузка авторов ---------------------------------------------------
-
-AUTHORS_CACHE_CAPACITY = 2000
-AFFILIATION_SEPARATOR = " \n "
-
-
-# --- Скачивание PDF ------------------------------------------------------
-
-FETCH_BATCH_SIZE = 10
 DOWNLOAD_TIMEOUT = 60
 
+# --- ИТМО как организация ------------------------------------------------
 
-# --- LLM-классификация ссылок --------------------------------------------
+ITMO_ROR_ID = "04txgxn49"
+ITMO_NAMES = ["ITMO University", "ITMO"]
+AUTHORS_CACHE_CAPACITY = 2000
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+# --- LLM-модели и батчи --------------------------------------------------
 
-LLM_MODEL = os.getenv("LLM_MODEL", "openai/gpt-4o-mini")
+CLASSIFY_MODEL = "deepseek/deepseek-v4-pro"      # ссылка авторов или чужая
 
-CLASSIFY_BATCH_SIZE = 50
+DEPT_MODEL = "deepseek/deepseek-v4-pro"          # сопоставление департаментов
+DEPT_CHUNK_SIZE = 20
+DEPT_SLEEP_BETWEEN_CHUNKS = 1.0
+DEPT_TIMEOUT = 240                               # длинный контекст + reasoning
 
+PERSONS_RU_MODEL = "openai/gpt-4o-mini"          # транслитерация ФИО
+PERSONS_RU_CHUNK_SIZE = 50
+PERSONS_RU_SLEEP_BETWEEN_CHUNKS = 0.3
 
-# --- Извлечение ссылок на репозитории ------------------------------------
+LLM_RATE_LIMIT_SLEEP = 30                        # пауза при 429 от OpenRouter
 
-SUPPORTED_HOSTS = [
-    "github.com",
-    "gitlab.com",
-    "bitbucket.org",
-    "codeberg.org",
-    "gitee.com",
-    "huggingface.co",
-    "zenodo.org",
-    "figshare.com",
-    "osf.io",
-]
+# --- Извлечение ссылок ---------------------------------------------------
 
-# Сколько символов с каждой стороны URL сохраняется в repo_links.context.
-CONTEXT_RADIUS = 400
-
-# Знаки препинания, которые часто стоят сразу после URL; срезаются перед
-# сохранением, чтобы не таскать их внутри URL.
-URL_TRAILING_PUNCT = ".,;:!?)]}>\"'"
+CONTEXT_RADIUS = 400         # символов вокруг URL в repo_links.context
