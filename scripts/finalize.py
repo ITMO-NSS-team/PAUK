@@ -293,6 +293,9 @@ def main() -> None:
         logger.info("[2/3] publication_departments: %d связей", sync_publication_departments(conn))
         logger.info("[3/3] repository_departments: %d связей", sync_repository_departments(conn))
         print_summary(conn)
+    except Exception:
+        logger.exception("Финализация упала с ошибкой")
+        raise
     finally:
         conn.close()
 

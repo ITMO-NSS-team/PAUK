@@ -120,6 +120,9 @@ def main() -> None:
             "Заполнено ФИО: %d, пустых: %d, чанков с ошибкой: %d",
             stats["filled"], stats["empty"], stats["failed_chunks"],
         )
+    except Exception:
+        logger.exception("enrich_persons_ru упал с ошибкой")
+        raise
     finally:
         conn.commit()
         conn.close()

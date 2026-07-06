@@ -303,6 +303,9 @@ def main() -> None:
             "Размечено: %d, без департамента: %d, новых депов: %d, чанков с ошибкой: %d",
             stats["updated"], stats["no_dept"], new_depts, stats["failed_chunks"],
         )
+    except Exception:
+        logger.exception("enrich_departments упал с ошибкой")
+        raise
     finally:
         conn.commit()
         conn.close()

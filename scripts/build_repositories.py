@@ -373,6 +373,9 @@ def main() -> None:
             "Готово — создано: %d, орг: %d, user: %d, привязано к persons_itmo: %d",
             stats["created"], stats["orgs"], stats["users"], stats["owner_linked"],
         )
+    except Exception:
+        logger.exception("build_repositories упал с ошибкой")
+        raise
     finally:
         conn.commit()
         conn.close()

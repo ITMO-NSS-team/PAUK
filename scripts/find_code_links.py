@@ -391,6 +391,9 @@ def main() -> None:
         run_fetch(conn)
         run_extract(conn)
         run_classify(conn)
+    except Exception:
+        logger.exception("find_code_links упал с ошибкой")
+        raise
     finally:
         conn.close()
 

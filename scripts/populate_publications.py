@@ -523,6 +523,9 @@ class PublicationsIngestor:
             if self.conn is not None:
                 self.conn.commit()
             self.print_summary()
+        except Exception:
+            logger.exception("populate_publications упал с ошибкой")
+            raise
         finally:
             self.disconnect()
 
