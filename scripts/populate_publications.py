@@ -389,7 +389,7 @@ class PublicationsIngestor:
             print(f"  [{index}/{total}] {work_id} уже есть в БД, пропуск")
             return
 
-        title = work.get("title", "No title")
+        title = work.get("title") or "No title"
         title_preview = title[:60] + "..." if len(title) > 60 else title
         print(f"  [{index}/{total}] {work_id} | {title_preview}")
 

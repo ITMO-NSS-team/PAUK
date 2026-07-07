@@ -139,11 +139,12 @@ def download_pdf(session: requests.Session, pdf_url: str, dest: Path) -> bool:
         return False
 
     with dest.open("rb") as handle:
-        if handle.read(4) != PDF_MAGIC:
-            content_type = response.headers.get("Content-Type", "?")
-            print(f"  скачанный файл не PDF (Content-Type: {content_type})")
-            dest.unlink(missing_ok=True)
-            return False
+        header = handle.read(4)
+    if header != PDF_MAGIC:
+        content_type = response.headers.get("Content-Type", "?")
+        print(f"  скачанный файл не PDF (Content-Type: {content_type})")
+        dest.unlink(missing_ok=True)
+        return False
     return True
 
 
