@@ -1,13 +1,4 @@
-"""Интерактивное демо PAUK по департаментам ИТМО.
-
-Работает поверх БД из new/OPENSOURCE_departaments_bkp.db.
-
-Группировка публикаций — через persons_itmo.department (ID департаментов
-через '; '), которые сопоставлены LLM-скриптом `new/4_department_enrich.py`.
-
-Запуск из корня проекта:
-    uv run streamlit run app_departments.py
-"""
+"""Интерактивное демо PAUK по департаментам ИТМО."""
 
 import sqlite3
 from pathlib import Path
@@ -17,9 +8,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-ROOT_DIR = Path(__file__).resolve().parent
-DB_PATH = ROOT_DIR / "data" / "OPENSOURCE_departaments_bkp.db"
-OLD_DB_PATH = ROOT_DIR / "data" / "itmo_research_opensource.db"
+ROOT_DIR = Path(__file__).resolve().parent.parent
+DB_PATH = ROOT_DIR / "data" / "itmo_opensource.db"
 
 
 LAB_COLORS_BY_NAME: dict[str, str] = {
@@ -144,17 +134,14 @@ def color_for(dept_name: str) -> str:
 
 @st.cache_data
 def load_pub_status() -> dict[str, str]:
-    """Возвращает {publication_id: 'confirmed'|'rejected'} через ATTACH старой БД.
+    """Возвращает {publication_id: 'confirmed'|'rejected'} из repo_links той же БД.
     Публикации без записи в repo_links считаются 'none' (не возвращаются)."""
-    if not OLD_DB_PATH.exists():
-        return {}
     conn = sqlite3.connect(DB_PATH)
     try:
-        conn.execute(f"ATTACH DATABASE '{OLD_DB_PATH}' AS oldb")
         df = pd.read_sql_query(
             """
             SELECT publication_id, MAX(is_relevant) AS best, COUNT(*) AS n
-            FROM oldb.repo_links
+            FROM repo_links
             GROUP BY publication_id
             """,
             conn,

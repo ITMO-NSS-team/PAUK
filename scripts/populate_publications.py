@@ -1,29 +1,15 @@
-"""Загружает публикации сотрудников ИТМО из OpenAlex в локальную БД.
-
-Для каждой работы за период [--start-date, --end-date],
-аффилированной с ИТМО (определяется по ROR ID и набору известных названий
-организации), скрипт заполняет таблицы publications, persons_itmo,
-persons_external и publication_authors.
-
-Авторы дедуплицируются по их display_name и известным альтернативам.
-In-memory LRU-кэш не даёт лишний раз дёрнуть OpenAlex /authors за одним и
-тем же автором в рамках одного запуска.
-
-Запускать из корня проекта:
-    uv run python scripts/populate_publications.py \\
-        --start-date 2025-01-01 --end-date 2026-05-01
-"""
-
 import argparse
 import json
+import logging
 import sqlite3
 import time
 from collections import OrderedDict
 from typing import Any
 
+logger = logging.getLogger(__name__)
+
 import requests
 from config import (
-    AFFILIATION_SEPARATOR,
     AUTHORS_CACHE_CAPACITY,
     DB_PATH,
     ITMO_NAMES,
@@ -34,6 +20,8 @@ from config import (
     REQUEST_DELAY,
     USER_AGENT,
 )
+
+AFFILIATION_SEPARATOR = " \n "
 
 
 class LRUCache:
@@ -122,8 +110,8 @@ class PublicationsIngestor:
             f"publication_date:<{self.end_date}"
         )
 
-        print(f"Запрашиваю работы ИТМО из OpenAlex (ROR {ITMO_ROR_ID})")
-        print(f"Период: {self.start_date} -> {self.end_date}")
+        logger.info("Запрашиваю работы ИТМО из OpenAlex (ROR %s)", ITMO_ROR_ID)
+        logger.info("Период: %s -> %s", self.start_date, self.end_date)
 
         while True:
             params = self._api_params(
@@ -139,12 +127,12 @@ class PublicationsIngestor:
                 self.api_stats["works_requests"] += 1
                 self.api_stats["total_requests"] += 1
                 if response.status_code == 429:
-                    print(f"  страница {page}: 429, sleep 60 сек и повтор")
+                    logger.warning("страница %d: 429, sleep 60 сек и повтор", page)
                     time.sleep(60)
                     continue
                 response.raise_for_status()
             except requests.RequestException as exc:
-                print(f"  запрос упал: {exc}")
+                logger.warning("запрос упал: %s", exc)
                 break
 
             data = response.json()
@@ -153,7 +141,7 @@ class PublicationsIngestor:
                 break
 
             all_papers.extend(results)
-            print(f"  страница {page}: +{len(results)} (всего {len(all_papers)})")
+            logger.info("страница %d: +%d (всего %d)", page, len(results), len(all_papers))
 
             cursor = data.get("meta", {}).get("next_cursor")
             if not cursor:
@@ -161,13 +149,13 @@ class PublicationsIngestor:
             page += 1
             time.sleep(REQUEST_DELAY)
 
-        print(f"Получено работ: {len(all_papers)}")
+        logger.info("Получено работ: %d", len(all_papers))
         return all_papers
 
     def fetch_openalex_author(self, author_id: str, retries: int = 3) -> dict | None:
         """Возвращает полную карточку автора из /authors, используя LRU-кэш.
 
-        При 429 ждёт минуту и повторяет, но не более ``retries`` раз — иначе
+        При 429 ждёт минуту и повторяет, но не более ``retries`` раз - иначе
         получили бы бесконечный цикл на устойчивом rate-limit.
         """
         if not author_id or author_id == "None":
@@ -184,7 +172,7 @@ class PublicationsIngestor:
             self.api_stats["authors_requests"] += 1
             self.api_stats["total_requests"] += 1
         except requests.RequestException as exc:
-            print(f"  запрос /authors упал для {author_id}: {exc}")
+            logger.warning("запрос /authors упал для %s: %s", author_id, exc)
             return None
 
         if response.status_code == 200:
@@ -192,7 +180,7 @@ class PublicationsIngestor:
             self.authors_cache.put(author_id, data)
             return data
         if response.status_code == 429 and retries > 0:
-            print(f"  OpenAlex 429 для {author_id}, sleep 60 сек (осталось попыток: {retries - 1})")
+            logger.warning("OpenAlex 429 для %s, sleep 60 сек (осталось попыток: %d)", author_id, retries - 1)
             time.sleep(60)
             return self.fetch_openalex_author(author_id, retries - 1)
         return None
@@ -372,7 +360,7 @@ class PublicationsIngestor:
             self.stats[counter_key] += 1
             return person_id
         except sqlite3.IntegrityError as exc:
-            print(f"  ошибка вставки в {table} {person_id}: {exc}")
+            logger.warning("ошибка вставки в %s %s: %s", table, person_id, exc)
             return None
 
     # --- Сохранение публикации -----------------------------------------
@@ -381,17 +369,17 @@ class PublicationsIngestor:
         """Сохраняет одну работу OpenAlex и связанные с ней строки авторства."""
         work_id = work.get("id", "").replace("https://openalex.org/", "")
         if not work_id:
-            print(f"  [{index}/{total}] пропуск: нет id")
+            logger.warning("[%d/%d] пропуск: нет id", index, total)
             return
 
         self.cursor.execute("SELECT 1 FROM publications WHERE id = ?", (work_id,))
         if self.cursor.fetchone():
-            print(f"  [{index}/{total}] {work_id} уже есть в БД, пропуск")
+            logger.info("[%d/%d] %s уже есть в БД, пропуск", index, total, work_id)
             return
 
         title = work.get("title") or "No title"
         title_preview = title[:60] + "..." if len(title) > 60 else title
-        print(f"  [{index}/{total}] {work_id} | {title_preview}")
+        logger.info("[%d/%d] %s | %s", index, total, work_id, title_preview)
 
         funding = self.extract_funding_info(work)
         if funding:
@@ -413,7 +401,7 @@ class PublicationsIngestor:
                 (work_id, title, journal, doi, pub_date, year, funding, work.get("id")),
             )
         except sqlite3.IntegrityError as exc:
-            print(f"  ошибка вставки публикации {work_id}: {exc}")
+            logger.warning("ошибка вставки публикации %s: %s", work_id, exc)
             return
 
         authorships = work.get("authorships") or []
@@ -480,7 +468,7 @@ class PublicationsIngestor:
                 if self.cursor.rowcount > 0:
                     self.stats["authorships_created"] += 1
             except sqlite3.Error as exc:
-                print(f"  ошибка вставки авторства: {exc}")
+                logger.warning("ошибка вставки авторства: %s", exc)
 
         self.cursor.execute(
             "UPDATE publications SET authors = ?, affiliation = ? WHERE id = ?",
@@ -500,26 +488,20 @@ class PublicationsIngestor:
     # --- Отчёт ----------------------------------------------------------
 
     def print_summary(self) -> None:
-        print()
-        print("Итог загрузки")
-        print("-" * 40)
-        print(f"  Публикаций обработано:     {self.stats['papers_processed']}")
-        print(f"  Из них с грантами:         {self.stats['papers_with_funding']}")
-        print(f"  Новых сотрудников ИТМО:    {self.stats['new_itmo_persons']}")
-        print(f"  Новых внешних авторов:     {self.stats['new_external_persons']}")
-        print(f"  Связей авторства создано:  {self.stats['authorships_created']}")
-        print(f"  Пропущено авторов:         {self.stats['authors_skipped']}")
-        print()
-        print(f"  Запросов к /works:         {self.api_stats['works_requests']}")
-        print(f"  Запросов к /authors:       {self.api_stats['authors_requests']}")
-        print(f"  Всего HTTP-запросов:       {self.api_stats['total_requests']}")
         cache_total = self.stats["cache_hits"] + self.stats["cache_misses"]
-        if cache_total:
-            hit_rate = self.stats["cache_hits"] / cache_total * 100
-            print(
-                f"  Кэш авторов:               "
-                f"{self.stats['cache_hits']}/{cache_total} попаданий ({hit_rate:.0f}%)"
-            )
+        cache_info = (
+            f", кэш: {self.stats['cache_hits']}/{cache_total} ({self.stats['cache_hits'] / cache_total * 100:.0f}%)"
+            if cache_total else ""
+        )
+        logger.info(
+            "Итог: публикаций %d (грантов %d), ИТМО +%d, внешних +%d, авторств %d, пропущено %d"
+            " | /works %d, /authors %d, всего %d%s",
+            self.stats["papers_processed"], self.stats["papers_with_funding"],
+            self.stats["new_itmo_persons"], self.stats["new_external_persons"],
+            self.stats["authorships_created"], self.stats["authors_skipped"],
+            self.api_stats["works_requests"], self.api_stats["authors_requests"],
+            self.api_stats["total_requests"], cache_info,
+        )
 
     # --- Драйвер --------------------------------------------------------
 
@@ -528,20 +510,22 @@ class PublicationsIngestor:
         try:
             papers = self.fetch_papers_by_date_range()
             if not papers:
-                print("Загружать нечего.")
+                logger.info("Загружать нечего.")
                 return
-            print()
-            print(f"Сохраняю {len(papers)} публикаций")
+            logger.info("Сохраняю %d публикаций", len(papers))
             for index, paper in enumerate(papers, 1):
                 self.add_publication(paper, index, len(papers))
                 time.sleep(0.05)
             self.conn.commit()
             self.print_summary()
         except KeyboardInterrupt:
-            print("\nПрервано пользователем, коммичу что успели сохранить.")
+            logger.warning("Прервано пользователем, коммичу что успели сохранить.")
             if self.conn is not None:
                 self.conn.commit()
             self.print_summary()
+        except Exception:
+            logger.exception("populate_publications упал с ошибкой")
+            raise
         finally:
             self.disconnect()
 
@@ -564,6 +548,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     args = parse_args()
     ingestor = PublicationsIngestor(
         db_path=DB_PATH,
