@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import re
 import sqlite3
 import time
@@ -13,6 +14,8 @@ from config import (
     SQLITE_TIMEOUT,
     USER_AGENT_EMAIL,
 )
+
+logger = logging.getLogger(__name__)
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS crossref_orcid (
@@ -111,7 +114,7 @@ def run(limit: int) -> None:
     pubs = list(by_pub.items())
     if limit:
         pubs = pubs[:limit]
-    print(f"Публикаций к проверке: {len(pubs)} (нуждающихся персон: {len(surn)})\n")
+    logger.info("Публикаций к проверке: %d, Нуждающихся в ORCID персон: %d", len(pubs), len(surn))
 
     session = requests.Session()
     session.headers["User-Agent"] = f"ITMO-Research/1.0 (mailto:{USER_AGENT_EMAIL})"
@@ -134,19 +137,17 @@ def run(limit: int) -> None:
         time.sleep(CROSSREF_REQUEST_DELAY)
         if stats["pubs"] % 100 == 0:
             prof.commit()
-            print(f"  [{i}/{len(pubs)}] найдено ORCID: {stats['found']}")
+            logger.info("[%d/%d] найдено ORCID: %d", i, len(pubs), stats['found'])
     prof.commit()
 
     total = prof.execute("SELECT COUNT(*) FROM crossref_orcid").fetchone()[0]
     prof.close()
     main.close()
-    print()
-    print(f"Публикаций проверено:   {stats['pubs']}")
-    print(f"Новых ORCID: {stats['found']}")
-    print(f"Всего в crossref_orcid:  {total}")
+    logger.info("Публикаций проверено: %d, Новых ORCID: %d, Всего в crossref_orcid: %d", stats['pubs'], stats['found'], total)
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description="ORCID авторов из Crossref -> crossref_orcid.")
     parser.add_argument("--limit", type=int, default=None, help="Сколько публикаций проверить.")
     run(parser.parse_args().limit)

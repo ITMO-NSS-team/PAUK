@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import sqlite3
 import time
 from urllib.parse import urlparse
@@ -17,12 +18,14 @@ from config import (
     USER_AGENT,
 )
 
+logger = logging.getLogger(__name__)
+
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS github_candidates (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     github_login    TEXT NOT NULL,
     github_url      TEXT,
-    user_type       TEXT,        -- User | Organization | Bot (из GitHub)
+    user_type       TEXT,        -- User | Organization | Bot
     source          TEXT,        -- repo_owner | repo_contributor
     repo_url        TEXT,        -- канонический https://github.com/owner/repo
     publication_ids TEXT,        -- JSON [publication_id] — мост к ИТМО-авторам
@@ -83,13 +86,13 @@ class GitHubClient:
         self.calls = 0
 
     def get(self, path: str, params: dict | None = None, retries: int = 3):
-        """GET к GitHub API. Возвращает распарсенный JSON или None (404/ошибка)."""
+        """GET к GitHub API. Возвращает распарсенный JSON или None."""
         url = path if path.startswith("http") else f"{GITHUB_API_URL}{path}"
         self.calls += 1
         try:
             resp = self.session.get(url, params=params, timeout=HTTP_TIMEOUT)
         except requests.RequestException as exc:
-            print(f"  запрос упал {url}: {exc}")
+            logger.warning("запрос упал %s: %s", url, exc)
             return None
 
         if resp.status_code == 200:
@@ -105,14 +108,14 @@ class GitHubClient:
             if remaining == "0":
                 reset = int(resp.headers.get("X-RateLimit-Reset", "0"))
                 wait = max(0, reset - int(time.time())) + 2
-                print(f"  rate-limit исчерпан, sleep {wait} сек")
+                logger.warning("rate-limit исчерпан, sleep %d сек", wait)
                 time.sleep(min(wait, 3600))
             else:  # вторичный лимит — Retry-After или дефолт
                 wait = int(resp.headers.get("Retry-After", "60"))
-                print(f"  вторичный лимит, sleep {wait} сек")
+                logger.warning("вторичный лимит, sleep %d сек", wait)
                 time.sleep(wait)
             return self.get(path, params, retries - 1)
-        print(f"  {resp.status_code} для {url}")
+        logger.warning("%d для %s", resp.status_code, url)
         return None
 
 
@@ -330,22 +333,21 @@ class GitHubHarvester:
 
     def run(self) -> None:
         if not GITHUB_TOKEN:
-            print("GITHUB_TOKEN не задан в .env — лимит 60 запросов/час. "
-                  "Создай токен: https://github.com/settings/tokens")
+            logger.warning("GITHUB_TOKEN не задан в .env — лимит 60 запросов/час. "
+                           "Создайте токен: https://github.com/settings/tokens")
 
         out = sqlite3.connect(self.out_db, timeout=SQLITE_TIMEOUT)
         out.executescript(SCHEMA_SQL)
         done = {r[0] for r in out.execute("SELECT DISTINCT repo_url FROM github_candidates")}
 
-        print(f"Источник:  {self.source_db}")
-        print(f"Результат: {self.out_db}")
+        logger.info("Источник: %s, Результат: %s", self.source_db, self.out_db)
         try:
             if self.mode == "accounts":
                 self._run_accounts(out, done)
             else:
                 self._run_repos(out, done)
         except KeyboardInterrupt:
-            print("\nПрервано пользователем.")
+            logger.warning("Прервано пользователем")
             out.commit()
         finally:
             self.print_summary()
@@ -353,26 +355,27 @@ class GitHubHarvester:
 
     def _run_repos(self, out: sqlite3.Connection, done: set[str]) -> None:
         repos = self.load_repos(done)
-        print(f"К обработке репозиториев: {len(repos)} (уже собрано: {len(done)})\n")
+        logger.info("К обработке репозиториев: %d (уже собрано: %d)", len(repos), len(done))
         for i, (repo_url, pubs) in enumerate(repos, 1):
             self.stats["repos"] += 1
             candidates = self.harvest_repo(repo_url, pubs)
             self.stats["candidates"] += len(candidates)
             self.save(out, repo_url, candidates)
             logins = ", ".join(c["github_login"] for c in candidates) or "—"
-            print(f"  [{i}/{len(repos)}] {repo_url:55}  {logins}")
+            logger.info("[%d/%d] %-55s %s", i, len(repos), repo_url, logins)
             if self.stats["repos"] % 10 == 0:
                 out.commit()
         out.commit()
 
     def _run_accounts(self, out: sqlite3.Connection, done: set[str]) -> None:
         seeds = self.load_seeds()
-        print(f"Сидов: {len(seeds)} (ИТМО-организации + подтверждённые аккаунты)\n")
+        logger.info("Сидов: %d (ИТМО-организации + подтверждённые аккаунты)", len(seeds))
         for i, (login, kind) in enumerate(seeds, 1):
             self.stats["seeds"] += 1
             repos = self.list_owned_repos(login)
             fresh = [u for u in repos if self.refresh or u not in done]
-            print(f"  [{i}/{len(seeds)}] {kind:4} {login:24} репо:{len(repos):3} новых:{len(fresh)}")
+            logger.info("[%d/%d] %-4s %-24s репо:%3d новых:%d", i, len(seeds), kind, login,
+                        len(repos), len(fresh))
             for repo_url in fresh:
                 candidates = self.harvest_repo(repo_url, [])
                 self.stats["repos"] += 1
@@ -384,17 +387,14 @@ class GitHubHarvester:
         out.commit()
 
     def print_summary(self) -> None:
-        print()
-        print("Итог сбора кандидатов с GitHub")
-        print("-" * 40)
         if self.mode == "accounts":
-            print(f"  Сидов обработано:        {self.stats['seeds']}")
-        print(f"  Репозиториев обработано: {self.stats['repos']}")
-        print(f"  Кандидатов собрано:      {self.stats['candidates']}")
-        print(f"    из них owner:          {self.stats['owners']}")
-        print(f"    из них contributor:    {self.stats['contributors']}")
-        print(f"  Пропущено ботов/орг:     {self.stats['skipped_bots']}")
-        print(f"  Запросов к GitHub:       {self.gh.calls}")
+            logger.info("Сидов обработано: %d", self.stats["seeds"])
+        logger.info(
+            "Итог сбора кандидатов с GitHub: репозиториев %d, кандидатов %d "
+            "(owner %d, contributor %d), пропущено ботов/орг %d, запросов к GitHub %d",
+            self.stats["repos"], self.stats["candidates"], self.stats["owners"],
+            self.stats["contributors"], self.stats["skipped_bots"], self.gh.calls,
+        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -419,6 +419,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     args = parse_args()
     GitHubHarvester(
         source_db=args.source_db,

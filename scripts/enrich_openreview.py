@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import re
 import sqlite3
 import time
@@ -15,6 +16,8 @@ from config import (
     OPENREVIEW_USERNAME,
     SQLITE_TIMEOUT,
 )
+
+logger = logging.getLogger(__name__)
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS openreview_profiles (
@@ -194,7 +197,7 @@ class OpenReviewEnricher:
         out = sqlite3.connect(DB_PATH, timeout=SQLITE_TIMEOUT)
         out.executescript(SCHEMA_SQL)
         people = self.load_people(out)
-        print(f"К обработке: {len(people)} персон\n")
+        logger.info("К обработке: %d персон", len(people))
         try:
             for i, (pid, name_en, norms, extra, our_orcid) in enumerate(people, 1):
                 self.stats["processed"] += 1
@@ -204,25 +207,19 @@ class OpenReviewEnricher:
                     self.save(out, pid, data)
                     self.stats["matched"] += 1
                     self.stats[matched_by] += 1
-                    print(f"  [{i}/{len(people)}] {name_en[:28]:28} -> {data['openreview_id']:24} ({matched_by})")
+                    logger.info("[%d/%d] %s -> %s (%s)", i, len(people), name_en[:28], data['openreview_id'], matched_by)
                 if self.stats["processed"] % 20 == 0:
                     out.commit()
             out.commit()
         except KeyboardInterrupt:
-            print("\nПрервано, коммичу.")
+            logger.warning("Прервано пользователем")
             out.commit()
         finally:
             self.summary()
             out.close()
 
     def summary(self) -> None:
-        print()
-        print(f"Обработано:        {self.stats['processed']}")
-        print(f"Найдено профилей:  {self.stats['matched']}")
-        print(f"  по orcid:        {self.stats['orcid']}")
-        print(f"  по @itmo.ru:     {self.stats['itmo_email']}")
-        print(f"  по аффилиации:   {self.stats['itmo_affil']}")
-        print(f"Запросов к OpenReview: {self.gh.calls}")
+        logger.info("Обработано: %d, Найдено профилей: %d по orcid: %d по @itmo.ru: %d по аффилиации: %d, Запросов к OpenReview: %d", self.stats['processed'], self.stats['matched'], self.stats['orcid'], self.stats['itmo_email'], self.stats['itmo_affil'], self.gh.calls)
 
 
 def parse_args() -> argparse.Namespace:
@@ -233,6 +230,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     args = parse_args()
     OpenReviewEnricher(limit=args.limit, refresh=args.refresh).run()
 

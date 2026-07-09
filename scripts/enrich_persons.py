@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import re
 import sqlite3
 import time
@@ -18,6 +19,8 @@ from config import (
     USER_AGENT,
     USER_AGENT_EMAIL,
 )
+
+logger = logging.getLogger(__name__)
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS person_profiles (
@@ -282,7 +285,7 @@ class PersonEnricher:
         try:
             resp = self.session.get(url, params=params, headers=headers, timeout=HTTP_TIMEOUT)
         except requests.RequestException as exc:
-            print(f"  запрос упал {url}: {exc}")
+            logger.warning("запрос упал %s: %s", url, exc)
             return None
         if resp.status_code == 200:
             try:
@@ -290,11 +293,11 @@ class PersonEnricher:
             except ValueError:
                 return None
         if resp.status_code == 429 and retries > 0:
-            print(f"  429 для {url}, sleep {RATE_LIMIT_SLEEP} сек (осталось попыток: {retries - 1})")
+            logger.warning("429 для %s, sleep %d сек (осталось попыток: %d)", url, RATE_LIMIT_SLEEP, retries - 1)
             time.sleep(RATE_LIMIT_SLEEP)
             return self._get_json(url, params, headers, retries - 1)
         if resp.status_code != 404:
-            print(f"  {resp.status_code} для {url}")
+            logger.warning("%d для %s", resp.status_code, url)
         return None
 
     def fetch_author(self, author_id: str) -> dict | None:
@@ -399,9 +402,8 @@ class PersonEnricher:
         people = self._load_people(src, done)
         src.close()
 
-        print(f"Источник:  {self.source_db}")
-        print(f"Результат: {self.out_db}")
-        print(f"К обработке: {len(people)} | уже собрано: {len(done)}\n")
+        logger.info("Источник: %s, Результат: %s", self.source_db, self.out_db)
+        logger.info("К обработке: %d | уже собрано: %d", len(people), len(done))
 
         try:
             for i, (person_id, name_en, author_id) in enumerate(people, 1):
@@ -434,30 +436,28 @@ class PersonEnricher:
 
                 badge = f">>> {', '.join(g['url'] for g in github)}" if github else status
                 h = (oa or {}).get("h_index")
-                print(f"  [{i}/{len(people)}] {name_en[:30]:30}  h={h if h is not None else '-':<3}  {badge}")
+                logger.info("[%d/%d] %-30s h=%-3s %s", i, len(people), name_en[:30],
+                            h if h is not None else "-", badge)
 
                 if self.stats["processed"] % 20 == 0:
                     out.commit()
             out.commit()
         except KeyboardInterrupt:
-            print("\nПрервано пользователем")
+            logger.warning("Прервано пользователем")
             out.commit()
         finally:
             self.print_summary()
             out.close()
 
     def print_summary(self) -> None:
-        print()
-        print("Итог обогащения профилей")
-        print("-" * 40)
-        print(f"  Обработано:             {self.stats['processed']}")
-        print(f"  Обогащено с ORCID:    {self.stats['enriched']}")
-        print(f"  Без ORCID, только OA:  {self.stats['no_orcid']}")
-        print(f"  Ошибок ORCID API:       {self.stats['orcid_error']}")
-        print(f"  Из них с GitHub:        {self.stats['github_found']}")
-        print()
-        print(f"  Запросов к OpenAlex:    {self.api_stats['openalex']}")
-        print(f"  Запросов к ORCID:       {self.api_stats['orcid']}")
+        logger.info(
+            "Итог обогащения профилей: обработано %d, обогащено с ORCID %d, "
+            "без ORCID (только OA) %d, ошибок ORCID API %d, из них с GitHub %d",
+            self.stats["processed"], self.stats["enriched"], self.stats["no_orcid"],
+            self.stats["orcid_error"], self.stats["github_found"],
+        )
+        logger.info("Запросов к OpenAlex: %d, запросов к ORCID: %d",
+                    self.api_stats["openalex"], self.api_stats["orcid"])
 
 
 def parse_args() -> argparse.Namespace:
@@ -476,6 +476,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     args = parse_args()
     PersonEnricher(
         source_db=args.source_db,
