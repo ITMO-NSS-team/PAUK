@@ -4,8 +4,6 @@ import logging
 import sqlite3
 import time
 
-logger = logging.getLogger(__name__)
-
 from config import (
     DB_PATH,
     PERSONS_RU_CHUNK_SIZE as CHUNK_SIZE,
@@ -13,6 +11,8 @@ from config import (
     PERSONS_RU_SLEEP_BETWEEN_CHUNKS as SLEEP_BETWEEN_CHUNKS,
 )
 from llm import chat_json
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
 Ты транслитерируешь имена сотрудников ИТМО с английского на русский.

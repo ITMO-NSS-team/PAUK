@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import re
 import sqlite3
 import time
@@ -15,6 +16,8 @@ from config import (
     SQLITE_TIMEOUT,
     pdf_path_for,
 )
+
+logger = logging.getLogger(__name__)
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS collected_emails (
@@ -130,7 +133,7 @@ def run_pdf(main: sqlite3.Connection, out: sqlite3.Connection) -> None:
     by_pub = load_pub_authors(main)
     pubs = [(pid, pdf_path_for(pid)) for pid in by_pub]
     pubs = [(pid, path) for pid, path in pubs if path.exists()]
-    print(f"Статей с PDF и ИТМО-авторами: {len(pubs)}\n")
+    logger.info("Статей с PDF и ИТМО-авторами: %d", len(pubs))
 
     stats = {"pdfs": 0, "emails": 0, "attributed": 0, "ambiguous": 0, "unmatched": 0}
     for i, (pub_id, path) in enumerate(pubs, 1):
@@ -149,15 +152,11 @@ def run_pdf(main: sqlite3.Connection, out: sqlite3.Connection) -> None:
                 stats["unmatched"] += 1
         if stats["pdfs"] % 100 == 0:
             out.commit()
-            print(f"  [{i}/{len(pubs)}] обработано")
+            logger.info("[%d/%d] обработано", i, len(pubs))
     out.commit()
 
-    print(f"\nPDF прочитано:        {stats['pdfs']}")
-    print(f"Email встречено:      {stats['emails']}")
-    print(f"Привязано (1 автор):  {stats['attributed']}")
-    print(f"Неоднозначных:        {stats['ambiguous']}")
-    print(f"Без совпадения ФИО:   {stats['unmatched']}")
-
+    logger.info("PDF прочитано: %d, Email встречено: %d, Привязано (1 автор): %d, Неоднозначных: %d, Без совпадения ФИО: %d",
+                 stats['pdfs'], stats['emails'], stats['attributed'], stats['ambiguous'], stats['unmatched'])
 
 # --- Источник: личные/лаб-страницы -----------------------------------------
 
@@ -208,7 +207,7 @@ def run_pages(main: sqlite3.Connection, out: sqlite3.Connection, limit: int | No
               if pid in surn and surn[pid] and pid not in done]
     if limit:
         people = people[:limit]
-    print(f"Персон к обходу: {len(people)}\n")
+    logger.info("Персон к обходу: %d", len(people))
 
     session = requests.Session()
     session.headers["User-Agent"] = BROWSER_USER_AGENT
@@ -230,18 +229,17 @@ def run_pages(main: sqlite3.Connection, out: sqlite3.Connection, limit: int | No
             time.sleep(PAGE_SCRAPE_REQUEST_DELAY)
         if stats["persons"] % 25 == 0:
             out.commit()
-            print(f"  [{i}/{len(people)}] найдено: {stats['found']}")
+            logger.info("[%d/%d] найдено: %d", i, len(people), stats['found'])
     out.commit()
 
-    print(f"\nПерсон обойдено: {stats['persons']}")
-    print(f"URL проверено:   {stats['urls']}")
-    print(f"Привязок email:  {stats['found']}")
+    logger.info("Персон обойдено: %d, URL проверено: %d, Привязок email: %d", stats['persons'], stats['urls'], stats['found'])
 
 
 # --- Драйвер ---------------------------------------------------------------
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description="Email из PDF/страниц -> collected_emails.")
     # Два источника (--source): pdf — полный текст скачанных PDF 
     # pages — страницы из ORCID и openreview c деобфусцированием
@@ -257,6 +255,9 @@ def main() -> None:
             run_pdf(main_db, out)
         else:
             run_pages(main_db, out, args.limit)
+    except Exception:
+        logger.exception("collect_emails упал с ошибкой")
+        raise
     finally:
         out.close()
         main_db.close()

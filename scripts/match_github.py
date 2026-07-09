@@ -1,11 +1,14 @@
 import argparse
 import json
+import logging
 import re
 import sqlite3
 import unicodedata
 from difflib import SequenceMatcher
 
 from config import DB_PATH, SQLITE_TIMEOUT
+
+logger = logging.getLogger(__name__)
 
 NAME_EXACT = 0.999
 NAME_FUZZY = 0.86
@@ -332,10 +335,11 @@ def run(apply: bool) -> None:
     logins = load_candidates(prof, itmo_orgs)
     repo_id_by_url = dict(main.execute("SELECT url, id FROM repositories"))
 
-    print(f"Кандидатов-логинов: {len(logins)}; персон ИТМО: {len(persons)}\n")
+    logger.info("Кандидатов-логинов: %d; персон ИТМО: %d", len(logins), len(persons))
     stats = {"matched": 0, "review": 0, "rejected": 0, "no_target": 0, "new_github": 0}
 
     prof.execute("DELETE FROM github_matches")
+    prof.commit()
     for login, cand in sorted(logins.items()):
         result = match_login(login, cand, persons, email_index, name_index, bridge)
         if result is None:
@@ -343,18 +347,22 @@ def run(apply: bool) -> None:
             continue
         pid, score, signals, evidence, decision = result
         save_match(prof, login, cand, pid, persons, score, signals, evidence, decision)
+        prof.commit()  # main и prof — два соединения на один файл; держать транзакцию
+                        # открытой блокирует запись из main на следующем шаге
         stats[decision] += 1
         if decision == "matched":
             already = persons[pid]["name_en"]
-            print(f"  [{decision}] {login:22} -> {already:28} {','.join(signals)}")
+            logger.info("[%s] %-22s -> %-28s %s", decision, login, already, ",".join(signals))
             if apply:
                 if not persons[pid]["github"]:
                     stats["new_github"] += 1
                     persons[pid]["github"] = login  # держим кэш свежим на случай второго
                                                      # логина той же персоны в этом прогоне
                 apply_to_main(main, login, cand, pid, repo_id_by_url)
+                main.commit()
         elif decision == "review":
-            print(f"  [review ] {login:22} -> {persons[pid]['name_en']:28} {evidence.get('name_sim')}")
+            logger.info("[review ] %-22s -> %-28s %s", login, persons[pid]["name_en"],
+                        evidence.get("name_sim"))
 
     prof.commit()
     if apply:
@@ -362,17 +370,14 @@ def run(apply: bool) -> None:
     prof.close()
     main.close()
 
-    print()
-    print("Итог матчинга")
-    print("-" * 40)
-    print(f"  matched:            {stats['matched']}")
-    print(f"  review:             {stats['review']}")
-    print(f"  rejected:           {stats['rejected']}")
-    print(f"  без цели (no_target):{stats['no_target']}")
+    logger.info(
+        "Итог матчинга: matched %d, review %d, rejected %d, без цели (no_target) %d",
+        stats["matched"], stats["review"], stats["rejected"], stats["no_target"],
+    )
     if apply:
-        print(f"  новых github в persons_itmo: {stats['new_github']}")
+        logger.info("новых github в persons_itmo: %d", stats["new_github"])
     else:
-        print("  (--apply не задан: основная БД не менялась)")
+        logger.info("--apply не задан: основная БД не менялась")
 
 
 def parse_args() -> argparse.Namespace:
@@ -383,6 +388,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     run(parse_args().apply)
 
 

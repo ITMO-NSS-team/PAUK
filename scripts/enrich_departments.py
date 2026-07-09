@@ -5,8 +5,6 @@ import sqlite3
 import time
 import uuid
 
-logger = logging.getLogger(__name__)
-
 from config import (
     DB_PATH,
     DEPT_CHUNK_SIZE,
@@ -15,6 +13,8 @@ from config import (
     DEPT_TIMEOUT,
 )
 from llm import chat_json
+
+logger = logging.getLogger(__name__)
 
 NO_DEPT_SENTINEL = "-"
 

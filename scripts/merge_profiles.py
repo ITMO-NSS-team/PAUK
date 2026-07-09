@@ -1,9 +1,12 @@
 import argparse
 import json
+import logging
 import re
 import sqlite3
 
 from config import DB_PATH, SQLITE_TIMEOUT
+
+logger = logging.getLogger(__name__)
 
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 
@@ -160,14 +163,15 @@ def run(apply: bool) -> None:
     main.close()
     prof.close()
 
-    print("Заполнено:")
+    logger.info("Заполнено:")
     for k in ("email", "github", "google_scholar", "openreview", "linkedin", "gitlab"):
-        print(f"  {k:15} {stats[k]}")
+        logger.info("%s %d", k, stats[k])
     if not apply:
-        print("\n(--apply не задан: основная БД не менялась)")
+        logger.info("--apply не задан: основная БД не менялась")
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description="Сборка финальной БД из всех источников.")
     parser.add_argument("--apply", action="store_true", help="Записать в persons_itmo.")
     run(parser.parse_args().apply)
