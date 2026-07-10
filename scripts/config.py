@@ -29,6 +29,7 @@ OPENALEX_WORKS_URL = "https://api.openalex.org/works"
 OPENALEX_AUTHORS_URL = "https://api.openalex.org/authors"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 GITHUB_API_URL = "https://api.github.com"
+PDF_CRAWLER_URL = "http://localhost:8000/api/v1"
 
 # --- HTTP ---------------------------------------------------------------
 
@@ -39,6 +40,7 @@ BROWSER_USER_AGENT = (
 )
 REQUEST_DELAY = 0.1
 DOWNLOAD_TIMEOUT = 60
+CRAWLER_DOWNLOAD_TIMEOUT = 300
 
 # --- ИТМО как организация ------------------------------------------------
 

@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS publications (
     affiliation      TEXT,
     pdf_url          TEXT,
     abstract         TEXT,
-    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    full_text        TEXT
 );
 
 CREATE TABLE IF NOT EXISTS persons_itmo (

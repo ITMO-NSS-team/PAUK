@@ -3,7 +3,7 @@ import re
 import sqlite3
 import time
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlencode
 
 import fitz
 import requests
@@ -16,11 +16,13 @@ from config import (
     OPENALEX_API_KEY,
     OPENALEX_WORKS_URL,
     PDF_DIR,
+    PDF_CRAWLER_URL,
     REQUEST_DELAY,
     USER_AGENT,
     pdf_path_for,
 )
 from llm import chat_json
+from scripts.config import CRAWLER_DOWNLOAD_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -74,10 +76,10 @@ def fetch_paper_data(session: requests.Session, openalex_id: str) -> dict | None
     return {"pdf_url": pdf_url, "abstract": reconstruct_abstract(data.get("abstract_inverted_index"))}
 
 
-def download_pdf(session: requests.Session, pdf_url: str, dest: Path) -> bool:
+def download_pdf(session: requests.Session, pdf_url: str, dest: Path, timeout=DOWNLOAD_TIMEOUT) -> bool:
     """Качает pdf_url в dest. True только если файл реально PDF."""
     try:
-        response = session.get(pdf_url, timeout=DOWNLOAD_TIMEOUT, stream=True, allow_redirects=True)
+        response = session.get(pdf_url, timeout=timeout, stream=True, allow_redirects=True)
     except requests.RequestException as exc:
         logger.warning("ошибка скачивания: %s", exc)
         return False
@@ -100,6 +102,8 @@ def download_pdf(session: requests.Session, pdf_url: str, dest: Path) -> bool:
             return False
     return True
 
+def build_crawler_download_url(doi: str)-> str:
+    return f"{PDF_CRAWLER_URL}/download?{urlencode({'url': doi})}"
 
 def run_fetch(conn: sqlite3.Connection) -> None:
     PDF_DIR.mkdir(parents=True, exist_ok=True)
@@ -110,7 +114,7 @@ def run_fetch(conn: sqlite3.Connection) -> None:
 
     cur = conn.cursor()
     pubs = cur.execute(
-        "SELECT id, pdf_url, abstract FROM publications WHERE pdf_url IS NULL OR abstract IS NULL"
+        "SELECT id, doi, pdf_url, abstract FROM publications WHERE pdf_url IS NULL OR abstract IS NULL"
     ).fetchall()
     if not pubs:
         logger.info("Материал уже собран по всем публикациям.")
@@ -118,7 +122,15 @@ def run_fetch(conn: sqlite3.Connection) -> None:
 
     logger.info("[fetch] обрабатываю %d публикаций", len(pubs))
     downloaded = 0
-    for index, (pub_id, current_pdf_url, current_abstract) in enumerate(pubs, 1):
+
+    try:
+        crawler_healthcheck = browser_session.get(PDF_CRAWLER_URL + "/healthcheck")
+        crawler_healthcheck.raise_for_status()
+        is_crawler_running = True
+    except requests.exceptions.RequestException:
+        is_crawler_running = False
+
+    for index, (pub_id, doi, current_pdf_url, current_abstract) in enumerate(pubs, 1):
         logger.info("[fetch %d/%d] %s", index, len(pubs), pub_id)
         data = fetch_paper_data(api_session, pub_id)
         if data is None:
@@ -128,8 +140,16 @@ def run_fetch(conn: sqlite3.Connection) -> None:
         if current_abstract is None:
             conn.execute("UPDATE publications SET abstract = ? WHERE id = ?", (data["abstract"] or "", pub_id))
         if current_pdf_url is None:
-            conn.execute("UPDATE publications SET pdf_url = ? WHERE id = ?", (data["pdf_url"] or "", pub_id))
             dest = pdf_path_for(pub_id)
+            if is_crawler_running and data["pdf_url"] is None:
+                crawler_url = build_crawler_download_url(doi)
+                if download_pdf(api_session, crawler_url, dest, timeout=CRAWLER_DOWNLOAD_TIMEOUT):
+                    downloaded += 1
+                    data["pdf_url"] = crawler_url
+                    logger.info("  PDF скачан используя crawler (%d КБ)", dest.stat().st_size // 1024)
+
+            conn.execute("UPDATE publications SET pdf_url = ? WHERE id = ?", (data["pdf_url"] or "", pub_id))
+
             if data["pdf_url"] and not dest.exists() and download_pdf(browser_session, data["pdf_url"], dest):
                 downloaded += 1
                 logger.info("  PDF скачан (%d КБ)", dest.stat().st_size // 1024)
@@ -383,12 +403,28 @@ def run_classify(conn: sqlite3.Connection) -> None:
         time.sleep(REQUEST_DELAY)
     logger.info("[classify] авторских: %d, чужих: %d, не удалось: %d", yes, no, failed)
 
+def run_fill_full_text(conn: sqlite3.Connection) -> None:
+    cur = conn.cursor()
+    rows = cur.execute("SELECT id FROM publications").fetchall()
+
+    for index, (pub_id,) in enumerate(rows, 1):
+        pdf_path = pdf_path_for(pub_id)
+        if pdf_path.exists():
+            print(pub_id)
+            doc = fitz.open(pdf_path)
+            full_text = ""
+            for page in doc:
+                full_text += normalize_pdf_text(page.get_text()) + "\n"
+            conn.execute("UPDATE publications SET full_text = ? WHERE id = ?", (full_text, pub_id))
+            conn.commit()
+            logger.info("[fill full text] Добавлен полный текст статьи для %s", pub_id)
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     conn = sqlite3.connect(DB_PATH, timeout=30)
     try:
         run_fetch(conn)
+        run_fill_full_text(conn)
         run_extract(conn)
         run_classify(conn)
     except Exception:
