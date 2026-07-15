@@ -55,6 +55,10 @@ DEPT_CHUNK_SIZE = 20
 DEPT_SLEEP_BETWEEN_CHUNKS = 1.0
 DEPT_TIMEOUT = 240                               # длинный контекст + reasoning
 
+DEPT_TRANSLATE_MODEL = "openai/gpt-4o-mini"      # перевод названий департаментов
+DEPT_TRANSLATE_CHUNK_SIZE = 30
+DEPT_TRANSLATE_SLEEP_BETWEEN_CHUNKS = 0.3
+
 PERSONS_RU_MODEL = "openai/gpt-4o-mini"          # транслитерация ФИО
 PERSONS_RU_CHUNK_SIZE = 50
 PERSONS_RU_SLEEP_BETWEEN_CHUNKS = 0.3
@@ -64,3 +68,14 @@ LLM_RATE_LIMIT_SLEEP = 30                        # пауза при 429 от Op
 # --- Извлечение ссылок ---------------------------------------------------
 
 CONTEXT_RADIUS = 400         # символов вокруг URL в repo_links.context
+
+# --- Официальный каталог департаментов (source of truth) -----------------
+
+# en↔ru список официальных подразделений ИТМО: источник истины для name_ru
+# официальных депов и якорь точного матчинга.
+DEPARTMENTS_CATALOG_PATH = DATA_DIR / "departments_catalog.json"
+
+# Официальная структура ИТМО (EN-страница + RU-сайт с общими faculty ID).
+ITMO_STRUCTURE_URL_EN = "https://en.itmo.ru/en/department_list/Academic_Structure.htm"
+ITMO_SITE_EN = "https://en.itmo.ru"
+ITMO_SITE_RU = "https://itmo.ru"

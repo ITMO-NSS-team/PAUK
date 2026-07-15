@@ -34,17 +34,32 @@ uv run python scripts/populate_publications.py \
 # 3. GitHub-часть: abstract+PDF -> ссылки на код (repo_links) -> вердикт LLM.
 uv run python scripts/find_code_links.py
 
-# 4. LLM-разметка департаментов ИТМО по аффилиациям -> persons_itmo.department.
-uv run python scripts/enrich_departments.py
+# 4. Официальный en<->ru каталог департаментов ИТМО -> departments (name_ru + алиасы).
+uv run python scripts/seed_departments.py
 
-# 5. Русские ФИО (транслитерация name_en) -> persons_itmo.*_ru.
+# 5. Разметка департаментов по аффилиациям:
+#    stage-1 точный матч по каталогу (без LLM) + stage-2 LLM с якорем на офиц. русские названия.
+uv run python scripts/enrich_departments.py --mode match
+#    Перевод name_ru неофициальных депов (официальные — из каталога, не трогаются).
+uv run python scripts/enrich_departments.py --mode translate
+
+# 6. Русские ФИО (транслитерация name_en) -> persons_itmo.*_ru.
 uv run python scripts/enrich_persons_ru.py
 
-# 6. Чистый слой repositories + github_departments (GitHub API, split user/org).
+# 7. Чистый слой repositories + github_departments (GitHub API, split user/org).
 uv run python scripts/build_repositories.py
 
-# 7. Чистка дублей + производные связи (has_code, *_departments).
+# 8. Чистка дублей + производные связи (has_code, *_departments).
 uv run python scripts/finalize.py        # --dry-run чтобы только посмотреть dedup
+```
+
+Разовые/сервисные (не в `run_pipeline.sh`):
+
+```bash
+# (Пере)генерация официального каталога департаментов из структуры ИТМО.
+uv run python scripts/build_department_catalog.py     # -> data/departments_catalog.json
+# Выгрузка списка департаментов en<->ru для валидации переводов.
+uv run python scripts/export_departments.py           # -> reports/departments_en_ru.csv
 ```
 
 ## Схема БД
@@ -57,7 +72,7 @@ uv run python scripts/finalize.py        # --dry-run чтобы только п�
 | `persons_itmo`            | Сотрудники ИТМО (+ `department`, `github`)                        |
 | `persons_external`        | Внешние соавторы                                                  |
 | `publication_authors`     | Авторство (публикация ↔ человек)                                  |
-| `departments`             | Департаменты ИТМО (`name_en` + `name_variants`)                   |
+| `departments`             | Департаменты ИТМО (`name_en`, `name_ru`, `name_variants`); официальные — из `data/departments_catalog.json` |
 | `publication_departments` | Публикация ↔ департамент (через департаменты её ИТМО-авторов)     |
 | `github_departments`      | **GitHub-организации** (лаборатории): login, name, описание       |
 | `repositories`            | Чистый слой репозиториев + метаданные GitHub                     |

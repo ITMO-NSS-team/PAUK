@@ -4,6 +4,7 @@ import logging
 import re
 import sqlite3
 
+from catalog import load_catalog, official_name_en_set
 from config import DB_PATH
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,7 @@ def dedup_departments(conn: sqlite3.Connection, dry_run: bool) -> int:
         for did, name, var in cur.fetchall()
     }
     name_to_id = {normalize(info["name_en"]): did for did, info in depts.items()}
+    official = official_name_en_set(load_catalog())
 
     uf = UnionFind()
     for did in depts:
@@ -74,7 +76,9 @@ def dedup_departments(conn: sqlite3.Connection, dry_run: bool) -> int:
     for members in uf.groups().values():
         if len(members) < 2:
             continue
-        canonical = max(members, key=lambda d: (len(depts[d]["variants"]), d))
+        # Официальный деп (name_en ∈ каталог) выигрывает канон, чтобы не потерять
+        # авторитетный name_ru; иначе — по числу вариантов, затем по id.
+        canonical = max(members, key=lambda d: (depts[d]["name_en"] in official, len(depts[d]["variants"]), d))
         for loser in (d for d in members if d != canonical):
             logger.info("Слияние департаментов: «%s» → «%s»", depts[loser]["name_en"], depts[canonical]["name_en"])
             if not dry_run:

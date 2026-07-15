@@ -18,26 +18,32 @@ run_step() {
     "$@"
 }
 
-run_step "1/8" "init_db" \
+run_step "1/10" "init_db" \
     uv run python scripts/init_db.py
 
-run_step "2/8" "populate_publications ($START_DATE -> $END_DATE)" \
+run_step "2/10" "populate_publications ($START_DATE -> $END_DATE)" \
     uv run python scripts/populate_publications.py --start-date "$START_DATE" --end-date "$END_DATE"
 
-run_step "3/8" "find_code_links" \
+run_step "3/10" "find_code_links" \
     uv run python scripts/find_code_links.py
 
-run_step "4/8" "enrich_departments" \
-    uv run python scripts/enrich_departments.py
+run_step "4/10" "seed_departments (официальный en<->ru каталог -> departments)" \
+    uv run python scripts/seed_departments.py
 
-run_step "5/8" "enrich_persons_ru" \
+run_step "5/10" "enrich_departments --mode match (stage-1 каталог + stage-2 LLM)" \
+    uv run python scripts/enrich_departments.py --mode match
+
+run_step "6/10" "enrich_departments --mode translate (name_ru неофициальных)" \
+    uv run python scripts/enrich_departments.py --mode translate
+
+run_step "7/10" "enrich_persons_ru" \
     uv run python scripts/enrich_persons_ru.py
 
-run_step "6/8" "build_repositories" \
+run_step "8/10" "build_repositories" \
     uv run python scripts/build_repositories.py
 
-run_step "7/8" "finalize" \
+run_step "9/10" "finalize" \
     uv run python scripts/finalize.py
 
-run_step "8/8" "export_graph (данные для визуализации)" \
+run_step "10/10" "export_graph (данные для визуализации)" \
     uv run python visualization/export_graph.py
