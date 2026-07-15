@@ -1,0 +1,202 @@
+[
+  {
+    "faculty_id": 1,
+    "school_en": "School of Computer Technologies and Control",
+    "school_ru": "Мегафакультет компьютерных технологий и управления",
+    "name_en": "School of Computer Technologies and Control",
+    "name_ru": "Мегафакультет компьютерных технологий и управления",
+    "aliases": []
+  },
+  {
+    "faculty_id": 106,
+    "school_en": "School of Physics and Engineering",
+    "school_ru": "Физико-технический мегафакультет",
+    "name_en": "School of Physics and Engineering",
+    "name_ru": "Физико-технический мегафакультет",
+    "aliases": []
+  },
+  {
+    "faculty_id": 107,
+    "school_en": "School of Translational Information Technologies",
+    "school_ru": "Мегафакультет трансляционных информационных технологий",
+    "name_en": "School of Translational Information Technologies",
+    "name_ru": "Мегафакультет трансляционных информационных технологий",
+    "aliases": []
+  },
+  {
+    "faculty_id": 116,
+    "school_en": "School of Life Sciences",
+    "school_ru": "Мегафакультет наук о жизни",
+    "name_en": "School of Life Sciences",
+    "name_ru": "Мегафакультет наук о жизни",
+    "aliases": []
+  },
+  {
+    "faculty_id": 103,
+    "school_en": "School of Computer Technologies and Control",
+    "school_ru": "Мегафакультет компьютерных технологий и управления",
+    "name_en": "Faculty of Control Systems and Robotics",
+    "name_ru": "Факультет систем управления и робототехники",
+    "aliases": []
+  },
+  {
+    "faculty_id": 104,
+    "school_en": "School of Computer Technologies and Control",
+    "school_ru": "Мегафакультет компьютерных технологий и управления",
+    "name_en": "Faculty of Software Engineering and Computer Systems",
+    "name_ru": "Факультет программной инженерии и компьютерной техники",
+    "aliases": []
+  },
+  {
+    "faculty_id": 105,
+    "school_en": "School of Computer Technologies and Control",
+    "school_ru": "Мегафакультет компьютерных технологий и управления",
+    "name_en": "Faculty of Secure Information Technologies",
+    "name_ru": "Факультет безопасности информационных технологий",
+    "aliases": []
+  },
+  {
+    "faculty_id": 117,
+    "school_en": "School of Computer Technologies and Control",
+    "school_ru": "Мегафакультет компьютерных технологий и управления",
+    "name_en": "Institute of Advanced Data Transfer Systems",
+    "name_ru": "Институт перспективных систем передачи данных",
+    "aliases": []
+  },
+  {
+    "faculty_id": 119,
+    "school_en": "School of Computer Technologies and Control",
+    "school_ru": "Мегафакультет компьютерных технологий и управления",
+    "name_en": "Institute of Information and Navigation Systems",
+    "name_ru": "Институт информационно-навигационных систем",
+    "aliases": []
+  },
+  {
+    "faculty_id": 120,
+    "school_en": "School of Computer Technologies and Control",
+    "school_ru": "Мегафакультет компьютерных технологий и управления",
+    "name_en": "Institute of Intelligent Industrial Technologies",
+    "name_ru": "Институт интеллектуальных промышленных технологий",
+    "aliases": []
+  },
+  {
+    "faculty_id": 121,
+    "school_en": "School of Physics and Engineering",
+    "school_ru": "Физико-технический мегафакультет",
+    "name_en": "Institute of Laser Technologies",
+    "name_ru": "Институт лазерных технологий",
+    "aliases": []
+  },
+  {
+    "faculty_id": 108,
+    "school_en": "School of Physics and Engineering",
+    "school_ru": "Физико-технический мегафакультет",
+    "name_en": "Faculty of Physics",
+    "name_ru": "Физический факультет",
+    "aliases": []
+  },
+  {
+    "faculty_id": 124,
+    "school_en": "School of Physics and Engineering",
+    "school_ru": "Физико-технический мегафакультет",
+    "name_en": "Research and Educational Center for Photonics and Optical IT",
+    "name_ru": "Научно-образовательный центр фотоники и оптоинформатики",
+    "aliases": ["Center for Photonics and Optical IT", "Faculty of Photonics and Optical Information"]
+  },
+  {
+    "faculty_id": 127,
+    "school_en": "School of Translational Information Technologies",
+    "school_ru": "Мегафакультет трансляционных информационных технологий",
+    "name_en": "Institute for Artificial Intelligence",
+    "name_ru": "Институт искусственного интеллекта",
+    "aliases": ["AI Institute", "Institute of Artificial Intelligence"]
+  },
+  {
+    "faculty_id": 7,
+    "school_en": "School of Translational Information Technologies",
+    "school_ru": "Мегафакультет трансляционных информационных технологий",
+    "name_en": "Information Technologies and Programming Faculty",
+    "name_ru": "Факультет информационных технологий и программирования",
+    "aliases": ["Faculty of Information Technologies and Programming"]
+  },
+  {
+    "faculty_id": 19,
+    "school_en": "School of Translational Information Technologies",
+    "school_ru": "Мегафакультет трансляционных информационных технологий",
+    "name_en": "Faculty of Applied Informatics",
+    "name_ru": "Факультет инфокоммуникационных технологий",
+    "aliases": ["Faculty of Infocommunication Technologies"]
+  },
+  {
+    "faculty_id": 114,
+    "school_en": "School of Translational Information Technologies",
+    "school_ru": "Мегафакультет трансляционных информационных технологий",
+    "name_en": "Artificial Intelligence Technologies Faculty",
+    "name_ru": "Факультет цифровых трансформаций",
+    "aliases": ["Faculty of Digital Transformations", "Faculty of AI Technologies"]
+  },
+  {
+    "faculty_id": 123,
+    "school_en": "School of Translational Information Technologies",
+    "school_ru": "Мегафакультет трансляционных информационных технологий",
+    "name_en": "Institute of Applied Computer Science",
+    "name_ru": "Институт прикладных компьютерных наук",
+    "aliases": []
+  },
+  {
+    "faculty_id": 88,
+    "school_en": "School of Translational Information Technologies",
+    "school_ru": "Мегафакультет трансляционных информационных технологий",
+    "name_en": "Institute of Design & Urban Studies",
+    "name_ru": "Институт дизайна и урбанистики",
+    "aliases": ["Institute of Design and Urban Studies"]
+  },
+  {
+    "faculty_id": 118,
+    "school_en": "School of Life Sciences",
+    "school_ru": "Мегафакультет наук о жизни",
+    "name_en": "Faculty of Ecotechnologies",
+    "name_ru": "Факультет экотехнологий",
+    "aliases": ["Faculty of Ecotechnology"]
+  },
+  {
+    "faculty_id": 98,
+    "school_en": "School of Life Sciences",
+    "school_ru": "Мегафакультет наук о жизни",
+    "name_en": "Faculty of Biotechnologies",
+    "name_ru": "Факультет биотехнологий",
+    "aliases": ["Faculty of Biotechnology"]
+  },
+  {
+    "faculty_id": 87,
+    "school_en": "",
+    "school_ru": "",
+    "name_en": "Faculty of Technological Management and Innovations",
+    "name_ru": "Факультет технологического менеджмента и инноваций",
+    "aliases": []
+  },
+  {
+    "faculty_id": 115,
+    "school_en": "",
+    "school_ru": "",
+    "name_en": "Higher School of Engineering and Technology",
+    "name_ru": "Институт «Высшая инженерная школа»",
+    "aliases": ["Higher Engineering School", "Institute of Higher Engineering School"]
+  },
+  {
+    "faculty_id": 125,
+    "school_en": "",
+    "school_ru": "",
+    "name_en": "ITMO Advanced Engineering School in Interdisciplinary Engineering",
+    "name_ru": "Передовая инженерная школа междисциплинарного инжиниринга",
+    "aliases": ["Advanced Engineering School"]
+  },
+  {
+    "faculty_id": 17,
+    "school_en": "",
+    "school_ru": "",
+    "name_en": "Institute of International Development and Partnership",
+    "name_ru": "Институт международного развития и партнёрства",
+    "aliases": []
+  }
+]
