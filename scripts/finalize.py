@@ -76,8 +76,6 @@ def dedup_departments(conn: sqlite3.Connection, dry_run: bool) -> int:
     for members in uf.groups().values():
         if len(members) < 2:
             continue
-        # Официальный деп (name_en ∈ каталог) выигрывает канон, чтобы не потерять
-        # авторитетный name_ru; иначе — по числу вариантов, затем по id.
         canonical = max(members, key=lambda d: (depts[d]["name_en"] in official, len(depts[d]["variants"]), d))
         for loser in (d for d in members if d != canonical):
             logger.info("Слияние департаментов: «%s» → «%s»", depts[loser]["name_en"], depts[canonical]["name_en"])
