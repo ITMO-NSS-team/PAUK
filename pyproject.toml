@@ -14,4 +14,6 @@ dependencies = [
     "scipy>=1.17.1",
     "streamlit>=1.57.0",
     "watchdog>=6.0.0",
+    "neo4j",
+    "tqdm"
 ]

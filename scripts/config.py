@@ -64,3 +64,8 @@ LLM_RATE_LIMIT_SLEEP = 30                        # пауза при 429 от Op
 # --- Извлечение ссылок ---------------------------------------------------
 
 CONTEXT_RADIUS = 400         # символов вокруг URL в repo_links.context
+
+# --- Подключение к графовой БД -------------------------------------------
+NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
