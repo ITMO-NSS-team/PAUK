@@ -405,7 +405,6 @@ def run_match(conn: sqlite3.Connection, cur: sqlite3.Cursor) -> None:
     departments = load_departments(cur)
     index = build_official_index(departments, official_names)
 
-    # Stage 1: точный матч по каталогу (+ выученные алиасы), без LLM.
     remaining: list[tuple[str, str]] = []
     stage1_hits = 0
     for pid, aff in persons:

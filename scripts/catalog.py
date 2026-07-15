@@ -13,7 +13,6 @@ from pathlib import Path
 from config import DEPARTMENTS_CATALOG_PATH
 
 _QUOTES_RE = re.compile(r'["“”‘’«»]')
-# Оставляем латиницу, кириллицу и цифры; всё прочее — разделитель.
 _NON_ALNUM_RE = re.compile(r"[^0-9a-zа-яё]+", re.IGNORECASE)
 
 

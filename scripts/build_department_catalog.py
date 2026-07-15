@@ -32,7 +32,6 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-# Ссылка на страницу факультета: /en/faculty/<id>/<slug>.htm + текст ссылки.
 FACULTY_LINK_RE = re.compile(
     r'/en/faculty/(\d+)/([^"\'>]+?\.htm)"[^>]*>\s*([^<]+?)\s*<', re.IGNORECASE
 )
@@ -96,7 +95,7 @@ def fetch_name_ru(faculty_id: int, slug: str) -> str | None:
 
 
 def build_catalog() -> list[dict]:
-    """Собирает каталог: EN-структура + RU-названия по faculty_id."""
+    """Собирает каталог: EN-структура + RU-названия по faculty_id (вкл. school_ru)."""
     html = fetch(ITMO_STRUCTURE_URL_EN)
     if not html:
         raise SystemExit("Не удалось получить страницу структуры ИТМО.")
@@ -104,23 +103,25 @@ def build_catalog() -> list[dict]:
     assign_schools(rows)
     logger.info("Найдено %d подразделений на EN-странице структуры.", len(rows))
 
-    catalog: list[dict] = []
     for row in rows:
-        name_ru = fetch_name_ru(row["faculty_id"], row["slug"])
-        if not name_ru:
+        row["name_ru"] = fetch_name_ru(row["faculty_id"], row["slug"]) or ""
+        if not row["name_ru"]:
             logger.warning("Нет name_ru для #%s (%s) — дозаполнить вручную.",
                            row["faculty_id"], row["name_en"])
-        catalog.append(
-            {
-                "faculty_id": row["faculty_id"],
-                "school_en": row["school_en"],
-                "school_ru": "",  # дозаполнить вручную при сверке
-                "name_en": row["name_en"],
-                "name_ru": name_ru or "",
-                "aliases": [],
-            }
-        )
         time.sleep(0.3)
+    school_ru = {r["name_en"]: r["name_ru"] for r in rows if r["is_school"]}
+
+    catalog = [
+        {
+            "faculty_id": row["faculty_id"],
+            "school_en": row["school_en"],
+            "school_ru": school_ru.get(row["school_en"], ""),
+            "name_en": row["name_en"],
+            "name_ru": row["name_ru"],
+            "aliases": [],
+        }
+        for row in rows
+    ]
     catalog.sort(key=lambda d: d["name_en"].lower())
     return catalog
 

@@ -101,7 +101,7 @@
     "school_ru": "Физико-технический мегафакультет",
     "name_en": "Research and Educational Center for Photonics and Optical IT",
     "name_ru": "Научно-образовательный центр фотоники и оптоинформатики",
-    "aliases": ["Center for Photonics and Optical IT", "Faculty of Photonics and Optical Information"]
+    "aliases": ["Center for Photonics and Optical IT"]
   },
   {
     "faculty_id": 127,
@@ -181,7 +181,7 @@
     "school_ru": "",
     "name_en": "Higher School of Engineering and Technology",
     "name_ru": "Институт «Высшая инженерная школа»",
-    "aliases": ["Higher Engineering School", "Institute of Higher Engineering School"]
+    "aliases": ["Higher Engineering School"]
   },
   {
     "faculty_id": 125,
