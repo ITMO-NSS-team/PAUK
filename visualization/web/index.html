@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PAUK</title>
+  <link rel="icon" type="image/jpeg" href="logo.jpg" />
+  <link rel="stylesheet" href="vendor/maplibre-gl.css" />
+  <link rel="stylesheet" href="style.css" />
+  <script>(function(){var t=localStorage.getItem("pauk-theme");if(t==="dark"||(t==null&&matchMedia("(prefers-color-scheme:dark)").matches))document.documentElement.setAttribute("data-theme","dark");})()</script>
+</head>
+<body>
+  <div id="map"></div>
+  <canvas id="overlay"></canvas>
+
+  <header id="topbar">
+    <div class="brand">
+      <img class="brand-logo" src="logo.jpg" alt="PAUK" />
+      <span class="brand-sub">Карта соавторства ИТМО</span>
+    </div>
+    <div id="tab-toggle">
+      <button data-tab="1" class="active">Персоналии</button><button data-tab="2">Репозитории</button><button data-tab="3">Публикации</button><button data-tab="4">Поиск</button>
+    </div>
+    <div class="topbar-right">
+      <span id="loading">Карта строится ...</span>
+      <button class="topbar-icon-btn" id="export-btn" title="Скачать карту как PNG">
+        <svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8.5 2.5v8M5.5 8l3 3 3-3"/><path d="M2.5 13.5h12"/>
+        </svg>
+      </button>
+      <button class="theme-toggle" id="theme-toggle" title="Светлая / тёмная тема" aria-label="Переключить тему">
+        <span class="theme-icon">☀️</span>
+        <span class="theme-track"><span class="theme-thumb"></span></span>
+        <span class="theme-icon">🌙</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- left: search + filter -->
+  <aside id="left-panel">
+    <div class="card">
+      <div class="card-label">Поиск</div>
+      <input id="search" type="text" placeholder="Автор, репозиторий или публикация" autocomplete="off" />
+      <div id="search-results"></div>
+    </div>
+    <div class="card" id="edge-filter-card" style="display:none;margin-top:10px">
+      <div class="card-label" id="edge-filter-label">мин. совм. публикаций</div>
+      <div class="edge-filter-row">
+        <input type="range" id="edge-threshold" min="1" max="30" value="1" />
+        <span id="edge-threshold-val">1</span>
+      </div>
+      <div style="font-size:11px;color:var(--faint);margin-top:6px">только отображение рёбер</div>
+    </div>
+    <div class="card" id="year-filter-card" style="display:none;margin-top:10px">
+      <div class="card-label">публикации по год</div>
+      <div class="edge-filter-row">
+        <button id="year-play-btn" class="year-play-btn" title="Проиграть по годам">▶</button>
+        <input type="range" id="year-from" min="2020" max="2026" value="2026" />
+        <span id="year-from-val" style="font-size:16px;font-weight:800;color:var(--accent);min-width:36px;text-align:right">2026</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- right: mode description + overview / node card -->
+  <aside id="right-panel">
+    <div id="overview" class="card"></div>
+    <div id="detail" class="card hidden">
+      <button id="detail-close" title="закрыть">×</button>
+      <div id="detail-body"></div>
+    </div>
+  </aside>
+
+  <!-- Tab 4: search page (full-screen, on top of the map) -->
+  <div id="search-page">
+    <div id="sp-search-bar">
+      <input id="sp-input" type="text" placeholder="Поиск автора, публикации или департамента…" autocomplete="off" />
+      <div id="sp-results"></div>
+    </div>
+    <div id="sp-main"></div>
+  </div>
+
+  <script defer src="vendor/maplibre-gl.js"></script>
+  <script defer src="vendor/d3.min.js"></script>
+  <script defer src="graph-data.js"></script>
+  <script defer src="core.js"></script>
+  <script defer src="build.js"></script>
+  <script defer src="overlay.js"></script>
+  <script defer src="panels.js"></script>
+  <script defer src="selection.js"></script>
+  <script defer src="tab-authors.js"></script>
+  <script defer src="tab-repos.js"></script>
+  <script defer src="tab-pubs.js"></script>
+  <script defer src="search.js"></script>
+  <script defer src="main.js"></script>
+  <script defer src="graph-search.js"></script>
+</body>
+</html>
