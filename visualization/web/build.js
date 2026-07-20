@@ -38,6 +38,57 @@ function clipConvex(subject, clip) {
   return output;
 }
 
+// Territory outline detail: raster cell for boundary tracing (data units).
+// Smaller = more detailed, more jagged border.
+const HULL_CELL = 18;
+
+// Concave outline of a point set: occupied-grid boundary tracing + corner
+// smoothing. A convex hull collapses compact clusters to 3-6 vertices
+// (plain triangles/quads); this follows the actual cluster shape.
+function concaveOutline(pts) {
+  // no dilation: the outline runs along the occupied cells themselves, so
+  // territories hug their clusters tightly and keep dark space between them
+  const solid = new Set();
+  pts.forEach(p => solid.add(Math.floor(p[0] / HULL_CELL) + "," + Math.floor(p[1] / HULL_CELL)));
+  // boundary segments: cell sides not shared with another solid cell,
+  // directed so loops chain head-to-tail
+  const segs = new Map(); // "x,y" start -> [xe, ye] end (grid corner coords)
+  solid.forEach(k => {
+    const [x, y] = k.split(",").map(Number);
+    if (!solid.has(x + "," + (y - 1))) segs.set(x + "," + y, [x + 1, y]);
+    if (!solid.has((x + 1) + "," + y)) segs.set((x + 1) + "," + y, [x + 1, y + 1]);
+    if (!solid.has(x + "," + (y + 1))) segs.set((x + 1) + "," + (y + 1), [x, y + 1]);
+    if (!solid.has((x - 1) + "," + y)) segs.set(x + "," + (y + 1), [x, y]);
+  });
+  // chain segments into loops; keep the longest
+  let best = [];
+  const used = new Set();
+  segs.forEach((_, startKey) => {
+    if (used.has(startKey)) return;
+    const loop = [];
+    let key = startKey;
+    while (segs.has(key) && !used.has(key)) {
+      used.add(key);
+      const [x, y] = key.split(",").map(Number);
+      loop.push([x * HULL_CELL, y * HULL_CELL]);
+      const end = segs.get(key);
+      key = end[0] + "," + end[1];
+    }
+    if (loop.length > best.length) best = loop;
+  });
+  // two rounds of Chaikin corner-cutting: organic border instead of stairs
+  for (let round = 0; round < 2; round++) {
+    const sm = [];
+    for (let i = 0; i < best.length; i++) {
+      const P = best[i], Q = best[(i + 1) % best.length];
+      sm.push([0.75 * P[0] + 0.25 * Q[0], 0.75 * P[1] + 0.25 * Q[1]]);
+      sm.push([0.25 * P[0] + 0.75 * Q[0], 0.25 * P[1] + 0.75 * Q[1]]);
+    }
+    best = sm;
+  }
+  return best;
+}
+
 // Largest spatial island via grid-linkage: points in the same or adjacent
 // grid cells (cell = HULL_LINK_DIST) belong to one island.
 function dominantIsland(pts) {
@@ -97,11 +148,10 @@ function buildHullFeatures() {
     if (!d || d.name === "Без департамента" || pts.length < MIN_HULL_NODES) return;
     const core = dominantIsland(pts);
     if (core.length < MIN_HULL_NODES) return;
-    const hull = d3.polygonHull(core);
-    if (!hull) return;
-    const [cx, cy] = d3.polygonCentroid(hull);
-    const inflated = hull.map(([x, y]) => [cx + (x - cx) * 1.08, cy + (y - cy) * 1.08]);
-    cands.push({ did, d, n: pts.length, hull: inflated, cx, cy });
+    const outline = concaveOutline(core);
+    if (outline.length < 3) return;
+    const [cx, cy] = d3.polygonCentroid(outline);
+    cands.push({ did, d, n: pts.length, hull: outline, cx, cy });
   });
 
   // Pass 2: clip each hull by the Voronoi cell of its island centroid —
