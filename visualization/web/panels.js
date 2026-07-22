@@ -20,22 +20,15 @@ function closePanel() {
 function renderOverview() {
   const fmt = n => n.toLocaleString("ru-RU");
   const tabLabels  = ["", "Персоналии", "Репозитории", "Публикации", "Поиск"];
-  const tabMetrics = [
-    "",
-    "Узлы: FA2 по группам департаментов. Рёбра: > n совм. публикаций",
-    "Узлы: FA2 по совместным публикациям. Рёбра: общая публикация. Размер: ★",
-    "Узлы: центроид ИТМО-авторов. Рёбра: > m общих автора ИТМО",
-  ];
   overview.innerHTML =
     `<div class="card-label">Обзор · ${tabLabels[tab]}</div>` +
-    (tabMetrics[tab] ? `<div class="overview-metric">${tabMetrics[tab]}</div>` : "") +
     `<div class="stat-grid">` +
     `<div class="stat"><div class="stat-num">${fmt(DATA.authors.length)}</div><div class="stat-lbl">авторов ИТМО</div></div>` +
     `<div class="stat"><div class="stat-num">${fmt(DATA.pubs.length)}</div><div class="stat-lbl">публикаций</div></div>` +
     `<div class="stat"><div class="stat-num">${fmt(DATA.repos.length)}</div><div class="stat-lbl">репозиториев</div></div>` +
     `<div class="stat"><div class="stat-num">${fmt(DATA.departments.filter(d => d.name !== "Без департамента").length)}</div><div class="stat-lbl">департаментов</div></div>` +
     `</div>` +
-    (tab === 2 ? `<div style="margin-top:16px;padding:11px 14px;background:var(--accent-soft);border-radius:10px;font-size:14px;font-weight:700;color:var(--accent);text-align:center;line-height:1.4">Вкладка в разработке</div>` : "");
+    (tab === 2 ? `<div style="margin-top:16px;padding:11px 14px;background:var(--surface-2);border-radius:10px;font-size:14px;font-weight:700;color:var(--text);text-align:center;line-height:1.4">Вкладка в разработке</div>` : "");
 }
 
 function showNodeCard(key) {
@@ -119,14 +112,17 @@ function _drawYearChart(svgEl, yearCounts) {
   const xCenter = y => single ? pad.l + innerW / 2 : pad.l + inset + (y - yrMin) / Math.max(1, yrMax - yrMin) * (innerW - 2 * inset);
   const barW   = Math.min(32, Math.max(4, (innerW - 2 * inset) / Math.max(1, allYears.length) - 4));
   const yScale = v => H - pad.b - (v / maxVal) * (H - pad.t - pad.b);
-  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#e22653";
-  const muted  = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim() || "#6b7480";
+  // fill/stroke reference the CSS variables directly (not resolved to a hex
+  // string here) so the chart re-colors live on theme toggle instead of
+  // keeping whatever color was baked in at draw time — a chart drawn in
+  // light mode used to go dark-on-dark and vanish after switching to dark.
+  const bar = "var(--text)", muted = "var(--muted)";
   let s = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">`;
   s += `<line x1="${pad.l}" y1="${pad.t}" x2="${W - pad.r}" y2="${pad.t}" stroke="${muted}" stroke-opacity="0.2" stroke-width="1"/>`;
   allYears.forEach(y => {
     const v = yearCounts[y] || 0, cx = xCenter(y), bx = cx - barW / 2, by = yScale(v), bh = H - pad.b - by;
     if (bh > 0) {
-      s += `<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" fill="${accent}" opacity="0.82" rx="1"/>`;
+      s += `<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" fill="${bar}" opacity="0.82" rx="1"/>`;
       s += `<text x="${cx.toFixed(1)}" y="${(by - 3).toFixed(1)}" font-size="9" fill="${muted}" text-anchor="middle">${v}</text>`;
     }
     if (allYears.length <= 12 || y % 2 === 0)

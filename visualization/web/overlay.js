@@ -5,7 +5,7 @@ const octx    = overlay.getContext("2d");
 
 // Label colors come from theme CSS variables; refreshed on theme toggle
 var _labelHalo = "rgba(255,255,255,0.92)";
-var _labelText = "#1a1d21";
+var _labelText = "#191F1D";
 function refreshLabelColors() {
   const cs = getComputedStyle(document.documentElement);
   _labelHalo = cs.getPropertyValue("--label-halo").trim() || _labelHalo;

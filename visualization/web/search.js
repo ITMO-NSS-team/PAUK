@@ -3,8 +3,23 @@
 // ---- Navigation (Tab 4) ----
 // Browser history is the single source of truth (pushState in spShow*, popstate in main.js).
 var spOnLanding = false;
+// What's currently shown on the search page — lets _onDetailReady (core.js)
+// re-render it once publication labels/journals/DOIs arrive, instead of only
+// handling the landing-page case. Without this, a deep link straight into an
+// author/pub/repo/dept profile renders once with incomplete pub data and
+// never gets backfilled once graph-search.js actually finishes loading.
+var _spCurrentView = { kind: "landing" };
 
 function spGoHome() { spShowLanding(); }
+
+function _spRefreshCurrentView() {
+  const v = _spCurrentView;
+  if (v.kind === "author") spShowAuthorProfile(v.key);
+  else if (v.kind === "pub") spShowPubProfile(v.key);
+  else if (v.kind === "repo") spShowRepoProfile(v.key);
+  else if (v.kind === "dept") spShowDeptProfile(v.id);
+  else spShowLanding();
+}
 
 function _spNavBtns() {
   return `<div class="sp-nav-btns">
@@ -132,6 +147,7 @@ function runSpSearch() {
 
 function spShowLanding() {
   spOnLanding = true;
+  _spCurrentView = { kind: "landing" };
   document.title = "PAUK";
   if (typeof _replaceUrl === "function") _replaceUrl({ tab: 4 });
   const topAuthors = [...DATA.authors].sort((a, b) => b.pubs_count - a.pubs_count).slice(0, 12);
@@ -212,6 +228,7 @@ function spShowAuthorProfile(key) {
   const n = nodeByKey.get(key);
   if (!n || n.kind !== "author") return;
   spOnLanding = false;
+  _spCurrentView = { kind: "author", key };
   document.title = `${n.label} — PAUK`;
   if (typeof _pushUrl === "function") _pushUrl({ tab: 4, kind: "author", key });
   const pubs  = (authorPubs.get(key) || []).map(k => nodeByKey.get(k)).filter(Boolean)
@@ -307,6 +324,7 @@ function spShowPubProfile(key) {
   const n = nodeByKey.get(key);
   if (!n || n.kind !== "pub") return;
   spOnLanding = false;
+  _spCurrentView = { kind: "pub", key };
   document.title = `${n.label || n.key} — PAUK`;
   if (typeof _pushUrl === "function") _pushUrl({ tab: 4, kind: "pub", key });
   const authors = (pubAuthors.get(key) || []).map(k => nodeByKey.get(k)).filter(Boolean);
@@ -378,6 +396,7 @@ function spShowRepoProfile(key) {
   const n = nodeByKey.get(key);
   if (!n || n.kind !== "repo") return;
   spOnLanding = false;
+  _spCurrentView = { kind: "repo", key };
   document.title = `${n.label} — PAUK`;
   if (typeof _pushUrl === "function") _pushUrl({ tab: 4, kind: "repo", key });
   const persons = (repoPersons.get(key) || []).map(p => ({ ...p, node: nodeByKey.get(p.key) })).filter(p => p.node);
@@ -419,6 +438,7 @@ function spShowDeptProfile(id) {
   const d = deptById.get(id) || deptById.get(+id);
   if (!d) return;
   spOnLanding = false;
+  _spCurrentView = { kind: "dept", id: d.id };
   document.title = `${d.name} — PAUK`;
   if (typeof _pushUrl === "function") _pushUrl({ tab: 4, kind: "dept", id: d.id });
   const deptAuthors = DATA.authors.filter(a => a.dept == id)

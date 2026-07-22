@@ -58,8 +58,8 @@ NO_DEPT_NAME = "Без департамента"
 NO_DEPT_COLOR = "#8a8f98"
 
 # Edge export thresholds (the layout is computed over the full graph)
-COAUTH_MIN_W = 2       # min joint publications for an author-author edge
-PUB_EDGE_MIN_W = 3     # min shared ITMO authors for a publication-publication edge
+COAUTH_MIN_W = 2  # min joint publications for an author-author edge
+PUB_EDGE_MIN_W = 3  # min shared ITMO authors for a publication-publication edge
 
 # Frontend coordinate space: 0..1000 (core.js: S = 1000)
 COORD_MIN, COORD_MAX = 30.0, 970.0
@@ -67,7 +67,7 @@ COORD_MIN, COORD_MAX = 30.0, 970.0
 FA2_ITER_AUTHORS = int(os.getenv("PAUK_FA2_ITER_AUTHORS", "300"))
 FA2_ITER_PUBS = int(os.getenv("PAUK_FA2_ITER_PUBS", "250"))
 FA2_ITER_REPOS = int(os.getenv("PAUK_FA2_ITER_REPOS", "100"))
-PUB_LAYOUT_TOP_K = 6   # strongest shared-author edges kept per publication for layout
+PUB_LAYOUT_TOP_K = 6  # strongest shared-author edges kept per publication for layout
 
 
 def golden_color(i: int) -> str:
@@ -115,7 +115,7 @@ def fit_coords(pos: dict) -> dict:
     }
 
 
-DEPT_EDGE_K = 3        # random same-department peers each node is tied to
+DEPT_EDGE_K = 3  # random same-department peers each node is tied to
 DEPT_EDGE_WEIGHT = 1.0  # comparable to real edges (joint pubs start at 1.0)
 # Publications use a much weaker department term: a dense random same-dept
 # graph is structureless and relaxes into a featureless ball ("circle") under
@@ -159,8 +159,9 @@ def spread_min_distance(pos, d_min, seed, iters=800):
     return {k: (round(float(x), 1), round(float(y), 1)) for k, (x, y) in zip(keys, P)}
 
 
-def sparse_dept_edges(all_ids, dept_of, rng, k=DEPT_EDGE_K, weight=DEPT_EDGE_WEIGHT,
-                      taper_size=None):
+def sparse_dept_edges(
+    all_ids, dept_of, rng, k=DEPT_EDGE_K, weight=DEPT_EDGE_WEIGHT, taper_size=None
+):
     """Weak "shared department" edges for the layout: each node is tied to k
     random peers from its department. A sparse random graph clusters into an
     organic blob under FA2 — unlike a per-department hub/anchor node, whose
@@ -214,7 +215,9 @@ def fa2_blended_layout(edge_weights, all_ids, max_iter, seed):
     giant = max(comps, key=len) if comps else set()
     if len(giant) < 2:
         giant = set()
-    small = sorted((c for c in comps if c is not giant and len(c) >= 2), key=len, reverse=True)
+    small = sorted(
+        (c for c in comps if c is not giant and len(c) >= 2), key=len, reverse=True
+    )
     singles = sorted(n for c in comps if c is not giant and len(c) == 1 for n in c)
 
     pos = {}
@@ -264,9 +267,11 @@ def fa2_blended_layout(edge_weights, all_ids, max_iter, seed):
             pos[n] = free_spot(patch_point)
 
     for n in singles:
+
         def gen():
             ax, ay = rng.choice(crowd)
             return rng.gauss(ax, STRANDED_JITTER), rng.gauss(ay, STRANDED_JITTER)
+
         pos[n] = free_spot(gen)
 
     stats = (len(giant), G.subgraph(giant).number_of_edges(), len(small), len(singles))
@@ -300,15 +305,25 @@ def cypher(driver, query, **params):
         try:
             t0 = time.time()
             records, _, _ = driver.execute_query(query, **params)
-            logger.info("запрос вернул %d строк за %.1f c: %s…",
-                        len(records), time.time() - t0, query.lstrip()[:60])
+            logger.info(
+                "запрос вернул %d строк за %.1f c: %s…",
+                len(records),
+                time.time() - t0,
+                query.lstrip()[:60],
+            )
             return [tuple(r.values()) for r in records]
         except (ServiceUnavailable, SessionExpired, TransientError, OSError) as exc:
             if attempt == CYPHER_RETRIES:
                 raise
             wait = min(60, 5 * attempt)
-            logger.warning("запрос упал (%s: %s), попытка %d/%d, пауза %d c",
-                           type(exc).__name__, exc, attempt, CYPHER_RETRIES, wait)
+            logger.warning(
+                "запрос упал (%s: %s), попытка %d/%d, пауза %d c",
+                type(exc).__name__,
+                exc,
+                attempt,
+                CYPHER_RETRIES,
+                wait,
+            )
             time.sleep(wait)
 
 
@@ -408,7 +423,9 @@ def build_graph_data(db, seed: int):
     pubs_rows = [r for r in db["publications"] if r[0] in pub_authors]
     pub_ids = {r[0] for r in pubs_rows}
     logger.info(
-        "publications with ITMO authors: %d of %d", len(pubs_rows), len(db["publications"])
+        "publications with ITMO authors: %d of %d",
+        len(pubs_rows),
+        len(db["publications"]),
     )
 
     # --- static author departments (:Person:Itmo)-[:BELONGS_TO]->(:Department) -
@@ -435,7 +452,11 @@ def build_graph_data(db, seed: int):
     author_dept = {}
     for per in static_depts:
         dept = None
-        for pid in sorted(author_pubs.get(per, []), key=lambda p: (pub_date.get(p, ""), p), reverse=True):
+        for pid in sorted(
+            author_pubs.get(per, []),
+            key=lambda p: (pub_date.get(p, ""), p),
+            reverse=True,
+        ):
             if pub_primary.get(pid):
                 dept = pub_primary[pid]
                 break
@@ -512,7 +533,7 @@ def build_graph_data(db, seed: int):
             "n_repos": n_repo[no_dept_gid],
         }
     )
-    logger.info("departments: %d (+ \"%s\")", len(ordered), NO_DEPT_NAME)
+    logger.info('departments: %d (+ "%s")', len(ordered), NO_DEPT_NAME)
 
     # --- co-authorship graph and FA2 layout -------------------------------------
     # Proximity measure per the original design: joint publications + joint
@@ -543,7 +564,12 @@ def build_graph_data(db, seed: int):
     logger.info(
         "FA2 over authors: giant %d nodes / %d edges, blended: %d small comps + %d singles, "
         "min-sep %.1f, %.1f s",
-        n_giant, e_giant, n_small, n_single, MIN_SEP_AUTHORS, time.time() - t0,
+        n_giant,
+        e_giant,
+        n_small,
+        n_single,
+        MIN_SEP_AUTHORS,
+        time.time() - t0,
     )
 
     # --- publication-to-publication graph (shared ITMO authors) -----------------
@@ -570,8 +596,12 @@ def build_graph_data(db, seed: int):
         for w, o in lst[:PUB_LAYOUT_TOP_K]:
             pub_layout_w[(n, o) if n < o else (o, n)] = w
     for pair, w in sparse_dept_edges(
-        pub_ids, pub_primary, rng,
-        k=PUB_DEPT_EDGE_K, weight=PUB_DEPT_EDGE_WEIGHT, taper_size=150,
+        pub_ids,
+        pub_primary,
+        rng,
+        k=PUB_DEPT_EDGE_K,
+        weight=PUB_DEPT_EDGE_WEIGHT,
+        taper_size=150,
     ).items():
         pub_layout_w[pair] = pub_layout_w.get(pair, 0) + w
 
@@ -582,7 +612,12 @@ def build_graph_data(db, seed: int):
     logger.info(
         "FA2 over publications: giant %d nodes / %d edges, blended: %d small comps + %d singles, "
         "min-sep %.1f, %.1f s",
-        n_giant_p, e_giant_p, n_small_p, n_single_p, MIN_SEP_PUBS, time.time() - t0,
+        n_giant_p,
+        e_giant_p,
+        n_small_p,
+        n_single_p,
+        MIN_SEP_PUBS,
+        time.time() - t0,
     )
 
     # --- repository edges (shared publications, incl. pubs outside the graph) ---
@@ -672,16 +707,16 @@ def build_graph_data(db, seed: int):
     ]
 
     pub_edges = [
-        {"s": a, "t": b, "w": w} for (a, b), w in pub_pair_w.items() if w >= PUB_EDGE_MIN_W
+        {"s": a, "t": b, "w": w}
+        for (a, b), w in pub_pair_w.items()
+        if w >= PUB_EDGE_MIN_W
     ]
 
     repo_edges = [{"s": a, "t": b, "w": w} for (a, b), w in repo_edge_w.items()]
 
     dept_pair_w = Counter()
     for pid in pub_ids:
-        ds = sorted(
-            {g(author_dept[per]) for per in pub_authors[pid]} - {no_dept_gid}
-        )
+        ds = sorted({g(author_dept[per]) for per in pub_authors[pid]} - {no_dept_gid})
         for a, b in combinations(ds, 2):
             dept_pair_w[(a, b)] += 1
     dept_edges = [{"s": a, "t": b, "w": w} for (a, b), w in dept_pair_w.items()]
@@ -698,8 +733,13 @@ def build_graph_data(db, seed: int):
 
     logger.info(
         "edges: coauth %d, pub %d, repo %d, dept %d, repo-author %d, repo-pub %d, authorship %d",
-        len(coauth_edges), len(pub_edges), len(repo_edges), len(dept_edges),
-        len(repo_author_edges), len(repo_pub_edges), len(all_edges),
+        len(coauth_edges),
+        len(pub_edges),
+        len(repo_edges),
+        len(dept_edges),
+        len(repo_author_edges),
+        len(repo_pub_edges),
+        len(all_edges),
     )
 
     return {
@@ -751,9 +791,15 @@ def dump_js(data, prefix: str, suffix: str, path: Path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Static data generation for the web visualization")
-    parser.add_argument("--out-dir", type=Path, default=OUT_DIR_DEFAULT,
-                        help="where to write graph-data.js and graph-search.js")
+    parser = argparse.ArgumentParser(
+        description="Static data generation for the web visualization"
+    )
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=OUT_DIR_DEFAULT,
+        help="where to write graph-data.js and graph-search.js",
+    )
     parser.add_argument("--seed", type=int, default=42, help="FA2 layout seed")
     args = parser.parse_args()
 

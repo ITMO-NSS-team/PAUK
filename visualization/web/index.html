@@ -7,31 +7,116 @@
   <link rel="icon" type="image/jpeg" href="logo.jpg" />
   <link rel="stylesheet" href="vendor/maplibre-gl.css" />
   <link rel="stylesheet" href="style.css" />
-  <script>(function(){var t=localStorage.getItem("pauk-theme");if(t==="dark"||(t==null&&matchMedia("(prefers-color-scheme:dark)").matches))document.documentElement.setAttribute("data-theme","dark");})()</script>
+  <script>document.documentElement.setAttribute("data-theme","dark");</script>
 </head>
 <body>
+  <div id="boot-screen">
+    <img class="boot-logo" src="logo.jpg" alt="PAUK" />
+    <div class="boot-title">PAUK</div>
+    <div class="boot-status" id="boot-status">Загрузка карты…</div>
+  </div>
+
+  <div id="welcome-modal" class="hidden">
+    <svg id="welcome-burst" class="welcome-burst" aria-hidden="true"></svg>
+    <div class="welcome-hero">
+      <a class="welcome-badge" href="https://github.com/ITMO-NSS-team/PAUK" target="_blank" rel="noopener noreferrer">Открытый проект ИТМО <span class="welcome-badge-arrow">›</span></a>
+      <h1 class="welcome-title">Карта соавторства<br />и открытого кода ИТМО</h1>
+      <p class="welcome-subtitle">
+        Публикации, авторы и департаменты ИТМО — и связанные с ними open-source репозитории на GitHub.
+      </p>
+      <button id="welcome-close" class="welcome-cta loading" disabled>
+        <span id="welcome-cta-text">Загружаем карту…</span>
+        <span class="welcome-cta-arrow">→</span>
+      </button>
+      <div class="welcome-modes">Персоналии · Публикации · Репозитории · Поиск</div>
+    </div>
+  </div>
+
+  <!-- Not deferred, deliberately: graph-data.js (5MB+) blocks every deferred
+       script below until it finishes downloading, so anything meant to run
+       DURING that wait (which theme/hero to show, the rotating status text)
+       has to execute immediately here instead of waiting on that chain. -->
+  <script>
+  (function () {
+    var params = new URLSearchParams(location.search);
+    var hasDeepLink = !!(params.get("kind") && (params.get("key") || params.get("id") !== null));
+    window._pauk_hasDeepLink = hasDeepLink;
+
+    var targets = [];
+    if (hasDeepLink) {
+      document.getElementById("welcome-modal").style.display = "none";
+      targets.push(document.getElementById("boot-status"));
+    } else {
+      document.getElementById("boot-screen").style.display = "none";
+      document.getElementById("welcome-modal").classList.remove("hidden");
+      targets.push(document.getElementById("welcome-cta-text"));
+    }
+
+    var messages = ["Загружаем карту…", "Подгружаем данные…", "Строим графы…",
+                     "Собираем департаменты…", "Считаем связи…", "Почти готово…"];
+    var i = 0;
+    window._pauk_rotateTimer = setInterval(function () {
+      i = (i + 1) % messages.length;
+      targets.forEach(function (el) { if (el) el.textContent = messages[i]; });
+    }, 1300);
+
+    // Burst-line decoration is pure viewport geometry — no reason to wait
+    // for the data/map chain just to draw it.
+    function buildWelcomeBurst() {
+      var svg = document.getElementById("welcome-burst");
+      if (!svg) return;
+      var w = window.innerWidth, h = window.innerHeight;
+      svg.setAttribute("viewBox", "0 0 " + w + " " + h);
+      var cx = w / 2, cy = h / 2;
+      var n = Math.max(48, Math.round(w / 22));
+      var rx = Math.min(w * 0.17, 230);
+      var ry = Math.min(h * 0.26, 190);
+      var maxLen = Math.max(w, h) * 0.5;
+      var s = "";
+      for (var k = 0; k < n; k++) {
+        var angle = (k / n) * Math.PI * 2;
+        var ux = Math.cos(angle), uy = Math.sin(angle);
+        var len = maxLen * (0.45 + Math.random() * 0.55);
+        var x1 = cx + ux * rx, y1 = cy + uy * ry;
+        var x2 = cx + ux * (rx + len), y2 = cy + uy * (ry + len);
+        var op = (0.25 + Math.random() * 0.5).toFixed(2);
+        s += '<line x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '" stroke-opacity="' + op + '"/>';
+      }
+      svg.innerHTML = s;
+    }
+    window._pauk_buildWelcomeBurst = buildWelcomeBurst;
+    if (!hasDeepLink) buildWelcomeBurst();
+    var _burstResizeTimer = null;
+    window.addEventListener("resize", function () {
+      if (document.getElementById("welcome-modal").classList.contains("hidden")) return;
+      clearTimeout(_burstResizeTimer);
+      _burstResizeTimer = setTimeout(buildWelcomeBurst, 120);
+    });
+  })();
+  </script>
+
   <div id="map"></div>
   <canvas id="overlay"></canvas>
 
   <header id="topbar">
-    <div class="brand">
-      <img class="brand-logo" src="logo.jpg" alt="PAUK" />
-      <span class="brand-sub">Карта соавторства ИТМО</span>
-    </div>
     <div id="tab-toggle">
-      <button data-tab="1" class="active">Персоналии</button><button data-tab="2">Репозитории</button><button data-tab="3">Публикации</button><button data-tab="4">Поиск</button>
+      <button data-tab="1" class="active">Персоналии</button><button data-tab="3">Публикации</button><button data-tab="2">Репозитории</button><button data-tab="4">Поиск</button>
     </div>
     <div class="topbar-right">
-      <span id="loading">Карта строится ...</span>
       <button class="topbar-icon-btn" id="export-btn" title="Скачать карту как PNG">
         <svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
           <path d="M8.5 2.5v8M5.5 8l3 3 3-3"/><path d="M2.5 13.5h12"/>
         </svg>
       </button>
       <button class="theme-toggle" id="theme-toggle" title="Светлая / тёмная тема" aria-label="Переключить тему">
-        <span class="theme-icon">☀️</span>
+        <svg class="theme-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+        </svg>
         <span class="theme-track"><span class="theme-thumb"></span></span>
-        <span class="theme-icon">🌙</span>
+        <svg class="theme-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>
+        </svg>
       </button>
     </div>
   </header>
@@ -41,6 +126,7 @@
     <div class="card">
       <div class="card-label">Поиск</div>
       <input id="search" type="text" placeholder="Автор, репозиторий или публикация" autocomplete="off" />
+      <div class="search-loading-hint">Индекс публикаций ещё загружается — авторы и репозитории уже доступны</div>
       <div id="search-results"></div>
     </div>
     <div class="card" id="edge-filter-card" style="display:none;margin-top:10px">
@@ -56,7 +142,7 @@
       <div class="edge-filter-row">
         <button id="year-play-btn" class="year-play-btn" title="Проиграть по годам">▶</button>
         <input type="range" id="year-from" min="2020" max="2026" value="2026" />
-        <span id="year-from-val" style="font-size:16px;font-weight:800;color:var(--accent);min-width:36px;text-align:right">2026</span>
+        <span id="year-from-val" style="font-size:16px;font-weight:800;color:var(--text);min-width:36px;text-align:right">2026</span>
       </div>
     </div>
   </aside>
@@ -74,6 +160,7 @@
   <div id="search-page">
     <div id="sp-search-bar">
       <input id="sp-input" type="text" placeholder="Поиск автора, публикации или департамента…" autocomplete="off" />
+      <div class="search-loading-hint">Индекс публикаций ещё загружается — авторы и репозитории уже доступны</div>
       <div id="sp-results"></div>
     </div>
     <div id="sp-main"></div>

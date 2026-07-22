@@ -4,7 +4,7 @@ import gzip
 import io
 import mimetypes
 import sys
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8501
@@ -41,13 +41,18 @@ class GzipHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Encoding", "gzip")
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # client navigated away / dropped connection mid-download — not our problem
 
     def log_message(self, fmt, *args):
         pass  # quiet mode
 
 
 if __name__ == "__main__":
-    server = HTTPServer(("", PORT), GzipHandler)
+    # threaded: a slow/large download (graph-data.js is 5MB+) from one client
+    # must not block every other request behind it
+    server = ThreadingHTTPServer(("", PORT), GzipHandler)
     print(f"http://0.0.0.0:{PORT}  (gzip on)")
     server.serve_forever()

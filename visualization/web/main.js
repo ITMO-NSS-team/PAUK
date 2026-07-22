@@ -81,6 +81,30 @@ function togglePlay() {
   _playTimer ? stopPlay() : startPlay();
 }
 
+// The hero (or, for a deep link, the boot screen) is already showing by the
+// time this file even starts executing — index.html's inline early script
+// put it there and started the rotating status text, since graph-data.js
+// (5MB+) blocks every deferred script including this one from running any
+// sooner. This just stops that rotation and reveals whatever's ready.
+function finishLoading() {
+  clearInterval(window._pauk_rotateTimer);
+  if (window._pauk_hasDeepLink) {
+    const el = document.getElementById("boot-screen");
+    if (!el) return;
+    el.classList.add("hidden");
+    setTimeout(() => { el.style.display = "none"; }, 350);
+  } else {
+    const cta = document.getElementById("welcome-close");
+    cta.disabled = false;
+    cta.classList.remove("loading");
+    document.getElementById("welcome-cta-text").textContent = "Смотреть карту";
+  }
+}
+
+function hideWelcome() {
+  document.getElementById("welcome-modal").classList.add("hidden");
+}
+
 function exportPng() {
   const mapCanvas = map.getCanvas();
   const overlay   = document.getElementById("overlay");
@@ -123,21 +147,33 @@ function exportPng() {
   });
 }
 
-// Theme-dependent map layer colors; background comes from the --map-bg CSS variable
+// Theme-dependent map layer colors; background comes from the --map-bg CSS variable.
+// The chrome is pure grayscale (department/edge-kind colors are the only color on
+// the page), so with the map background now near-white / near-black (much higher
+// contrast than the old soft grays), these decorative lines need to actually flip
+// per theme rather than use one fixed mid-tone that used to work for both.
 function _applyMapTheme(dark) {
   if (!map || !map.getLayer) return;
   const mapBg = getComputedStyle(document.documentElement)
-    .getPropertyValue("--map-bg").trim() || (dark ? "#111214" : "#eef1f5");
+    .getPropertyValue("--map-bg").trim() || (dark ? "#191F1D" : "#ffffff");
   if (map.getLayer("bg"))        map.setPaintProperty("bg", "background-color", mapBg);
-  if (map.getLayer("dept-line")) map.setPaintProperty("dept-line", "line-color", dark ? "#3f444c" : "#ffffff");
+  if (map.getLayer("dept-line")) map.setPaintProperty("dept-line", "line-color", dark ? "#616161" : "#ffffff");
   if (map.getLayer("authors"))   map.setPaintProperty("authors", "circle-stroke-color",
-    dark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.28)");
+    dark ? "rgba(242,242,242,0.25)" : "rgba(25,31,29,0.28)");
+  if (map.getLayer("dept-edges"))
+    map.setPaintProperty("dept-edges", "line-color", dark ? "#7F7F7F" : "#9D9D9D");
+  if (map.getLayer("dept-focus-edges"))
+    map.setPaintProperty("dept-focus-edges", "line-color", dark ? "#F2F2F2" : "#191F1D");
+  if (map.getLayer("sel-edges"))
+    map.setPaintProperty("sel-edges", "line-color", dark ? "#F2F2F2" : "#191F1D");
 }
 
 function _applyTheme(dark) {
+  // No persistence by design: every fresh load starts dark regardless of
+  // what a visitor toggled last time — the toggle only affects the current
+  // session, on purpose.
   if (dark) document.documentElement.setAttribute("data-theme", "dark");
   else      document.documentElement.removeAttribute("data-theme");
-  localStorage.setItem("pauk-theme", dark ? "dark" : "light");
   _applyMapTheme(dark);
   if (typeof refreshLabelColors === "function") { refreshLabelColors(); drawOverlay(); }
 }
@@ -189,7 +225,7 @@ function updateEdgeFilterUI(t) {
 
 var map = new maplibregl.Map({
   container: "map",
-  style: { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#eef1f5" } }] },
+  style: { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#ffffff" } }] },
   center: [0, 0], zoom: 5.3, minZoom: 4.3, maxZoom: 15,
   renderWorldCopies: false, attributionControl: false, preserveDrawingBuffer: true,
 });
@@ -215,14 +251,14 @@ map.on("load", () => {
   map.addLayer({ id: "dept-edges", type: "line", source: "dept-edges",
     layout: { "line-cap": "round" },
     paint: {
-      "line-color": "#9aa8d8",
+      "line-color": "#9D9D9D",
       "line-width": ["interpolate", ["linear"], ["get", "w"], 2, 0.6, 50, 4, 385, 8],
       "line-opacity": DEPT_EDGE_OPACITY,
     } });
   map.addLayer({ id: "dept-focus-edges", type: "line", source: "dept-focus",
     layout: { "line-cap": "round" },
     paint: {
-      "line-color": "#7b8bd0",
+      "line-color": "#191F1D",
       "line-width": ["interpolate", ["linear"], ["get", "w"], 1, 1, 50, 5, 385, 9],
       "line-opacity": FOCUS_EDGE_OPACITY,
     } });
@@ -271,7 +307,7 @@ map.on("load", () => {
     } });
 
   map.addLayer({ id: "sel-edges", type: "line", source: "sel-edges",
-    paint: { "line-color": "#e22653", "line-width": 1.8, "line-opacity": 0.9 } });
+    paint: { "line-color": "#191F1D", "line-width": 1.8, "line-opacity": 0.9 } });
   map.addLayer({ id: "sel-points", type: "circle", source: "sel-points",
     paint: {
       "circle-color": ["get", "color"],
@@ -325,7 +361,7 @@ map.on("load", () => {
   renderOverview();
   const _initCam = map.cameraForBounds(FIT, { padding: 30 });
   map.easeTo({ center: _initCam ? _initCam.center : [0, 0], zoom: 5.6, duration: 0 });
-  document.getElementById("loading").style.display = "none";
+  finishLoading();
   sizeOverlay();
   map.on("render", drawOverlay);
   drawOverlay();
@@ -337,12 +373,15 @@ map.on("load", () => {
   });
 
   document.getElementById("export-btn").addEventListener("click", exportPng);
+  document.getElementById("welcome-close").addEventListener("click", hideWelcome);
 
   // Initial routing. For profile URLs, push the landing page into history first,
   // so the browser "back" button leads there instead of leaving the site.
+  // The URL's own ?tab= is honored as-is — a reload should return you to
+  // where you were, same as any normal page.
   const _initParams = Object.fromEntries(new URLSearchParams(location.search));
   const _initTab = +(_initParams.tab || 1);
-  if (_initTab === 4 && _initParams.kind) {
+  if (_initTab === 4 && window._pauk_hasDeepLink) {
     history.replaceState({ tab: 4 }, "", "?tab=4");
     _applyUrlState(_initParams);
   } else {

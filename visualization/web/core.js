@@ -20,8 +20,51 @@ DATA.authors.forEach(n => nodeByKey.set(n.key, n));
 DATA.repos.forEach(n => nodeByKey.set(n.key, n));
 DATA.pubs.forEach(n => nodeByKey.set(n.key, n));
 
+// Department colors come out of generate_data.py fully saturated (HLS s=0.4) —
+// fine on their own, but too crayon-bright against the site's grayscale-minimal
+// chrome. Muting them once here, at the single point every color consumer reads
+// from (dots, hulls, dept-dots, legends), keeps departments distinguishable
+// without fighting the rest of the page for attention.
+const NODE_COLOR_SAT_MUL = 0.55;
+function hexToHsl(hex) {
+  const r = parseInt(hex.slice(1, 3), 16) / 255, g = parseInt(hex.slice(3, 5), 16) / 255, b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0; const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h /= 6;
+  }
+  return [h, s, l];
+}
+function hslToHex(h, s, l) {
+  const hue2rgb = (p, q, t) => {
+    if (t < 0) t += 1; if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  let r, g, b;
+  if (s === 0) { r = g = b = l; }
+  else {
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1 / 3); g = hue2rgb(p, q, h); b = hue2rgb(p, q, h - 1 / 3);
+  }
+  const toHex = v => Math.round(v * 255).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+function muteColor(hex) {
+  const [h, s, l] = hexToHsl(hex);
+  return hslToHex(h, s * NODE_COLOR_SAT_MUL, l);
+}
+
 const deptById = new Map();
-DATA.departments.forEach(d => deptById.set(d.id, d));
+DATA.departments.forEach(d => { d.color = muteColor(d.color); deptById.set(d.id, d); });
 
 const authorPubs = new Map();
 const pubAuthors = new Map();
@@ -115,6 +158,7 @@ function esc(s) {
 function empty() { return { type: "FeatureCollection", features: [] }; }
 
 // Merge publication text data loaded from graph-search.js
+window._pubDetailReady = false;
 window._onDetailReady = function(detail) {
   detail.forEach(d => {
     const n = nodeByKey.get(d.key);
@@ -125,9 +169,13 @@ window._onDetailReady = function(detail) {
     n.has_code = d.has_code;
     n.code_url = d.code_url;
   });
+  window._pubDetailReady = true;
+  document.querySelectorAll(".search-loading-hint").forEach(el => el.classList.add("hidden"));
   if (typeof window._rebuildPubSearch === "function") window._rebuildPubSearch();
-  if (tab === 4 && typeof spShowLanding === "function" &&
-      typeof spOnLanding !== "undefined" && spOnLanding) spShowLanding();
+  // Re-render whatever's currently on the search page — not just the landing
+  // case — so a profile opened via deep link (before this data arrived) gets
+  // its publication titles/journals/DOIs backfilled instead of staying blank.
+  if (tab === 4 && typeof _spRefreshCurrentView === "function") _spRefreshCurrentView();
 };
 if (window._pendingDetail) {
   window._onDetailReady(window._pendingDetail);
