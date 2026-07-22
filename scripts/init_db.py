@@ -1,7 +1,7 @@
 import logging
 import sqlite3
 
-from config import DB_PATH
+from data_enrichment.config import DB_PATH
 
 logger = logging.getLogger(__name__)
 

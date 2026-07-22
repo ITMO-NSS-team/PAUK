@@ -3,16 +3,16 @@ import logging
 import time
 
 import requests
-from config import DOWNLOAD_TIMEOUT, LLM_RATE_LIMIT_SLEEP, OPENROUTER_API_KEY, OPENROUTER_URL
+
+from .config import LLM_RATE_LIMIT_SLEEP, LLM_TIMEOUT, OPENROUTER_API_KEY, OPENROUTER_URL
 
 logger = logging.getLogger(__name__)
 
 
-def chat_json(model: str, messages: list[dict], timeout: int = DOWNLOAD_TIMEOUT) -> dict | None:
+def chat_json(model: str, messages: list[dict], timeout: int = LLM_TIMEOUT) -> dict | None:
     """POST в OpenRouter, вернуть распарсенный JSON ответа модели или None.
 
-    None при: нет ключа, сетевой ошибке, 429/нештатном статусе, пустом
-    content (reasoning-модели иногда так делают) или невалидном JSON.
+    None при отсутствии ключа, сетевой ошибке, 429, пустом content или невалидном JSON.
     """
     if not OPENROUTER_API_KEY:
         logger.error("OPENROUTER_API_KEY не задан в .env")
@@ -37,7 +37,7 @@ def chat_json(model: str, messages: list[dict], timeout: int = DOWNLOAD_TIMEOUT)
         return None
 
     if response.status_code == 429:
-        logger.warning("OpenRouter 429 (rate limit), пауза %d сек", LLM_RATE_LIMIT_SLEEP)
+        logger.warning("OpenRouter 429 rate limit, пауза %d сек", LLM_RATE_LIMIT_SLEEP)
         time.sleep(LLM_RATE_LIMIT_SLEEP)
         return None
     if response.status_code != 200:
