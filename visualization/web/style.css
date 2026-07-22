@@ -125,9 +125,6 @@ body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-font
 .boot-status { font-size: 13px; color: var(--muted); }
 
 /* ---------- welcome hero ---------- */
-/* Solid full-viewport takeover — not a dimmed modal over the map — so it
-   works identically whether it's the first thing shown after boot, or
-   reopened later via the topbar info button. */
 #welcome-modal {
   position: fixed; inset: 0; z-index: 26;
   display: flex; align-items: center; justify-content: center;
@@ -263,8 +260,7 @@ body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-font
 #detail-body > * { animation: detailFadeIn 0.18s ease both; }
 #detail { flex: 1 1 auto; overflow-y: auto; position: relative; overscroll-behavior: none; }
 #detail-close {
-  /* z-index: #detail-body children form a stacking context because of the
-     transform animation and would otherwise intercept clicks on the button's lower part */
+  /* z-index needed: #detail-body's animation gives it its own stacking context */
   position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; z-index: 2;
   display: flex; align-items: center; justify-content: center;
   background: none; border: none; -webkit-appearance: none; appearance: none;
@@ -289,9 +285,7 @@ body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-font
 }
 .tag { display: inline-block; padding: 1px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; background: var(--surface-2); color: var(--text); }
 .tag.gray { background: var(--surface-2); color: var(--muted); }
-/* .tag.green is the one deliberate exception to the grayscale rule: "has code"
-   is a genuine binary data signal (same tier as department color), not chrome. */
-.tag.green { background: #e4f7ec; color: #1a9d54; }
+.tag.green { background: #e4f7ec; color: #1a9d54; } /* deliberate exception: "has code" is a data signal, not chrome */
 .tag.blue  { background: var(--surface-2); color: var(--text); }
 :root[data-theme="dark"] .tag.green { background: #0f2d1c; color: #4ade80; }
 a { color: var(--text); text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 2px; }

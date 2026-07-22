@@ -81,11 +81,9 @@ function togglePlay() {
   _playTimer ? stopPlay() : startPlay();
 }
 
-// The hero (or, for a deep link, the boot screen) is already showing by the
-// time this file even starts executing — index.html's inline early script
-// put it there and started the rotating status text, since graph-data.js
-// (5MB+) blocks every deferred script including this one from running any
-// sooner. This just stops that rotation and reveals whatever's ready.
+// index.html's inline script already shows the hero/boot screen and starts
+// the rotating status text (graph-data.js blocks this file from running any
+// sooner) — this just stops the rotation and reveals whatever's ready.
 function finishLoading() {
   clearInterval(window._pauk_rotateTimer);
   if (window._pauk_hasDeepLink) {
@@ -148,10 +146,6 @@ function exportPng() {
 }
 
 // Theme-dependent map layer colors; background comes from the --map-bg CSS variable.
-// The chrome is pure grayscale (department/edge-kind colors are the only color on
-// the page), so with the map background now near-white / near-black (much higher
-// contrast than the old soft grays), these decorative lines need to actually flip
-// per theme rather than use one fixed mid-tone that used to work for both.
 function _applyMapTheme(dark) {
   if (!map || !map.getLayer) return;
   const mapBg = getComputedStyle(document.documentElement)
@@ -169,9 +163,7 @@ function _applyMapTheme(dark) {
 }
 
 function _applyTheme(dark) {
-  // No persistence by design: every fresh load starts dark regardless of
-  // what a visitor toggled last time — the toggle only affects the current
-  // session, on purpose.
+  // no localStorage: every fresh load starts dark by design
   if (dark) document.documentElement.setAttribute("data-theme", "dark");
   else      document.documentElement.removeAttribute("data-theme");
   _applyMapTheme(dark);
@@ -377,8 +369,6 @@ map.on("load", () => {
 
   // Initial routing. For profile URLs, push the landing page into history first,
   // so the browser "back" button leads there instead of leaving the site.
-  // The URL's own ?tab= is honored as-is — a reload should return you to
-  // where you were, same as any normal page.
   const _initParams = Object.fromEntries(new URLSearchParams(location.search));
   const _initTab = +(_initParams.tab || 1);
   if (_initTab === 4 && window._pauk_hasDeepLink) {

@@ -3,11 +3,7 @@
 // ---- Navigation (Tab 4) ----
 // Browser history is the single source of truth (pushState in spShow*, popstate in main.js).
 var spOnLanding = false;
-// What's currently shown on the search page — lets _onDetailReady (core.js)
-// re-render it once publication labels/journals/DOIs arrive, instead of only
-// handling the landing-page case. Without this, a deep link straight into an
-// author/pub/repo/dept profile renders once with incomplete pub data and
-// never gets backfilled once graph-search.js actually finishes loading.
+// What's currently shown, so _onDetailReady (core.js) can re-render it once pub data arrives
 var _spCurrentView = { kind: "landing" };
 
 function spGoHome() { spShowLanding(); }

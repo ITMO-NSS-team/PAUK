@@ -20,11 +20,7 @@ DATA.authors.forEach(n => nodeByKey.set(n.key, n));
 DATA.repos.forEach(n => nodeByKey.set(n.key, n));
 DATA.pubs.forEach(n => nodeByKey.set(n.key, n));
 
-// Department colors come out of generate_data.py fully saturated (HLS s=0.4) —
-// fine on their own, but too crayon-bright against the site's grayscale-minimal
-// chrome. Muting them once here, at the single point every color consumer reads
-// from (dots, hulls, dept-dots, legends), keeps departments distinguishable
-// without fighting the rest of the page for attention.
+// Desaturate the fully-saturated colors from generate_data.py to match the grayscale chrome
 const NODE_COLOR_SAT_MUL = 0.55;
 function hexToHsl(hex) {
   const r = parseInt(hex.slice(1, 3), 16) / 255, g = parseInt(hex.slice(3, 5), 16) / 255, b = parseInt(hex.slice(5, 7), 16) / 255;
@@ -172,9 +168,7 @@ window._onDetailReady = function(detail) {
   window._pubDetailReady = true;
   document.querySelectorAll(".search-loading-hint").forEach(el => el.classList.add("hidden"));
   if (typeof window._rebuildPubSearch === "function") window._rebuildPubSearch();
-  // Re-render whatever's currently on the search page — not just the landing
-  // case — so a profile opened via deep link (before this data arrived) gets
-  // its publication titles/journals/DOIs backfilled instead of staying blank.
+  // refresh the current search-page view so deep-linked profiles get backfilled
   if (tab === 4 && typeof _spRefreshCurrentView === "function") _spRefreshCurrentView();
 };
 if (window._pendingDetail) {

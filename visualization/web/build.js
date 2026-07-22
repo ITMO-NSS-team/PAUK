@@ -2,18 +2,14 @@
 
 const MIN_HULL_NODES = 30;
 const BACKBONE_N     = 35;
-// Members closer than this (data units, 0..1000) count as one spatial island.
-// A department's hull is drawn around its LARGEST island only: members are often
-// scattered across several collaboration clusters, and a hull over all of them
-// would span half the map and overlap other territories. Counts shown in the UI
-// still reflect all members — this only affects the drawn shape.
+// Hull is drawn around a department's largest spatial island only (see
+// dominantIsland) — members scattered across unrelated clusters would
+// otherwise balloon the territory across the whole map.
 const HULL_LINK_DIST = 30;
 
-// Convex polygon clip (Sutherland–Hodgman). Both rings are [[x,y],...]; the
-// clip ring must be convex (Voronoi cells are). Returns possibly-empty ring.
+// Sutherland-Hodgman convex clip; clip ring must be convex (Voronoi cells are)
 function clipConvex(subject, clip) {
   const cross = (a, b, p) => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
-  // normalize clip to counter-clockwise so "inside" is cross >= 0
   let area = 0;
   for (let i = 0; i < clip.length; i++) {
     const p = clip[i], q = clip[(i + 1) % clip.length];
@@ -38,20 +34,13 @@ function clipConvex(subject, clip) {
   return output;
 }
 
-// Territory outline detail: raster cell for boundary tracing (data units).
-// Smaller = more detailed, more jagged border.
-const HULL_CELL = 18;
+const HULL_CELL = 18; // raster cell for boundary tracing; smaller = more jagged
 
-// Concave outline of a point set: occupied-grid boundary tracing + corner
-// smoothing. A convex hull collapses compact clusters to 3-6 vertices
-// (plain triangles/quads); this follows the actual cluster shape.
+// Concave outline via occupied-grid boundary tracing + Chaikin smoothing —
+// a convex hull collapses compact clusters to 3-6 vertices (plain triangles)
 function concaveOutline(pts) {
-  // no dilation: the outline runs along the occupied cells themselves, so
-  // territories hug their clusters tightly and keep dark space between them
   const solid = new Set();
   pts.forEach(p => solid.add(Math.floor(p[0] / HULL_CELL) + "," + Math.floor(p[1] / HULL_CELL)));
-  // boundary segments: cell sides not shared with another solid cell,
-  // directed so loops chain head-to-tail
   const segs = new Map(); // "x,y" start -> [xe, ye] end (grid corner coords)
   solid.forEach(k => {
     const [x, y] = k.split(",").map(Number);
@@ -60,7 +49,6 @@ function concaveOutline(pts) {
     if (!solid.has(x + "," + (y + 1))) segs.set((x + 1) + "," + (y + 1), [x, y + 1]);
     if (!solid.has((x - 1) + "," + y)) segs.set(x + "," + (y + 1), [x, y]);
   });
-  // chain segments into loops; keep the longest
   let best = [];
   const used = new Set();
   segs.forEach((_, startKey) => {
@@ -76,7 +64,6 @@ function concaveOutline(pts) {
     }
     if (loop.length > best.length) best = loop;
   });
-  // two rounds of Chaikin corner-cutting: organic border instead of stairs
   for (let round = 0; round < 2; round++) {
     const sm = [];
     for (let i = 0; i < best.length; i++) {
@@ -89,8 +76,7 @@ function concaveOutline(pts) {
   return best;
 }
 
-// Largest spatial island via grid-linkage: points in the same or adjacent
-// grid cells (cell = HULL_LINK_DIST) belong to one island.
+// Largest spatial island via grid-linkage (points in adjacent cells belong together)
 function dominantIsland(pts) {
   const cell = HULL_LINK_DIST;
   const grid = new Map();
@@ -141,7 +127,6 @@ function buildHullFeatures() {
     deptCentroid.set(did, [acc[0] / acc[2], acc[1] / acc[2]]);
   });
 
-  // Pass 1: dominant island + raw hull per eligible department
   const cands = [];
   byDept.forEach((pts, did) => {
     const d = deptById.get(did);
@@ -154,8 +139,7 @@ function buildHullFeatures() {
     cands.push({ did, d, n: pts.length, hull: outline, cx, cy });
   });
 
-  // Pass 2: clip each hull by the Voronoi cell of its island centroid —
-  // Voronoi cells are disjoint, so territories can never overlap.
+  // clip each hull to its island's Voronoi cell — cells are disjoint, so territories can't overlap
   const features = [];
   if (cands.length) {
     const voronoi = d3.Delaunay.from(cands.map(c => [c.cx, c.cy]))

@@ -32,10 +32,8 @@
     </div>
   </div>
 
-  <!-- Not deferred, deliberately: graph-data.js (5MB+) blocks every deferred
-       script below until it finishes downloading, so anything meant to run
-       DURING that wait (which theme/hero to show, the rotating status text)
-       has to execute immediately here instead of waiting on that chain. -->
+  <!-- Not deferred: graph-data.js (5MB+) blocks every deferred script below
+       until it downloads, so this needs to run immediately instead. -->
   <script>
   (function () {
     var params = new URLSearchParams(location.search);
@@ -60,8 +58,6 @@
       targets.forEach(function (el) { if (el) el.textContent = messages[i]; });
     }, 1300);
 
-    // Burst-line decoration is pure viewport geometry — no reason to wait
-    // for the data/map chain just to draw it.
     function buildWelcomeBurst() {
       var svg = document.getElementById("welcome-burst");
       if (!svg) return;

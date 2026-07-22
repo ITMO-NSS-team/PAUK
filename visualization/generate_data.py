@@ -117,9 +117,7 @@ def fit_coords(pos: dict) -> dict:
 
 DEPT_EDGE_K = 3  # random same-department peers each node is tied to
 DEPT_EDGE_WEIGHT = 1.0  # comparable to real edges (joint pubs start at 1.0)
-# Publications use a much weaker department term: a dense random same-dept
-# graph is structureless and relaxes into a featureless ball ("circle") under
-# FA2; with k=1/w=0.5 the real shared-author links shape each cluster instead.
+# weaker for pubs: at full strength the random dept graph flattens big pubs into a featureless disc
 PUB_DEPT_EDGE_K = 1
 PUB_DEPT_EDGE_WEIGHT = 0.5
 STRANDED_JITTER = 55.0  # sigma of the blend-in scatter, in final 0..1000 units
@@ -129,11 +127,8 @@ MIN_SEP_PUBS = float(os.getenv("PAUK_MIN_SEP_PUBS", "3.5"))
 
 
 def spread_min_distance(pos, d_min, seed, iters=800):
-    """Collision-removal pass: iteratively push apart any pair of nodes closer
-    than d_min. Converged FA2 clusters are so dense they render as solid
-    filled discs ("circles"); spacing nodes out turns them into readable
-    point clouds while keeping the global structure — pushes are tiny and
-    local, only ever between already-overlapping neighbors."""
+    """Push apart any pair of nodes closer than d_min — converged FA2 clusters
+    are dense enough to render as solid filled discs otherwise."""
     import numpy as np
     from scipy.spatial import cKDTree
 
@@ -162,16 +157,13 @@ def spread_min_distance(pos, d_min, seed, iters=800):
 def sparse_dept_edges(
     all_ids, dept_of, rng, k=DEPT_EDGE_K, weight=DEPT_EDGE_WEIGHT, taper_size=None
 ):
-    """Weak "shared department" edges for the layout: each node is tied to k
-    random peers from its department. A sparse random graph clusters into an
-    organic blob under FA2 — unlike a per-department hub/anchor node, whose
-    star topology arranges leaves in a perfect circle around it (rings were
-    exactly the visual artifact this replaces).
+    """Weak "shared department" edges: each node ties to k random peers from
+    its department. Sparse random graph -> organic blob under FA2; a
+    per-department hub/anchor node instead arranges its leaves in a perfect
+    circle (rings were exactly the artifact this replaces).
 
-    taper_size: if set, departments larger than this get proportionally
-    weaker edges (weight * taper_size/size). Big departments are already
-    held together by their real edges; at full strength the random dept
-    graph homogenizes them into a featureless disc."""
+    taper_size: departments larger than this get proportionally weaker
+    edges, so already-large depts don't flatten into a featureless disc."""
     by_dept = defaultdict(list)
     for i in all_ids:
         d = dept_of.get(i)
@@ -193,21 +185,15 @@ def sparse_dept_edges(
 
 
 def fa2_blended_layout(edge_weights, all_ids, max_iter, seed):
-    """FA2 over the GIANT connected component only, then blend everything
-    else into the resulting cloud.
+    """FA2 over the GIANT connected component only, then blend everything else
+    in afterward. This is essential, not an optimization: disconnected
+    components only repel each other and drift apart without bound as
+    iterations grow, so the real content gets crushed to a dot on rescale
+    ("everything piled in the center") if FA2 runs on the full graph.
 
-    Restricting FA2 to the giant component is essential: disconnected
-    components feel only repulsion from each other and drift apart without
-    bound as iterations grow — the giant component then gets crushed into a
-    tiny blob when coordinates are rescaled (this was the "everything piled
-    in the center" artifact).
-
-    Blending (mimics the original lost layout, where isolated authors were
-    interspersed through the whole map — no center pile, no ring):
-      - small components (>=2 nodes) stay together as one tight patch near a
-        random crowd position, so nodes that DO collaborate remain adjacent;
-      - true singletons land near a random crowd position with jitter,
-        spaced out on a coarse occupancy grid so they don't clump."""
+    Small components (>=2 nodes) land together as one tight patch so
+    collaborators stay adjacent; true singletons scatter individually with
+    jitter on a coarse occupancy grid so they don't clump or ring."""
     G = nx.Graph()
     G.add_nodes_from(all_ids)
     G.add_weighted_edges_from((a, b, w) for (a, b), w in edge_weights.items())
@@ -253,9 +239,7 @@ def fa2_blended_layout(edge_weights, all_ids, max_iter, seed):
         ccx = min(940.0, max(60.0, rng.gauss(ax, STRANDED_JITTER)))
         ccy = min(940.0, max(60.0, rng.gauss(ay, STRANDED_JITTER)))
         radius = 6.0 + 2.2 * math.sqrt(len(comp))
-        # random stretch + rotation per patch: an isotropic Gaussian would
-        # draw every small component as a neat round spot
-        sx, sy = rng.uniform(0.55, 1.6), rng.uniform(0.55, 1.6)
+        sx, sy = rng.uniform(0.55, 1.6), rng.uniform(0.55, 1.6)  # stretch/rotate so patches aren't neat circles
         ang = rng.uniform(0.0, math.pi)
         cos_a, sin_a = math.cos(ang), math.sin(ang)
 
@@ -294,11 +278,8 @@ CYPHER_RETRIES = 5
 
 
 def cypher(driver, query, **params):
-    """Managed read with retries: driver.execute_query() re-runs the whole
-    query on transient/connection failures, and we add an outer retry loop
-    with backoff on top — over a VPN a single dropped connection must not
-    kill a multi-minute export (session.run() has no retry at all: one
-    mid-stream stall means SessionExpired and a dead run)."""
+    """Retrying read: a single dropped VPN connection shouldn't kill a
+    multi-minute export (plain session.run() has no retry at all)."""
     from neo4j.exceptions import ServiceUnavailable, SessionExpired, TransientError
 
     for attempt in range(1, CYPHER_RETRIES + 1):
@@ -328,15 +309,10 @@ def cypher(driver, query, **params):
 
 
 def load_db(driver):
-    """Read everything we need from Neo4j into the same flat structures
-    load_db() used to return from SQLite, so build_graph_data() below is
-    untouched.
-
-    Two things aren't plain column reads anymore, because the graph model
-    stores them as relationships rather than string columns:
-      - an author's departments -> (:Person:Itmo)-[:BELONGS_TO]->(:Department)
-      - a repo's owner          -> (:Repository)-[:OWNED_BY]->(:GitHubProfile)
-    """
+    """Read everything into the same flat structures build_graph_data() expects.
+    Author departments and repo owners aren't plain columns in the graph model —
+    they're relationships: (:Person:Itmo)-[:BELONGS_TO]->(:Department),
+    (:Repository)-[:OWNED_BY]->(:GitHubProfile)."""
     db = {}
 
     db["persons"] = cypher(
@@ -536,10 +512,8 @@ def build_graph_data(db, seed: int):
     logger.info('departments: %d (+ "%s")', len(ordered), NO_DEPT_NAME)
 
     # --- co-authorship graph and FA2 layout -------------------------------------
-    # Proximity measure per the original design: joint publications + joint
-    # repositories + shared department. The exported coauth_edges (visible
-    # lines in the UI) stay pure joint-publication counts — this richer graph
-    # is layout-only scaffolding for positioning.
+    # layout weight = joint publications + joint repos + shared dept; exported
+    # coauth_edges (visible in the UI) stay pure joint-publication counts
     coauth = Counter()
     for pid, pers in pub_authors.items():
         for a, b in combinations(sorted(set(pers)), 2):
@@ -578,13 +552,9 @@ def build_graph_data(db, seed: int):
         for a, b in combinations(sorted(set(plist)), 2):
             pub_pair_w[(a, b)] += 1
 
-    # Publications get their own FA2 layout too — shared authors + shared
-    # department — instead of inheriting their authors' centroid. A centroid
-    # degenerates badly for solo-authored publications, which just collapse
-    # onto whatever position their one author happens to have.
-    # Even one shared author is meaningful proximity, but the full w>=1 graph
-    # is ~310k edges; keeping each publication's top-K strongest edges
-    # preserves local structure at a fraction of the cost.
+    # Publications get their own FA2 layout (not their authors' centroid,
+    # which degenerates for solo-authored pubs). Full w>=1 graph is ~310k
+    # edges, so keep only each pub's top-K strongest links.
     t0 = time.time()
     strongest = defaultdict(list)
     for (a, b), w in pub_pair_w.items():
