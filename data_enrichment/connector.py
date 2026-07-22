@@ -147,7 +147,7 @@ class SqliteConnector:
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._write_lock = threading.Lock()
 
-    # низкоуровневое, временно, пока не выделены именованные методы под операции
+    # Низкоуровневый доступ только для методов ниже, операции им не пользуются.
 
     def query(self, sql: str, params: tuple = ()) -> list:
         return self._conn.execute(sql, params).fetchall()
