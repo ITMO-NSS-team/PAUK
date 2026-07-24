@@ -53,7 +53,7 @@
     "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Faculty of Secure Information Technologies",
     "name_ru": "Факультет безопасности информационных технологий",
-    "aliases": []
+    "aliases": ["FBIT", "ФБИТ", "Факультет защищённых информационных технологий"]
   },
   {
     "faculty_id": 117,
@@ -189,7 +189,7 @@
     "school_ru": "",
     "name_en": "ITMO Advanced Engineering School in Interdisciplinary Engineering",
     "name_ru": "Передовая инженерная школа междисциплинарного инжиниринга",
-    "aliases": ["Advanced Engineering School"]
+    "aliases": ["Advanced Engineering School", "PISH", "ПИШ", "Principal Engineering School", "Главная инженерная школа"]
   },
   {
     "faculty_id": 17,

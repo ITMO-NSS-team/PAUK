@@ -20,6 +20,7 @@ import sqlite3
 import time
 import uuid
 
+from affiliations import clean_affiliation, has_department_mention
 from catalog import load_catalog, normalize as catalog_normalize, official_name_en_set
 from config import (
     DB_PATH,
@@ -36,7 +37,6 @@ from llm import chat_json
 logger = logging.getLogger(__name__)
 
 NO_DEPT_SENTINEL = "-"
-AFFILIATION_SEPARATOR = " \n "
 
 SYSTEM_PROMPT = """\
 Ты — эксперт по организационной структуре университета ИТМО. Твоя задача —
@@ -46,16 +46,15 @@ SYSTEM_PROMPT = """\
 Ты получишь:
 1. ПОЛНЫЙ список департаментов ИТМО: id, name_en, name_ru, variants. Записи с
    name_ru — это ОФИЦИАЛЬНАЯ структура ИТМО; предпочитай матч именно с ними.
-2. ПАЧКУ персон, для каждой — сырое поле affiliation (строки через " \\n ").
+2. ПАЧКУ персон, для каждой — поле affiliation: как правило это уже извлечённый
+   список подразделений (через ';'); иногда — сырой текст.
 
 ДЕЙСТВИЯ:
-1. Выдели в аффилиациях упоминания подразделений ИТМО.
+1. Выдели упоминания подразделений ИТМО (если поле уже список — бери как есть).
    - Голый университет без подразделения (ITMO University, ITMO, Университет
      ИТМО) — НЕ извлекай.
-   - Несколько подразделений в одной строке (через запятую, ';' или "and") —
+   - Несколько подразделений в одной записи (через запятую, ';' или "and") —
      извлеки КАЖДОЕ отдельно.
-   - Нормализуй: убери хвостовое "ITMO University", лишние запятые/кавычки,
-     приведи к Title Case, схлопни двойные пробелы.
 2. Сравни каждое извлечённое название с департаментами (name_en, name_ru, variants).
    Авторы переводят названия своих подразделений на английский ПРОИЗВОЛЬНО —
    сопоставляй по смыслу с официальным русскоязычным названием из списка:
@@ -395,6 +394,19 @@ def fetch_persons_without_department(conn: sqlite3.Connection) -> list[tuple[str
     return cur.fetchall()
 
 
+def stage1_partition(units: list[str], index: list[tuple[str, str]]) -> tuple[list[str], list[str]]:
+    """Делит очищенные юниты на (dept_id официальных матчей, несматченные строки)."""
+    matched: list[str] = []
+    unmatched: list[str] = []
+    for unit in units:
+        ids = stage1_match(unit, index)
+        if ids:
+            matched.extend(ids)
+        else:
+            unmatched.append(unit)
+    return list(dict.fromkeys(matched)), unmatched
+
+
 def run_match(conn: sqlite3.Connection, cur: sqlite3.Cursor) -> None:
     persons = fetch_persons_without_department(conn)
     if not persons:
@@ -406,18 +418,26 @@ def run_match(conn: sqlite3.Connection, cur: sqlite3.Cursor) -> None:
     index = build_official_index(departments, official_names)
 
     remaining: list[tuple[str, str]] = []
-    stage1_hits = 0
+    stage1_hits = no_unit = 0
     for pid, aff in persons:
-        ids = stage1_match(aff or "", index)
-        if ids:
-            cur.execute("UPDATE persons_itmo SET department = ? WHERE id = ?", ("; ".join(ids), pid))
+        units = clean_affiliation(aff)                 # дедуп/очистка аффилиации до юнитов ИТМО
+        if not units:
+            if has_department_mention(aff):
+                remaining.append((pid, aff))           # подразделение упомянуто, но не извлеклось → LLM на сыром
+            else:
+                cur.execute("UPDATE persons_itmo SET department = ? WHERE id = ?", (NO_DEPT_SENTINEL, pid))
+                no_unit += 1
+            continue
+        matched, unmatched = stage1_partition(units, index)
+        if matched and not unmatched:
+            cur.execute("UPDATE persons_itmo SET department = ? WHERE id = ?", ("; ".join(matched), pid))
             stage1_hits += 1
         else:
-            remaining.append((pid, aff))
+            remaining.append((pid, "; ".join(units)))  # в LLM — короткий чистый список юнитов
     conn.commit()
     logger.info(
-        "Stage-1 (точный матч по каталогу): размечено без LLM %d/%d, на LLM осталось %d",
-        stage1_hits, len(persons), len(remaining),
+        "Stage-1: официально размечено %d/%d, без ITMO-подразделения %d, на LLM осталось %d",
+        stage1_hits, len(persons), no_unit, len(remaining),
     )
     if remaining:
         _match_stage2_llm(conn, cur, remaining)
