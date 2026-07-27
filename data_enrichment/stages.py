@@ -4,22 +4,24 @@ import logging
 import os
 import uuid
 
-from .config import (BROWSER_USER_AGENT, CLASSIFY_MODEL, DEPT_MODEL, DEPT_TIMEOUT,
-                     PAGE_SCRAPE_TIMEOUT, PERSONS_RU_MODEL, pdf_path_for)
+from .config import (
+    BROWSER_USER_AGENT,
+    CLASSIFY_MODEL,
+    DEPT_MODEL,
+    DEPT_TIMEOUT,
+    PAGE_SCRAPE_TIMEOUT,
+    PERSONS_RU_MODEL,
+    pdf_path_for,
+)
 from .conveyor import PipelinePerson, PubLinks, PubStage, PubUnit, RepoLink, Stage
-from .models import Department
-from .llm import chat_json
-
 from .helpers import (
     CLASSIFY_PROMPT,
     OpenReviewClient,
     alpha,
     author_surnames,
-    emails_from_html,
-    is_page,
-    usable_email,
     crossref_authors,
     deduplicate,
+    emails_from_html,
     emails_from_pdf,
     extract,
     extract_from_abstract,
@@ -27,6 +29,7 @@ from .helpers import (
     extract_from_person,
     fetch_openalex_author,
     fetch_orcid_record,
+    is_page,
     match_authors,
     norm,
     normalize,
@@ -36,8 +39,11 @@ from .helpers import (
     surname_match,
     tail,
     tail_id,
+    usable_email,
     verify,
 )
+from .llm import chat_json
+from .models import Department
 
 logger = logging.getLogger(__name__)
 
@@ -409,7 +415,7 @@ class CollectEmailsPages(Stage):
     def _urls(self, p: PipelinePerson) -> list[str]:
         prof = p.profile or {}
         urls = [u.get("url") for u in (prof.get("orcid") or {}).get("researcher_urls") or []]
-        urls.append(((prof.get("openreview") or {}).get("homepage")))
+        urls.append((prof.get("openreview") or {}).get("homepage"))
         return [u for u in dict.fromkeys(urls) if is_page(u)]
 
     def apply(self, p: PipelinePerson) -> None:
