@@ -2,16 +2,22 @@ from __future__ import annotations
 
 import logging
 import os
+import uuid
 
-from .config import CLASSIFY_MODEL, PERSONS_RU_MODEL, pdf_path_for
+from .config import (BROWSER_USER_AGENT, CLASSIFY_MODEL, DEPT_MODEL, DEPT_TIMEOUT,
+                     PAGE_SCRAPE_TIMEOUT, PERSONS_RU_MODEL, pdf_path_for)
 from .conveyor import PipelinePerson, PubLinks, PubStage, PubUnit, RepoLink, Stage
+from .models import Department
 from .llm import chat_json
 
-# Переходно тянем протестированные хелперы из старого модуля; когда operations.py
-# уйдёт, переедут сюда/в общий util.
-from .operations import (
+from .helpers import (
     CLASSIFY_PROMPT,
     OpenReviewClient,
+    alpha,
+    author_surnames,
+    emails_from_html,
+    is_page,
+    usable_email,
     crossref_authors,
     deduplicate,
     emails_from_pdf,
@@ -23,6 +29,7 @@ from .operations import (
     fetch_orcid_record,
     match_authors,
     norm,
+    normalize,
     parse_openalex_author,
     parse_orcid_record,
     search_terms,
@@ -182,8 +189,9 @@ class CollectEmailsPdf(PubStage):
             cand = match_authors(email.split("@")[0], authors)
             if len(cand) == 1:
                 part = out.setdefault(cand[0], PipelinePerson(id=cand[0]))
-                if not part.email:
-                    part.email = email
+                u = usable_email(email)
+                if u and ("pdf", u) not in part.email_candidates:
+                    part.email_candidates.append(("pdf", u))
 
 
 class ExtractRepoLinks(PubStage):
@@ -235,3 +243,191 @@ class ClassifyRepoLinks(PubStage):
             except (TypeError, ValueError):
                 link.llm_confidence = 0.0
             link.llm_reason = str(data.get("reason") or "").strip() or None
+
+
+# --- Департаменты: реестр + шортлист ------------------------------------------
+
+DEPT_SHORTLIST_PROMPT = """\
+Ты — эксперт по оргструктуре университета ИТМО. Сопоставь аффилиацию человека
+с подразделениями ИТМО.
+
+Ты получишь СПИСОК КАНДИДАТОВ (предварительно отобранные похожие подразделения:
+name_en и variants) и сырую строку affiliation.
+
+ДЕЙСТВИЯ:
+1. Выдели в аффилиации упоминания подразделений ИТМО.
+   - Голый университет без подразделения (ITMO University, ITMO) — НЕ извлекай.
+   - Несколько подразделений в одной строке — извлеки КАЖДОЕ.
+   - Нормализуй: убери хвостовое "ITMO University", кавычки, двойные пробелы.
+2. Сравни каждое извлечённое название с кандидатами:
+   - Мелкие различия (регистр, Center/Centre, Lab/Laboratory, перестановка слов)
+     — ОДНО И ТО ЖЕ → matched=true, existing_name_en из списка; если написание
+     слегка иное — add_variant_to_existing=true.
+   - Название лишь часть другого, более длинного — РАЗНЫЕ (сомневаешься — разные).
+   - Подходящего кандидата нет → matched=false, is_new=true, new_name_en.
+
+Верни СТРОГО валидный JSON без markdown:
+{"departments":[{"extracted_name":"...","matched":true,"existing_name_en":"...",
+"is_new":false,"new_name_en":"","add_variant_to_existing":false}]}
+"""
+
+
+class DepartmentRegistry:
+    """Реестр департаментов в памяти: общее растущее состояние этапа. Следующая
+    персона видит созданное предыдущей — дубликаты не плодятся (поток и так
+    последователен). В конце прогона to_models() уходит в сток."""
+
+    def __init__(self, departments: list[Department] | None = None) -> None:
+        self.departments: dict[str, Department] = {d.id: d for d in (departments or [])}
+
+    def _names(self, d: Department) -> list[str]:
+        return [n for n in [d.name_en, d.name_ru, *d.name_variants] if n]
+
+    def resolve(self, name: str) -> str | None:
+        """id по точному (нормализованному) совпадению имени/варианта."""
+        target = normalize(name)
+        if not target:
+            return None
+        for did, d in self.departments.items():
+            if any(normalize(n) == target for n in self._names(d)):
+                return did
+        return None
+
+    def create(self, name_en: str) -> str:
+        existing = self.resolve(name_en)
+        if existing:
+            return existing
+        did = f"dept_{uuid.uuid4().hex[:12]}"
+        self.departments[did] = Department(id=did, name_en=name_en)
+        return did
+
+    def add_variant(self, dept_id: str, variant: str) -> None:
+        d = self.departments.get(dept_id)
+        if not d or not variant:
+            return
+        known = {normalize(n) for n in self._names(d)}
+        if normalize(variant) not in known:
+            d.name_variants.append(variant)
+
+    def shortlist(self, affiliation: str, k: int = 8) -> list[Department]:
+        """Кандидаты по строковому сходству: подстрока → 1.0, иначе доля токенов
+        названия, найденных в аффилиации. Замена полного списка в промпте."""
+        aff_norm = normalize(affiliation)
+        aff_tokens = set(aff_norm.split())
+        scored = []
+        for d in self.departments.values():
+            best = 0.0
+            for n in self._names(d):
+                nn = normalize(n)
+                if not nn:
+                    continue
+                if nn in aff_norm:
+                    best = 1.0
+                    break
+                toks = set(nn.split())
+                if toks:
+                    best = max(best, len(toks & aff_tokens) / len(toks))
+            if best >= 0.34:
+                scored.append((best, d))
+        scored.sort(key=lambda x: -x[0])
+        return [d for _, d in scored[:k]]
+
+    def to_models(self) -> list[Department]:
+        return list(self.departments.values())
+
+
+# Голый университет — не департамент. Guard против главной ошибки LLM на этом
+# этапе (живой прогон: модель завела "ITMO University" как департамент).
+NOT_A_DEPARTMENT = {
+    "itmo", "itmo university", "university itmo", "national research university itmo",
+    "itmo national research university", "university of itmo",
+    "saint petersburg national research university of information technologies mechanics and optics",
+}
+
+
+def is_bare_university(name: str) -> bool:
+    return normalize(name) in NOT_A_DEPARTMENT
+
+
+class EnrichDepartments(Stage):
+    """Аффилиация (рабочее поле) → department_ids через LLM. В промпт идёт шортлист
+    кандидатов, не весь реестр — режет контекст на порядок. Новые департаменты
+    заводятся в реестре; сомнительное 'создать' сперва проверяется по имени."""
+
+    name = "enrich_departments"
+    model = DEPT_MODEL
+
+    def __init__(self, registry: DepartmentRegistry) -> None:
+        self.registry = registry
+
+    def apply(self, p: PipelinePerson) -> None:
+        if p.department_ids or not p.affiliation:
+            return
+        cands = self.registry.shortlist(p.affiliation)
+        cand_block = "\n".join(
+            f'- name_en: {d.name_en}\n  variants: [{", ".join(d.name_variants) or "—"}]'
+            for d in cands) or "(похожих не найдено — всё в аффилиации будет новым)"
+        data = chat_json(self.model, [
+            {"role": "system", "content": DEPT_SHORTLIST_PROMPT},
+            {"role": "user", "content": f"КАНДИДАТЫ:\n{cand_block}\n\naffiliation: {p.affiliation}"},
+        ], timeout=DEPT_TIMEOUT)
+        if not data:
+            return
+        ids: list[str] = []
+        for dep in data.get("departments", []):
+            if dep.get("is_new"):
+                name = (dep.get("new_name_en") or dep.get("extracted_name") or "").strip()
+                if name and not is_bare_university(name):
+                    ids.append(self.registry.create(name))
+                continue
+            name = (dep.get("existing_name_en") or "").strip()
+            did = self.registry.resolve(name) if name else None
+            if did is None:
+                fallback = name or (dep.get("extracted_name") or "").strip()
+                if fallback and not is_bare_university(fallback):
+                    did = self.registry.create(fallback)
+            if did:
+                ids.append(did)
+                if dep.get("add_variant_to_existing"):
+                    self.registry.add_variant(did, (dep.get("extracted_name") or "").strip())
+        p.department_ids = list(dict.fromkeys(ids))
+
+
+class CollectEmailsPages(Stage):
+    """Email с личных/лаб-страниц: адреса берутся из собранного профиля
+    (researcher_urls ORCID + homepage OpenReview), почта привязывается по фамилии
+    в локальной части. Идёт после EnrichPersons/EnrichOpenreview — нужен p.profile.
+    Кандидаты с источником "page" — выбор в finalize_emails."""
+
+    name = "collect_emails_pages"
+
+    def __init__(self) -> None:
+        import requests
+        self._session = requests.Session()
+        self._session.headers["User-Agent"] = BROWSER_USER_AGENT
+
+    def _urls(self, p: PipelinePerson) -> list[str]:
+        prof = p.profile or {}
+        urls = [u.get("url") for u in (prof.get("orcid") or {}).get("researcher_urls") or []]
+        urls.append(((prof.get("openreview") or {}).get("homepage")))
+        return [u for u in dict.fromkeys(urls) if is_page(u)]
+
+    def apply(self, p: PipelinePerson) -> None:
+        if any(src == "page" for src, _ in p.email_candidates):   # уже обходили
+            return
+        surnames = author_surnames(p.name_en or "", None) | {
+            s for v in p.name_variants for s in author_surnames(v, None)}
+        if not surnames:
+            return
+        for url in self._urls(p):
+            try:
+                r = self._session.get(url, timeout=PAGE_SCRAPE_TIMEOUT, allow_redirects=True)
+            except Exception:
+                continue
+            if r.status_code != 200 or "html" not in r.headers.get("Content-Type", "").lower():
+                continue
+            for email in emails_from_html(r.text):
+                if any(s in alpha(email.split("@")[0]) for s in surnames):
+                    u = usable_email(email)
+                    if u and ("page", u) not in p.email_candidates:
+                        p.email_candidates.append(("page", u))
