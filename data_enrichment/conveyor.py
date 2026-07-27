@@ -12,14 +12,13 @@ logger = logging.getLogger(__name__)
 
 
 class PipelinePerson(ItmoPerson):
-    """Объект, текущий по конвейеру: граф-модель и рабочие поля.
-
-    Рабочие поля — поля, которые не идут в (orcid сигнал матчинга, affiliation для классификации департамента).
-    Помечены exclude=True: текут по пайплайну, но model_dump/JSON их выкидывает.
-    """
+    """Объект, текущий по конвейеру"""
 
     orcid: str | None = Field(default=None, exclude=True)
     affiliation: str | None = Field(default=None, exclude=True)
+    # Кандидаты email как (источник, адрес): лучший выберет finalize_emails после
+    # барьеров по приоритету источников — как в старом merge_profiles.
+    email_candidates: list[tuple[str, str]] = Field(default_factory=list, exclude=True)
     profile: dict | None = None
 
 
@@ -69,12 +68,17 @@ def merge_by_id(main: dict[str, PipelinePerson], partial: PipelinePerson) -> Non
         return
     for field in type(partial).model_fields:
         value = getattr(partial, field, None)
-        if field != "id" and value and not getattr(target, field, None):
+        if field == "id" or not value:
+            continue
+        current = getattr(target, field, None)
+        if isinstance(current, list) and isinstance(value, list):
+            merged = current + [v for v in value if v not in current]
+            setattr(target, field, merged)
+        elif not current:
             setattr(target, field, value)
 
 
 # --- Субконвейер по публикациям -----------------------------------
-# Этапы, где на вход публикация, а не персона.
 
 
 class PubAuthor(BaseModel):
@@ -103,7 +107,7 @@ class RepoLink(BaseModel):
 
 
 class PubLinks(BaseModel):
-    """Выход ветки код-ссылок: ссылки публикации. Ключ publication_id, не person_id
+    """Выход ветки код ссылок: ссылки публикации. Ключ publication_id, не person_id
     Ссылки привязаны к статье, к людям выходят позже через github ветку."""
     publication_id: str
     links: list[RepoLink] = []
