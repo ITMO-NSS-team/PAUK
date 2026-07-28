@@ -14,11 +14,13 @@ logger = logging.getLogger(__name__)
 class PipelinePerson(ItmoPerson):
     """Объект, текущий по конвейеру"""
 
-    orcid: str | None = Field(default=None, exclude=True)
-    affiliation: str | None = Field(default=None, exclude=True)
-    # Кандидаты email как (источник, адрес): лучший выберет finalize_emails после
-    # барьеров по приоритету источников — как в старом merge_profiles.
-    email_candidates: list[tuple[str, str]] = Field(default_factory=list, exclude=True)
+    # Рабочие поля: вход/промежуток обработки (orcid — сигнал матчинга, affiliation —
+    # для классификации департамента, email_candidates — выбор в finalize_emails).
+    # В выходной JSON текут вместе со всем остальным: гоним щедро, лишнее отбросит
+    # сток/коннектор. Граф-модель (models.py) не трогаем — поля живут в подклассе.
+    orcid: str | None = None
+    affiliation: str | None = None
+    email_candidates: list[tuple[str, str]] = Field(default_factory=list)
     profile: dict | None = None
 
 
