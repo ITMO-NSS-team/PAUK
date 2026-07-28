@@ -813,7 +813,7 @@ def normalize(s: str) -> str:
 
 
 
-MAILTO_RE = re.compile(r"mailto:([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})", re.I)
+MAILTO_RE = re.compile(r"mailto:([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})", re.IGNORECASE)
 
 SKIP_HOSTS = ("github.com", "linkedin.com", "scholar.google", "researchgate",
               "orcid.org", "twitter.com", "x.com", "facebook", "youtube",
