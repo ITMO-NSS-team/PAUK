@@ -18,16 +18,16 @@ run_step() {
     "$@"
 }
 
-run_step "1/5" "init_db схема" \
+run_step "1/4" "init_db схема" \
     uv run python -m scripts.init_db
 
-run_step "2/5" "populate_publications - ingest из OpenAlex ($START_DATE -> $END_DATE)" \
+run_step "2/4" "populate_publications - ingest из OpenAlex ($START_DATE -> $END_DATE)" \
     uv run python -m scripts.populate_publications --start-date "$START_DATE" --end-date "$END_DATE"
 
-run_step "3/5" "export_input - SQLite -> JSONL (мост, умрёт с JSON-вводом)" \
+run_step "3/4" "export_input - SQLite -> JSONL (мост, умрёт с JSON-вводом)" \
     uv run python -m scripts.export_input
 
-run_step "4/5" "конвейер обогащения" \
+run_step "4/4" "конвейер обогащения" \
     uv run python -m data_enrichment.run_conveyor
 
 run_step "5/5" "export_graph данные для визуализации" \
