@@ -18,26 +18,17 @@ run_step() {
     "$@"
 }
 
-run_step "1/8" "init_db" \
-    uv run python scripts/init_db.py
+run_step "1/4" "init_db схема" \
+    uv run python -m scripts.init_db
 
-run_step "2/8" "populate_publications ($START_DATE -> $END_DATE)" \
-    uv run python scripts/populate_publications.py --start-date "$START_DATE" --end-date "$END_DATE"
+run_step "2/4" "populate_publications - ingest из OpenAlex ($START_DATE -> $END_DATE)" \
+    uv run python -m scripts.populate_publications --start-date "$START_DATE" --end-date "$END_DATE"
 
-run_step "3/8" "find_code_links" \
-    uv run python scripts/find_code_links.py
+run_step "3/4" "export_input - SQLite -> JSONL (мост, умрёт с JSON-вводом)" \
+    uv run python -m scripts.export_input
 
-run_step "4/8" "enrich_departments" \
-    uv run python scripts/enrich_departments.py
+run_step "4/4" "конвейер обогащения" \
+    uv run python -m data_enrichment.run_conveyor
 
-run_step "5/8" "enrich_persons_ru" \
-    uv run python scripts/enrich_persons_ru.py
-
-run_step "6/8" "build_repositories" \
-    uv run python scripts/build_repositories.py
-
-run_step "7/8" "finalize" \
-    uv run python scripts/finalize.py
-
-run_step "8/8" "export_graph (данные для визуализации)" \
+run_step "5/5" "export_graph данные для визуализации" \
     uv run python visualization/export_graph.py

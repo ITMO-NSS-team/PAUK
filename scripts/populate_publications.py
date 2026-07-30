@@ -9,7 +9,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 import requests
-from config import (
+from data_enrichment.config import (
     AUTHORS_CACHE_CAPACITY,
     DB_PATH,
     ITMO_NAMES,
