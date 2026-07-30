@@ -48,7 +48,7 @@
   },
   {
     "faculty_id": 455,
-    "school_en": "Educational Center for Energy Efficient Engineering Systems",
+    "school_en": "Educational Center \"Energy-Efficient Engineering Systems\"",
     "school_ru": "Образовательный центр \"Энергоэффективные инженерные системы\"",
     "name_en": "Center for Project Activities and Commercialization",
     "name_ru": "Центр проектной деятельности и коммерциализации",
@@ -56,15 +56,17 @@
   },
   {
     "faculty_id": 497,
-    "school_en": "Educational Center for Energy Efficient Engineering Systems",
+    "school_en": "Educational Center \"Energy-Efficient Engineering Systems\"",
     "school_ru": "Образовательный центр \"Энергоэффективные инженерные системы\"",
-    "name_en": "Educational Center for Energy Efficient Engineering Systems",
+    "name_en": "Educational Center \"Energy-Efficient Engineering Systems\"",
     "name_ru": "Образовательный центр \"Энергоэффективные инженерные системы\"",
-    "aliases": []
+    "aliases": [
+      "Educational Center for Energy Efficient Engineering Systems"
+    ]
   },
   {
     "faculty_id": null,
-    "school_en": "Educational Center for Energy Efficient Engineering Systems",
+    "school_en": "Educational Center \"Energy-Efficient Engineering Systems\"",
     "school_ru": "Образовательный центр \"Энергоэффективные инженерные системы\"",
     "name_en": "Interfaculty Laboratory of Translational Technologies in Education",
     "name_ru": "Межфакультетская лаборатория \"Трансляционные технологии в образовании\"",
@@ -132,9 +134,10 @@
     "faculty_id": 506,
     "school_en": "Higher School of Engineering and Technology",
     "school_ru": "Институт «Высшая инженерно-техническая школа»",
-    "name_en": "Research and Production Center for Precision Electromechanics",
+    "name_en": "Scientific and Production Center \"Precision Electromechanics\"",
     "name_ru": "Научно-производственный центр \"Прецизионная электромеханика\"",
     "aliases": [
+      "Research and Production Center for Precision Electromechanics",
       "Research and Production Center Precision Electromechanics"
     ]
   },
@@ -142,9 +145,11 @@
     "faculty_id": 457,
     "school_en": "Higher School of Engineering and Technology",
     "school_ru": "Институт «Высшая инженерно-техническая школа»",
-    "name_en": "Research Center for Waveguide Photonics",
+    "name_en": "Research Center of Light-Guided Photonics",
     "name_ru": "Научно-исследовательский центр световодной фотоники",
-    "aliases": []
+    "aliases": [
+      "Research Center for Waveguide Photonics"
+    ]
   },
   {
     "faculty_id": 508,
@@ -449,9 +454,11 @@
     "faculty_id": 459,
     "school_en": "School of Computer Technologies and Control",
     "school_ru": "Мегафакультет компьютерных технологий и управления",
-    "name_en": "Research Center for Quality Control Technologies in Rocket and Space Technology",
+    "name_en": "Research Center for Quality Control Technologies in the Aerospace Industry",
     "name_ru": "Научно-исследовательский центр технологий контроля качества ракетно-космической техники",
-    "aliases": []
+    "aliases": [
+      "Research Center for Quality Control Technologies in Rocket and Space Technology"
+    ]
   },
   {
     "faculty_id": null,
@@ -614,7 +621,6 @@
     "aliases": [
       "International Scientific Center for Biotechnology of the Third Millennium",
       "International Research Centre Biotechnologies of the Third Millennium",
-      "International Research Center Biotechnologies of the Third Millennium",
       "International Research Center 'Biotechnologies of the Third Millennium'"
     ]
   },
@@ -765,9 +771,11 @@
     "faculty_id": 513,
     "school_en": "School of Physics and Engineering",
     "school_ru": "Физико-технический мегафакультет",
-    "name_en": "International Scientific and Educational Center for Physics of Nanostructures",
+    "name_en": "International Research and Educational Center for Physics of Nanostructures",
     "name_ru": "Международный научно-образовательный центр физики наноструктур",
-    "aliases": []
+    "aliases": [
+      "International Scientific and Educational Center for Physics of Nanostructures"
+    ]
   },
   {
     "faculty_id": null,
@@ -1044,19 +1052,19 @@
     "faculty_id": 88,
     "school_en": "School of Translational Information Technologies",
     "school_ru": "Мегафакультет трансляционных информационных технологий",
-    "name_en": "Institute of Design and Urban Studies",
+    "name_en": "Institute of Design & Urban Studies",
     "name_ru": "Институт дизайна и урбанистики",
-    "aliases": [
-      "Institute of Design & Urban Studies"
-    ]
+    "aliases": []
   },
   {
     "faculty_id": 509,
     "school_en": "School of Translational Information Technologies",
     "school_ru": "Мегафакультет трансляционных информационных технологий",
-    "name_en": "School of Game Development",
+    "name_en": "Game Development School",
     "name_ru": "Школа разработки видеоигр",
-    "aliases": []
+    "aliases": [
+      "School of Game Development"
+    ]
   },
   {
     "faculty_id": 107,
