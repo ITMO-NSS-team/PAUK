@@ -75,7 +75,9 @@ CONTEXT_RADIUS = 400         # символов вокруг URL в repo_links.c
 # официальных депов и якорь точного матчинга.
 DEPARTMENTS_CATALOG_PATH = DATA_DIR / "departments_catalog.json"
 
-# Официальная структура ИТМО (EN-страница + RU-сайт с общими faculty ID).
+# Официальная структура ИТМО. RU-страница — полное дерево подразделений (до лабораторий);
+# EN-страница — официальные англ. названия faculty/центр-тира с общими id.
+ITMO_STRUCTURE_URL_RU = "https://itmo.ru/ru/department_units/obshchaya_struktura_universiteta.htm"
 ITMO_STRUCTURE_URL_EN = "https://en.itmo.ru/en/department_list/Academic_Structure.htm"
 ITMO_SITE_EN = "https://en.itmo.ru"
 ITMO_SITE_RU = "https://itmo.ru"

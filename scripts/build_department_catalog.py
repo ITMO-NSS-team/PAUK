@@ -1,12 +1,20 @@
-"""Одноразовый генератор официального en↔ru каталога департаментов ИТМО.
+"""Одноразовый генератор draft официального каталога департаментов ИТМО.
 
-Скрейпит официальную страницу структуры ИТМО (EN) — извлекает факультеты/институты
-с их числовым faculty_id, slug и английским названием, группирует по мегафакультетам
-(schools) в порядке документа, затем по тому же faculty_id тянет русское название с
-RU-сайта (itmo.ru/ru/viewfaculty/<id>/<slug>). Результат — draft JSON.
+Скрейпит ПОЛНОЕ дерево научной структуры с RU-страницы
+(`ITMO_STRUCTURE_URL_RU`, «Основные образовательные и научные подразделения»):
+факультеты → институты → центры → лаборатории. Иерархию восстанавливает по глубине
+вложенности `<ul>` (линейный скан по сбалансированным тегам — надёжно к незакрытым
+`<li>`, на которых DOM-парсеры путают предков). Не-научные единицы (админ/производство/
+профориентация) отфильтровываются. Английские имена берутся с EN-страницы структуры
+(`ITMO_STRUCTURE_URL_EN`) по общему числовому id — официально для faculty/центр-тира.
 
-НЕ входит в пайплайн. Результат ОБЯЗАТЕЛЬНО сверяется вручную и коммитится как
-data/departments_catalog.json — источник истины для seed_departments.py.
+Юниты без официального EN (листовые лаборатории — у них нет ни id, ни EN-страницы)
+остаются с ПУСТЫМ name_en: их заполняют отдельно (LLM RU→EN + ручная сверка), а
+авторские написания добавляются в name_variants из корпуса аффилиаций. Всё это —
+одноразовые доводочные шаги; см. историю issue #40.
+
+НЕ входит в пайплайн. Результат — DRAFT: ОБЯЗАТЕЛЬНО сверяется вручную и дополняется
+перед коммитом как data/departments_catalog.json (источник истины для seed_departments).
 
 Запуск из корня проекта:
     uv run python scripts/build_department_catalog.py
@@ -17,7 +25,6 @@ import argparse
 import json
 import logging
 import re
-import time
 from pathlib import Path
 
 import requests
@@ -25,118 +32,136 @@ import requests
 from config import (
     DEPARTMENTS_CATALOG_PATH,
     DOWNLOAD_TIMEOUT,
-    ITMO_SITE_RU,
     ITMO_STRUCTURE_URL_EN,
+    ITMO_STRUCTURE_URL_RU,
     USER_AGENT,
 )
 
 logger = logging.getLogger(__name__)
 
-FACULTY_LINK_RE = re.compile(
-    r'/en/faculty/(\d+)/([^"\'>]+?\.htm)"[^>]*>\s*([^<]+?)\s*<', re.IGNORECASE
+# По умолчанию пишем в DRAFT, чтобы наивный ре-ран не затёр выверенный источник истины
+# (departments_catalog.json). Промоут draft → каталог — вручную после сверки.
+_DRAFT_PATH = DEPARTMENTS_CATALOG_PATH.with_name("departments_catalog.draft.json")
+
+# Границы научной секции на RU-странице.
+_SECTION_START = "Основные образовательные и научные"
+_SECTION_END = "Административные (сервисные)"
+# Ссылка-подразделение: /ru|en/[view]faculty|unit|department|otherstructure/<id>/...>ИМЯ<
+_LINK_RE = re.compile(
+    r"/(?:ru|en)/(?:view)?(?:faculty|unit|department|otherstructure)/(\d+)/[^\"'>]*\"[^>]*>\s*([^<]+?)\s*<",
+    re.I,
 )
-TITLE_RE = re.compile(r"<title>\s*(.*?)\s*</title>", re.IGNORECASE | re.DOTALL)
-# Хвост " — Университет ИТМО" / " | …": только em-dash или pipe с ведущим пробелом,
-# чтобы не обрезать названия с обычным дефисом (напр. "информационно-навигационных").
-TITLE_SUFFIX_RE = re.compile(r"\s+[—|].*$")
+# Токены дерева для линейного скана глубины.
+_TOKEN_RE = re.compile(r"(<ul\b)|(</ul>)|(<a\b[^>]*>(.*?)</a>)", re.I | re.S)
+# Не-научные единицы внутри научного дерева — исключаем.
+_DROP_RE = re.compile(
+    r"^отдел\b|опытно-экспериментальное производство|учебно-методическое объединение|"
+    r"^ресурсный центр$|военный учебный центр|базовая профориентационная школа|"
+    r"дополнительного образования для школьников|центр развития карьеры|"
+    r"учебно-практический центр",
+    re.I,
+)
 
 
-def fetch(url: str) -> str | None:
-    """GET с полит-агентом; None при ошибке (redirects следуются автоматически)."""
-    try:
-        resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=DOWNLOAD_TIMEOUT)
-        resp.raise_for_status()
-        return resp.text
-    except requests.RequestException as exc:
-        logger.warning("Не удалось получить %s: %s", url, exc)
-        return None
+def fetch(url: str) -> str:
+    """GET страницы с полит-агентом; кидает исключение при ошибке."""
+    resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=DOWNLOAD_TIMEOUT)
+    resp.raise_for_status()
+    return resp.text
 
 
-def parse_en_structure(html: str) -> list[dict]:
-    """Факультеты в порядке документа: {faculty_id, slug, name_en, is_school}."""
-    rows: list[dict] = []
-    seen: set[str] = set()
-    for fid, slug, name_en in FACULTY_LINK_RE.findall(html):
-        if fid in seen:
-            continue
-        seen.add(fid)
-        rows.append(
-            {
-                "faculty_id": int(fid),
-                "slug": slug,
-                "name_en": name_en.strip(),
-                "is_school": "megafakultet" in slug or "megafakultet" in name_en.lower(),
-            }
-        )
-    return rows
+def _clean(raw: str) -> str:
+    """Схлопывает пробелы, снимает html-теги/сущности из фрагмента."""
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", raw or "")).strip()
 
 
-def assign_schools(rows: list[dict]) -> None:
-    """Проставляет school_en каждому факультету по последнему виденному мегафакультету."""
-    current = ""
+def parse_ru_tree(html: str) -> list[dict]:
+    """Юниты научной секции с иерархией по глубине <ul>.
+
+    Возвращает список {name_ru, faculty_id, school_ru} в порядке документа; school_ru —
+    ближайший top-level предок (мегафакультет/самостоятельный топ-юнит), у самих
+    top-level — они сами. Не-научные единицы отфильтрованы.
+    """
+    start = html.find(_SECTION_START)
+    end = html.find(_SECTION_END)
+    if start == -1 or end == -1:
+        raise SystemExit("Не найдены границы научной секции на RU-странице структуры.")
+    segment = html[start:end]
+
+    id_by_name = {name: int(fid) for fid, name in _LINK_RE.findall(segment)}  # href-имена → id
+    depth, last_top, rows = 0, "", []
+    for token in _TOKEN_RE.finditer(segment):
+        if token.group(1):
+            depth += 1
+        elif token.group(2):
+            depth = max(0, depth - 1)
+        elif token.group(3):
+            name = _clean(token.group(4))
+            if not name or _DROP_RE.search(name):
+                continue
+            if depth == 1:
+                last_top = name
+            rows.append({"name_ru": name, "faculty_id": id_by_name.get(name),
+                         "school_ru": name if depth == 1 else last_top})
+    # дедуп по (name_ru, school_ru), порядок появления
+    seen, uniq = set(), []
     for row in rows:
-        if row["is_school"]:
-            current = row["name_en"]
-            row["school_en"] = row["name_en"]
-        else:
-            row["school_en"] = current
+        key = (row["name_ru"].lower(), row["school_ru"].lower())
+        if key not in seen:
+            seen.add(key)
+            uniq.append(row)
+    return uniq
 
 
-def fetch_name_ru(faculty_id: int, slug: str) -> str | None:
-    """Русское название подразделения из <title> RU-страницы факультета."""
-    url = f"{ITMO_SITE_RU}/ru/viewfaculty/{faculty_id}/{slug}"
-    html = fetch(url)
-    if not html:
-        return None
-    m = TITLE_RE.search(html)
-    if not m:
-        return None
-    return TITLE_SUFFIX_RE.sub("", m.group(1)).strip() or None
+def official_en_by_id(html: str) -> dict[int, str]:
+    """id → официальное англ. имя с EN-страницы структуры (faculty/центр-тир)."""
+    return {int(fid): _clean(name) for fid, name in _LINK_RE.findall(html)}
 
 
 def build_catalog() -> list[dict]:
-    """Собирает каталог: EN-структура + RU-названия по faculty_id (вкл. school_ru)."""
-    html = fetch(ITMO_STRUCTURE_URL_EN)
-    if not html:
-        raise SystemExit("Не удалось получить страницу структуры ИТМО.")
-    rows = parse_en_structure(html)
-    assign_schools(rows)
-    logger.info("Найдено %d подразделений на EN-странице структуры.", len(rows))
+    """Собирает draft: RU-дерево (иерархия) + официальный EN по id; EN лабов пуст."""
+    ru_units = parse_ru_tree(fetch(ITMO_STRUCTURE_URL_RU))
+    en_by_id = official_en_by_id(fetch(ITMO_STRUCTURE_URL_EN))
+    school_en = {u["name_ru"]: en_by_id.get(u["faculty_id"], "")
+                 for u in ru_units if u["school_ru"] == u["name_ru"]}
+    logger.info("Научных юнитов: %d | официальных EN с EN-страницы: %d",
+                len(ru_units), len(en_by_id))
 
-    for row in rows:
-        row["name_ru"] = fetch_name_ru(row["faculty_id"], row["slug"]) or ""
-        if not row["name_ru"]:
-            logger.warning("Нет name_ru для #%s (%s) — дозаполнить вручную.",
-                           row["faculty_id"], row["name_en"])
-        time.sleep(0.3)
-    school_ru = {r["name_en"]: r["name_ru"] for r in rows if r["is_school"]}
-
-    catalog = [
-        {
-            "faculty_id": row["faculty_id"],
-            "school_en": row["school_en"],
-            "school_ru": school_ru.get(row["school_en"], ""),
-            "name_en": row["name_en"],
-            "name_ru": row["name_ru"],
+    catalog, no_en = [], 0
+    for u in ru_units:
+        name_en = en_by_id.get(u["faculty_id"], "")
+        if not name_en:
+            no_en += 1
+        catalog.append({
+            "faculty_id": u["faculty_id"],
+            "school_en": school_en.get(u["school_ru"], ""),
+            "school_ru": u["school_ru"],
+            "name_en": name_en,
+            "name_ru": u["name_ru"],
             "aliases": [],
-        }
-        for row in rows
-    ]
-    catalog.sort(key=lambda d: d["name_en"].lower())
+        })
+    catalog.sort(key=lambda d: (d["school_ru"].lower(), d["name_ru"].lower()))
+    logger.warning("Без официального EN (заполнить LLM RU→EN + вручную): %d из %d",
+                   no_en, len(catalog))
     return catalog
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    parser = argparse.ArgumentParser(description="Сгенерировать draft официального каталога департаментов ИТМО.")
-    parser.add_argument("--out", type=Path, default=DEPARTMENTS_CATALOG_PATH,
-                        help="Куда писать JSON (по умолчанию — путь каталога из config).")
+    parser = argparse.ArgumentParser(
+        description="Сгенерировать draft официального каталога департаментов ИТМО."
+    )
+    parser.add_argument("--out", type=Path, default=_DRAFT_PATH,
+                        help="Куда писать draft JSON (по умолчанию — *.draft.json рядом с "
+                             "каталогом; боевой departments_catalog.json не перезаписывается).")
     args = parser.parse_args()
 
     catalog = build_catalog()
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    logger.info("Записано %d записей в %s. СВЕРЬТЕ ВРУЧНУЮ перед коммитом.", len(catalog), args.out)
+    logger.info("Записано %d записей в %s. СВЕРЬТЕ ВРУЧНУЮ, заполните EN лабов (LLM RU→EN) "
+                "и name_variants из корпуса, затем промоут → %s.",
+                len(catalog), args.out, DEPARTMENTS_CATALOG_PATH.name)
 
 
 if __name__ == "__main__":
