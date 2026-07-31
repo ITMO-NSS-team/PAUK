@@ -62,12 +62,18 @@ class NodeSpec:
             Any other key on the row (e.g. `_processing`) is ignored.
         relationships: Relationships embedded in the row, extracted
             separately from prop_fields.
+        rel_src_label: Label(s) used to MATCH this node as a relationship
+            source. Defaults to `labels`; persons override it with the base
+            "Person" because a person's extra label (Itmo/External) can be
+            upgraded by a later group while their relationships must still
+            resolve.
     """
 
     labels: str
     id_field: str = "id"
     prop_fields: tuple[str, ...] = ()
     relationships: tuple[RelSpec, ...] = field(default_factory=tuple)
+    rel_src_label: str | None = None
 
 
 NODE_REGISTRY: dict[str, NodeSpec] = {
@@ -77,6 +83,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
     ),
     "itmo_person": NodeSpec(
         labels="Person:Itmo",
+        rel_src_label="Person",
         prop_fields=(
             "openalex_id",
             "orcid",
@@ -112,6 +119,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
     ),
     "external_person": NodeSpec(
         labels="Person:External",
+        rel_src_label="Person",
         prop_fields=("openalex_id", "orcid", "name_en", "name_variants", "email"),
         relationships=(
             RelSpec(
@@ -231,10 +239,11 @@ def extract_relationships(row: dict, spec: NodeSpec) -> dict[tuple[str, str, str
         LinkCandidate) — those can't share one batch.
     """
     src_id = row[spec.id_field]
+    src_label = spec.rel_src_label or spec.labels
     out: dict[tuple[str, str, str, str], list[tuple[str, str, dict]]] = {}
 
     for rel in spec.relationships:
-        key = (spec.labels, rel.tgt_label, rel.rel_type, rel.tgt_match_field)
+        key = (src_label, rel.tgt_label, rel.rel_type, rel.tgt_match_field)
 
         if rel.scalar:
             value = row.get(rel.field)

@@ -28,7 +28,7 @@ class CodeLinksStage(EnrichmentStage):
             ):
                 continue
             state = pub.processing.get(self.name)
-            if state and state.status not in {ProcessingStatus.NOT_STARTED, ProcessingStatus.FAILED}:
+            if not self.needs_attempt(state):
                 continue
             # rstrip(".") drops sentence-ending periods the regex captures
             # ("code at https://github.com/org/repo." -> repo name "repo.").

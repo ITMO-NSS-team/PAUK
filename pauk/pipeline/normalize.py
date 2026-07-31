@@ -28,6 +28,42 @@ def _funding(work: dict) -> list[Funding]:
     ]
 
 
+def _canonical_person_id(person: Person) -> str:
+    """A person's id is their bare OpenAlex author ID.
+
+    Older prepared files used affiliation-dependent ids ("itmo_A5X" /
+    "external_A5X"), which split one author into two graph nodes whenever
+    OpenAlex missed the ITMO affiliation on some of their works.
+    """
+    return person.openalex_id or person.id.removeprefix("itmo_").removeprefix("external_")
+
+
+def _merge_person(base: Person, extra: Person) -> Person:
+    """Merge two prepared rows describing the same author (legacy split ids).
+
+    is_itmo is an OR (at least one ITMO affiliation makes the person ITMO);
+    lists are deduplicated unions; scalar fields keep base's value and fill
+    gaps from extra; processing states are kept from base, missing stages
+    come from extra.
+    """
+    base.is_itmo = base.is_itmo or extra.is_itmo
+    base.name_variants = list(dict.fromkeys([*base.name_variants, *extra.name_variants]))
+    base.department_ids = list(dict.fromkeys([*base.department_ids, *extra.department_ids]))
+    for authorship in extra.authored:
+        if authorship not in base.authored:
+            base.authored.append(authorship)
+    for contribution in extra.contributed_to:
+        if contribution not in base.contributed_to:
+            base.contributed_to.append(contribution)
+    for field in ("orcid", "name_en", "email", "first_name_ru", "second_name_ru",
+                  "surname_ru", "degree", "github", "google_scholar", "openreview", "thesis"):
+        if getattr(base, field) is None:
+            setattr(base, field, getattr(extra, field))
+    for stage, state in extra.processing.items():
+        base.processing.setdefault(stage, state)
+    return base
+
+
 class OpenAlexNormalizer:
     def __init__(self, raw: RawStore, prepared: PreparedStore) -> None:
         self.raw = raw
@@ -41,9 +77,12 @@ class OpenAlexNormalizer:
         publications: OrderedDict[str, Publication] = OrderedDict(
             (row.id, row) for row in self.prepared.read_models("publications", Publication)
         )
-        persons: OrderedDict[str, Person] = OrderedDict(
-            (row.id, row) for row in self.prepared.read_models("persons", Person)
-        )
+        persons: OrderedDict[str, Person] = OrderedDict()
+        for row in self.prepared.read_models("persons", Person):
+            canonical = _canonical_person_id(row)
+            row.id = canonical
+            existing = persons.get(canonical)
+            persons[canonical] = _merge_person(existing, row) if existing else row
         for envelope in self.raw.read("openalex_works"):
             work = envelope["payload"]
             work_id = _short_id(work.get("id"))
@@ -78,13 +117,14 @@ class OpenAlexNormalizer:
                     continue
                 institutions = authorship.get("institutions") or []
                 is_itmo = any(ITMO_ROR_ID in (inst.get("ror") or inst.get("id") or "") for inst in institutions)
-                person_id = f"itmo_{author_id}" if is_itmo else f"external_{author_id}"
-                person = persons.setdefault(person_id, Person(
-                    id=person_id,
+                person = persons.setdefault(author_id, Person(
+                    id=author_id,
                     openalex_id=author_id,
                     is_itmo=is_itmo,
                     name_en=author.get("display_name"),
                 ))
+                # At least one ITMO affiliation anywhere makes the person ITMO.
+                person.is_itmo = person.is_itmo or is_itmo
                 variants = author.get("display_name_alternatives") or []
                 person.name_variants = list(dict.fromkeys([*person.name_variants, *variants]))
                 authorship_record = Authorship(

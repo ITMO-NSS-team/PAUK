@@ -48,7 +48,7 @@ class RepositoriesStage(EnrichmentStage):
                     if row.publication_id not in repo.publication_ids:
                         repo.publication_ids.append(row.publication_id)
                     state = repo.processing.get(self.name)
-                    if state and state.status not in {ProcessingStatus.NOT_STARTED, ProcessingStatus.FAILED}:
+                    if not self.needs_attempt(state):
                         continue
                 else:
                     repo = Repository(id=repo_id, url=url, name=name, publication_ids=[row.publication_id])
