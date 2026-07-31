@@ -1,71 +1,91 @@
-# PAUK - мониторинг публикаций
+# PAUK
 
-## Установка
+PAUK собирает публикации, обогащает их данными внешних источников и загружает
+результат в Neo4j.
 
-```bash
-uv sync
-cp .env.example .env
-# отредактировать .env
+## Данные
+
+```text
+data/static/                 # версионируемые справочники, включая departments_catalog.json
+data/raw/<group>/            # полные неизменяемые ответы API
+data/prepared/<group>/       # JSONL сущностей для Neo4j
 ```
 
-## Запуск пайплайна
+В prepared-группе создаются `publications.jsonl`, `persons.jsonl`,
+`departments.jsonl`, `repositories.jsonl`, `github_profiles.jsonl` и
+`repo_links.jsonl`.
 
-Один скрипт по всем шагам:
-
-```bash
-./run_pipeline.sh
-# или с логом:
-./run_pipeline.sh 2>&1 | tee logs/pipeline.log
-```
-
-Даты и лимиты задаются переменными в начале `run_pipeline.sh`.
-
-Шаги по отдельности (все идемпотентны - повторный запуск дорабатывает
-только новое):
+## Запуск
 
 ```bash
-# 1. Схема единой БД.
-uv run python scripts/init_db.py
+# Одна публикация OpenAlex
+pauk run --work W2741809807
 
-# 2. Публикации ИТМО из OpenAlex + авторы (persons_itmo / persons_external).
-uv run python scripts/populate_publications.py \
-    --start-date 2024-05-01 --end-date 2026-06-15
+# Публикации за период
+pauk run --from 2025-01-01 --to 2025-03-31
 
-# 3. GitHub-часть: abstract+PDF -> ссылки на код (repo_links) -> вердикт LLM.
-uv run python scripts/find_code_links.py
+# Произвольный список OpenAlex ID
+pauk run --works-file selected_works.txt --name selected-july
 
-# 4. LLM-разметка департаментов ИТМО по аффилиациям -> persons_itmo.department.
-uv run python scripts/enrich_departments.py
-
-# 5. Русские ФИО (транслитерация name_en) -> persons_itmo.*_ru.
-uv run python scripts/enrich_persons_ru.py
-
-# 6. Чистый слой repositories + github_departments (GitHub API, split user/org).
-uv run python scripts/build_repositories.py
-
-# 7. Чистка дублей + производные связи (has_code, *_departments).
-uv run python scripts/finalize.py        # --dry-run чтобы только посмотреть dedup
+# Отдельные шаги
+pauk collect --work W2741809807
+pauk normalize --group 2026-07-31__W2741809807
+pauk enrich code_links --input data/prepared/2026-07-31__W2741809807/publications.jsonl
+pauk publish graph --group 2026-07-31__W2741809807
 ```
 
-## Схема БД
+Передача entity-файла в `enrich --input` ограничивает запуск строками именно
+этого файла; передача директории группы запускает этап для всей группы.
+Повторный `collect` не добавляет уже сохранённые OpenAlex works, а повторный
+`normalize` сохраняет данные enrichment и производные entity-файлы.
 
-Базовые сущности и связи:
+Каждая строка prepared JSONL содержит `_processing` со статусом этапа:
+`not_started`, `completed`, `completed_empty`, `not_applicable` или `failed`.
+Это поле не загружается в граф.
 
-| Таблица                   | Назначение                                                        |
-|---------------------------|------------------------------------------------------------------|
-| `publications`            | Публикации (+ `has_code`, `code_url`, `pdf_url`, `abstract`)      |
-| `persons_itmo`            | Сотрудники ИТМО (+ `department`, `github`)                        |
-| `persons_external`        | Внешние соавторы                                                  |
-| `publication_authors`     | Авторство (публикация ↔ человек)                                  |
-| `departments`             | Департаменты ИТМО (`name_en` + `name_variants`)                   |
-| `publication_departments` | Публикация ↔ департамент (через департаменты её ИТМО-авторов)     |
-| `github_departments`      | **GitHub-организации** (лаборатории): login, name, описание       |
-| `repositories`            | Чистый слой репозиториев + метаданные GitHub                     |
-| `repository_persons`      | Репозиторий ↔ человек (`owner` / `contributor`)                  |
-| `repository_departments`  | Репозиторий ↔ департамент ИТМО                                    |
-| `repository_publications` | Репозиторий ↔ публикация                                          |
-| `repo_links`              | Staging: все кандидатные ссылки + вердикт LLM (доказательная база)|
+## Схема графовой БД
 
-## Конфигурация
+`pauk publish graph --group <group>` загружает prepared JSONL в Neo4j через
+`MERGE`. Для всех типов узлов уникален `id`; у `GitHubProfile` также уникален
+`login`.
 
-Путь БД можно переопределить переменной окружения `PAUK_DB_PATH`. Остальные ключи - в `.env`.
+| Узел | Метка Neo4j | Основные свойства |
+|---|---|---|
+| Подразделение | `Department` | `id`, `name_en`, `name_ru`, `name_variants` |
+| Сотрудник ИТМО | `Person:Itmo` | `id`, `openalex_id`, `orcid`, ФИО, контакты, профили |
+| Внешний автор | `Person:External` | `id`, `openalex_id`, `orcid`, `name_en`, `name_variants`, `email` |
+| Публикация | `Publication` | `id`, `title`, `doi`, дата, журнал, код, funding, OpenAlex/PDF URL, abstract |
+| Репозиторий | `Repository` | `id`, `name`, `url`, описание, звёзды, лицензия, даты |
+| GitHub-профиль | `GitHubProfile` | `id`, `login`, `name`, URL, описание, location, type |
+| Кандидат ссылки | `LinkCandidate` | `id` (URL), `url`, `host` |
+
+Связи:
+
+```text
+(:Person:Itmo)     -[:BELONGS_TO]->  (:Department)
+(:Person:Itmo)     -[:AUTHORED]->    (:Publication)
+(:Person:External) -[:AUTHORED]->    (:Publication)
+(:Person:Itmo)     -[:CONTRIBUTED_TO]-> (:Repository)
+
+(:Publication) -[:PRODUCED_BY]-> (:Department)
+(:Publication) -[:MENTIONS_LINK]-> (:Repository | :LinkCandidate)
+
+(:Repository) -[:DEVELOPED_BY]-> (:Department)
+(:Repository) -[:IMPLEMENTS]->   (:Publication)
+(:Repository) -[:OWNED_BY]->     (:GitHubProfile)
+```
+
+У `AUTHORED` сохраняются `position`, `affiliation`, `is_corresponding`; у
+`CONTRIBUTED_TO` — `role`; у `MENTIONS_LINK` — контекст, номер страницы и
+результат проверки ссылки. Служебное `_processing` и поля, не перечисленные в
+`pauk/graph/extract.py`, в Neo4j не попадают.
+
+## GUI
+
+Визуализация расположена в `pauk/gui`. После загрузки данных в Neo4j можно
+сгенерировать статические данные и запустить веб-интерфейс:
+
+```bash
+python -m pauk.gui.generate_data
+python -m pauk.gui.serve
+```

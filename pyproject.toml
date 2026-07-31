@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "networkx>=3.6.1",
+    "neo4j>=6.2.0",
     "pandas>=3.0.3",
     "plotly>=6.7.0",
     "pydantic>=2.13.4",
@@ -16,3 +17,6 @@ dependencies = [
     "streamlit>=1.57.0",
     "watchdog>=6.0.0",
 ]
+
+[project.scripts]
+pauk = "pauk.cli:main"

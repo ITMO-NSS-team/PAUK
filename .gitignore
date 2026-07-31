@@ -5,8 +5,12 @@ __pycache__/
 .venv/
 
 *.jsonl
-
-data/
+!data/static/
+!data/static/**
+data/raw/*
+data/prepared/*
+!data/raw/.gitkeep
+!data/prepared/.gitkeep
 
 .env
 
