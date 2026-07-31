@@ -79,6 +79,47 @@ class Neo4jClient:
         with self.driver.session() as session:
             session.execute_write(lambda tx: tx.run(query, batch=batch))
 
+    def upsert_person_nodes_batch(self, nodes: list[tuple[str, dict]], is_itmo: bool):
+        """Create or update a batch of Person nodes in one query.
+
+        Persons are merged on the base :Person label because the same author
+        can appear as ITMO in one group and external in another — merging on
+        the full label pair would create a duplicate node and violate the
+        Person.id uniqueness constraint. The :Itmo label is sticky: at least
+        one ITMO affiliation anywhere makes the person ITMO, so an external
+        row never downgrades an existing :Itmo node.
+
+        Args:
+            nodes: List of (node_id, properties) tuples.
+            is_itmo: Whether this batch carries ITMO persons.
+        """
+        if not nodes:
+            return
+
+        batch = []
+        for node_id, properties in nodes:
+            props_clean = {k: v for k, v in properties.items() if k not in ("id", "created_at", "updated_at")}
+            batch.append({"node_id": node_id, "properties": props_clean})
+
+        if is_itmo:
+            label_clause = "SET n:Itmo REMOVE n:External"
+        else:
+            label_clause = "FOREACH (_ IN CASE WHEN n:Itmo THEN [] ELSE [1] END | SET n:External)"
+
+        query = cast(
+            LiteralString,
+            f"""
+            UNWIND $batch AS row
+            MERGE (n:Person {{id: row.node_id}})
+            ON CREATE SET n += row.properties, n.created_at = datetime(), n.updated_at = datetime()
+            ON MATCH SET  n += row.properties, n.updated_at = datetime()
+            {label_clause}
+            """,
+        )
+
+        with self.driver.session() as session:
+            session.execute_write(lambda tx: tx.run(query, batch=batch))
+
     def upsert_relationships_batch(
         self,
         src_label: str,

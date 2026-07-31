@@ -37,6 +37,22 @@ class StagesTest(unittest.TestCase):
             links = [link for row in prepared.read_models("repo_links", RepoLink) for link in row.links]
             self.assertEqual([link.url for link in links], ["https://github.com/org/repo"])
 
+    def test_force_reprocesses_completed_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prepared = PreparedStore(root / "prepared", "sample")
+            raw = RawStore(root / "raw", "sample")
+            prepared.write_models("publications", [
+                Publication(id="W1", title="with code", abstract="https://github.com/org/repo"),
+            ])
+            CodeLinksStage(prepared, raw).run()
+            result = CodeLinksStage(prepared, raw).run()
+            self.assertEqual(result["publications"], 0)  # completed rows are skipped
+            result = CodeLinksStage(prepared, raw, force=True).run()
+            self.assertEqual(result["publications"], 1)
+            rows = {row.id: row for row in prepared.read_models("publications", Publication)}
+            self.assertEqual(rows["W1"].processing["code_links"].attempts, 2)
+
     def test_code_links_respects_publication_input_scope(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

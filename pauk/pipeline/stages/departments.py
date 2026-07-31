@@ -26,7 +26,7 @@ class DepartmentsStage(EnrichmentStage):
                 if self.selection.entity not in {"persons", "publications"}:
                     continue
             state = person.processing.get(self.name)
-            if state and state.status not in {ProcessingStatus.NOT_STARTED, ProcessingStatus.FAILED}:
+            if not self.needs_attempt(state):
                 continue
             text = " ".join(a.affiliation or "" for a in person.authored).casefold()
             matched = [d.id for d in departments if d.name_en.casefold() in text or any(v.casefold() in text for v in d.name_variants)]

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+﻿from datetime import datetime, timezone
 
 from pauk.models import Person, Publication
 from pauk.models.processing import ProcessingState, ProcessingStatus
@@ -8,9 +8,6 @@ from pauk.sources.orcid import OrcidClient
 from pauk.sources.openreview import OpenReviewClient
 
 from .base import EnrichmentStage
-
-
-RETRYABLE = {ProcessingStatus.NOT_STARTED, ProcessingStatus.FAILED}
 
 
 class PersonsStage(EnrichmentStage):
@@ -29,10 +26,6 @@ class PersonsStage(EnrichmentStage):
             ]
         return []
 
-    @staticmethod
-    def _needs_attempt(state: ProcessingState | None) -> bool:
-        return state is None or state.status in RETRYABLE
-
     def run(self) -> dict[str, int]:
         people = list(self.prepared.read_models("persons", Person))
         publications = {
@@ -42,20 +35,20 @@ class PersonsStage(EnrichmentStage):
         eligible_people = self._people_in_scope(people)
         candidates = [
             person for person in eligible_people
-            if self._needs_attempt(person.processing.get(self.name))
+            if self.needs_attempt(person.processing.get(self.name))
         ]
         by_publication: dict[str, list[Person]] = {}
         for person in eligible_people:
             for authored in person.authored:
                 publication = publications.get(authored.publication_id)
-                if publication and self._needs_attempt(publication.processing.get(self.crossref_name)):
+                if publication and self.needs_attempt(publication.processing.get(self.crossref_name)):
                     by_publication.setdefault(authored.publication_id, []).append(person)
 
         crossref = CrossrefClient(self.config.request_timeout)
         crossref_changed = 0
         for publication_id, authors in by_publication.items():
             publication = publications.get(publication_id)
-            if publication is None or not self._needs_attempt(publication.processing.get(self.crossref_name)):
+            if publication is None or not self.needs_attempt(publication.processing.get(self.crossref_name)):
                 continue
             old_state = publication.processing.get(self.crossref_name)
             if not publication.doi:
