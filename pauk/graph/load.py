@@ -13,6 +13,12 @@ from .schema import create_constraints
 
 
 def load_jsonl_group(config: Settings, group: str) -> None:
+    """Load one prepared-JSONL group into Neo4j. Used by `pauk publish graph`.
+
+    Args:
+        config: Application settings (Neo4j connection, data directories).
+        group: Name of the group directory under config.prepared_dir.
+    """
     client = Neo4jClient(config.neo4j_uri, config.neo4j_user, config.neo4j_password)
     try:
         create_constraints(client)
@@ -22,12 +28,14 @@ def load_jsonl_group(config: Settings, group: str) -> None:
 
 
 def main() -> None:
+    """CLI entry point: `uv run python -m pauk.graph.load`."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
     parser = argparse.ArgumentParser(description="Load pipeline output into Neo4j.")
     parser.add_argument("--format", choices=["jsonl", "csv"], default="jsonl")
     parser.add_argument(
-        "--dir", default=None,
+        "--dir",
+        default=None,
         help="Input directory (default: prepared data for JSONL, data root for CSV)",
     )
     parser.add_argument("--uri", default=settings.neo4j_uri)

@@ -1,8 +1,8 @@
-""" /   CSV ( id/labels/properties,
-start_id/end_id/src_label/tgt_label/type/properties) —   
- scripts/data_to_graph.py,   ,   
- (: `from neo4j_client import ...` —    
-, . neo4j-connector.md  Obsidian).
+"""Generic CSV loader for nodes/relationships, independent of the JSONL
+pipeline path. Node files use columns id/labels/properties, relationship
+files use start_id/end_id/src_label/tgt_label/type/properties. Nothing in
+this repository currently produces such CSV files — this path exists for
+external/manual data loads and stays ready for when one shows up.
 """
 
 import csv
@@ -11,16 +11,23 @@ import logging
 from collections import defaultdict
 from pathlib import Path
 
-from .client import Neo4jClient, CHUNK_SIZE
+from .client import CHUNK_SIZE, Neo4jClient
 
 logger = logging.getLogger(__name__)
 
 
 def load_nodes_from_csv(client: Neo4jClient, csv_path: str, batch_size: int = CHUNK_SIZE):
-    """: id, labels, properties (properties — JSON-)."""
+    """Load nodes from a CSV file into Neo4j, in batches.
+
+    Args:
+        client: An open Neo4jClient to load data into.
+        csv_path: Path to a CSV file with columns id, labels, properties
+            (properties is a JSON string).
+        batch_size: Maximum number of nodes per Neo4j write.
+    """
     batches_by_labels = defaultdict(list)
 
-    with open(csv_path, mode="r", encoding="utf-8") as file:
+    with open(csv_path, encoding="utf-8") as file:
         reader = csv.DictReader(file)
         for row in reader:
             node_id = row["id"]
@@ -40,10 +47,18 @@ def load_nodes_from_csv(client: Neo4jClient, csv_path: str, batch_size: int = CH
 
 
 def load_relationships_from_csv(client: Neo4jClient, csv_path: str, batch_size: int = CHUNK_SIZE):
-    """: start_id, end_id, src_label, tgt_label, type, properties."""
+    """Load relationships from a CSV file into Neo4j, in batches.
+
+    Args:
+        client: An open Neo4jClient to load data into.
+        csv_path: Path to a CSV file with columns start_id, end_id,
+            src_label, tgt_label, type, properties (properties is a JSON
+            string).
+        batch_size: Maximum number of relationships per Neo4j write.
+    """
     batches_by_rel = defaultdict(list)
 
-    with open(csv_path, mode="r", encoding="utf-8") as file:
+    with open(csv_path, encoding="utf-8") as file:
         reader = csv.DictReader(file)
         for row in reader:
             src_id = row["start_id"]
@@ -67,30 +82,37 @@ def load_relationships_from_csv(client: Neo4jClient, csv_path: str, batch_size: 
 
 
 def discover_files(data_dir: Path, suffix: str) -> list[Path]:
+    """Return all files under `data_dir` whose name ends with `suffix`, sorted."""
     return sorted(data_dir.glob(f"*{suffix}"))
 
 
 def load_csv_dir(client: Neo4jClient, data_dir: Path) -> None:
-    """ (*_nodes.csv),   (*_rels.csv) —   ,  
-     jsonl_loader.load_jsonl_dir."""
+    """Load every *_nodes.csv file, then every *_rels.csv file, from a directory.
+
+    Same nodes-before-relationships ordering as jsonl_loader.load_jsonl_dir.
+
+    Args:
+        client: An open Neo4jClient to load data into.
+        data_dir: Directory to scan for *_nodes.csv/*_rels.csv files.
+    """
     if not data_dir.exists():
-        logger.error("    : %s", data_dir)
+        logger.error("Data directory does not exist: %s", data_dir)
         return
 
     node_files = discover_files(data_dir, "_nodes.csv")
     rel_files = discover_files(data_dir, "_rels.csv")
-    logger.info("  : %d,  : %d", len(node_files), len(rel_files))
+    logger.info("Found %d node file(s), %d relationship file(s)", len(node_files), len(rel_files))
 
     for file_path in node_files:
-        logger.info(": %s", file_path.name)
+        logger.info("Loading nodes: %s", file_path.name)
         try:
             load_nodes_from_csv(client, str(file_path))
         except Exception:
-            logger.error("     %s", file_path.name, exc_info=True)
+            logger.error("Failed to load node file %s", file_path.name, exc_info=True)
 
     for file_path in rel_files:
-        logger.info(": %s", file_path.name)
+        logger.info("Loading relationships: %s", file_path.name)
         try:
             load_relationships_from_csv(client, str(file_path))
         except Exception:
-            logger.error("     %s", file_path.name, exc_info=True)
+            logger.error("Failed to load relationship file %s", file_path.name, exc_info=True)
