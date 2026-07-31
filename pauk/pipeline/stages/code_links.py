@@ -30,7 +30,9 @@ class CodeLinksStage(EnrichmentStage):
             state = pub.processing.get(self.name)
             if state and state.status not in {ProcessingStatus.NOT_STARTED, ProcessingStatus.FAILED}:
                 continue
-            urls = list(dict.fromkeys(GITHUB_URL.findall(pub.abstract or "")))
+            # rstrip(".") drops sentence-ending periods the regex captures
+            # ("code at https://github.com/org/repo." -> repo name "repo.").
+            urls = list(dict.fromkeys(url.rstrip(".") for url in GITHUB_URL.findall(pub.abstract or "")))
             pub.has_code = bool(urls)
             pub.code_url = urls[0] if urls else None
             pub.processing[self.name] = ProcessingState(

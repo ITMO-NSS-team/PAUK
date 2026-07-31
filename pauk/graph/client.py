@@ -91,8 +91,11 @@ class Neo4jClient:
 
         Missing target nodes are not auto-created: if `MATCH` can't find the
         target, that relationship silently doesn't materialize. This method
-        makes that observable by comparing the request size against
-        Neo4j's `relationships_created` counter.
+        makes that observable by counting the batch rows whose source and
+        target both matched (`RETURN count(r)`). Neo4j's
+        `relationships_created` counter is NOT usable for this: it stays 0
+        when MERGE finds an already-existing relationship (re-runs, duplicate
+        rows in one batch), which is not an error.
 
         Args:
             src_label: Label of the source node.
@@ -104,8 +107,9 @@ class Neo4jClient:
                 GitHubProfile by "login").
 
         Returns:
-            Number of relationships actually created/updated. If lower than
-            len(relationships), some target nodes weren't found.
+            Number of batch rows whose relationship was created or updated.
+            If lower than len(relationships), some source/target nodes
+            weren't found.
         """
         if not relationships:
             return 0
@@ -127,21 +131,21 @@ class Neo4jClient:
             MERGE (src)-[r:{rel_type}]->(tgt)
             ON CREATE SET r += row.rel_properties, r.created_at = datetime(), r.updated_at = datetime()
             ON MATCH SET  r += row.rel_properties, r.updated_at = datetime()
+            RETURN count(r) AS matched
             """,
         )
 
         with self.driver.session() as session:
-            summary = session.execute_write(lambda tx: tx.run(query, batch=batch).consume())
+            matched = session.execute_write(lambda tx: tx.run(query, batch=batch).single()["matched"])
 
-        created = summary.counters.relationships_created
-        if created < len(batch):
+        if matched < len(batch):
             logger.warning(
-                "(:%s)-[:%s]->(:%s): requested %d, created %d — %d target node(s) not found",
+                "(:%s)-[:%s]->(:%s): requested %d, matched %d — %d row(s) whose source/target node was not found",
                 src_label,
                 rel_type,
                 tgt_label,
                 len(batch),
-                created,
-                len(batch) - created,
+                matched,
+                len(batch) - matched,
             )
-        return created
+        return matched
