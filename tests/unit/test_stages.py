@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pauk.models import Publication
+from pauk.models import Publication, RepoLink
 from pauk.models.processing import ProcessingStatus
 from pauk.pipeline.stages.code_links import CodeLinksStage
 from pauk.pipeline.stages.base import PreparedSelection
@@ -24,6 +24,18 @@ class StagesTest(unittest.TestCase):
             self.assertEqual(rows["W1"].processing["code_links"].status, ProcessingStatus.COMPLETED)
             self.assertEqual(rows["W2"].processing["code_links"].status, ProcessingStatus.COMPLETED_EMPTY)
             self.assertTrue(rows["W1"].has_code)
+
+    def test_code_links_strips_sentence_ending_period_from_url(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prepared = PreparedStore(root / "prepared", "sample")
+            raw = RawStore(root / "raw", "sample")
+            prepared.write_models("publications", [
+                Publication(id="W1", title="t", abstract="Code is available at https://github.com/org/repo."),
+            ])
+            CodeLinksStage(prepared, raw).run()
+            links = [link for row in prepared.read_models("repo_links", RepoLink) for link in row.links]
+            self.assertEqual([link.url for link in links], ["https://github.com/org/repo"])
 
     def test_code_links_respects_publication_input_scope(self):
         with tempfile.TemporaryDirectory() as tmp:
