@@ -12,6 +12,14 @@ from .base import EnrichmentStage
 GITHUB_URL = re.compile(r"https?://(?:www\.)?github\.com/[\w.-]+/[\w.-]+", re.IGNORECASE)
 
 
+def _canonical_github_url(url: str) -> str:
+    """Store www.github.com links under GitHub's canonical host."""
+    parsed = urlparse(url)
+    if parsed.netloc.lower() == "www.github.com":
+        return parsed._replace(netloc="github.com").geturl()
+    return url
+
+
 class CodeLinksStage(EnrichmentStage):
     name = "code_links"
 
@@ -32,7 +40,10 @@ class CodeLinksStage(EnrichmentStage):
                 continue
             # rstrip(".") drops sentence-ending periods the regex captures
             # ("code at https://github.com/org/repo." -> repo name "repo.").
-            urls = list(dict.fromkeys(url.rstrip(".") for url in GITHUB_URL.findall(pub.abstract or "")))
+            urls = list(dict.fromkeys(
+                _canonical_github_url(url.rstrip("."))
+                for url in GITHUB_URL.findall(pub.abstract or "")
+            ))
             pub.has_code = bool(urls)
             pub.code_url = urls[0] if urls else None
             pub.processing[self.name] = ProcessingState(
