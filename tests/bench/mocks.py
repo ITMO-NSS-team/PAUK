@@ -53,6 +53,9 @@ class MockGitHubClient:
             raise _http_404(f"https://api.github.com/repos/{owner}/{name}")
         return payload
 
+    def has_readme(self, owner: str, name: str) -> bool:
+        return True
+
 
 class MockCrossrefClient:
     def __init__(self, universe: dict) -> None:
