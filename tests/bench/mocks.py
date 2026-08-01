@@ -137,6 +137,27 @@ class RecordingNeo4jClient:
                 self.unresolved.append((src_label, rel_type, tgt_label, src_id, tgt_id))
         return matched
 
+    def promote_link_candidates_batch(self, candidates) -> None:
+        """Mirror of Neo4jClient.promote_link_candidates_batch: move
+        MENTIONS_LINK edges from a LinkCandidate to the now-known Repository
+        (matched by url) and delete the candidate node."""
+        for candidate_id, repository_url in candidates:
+            if candidate_id not in self.nodes.get("LinkCandidate", {}):
+                continue
+            repo_exists = any(props.get("url") == repository_url
+                              for props in self.nodes.get("Repository", {}).values())
+            if not repo_exists:
+                continue
+            moved = {}
+            for key, props in list(self.edges.items()):
+                _src, rel_type, tgt_primary, src_id, tgt_id = key
+                if tgt_primary == "LinkCandidate" and tgt_id == candidate_id and rel_type == "MENTIONS_LINK":
+                    del self.edges[key]
+                    moved[("Publication", "MENTIONS_LINK", "Repository", src_id, repository_url)] = props
+            for key, props in moved.items():
+                self.edges.setdefault(key, {}).update(props)
+            del self.nodes["LinkCandidate"][candidate_id]
+
     def close(self) -> None:
         pass
 

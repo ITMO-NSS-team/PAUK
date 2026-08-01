@@ -120,6 +120,54 @@ class Neo4jClient:
         with self.driver.session() as session:
             session.execute_write(lambda tx: tx.run(query, batch=batch))
 
+    def promote_link_candidates_batch(self, candidates: list[tuple[str, str]]) -> None:
+        """Replace resolved LinkCandidates with their Repository targets.
+
+        A publish performed while GitHub enrichment failed creates a
+        LinkCandidate. On a later successful retry, preserve any existing
+        MENTIONS_LINK properties while moving those relationships to the
+        Repository, then remove the candidate if nothing else references it.
+
+        Args:
+            candidates: (candidate_id, repository_url) pairs.
+        """
+        if not candidates:
+            return
+
+        batch = [
+            {"candidate_id": candidate_id, "repository_url": repository_url}
+            for candidate_id, repository_url in candidates
+        ]
+        move_query = cast(
+            LiteralString,
+            """
+            UNWIND $batch AS row
+            MATCH (candidate:LinkCandidate {id: row.candidate_id})
+            MATCH (repository:Repository {url: row.repository_url})
+            MATCH (publication:Publication)-[old:MENTIONS_LINK]->(candidate)
+            MERGE (publication)-[new:MENTIONS_LINK]->(repository)
+            ON CREATE SET new += properties(old), new.created_at = coalesce(old.created_at, datetime()), new.updated_at = datetime()
+            ON MATCH SET new += properties(old), new.updated_at = datetime()
+            DELETE old
+            """,
+        )
+        cleanup_query = cast(
+            LiteralString,
+            """
+            UNWIND $batch AS row
+            MATCH (candidate:LinkCandidate {id: row.candidate_id})
+            WHERE NOT (candidate)--()
+            DELETE candidate
+            """,
+        )
+
+        def promote(tx):
+            tx.run(move_query, batch=batch).consume()
+            tx.run(cleanup_query, batch=batch).consume()
+
+        with self.driver.session() as session:
+            session.execute_write(promote)
+
     def upsert_relationships_batch(
         self,
         src_label: str,

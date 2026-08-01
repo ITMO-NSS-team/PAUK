@@ -46,6 +46,7 @@ class RepositoriesStage(EnrichmentStage):
         }
         client = GitHubClient(self.config.request_timeout, self.config.github_token)
         changed = 0
+        attempted_repo_ids: set[str] = set()
         for row in rows:
             if not self._row_in_scope(row):
                 continue
@@ -73,6 +74,13 @@ class RepositoriesStage(EnrichmentStage):
                                       publication_ids=[row.publication_id], cited_urls=[url])
                     repositories[repo_id] = repo
                     state = None
+                # One repository can be mentioned by many publications. Its
+                # publication IDs are collected above, but the GitHub API must
+                # be called at most once per enrichment run (especially with
+                # --force, which otherwise retries every mention).
+                if repo_id in attempted_repo_ids:
+                    continue
+                attempted_repo_ids.add(repo_id)
                 try:
                     payload = client.get_repository(owner, name)
                     self.raw.append("github", payload, {"repository": url})

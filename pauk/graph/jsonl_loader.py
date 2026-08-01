@@ -14,6 +14,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Iterator
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 
 from .client import Neo4jClient, chunked
 from .extract import NODE_REGISTRY, extract_node, extract_relationships
@@ -52,12 +53,21 @@ def normalize_repo_url(url: str) -> str:
     cosmetic. Without this normalization the same repository would split
     into a Repository node and a LinkCandidate node.
     """
-    return url.strip().rstrip("/").removesuffix(".git").lower().replace("://www.", "://", 1)
+    normalized = url.strip().rstrip("/").lower().removesuffix(".git")
+    parsed = urlparse(normalized)
+    if parsed.netloc == "www.github.com":
+        normalized = urlunparse(parsed._replace(netloc="github.com"))
+    return normalized
 
 
 def extract_repo_links(
     pub_links_row: dict, known_repository_urls: dict[str, str]
-) -> tuple[list[tuple[str, dict]], list[tuple[str, str, dict]], list[tuple[str, str, dict]]]:
+) -> tuple[
+    list[tuple[str, dict]],
+    list[tuple[str, str, dict]],
+    list[tuple[str, str, dict]],
+    list[tuple[str, str]],
+]:
     """Extract MENTIONS_LINK edges from one repo_links.jsonl row.
 
     A row here (PubLinks) is not a node — it's a flat list of candidate code
@@ -77,15 +87,19 @@ def extract_repo_links(
             repositories.jsonl in this run.
 
     Returns:
-        A (link_candidate_nodes, repository_edges, candidate_edges) tuple:
+        A (link_candidate_nodes, repository_edges, candidate_edges,
+        candidate_promotions) tuple:
         LinkCandidate nodes to create, (publication_id, repository_url,
         props) edges matched by Repository "url", and (publication_id,
         candidate_id, props) edges matched by LinkCandidate "id".
+        candidate_promotions maps a previously created candidate ID to its
+        now-known Repository URL so the loader can migrate old graph edges.
     """
     publication_id = pub_links_row["publication_id"]
     candidate_nodes: list[tuple[str, dict]] = []
     repo_edges: list[tuple[str, str, dict]] = []
     candidate_edges: list[tuple[str, str, dict]] = []
+    candidate_promotions: list[tuple[str, str]] = []
 
     for link in pub_links_row.get("links") or []:
         url = link.get("url")
@@ -99,11 +113,12 @@ def extract_repo_links(
         stored_url = known_repository_urls.get(normalize_repo_url(url))
         if stored_url is not None:
             repo_edges.append((publication_id, stored_url, props))
+            candidate_promotions.append((url, stored_url))
         else:
             candidate_nodes.append((url, {"url": url, "host": link.get("host")}))
             candidate_edges.append((publication_id, url, props))
 
-    return candidate_nodes, repo_edges, candidate_edges
+    return candidate_nodes, repo_edges, candidate_edges, candidate_promotions
 
 
 def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
@@ -123,6 +138,7 @@ def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
     person_batches: dict[bool, list[tuple[str, dict]]] = {True: [], False: []}
     rel_batches: dict[tuple[str, str, str, str], list[tuple[str, str, dict]]] = defaultdict(list)
     known_repository_urls: dict[str, str] = {}
+    candidate_promotions: dict[str, str] = {}
 
     for filename, spec_key in FILE_SPECS.items():
         path = in_dir / filename
@@ -169,10 +185,11 @@ def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
         mentions_key = ("Publication", "LinkCandidate", "MENTIONS_LINK", "id")
         mentions_repo_key = ("Publication", "Repository", "MENTIONS_LINK", "url")
         for row in _read_jsonl(repo_links_path):
-            candidate_nodes, repo_edges, candidate_edges = extract_repo_links(row, known_repository_urls)
+            candidate_nodes, repo_edges, candidate_edges, promotions = extract_repo_links(row, known_repository_urls)
             node_batches["LinkCandidate"].extend(candidate_nodes)
             rel_batches[mentions_repo_key].extend(repo_edges)
             rel_batches[mentions_key].extend(candidate_edges)
+            candidate_promotions.update(promotions)
     else:
         logger.info("repo_links.jsonl not found in %s, skipping", in_dir)
 
@@ -185,6 +202,12 @@ def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
         for chunk in chunked(nodes):
             client.upsert_person_nodes_batch(chunk, is_itmo)
         logger.info("nodes (:Person:%s): loaded %d", "Itmo" if is_itmo else "External", len(nodes))
+
+    # A previous publish may have created LinkCandidates while GitHub was
+    # unavailable. Once the repository is known, move those old edges to the
+    # Repository and delete candidates that became orphaned.
+    for chunk in chunked(list(candidate_promotions.items())):
+        client.promote_link_candidates_batch(chunk)
 
     for (src_label, tgt_label, rel_type, tgt_match_prop), rels in rel_batches.items():
         for chunk in chunked(rels):
