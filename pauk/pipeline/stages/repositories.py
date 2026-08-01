@@ -8,6 +8,22 @@ from pauk.sources.github import GitHubClient
 from .base import EnrichmentStage
 
 
+GITHUB_HOSTS = {"github.com", "www.github.com"}
+
+
+def _canonical_repo_id(repo: Repository) -> str:
+    """github_{owner}_{name} from the fetched payload, not from the cited URL.
+
+    A repository renamed on GitHub (or cited in a different letter case)
+    yields a row keyed by the cited URL but carrying the canonical html_url.
+    Without re-keying, two rows would share one URL and violate the
+    Repository.url uniqueness constraint at publish time.
+    """
+    if repo.owner_login and repo.name:
+        return f"github_{repo.owner_login.lower()}_{repo.name.lower()}"
+    return repo.id
+
+
 class RepositoriesStage(EnrichmentStage):
     name = "repositories"
 
@@ -37,7 +53,7 @@ class RepositoriesStage(EnrichmentStage):
                 url = link.url.rstrip("/")
                 parsed = urlparse(url)
                 parts = parsed.path.strip("/").split("/")
-                if parsed.netloc.lower() != "github.com" or len(parts) != 2:
+                if parsed.netloc.lower() not in GITHUB_HOSTS or len(parts) != 2:
                     continue
                 owner, name = parts
                 repo_id = f"github_{owner.lower()}_{name.lower()}"
@@ -47,11 +63,14 @@ class RepositoriesStage(EnrichmentStage):
                 if repo is not None:
                     if row.publication_id not in repo.publication_ids:
                         repo.publication_ids.append(row.publication_id)
+                    if url not in repo.cited_urls:
+                        repo.cited_urls.append(url)
                     state = repo.processing.get(self.name)
                     if not self.needs_attempt(state):
                         continue
                 else:
-                    repo = Repository(id=repo_id, url=url, name=name, publication_ids=[row.publication_id])
+                    repo = Repository(id=repo_id, url=url, name=name,
+                                      publication_ids=[row.publication_id], cited_urls=[url])
                     repositories[repo_id] = repo
                     state = None
                 try:
@@ -67,10 +86,12 @@ class RepositoriesStage(EnrichmentStage):
                     owner_data = payload.get("owner") or {}
                     if repo.owner_login:
                         profile_id = f"github_{repo.owner_login.lower()}"
+                        # `or ""` and not a .get() default: the API serves
+                        # explicit nulls, which .get(key, "") passes through.
                         profiles[profile_id] = GitHubProfile(
                             id=profile_id, login=repo.owner_login,
                             name=owner_data.get("name"), html_url=owner_data.get("html_url"),
-                            type=owner_data.get("type", "").lower() or None,
+                            type=(owner_data.get("type") or "").lower() or None,
                         )
                     repo.processing[self.name] = ProcessingState(
                         status=ProcessingStatus.COMPLETED,
@@ -84,6 +105,25 @@ class RepositoriesStage(EnrichmentStage):
                         finished_at=datetime.now(timezone.utc), error=str(exc),
                     )
                 changed += 1
+        # Re-key fetched rows to their canonical identity: a renamed repo (the
+        # API redirects the old URL) or a case-variant citation must collapse
+        # into one row, otherwise two rows share one canonical URL.
+        canonical: dict[str, Repository] = {}
+        for repo in repositories.values():
+            canonical_id = _canonical_repo_id(repo)
+            winner = canonical.get(canonical_id)
+            if winner is None:
+                repo.id = canonical_id
+                canonical[canonical_id] = repo
+            else:
+                winner.publication_ids = list(dict.fromkeys([
+                    *winner.publication_ids, *repo.publication_ids,
+                ]))
+                winner.cited_urls = list(dict.fromkeys([
+                    *winner.cited_urls, *repo.cited_urls,
+                ]))
+        repositories = canonical
+
         for repo in repositories.values():
             repo.publication_ids = list(dict.fromkeys(repo.publication_ids))
         self.prepared.write_models("repositories", repositories.values())
