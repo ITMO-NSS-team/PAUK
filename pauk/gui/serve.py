@@ -2,10 +2,13 @@
 
 import gzip
 import io
+import logging
 import mimetypes
 import sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8501
 ROOT = Path(__file__).parent / "web"
@@ -43,14 +46,15 @@ class GzipHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         try:
             self.wfile.write(body)
-        except (BrokenPipeError, ConnectionResetError):
-            pass  # client navigated away / dropped connection mid-download — not our problem
+        except (BrokenPipeError, ConnectionResetError) as exc:
+            logger.debug("client dropped connection writing %s: %s", path, exc)
 
     def log_message(self, fmt, *args):
-        pass  # quiet mode
+        pass
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     # threaded: a slow/large download (graph-data.js is 5MB+) from one client
     # must not block every other request behind it
     server = ThreadingHTTPServer(("", PORT), GzipHandler)
