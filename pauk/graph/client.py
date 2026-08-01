@@ -79,6 +79,95 @@ class Neo4jClient:
         with self.driver.session() as session:
             session.execute_write(lambda tx: tx.run(query, batch=batch))
 
+    def upsert_person_nodes_batch(self, nodes: list[tuple[str, dict]], is_itmo: bool):
+        """Create or update a batch of Person nodes in one query.
+
+        Persons are merged on the base :Person label because the same author
+        can appear as ITMO in one group and external in another — merging on
+        the full label pair would create a duplicate node and violate the
+        Person.id uniqueness constraint. The :Itmo label is sticky: at least
+        one ITMO affiliation anywhere makes the person ITMO, so an external
+        row never downgrades an existing :Itmo node.
+
+        Args:
+            nodes: List of (node_id, properties) tuples.
+            is_itmo: Whether this batch carries ITMO persons.
+        """
+        if not nodes:
+            return
+
+        batch = []
+        for node_id, properties in nodes:
+            props_clean = {k: v for k, v in properties.items() if k not in ("id", "created_at", "updated_at")}
+            batch.append({"node_id": node_id, "properties": props_clean})
+
+        if is_itmo:
+            label_clause = "SET n:Itmo REMOVE n:External"
+        else:
+            label_clause = "FOREACH (_ IN CASE WHEN n:Itmo THEN [] ELSE [1] END | SET n:External)"
+
+        query = cast(
+            LiteralString,
+            f"""
+            UNWIND $batch AS row
+            MERGE (n:Person {{id: row.node_id}})
+            ON CREATE SET n += row.properties, n.created_at = datetime(), n.updated_at = datetime()
+            ON MATCH SET  n += row.properties, n.updated_at = datetime()
+            {label_clause}
+            """,
+        )
+
+        with self.driver.session() as session:
+            session.execute_write(lambda tx: tx.run(query, batch=batch))
+
+    def promote_link_candidates_batch(self, candidates: list[tuple[str, str]]) -> None:
+        """Replace resolved LinkCandidates with their Repository targets.
+
+        A publish performed while GitHub enrichment failed creates a
+        LinkCandidate. On a later successful retry, preserve any existing
+        MENTIONS_LINK properties while moving those relationships to the
+        Repository, then remove the candidate if nothing else references it.
+
+        Args:
+            candidates: (candidate_id, repository_url) pairs.
+        """
+        if not candidates:
+            return
+
+        batch = [
+            {"candidate_id": candidate_id, "repository_url": repository_url}
+            for candidate_id, repository_url in candidates
+        ]
+        move_query = cast(
+            LiteralString,
+            """
+            UNWIND $batch AS row
+            MATCH (candidate:LinkCandidate {id: row.candidate_id})
+            MATCH (repository:Repository {url: row.repository_url})
+            MATCH (publication:Publication)-[old:MENTIONS_LINK]->(candidate)
+            MERGE (publication)-[new:MENTIONS_LINK]->(repository)
+            ON CREATE SET new += properties(old), new.created_at = coalesce(old.created_at, datetime()), new.updated_at = datetime()
+            ON MATCH SET new += properties(old), new.updated_at = datetime()
+            DELETE old
+            """,
+        )
+        cleanup_query = cast(
+            LiteralString,
+            """
+            UNWIND $batch AS row
+            MATCH (candidate:LinkCandidate {id: row.candidate_id})
+            WHERE NOT (candidate)--()
+            DELETE candidate
+            """,
+        )
+
+        def promote(tx):
+            tx.run(move_query, batch=batch).consume()
+            tx.run(cleanup_query, batch=batch).consume()
+
+        with self.driver.session() as session:
+            session.execute_write(promote)
+
     def upsert_relationships_batch(
         self,
         src_label: str,
@@ -91,8 +180,11 @@ class Neo4jClient:
 
         Missing target nodes are not auto-created: if `MATCH` can't find the
         target, that relationship silently doesn't materialize. This method
-        makes that observable by comparing the request size against
-        Neo4j's `relationships_created` counter.
+        makes that observable by counting the batch rows whose source and
+        target both matched (`RETURN count(r)`). Neo4j's
+        `relationships_created` counter is NOT usable for this: it stays 0
+        when MERGE finds an already-existing relationship (re-runs, duplicate
+        rows in one batch), which is not an error.
 
         Args:
             src_label: Label of the source node.
@@ -104,8 +196,9 @@ class Neo4jClient:
                 GitHubProfile by "login").
 
         Returns:
-            Number of relationships actually created/updated. If lower than
-            len(relationships), some target nodes weren't found.
+            Number of batch rows whose relationship was created or updated.
+            If lower than len(relationships), some source/target nodes
+            weren't found.
         """
         if not relationships:
             return 0
@@ -127,21 +220,21 @@ class Neo4jClient:
             MERGE (src)-[r:{rel_type}]->(tgt)
             ON CREATE SET r += row.rel_properties, r.created_at = datetime(), r.updated_at = datetime()
             ON MATCH SET  r += row.rel_properties, r.updated_at = datetime()
+            RETURN count(r) AS matched
             """,
         )
 
         with self.driver.session() as session:
-            summary = session.execute_write(lambda tx: tx.run(query, batch=batch).consume())
+            matched = session.execute_write(lambda tx: tx.run(query, batch=batch).single()["matched"])
 
-        created = summary.counters.relationships_created
-        if created < len(batch):
+        if matched < len(batch):
             logger.warning(
-                "(:%s)-[:%s]->(:%s): requested %d, created %d — %d target node(s) not found",
+                "(:%s)-[:%s]->(:%s): requested %d, matched %d — %d row(s) whose source/target node was not found",
                 src_label,
                 rel_type,
                 tgt_label,
                 len(batch),
-                created,
-                len(batch) - created,
+                matched,
+                len(batch) - matched,
             )
-        return created
+        return matched

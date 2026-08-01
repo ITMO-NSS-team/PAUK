@@ -14,6 +14,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Iterator
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 
 from .client import Neo4jClient, chunked
 from .extract import NODE_REGISTRY, extract_node, extract_relationships
@@ -37,33 +38,68 @@ def _read_jsonl(path: Path) -> Iterator[dict]:
                 yield json.loads(line)
 
 
+def _stage_failed(row: dict, stage: str) -> bool:
+    """True if the given enrichment stage is recorded as failed on this row."""
+    state = (row.get("_processing") or {}).get(stage) or {}
+    return state.get("status") == "failed"
+
+
+def normalize_repo_url(url: str) -> str:
+    """Comparison key for repository URLs.
+
+    GitHub treats owner/name case-insensitively and the canonical html_url
+    returned by its API may differ in case from the URL found in an abstract;
+    a trailing slash or ".git" suffix are also cosmetic. Without this
+    normalization the same repository would split into a Repository node and
+    a LinkCandidate node.
+    """
+    normalized = url.strip().rstrip("/").lower().removesuffix(".git")
+    parsed = urlparse(normalized)
+    if parsed.netloc == "www.github.com":
+        normalized = urlunparse(parsed._replace(netloc="github.com"))
+    return normalized
+
+
 def extract_repo_links(
-    pub_links_row: dict, known_repository_urls: set[str]
-) -> tuple[list[tuple[str, dict]], list[tuple[str, str, dict]]]:
+    pub_links_row: dict, known_repository_urls: dict[str, str]
+) -> tuple[
+    list[tuple[str, dict]],
+    list[tuple[str, str, dict]],
+    list[tuple[str, str, dict]],
+    list[tuple[str, str]],
+]:
     """Extract MENTIONS_LINK edges from one repo_links.jsonl row.
 
     A row here (PubLinks) is not a node — it's a flat list of candidate code
     links for one publication, and unlike Publication.mentions_links it
     carries no target_kind discriminator. The rule (matching the old
-    graph_loader.py): if a link's url matches an already-known Repository.url,
-    create a MENTIONS_LINK edge to that Repository (matched by url);
-    otherwise create a LinkCandidate node on the fly, using the url itself
-    as its id — repo_links.jsonl carries no other stable id for a candidate.
+    graph_loader.py): if a link's url matches an already-known Repository.url
+    (compared via normalize_repo_url), create a MENTIONS_LINK edge to that
+    Repository, matched by the repository's *stored* url; otherwise create a
+    LinkCandidate node on the fly, using the url itself as its id —
+    repo_links.jsonl carries no other stable id for a candidate.
 
     Args:
         pub_links_row: One decoded repo_links.jsonl line
             ({"publication_id": ..., "links": [...]}).
-        known_repository_urls: URLs of Repository nodes already seen while
-            loading repositories.jsonl in this run.
+        known_repository_urls: Mapping of normalized Repository URL to the
+            URL as stored on the Repository node, built while loading
+            repositories.jsonl in this run.
 
     Returns:
-        A (link_candidate_nodes, mentions_link_edges) tuple: nodes to add to
-        the LinkCandidate batch, and (publication_id, target_id, props)
-        edges to add to the relevant MENTIONS_LINK batch.
+        A (link_candidate_nodes, repository_edges, candidate_edges,
+        candidate_promotions) tuple:
+        LinkCandidate nodes to create, (publication_id, repository_url,
+        props) edges matched by Repository "url", and (publication_id,
+        candidate_id, props) edges matched by LinkCandidate "id".
+        candidate_promotions maps a previously created candidate ID to its
+        now-known Repository URL so the loader can migrate old graph edges.
     """
     publication_id = pub_links_row["publication_id"]
     candidate_nodes: list[tuple[str, dict]] = []
-    edges: list[tuple[str, str, dict]] = []
+    repo_edges: list[tuple[str, str, dict]] = []
+    candidate_edges: list[tuple[str, str, dict]] = []
+    candidate_promotions: list[tuple[str, str]] = []
 
     for link in pub_links_row.get("links") or []:
         url = link.get("url")
@@ -74,13 +110,15 @@ def extract_repo_links(
             for k in ("context", "page_number", "is_relevant", "llm_confidence", "llm_reason")
             if link.get(k) is not None
         }
-        if url in known_repository_urls:
-            edges.append((publication_id, url, props))  # target matched by "url"
+        stored_url = known_repository_urls.get(normalize_repo_url(url))
+        if stored_url is not None:
+            repo_edges.append((publication_id, stored_url, props))
+            candidate_promotions.append((url, stored_url))
         else:
             candidate_nodes.append((url, {"url": url, "host": link.get("host")}))
-            edges.append((publication_id, url, props))  # target matched by "id" == url
+            candidate_edges.append((publication_id, url, props))
 
-    return candidate_nodes, edges
+    return candidate_nodes, repo_edges, candidate_edges, candidate_promotions
 
 
 def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
@@ -97,8 +135,10 @@ def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
             data/prepared/<group>/.
     """
     node_batches: dict[str, list[tuple[str, dict]]] = defaultdict(list)
+    person_batches: dict[bool, list[tuple[str, dict]]] = {True: [], False: []}
     rel_batches: dict[tuple[str, str, str, str], list[tuple[str, str, dict]]] = defaultdict(list)
-    known_repository_urls: set[str] = set()
+    known_repository_urls: dict[str, str] = {}
+    candidate_promotions: dict[str, str] = {}
 
     for filename, spec_key in FILE_SPECS.items():
         path = in_dir / filename
@@ -106,22 +146,33 @@ def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
             logger.info("%s not found in %s, skipping", filename, in_dir)
             continue
         spec = NODE_REGISTRY[spec_key]
+        skipped_failed = 0
         for row in _read_jsonl(path):
+            if spec_key == "repository" and _stage_failed(row, "repositories"):
+                # Never enriched successfully — a name/url stub would pollute
+                # the graph; it gets loaded once a retry succeeds.
+                skipped_failed += 1
+                continue
             labels, node = extract_node(row, spec)
             node_batches[labels].append(node)
             if spec_key == "repository":
                 # url is required on Repository, not Optional.
-                known_repository_urls.add(row["url"])
+                known_repository_urls[normalize_repo_url(row["url"])] = row["url"]
             for key, rels in extract_relationships(row, spec).items():
                 rel_batches[key].extend(rels)
+        if skipped_failed:
+            logger.info("%s: skipped %d failed (never enriched) row(s)", filename, skipped_failed)
 
     # Persons share a single file but use different labels in the graph.
+    # They are merged on the base :Person label (see upsert_person_nodes_batch)
+    # because the same author may be ITMO in one group and external in another.
     persons_path = in_dir / "persons.jsonl"
     if persons_path.exists():
         for row in _read_jsonl(persons_path):
-            spec = NODE_REGISTRY["itmo_person" if row.get("is_itmo") else "external_person"]
-            labels, node = extract_node(row, spec)
-            node_batches[labels].append(node)
+            is_itmo = bool(row.get("is_itmo"))
+            spec = NODE_REGISTRY["itmo_person" if is_itmo else "external_person"]
+            _labels, node = extract_node(row, spec)
+            person_batches[is_itmo].append(node)
             for key, rels in extract_relationships(row, spec).items():
                 rel_batches[key].extend(rels)
 
@@ -130,11 +181,11 @@ def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
         mentions_key = ("Publication", "LinkCandidate", "MENTIONS_LINK", "id")
         mentions_repo_key = ("Publication", "Repository", "MENTIONS_LINK", "url")
         for row in _read_jsonl(repo_links_path):
-            candidate_nodes, edges = extract_repo_links(row, known_repository_urls)
+            candidate_nodes, repo_edges, candidate_edges, promotions = extract_repo_links(row, known_repository_urls)
             node_batches["LinkCandidate"].extend(candidate_nodes)
-            for src_id, tgt_id, props in edges:
-                key = mentions_repo_key if tgt_id in known_repository_urls else mentions_key
-                rel_batches[key].append((src_id, tgt_id, props))
+            rel_batches[mentions_repo_key].extend(repo_edges)
+            rel_batches[mentions_key].extend(candidate_edges)
+            candidate_promotions.update(promotions)
     else:
         logger.info("repo_links.jsonl not found in %s, skipping", in_dir)
 
@@ -142,6 +193,17 @@ def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
         for chunk in chunked(nodes):
             client.upsert_nodes_batch(labels, chunk)
         logger.info("nodes (:%s): loaded %d", labels, len(nodes))
+
+    for is_itmo, nodes in person_batches.items():
+        for chunk in chunked(nodes):
+            client.upsert_person_nodes_batch(chunk, is_itmo)
+        logger.info("nodes (:Person:%s): loaded %d", "Itmo" if is_itmo else "External", len(nodes))
+
+    # A previous publish may have created LinkCandidates while GitHub was
+    # unavailable. Once the repository is known, move those old edges to the
+    # Repository and delete candidates that became orphaned.
+    for chunk in chunked(list(candidate_promotions.items())):
+        client.promote_link_candidates_batch(chunk)
 
     for (src_label, tgt_label, rel_type, tgt_match_prop), rels in rel_batches.items():
         for chunk in chunked(rels):

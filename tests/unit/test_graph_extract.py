@@ -76,10 +76,13 @@ class ExtractRelationshipsTest(unittest.TestCase):
     def test_person_relationships(self):
         rels = extract_relationships(PERSON_ROW, NODE_REGISTRY["itmo_person"])
 
-        belongs = rels[("Person:Itmo", "Department", "BELONGS_TO", "id")]
+        # Person relationships match their source by the base :Person label:
+        # the Itmo/External label can be upgraded by a later group, while
+        # relationships published from any group must still resolve.
+        belongs = rels[("Person", "Department", "BELONGS_TO", "id")]
         self.assertEqual(sorted(belongs), [("p1", "d1", {}), ("p1", "d2", {})])
 
-        authored = rels[("Person:Itmo", "Publication", "AUTHORED", "id")]
+        authored = rels[("Person", "Publication", "AUTHORED", "id")]
         self.assertEqual(
             authored,
             [
@@ -91,7 +94,7 @@ class ExtractRelationshipsTest(unittest.TestCase):
             ],
         )
 
-        contributed = rels[("Person:Itmo", "Repository", "CONTRIBUTED_TO", "id")]
+        contributed = rels[("Person", "Repository", "CONTRIBUTED_TO", "id")]
         self.assertEqual(contributed, [("p1", "r1", {"role": "maintainer"})])
 
     def test_repository_owned_by_is_scalar_and_matches_by_login(self):

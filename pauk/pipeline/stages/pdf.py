@@ -19,7 +19,7 @@ class PdfStage(EnrichmentStage):
             ):
                 continue
             state = publication.processing.get(self.name)
-            if state and state.status not in {ProcessingStatus.NOT_STARTED, ProcessingStatus.FAILED}:
+            if not self.needs_attempt(state):
                 continue
             publication.processing[self.name] = ProcessingState(
                 status=ProcessingStatus.COMPLETED if publication.pdf_url else ProcessingStatus.NOT_APPLICABLE,

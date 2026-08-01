@@ -78,6 +78,8 @@ def main() -> None:
     p.add_argument("--group", required=True)
     p = sub.add_parser("enrich")
     p.add_argument("stage", nargs="?", default="all")
+    p.add_argument("--force", action="store_true",
+                   help="reprocess rows whose stage already completed (e.g. after a fix)")
     input_group = p.add_mutually_exclusive_group(required=True)
     input_group.add_argument("--group")
     input_group.add_argument("--input")
@@ -104,7 +106,7 @@ def main() -> None:
         if args.stage != "all" and args.stage not in {stage.name for stage in ALL_STAGES}:
             parser.error(f"unknown enrichment stage: {args.stage}")
         group, selection = (validate_group(args.group), None) if args.group else _input_group_and_selection(args.input)
-        print(Enricher(PreparedStore(settings.prepared_dir, group), RawStore(settings.raw_dir, group), settings).run(args.stage, selection))
+        print(Enricher(PreparedStore(settings.prepared_dir, group), RawStore(settings.raw_dir, group), settings).run(args.stage, selection, args.force))
     elif args.command == "publish":
         from pauk.graph.load import load_jsonl_group
         group, _selection = (validate_group(args.group), None) if args.group else _input_group_and_selection(args.input)
