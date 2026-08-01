@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from urllib.parse import urlparse
 
 from pauk.models import GitHubProfile, RepoLink, Repository
@@ -6,7 +6,6 @@ from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.sources.github import GitHubClient
 
 from .base import EnrichmentStage
-
 
 GITHUB_HOSTS = {"github.com", "www.github.com"}
 
@@ -37,13 +36,9 @@ class RepositoriesStage(EnrichmentStage):
     def run(self) -> dict[str, int]:
         rows = list(self.prepared.read_models("repo_links", RepoLink))
         repositories = {
-            repository.id: repository
-            for repository in self.prepared.read_models("repositories", Repository)
+            repository.id: repository for repository in self.prepared.read_models("repositories", Repository)
         }
-        profiles = {
-            profile.id: profile
-            for profile in self.prepared.read_models("github_profiles", GitHubProfile)
-        }
+        profiles = {profile.id: profile for profile in self.prepared.read_models("github_profiles", GitHubProfile)}
         client = GitHubClient(self.config.request_timeout, self.config.github_token)
         changed = 0
         attempted_repo_ids: set[str] = set()
@@ -58,7 +53,11 @@ class RepositoriesStage(EnrichmentStage):
                     continue
                 owner, name = parts
                 repo_id = f"github_{owner.lower()}_{name.lower()}"
-                if self.selection is not None and self.selection.entity == "repositories" and repo_id not in self.selection.ids:
+                if (
+                    self.selection is not None
+                    and self.selection.entity == "repositories"
+                    and repo_id not in self.selection.ids
+                ):
                     continue
                 repo = repositories.get(repo_id)
                 if repo is not None:
@@ -88,10 +87,10 @@ class RepositoriesStage(EnrichmentStage):
                     repo.name = payload.get("name") or name
                     repo.description = payload.get("description")
                     repo.stars_num = payload.get("stargazers_count")
-                    repo.has_readme = False
-                    repo.owner_login = (payload.get("owner") or {}).get("login")
-                    repo.access_date = date.today()
+                    repo.has_readme = client.has_readme(owner, name)
                     owner_data = payload.get("owner") or {}
+                    repo.owner_login = owner_data.get("login")
+                    repo.access_date = date.today()
                     if repo.owner_login:
                         profile_id = f"github_{repo.owner_login.lower()}"
                         # `or ""` and not a .get() default: the API serves
@@ -104,13 +103,15 @@ class RepositoriesStage(EnrichmentStage):
                     repo.processing[self.name] = ProcessingState(
                         status=ProcessingStatus.COMPLETED,
                         attempts=(state.attempts if state else 0) + 1,
-                        finished_at=datetime.now(timezone.utc), result_count=1,
+                        finished_at=datetime.now(UTC),
+                        result_count=1,
                     )
                 except Exception as exc:
                     repo.processing[self.name] = ProcessingState(
                         status=ProcessingStatus.FAILED,
                         attempts=(state.attempts if state else 0) + 1,
-                        finished_at=datetime.now(timezone.utc), error=str(exc),
+                        finished_at=datetime.now(UTC),
+                        error=str(exc),
                     )
                 changed += 1
         # Re-key fetched rows to their canonical identity: a renamed repo (the

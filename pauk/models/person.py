@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from .processing import ProcessingState
@@ -26,3 +28,25 @@ class Person(BaseModel):
     authored: list[Authorship] = Field(default_factory=list)
     contributed_to: list[Contribution] = Field(default_factory=list)
     processing: dict[str, ProcessingState] = Field(default_factory=dict, alias="_processing")
+
+    # stub
+    scopus_id: str | None = None
+    researcher_id: str | None = None
+    dblp_id: str | None = None
+    name_ru: str | None = None
+    other_names: list[str] = Field(default_factory=list)
+    biography: str | None = None
+    country: str | None = None
+    homepage: str | None = None
+    gitlab_username: str | None = None
+    linkedin: str | None = None
+    twitter: str | None = None
+    wikipedia: str | None = None
+    works_count: int | None = None
+    cited_by_count: int | None = None
+    h_index: int | None = None
+    i10_index: int | None = None
+    counts_by_year: dict | None = None
+    status: str | None = None
+    created_at: datetime | None = None
+    enriched_at: datetime | None = None
