@@ -39,9 +39,10 @@ class CodeLinksStage(EnrichmentStage):
             if not self.needs_attempt(state):
                 continue
             # rstrip(".") drops sentence-ending periods the regex captures
-            # ("code at https://github.com/org/repo." -> repo name "repo.").
+            # ("code at https://github.com/org/repo." -> repo name "repo.");
+            # ".git" is a clone-URL suffix, never part of a repo name.
             urls = list(dict.fromkeys(
-                _canonical_github_url(url.rstrip("."))
+                _canonical_github_url(url.rstrip(".").removesuffix(".git"))
                 for url in GITHUB_URL.findall(pub.abstract or "")
             ))
             pub.has_code = bool(urls)

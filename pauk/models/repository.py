@@ -37,6 +37,9 @@ class Repository(BaseModel):
     id: str
     name: str
     url: str
+    # URLs this repo was cited by before canonicalization (renames, case
+    # variants) — lets the graph loader resolve old links to this node.
+    cited_urls: list[str] = Field(default_factory=list)
     description: str | None = None
     access_date: date | None = None
     has_readme: bool = False

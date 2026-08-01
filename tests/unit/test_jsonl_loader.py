@@ -10,6 +10,7 @@ class NormalizeRepoUrlTest(unittest.TestCase):
             "https://github.com/org/repo",
             "https://github.com/Org/Repo/",
             "https://github.com/Org/Repo.git",
+            "https://www.github.com/Org/Repo",
             "https://www.github.com/Org/Repo.GIT",
         ):
             self.assertEqual(normalize_repo_url(variant), canonical)

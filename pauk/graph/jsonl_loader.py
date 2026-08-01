@@ -49,9 +49,9 @@ def normalize_repo_url(url: str) -> str:
 
     GitHub treats owner/name case-insensitively and the canonical html_url
     returned by its API may differ in case from the URL found in an abstract;
-    a trailing slash or ".git" suffix are also cosmetic. Without this
-    normalization the same repository would split into a Repository node and
-    a LinkCandidate node.
+    a "www." host prefix, a trailing slash or a ".git" suffix are also
+    cosmetic. Without this normalization the same repository would split
+    into a Repository node and a LinkCandidate node.
     """
     normalized = url.strip().rstrip("/").lower().removesuffix(".git")
     parsed = urlparse(normalized)
@@ -156,8 +156,12 @@ def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
             labels, node = extract_node(row, spec)
             node_batches[labels].append(node)
             if spec_key == "repository":
-                # url is required on Repository, not Optional.
+                # url is required on Repository, not Optional. cited_urls are
+                # the URLs the repo was referenced by before canonicalization
+                # (renames, case variants) — map them to the stored url too.
                 known_repository_urls[normalize_repo_url(row["url"])] = row["url"]
+                for cited in row.get("cited_urls") or []:
+                    known_repository_urls.setdefault(normalize_repo_url(cited), row["url"])
             for key, rels in extract_relationships(row, spec).items():
                 rel_batches[key].extend(rels)
         if skipped_failed:
