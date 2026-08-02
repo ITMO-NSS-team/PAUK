@@ -33,6 +33,7 @@ from tests.bench.mocks import (
 )
 from tests.bench.universe import (
     AUTHOR_IDS,
+    DEDUP_MERGES,
     PHANTOM_URLS,
     REPO_OWNERS,
     build_universe,
@@ -107,20 +108,22 @@ def bench(tmp_path_factory) -> SimpleNamespace:
 # --- collect / normalize -------------------------------------------------------
 
 def test_collect_is_idempotent(bench):
-    assert bench.collected_first == 100
+    assert bench.collected_first == 110
     assert bench.collected_again == 0
 
 
 def test_normalize_counts(bench):
-    assert bench.normalize_result == {"publications": 100, "persons": 50}
-    assert set(bench.persons) == set(AUTHOR_IDS)
+    assert bench.normalize_result == {"publications": 110, "persons": 59}
+    # bench.persons is read after enrichment, i.e. after the dedup stage
+    # folded the split authors away.
+    assert set(bench.persons) == set(AUTHOR_IDS) - set(DEDUP_MERGES)
 
 
 def test_flaky_affiliation_does_not_split_identity(bench):
     for i in range(1, 6):
         person = bench.persons[f"A50000000{i:02d}"]
         assert person.is_itmo, f"A{i:02d} must be ITMO despite missing affiliations"
-    assert sum(p.is_itmo for p in bench.persons.values()) == 30
+    assert sum(p.is_itmo for p in bench.persons.values()) == 36
 
 
 def test_duplicate_author_entry_kept_per_position(bench):
@@ -242,6 +245,46 @@ def test_crossref_states(bench):
     assert bench.publications["W7000000015"].processing["crossref"].status == "failed"
 
 
+# --- dedup ------------------------------------------------------------------------------
+
+def test_orcid_split_author_is_merged(bench):
+    assert "A5000000052" not in bench.persons
+    canonical = bench.persons["A5000000051"]
+    assert canonical.merged_ids == ["A5000000052"]
+    assert canonical.is_itmo, "ITMO flag must survive merging in the external half"
+    assert {a.publication_id for a in canonical.authored} == {"W70000000101", "W70000000102"}
+    assert "D. A. Kovalev" in canonical.name_variants
+
+
+def test_variant_split_merges_transitively_including_cyrillic(bench):
+    assert "A5000000054" not in bench.persons
+    assert "A5000000055" not in bench.persons
+    canonical = bench.persons["A5000000053"]
+    assert canonical.merged_ids == ["A5000000054", "A5000000055"]
+    assert {a.publication_id for a in canonical.authored} == {
+        "W70000000103", "W70000000104", "W70000000105", "W70000000110",
+    }
+    assert {"E. Smirnova", "Екатерина Смирнова"} <= set(canonical.name_variants)
+
+
+def test_true_namesakes_stay_separate_but_reported(bench):
+    assert "A5000000056" in bench.persons and "A5000000057" in bench.persons
+    candidates_path = bench.config.prepared_dir / GROUP / "dedup_candidates.jsonl"
+    rows = [json.loads(line) for line in candidates_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()]
+    pairs = {frozenset((row["person_a"], row["person_b"])) for row in rows}
+    assert frozenset(("A5000000056", "A5000000057")) in pairs
+
+
+def test_conflicting_orcids_stay_separate_and_unreported(bench):
+    assert "A5000000058" in bench.persons and "A5000000059" in bench.persons
+    candidates_path = bench.config.prepared_dir / GROUP / "dedup_candidates.jsonl"
+    rows = [json.loads(line) for line in candidates_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()]
+    pairs = {frozenset((row["person_a"], row["person_b"])) for row in rows}
+    assert frozenset(("A5000000058", "A5000000059")) not in pairs
+
+
 # --- departments -----------------------------------------------------------------------
 
 def test_department_matching_including_aliases(bench):
@@ -256,13 +299,15 @@ def test_department_matching_including_aliases(bench):
 
 def test_graph_node_counts(bench):
     graph = bench.graph
-    assert len(graph.nodes["Publication"]) == 100
-    assert len(graph.nodes["Person"]) == 50
+    assert len(graph.nodes["Publication"]) == 110
+    assert len(graph.nodes["Person"]) == 56
     assert len(graph.nodes["Repository"]) == 80
     assert len(graph.nodes["GitHubProfile"]) == 16
     assert len(graph.nodes["LinkCandidate"]) == 3
     labels = list(graph.person_labels.values())
-    assert labels.count("Itmo") == 30 and labels.count("External") == 20
+    assert labels.count("Itmo") == 36 and labels.count("External") == 20
+    for merged_id in DEDUP_MERGES:
+        assert merged_id not in graph.nodes["Person"]
 
 
 def test_link_candidates_are_exactly_the_phantoms(bench):
@@ -274,7 +319,7 @@ def test_graph_edge_counts(bench):
     expected_authored = {(person.id, a.publication_id)
                          for person in bench.persons.values() for a in person.authored}
     assert graph.edge_pairs("AUTHORED") == expected_authored
-    assert len(expected_authored) == 208
+    assert len(expected_authored) == 228
 
     assert len(graph.edge_pairs("MENTIONS_LINK")) == 82 + 3  # repos + candidates
     assert len(graph.edge_pairs("IMPLEMENTS")) == 82
