@@ -7,17 +7,32 @@ Persons
     OpenAlex author disambiguation sometimes splits one researcher into
     several author records (e.g. "Nikolay Nikitin" and "Nikolay O. Nikitin").
     Person identity in PAUK is the OpenAlex author ID, so each split record
-    becomes its own person. Two rules fold them back together:
+    becomes its own person. Three rules fold them back together:
 
     1. ORCID: two persons carrying the same ORCID are the same author.
     2. Name variant: one person's display name is listed among the other's
        OpenAlex name variants, both are ITMO-affiliated, and they share at
        least one coauthor.
+    3. Same name by default: identical multi-token display names on two
+       ITMO-affiliated persons are one person unless something explicit
+       tells them apart — within one university's author pool a full-name
+       collision is far rarer than an OpenAlex split.
 
-    Pairs with weaker evidence (an exact display-name match without variant
-    confirmation, or a variant match without a shared coauthor) are never
-    merged automatically — they are written to dedup_candidates.jsonl in the
-    group directory for manual review.
+    An explicitly different identity field (ORCID, email, GitHub login,
+    OpenReview id, Google Scholar id) always keeps a pair separate. Pairs
+    with weaker evidence (a variant match without a shared coauthor, a
+    namesake outside ITMO, a single-token name) are never merged
+    automatically.
+
+    Every heuristic decision is journalled to dedup_candidates.jsonl in the
+    group directory: applied merges carry status "merged" with the rule(s)
+    that justified them — so they can be audited and rolled back — and
+    held-back pairs and groups carry status "held" with the reasons.
+
+    The same rules serve the graph-wide pass (pauk dedup graph, see
+    pauk/graph/dedup.py), which compares persons across all published
+    groups — duplicates whose records live in different groups are
+    invisible to this per-group stage.
 
 Publications
     One work reaches OpenAlex through several routes: a preprint and the
@@ -82,6 +97,197 @@ def _norm_doi(doi: str | None) -> str | None:
 
 def _variant_set(person: Person) -> set[str]:
     return {_norm(variant) for variant in person.name_variants if _norm(variant)}
+
+
+# Identity fields a person can carry explicitly; two persons differing in any
+# of them are two real people no matter how similar their names are.
+PROFILE_FIELDS = ("email", "github", "openreview", "google_scholar")
+
+
+def _profiles_conflict(first: Person, second: Person) -> bool:
+    return any(
+        getattr(first, field) and getattr(second, field)
+        and getattr(first, field) != getattr(second, field)
+        for field in PROFILE_FIELDS
+    )
+
+
+def _paired_persons(people: list[Person], in_scope: set[str] | None):
+    """Yield person pairs worth comparing.
+
+    Blocking keeps this quadratic only within small buckets: name-based
+    pairs must share a name token, ORCID pairs are grouped exactly.
+    """
+    by_orcid: dict[str, list[Person]] = {}
+    by_token: dict[str, list[Person]] = {}
+    for person in people:
+        if person.orcid:
+            by_orcid.setdefault(person.orcid, []).append(person)
+        for name in (person.name_en, *person.name_variants):
+            for token in _norm(name).replace(",", " ").split():
+                if len(token) > 2:
+                    by_token.setdefault(token, []).append(person)
+
+    emitted: set[tuple[str, str]] = set()
+    for bucket in (*by_orcid.values(), *by_token.values()):
+        unique = list({person.id: person for person in bucket}.values())
+        for i, first in enumerate(unique):
+            for second in unique[i + 1:]:
+                if in_scope is not None and first.id not in in_scope and second.id not in in_scope:
+                    continue
+                pair = tuple(sorted((first.id, second.id)))
+                if pair in emitted:
+                    continue
+                emitted.add(pair)
+                yield first, second
+
+
+def plan_person_merges(
+    people: list[Person],
+    trusted_orcid: dict[str, str | None],
+    in_scope: set[str] | None = None,
+) -> tuple[list[tuple[Person, list[Person]]], list[dict]]:
+    """Decide which persons are one author and which pairs need human eyes.
+
+    Shared by the per-group dedup stage and the graph-wide pass (pauk
+    dedup graph): both feed Person rows in, only the storage they apply the
+    result to differs.
+
+    Returns:
+        (groups, report): groups as (canonical, duplicates) tuples — the
+        canonical person is the one with the most authored works (ties:
+        having an ORCID, then the smallest id) — and review-journal rows.
+        Every heuristic decision lands in the journal: applied merges carry
+        status "merged" plus the rule(s) that justified them (so they can
+        be audited and rolled back via merged_ids), pairs and groups held
+        back carry status "held" plus the reasons.
+    """
+    by_id = {person.id: person for person in people}
+
+    pub_authors: dict[str, set[str]] = {}
+    for person in people:
+        for authorship in person.authored:
+            pub_authors.setdefault(authorship.publication_id, set()).add(person.id)
+
+    coauthor_cache: dict[str, set[str]] = {}
+
+    def coauthors(person: Person) -> set[str]:
+        cached = coauthor_cache.get(person.id)
+        if cached is None:
+            cached = set()
+            for authorship in person.authored:
+                cached |= pub_authors.get(authorship.publication_id, set())
+            cached.discard(person.id)
+            coauthor_cache[person.id] = cached
+        return cached
+
+    merge_pairs: list[tuple[str, str]] = []
+    pair_rules: dict[frozenset, str] = {}
+    report: list[dict] = []
+
+    def plan_pair(first: Person, second: Person, rule: str) -> None:
+        merge_pairs.append((first.id, second.id))
+        pair_rules[frozenset((first.id, second.id))] = rule
+
+    for first, second in _paired_persons(people, in_scope):
+        first_orcid = trusted_orcid.get(first.id)
+        second_orcid = trusted_orcid.get(second.id)
+        if first_orcid and second_orcid:
+            if first_orcid == second_orcid:
+                plan_pair(first, second, "orcid")
+            # Different ORCIDs are explicit evidence of two distinct
+            # people — never merge and not worth reporting either.
+            continue
+        if _profiles_conflict(first, second):
+            continue
+
+        first_name, second_name = _norm(first.name_en), _norm(second.name_en)
+        if not first_name or not second_name:
+            continue
+        variant_evidence = (
+            first_name != second_name
+            and (first_name in _variant_set(second) or second_name in _variant_set(first))
+        )
+        same_name = first_name == second_name
+        if not variant_evidence and not same_name:
+            continue
+        both_itmo = first.is_itmo and second.is_itmo
+        multi_token = len(first_name.split()) > 1
+        shared = (coauthors(first) & coauthors(second)) - {first.id, second.id}
+
+        if variant_evidence and both_itmo and shared:
+            plan_pair(first, second, "name_variant")
+        elif same_name and both_itmo and multi_token:
+            # Identical full name and nothing explicit telling them apart:
+            # one person by default.
+            plan_pair(first, second, "same_name")
+        elif first.is_itmo or second.is_itmo:
+            reasons = []
+            if not both_itmo:
+                reasons.append("only one person is ITMO-affiliated")
+            if same_name and both_itmo and not multi_token:
+                reasons.append("single-token display name")
+            if variant_evidence and both_itmo and not shared:
+                reasons.append("no shared coauthors")
+            report.append({
+                "status": "held",
+                "person_a": first.id, "name_a": first.name_en,
+                "person_b": second.id, "name_b": second.name_en,
+                "shared_coauthors": len(shared),
+                "held_because": reasons,
+            })
+
+    groups: list[tuple[Person, list[Person]]] = []
+    for members in _grouped(merge_pairs):
+        # Pairwise checks can't see transitive contradictions: A and B may
+        # each legitimately pair with a bridge person M yet differ from
+        # each other. A group spanning more than one ORCID (or any other
+        # explicit identity value) is refused whole, for manual review.
+        conflict = _group_conflict(members, by_id, trusted_orcid)
+        if conflict:
+            field, values = conflict
+            logger.warning(
+                "dedup: refusing to merge group %s — it spans %d distinct %s values",
+                sorted(members), len(values), field)
+            report.append({
+                "status": "held",
+                "persons": sorted(members),
+                "names": [by_id[member].name_en for member in sorted(members)],
+                "held_because": [f"group spans {len(values)} distinct {field} values"],
+            })
+            continue
+        ranked = sorted(
+            (by_id[member] for member in members),
+            key=lambda p: (-len(p.authored), p.orcid is None, p.id),
+        )
+        canonical, duplicates = ranked[0], ranked[1:]
+        groups.append((canonical, duplicates))
+        for duplicate in duplicates:
+            report.append({
+                "status": "merged",
+                "person_a": duplicate.id, "name_a": duplicate.name_en,
+                "person_b": canonical.id, "name_b": canonical.name_en,
+                "merged_into": canonical.id,
+                "rules": sorted({
+                    rule for pair, rule in pair_rules.items() if duplicate.id in pair
+                }),
+            })
+    return groups, report
+
+
+def _group_conflict(
+    members: list[str], by_id: dict[str, Person],
+    trusted_orcid: dict[str, str | None],
+) -> tuple[str, set[str]] | None:
+    """The first identity field whose values split the group, if any."""
+    orcids = {trusted_orcid.get(member) for member in members} - {None}
+    if len(orcids) > 1:
+        return "ORCID", orcids
+    for field in PROFILE_FIELDS:
+        values = {getattr(by_id[member], field) for member in members} - {None}
+        if len(values) > 1:
+            return field, values
+    return None
 
 
 def _grouped(pairs: Iterable[tuple[str, str]]) -> Iterator[list[str]]:
@@ -353,88 +559,33 @@ class DedupStage(EnrichmentStage):
 
     def _dedup_persons(self) -> tuple[int, int]:
         people = list(self.prepared.read_models("persons", Person))
-        by_id = {person.id: person for person in people}
-        in_scope = self._person_scope(people)
-        trusted_orcid = self._trusted_orcids(people)
+        groups, report = plan_person_merges(
+            people, self._trusted_orcids(people), self._person_scope(people))
 
-        pub_authors: dict[str, set[str]] = {}
-        for person in people:
-            for authorship in person.authored:
-                pub_authors.setdefault(authorship.publication_id, set()).add(person.id)
-
-        coauthor_cache: dict[str, set[str]] = {}
-
-        def coauthors(person: Person) -> set[str]:
-            cached = coauthor_cache.get(person.id)
-            if cached is None:
-                cached = set()
-                for authorship in person.authored:
-                    cached |= pub_authors.get(authorship.publication_id, set())
-                cached.discard(person.id)
-                coauthor_cache[person.id] = cached
-            return cached
-
-        merge_pairs: list[tuple[str, str]] = []
-        candidates: list[dict] = []
-        seen_pairs: set[tuple[str, str]] = set()
-
-        for first, second in self._paired(people, in_scope):
-            key = (first.id, second.id)
-            if key in seen_pairs:
-                continue
-            seen_pairs.add(key)
-            first_orcid = trusted_orcid.get(first.id)
-            second_orcid = trusted_orcid.get(second.id)
-            if first_orcid and second_orcid:
-                if first_orcid == second_orcid:
-                    merge_pairs.append(key)
-                # Different ORCIDs are explicit evidence of two distinct
-                # people — never merge and not worth reporting either.
-                continue
-
-            first_name, second_name = _norm(first.name_en), _norm(second.name_en)
-            if not first_name or not second_name:
-                continue
-            variant_evidence = (
-                first_name != second_name
-                and (first_name in _variant_set(second) or second_name in _variant_set(first))
-            )
-            same_name = first_name == second_name
-            if not variant_evidence and not same_name:
-                continue
-            both_itmo = first.is_itmo and second.is_itmo
-            shared = (coauthors(first) & coauthors(second)) - {first.id, second.id}
-
-            if variant_evidence and both_itmo and shared:
-                merge_pairs.append(key)
-            elif first.is_itmo or second.is_itmo:
-                reasons = []
-                if not variant_evidence:
-                    reasons.append("same display name is not confirmed by a name variant")
-                if not both_itmo:
-                    reasons.append("only one person is ITMO-affiliated")
-                if not shared:
-                    reasons.append("no shared coauthors")
-                candidates.append({
-                    "person_a": first.id, "name_a": first.name_en,
-                    "person_b": second.id, "name_b": second.name_en,
-                    "shared_coauthors": len(shared),
-                    "held_because": reasons,
-                })
-
-        removed = self._apply_person_merges(by_id, merge_pairs, trusted_orcid)
+        removed: set[str] = set()
+        for canonical, duplicates in groups:
+            for duplicate in duplicates:
+                logger.info("dedup: merging %s (%s) into %s (%s)",
+                            duplicate.id, duplicate.name_en, canonical.id, canonical.name_en)
+                _merge_person(canonical, duplicate)
+                if duplicate.name_en:
+                    canonical.name_variants = _union(canonical.name_variants, [duplicate.name_en])
+                canonical.merged_ids = _union(canonical.merged_ids, [duplicate.id])
+                removed.add(duplicate.id)
+            self._record_state(canonical, len(duplicates))
         if removed:
             people = [person for person in people if person.id not in removed]
             self.prepared.write_models("persons", people)
 
-        candidates_path = self.prepared.group_dir / CANDIDATES_FILENAME
-        with AtomicWriter(candidates_path) as fh:
-            for row in candidates:
+        held = sum(1 for row in report if row["status"] == "held")
+        report_path = self.prepared.group_dir / CANDIDATES_FILENAME
+        with AtomicWriter(report_path) as fh:
+            for row in report:
                 fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-        if candidates:
-            logger.info("dedup: %d candidate pair(s) left for manual review in %s",
-                        len(candidates), candidates_path)
-        return len(removed), len(candidates)
+        if report:
+            logger.info("dedup: review journal in %s — %d merge(s) applied, %d pair(s) held",
+                        report_path, len(removed), held)
+        return len(removed), held
 
     def _trusted_orcids(self, people: list[Person]) -> dict[str, str | None]:
         """ORCID per person id, preferring the raw OpenAlex author record.
@@ -470,71 +621,6 @@ class DedupStage(EnrichmentStage):
                 if any(a.publication_id in self.selection.ids for a in person.authored)
             }
         return set()
-
-    def _paired(self, people: list[Person], in_scope: set[str] | None):
-        """Yield person pairs worth comparing.
-
-        Blocking keeps this quadratic only within small buckets: name-based
-        pairs must share a name token, ORCID pairs are grouped exactly.
-        """
-        by_orcid: dict[str, list[Person]] = {}
-        by_token: dict[str, list[Person]] = {}
-        for person in people:
-            if person.orcid:
-                by_orcid.setdefault(person.orcid, []).append(person)
-            for name in (person.name_en, *person.name_variants):
-                for token in _norm(name).replace(",", " ").split():
-                    if len(token) > 2:
-                        by_token.setdefault(token, []).append(person)
-
-        emitted: set[tuple[str, str]] = set()
-        for bucket in (*by_orcid.values(), *by_token.values()):
-            unique = list({person.id: person for person in bucket}.values())
-            for i, first in enumerate(unique):
-                for second in unique[i + 1:]:
-                    if in_scope is not None and first.id not in in_scope and second.id not in in_scope:
-                        continue
-                    pair = tuple(sorted((first.id, second.id)))
-                    if pair in emitted:
-                        continue
-                    emitted.add(pair)
-                    yield first, second
-
-    def _apply_person_merges(self, by_id: dict[str, Person], pairs: list[tuple[str, str]],
-                             trusted_orcid: dict[str, str | None]) -> set[str]:
-        """Fold each group of paired persons into a canonical person.
-
-        The canonical person is the one with the most authored works
-        (ties: having an ORCID, then the smallest id, for determinism).
-
-        Pairwise checks can't see transitive contradictions: A and B may
-        each legitimately pair with a bridge person M yet carry different
-        ORCIDs themselves. Any group holding more than one distinct ORCID
-        is therefore skipped entirely and left for manual review.
-        """
-        removed: set[str] = set()
-        for members in _grouped(pairs):
-            distinct_orcids = {trusted_orcid.get(member) for member in members} - {None}
-            if len(distinct_orcids) > 1:
-                logger.warning(
-                    "dedup: refusing to merge group %s — it spans %d distinct ORCIDs",
-                    sorted(members), len(distinct_orcids))
-                continue
-            ranked = sorted(
-                (by_id[member] for member in members),
-                key=lambda p: (-len(p.authored), p.orcid is None, p.id),
-            )
-            canonical, duplicates = ranked[0], ranked[1:]
-            for duplicate in duplicates:
-                logger.info("dedup: merging %s (%s) into %s (%s)",
-                            duplicate.id, duplicate.name_en, canonical.id, canonical.name_en)
-                _merge_person(canonical, duplicate)
-                if duplicate.name_en:
-                    canonical.name_variants = _union(canonical.name_variants, [duplicate.name_en])
-                canonical.merged_ids = _union(canonical.merged_ids, [duplicate.id])
-                removed.add(duplicate.id)
-            self._record_state(canonical, len(duplicates))
-        return removed
 
     # --- shared helpers ---------------------------------------------------------
 

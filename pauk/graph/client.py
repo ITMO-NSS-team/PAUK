@@ -257,6 +257,46 @@ class Neo4jClient:
             logger.info("%s: folded %d duplicate node(s) into their canonical node", label, removed)
         return removed
 
+    def fetch_persons_for_dedup(self) -> list[dict]:
+        """Every Person node with the fields the person merge rules consume.
+
+        publication_ids carries the AUTHORED targets so the rules can
+        compute shared coauthors without a second round-trip.
+        """
+        query = """
+            MATCH (p:Person)
+            OPTIONAL MATCH (p)-[:AUTHORED]->(w:Publication)
+            RETURN p.id AS id, p.openalex_id AS openalex_id, p.name_en AS name_en,
+                   p.name_variants AS name_variants, p.orcid AS orcid, p.email AS email,
+                   p.github AS github, p.openreview AS openreview,
+                   p.google_scholar AS google_scholar, p.merged_ids AS merged_ids,
+                   'Itmo' IN labels(p) AS is_itmo,
+                   collect(DISTINCT w.id) AS publication_ids
+        """
+        with self.driver.session() as session:
+            return session.execute_read(
+                lambda tx: [dict(record) for record in tx.run(query)])
+
+    def fetch_merged_id_map(self, label: str) -> dict[str, str]:
+        """Map of merged-away id to canonical id stored on `label` nodes.
+
+        The loader uses this after every publish to re-fold ids that an
+        older group's rows just resurrected (the group was published before
+        a graph-wide dedup folded those ids elsewhere).
+        """
+        query = cast(
+            LiteralString,
+            f"""
+            MATCH (n:{label})
+            WHERE size(coalesce(n.merged_ids, [])) > 0
+            UNWIND n.merged_ids AS merged_id
+            RETURN merged_id, n.id AS canonical_id
+            """,
+        )
+        with self.driver.session() as session:
+            return session.execute_read(
+                lambda tx: {record["merged_id"]: record["canonical_id"] for record in tx.run(query)})
+
     def merge_person_nodes_batch(self, merges: list[tuple[str, str]]) -> int:
         """Fold duplicate Person nodes into their canonical person."""
         return self._fold_nodes_batch("Person", merges, outgoing=(
