@@ -1,4 +1,4 @@
-"""Fully synthetic test universe: 100 works, 50 authors, 80 repositories.
+"""Fully synthetic test universe: 110 works, 59 authors, 80 repositories.
 
 Deterministic (no randomness) and self-describing: every tricky case the
 pipeline must survive is a named constant here, and `build_universe()`
@@ -7,7 +7,7 @@ returns the raw payloads exactly as the external APIs would serve them.
 Tricky cases covered
 --------------------
 
-Authors (A5000000001..A5000000050, 30 ITMO / 20 external):
+Authors (A5000000001..A5000000059, 38 ITMO / 21 external before dedup):
 * A01-A05  ITMO affiliation missing on odd-numbered works (identity merge,
            sticky is_itmo)
 * A06/A07  same family name ("Ivanov") on the same work -> the Crossref
@@ -22,6 +22,21 @@ Authors (A5000000001..A5000000050, 30 ITMO / 20 external):
 * A13      ORCID already present in the OpenAlex author payload
 * A14      ORCID arrives only via Crossref (plus an email via ORCID record)
 * A16      OpenAlex authors endpoint fails -> persons stage FAILED
+
+Split-author duplicates for the dedup stage (works W101..W110):
+* A51/A52  same person split by OpenAlex: "Dmitry Kovalev" (ITMO) and
+           "D. A. Kovalev" (external, affiliation missed) share one ORCID
+           in their author records -> merged into A51, is_itmo survives
+* A53/A54/A55  one person, three spellings: "Ekaterina Smirnova" lists
+           "E. Smirnova" and "Екатерина Смирнова" among her name variants;
+           each duplicate shares coauthor A17 -> the whole group folds
+           transitively into A53 (most works)
+* A56/A57  true namesakes: two different ITMO "Ivan Volkov"s with a shared
+           coauthor but no variant evidence -> NOT merged, reported in
+           dedup_candidates.jsonl
+* A58/A59  "Olga Fedorova" lists "O. Fedorova" as a variant and they share
+           a coauthor, but their author records carry different ORCIDs ->
+           NOT merged and not even a candidate
 
 Works (W7000000001..W7000000100):
 * W001     GitHub URL with a sentence-ending period
@@ -53,8 +68,24 @@ alias URL redirects to a canonical repo, and some owner payloads miss
 
 from __future__ import annotations
 
-AUTHOR_IDS = [f"A50000000{i:02d}" for i in range(1, 51)]
-WORK_IDS = [f"W70000000{i:02d}" for i in range(1, 101)]
+AUTHOR_IDS = [f"A50000000{i:02d}" for i in range(1, 60)]
+WORK_IDS = [f"W70000000{i:02d}" for i in range(1, 111)]
+
+# Split-author cases: ids merged away by the dedup stage and where they go.
+DEDUP_MERGES = {
+    "A5000000052": "A5000000051",
+    "A5000000054": "A5000000053",
+    "A5000000055": "A5000000053",
+}
+# (author index, filler coauthor index) per dedup work W101..W110.
+DEDUP_WORK_AUTHORS = {
+    101: (51, 20), 102: (52, 21),
+    103: (53, 17), 104: (54, 17), 105: (55, 17), 110: (53, 24),
+    106: (56, 22), 107: (57, 22),
+    108: (58, 23), 109: (59, 23),
+}
+KOVALEV_ORCID = "0000-0006-0000-0051"
+FEDOROVA_ORCIDS = {58: "0000-0007-0000-0058", 59: "0000-0007-0000-0059"}
 
 ITMO_ROR = "https://ror.org/04txgxn49"
 ITMO_INSTITUTION = {"ror": ITMO_ROR, "display_name": "ITMO University"}
@@ -149,6 +180,15 @@ def _author_name(i: int) -> str | None:
         9: "Jan van der Berg",
         10: None,
         11: "José Álvarez-Müller",
+        51: "Dmitry Kovalev",
+        52: "D. A. Kovalev",
+        53: "Ekaterina Smirnova",
+        54: "E. Smirnova",
+        55: "Екатерина Смирнова",
+        56: "Ivan Volkov",
+        57: "Ivan Volkov",
+        58: "Olga Fedorova",
+        59: "O. Fedorova",
     }
     if i in special:
         return special[i]
@@ -169,8 +209,9 @@ def _affiliation(i: int, itmo: bool) -> list[str]:
 
 
 def _is_itmo(i: int, n: int) -> bool:
-    """A01..A30 are ITMO, but A01..A05 lose the affiliation on odd works."""
-    if i > 30:
+    """A01..A30 and the dedup authors (except A52) are ITMO; A01..A05 lose
+    the affiliation on odd works, A52 is the external half of a split."""
+    if 31 <= i <= 50 or i == 52:
         return False
     return not (i <= 5 and n % 2 == 1)
 
@@ -211,6 +252,8 @@ def build_universe() -> dict:
             work["authorships"] = [_authorship(i, n) for i in (1, 2, 3, 4, 5, 6, 7, 8, 31, 32, 33, 34)]
         elif n == 18:
             work["authorships"] = [_authorship(12, n), _authorship(35, n), _authorship(12, n)]
+        elif n in DEDUP_WORK_AUTHORS:
+            work["authorships"] = [_authorship(i, n) for i in DEDUP_WORK_AUTHORS[n]]
         else:
             first = (n - 1) % 50 + 1
             second = (n + 16) % 50 + 1
@@ -239,17 +282,33 @@ def build_universe() -> dict:
 
     assert not remaining, f"universe bug: {len(remaining)} repos never cited"
 
+    dedup_alternatives = {
+        51: ["D. A. Kovalev"],
+        52: [],
+        53: ["E. Smirnova", "Екатерина Смирнова", "Smirnova, Ekaterina"],
+        54: [],
+        55: [],
+        56: ["I. Volkov"],
+        57: ["I. Volkov"],
+        58: ["O. Fedorova"],
+        59: [],
+    }
     authors_api: dict[str, dict | None] = {}
     for i, author_id in enumerate(AUTHOR_IDS, start=1):
         if i == 16:
             authors_api[author_id] = None  # endpoint fails
             continue
         payload: dict = {
+            "id": f"https://openalex.org/{author_id}",
             "display_name": _author_name(i) or f"Recovered Name{i:02d}",
-            "display_name_alternatives": [f"A. Surname{i:02d}"],
+            "display_name_alternatives": dedup_alternatives.get(i, [f"A. Surname{i:02d}"]),
         }
         if i == 13:
             payload["orcid"] = "https://orcid.org/0000-0001-0000-0013"
+        if i in (51, 52):
+            payload["orcid"] = f"https://orcid.org/{KOVALEV_ORCID}"
+        if i in FEDOROVA_ORCIDS:
+            payload["orcid"] = f"https://orcid.org/{FEDOROVA_ORCIDS[i]}"
         authors_api[author_id] = payload
 
     crossref: dict[str, dict] = {}
@@ -282,6 +341,9 @@ def build_universe() -> dict:
         "0000-0001-0000-0013": {"person": {"emails": {"email": []}}},
         "0000-0002-0000-0014": {"person": {"emails": {"email": [{"email": "a14@example.org"}]}}},
         "0000-0005-0000-0008": {"person": {}},  # record without an emails block
+        KOVALEV_ORCID: {"person": {"emails": {"email": []}}},
+        FEDOROVA_ORCIDS[58]: {"person": {"emails": {"email": []}}},
+        FEDOROVA_ORCIDS[59]: {"person": {"emails": {"email": []}}},
     }
 
     return {
