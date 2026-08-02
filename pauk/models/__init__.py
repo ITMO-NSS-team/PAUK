@@ -1,6 +1,6 @@
 from .department import Department
 from .person import Person
-from .publication import Funding, Publication
+from .publication import Funding, Publication, PublicationVersion
 from .relations import Authorship, Contribution, MentionsLink
 from .repository import CodeLink, GitHubProfile, LinkCandidate, RepoLink, Repository
 
@@ -15,6 +15,7 @@ __all__ = [
     "MentionsLink",
     "Person",
     "Publication",
+    "PublicationVersion",
     "RepoLink",
     "Repository",
 ]

@@ -5,6 +5,7 @@ from .pdf import PdfStage
 from .persons import PersonsStage
 from .repositories import RepositoriesStage
 
-# Dedup runs right after persons: it needs the ORCIDs and name variants
-# that stage fetches, and departments should already see merged persons.
-ALL_STAGES = (PdfStage, PersonsStage, DedupStage, DepartmentsStage, CodeLinksStage, RepositoriesStage)
+# Dedup runs last: it folds duplicate publications, repositories and persons
+# using what the other stages fetched (ORCIDs and name variants, GitHub repo
+# ids) and rewrites every prepared row that referenced a merged-away id.
+ALL_STAGES = (PdfStage, PersonsStage, DepartmentsStage, CodeLinksStage, RepositoriesStage, DedupStage)

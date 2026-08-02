@@ -172,18 +172,23 @@ class Neo4jClient:
         with self.driver.session() as session:
             session.execute_write(promote)
 
-    def merge_person_nodes_batch(self, merges: list[tuple[str, str]]) -> int:
-        """Fold duplicate Person nodes into their canonical person.
+    def _fold_nodes_batch(self, label: str, merges: list[tuple[str, str]],
+                          outgoing: tuple[tuple[str, str], ...],
+                          incoming: tuple[tuple[str, str], ...] = ()) -> int:
+        """Fold duplicate nodes of one label into their canonical node.
 
-        The dedup enrichment stage records the OpenAlex IDs it merged away
-        on the surviving person (merged_ids). A publish performed before the
-        merge may still hold a node for such an ID — move its relationships
-        onto the canonical node (existing canonical relationships win, the
-        duplicate's properties only fill gaps) and delete the duplicate.
-        Rows whose duplicate node does not exist are no-ops.
+        The dedup enrichment stage records the ids it merged away on the
+        surviving row (merged_ids). A publish performed before the merge may
+        still hold a node for such an id — move its relationships onto the
+        canonical node (existing canonical relationships win, the duplicate's
+        properties only fill gaps) and delete the duplicate. Rows whose
+        duplicate node does not exist are no-ops.
 
         Args:
+            label: Node label being folded, e.g. "Person".
             merges: (duplicate_id, canonical_id) pairs.
+            outgoing: (rel_type, target_label) pairs the node points to.
+            incoming: (source_label, rel_type) pairs pointing at the node.
 
         Returns:
             Number of duplicate nodes that were actually removed.
@@ -196,36 +201,46 @@ class Neo4jClient:
         if not batch:
             return 0
 
-        # Person's outgoing relationship types; incoming ones don't exist in
-        # the schema. rel_type/label are interpolated for the same reason as
-        # in upsert_relationships_batch: they are our own literals.
+        # Labels and relationship types are interpolated for the same reason
+        # as in upsert_relationships_batch: Cypher cannot parameterize
+        # identifiers, and these are always our own literals.
         move_queries = [
             cast(
                 LiteralString,
                 f"""
                 UNWIND $batch AS row
-                MATCH (dup:Person {{id: row.dup_id}})-[old:{rel_type}]->(tgt:{tgt_label})
-                MATCH (canonical:Person {{id: row.canonical_id}})
-                MERGE (canonical)-[new:{rel_type}]->(tgt)
+                MATCH (dup:{label} {{id: row.dup_id}})-[old:{rel_type}]->(other:{other_label})
+                MATCH (canonical:{label} {{id: row.canonical_id}})
+                MERGE (canonical)-[new:{rel_type}]->(other)
                 ON CREATE SET new += properties(old), new.created_at = coalesce(old.created_at, datetime()), new.updated_at = datetime()
                 ON MATCH SET new.updated_at = datetime()
                 DELETE old
                 """,
             )
-            for rel_type, tgt_label in (
-                ("AUTHORED", "Publication"),
-                ("BELONGS_TO", "Department"),
-                ("CONTRIBUTED_TO", "Repository"),
+            for rel_type, other_label in outgoing
+        ] + [
+            cast(
+                LiteralString,
+                f"""
+                UNWIND $batch AS row
+                MATCH (other:{other_label})-[old:{rel_type}]->(dup:{label} {{id: row.dup_id}})
+                MATCH (canonical:{label} {{id: row.canonical_id}})
+                MERGE (other)-[new:{rel_type}]->(canonical)
+                ON CREATE SET new += properties(old), new.created_at = coalesce(old.created_at, datetime()), new.updated_at = datetime()
+                ON MATCH SET new.updated_at = datetime()
+                DELETE old
+                """,
             )
+            for other_label, rel_type in incoming
         ]
         # The canonical node must exist — otherwise deleting the duplicate
-        # would lose the person entirely.
+        # would lose the entity entirely.
         delete_query = cast(
             LiteralString,
-            """
+            f"""
             UNWIND $batch AS row
-            MATCH (dup:Person {id: row.dup_id})
-            MATCH (:Person {id: row.canonical_id})
+            MATCH (dup:{label} {{id: row.dup_id}})
+            MATCH (:{label} {{id: row.canonical_id}})
             DETACH DELETE dup
             RETURN count(dup) AS removed
             """,
@@ -239,8 +254,38 @@ class Neo4jClient:
         with self.driver.session() as session:
             removed = session.execute_write(merge)
         if removed:
-            logger.info("persons: folded %d duplicate node(s) into their canonical person", removed)
+            logger.info("%s: folded %d duplicate node(s) into their canonical node", label, removed)
         return removed
+
+    def merge_person_nodes_batch(self, merges: list[tuple[str, str]]) -> int:
+        """Fold duplicate Person nodes into their canonical person."""
+        return self._fold_nodes_batch("Person", merges, outgoing=(
+            ("AUTHORED", "Publication"),
+            ("BELONGS_TO", "Department"),
+            ("CONTRIBUTED_TO", "Repository"),
+        ))
+
+    def merge_publication_nodes_batch(self, merges: list[tuple[str, str]]) -> int:
+        """Fold duplicate Publication nodes into the surviving publication."""
+        return self._fold_nodes_batch("Publication", merges, outgoing=(
+            ("PRODUCED_BY", "Department"),
+            ("MENTIONS_LINK", "Repository"),
+            ("MENTIONS_LINK", "LinkCandidate"),
+        ), incoming=(
+            ("Person", "AUTHORED"),
+            ("Repository", "IMPLEMENTS"),
+        ))
+
+    def merge_repository_nodes_batch(self, merges: list[tuple[str, str]]) -> int:
+        """Fold duplicate Repository nodes into the surviving repository."""
+        return self._fold_nodes_batch("Repository", merges, outgoing=(
+            ("IMPLEMENTS", "Publication"),
+            ("OWNED_BY", "GitHubProfile"),
+            ("DEVELOPED_BY", "Department"),
+        ), incoming=(
+            ("Publication", "MENTIONS_LINK"),
+            ("Person", "CONTRIBUTED_TO"),
+        ))
 
     def upsert_relationships_batch(
         self,

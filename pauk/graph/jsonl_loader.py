@@ -14,10 +14,13 @@ import logging
 from collections import defaultdict
 from collections.abc import Iterator
 from pathlib import Path
-from urllib.parse import urlparse, urlunparse
+
+from pauk.urls import normalize_repo_url
 
 from .client import Neo4jClient, chunked
 from .extract import NODE_REGISTRY, extract_node, extract_relationships
+
+__all__ = ["extract_repo_links", "load_jsonl_dir", "normalize_repo_url"]
 
 logger = logging.getLogger(__name__)
 
@@ -42,22 +45,6 @@ def _stage_failed(row: dict, stage: str) -> bool:
     """True if the given enrichment stage is recorded as failed on this row."""
     state = (row.get("_processing") or {}).get(stage) or {}
     return state.get("status") == "failed"
-
-
-def normalize_repo_url(url: str) -> str:
-    """Comparison key for repository URLs.
-
-    GitHub treats owner/name case-insensitively and the canonical html_url
-    returned by its API may differ in case from the URL found in an abstract;
-    a "www." host prefix, a trailing slash or a ".git" suffix are also
-    cosmetic. Without this normalization the same repository would split
-    into a Repository node and a LinkCandidate node.
-    """
-    normalized = url.strip().rstrip("/").lower().removesuffix(".git")
-    parsed = urlparse(normalized)
-    if parsed.netloc == "www.github.com":
-        normalized = urlunparse(parsed._replace(netloc="github.com"))
-    return normalized
 
 
 def extract_repo_links(
@@ -139,6 +126,7 @@ def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
     rel_batches: dict[tuple[str, str, str, str], list[tuple[str, str, dict]]] = defaultdict(list)
     known_repository_urls: dict[str, str] = {}
     candidate_promotions: dict[str, str] = {}
+    node_merges: dict[str, list[tuple[str, str]]] = defaultdict(list)
 
     for filename, spec_key in FILE_SPECS.items():
         path = in_dir / filename
@@ -155,6 +143,8 @@ def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
                 continue
             labels, node = extract_node(row, spec)
             node_batches[labels].append(node)
+            for merged_id in row.get("merged_ids") or []:
+                node_merges[spec_key].append((merged_id, row["id"]))
             if spec_key == "repository":
                 # url is required on Repository, not Optional. cited_urls are
                 # the URLs the repo was referenced by before canonicalization
@@ -212,11 +202,15 @@ def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
     for chunk in chunked(list(candidate_promotions.items())):
         client.promote_link_candidates_batch(chunk)
 
-    # A previous publish may still hold Person nodes that the dedup stage
-    # has since folded into a canonical person — migrate their relationships
-    # and remove them before the canonical relationships are loaded.
+    # A previous publish may still hold nodes that the dedup stage has since
+    # folded into a canonical row — migrate their relationships and remove
+    # them before the canonical relationships are loaded.
     for chunk in chunked(person_merges):
         client.merge_person_nodes_batch(chunk)
+    for chunk in chunked(node_merges["publication"]):
+        client.merge_publication_nodes_batch(chunk)
+    for chunk in chunked(node_merges["repository"]):
+        client.merge_repository_nodes_batch(chunk)
 
     for (src_label, tgt_label, rel_type, tgt_match_prop), rels in rel_batches.items():
         for chunk in chunked(rels):

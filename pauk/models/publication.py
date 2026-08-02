@@ -11,6 +11,24 @@ class Funding(BaseModel):
     grant_id: str | None = None
 
 
+class PublicationVersion(BaseModel):
+    """One place a work appeared: a preprint, a dataset deposit, a journal
+    version of record, or a duplicate OpenAlex record of any of those.
+
+    The dedup stage folds such records into a single Publication and keeps
+    one entry here per record — including the surviving one — so that no
+    venue, DOI or OpenAlex id is lost by merging.
+    """
+
+    openalex_id: str
+    doi: str | None = None
+    journal: str | None = None
+    publication_date: date | None = None
+    year: int | None = None
+    openalex_url: str | None = None
+    pdf_url: str | None = None
+
+
 class Publication(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -28,4 +46,8 @@ class Publication(BaseModel):
     abstract: str | None = None
     department_ids: list[str] = Field(default_factory=list)
     mentions_links: list[MentionsLink] = Field(default_factory=list)
+    # Every record folded into this publication (see PublicationVersion) and
+    # the OpenAlex work ids those records were keyed by.
+    versions: list[PublicationVersion] = Field(default_factory=list)
+    merged_ids: list[str] = Field(default_factory=list)
     processing: dict[str, ProcessingState] = Field(default_factory=dict, alias="_processing")
