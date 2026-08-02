@@ -172,6 +172,76 @@ class Neo4jClient:
         with self.driver.session() as session:
             session.execute_write(promote)
 
+    def merge_person_nodes_batch(self, merges: list[tuple[str, str]]) -> int:
+        """Fold duplicate Person nodes into their canonical person.
+
+        The dedup enrichment stage records the OpenAlex IDs it merged away
+        on the surviving person (merged_ids). A publish performed before the
+        merge may still hold a node for such an ID — move its relationships
+        onto the canonical node (existing canonical relationships win, the
+        duplicate's properties only fill gaps) and delete the duplicate.
+        Rows whose duplicate node does not exist are no-ops.
+
+        Args:
+            merges: (duplicate_id, canonical_id) pairs.
+
+        Returns:
+            Number of duplicate nodes that were actually removed.
+        """
+        batch = [
+            {"dup_id": dup_id, "canonical_id": canonical_id}
+            for dup_id, canonical_id in merges
+            if dup_id != canonical_id
+        ]
+        if not batch:
+            return 0
+
+        # Person's outgoing relationship types; incoming ones don't exist in
+        # the schema. rel_type/label are interpolated for the same reason as
+        # in upsert_relationships_batch: they are our own literals.
+        move_queries = [
+            cast(
+                LiteralString,
+                f"""
+                UNWIND $batch AS row
+                MATCH (dup:Person {{id: row.dup_id}})-[old:{rel_type}]->(tgt:{tgt_label})
+                MATCH (canonical:Person {{id: row.canonical_id}})
+                MERGE (canonical)-[new:{rel_type}]->(tgt)
+                ON CREATE SET new += properties(old), new.created_at = coalesce(old.created_at, datetime()), new.updated_at = datetime()
+                ON MATCH SET new.updated_at = datetime()
+                DELETE old
+                """,
+            )
+            for rel_type, tgt_label in (
+                ("AUTHORED", "Publication"),
+                ("BELONGS_TO", "Department"),
+                ("CONTRIBUTED_TO", "Repository"),
+            )
+        ]
+        # The canonical node must exist — otherwise deleting the duplicate
+        # would lose the person entirely.
+        delete_query = cast(
+            LiteralString,
+            """
+            UNWIND $batch AS row
+            MATCH (dup:Person {id: row.dup_id})
+            MATCH (:Person {id: row.canonical_id})
+            DETACH DELETE dup
+            RETURN count(dup) AS removed
+            """,
+        )
+
+        def merge(tx) -> int:
+            for query in move_queries:
+                tx.run(query, batch=batch).consume()
+            return tx.run(delete_query, batch=batch).single()["removed"]
+
+        with self.driver.session() as session:
+            removed = session.execute_write(merge)
+        if removed:
+            logger.info("persons: folded %d duplicate node(s) into their canonical person", removed)
+        return removed
+
     def upsert_relationships_batch(
         self,
         src_label: str,

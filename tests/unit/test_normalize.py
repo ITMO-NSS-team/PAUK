@@ -81,6 +81,28 @@ class NormalizeTest(unittest.TestCase):
             self.assertEqual(person.email, "p@example.org")
             self.assertEqual({a.publication_id for a in person.authored}, {"W1", "W2"})
 
+    def test_merged_author_id_keeps_routing_to_canonical_person(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = RawStore(root / "raw", "sample")
+            raw.append("openalex_works", {
+                "id": "https://openalex.org/W5", "title": "New work by the merged id",
+                "authorships": [
+                    {"author": {"id": "https://openalex.org/A9", "display_name": "Nikolay Nikitin"}},
+                ],
+            }, {"work_id": "W5"})
+            prepared = PreparedStore(root / "prepared", "sample")
+            prepared.write_models("persons", [
+                Person(id="A1", openalex_id="A1", is_itmo=True, name_en="Nikolay O. Nikitin",
+                       merged_ids=["A9"], authored=[{"publication_id": "W1", "position": 1}]),
+            ])
+            result = OpenAlexNormalizer(raw, prepared).run()
+            self.assertEqual(result["persons"], 1)
+            person = next(prepared.read_models("persons", Person))
+            self.assertEqual(person.id, "A1")
+            self.assertEqual(person.merged_ids, ["A9"])
+            self.assertEqual({a.publication_id for a in person.authored}, {"W1", "W5"})
+
     def test_re_normalization_preserves_enrichment_files_and_publication_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

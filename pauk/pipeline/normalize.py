@@ -49,6 +49,7 @@ def _merge_person(base: Person, extra: Person) -> Person:
     base.is_itmo = base.is_itmo or extra.is_itmo
     base.name_variants = list(dict.fromkeys([*base.name_variants, *extra.name_variants]))
     base.department_ids = list(dict.fromkeys([*base.department_ids, *extra.department_ids]))
+    base.merged_ids = list(dict.fromkeys([*base.merged_ids, *extra.merged_ids]))
     for authorship in extra.authored:
         if authorship not in base.authored:
             base.authored.append(authorship)
@@ -83,6 +84,14 @@ class OpenAlexNormalizer:
             row.id = canonical
             existing = persons.get(canonical)
             persons[canonical] = _merge_person(existing, row) if existing else row
+        # Authors previously folded by the dedup stage keep routing to their
+        # canonical person on re-normalization instead of resurfacing as a
+        # fresh duplicate row.
+        merged_alias = {
+            merged_id: person.id
+            for person in persons.values()
+            for merged_id in person.merged_ids
+        }
         for envelope in self.raw.read("openalex_works"):
             work = envelope["payload"]
             work_id = _short_id(work.get("id"))
@@ -115,6 +124,7 @@ class OpenAlexNormalizer:
                 author_id = _short_id(author.get("id"))
                 if not author_id:
                     continue
+                author_id = merged_alias.get(author_id, author_id)
                 institutions = authorship.get("institutions") or []
                 is_itmo = any(ITMO_ROR_ID in (inst.get("ror") or inst.get("id") or "") for inst in institutions)
                 person = persons.setdefault(author_id, Person(

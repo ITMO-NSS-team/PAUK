@@ -170,6 +170,7 @@ def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
     # Persons share a single file but use different labels in the graph.
     # They are merged on the base :Person label (see upsert_person_nodes_batch)
     # because the same author may be ITMO in one group and external in another.
+    person_merges: list[tuple[str, str]] = []
     persons_path = in_dir / "persons.jsonl"
     if persons_path.exists():
         for row in _read_jsonl(persons_path):
@@ -177,6 +178,8 @@ def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
             spec = NODE_REGISTRY["itmo_person" if is_itmo else "external_person"]
             _labels, node = extract_node(row, spec)
             person_batches[is_itmo].append(node)
+            for merged_id in row.get("merged_ids") or []:
+                person_merges.append((merged_id, row["id"]))
             for key, rels in extract_relationships(row, spec).items():
                 rel_batches[key].extend(rels)
 
@@ -208,6 +211,12 @@ def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
     # Repository and delete candidates that became orphaned.
     for chunk in chunked(list(candidate_promotions.items())):
         client.promote_link_candidates_batch(chunk)
+
+    # A previous publish may still hold Person nodes that the dedup stage
+    # has since folded into a canonical person — migrate their relationships
+    # and remove them before the canonical relationships are loaded.
+    for chunk in chunked(person_merges):
+        client.merge_person_nodes_batch(chunk)
 
     for (src_label, tgt_label, rel_type, tgt_match_prop), rels in rel_batches.items():
         for chunk in chunked(rels):

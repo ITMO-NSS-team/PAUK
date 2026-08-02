@@ -118,6 +118,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "status",
             "created_at",
             "enriched_at",
+            "merged_ids",
         ),
         relationships=(
             RelSpec("department_ids", "BELONGS_TO", "Department", None),
@@ -166,6 +167,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "status",
             "created_at",
             "enriched_at",
+            "merged_ids",
         ),
         relationships=(
             RelSpec(

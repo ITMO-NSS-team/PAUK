@@ -161,6 +161,29 @@ class RecordingNeo4jClient:
                 self.edges.setdefault(key, {}).update(props)
             del self.nodes["LinkCandidate"][candidate_id]
 
+    def merge_person_nodes_batch(self, merges) -> int:
+        """Mirror of Neo4jClient.merge_person_nodes_batch: move the duplicate
+        person's outgoing edges onto the canonical person (existing canonical
+        edges win) and delete the duplicate node."""
+        removed = 0
+        for dup_id, canonical_id in merges:
+            if dup_id == canonical_id:
+                continue
+            if dup_id not in self.nodes.get("Person", {}):
+                continue
+            if canonical_id not in self.nodes.get("Person", {}):
+                continue
+            for key, props in list(self.edges.items()):
+                src_primary, rel_type, tgt_primary, src_id, tgt_id = key
+                if src_primary == "Person" and src_id == dup_id:
+                    del self.edges[key]
+                    self.edges.setdefault(
+                        (src_primary, rel_type, tgt_primary, canonical_id, tgt_id), props)
+            del self.nodes["Person"][dup_id]
+            self.person_labels.pop(dup_id, None)
+            removed += 1
+        return removed
+
     def close(self) -> None:
         pass
 
