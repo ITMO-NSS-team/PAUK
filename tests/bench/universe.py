@@ -1,4 +1,4 @@
-"""Fully synthetic test universe: 110 works, 59 authors, 80 repositories.
+"""Fully synthetic test universe: 120 works, 59 authors, 80 repositories.
 
 Deterministic (no randomness) and self-describing: every tricky case the
 pipeline must survive is a named constant here, and `build_universe()`
@@ -60,16 +60,85 @@ Works (W7000000001..W7000000100):
 * W019     grants/funding present (stored as JSON text on the node) + 404 repo
 * W020     pdf_url present + 404 repo (typo of a real name)
 
+Duplicate publication records for the dedup stage (works W111..W120):
+* W111/W112  one DOI re-indexed into two OpenAlex records; W112 carries no
+             authors at all -> the documented record survives
+* W113/W114  preprint and version of record: same title, different DOI,
+             journal and date -> the later record survives and keeps both
+             venues in `versions`
+* W115-W117  one deposit re-released three times -> the newest survives
+             holding three versions
+* W118       untitled like W013: the "Untitled" placeholder must never
+             merge two works
+* W119/W120  one title differing only in letter case and spacing -> merged
+
 Repositories: 80 canonical repos across 16 owners (5 each); all 80 are
 cited at least once. 3 phantom URLs are cited but never existed (404), one
 alias URL redirects to a canonical repo, and some owner payloads miss
-`name`/`type`.
+`name`/`type`. A row written before a repository was renamed (STALE_REPO_ID)
+is seeded between the two enrichment runs: only GitHub's numeric id ties it
+to the row the new name produced.
 """
 
 from __future__ import annotations
 
 AUTHOR_IDS = [f"A50000000{i:02d}" for i in range(1, 60)]
-WORK_IDS = [f"W70000000{i:02d}" for i in range(1, 111)]
+WORK_IDS = [f"W70000000{i:02d}" for i in range(1, 121)]
+
+# Duplicate publication records (works W111..W120). One work reaches OpenAlex
+# as several records: a re-indexed duplicate of one DOI, a preprint and its
+# version of record, a deposit re-released per version. Titles differing only
+# in case and spacing are the same title; the "Untitled" placeholder is not.
+DUPLICATE_DOI = "https://doi.org/10.7777/synth.dup"
+PUBLICATION_TITLES = {
+    111: "Bench duplicate record", 112: "Bench duplicate record",
+    113: "Bench preprint and version of record",
+    114: "Bench preprint and version of record",
+    115: "Bench dataset deposit", 116: "Bench dataset deposit", 117: "Bench dataset deposit",
+    119: "Bench Case Variant Study", 120: "  bench case VARIANT   study ",
+}
+PUBLICATION_JOURNALS = {
+    111: "Synthetic Journal", 112: "Synthetic Journal",
+    113: "Synthetic Preprint Server", 114: "Synthetic Journal",
+    115: "Synthetic Data Archive", 116: "Synthetic Data Archive",
+    117: "Synthetic Data Archive",
+}
+PUBLICATION_DOIS = {
+    111: DUPLICATE_DOI, 112: DUPLICATE_DOI,
+    113: "https://doi.org/10.7777/preprint.113", 114: "https://doi.org/10.7777/vor.114",
+    115: "https://doi.org/10.7777/deposit.115", 116: "https://doi.org/10.7777/deposit.116",
+    117: "https://doi.org/10.7777/deposit.117",
+}
+PUBLICATION_DATES = {
+    111: "2026-03-15", 112: "2026-03-15",   # one DOI, one date: authors decide
+    113: "2026-02-15", 114: "2026-09-15",   # the version of record comes later
+    115: "2026-01-20", 116: "2026-04-20", 117: "2026-07-20",
+    119: "2026-06-05", 120: "2026-05-05",
+}
+# Same authors on both records of a work: their authorships must collapse.
+DUPLICATE_WORK_AUTHORS = {
+    111: (21, 22), 112: (),  # the re-indexed record carries no authors at all
+    113: (24, 25), 114: (24, 25),
+    115: (26, 27), 116: (26, 27), 117: (26, 27),
+    118: (30,), 119: (28, 29), 120: (28, 29),
+}
+# Merged-away work id -> the record that survives.
+PUBLICATION_MERGES = {
+    "W70000000112": "W70000000111",
+    "W70000000113": "W70000000114",
+    "W70000000115": "W70000000117",
+    "W70000000116": "W70000000117",
+    "W70000000120": "W70000000119",
+}
+UNTITLED_WORK_IDS = ("W7000000013", "W70000000118")
+
+# A repository renamed on GitHub between two runs: the row written before the
+# rename survives in prepared under its old id and URL, and only GitHub's
+# numeric id ties it to the row the new name produced.
+STALE_REPO_ID = "github_benchorg7_legacy-name"
+STALE_REPO_URL = "https://github.com/BenchOrg7/legacy-name"
+STALE_REPO_CANONICAL_ID = "github_benchorg7_alphatool"
+STALE_REPO_PUBLICATION = "W7000000021"
 
 # Split-author cases: ids merged away by the dedup stage and where they go.
 DEDUP_MERGES = {
@@ -152,6 +221,11 @@ def _inverted_index(text: str) -> dict[str, list[int]]:
     return index
 
 
+def repo_github_id(owner: str, name: str) -> int:
+    """GitHub's numeric id for a synthetic repository."""
+    return 100_000 + REPO_OWNERS.index(owner) * 10 + REPO_NAMES.index(name)
+
+
 def _canonical_repos() -> dict[tuple[str, str], dict]:
     repos: dict[tuple[str, str], dict] = {}
     for oi, owner in enumerate(REPO_OWNERS):
@@ -163,6 +237,9 @@ def _canonical_repos() -> dict[tuple[str, str], dict]:
         }
         for ri, name in enumerate(REPO_NAMES):
             repos[(owner.lower(), name.lower())] = {
+                # GitHub's numeric id: one per repository, unchanged by the
+                # renames below (an old and a new name serve one payload).
+                "id": repo_github_id(owner, name),
                 "name": name,
                 "html_url": f"https://github.com/{owner}/{name}",
                 "description": f"Synthetic repo {owner}/{name}" if ri % 2 == 0 else None,
@@ -238,16 +315,22 @@ def build_universe() -> dict:
     for n, work_id in enumerate(WORK_IDS, start=1):
         work: dict = {"id": f"https://openalex.org/{work_id}"}
 
+        if n not in (13, 118):  # both untitled: a placeholder is not a title
+            work["title"] = PUBLICATION_TITLES.get(n, f"Synthetic paper {n:03d}")
         if n != 13:
-            work["title"] = f"Synthetic paper {n:03d}"
-            work["publication_date"] = f"2026-{(n - 1) % 12 + 1:02d}-15"
+            work["publication_date"] = PUBLICATION_DATES.get(
+                n, f"2026-{(n - 1) % 12 + 1:02d}-15")
         if n == 15:
             work["doi"] = "https://doi.org/10.9999/unknown-to-crossref"
         elif n not in (13, 14):
-            work["doi"] = f"https://doi.org/10.7777/synth.{n:03d}"
+            work["doi"] = PUBLICATION_DOIS.get(n, f"https://doi.org/10.7777/synth.{n:03d}")
+        if n in PUBLICATION_JOURNALS:
+            work["primary_location"] = {"source": {"display_name": PUBLICATION_JOURNALS[n]}}
 
         if n == 16:
             work["authorships"] = []
+        elif n in DUPLICATE_WORK_AUTHORS:
+            work["authorships"] = [_authorship(i, n) for i in DUPLICATE_WORK_AUTHORS[n]]
         elif n == 17:
             work["authorships"] = [_authorship(i, n) for i in (1, 2, 3, 4, 5, 6, 7, 8, 31, 32, 33, 34)]
         elif n == 18:

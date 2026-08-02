@@ -158,28 +158,42 @@ class RecordingNeo4jClient:
                 self.edges.setdefault(key, {}).update(props)
             del self.nodes["LinkCandidate"][candidate_id]
 
-    def merge_person_nodes_batch(self, merges) -> int:
-        """Mirror of Neo4jClient.merge_person_nodes_batch: move the duplicate
-        person's outgoing edges onto the canonical person (existing canonical
-        edges win) and delete the duplicate node."""
+    def _fold_nodes(self, label: str, merges) -> int:
+        """Mirror of Neo4jClient._fold_nodes_batch: move the duplicate node's
+        edges (both directions) onto the canonical node — existing canonical
+        edges win — and delete the duplicate node."""
         removed = 0
         for dup_id, canonical_id in merges:
             if dup_id == canonical_id:
                 continue
-            if dup_id not in self.nodes.get("Person", {}):
+            if dup_id not in self.nodes.get(label, {}):
                 continue
-            if canonical_id not in self.nodes.get("Person", {}):
+            if canonical_id not in self.nodes.get(label, {}):
                 continue
             for key, props in list(self.edges.items()):
                 src_primary, rel_type, tgt_primary, src_id, tgt_id = key
-                if src_primary == "Person" and src_id == dup_id:
+                if src_primary == label and src_id == dup_id:
                     del self.edges[key]
                     self.edges.setdefault(
                         (src_primary, rel_type, tgt_primary, canonical_id, tgt_id), props)
-            del self.nodes["Person"][dup_id]
-            self.person_labels.pop(dup_id, None)
+                elif tgt_primary == label and tgt_id == dup_id:
+                    del self.edges[key]
+                    self.edges.setdefault(
+                        (src_primary, rel_type, tgt_primary, src_id, canonical_id), props)
+            del self.nodes[label][dup_id]
+            if label == "Person":
+                self.person_labels.pop(dup_id, None)
             removed += 1
         return removed
+
+    def merge_person_nodes_batch(self, merges) -> int:
+        return self._fold_nodes("Person", merges)
+
+    def merge_publication_nodes_batch(self, merges) -> int:
+        return self._fold_nodes("Publication", merges)
+
+    def merge_repository_nodes_batch(self, merges) -> int:
+        return self._fold_nodes("Repository", merges)
 
     def close(self) -> None:
         pass

@@ -35,8 +35,15 @@ from tests.bench.universe import (
     AUTHOR_IDS,
     DEDUP_MERGES,
     PHANTOM_URLS,
+    PUBLICATION_MERGES,
     REPO_OWNERS,
+    STALE_REPO_CANONICAL_ID,
+    STALE_REPO_ID,
+    STALE_REPO_PUBLICATION,
+    STALE_REPO_URL,
+    UNTITLED_WORK_IDS,
     build_universe,
+    repo_github_id,
 )
 
 GROUP = "bench"
@@ -77,6 +84,16 @@ def bench(tmp_path_factory) -> SimpleNamespace:
     try:
         Enricher(prepared, raw, config).run()
         repos_after_first = {r.id: r for r in prepared.read_models("repositories", Repository)}
+        # A repository renamed on GitHub after an earlier run: that run's row
+        # kept the old id and URL, so only the numeric id can tie it to the
+        # row the new name produced. Seeded here, folded by the re-run below.
+        prepared.write_models("repositories", [*repos_after_first.values(), Repository(
+            id=STALE_REPO_ID, name="legacy-name", url=STALE_REPO_URL,
+            github_id=repo_github_id("BenchOrg7", "AlphaTool"),
+            cited_urls=[STALE_REPO_URL], owner_login="BenchOrg7",
+            publication_ids=[STALE_REPO_PUBLICATION],
+            processing={"repositories": {"status": "completed", "attempts": 1}},
+        )])
         Enricher(prepared, raw, config).run()  # re-run: completed rows must not change
     finally:
         for p in patches:
@@ -108,12 +125,14 @@ def bench(tmp_path_factory) -> SimpleNamespace:
 # --- collect / normalize -------------------------------------------------------
 
 def test_collect_is_idempotent(bench):
-    assert bench.collected_first == 110
+    assert bench.collected_first == 120
     assert bench.collected_again == 0
 
 
 def test_normalize_counts(bench):
-    assert bench.normalize_result == {"publications": 110, "persons": 59}
+    # Normalization keeps one row per OpenAlex work; duplicate records of one
+    # publication are folded later, by the dedup stage.
+    assert bench.normalize_result == {"publications": 120, "persons": 59}
     # bench.persons is read after enrichment, i.e. after the dedup stage
     # folded the split authors away.
     assert set(bench.persons) == set(AUTHOR_IDS) - set(DEDUP_MERGES)
@@ -285,6 +304,77 @@ def test_conflicting_orcids_stay_separate_and_unreported(bench):
     assert frozenset(("A5000000058", "A5000000059")) not in pairs
 
 
+# --- publication dedup -------------------------------------------------------------------
+
+def test_one_doi_re_indexed_twice_is_one_publication(bench):
+    assert "W70000000112" not in bench.publications
+    survivor = bench.publications["W70000000111"]
+    assert survivor.merged_ids == ["W70000000112"]
+    assert {v.openalex_id for v in survivor.versions} == {"W70000000111", "W70000000112"}
+
+
+def test_preprint_folds_into_version_of_record_keeping_both_venues(bench):
+    assert "W70000000113" not in bench.publications
+    survivor = bench.publications["W70000000114"]
+    assert (survivor.journal, survivor.doi) == ("Synthetic Journal",
+                                                "https://doi.org/10.7777/vor.114")
+    assert {(v.journal, v.doi) for v in survivor.versions} == {
+        ("Synthetic Journal", "https://doi.org/10.7777/vor.114"),
+        ("Synthetic Preprint Server", "https://doi.org/10.7777/preprint.113"),
+    }
+
+
+def test_repeated_deposits_collapse_into_the_newest_one(bench):
+    survivor = bench.publications["W70000000117"]
+    assert sorted(survivor.merged_ids) == ["W70000000115", "W70000000116"]
+    assert {v.doi for v in survivor.versions} == {
+        "https://doi.org/10.7777/deposit.115",
+        "https://doi.org/10.7777/deposit.116",
+        "https://doi.org/10.7777/deposit.117",
+    }
+
+
+def test_untitled_works_are_never_merged_with_each_other(bench):
+    for work_id in UNTITLED_WORK_IDS:
+        assert bench.publications[work_id].title == "Untitled"
+
+
+def test_title_case_and_spacing_variants_are_one_publication(bench):
+    assert "W70000000120" not in bench.publications
+    assert bench.publications["W70000000119"].title == "Bench Case Variant Study"
+
+
+def test_authorships_follow_the_surviving_publication(bench):
+    for author_id in ("A5000000024", "A5000000025"):
+        works = [a.publication_id for a in bench.persons[author_id].authored
+                 if a.publication_id in {"W70000000113", "W70000000114"}]
+        # One authorship, not one per merged record.
+        assert works == ["W70000000114"]
+
+
+def test_merged_publications_leave_no_graph_node(bench):
+    for merged_id in PUBLICATION_MERGES:
+        assert merged_id not in bench.graph.nodes["Publication"]
+
+
+def test_versions_are_json_text(bench):
+    props = bench.graph.nodes["Publication"]["W70000000114"]
+    assert isinstance(props["versions"], str)
+    assert "Synthetic Preprint Server" in props["versions"]
+
+
+# --- repository dedup --------------------------------------------------------------------
+
+def test_row_written_before_a_rename_folds_into_the_canonical_repository(bench):
+    assert STALE_REPO_ID not in bench.repositories
+    survivor = bench.repositories[STALE_REPO_CANONICAL_ID]
+    assert survivor.merged_ids == [STALE_REPO_ID]
+    assert survivor.url == "https://github.com/BenchOrg7/AlphaTool"
+    # Both names stay citable, and the publication of the old row survives.
+    assert STALE_REPO_URL in survivor.cited_urls
+    assert STALE_REPO_PUBLICATION in survivor.publication_ids
+
+
 # --- departments -----------------------------------------------------------------------
 
 def test_department_matching_including_aliases(bench):
@@ -299,7 +389,7 @@ def test_department_matching_including_aliases(bench):
 
 def test_graph_node_counts(bench):
     graph = bench.graph
-    assert len(graph.nodes["Publication"]) == 110
+    assert len(graph.nodes["Publication"]) == 120 - len(PUBLICATION_MERGES)
     assert len(graph.nodes["Person"]) == 56
     assert len(graph.nodes["Repository"]) == 80
     assert len(graph.nodes["GitHubProfile"]) == 16
@@ -319,10 +409,13 @@ def test_graph_edge_counts(bench):
     expected_authored = {(person.id, a.publication_id)
                          for person in bench.persons.values() for a in person.authored}
     assert graph.edge_pairs("AUTHORED") == expected_authored
-    assert len(expected_authored) == 228
+    # 228 from works W001..W110 plus 9 from the duplicate-record works: two
+    # authors each on W111, W114, W117 and W119, one on W118.
+    assert len(expected_authored) == 237
 
     assert len(graph.edge_pairs("MENTIONS_LINK")) == 82 + 3  # repos + candidates
-    assert len(graph.edge_pairs("IMPLEMENTS")) == 82
+    # 82 plus the publication inherited from the pre-rename repository row.
+    assert len(graph.edge_pairs("IMPLEMENTS")) == 83
     assert len(graph.edge_pairs("OWNED_BY")) == 80
     assert len(graph.edge_pairs("BELONGS_TO")) == 14
 
