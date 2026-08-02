@@ -3,7 +3,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pauk.graph.dedup import dedup_graph_persons
+from pauk.graph.dedup import (
+    dedup_graph_persons,
+    dedup_graph_publications,
+    dedup_graph_repositories,
+)
 from pauk.graph.jsonl_loader import load_jsonl_dir
 from pauk.models import Person, Publication, RepoLink, Repository
 from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage
@@ -447,14 +451,17 @@ class GraphDedupTest(unittest.TestCase):
                         [person("X1", "Julia Borisova", ["W1"])])
         self.load_group(client, "y2026", [publication("W2", "Paper two")],
                         [person("Y1", "Julia Borisova", ["W2"], orcid="0009-0001")])
-        result = dedup_graph_persons(client, {})
-        self.assertEqual(result["graph_persons_merged"], 1)
+        removed, report = dedup_graph_persons(client, {})
+        self.assertEqual(removed, 1)
         # The record carrying an ORCID wins the canonical spot.
         self.assertNotIn("X1", client.nodes["Person"])
         self.assertEqual(client.nodes["Person"]["Y1"]["merged_ids"], ["X1"])
         self.assertEqual(
             {pair for pair in client.edge_pairs("AUTHORED") if pair[0] in {"X1", "Y1"}},
             {("Y1", "W1"), ("Y1", "W2")})
+        (applied,) = [row for row in report if row["status"] == "merged"]
+        self.assertEqual((applied["person_a"], applied["merged_into"], applied["rules"]),
+                         ("X1", "Y1", ["same_name"]))
 
     def test_raw_orcids_veto_graph_merges_too(self):
         client = RecordingNeo4jClient()
@@ -462,10 +469,54 @@ class GraphDedupTest(unittest.TestCase):
                         [person("X1", "Julia Borisova", ["W1"])])
         self.load_group(client, "y2026", [publication("W2", "Paper two")],
                         [person("Y1", "Julia Borisova", ["W2"])])
-        result = dedup_graph_persons(client, {"X1": "0009-0001", "Y1": "0009-0002"})
-        self.assertEqual(result["graph_persons_merged"], 0)
+        removed, _report = dedup_graph_persons(client, {"X1": "0009-0001", "Y1": "0009-0002"})
+        self.assertEqual(removed, 0)
         self.assertIn("X1", client.nodes["Person"])
         self.assertIn("Y1", client.nodes["Person"])
+
+    def test_cross_group_publication_records_fold_in_graph(self):
+        client = RecordingNeo4jClient()
+        self.load_group(client, "q1",
+                        [publication("W1", "Same work", doi="10.1/x", day="2026-01-01")],
+                        [person("X1", "Author One", ["W1"])])
+        self.load_group(client, "y2026",
+                        [publication("W2", "Same work", doi="10.1/x", day="2026-05-01")],
+                        [person("X1", "Author One", ["W2"])])
+        removed, report = dedup_graph_publications(client)
+        self.assertEqual(removed, 1)
+        # The later record survives; edges follow it.
+        self.assertNotIn("W1", client.nodes["Publication"])
+        self.assertEqual(client.nodes["Publication"]["W2"]["merged_ids"], ["W1"])
+        self.assertEqual(
+            {pair for pair in client.edge_pairs("AUTHORED") if pair[0] == "X1"},
+            {("X1", "W2")})
+        (applied,) = report
+        self.assertEqual((applied["entity"], applied["record_a"], applied["merged_into"]),
+                         ("publication", "W1", "W2"))
+        self.assertEqual(applied["rules"], ["doi"])
+
+    def test_cross_group_renamed_repository_folds_in_graph(self):
+        client = RecordingNeo4jClient()
+        for group, rid, url, day in (
+            ("q1", "github_org_old", "https://github.com/org/old", "2026-01-01"),
+            ("y2026", "github_org_new", "https://github.com/org/new", "2026-06-01"),
+        ):
+            prepared = PreparedStore(self.root / "prepared", group)
+            prepared.write_models("publications", [publication(f"W_{group}", f"Work {group}")])
+            prepared.write_models("repositories", [
+                repository(rid, rid.split("_")[-1], url, github_id=42,
+                           publications=[f"W_{group}"], day=day)])
+            load_jsonl_dir(client, prepared.group_dir)
+        removed, report = dedup_graph_repositories(client)
+        self.assertEqual(removed, 1)
+        self.assertNotIn("github_org_old", client.nodes["Repository"])
+        survivor = client.nodes["Repository"]["github_org_new"]
+        self.assertEqual(survivor["merged_ids"], ["github_org_old"])
+        self.assertIn("https://github.com/org/old", survivor["cited_urls"])
+        self.assertEqual(client.edge_pairs("IMPLEMENTS"),
+                         {("github_org_new", "W_q1"), ("github_org_new", "W_y2026")})
+        (applied,) = report
+        self.assertEqual(applied["rules"], ["github_id"])
 
     def test_republish_of_old_group_does_not_resurrect_folded_person(self):
         client = RecordingNeo4jClient()
