@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from pauk.graph.jsonl_loader import load_jsonl_dir
-from pauk.models import Person
+from pauk.models import Person, Publication, RepoLink, Repository
 from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage
 from pauk.storage import PreparedStore, RawStore
 from tests.bench.mocks import RecordingNeo4jClient
@@ -15,6 +15,19 @@ def person(pid, name, works, *, itmo=True, orcid=None, variants=(), merged=()):
         id=pid, openalex_id=pid, is_itmo=itmo, name_en=name, orcid=orcid,
         name_variants=list(variants), merged_ids=list(merged),
         authored=[{"publication_id": w, "position": 1} for w in works],
+    )
+
+
+def publication(pid, title, *, doi=None, journal=None, day="2026-01-01"):
+    return Publication(id=pid, title=title, doi=doi, journal=journal, publication_date=day)
+
+
+def repository(rid, name, url, *, github_id=None, cited=(), publications=(), day=None):
+    return Repository(
+        id=rid, name=name, url=url, github_id=github_id,
+        cited_urls=list(cited) or [url], publication_ids=list(publications),
+        access_date=day,
+        processing={"repositories": {"status": "completed", "attempts": 1}},
     )
 
 
@@ -63,7 +76,8 @@ class DedupStageTest(unittest.TestCase):
             person("A1", "Nikolay O. Nikitin", ["W1"], variants=["Nikolay Nikitin"]),
             person("A2", "Nikolay Nikitin", ["W3"]),
         ])
-        self.assertEqual(result, {"dedup_merged": 0, "dedup_candidates": 1})
+        self.assertEqual(result["dedup_merged"], 0)
+        self.assertEqual(result["dedup_candidates"], 1)
         self.assertEqual(set(people), {"A1", "A2"})
         (candidate,) = self.candidates()
         self.assertEqual({candidate["person_a"], candidate["person_b"]}, {"A1", "A2"})
@@ -87,7 +101,7 @@ class DedupStageTest(unittest.TestCase):
             person("A2", "Nikolay Nikitin", ["W3"], orcid="0000-0003"),
             person("A3", "Ilia Revin", ["W1", "W3"]),
         ])
-        self.assertEqual(result, {"dedup_merged": 0, "dedup_candidates": 0})
+        self.assertEqual((result["dedup_merged"], result["dedup_candidates"]), (0, 0))
         self.assertEqual(set(people), {"A1", "A2", "A3"})
 
     def test_external_pair_is_not_merged_and_not_reported(self):
@@ -96,7 +110,7 @@ class DedupStageTest(unittest.TestCase):
             person("A2", "W. Wang", ["W2"], itmo=False),
             person("A3", "Shared Coauthor", ["W1", "W2"], itmo=False),
         ])
-        self.assertEqual(result, {"dedup_merged": 0, "dedup_candidates": 0})
+        self.assertEqual((result["dedup_merged"], result["dedup_candidates"]), (0, 0))
         self.assertEqual(len(people), 3)
 
     def test_transitive_orcid_group_folds_into_most_published(self):
@@ -162,6 +176,203 @@ class DedupStageTest(unittest.TestCase):
         self.assertEqual(again["dedup_merged"], 0)
         rows = {p.id: p for p in self.prepared.read_models("persons", Person)}
         self.assertEqual(rows["A1"].merged_ids, ["A2"])
+
+
+class PublicationDedupTest(unittest.TestCase):
+    def run_stage(self, publications, people=(), repositories=(), repo_links=()):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.prepared = PreparedStore(root / "prepared", "sample")
+        self.raw = RawStore(root / "raw", "sample")
+        self.prepared.write_models("publications", publications)
+        self.prepared.write_models("persons", people)
+        self.prepared.write_models("repositories", repositories)
+        self.prepared.write_models("repo_links", repo_links)
+        result = DedupStage(self.prepared, self.raw).run()
+        rows = {p.id: p for p in self.prepared.read_models("publications", Publication)}
+        return result, rows
+
+    def test_same_doi_under_two_work_ids_is_one_publication(self):
+        # OpenAlex re-indexing leaves a second record for one DOI, often
+        # without any authors at all — the documented one must survive.
+        result, publications = self.run_stage(
+            [
+                publication("W1", "A study", doi="https://doi.org/10.1/x", journal="Journal"),
+                publication("W2", "A study", doi="10.1/X", journal="Journal"),
+            ],
+            people=[person("A1", "Author One", ["W1"])],
+        )
+        self.assertEqual(result["dedup_publications_merged"], 1)
+        self.assertEqual(set(publications), {"W1"})
+        self.assertEqual(publications["W1"].merged_ids, ["W2"])
+        self.assertEqual({v.openalex_id for v in publications["W1"].versions}, {"W1", "W2"})
+
+    def test_preprint_and_version_of_record_keep_both_venues(self):
+        result, publications = self.run_stage([
+            publication("W1", "Deep nets for spiders", doi="10.2/preprint",
+                        journal="SSRN Electronic Journal", day="2025-06-01"),
+            publication("W2", "Deep nets for spiders", doi="10.3/vor",
+                        journal="Sensors", day="2026-03-13"),
+        ])
+        self.assertEqual(result["dedup_publications_merged"], 1)
+        # The later record is the version of record and survives.
+        self.assertEqual(set(publications), {"W2"})
+        survivor = publications["W2"]
+        self.assertEqual(survivor.journal, "Sensors")
+        self.assertEqual({(v.journal, v.doi) for v in survivor.versions},
+                         {("Sensors", "10.3/vor"), ("SSRN Electronic Journal", "10.2/preprint")})
+
+    def test_identical_titles_differing_only_in_case_and_spacing_merge(self):
+        _, publications = self.run_stage([
+            publication("W1", "Bandage: continuous build", day="2026-01-12"),
+            publication("W2", "  BANDAGE:   Continuous Build ", day="2026-04-10"),
+        ])
+        self.assertEqual(set(publications), {"W2"})
+
+    def test_untitled_works_are_never_merged(self):
+        _, publications = self.run_stage([
+            publication("W1", "Untitled"),
+            publication("W2", "Untitled"),
+        ])
+        self.assertEqual(set(publications), {"W1", "W2"})
+
+    def test_references_follow_the_surviving_publication(self):
+        _, _ = self.run_stage(
+            [
+                publication("W1", "One work", doi="10.1/x", day="2026-01-01"),
+                publication("W2", "One work", doi="10.1/x", day="2026-02-01"),
+            ],
+            people=[
+                person("A1", "Author One", ["W1", "W2"]),
+                person("A2", "Author Two", ["W1"]),
+            ],
+            repositories=[Repository(id="github_org_repo", name="repo",
+                                     url="https://github.com/org/repo",
+                                     publication_ids=["W1", "W2"])],
+            repo_links=[
+                RepoLink(publication_id="W1", links=[{"url": "https://github.com/org/repo"}]),
+                RepoLink(publication_id="W2", links=[{"url": "https://github.com/org/other"}]),
+            ],
+        )
+        people = {p.id: p for p in self.prepared.read_models("persons", Person)}
+        # The same authorship on both records collapses into one.
+        self.assertEqual([a.publication_id for a in people["A1"].authored], ["W2"])
+        self.assertEqual([a.publication_id for a in people["A2"].authored], ["W2"])
+        (repo_row,) = self.prepared.read_models("repositories", Repository)
+        self.assertEqual(repo_row.publication_ids, ["W2"])
+        # Both records' link rows fold into one row keyed by the survivor.
+        (links,) = self.prepared.read_models("repo_links", RepoLink)
+        self.assertEqual(links.publication_id, "W2")
+        self.assertEqual({link.url for link in links.links},
+                         {"https://github.com/org/repo", "https://github.com/org/other"})
+
+    def test_second_run_is_a_no_op(self):
+        self.run_stage([
+            publication("W1", "One work", doi="10.1/x", day="2026-01-01"),
+            publication("W2", "One work", doi="10.1/x", day="2026-02-01"),
+        ])
+        again = DedupStage(self.prepared, self.raw).run()
+        self.assertEqual(again["dedup_publications_merged"], 0)
+        rows = {p.id: p for p in self.prepared.read_models("publications", Publication)}
+        self.assertEqual(rows["W2"].merged_ids, ["W1"])
+        self.assertEqual(len(rows["W2"].versions), 2)
+
+
+class RepositoryDedupTest(unittest.TestCase):
+    def run_stage(self, repositories):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.prepared = PreparedStore(root / "prepared", "sample")
+        self.raw = RawStore(root / "raw", "sample")
+        self.prepared.write_models("repositories", repositories)
+        result = DedupStage(self.prepared, self.raw).run()
+        return result, {r.id: r for r in self.prepared.read_models("repositories", Repository)}
+
+    def test_renamed_repository_folds_and_keeps_every_url(self):
+        # The old row was written before the rename; only GitHub's numeric id
+        # ties the two rows together.
+        result, repositories = self.run_stage([
+            repository("github_org_old-name", "old-name", "https://github.com/org/old-name",
+                       github_id=42, publications=["W1"], day="2026-01-01"),
+            repository("github_org_new-name", "new-name", "https://github.com/org/new-name",
+                       github_id=42, publications=["W2"], day="2026-06-01"),
+        ])
+        self.assertEqual(result["dedup_repositories_merged"], 1)
+        self.assertEqual(set(repositories), {"github_org_new-name"})
+        survivor = repositories["github_org_new-name"]
+        self.assertEqual(survivor.url, "https://github.com/org/new-name")
+        self.assertIn("https://github.com/org/old-name", survivor.cited_urls)
+        self.assertEqual(survivor.publication_ids, ["W2", "W1"])
+        self.assertEqual(survivor.merged_ids, ["github_org_old-name"])
+
+    def test_shared_citation_url_folds_rows_without_github_id(self):
+        result, repositories = self.run_stage([
+            repository("github_org_alpha", "alpha", "https://github.com/org/alpha",
+                       cited=["https://github.com/org/Alpha"], day="2026-01-01"),
+            repository("github_org_alpha-renamed", "alpha-renamed",
+                       "https://github.com/org/alpha-renamed",
+                       cited=["https://github.com/org/alpha"], day="2026-06-01"),
+        ])
+        self.assertEqual(result["dedup_repositories_merged"], 1)
+        self.assertEqual(set(repositories), {"github_org_alpha-renamed"})
+
+    def test_distinct_repositories_are_left_alone(self):
+        result, repositories = self.run_stage([
+            repository("github_org_alpha", "alpha", "https://github.com/org/alpha", github_id=1),
+            repository("github_org_beta", "beta", "https://github.com/org/beta", github_id=2),
+        ])
+        self.assertEqual(result["dedup_repositories_merged"], 0)
+        self.assertEqual(len(repositories), 2)
+
+
+class LoaderPublicationMergeTest(unittest.TestCase):
+    def test_previously_published_duplicate_publication_is_folded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            prepared = PreparedStore(Path(tmp) / "prepared", "sample")
+            client = RecordingNeo4jClient()
+            # First publish: both records of the work are still separate.
+            prepared.write_models("publications", [
+                publication("W1", "One work", doi="10.1/x"),
+                publication("W2", "One work", doi="10.1/x"),
+            ])
+            prepared.write_models("persons", [person("A1", "Author One", ["W1", "W2"])])
+            load_jsonl_dir(client, prepared.group_dir)
+            assert ("A1", "W2") in client.edge_pairs("AUTHORED")
+            # Second publish after dedup: W2 folded into W1.
+            prepared.write_models("publications", [
+                Publication(id="W1", title="One work", doi="10.1/x", merged_ids=["W2"]),
+            ])
+            prepared.write_models("persons", [person("A1", "Author One", ["W1"])])
+            load_jsonl_dir(client, prepared.group_dir)
+            self.assertNotIn("W2", client.nodes["Publication"])
+            # The edge that pointed at the duplicate now points at the survivor.
+            self.assertEqual(client.edge_pairs("AUTHORED"), {("A1", "W1")})
+
+    def test_previously_published_duplicate_repository_is_folded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            prepared = PreparedStore(Path(tmp) / "prepared", "sample")
+            client = RecordingNeo4jClient()
+            prepared.write_models("publications", [publication("W1", "One work")])
+            prepared.write_models("repositories", [
+                repository("github_org_old", "old", "https://github.com/org/old",
+                           github_id=7, publications=["W1"]),
+            ])
+            load_jsonl_dir(client, prepared.group_dir)
+            assert ("github_org_old", "W1") in client.edge_pairs("IMPLEMENTS")
+            prepared.write_models("repositories", [
+                repository("github_org_new", "new", "https://github.com/org/new",
+                           github_id=7, cited=["https://github.com/org/new",
+                                               "https://github.com/org/old"],
+                           publications=["W1"]),
+            ])
+            rows = list(prepared.read_models("repositories", Repository))
+            rows[0].merged_ids = ["github_org_old"]
+            prepared.write_models("repositories", rows)
+            load_jsonl_dir(client, prepared.group_dir)
+            self.assertNotIn("github_org_old", client.nodes["Repository"])
+            self.assertEqual(client.edge_pairs("IMPLEMENTS"), {("github_org_new", "W1")})
 
 
 class LoaderPersonMergeTest(unittest.TestCase):

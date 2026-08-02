@@ -103,6 +103,32 @@ class NormalizeTest(unittest.TestCase):
             self.assertEqual(person.merged_ids, ["A9"])
             self.assertEqual({a.publication_id for a in person.authored}, {"W1", "W5"})
 
+    def test_re_normalization_routes_a_merged_work_to_its_publication(self):
+        # Both records of one work are still in raw; the dedup stage folded
+        # them, so re-normalizing must not resurrect the merged-away record.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = RawStore(root / "raw", "sample")
+            for work_id in ("W1", "W2"):
+                raw.append("openalex_works", {
+                    "id": f"https://openalex.org/{work_id}", "title": "One work",
+                    "doi": "https://doi.org/10.1/x",
+                    "authorships": [{"author": {"id": "https://openalex.org/A1",
+                                                "display_name": "Author One"}}],
+                }, {"work_id": work_id})
+            prepared = PreparedStore(root / "prepared", "sample")
+            prepared.write_models("publications", [
+                Publication(id="W1", title="One work", merged_ids=["W2"],
+                            versions=[{"openalex_id": "W1"}, {"openalex_id": "W2"}]),
+            ])
+            result = OpenAlexNormalizer(raw, prepared).run()
+            self.assertEqual(result["publications"], 1)
+            publication = next(prepared.read_models("publications", Publication))
+            self.assertEqual((publication.id, publication.merged_ids), ("W1", ["W2"]))
+            self.assertEqual(len(publication.versions), 2)
+            person = next(prepared.read_models("persons", Person))
+            self.assertEqual([a.publication_id for a in person.authored], ["W1"])
+
     def test_re_normalization_preserves_enrichment_files_and_publication_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

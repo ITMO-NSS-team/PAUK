@@ -19,6 +19,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 
+# Row fields holding a list of maps: Neo4j has no nested-map property type,
+# so they are stored as JSON text.
+JSON_TEXT_FIELDS = ("funding", "versions")
+
+
 @dataclass(frozen=True)
 class RelSpec:
     """Describes one relationship embedded in a prepared-JSONL row.
@@ -146,6 +151,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "openalex_url",
             "pdf_url",
             "abstract",
+            "versions",
         ),
         relationships=(
             RelSpec("department_ids", "PRODUCED_BY", "Department", None),
@@ -173,6 +179,8 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
         prop_fields=(
             "name",
             "url",
+            "github_id",
+            "cited_urls",
             "description",
             "access_date",
             "has_readme",
@@ -218,9 +226,11 @@ def extract_node(row: dict, spec: NodeSpec) -> tuple[str, tuple[str, dict]]:
     """
     node_id = row[spec.id_field]
     props = {k: row[k] for k in spec.prop_fields if row.get(k) is not None}
-    # Neo4j properties cannot contain nested maps; funding is kept as JSON text.
-    if isinstance(props.get("funding"), list):
-        props["funding"] = json.dumps(props["funding"], ensure_ascii=False)
+    # Neo4j properties cannot contain nested maps; lists of them (funding
+    # entries, publication versions) are kept as JSON text.
+    for field in JSON_TEXT_FIELDS:
+        if isinstance(props.get(field), list):
+            props[field] = json.dumps(props[field], ensure_ascii=False)
     return spec.labels, (node_id, props)
 
 

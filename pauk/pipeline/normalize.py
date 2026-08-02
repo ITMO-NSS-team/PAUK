@@ -92,33 +92,45 @@ class OpenAlexNormalizer:
             for person in persons.values()
             for merged_id in person.merged_ids
         }
+        # Same for works the dedup stage folded into one publication: their
+        # raw payloads are still on disk, but they are versions of a
+        # publication that already exists, not publications of their own.
+        publication_alias = {
+            merged_id: publication.id
+            for publication in publications.values()
+            for merged_id in publication.merged_ids
+        }
         for envelope in self.raw.read("openalex_works"):
             work = envelope["payload"]
             work_id = _short_id(work.get("id"))
             if not work_id:
                 continue
-            pub_date = work.get("publication_date")
-            source = ((work.get("primary_location") or {}).get("source") or {})
-            normalized_publication = Publication(
-                id=work_id,
-                title=work.get("title") or "Untitled",
-                doi=work.get("doi"),
-                openalex_url=work.get("id"),
-                publication_date=date.fromisoformat(pub_date) if pub_date else None,
-                year=int(pub_date[:4]) if pub_date else None,
-                journal=source.get("display_name"),
-                pdf_url=(work.get("best_oa_location") or {}).get("pdf_url"),
-                abstract=_abstract(work),
-                funding=_funding(work),
-            )
-            existing_publication = publications.get(work_id)
-            if existing_publication:
-                normalized_publication.has_code = existing_publication.has_code
-                normalized_publication.code_url = existing_publication.code_url
-                normalized_publication.department_ids = existing_publication.department_ids
-                normalized_publication.mentions_links = existing_publication.mentions_links
-                normalized_publication.processing = existing_publication.processing
-            publications[work_id] = normalized_publication
+            publication_id = publication_alias.get(work_id, work_id)
+            if publication_id == work_id:
+                pub_date = work.get("publication_date")
+                source = ((work.get("primary_location") or {}).get("source") or {})
+                normalized_publication = Publication(
+                    id=work_id,
+                    title=work.get("title") or "Untitled",
+                    doi=work.get("doi"),
+                    openalex_url=work.get("id"),
+                    publication_date=date.fromisoformat(pub_date) if pub_date else None,
+                    year=int(pub_date[:4]) if pub_date else None,
+                    journal=source.get("display_name"),
+                    pdf_url=(work.get("best_oa_location") or {}).get("pdf_url"),
+                    abstract=_abstract(work),
+                    funding=_funding(work),
+                )
+                existing_publication = publications.get(work_id)
+                if existing_publication:
+                    normalized_publication.has_code = existing_publication.has_code
+                    normalized_publication.code_url = existing_publication.code_url
+                    normalized_publication.department_ids = existing_publication.department_ids
+                    normalized_publication.mentions_links = existing_publication.mentions_links
+                    normalized_publication.versions = existing_publication.versions
+                    normalized_publication.merged_ids = existing_publication.merged_ids
+                    normalized_publication.processing = existing_publication.processing
+                publications[work_id] = normalized_publication
             for position, authorship in enumerate(work.get("authorships") or [], start=1):
                 author = authorship.get("author") or {}
                 author_id = _short_id(author.get("id"))
@@ -138,7 +150,7 @@ class OpenAlexNormalizer:
                 variants = author.get("display_name_alternatives") or []
                 person.name_variants = list(dict.fromkeys([*person.name_variants, *variants]))
                 authorship_record = Authorship(
-                    publication_id=work_id,
+                    publication_id=publication_id,
                     position=position,
                     affiliation="; ".join(authorship.get("raw_affiliation_strings") or []) or None,
                     is_corresponding=bool(authorship.get("is_corresponding")),
