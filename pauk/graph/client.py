@@ -273,6 +273,36 @@ class Neo4jClient:
             return session.execute_read(
                 lambda tx: [dict(record) for record in tx.run(query)])
 
+    def fetch_publications_for_dedup(self) -> list[dict]:
+        """Every Publication node with the fields the merge rules consume.
+
+        author_count feeds the ranking: between records of one work the
+        best-documented one survives.
+        """
+        query = """
+            MATCH (p:Publication)
+            OPTIONAL MATCH (a:Person)-[:AUTHORED]->(p)
+            RETURN p.id AS id, p.doi AS doi, p.title AS title,
+                   p.publication_date AS publication_date,
+                   p.merged_ids AS merged_ids, count(a) AS author_count
+        """
+        with self.driver.session() as session:
+            return session.execute_read(
+                lambda tx: [dict(record) for record in tx.run(query)])
+
+    def fetch_repositories_for_dedup(self) -> list[dict]:
+        """Every Repository node with the fields the merge rules consume."""
+        query = """
+            MATCH (r:Repository)
+            OPTIONAL MATCH (r)-[:IMPLEMENTS]->(w:Publication)
+            RETURN r.id AS id, r.url AS url, r.github_id AS github_id,
+                   r.cited_urls AS cited_urls, r.access_date AS access_date,
+                   r.merged_ids AS merged_ids, count(w) AS publication_count
+        """
+        with self.driver.session() as session:
+            return session.execute_read(
+                lambda tx: [dict(record) for record in tx.run(query)])
+
     def fetch_merged_id_map(self, label: str) -> dict[str, str]:
         """Map of merged-away id to canonical id stored on `label` nodes.
 

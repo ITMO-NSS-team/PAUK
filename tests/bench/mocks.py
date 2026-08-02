@@ -203,6 +203,28 @@ class RecordingNeo4jClient:
             })
         return rows
 
+    def fetch_publications_for_dedup(self) -> list[dict]:
+        """Mirror of Neo4jClient.fetch_publications_for_dedup."""
+        return [{
+            "id": publication_id,
+            **{field: props.get(field) for field in (
+                "doi", "title", "publication_date", "merged_ids")},
+            "author_count": sum(
+                1 for (_src, rel_type, tgt_primary, _sid, tgt_id) in self.edges
+                if rel_type == "AUTHORED" and tgt_primary == "Publication" and tgt_id == publication_id),
+        } for publication_id, props in self.nodes.get("Publication", {}).items()]
+
+    def fetch_repositories_for_dedup(self) -> list[dict]:
+        """Mirror of Neo4jClient.fetch_repositories_for_dedup."""
+        return [{
+            "id": repository_id,
+            **{field: props.get(field) for field in (
+                "url", "github_id", "cited_urls", "access_date", "merged_ids")},
+            "publication_count": sum(
+                1 for (src_primary, rel_type, _tgt, src_id, _tid) in self.edges
+                if rel_type == "IMPLEMENTS" and src_primary == "Repository" and src_id == repository_id),
+        } for repository_id, props in self.nodes.get("Repository", {}).items()]
+
     def fetch_merged_id_map(self, label: str) -> dict[str, str]:
         """Mirror of Neo4jClient.fetch_merged_id_map over recorded state."""
         return {

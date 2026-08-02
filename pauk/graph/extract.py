@@ -152,6 +152,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "pdf_url",
             "abstract",
             "versions",
+            "merged_ids",
         ),
         relationships=(
             RelSpec("department_ids", "PRODUCED_BY", "Department", None),
@@ -188,6 +189,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "last_updated",
             "license",
             "contributors",
+            "merged_ids",
         ),
         relationships=(
             RelSpec("department_ids", "DEVELOPED_BY", "Department", None),
