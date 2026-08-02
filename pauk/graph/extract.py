@@ -98,6 +98,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "google_scholar",
             "openreview",
             "thesis",
+            "merged_ids",
         ),
         relationships=(
             RelSpec("department_ids", "BELONGS_TO", "Department", None),
@@ -120,7 +121,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
     "external_person": NodeSpec(
         labels="Person:External",
         rel_src_label="Person",
-        prop_fields=("openalex_id", "orcid", "name_en", "name_variants", "email"),
+        prop_fields=("openalex_id", "orcid", "name_en", "name_variants", "email", "merged_ids"),
         relationships=(
             RelSpec(
                 "authored",

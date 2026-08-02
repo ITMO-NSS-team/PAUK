@@ -23,6 +23,7 @@ class Person(BaseModel):
     openreview: str | None = None
     thesis: str | None = None
     department_ids: list[str] = Field(default_factory=list)
+    merged_ids: list[str] = Field(default_factory=list)
     authored: list[Authorship] = Field(default_factory=list)
     contributed_to: list[Contribution] = Field(default_factory=list)
     processing: dict[str, ProcessingState] = Field(default_factory=dict, alias="_processing")
