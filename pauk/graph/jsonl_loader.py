@@ -216,3 +216,18 @@ def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
         for chunk in chunked(rels):
             client.upsert_relationships_batch(src_label, tgt_label, rel_type, chunk, tgt_match_prop)
         logger.info("relationships (:%s)-[:%s]->(:%s): requested %d", src_label, rel_type, tgt_label, len(rels))
+
+    # A group published before a graph-wide dedup still carries rows for
+    # ids that were since folded into another group's canonical node — the
+    # upserts above just resurrected them, relationships included. Fold
+    # them right back using the merged_ids maps stored on canonical nodes.
+    for label, fold in (("Person", client.merge_person_nodes_batch),
+                        ("Publication", client.merge_publication_nodes_batch),
+                        ("Repository", client.merge_repository_nodes_batch)):
+        alias_pairs = [
+            (merged_id, canonical_id)
+            for merged_id, canonical_id in client.fetch_merged_id_map(label).items()
+            if merged_id != canonical_id
+        ]
+        for chunk in chunked(alias_pairs):
+            fold(chunk)

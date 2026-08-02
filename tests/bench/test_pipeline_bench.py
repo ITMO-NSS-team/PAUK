@@ -142,7 +142,7 @@ def test_flaky_affiliation_does_not_split_identity(bench):
     for i in range(1, 6):
         person = bench.persons[f"A50000000{i:02d}"]
         assert person.is_itmo, f"A{i:02d} must be ITMO despite missing affiliations"
-    assert sum(p.is_itmo for p in bench.persons.values()) == 36
+    assert sum(p.is_itmo for p in bench.persons.values()) == 35
 
 
 def test_duplicate_author_entry_kept_per_position(bench):
@@ -286,13 +286,11 @@ def test_variant_split_merges_transitively_including_cyrillic(bench):
     assert {"E. Smirnova", "Екатерина Смирнова"} <= set(canonical.name_variants)
 
 
-def test_true_namesakes_stay_separate_but_reported(bench):
-    assert "A5000000056" in bench.persons and "A5000000057" in bench.persons
-    candidates_path = bench.config.prepared_dir / GROUP / "dedup_candidates.jsonl"
-    rows = [json.loads(line) for line in candidates_path.read_text(encoding="utf-8").splitlines()
-            if line.strip()]
-    pairs = {frozenset((row["person_a"], row["person_b"])) for row in rows}
-    assert frozenset(("A5000000056", "A5000000057")) in pairs
+def test_same_name_without_distinguishing_marks_merges_by_default(bench):
+    assert "A5000000057" not in bench.persons
+    canonical = bench.persons["A5000000056"]
+    assert canonical.merged_ids == ["A5000000057"]
+    assert {a.publication_id for a in canonical.authored} == {"W70000000106", "W70000000107"}
 
 
 def test_conflicting_orcids_stay_separate_and_unreported(bench):
@@ -390,12 +388,12 @@ def test_department_matching_including_aliases(bench):
 def test_graph_node_counts(bench):
     graph = bench.graph
     assert len(graph.nodes["Publication"]) == 120 - len(PUBLICATION_MERGES)
-    assert len(graph.nodes["Person"]) == 56
+    assert len(graph.nodes["Person"]) == 55
     assert len(graph.nodes["Repository"]) == 80
     assert len(graph.nodes["GitHubProfile"]) == 16
     assert len(graph.nodes["LinkCandidate"]) == 3
     labels = list(graph.person_labels.values())
-    assert labels.count("Itmo") == 36 and labels.count("External") == 20
+    assert labels.count("Itmo") == 35 and labels.count("External") == 20
     for merged_id in DEDUP_MERGES:
         assert merged_id not in graph.nodes["Person"]
 

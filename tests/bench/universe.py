@@ -31,12 +31,11 @@ Split-author duplicates for the dedup stage (works W101..W110):
            "E. Smirnova" and "Екатерина Смирнова" among her name variants;
            each duplicate shares coauthor A17 -> the whole group folds
            transitively into A53 (most works)
-* A56/A57  true namesakes: two different ITMO "Ivan Volkov"s with a shared
-           coauthor but no variant evidence -> NOT merged, reported in
-           dedup_candidates.jsonl
+* A56/A57  identical ITMO display names ("Ivan Volkov") with nothing
+           explicit telling them apart -> merged by default into A56
 * A58/A59  "Olga Fedorova" lists "O. Fedorova" as a variant and they share
            a coauthor, but their author records carry different ORCIDs ->
-           NOT merged and not even a candidate
+           an explicit difference: NOT merged and not even a candidate
 
 Works (W7000000001..W7000000100):
 * W001     GitHub URL with a sentence-ending period
@@ -145,6 +144,7 @@ DEDUP_MERGES = {
     "A5000000052": "A5000000051",
     "A5000000054": "A5000000053",
     "A5000000055": "A5000000053",
+    "A5000000057": "A5000000056",
 }
 # (author index, filler coauthor index) per dedup work W101..W110.
 DEDUP_WORK_AUTHORS = {

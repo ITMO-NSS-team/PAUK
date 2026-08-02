@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from pauk.graph.dedup import dedup_graph_persons
 from pauk.graph.jsonl_loader import load_jsonl_dir
 from pauk.models import Person, Publication, RepoLink, Repository
 from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage
@@ -10,10 +11,12 @@ from pauk.storage import PreparedStore, RawStore
 from tests.bench.mocks import RecordingNeo4jClient
 
 
-def person(pid, name, works, *, itmo=True, orcid=None, variants=(), merged=()):
+def person(pid, name, works, *, itmo=True, orcid=None, variants=(), merged=(),
+           email=None, github=None):
     return Person(
         id=pid, openalex_id=pid, is_itmo=itmo, name_en=name, orcid=orcid,
         name_variants=list(variants), merged_ids=list(merged),
+        email=email, github=github,
         authored=[{"publication_id": w, "position": 1} for w in works],
     )
 
@@ -42,9 +45,10 @@ class DedupStageTest(unittest.TestCase):
         result = DedupStage(self.prepared, self.raw).run()
         return result, {p.id: p for p in self.prepared.read_models("persons", Person)}
 
-    def candidates(self):
+    def journal(self, status=None):
         path = self.prepared.group_dir / CANDIDATES_FILENAME
-        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        return [row for row in rows if status is None or row["status"] == status]
 
     def test_same_orcid_merges_even_without_name_or_itmo_evidence(self):
         result, people = self.run_stage([
@@ -69,7 +73,10 @@ class DedupStageTest(unittest.TestCase):
         self.assertEqual(result["dedup_merged"], 1)
         self.assertEqual(set(people), {"A1", "A3"})
         self.assertEqual(people["A1"].merged_ids, ["A2"])
-        self.assertEqual(self.candidates(), [])
+        self.assertEqual(self.journal("held"), [])
+        (applied,) = self.journal("merged")
+        self.assertEqual((applied["person_a"], applied["merged_into"], applied["rules"]),
+                         ("A2", "A1", ["name_variant"]))
 
     def test_variant_match_without_shared_coauthor_is_only_a_candidate(self):
         result, people = self.run_stage([
@@ -79,21 +86,61 @@ class DedupStageTest(unittest.TestCase):
         self.assertEqual(result["dedup_merged"], 0)
         self.assertEqual(result["dedup_candidates"], 1)
         self.assertEqual(set(people), {"A1", "A2"})
-        (candidate,) = self.candidates()
+        (candidate,) = self.journal("held")
         self.assertEqual({candidate["person_a"], candidate["person_b"]}, {"A1", "A2"})
         self.assertEqual(candidate["held_because"], ["no shared coauthors"])
 
-    def test_same_display_name_without_variant_evidence_is_only_a_candidate(self):
+    def test_same_display_name_both_itmo_merges_by_default(self):
+        # No shared coauthors needed: an identical full name inside the ITMO
+        # author pool with nothing explicit telling the two apart is one
+        # person by default.
         result, people = self.run_stage([
-            person("A1", "Ivan Petrov", ["W1"]),
-            person("A2", "Ivan Petrov", ["W2"]),
-            person("A3", "Shared Coauthor", ["W1", "W2"]),
+            person("A1", "Ivan Petrov", ["W1", "W2"]),
+            person("A2", "Ivan Petrov", ["W3"]),
         ])
-        self.assertEqual(result["dedup_merged"], 0)
-        self.assertEqual(result["dedup_candidates"], 1)
-        (candidate,) = self.candidates()
-        self.assertIn("same display name is not confirmed by a name variant",
-                      candidate["held_because"])
+        self.assertEqual(result["dedup_merged"], 1)
+        self.assertEqual(set(people), {"A1"})
+        self.assertEqual(people["A1"].merged_ids, ["A2"])
+        self.assertEqual(self.journal("held"), [])
+        # The ambiguous merge is journalled as already applied, for review
+        # and possible rollback.
+        (applied,) = self.journal("merged")
+        self.assertEqual((applied["person_a"], applied["merged_into"], applied["rules"]),
+                         ("A2", "A1", ["same_name"]))
+
+    def test_same_name_with_different_orcids_stays_separate(self):
+        result, people = self.run_stage([
+            person("A1", "Ivan Petrov", ["W1"], orcid="0000-0001"),
+            person("A2", "Ivan Petrov", ["W2"], orcid="0000-0002"),
+        ])
+        self.assertEqual((result["dedup_merged"], result["dedup_candidates"]), (0, 0))
+        self.assertEqual(len(people), 2)
+
+    def test_same_name_with_different_emails_stays_separate(self):
+        result, people = self.run_stage([
+            person("A1", "Ivan Petrov", ["W1"], email="one@itmo.ru"),
+            person("A2", "Ivan Petrov", ["W2"], email="two@itmo.ru"),
+        ])
+        self.assertEqual((result["dedup_merged"], result["dedup_candidates"]), (0, 0))
+        self.assertEqual(len(people), 2)
+
+    def test_same_name_with_external_half_is_only_a_candidate(self):
+        result, _ = self.run_stage([
+            person("A1", "Ivan Petrov", ["W1"]),
+            person("A2", "Ivan Petrov", ["W2"], itmo=False),
+        ])
+        self.assertEqual((result["dedup_merged"], result["dedup_candidates"]), (0, 1))
+        (candidate,) = self.journal("held")
+        self.assertEqual(candidate["held_because"], ["only one person is ITMO-affiliated"])
+
+    def test_single_token_name_is_only_a_candidate(self):
+        result, _ = self.run_stage([
+            person("A1", "Ivanov", ["W1"]),
+            person("A2", "Ivanov", ["W2"]),
+        ])
+        self.assertEqual((result["dedup_merged"], result["dedup_candidates"]), (0, 1))
+        (candidate,) = self.journal("held")
+        self.assertEqual(candidate["held_because"], ["single-token display name"])
 
     def test_conflicting_orcids_block_merge_and_candidates(self):
         result, people = self.run_stage([
@@ -166,6 +213,9 @@ class DedupStageTest(unittest.TestCase):
         ])
         self.assertEqual(result["dedup_merged"], 0)
         self.assertEqual(len(people), 4)
+        (group_row,) = self.journal("held")
+        self.assertEqual(sorted(group_row["persons"]), ["A1", "A2", "A3"])
+        self.assertEqual(group_row["held_because"], ["group spans 2 distinct ORCID values"])
 
     def test_second_run_is_a_no_op(self):
         _, people = self.run_stage([
@@ -373,6 +423,62 @@ class LoaderPublicationMergeTest(unittest.TestCase):
             load_jsonl_dir(client, prepared.group_dir)
             self.assertNotIn("github_org_old", client.nodes["Repository"])
             self.assertEqual(client.edge_pairs("IMPLEMENTS"), {("github_org_new", "W1")})
+
+
+class GraphDedupTest(unittest.TestCase):
+    """Cross-group duplicates are invisible to the per-group stage; the
+    graph-wide pass compares Person nodes from every published group."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+
+    def load_group(self, client, group, publications, people):
+        prepared = PreparedStore(self.root / "prepared", group)
+        prepared.write_models("publications", publications)
+        prepared.write_models("persons", people)
+        load_jsonl_dir(client, prepared.group_dir)
+        return prepared
+
+    def test_cross_group_namesakes_fold_in_graph(self):
+        client = RecordingNeo4jClient()
+        self.load_group(client, "q1", [publication("W1", "Paper one")],
+                        [person("X1", "Julia Borisova", ["W1"])])
+        self.load_group(client, "y2026", [publication("W2", "Paper two")],
+                        [person("Y1", "Julia Borisova", ["W2"], orcid="0009-0001")])
+        result = dedup_graph_persons(client, {})
+        self.assertEqual(result["graph_persons_merged"], 1)
+        # The record carrying an ORCID wins the canonical spot.
+        self.assertNotIn("X1", client.nodes["Person"])
+        self.assertEqual(client.nodes["Person"]["Y1"]["merged_ids"], ["X1"])
+        self.assertEqual(
+            {pair for pair in client.edge_pairs("AUTHORED") if pair[0] in {"X1", "Y1"}},
+            {("Y1", "W1"), ("Y1", "W2")})
+
+    def test_raw_orcids_veto_graph_merges_too(self):
+        client = RecordingNeo4jClient()
+        self.load_group(client, "q1", [publication("W1", "Paper one")],
+                        [person("X1", "Julia Borisova", ["W1"])])
+        self.load_group(client, "y2026", [publication("W2", "Paper two")],
+                        [person("Y1", "Julia Borisova", ["W2"])])
+        result = dedup_graph_persons(client, {"X1": "0009-0001", "Y1": "0009-0002"})
+        self.assertEqual(result["graph_persons_merged"], 0)
+        self.assertIn("X1", client.nodes["Person"])
+        self.assertIn("Y1", client.nodes["Person"])
+
+    def test_republish_of_old_group_does_not_resurrect_folded_person(self):
+        client = RecordingNeo4jClient()
+        old_group = self.load_group(client, "q1", [publication("W1", "Paper one")],
+                                    [person("X1", "Julia Borisova", ["W1"])])
+        self.load_group(client, "y2026", [publication("W2", "Paper two")],
+                        [person("Y1", "Julia Borisova", ["W2"], orcid="0009-0001")])
+        dedup_graph_persons(client, {})
+        # The old group's prepared rows still carry X1: republishing them
+        # must fold it right back instead of splitting the person again.
+        load_jsonl_dir(client, old_group.group_dir)
+        self.assertNotIn("X1", client.nodes["Person"])
+        self.assertIn(("Y1", "W1"), client.edge_pairs("AUTHORED"))
 
 
 class LoaderPersonMergeTest(unittest.TestCase):

@@ -186,6 +186,31 @@ class RecordingNeo4jClient:
             removed += 1
         return removed
 
+    def fetch_persons_for_dedup(self) -> list[dict]:
+        """Mirror of Neo4jClient.fetch_persons_for_dedup over recorded state."""
+        rows = []
+        for person_id, props in self.nodes.get("Person", {}).items():
+            rows.append({
+                "id": person_id,
+                **{field: props.get(field) for field in (
+                    "openalex_id", "name_en", "name_variants", "orcid", "email",
+                    "github", "openreview", "google_scholar", "merged_ids")},
+                "is_itmo": self.person_labels.get(person_id) == "Itmo",
+                "publication_ids": sorted({
+                    tgt_id for (src_primary, rel_type, _tgt, src_id, tgt_id) in self.edges
+                    if src_primary == "Person" and rel_type == "AUTHORED" and src_id == person_id
+                }),
+            })
+        return rows
+
+    def fetch_merged_id_map(self, label: str) -> dict[str, str]:
+        """Mirror of Neo4jClient.fetch_merged_id_map over recorded state."""
+        return {
+            merged_id: node_id
+            for node_id, props in self.nodes.get(label, {}).items()
+            for merged_id in props.get("merged_ids") or []
+        }
+
     def merge_person_nodes_batch(self, merges) -> int:
         return self._fold_nodes("Person", merges)
 
