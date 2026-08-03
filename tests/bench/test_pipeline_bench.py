@@ -33,6 +33,10 @@ from tests.bench.mocks import (
 )
 from tests.bench.universe import (
     ARCHIVE_AUTHOR_AFFILIATION,
+    CONSORTIUM_FILLERS,
+    CONSORTIUM_ITMO_INDEX,
+    CONSORTIUM_ORG_NAME,
+    CONSORTIUM_WORK,
     ARCHIVE_AUTHOR_ID,
     ARCHIVE_REPO_ID,
     ARCHIVE_REPO_URL,
@@ -136,20 +140,22 @@ def bench(tmp_path_factory) -> SimpleNamespace:
 # --- collect / normalize -------------------------------------------------------
 
 def test_collect_is_idempotent(bench):
-    assert bench.collected_first == 123
+    assert bench.collected_first == 124
     assert bench.collected_again == 0
 
 
 def test_normalize_counts(bench):
     # Normalization keeps one row per OpenAlex work; duplicate records of one
     # publication are folded later, by the dedup stage.
-    assert bench.normalize_result == {"publications": 123, "persons": 61}
+    assert bench.normalize_result == {"publications": 124, "persons": 64}
     # bench.persons is read after enrichment, i.e. after the dedup stage
     # folded the split authors away.
-    openalex_persons = {pid for pid in bench.persons if pid.startswith("A5")}
+    openalex_persons = {pid for pid in bench.persons if pid.startswith("A50")}
     assert openalex_persons == set(AUTHOR_IDS) - set(DEDUP_MERGES)
-    # Plus the two authors of W121, whom OpenAlex has not disambiguated.
-    assert len(bench.persons) == len(openalex_persons) + 2
+    assert set(CONSORTIUM_FILLERS) <= set(bench.persons)
+    # Plus the consortium fillers and the two authors of W121, whom
+    # OpenAlex has not disambiguated.
+    assert len(bench.persons) == len(openalex_persons) + len(CONSORTIUM_FILLERS) + 2
 
 
 def test_flaky_affiliation_does_not_split_identity(bench):
@@ -408,6 +414,20 @@ def test_publisher_markup_is_stripped_from_the_title(bench):
     assert bench.publications[MARKUP_WORK].title == MARKUP_TITLE_CLEAN
 
 
+def test_consortium_paper_finds_the_itmo_participant_beyond_the_cut(bench):
+    # The list endpoint truncated the author list; only the single-work
+    # record names the ITMO participant.
+    itmo_id = f"A50000000{CONSORTIUM_ITMO_INDEX}"
+    assert (itmo_id, CONSORTIUM_WORK) in bench.graph.edge_pairs("AUTHORED")
+    for filler in CONSORTIUM_FILLERS:
+        assert (filler, CONSORTIUM_WORK) in bench.graph.edge_pairs("AUTHORED")
+
+
+def test_an_organization_in_an_author_slot_never_becomes_a_person(bench):
+    assert all(p.name_en != CONSORTIUM_ORG_NAME for p in bench.persons.values())
+    assert "A5900000999" not in bench.persons
+
+
 def test_a_release_archive_points_at_the_repository_it_archives(bench):
     # The deposit cites no URL: the repository is named in its title.
     deposit = bench.publications[ARCHIVE_WORK]
@@ -454,14 +474,15 @@ def test_department_matching_including_aliases(bench):
 
 def test_graph_node_counts(bench):
     graph = bench.graph
-    assert len(graph.nodes["Publication"]) == 123 - len(PUBLICATION_MERGES)
-    # 55 OpenAlex authors plus the two of W121 keyed by ORCID and by name.
-    assert len(graph.nodes["Person"]) == 57
+    assert len(graph.nodes["Publication"]) == 124 - len(PUBLICATION_MERGES)
+    # 55 OpenAlex authors, the two of W121 keyed by ORCID and by name,
+    # and the consortium fillers.
+    assert len(graph.nodes["Person"]) == 60
     assert len(graph.nodes["Repository"]) == 80
     assert len(graph.nodes["GitHubProfile"]) == 16
     assert len(graph.nodes["LinkCandidate"]) == 3
     labels = list(graph.person_labels.values())
-    assert labels.count("Itmo") == 36 and labels.count("External") == 21
+    assert labels.count("Itmo") == 36 and labels.count("External") == 24
     for merged_id in DEDUP_MERGES:
         assert merged_id not in graph.nodes["Person"]
 
@@ -477,8 +498,9 @@ def test_graph_edge_counts(bench):
     assert graph.edge_pairs("AUTHORED") == expected_authored
     # 228 from works W001..W110, 9 from the duplicate-record works (two
     # authors each on W111, W114, W117 and W119, one on W118), 2 keyable
-    # authors on W121, 2 on W122 and the lone depositor of W123.
-    assert len(expected_authored) == 242
+    # authors on W121, 2 on W122, the lone depositor of W123, and the
+    # consortium paper's 3 fillers + ITMO participant.
+    assert len(expected_authored) == 246
 
     assert len(graph.edge_pairs("MENTIONS_LINK")) == 83 + 3  # repos + candidates
     # 82 plus the publication inherited from the pre-rename repository row

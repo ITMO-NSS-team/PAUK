@@ -15,6 +15,9 @@ def _http_404(url: str) -> requests.HTTPError:
 class MockOpenAlexClient:
     def __init__(self, universe: dict) -> None:
         self.works = {w["id"].rsplit("/", 1)[-1]: w for w in universe["works"]}
+        # Complete records the single-work endpoint serves for works whose
+        # list payload is truncated.
+        self.works_full = dict(universe.get("works_full") or {})
         self.authors_api = universe["authors_api"]
 
     @staticmethod
@@ -23,6 +26,8 @@ class MockOpenAlexClient:
 
     def get_work(self, work_id: str) -> dict:
         normalized = self.normalize_work_id(work_id)
+        if normalized in self.works_full:
+            return self.works_full[normalized]
         if normalized not in self.works:
             raise _http_404(f"https://api.openalex.org/works/{normalized}")
         return self.works[normalized]

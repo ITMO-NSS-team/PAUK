@@ -213,6 +213,58 @@ class NormalizeTest(unittest.TestCase):
             publication = next(prepared.read_models("publications", Publication))
             self.assertEqual(publication.title, "Comparison of the ab initio QED approaches")
 
+    def test_an_organization_listed_as_an_author_is_not_a_person(self):
+        # ACL Anthology deposits put the venue into an author slot, and
+        # OpenAlex mints an author entity for it.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = RawStore(root / "raw", "sample")
+            raw.append("openalex_works", {
+                "id": "https://openalex.org/W1", "title": "Demo paper",
+                "authorships": [
+                    {"author": {"id": "https://openalex.org/A9",
+                                "display_name": "Association for Computational Linguistics 2026"}},
+                    {"author": {"id": "https://openalex.org/A1", "display_name": "Real Person"},
+                     "institutions": [{"ror": "https://ror.org/04txgxn49"}]},
+                ],
+            }, {"work_id": "W1"})
+            prepared = PreparedStore(root / "prepared", "sample")
+            result = OpenAlexNormalizer(raw, prepared).run()
+            self.assertEqual(result["persons"], 1)
+            (person,) = prepared.read_models("persons", Person)
+            self.assertEqual(person.name_en, "Real Person")
+            # The human keeps the position the work listed them under.
+            self.assertEqual(person.authored[0].position, 2)
+
+    def test_external_authors_are_capped_but_itmo_never_is(self):
+        # Consortium papers carry hundreds of authors; the ITMO participant
+        # can sit beyond any cap and must survive it.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = RawStore(root / "raw", "sample")
+            authorships = [
+                {"author": {"id": f"https://openalex.org/A{i}",
+                            "display_name": f"External {i}"}}
+                for i in range(1, 503)
+            ]
+            authorships.append({
+                "author": {"id": "https://openalex.org/A9999", "display_name": "ITMO Person"},
+                "institutions": [{"ror": "https://ror.org/04txgxn49"}],
+            })
+            raw.append("openalex_works", {
+                "id": "https://openalex.org/W1", "title": "Consortium work",
+                "authorships": authorships,
+            }, {"work_id": "W1"})
+            prepared = PreparedStore(root / "prepared", "sample")
+            result = OpenAlexNormalizer(raw, prepared).run()
+            people = {p.id: p for p in prepared.read_models("persons", Person)}
+            self.assertEqual(result["persons"], 501)  # 500 external + the ITMO author
+            self.assertIn("A9999", people)
+            self.assertTrue(people["A9999"].is_itmo)
+            self.assertEqual(people["A9999"].authored[0].position, 503)
+            self.assertNotIn("A501", people)  # external #501 fell over the cap
+            self.assertNotIn("A502", people)
+
     def test_re_normalization_preserves_enrichment_files_and_publication_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

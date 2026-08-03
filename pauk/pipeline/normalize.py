@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import logging
 import re
 from collections import OrderedDict
 from datetime import date
@@ -9,7 +10,25 @@ from hashlib import sha1
 from pauk.models import Authorship, Funding, Person, Publication
 from pauk.storage import GroupLock, PreparedStore, RawStore
 
+logger = logging.getLogger(__name__)
+
 ITMO_ROR_ID = "04txgxn49"
+
+# Metadata sometimes lists an organization in an author slot — ACL Anthology
+# deposits put the venue there ("Association for Computational Linguistics
+# 2026"), consortium papers list their collaborator group. OpenAlex even
+# mints author entities for these; they are not people and never become
+# persons.
+ORG_AUTHOR_NAME = re.compile(
+    r"\b(association|conference|proceedings|workshop|committee|consortium"
+    r"|collaborat\w*|society)\b",
+    re.IGNORECASE,
+)
+
+# Consortium papers carry hundreds of authors. All ITMO-affiliated ones are
+# kept; external coauthors are capped so that a single epidemiology
+# consortium does not flood the graph.
+EXTERNAL_AUTHORS_LIMIT = 500
 
 MATH_BLOCK = re.compile(r"<mml:math\b[^>]*>.*?</mml:math>", re.DOTALL | re.IGNORECASE)
 MATH_LEAF = re.compile(r"<mml:(mi|mn|mo|mtext)\b[^>]*>(.*?)</mml:\1>", re.DOTALL | re.IGNORECASE)
@@ -205,8 +224,14 @@ class OpenAlexNormalizer:
                     normalized_publication.merged_ids = existing_publication.merged_ids
                     normalized_publication.processing = existing_publication.processing
                 publications[work_id] = normalized_publication
+            external_kept = 0
             for position, authorship in enumerate(work.get("authorships") or [], start=1):
                 author = authorship.get("author") or {}
+                name = author.get("display_name") or ""
+                if ORG_AUTHOR_NAME.search(name):
+                    logger.info("normalize: %s lists an organization as an author, skipping: %s",
+                                work_id, name)
+                    continue
                 openalex_id = _short_id(author.get("id"))
                 person_id = openalex_id or _fallback_person_id(author)
                 if not person_id:
@@ -214,6 +239,12 @@ class OpenAlexNormalizer:
                 person_id = merged_alias.get(person_id, person_id)
                 institutions = authorship.get("institutions") or []
                 is_itmo = any(ITMO_ROR_ID in (inst.get("ror") or inst.get("id") or "") for inst in institutions)
+                if not is_itmo:
+                    # Positions keep counting, so the kept authorships stay at
+                    # the positions the work listed them under.
+                    external_kept += 1
+                    if external_kept > EXTERNAL_AUTHORS_LIMIT:
+                        continue
                 person = persons.setdefault(person_id, Person(
                     id=person_id,
                     openalex_id=openalex_id,

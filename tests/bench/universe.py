@@ -1,4 +1,4 @@
-"""Fully synthetic test universe: 120 works, 59 authors, 80 repositories.
+"""Fully synthetic test universe: 124 works, 62 authors, 80 repositories.
 
 Deterministic (no randomness) and self-describing: every tricky case the
 pipeline must survive is a named constant here, and `build_universe()`
@@ -78,6 +78,10 @@ Records OpenAlex has not finished processing:
 * W123      a GitHub release archived on Zenodo: the repository is named
             only in the title, and the deposit says nothing about where its
             author works — the author's own OpenAlex record does
+* W124      a consortium paper whose author list the works endpoint
+            truncates: the ITMO participant is beyond the cut and only the
+            single-work record names them, and the consortium itself sits in
+            an author slot without being a person
 
 Repositories: 80 canonical repos across 16 owners (5 each); all 80 are
 cited at least once. 3 phantom URLs are cited but never existed (404), one
@@ -90,7 +94,18 @@ to the row the new name produced.
 from __future__ import annotations
 
 AUTHOR_IDS = [f"A50000000{i:02d}" for i in range(1, 60)]
-WORK_IDS = [f"W70000000{i:02d}" for i in range(1, 124)]
+WORK_IDS = [f"W70000000{i:02d}" for i in range(1, 125)]
+
+# W124: a consortium paper. The list endpoint truncates its author list (the
+# is_authors_truncated flag stands in for the 100-entry cap, which would be
+# unwieldy to synthesize) and the ITMO participant is beyond the cut, so the
+# collector must fetch the single-work record to find them. The full list
+# also carries the consortium itself in an author slot — an organization,
+# not a person.
+CONSORTIUM_WORK = "W70000000124"
+CONSORTIUM_ITMO_INDEX = 22            # existing ITMO author A5000000022
+CONSORTIUM_ORG_NAME = "Synthetic Science Consortium Collaborators"
+CONSORTIUM_FILLERS = [f"A59000001{i:02d}" for i in range(3)]
 
 # W123: a GitHub release archived on Zenodo. OpenAlex indexes it as a work of
 # its own, and the deposit names neither the repository as a link nor the
@@ -353,7 +368,9 @@ def build_universe() -> dict:
     for n, work_id in enumerate(WORK_IDS, start=1):
         work: dict = {"id": f"https://openalex.org/{work_id}"}
 
-        if n == 123:
+        if n == 124:
+            work["title"] = "Synthetic consortium paper"
+        elif n == 123:
             work["title"] = ARCHIVE_TITLE
             work["type"] = "software"
         elif n == 122:
@@ -370,7 +387,17 @@ def build_universe() -> dict:
         if n in PUBLICATION_JOURNALS:
             work["primary_location"] = {"source": {"display_name": PUBLICATION_JOURNALS[n]}}
 
-        if n == 16:
+        if n == 124:
+            # The truncated view the list endpoint serves: fillers only, the
+            # ITMO participant is beyond the cut.
+            work["is_authors_truncated"] = True
+            work["authorships"] = [
+                {"author": {"id": f"https://openalex.org/{filler}",
+                            "display_name": f"Filler Person {i}"},
+                 "raw_affiliation_strings": [f"External University {i}"]}
+                for i, filler in enumerate(CONSORTIUM_FILLERS[:2])
+            ]
+        elif n == 16:
             work["authorships"] = []
         elif n == 123:
             # A self-deposit that names the author but not where they work.
@@ -502,8 +529,32 @@ def build_universe() -> dict:
         FEDOROVA_ORCIDS[59]: {"person": {"emails": {"email": []}}},
     }
 
+    # The complete record of the consortium paper, as the single-work
+    # endpoint serves it: all fillers, the organization in an author slot,
+    # and the ITMO participant last.
+    consortium_full = next(w for w in works if w["id"].endswith(CONSORTIUM_WORK))
+    consortium_full = {
+        **{k: v for k, v in consortium_full.items() if k != "is_authors_truncated"},
+        "authorships": [
+            *[{"author": {"id": f"https://openalex.org/{filler}",
+                          "display_name": f"Filler Person {i}"},
+               "raw_affiliation_strings": [f"External University {i}"]}
+              for i, filler in enumerate(CONSORTIUM_FILLERS)],
+            {"author": {"id": "https://openalex.org/A5900000999",
+                        "display_name": CONSORTIUM_ORG_NAME}},
+            _authorship(CONSORTIUM_ITMO_INDEX, 124),
+        ],
+    }
+    for i, filler in enumerate(CONSORTIUM_FILLERS):
+        authors_api[filler] = {
+            "id": f"https://openalex.org/{filler}",
+            "display_name": f"Filler Person {i}",
+            "display_name_alternatives": [],
+        }
+
     return {
         "works": works,
+        "works_full": {CONSORTIUM_WORK: consortium_full},
         "authors_api": authors_api,
         "github": repos,
         "renamed": RENAMED_ALIASES,
