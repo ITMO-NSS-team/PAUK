@@ -9,7 +9,7 @@ from pauk.graph.dedup import (
     dedup_graph_repositories,
 )
 from pauk.graph.jsonl_loader import load_jsonl_dir
-from pauk.models import Person, Publication, RepoLink, Repository
+from pauk.models import Person, Publication, PublicationVersion, RepoLink, Repository
 from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage
 from pauk.storage import PreparedStore, RawStore
 from tests.bench.mocks import RecordingNeo4jClient
@@ -316,6 +316,40 @@ class PublicationDedupTest(unittest.TestCase):
             publication("W2", "Untitled"),
         ])
         self.assertEqual(set(publications), {"W1", "W2"})
+
+    def test_a_ledger_entry_without_authors_is_completed_from_raw(self):
+        # Records folded before author lists were versioned left entries with
+        # the bibliography only, and no later merge revisits them.
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        prepared = PreparedStore(root / "prepared", "sample")
+        raw = RawStore(root / "raw", "sample")
+        raw.append("openalex_works", {
+            "id": "https://openalex.org/W2", "title": "One work",
+            "abstract_inverted_index": {"Older": [0], "abstract": [1]},
+            "authorships": [
+                {"author": {"id": "https://openalex.org/A1", "display_name": "Author One"}},
+                {"author": {"id": "https://openalex.org/A9",
+                            "display_name": "Association for Computational Linguistics 2026"}},
+            ],
+        }, {"work_id": "W2"})
+        survivor = publication("W1", "One work", doi="10.1/x")
+        survivor.merged_ids = ["W2"]
+        survivor.versions = [
+            PublicationVersion(openalex_id="W1", doi="10.1/x"),
+            PublicationVersion(openalex_id="W2", doi="10.1/y"),
+        ]
+        prepared.write_models("publications", [survivor])
+        prepared.write_models("persons", [person("A1", "Author One", ["W1"])])
+        DedupStage(prepared, raw).run()
+        (row,) = prepared.read_models("publications", Publication)
+        ledger = {v.openalex_id: v for v in row.versions}
+        self.assertEqual([a.person_id for a in ledger["W1"].authors], ["A1"])
+        # The folded record's own author list is rebuilt from its raw payload,
+        # without the organization sitting in an author slot.
+        self.assertEqual([a.person_id for a in ledger["W2"].authors], ["A1"])
+        self.assertEqual(ledger["W2"].abstract, "Older abstract")
 
     def test_a_fresher_but_empty_record_does_not_become_the_face(self):
         # A re-indexed duplicate can be newer yet carry one author and a DOI

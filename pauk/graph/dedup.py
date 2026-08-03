@@ -94,7 +94,10 @@ def _merged_versions_json(canonical: dict, duplicates: list[dict]) -> str:
         existing = by_id.setdefault(entry.get("openalex_id"), entry)
         if existing is not entry:
             for key, value in entry.items():
-                existing.setdefault(key, value)
+                # An empty author list counts as missing: entries written
+                # before author lists were versioned carry one.
+                if existing.get(key) in (None, [], ""):
+                    existing[key] = value
 
     for row in (canonical, *duplicates):
         try:

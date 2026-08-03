@@ -65,7 +65,13 @@ from datetime import date, datetime, timezone
 
 from pauk.models import Person, Publication, PublicationVersion, RepoLink, Repository, VersionAuthor
 from pauk.models.processing import ProcessingState, ProcessingStatus
-from pauk.pipeline.normalize import _merge_person
+from pauk.pipeline.normalize import (
+    ORG_AUTHOR_NAME,
+    _abstract,
+    _fallback_person_id,
+    _merge_person,
+    _short_id,
+)
 from pauk.storage.atomic import AtomicWriter
 from pauk.urls import normalize_repo_url
 
@@ -422,6 +428,60 @@ class DedupStage(EnrichmentStage):
 
     # --- publications ---------------------------------------------------------
 
+    def _refresh_version_ledger(self, publications: list[Publication],
+                                version_authors: dict[str, list[VersionAuthor]],
+                                known_persons: dict[str, Person]) -> int:
+        """Rebuild ledger entries from the raw payload of each record.
+
+        Raw is the only per-record source that stays correct: a ledger entry
+        written after a merge would otherwise describe the merged state (the
+        union of every record's authors), and entries written before author
+        lists were versioned hold nothing at all. Only authors that exist as
+        persons here are kept, which leaves out organizations sitting in
+        author slots, coauthors dropped by the consortium cap, and ids that
+        person dedup has since folded away.
+        """
+        if not any(publication.versions for publication in publications):
+            return 0
+
+        raw_works: dict[str, dict] = {}
+        for envelope in self.raw.read("openalex_works"):
+            payload = envelope.get("payload") or {}
+            work_id = _short_id(payload.get("id"))
+            if work_id:
+                raw_works[work_id] = payload
+
+        refreshed = 0
+        for publication in publications:
+            for version in publication.versions:
+                work = raw_works.get(version.openalex_id)
+                if work is None:
+                    # No raw payload (an older group, another machine): keep
+                    # whatever the entry already carries.
+                    if not version.authors and version.openalex_id == publication.id:
+                        version.authors = list(version_authors.get(publication.id, ()))
+                        refreshed += bool(version.authors)
+                    continue
+                authors = []
+                for position, authorship in enumerate(work.get("authorships") or [], start=1):
+                    author = authorship.get("author") or {}
+                    if ORG_AUTHOR_NAME.search(author.get("display_name") or ""):
+                        continue
+                    person_id = _short_id(author.get("id")) or _fallback_person_id(author)
+                    person = known_persons.get(person_id) if person_id else None
+                    if person is None:
+                        continue
+                    authors.append(VersionAuthor(person_id=person.id, name=person.name_en,
+                                                 position=position))
+                if version.abstract is None:
+                    version.abstract = _abstract(work)
+                if authors != version.authors:
+                    version.authors = authors
+                    refreshed += 1
+        if refreshed:
+            logger.info("dedup: rebuilt %d version-ledger entry(ies) from raw payloads", refreshed)
+        return refreshed
+
     def _dedup_publications(self) -> dict[str, str]:
         """Fold duplicate publication records and repoint every reference.
 
@@ -439,7 +499,11 @@ class DedupStage(EnrichmentStage):
         # version ledger before merging repoints them all to the survivor.
         author_counts: Counter[str] = Counter()
         version_authors: dict[str, list[VersionAuthor]] = {}
+        known_persons: dict[str, Person] = {}
         for person in self.prepared.read_models("persons", Person):
+            known_persons[person.id] = person
+            for merged_id in person.merged_ids:
+                known_persons.setdefault(merged_id, person)
             for authorship in person.authored:
                 author_counts[authorship.publication_id] += 1
                 version_authors.setdefault(authorship.publication_id, []).append(
@@ -448,6 +512,7 @@ class DedupStage(EnrichmentStage):
         for authors in version_authors.values():
             authors.sort(key=lambda author: (author.position is None,
                                              author.position, author.person_id))
+        refreshed = self._refresh_version_ledger(publications, version_authors, known_persons)
 
         pairs = self._pairs_by_key(publications, in_scope, (
             lambda publication: _norm_doi(publication.doi),
@@ -487,6 +552,9 @@ class DedupStage(EnrichmentStage):
             self._record_state(canonical, len(duplicates))
 
         if not id_map:
+            # Ledger rebuilds still have to reach disk when nothing merged.
+            if refreshed:
+                self.prepared.write_models("publications", publications)
             return {}
         self.prepared.write_models(
             "publications", [row for row in publications if row.id not in id_map])
