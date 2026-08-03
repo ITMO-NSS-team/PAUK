@@ -97,16 +97,18 @@ class PersonsStage(EnrichmentStage):
         for person in candidates:
             state = person.processing.get(self.name)
             try:
-                if not person.openalex_id:
-                    raise ValueError("missing OpenAlex author ID")
                 before = person.model_dump(exclude={"processing", "authored", "contributed_to"})
-                payload = client.get_author(person.openalex_id)
-                self.raw.append("openalex_authors", payload, {"author_id": person.openalex_id})
-                person.name_en = payload.get("display_name") or person.name_en
-                person.name_variants = list(dict.fromkeys([
-                    *person.name_variants, *(payload.get("display_name_alternatives") or []),
-                ]))
-                person.orcid = person.orcid or ((payload.get("orcid") or "").rstrip("/").split("/")[-1] or None)
+                # Authors OpenAlex has not disambiguated yet have no author
+                # record to fetch (normalize keys them by ORCID or name); the
+                # enrichment below still applies to whatever they do carry.
+                if person.openalex_id:
+                    payload = client.get_author(person.openalex_id)
+                    self.raw.append("openalex_authors", payload, {"author_id": person.openalex_id})
+                    person.name_en = payload.get("display_name") or person.name_en
+                    person.name_variants = list(dict.fromkeys([
+                        *person.name_variants, *(payload.get("display_name_alternatives") or []),
+                    ]))
+                    person.orcid = person.orcid or ((payload.get("orcid") or "").rstrip("/").split("/")[-1] or None)
                 if person.orcid:
                     record = orcid_client.get_record(person.orcid)
                     self.raw.append("orcid", record, {"orcid": person.orcid})

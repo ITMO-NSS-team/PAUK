@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from datetime import date
+from hashlib import sha1
 
 from pauk.models import Authorship, Funding, Person, Publication
 from pauk.storage import GroupLock, PreparedStore, RawStore
@@ -11,6 +12,26 @@ ITMO_ROR_ID = "04txgxn49"
 
 def _short_id(value: str | None) -> str | None:
     return value.rstrip("/").split("/")[-1] if value else None
+
+
+def _fallback_person_id(author: dict) -> str | None:
+    """Local identity for an author OpenAlex has not disambiguated yet.
+
+    Fresh records arrive with author.id null but the display name — and
+    often the ORCID — filled in. Keying on the OpenAlex id alone would drop
+    those authorships and leave the publication with no authors at all, so
+    they get a deterministic local id instead: the ORCID when there is one,
+    otherwise a hash of the name, which keeps one node per distinct name.
+    Either way the dedup stage can fold the person into the real author once
+    OpenAlex assigns an id, by ORCID or by name.
+    """
+    orcid = _short_id(author.get("orcid"))
+    if orcid:
+        return f"orcid_{orcid}"
+    name = " ".join((author.get("display_name") or "").split())
+    if not name:
+        return None
+    return f"name_{sha1(name.casefold().encode()).hexdigest()[:12]}"
 
 
 def _abstract(work: dict) -> str | None:
@@ -133,20 +154,22 @@ class OpenAlexNormalizer:
                 publications[work_id] = normalized_publication
             for position, authorship in enumerate(work.get("authorships") or [], start=1):
                 author = authorship.get("author") or {}
-                author_id = _short_id(author.get("id"))
-                if not author_id:
+                openalex_id = _short_id(author.get("id"))
+                person_id = openalex_id or _fallback_person_id(author)
+                if not person_id:
                     continue
-                author_id = merged_alias.get(author_id, author_id)
+                person_id = merged_alias.get(person_id, person_id)
                 institutions = authorship.get("institutions") or []
                 is_itmo = any(ITMO_ROR_ID in (inst.get("ror") or inst.get("id") or "") for inst in institutions)
-                person = persons.setdefault(author_id, Person(
-                    id=author_id,
-                    openalex_id=author_id,
+                person = persons.setdefault(person_id, Person(
+                    id=person_id,
+                    openalex_id=openalex_id,
                     is_itmo=is_itmo,
                     name_en=author.get("display_name"),
                 ))
                 # At least one ITMO affiliation anywhere makes the person ITMO.
                 person.is_itmo = person.is_itmo or is_itmo
+                person.orcid = person.orcid or _short_id(author.get("orcid"))
                 variants = author.get("display_name_alternatives") or []
                 person.name_variants = list(dict.fromkeys([*person.name_variants, *variants]))
                 authorship_record = Authorship(

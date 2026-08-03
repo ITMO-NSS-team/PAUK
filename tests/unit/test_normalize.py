@@ -129,6 +129,51 @@ class NormalizeTest(unittest.TestCase):
             person = next(prepared.read_models("persons", Person))
             self.assertEqual([a.publication_id for a in person.authored], ["W1"])
 
+    def test_authors_without_an_openalex_id_are_kept(self):
+        # Fresh OpenAlex records carry the authors but no author entity yet;
+        # dropping them would leave the publication with no authors at all.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = RawStore(root / "raw", "sample")
+            raw.append("openalex_works", {
+                "id": "https://openalex.org/W1", "title": "Fresh record",
+                "authorships": [
+                    {"author": {"id": None, "display_name": "Ianina D. Moor",
+                                "orcid": "https://orcid.org/0000-0002-1624-2659"},
+                     "institutions": [{"ror": "https://ror.org/04txgxn49"}]},
+                    {"author": {"id": None, "display_name": "D. V. Karlovets"}},
+                    {"author": {"id": None, "display_name": None}},
+                ],
+            }, {"work_id": "W1"})
+            prepared = PreparedStore(root / "prepared", "sample")
+            result = OpenAlexNormalizer(raw, prepared).run()
+            # The nameless authorship is the only one that cannot be keyed.
+            self.assertEqual(result["persons"], 2)
+            people = {p.id: p for p in prepared.read_models("persons", Person)}
+            by_orcid = people["orcid_0000-0002-1624-2659"]
+            self.assertEqual(by_orcid.name_en, "Ianina D. Moor")
+            self.assertEqual(by_orcid.orcid, "0000-0002-1624-2659")
+            self.assertIsNone(by_orcid.openalex_id)
+            self.assertTrue(by_orcid.is_itmo)
+            by_name = next(p for p in people.values() if p.name_en == "D. V. Karlovets")
+            self.assertTrue(by_name.id.startswith("name_"))
+            self.assertIsNone(by_name.openalex_id)
+
+    def test_the_same_unidentified_author_is_one_person_across_works(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = RawStore(root / "raw", "sample")
+            for work_id in ("W1", "W2"):
+                raw.append("openalex_works", {
+                    "id": f"https://openalex.org/{work_id}", "title": f"Work {work_id}",
+                    "authorships": [{"author": {"id": None, "display_name": "D. V. Karlovets"}}],
+                }, {"work_id": work_id})
+            prepared = PreparedStore(root / "prepared", "sample")
+            result = OpenAlexNormalizer(raw, prepared).run()
+            self.assertEqual(result["persons"], 1)
+            person = next(prepared.read_models("persons", Person))
+            self.assertEqual({a.publication_id for a in person.authored}, {"W1", "W2"})
+
     def test_re_normalization_preserves_enrichment_files_and_publication_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
