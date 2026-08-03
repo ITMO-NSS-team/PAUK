@@ -114,8 +114,22 @@ def collect(drv):
 
     checks = []
     for c in CHECKS:
-        n = scalar(drv, c.count)
-        denom = scalar(drv, c.of) if c.of else None
+        # Per-check isolation: a query that fails against the current graph
+        # (a property typed differently than the check assumes, say) must not
+        # take the whole snapshot down with it — the tab would show nothing
+        # at all instead of the 30-odd checks that did run.
+        try:
+            n = scalar(drv, c.count)
+            denom = scalar(drv, c.of) if c.of else None
+        except Exception as exc:
+            logger.warning("проверка %s не выполнилась: %s", c.id, exc)
+            checks.append({
+                "id": c.id, "group": c.group, "title": c.title,
+                "n": None, "of": None, "pct": None,
+                "status": "error", "hint": f"{type(exc).__name__}: {exc}",
+                "has_examples": False,
+            })
+            continue
         checks.append({
             "id": c.id, "group": c.group, "title": c.title,
             "n": n, "of": denom,

@@ -604,3 +604,8 @@ a:hover { text-decoration-color: var(--text); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 #st-hl-bar .st-btn { padding: 5px 11px; font-size: 11px; }
+
+/* Проверка, которая не смогла выполниться на текущем графе. */
+.st-err-check .st-dot { background: var(--text); box-shadow: 0 0 0 3px var(--surface-2); }
+.st-err-check .st-check-t { font-weight: 700; }
+.st-err-check .st-check-hint { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }

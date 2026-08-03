@@ -109,8 +109,12 @@ class GzipHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         route = self.path.split("?")[0]
+        # Deliberately POST-only: recomputing queries Neo4j for several
+        # seconds and rewrites web/graph-stats.js. A GET must stay safe to
+        # repeat — browser prefetch, crawlers and proxies all issue them
+        # unprompted. The page's "Пересчитать" button already POSTs.
         if route == API_STATS:
-            return self._recompute_stats()
+            return self._send_json(405, {"error": "Пересчёт доступен только методом POST."})
         if route == API_CHECK:
             return self._check_examples()
 

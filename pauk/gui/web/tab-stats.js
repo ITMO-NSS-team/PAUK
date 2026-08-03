@@ -9,8 +9,9 @@ const ST_STATUS = {
   fail: { label: "проблема", cls: "st-fail" },
   warn: { label: "внимание", cls: "st-warn" },
   ok:   { label: "ок",       cls: "st-ok"   },
+  error: { label: "не выполнилась", cls: "st-err-check" },
 };
-const ST_ORDER = { fail: 0, warn: 1, ok: 2 };
+const ST_ORDER = { error: 0, fail: 1, warn: 2, ok: 3 };
 
 const ST_VIEW_LIMIT = 300;    // строк в окне
 const ST_CSV_LIMIT  = 5000;   // строк в выгрузке
@@ -61,7 +62,7 @@ function stChecks(checks) {
     const items = g.items.slice().sort((a, b) =>
       ST_ORDER[a.status] - ST_ORDER[b.status] || (b.pct || 0) - (a.pct || 0) || b.n - a.n);
     return `<div class="st-block"><div class="st-col-h">${esc(g.name)}</div>` + items.map(c => {
-      const st = ST_STATUS[c.status];
+      const st = ST_STATUS[c.status] || ST_STATUS.ok;
       const clickable = c.has_examples && c.n > 0;
       return `<div class="st-check ${st.cls}${clickable ? " st-clickable" : ""}"${
         clickable ? ` data-check="${esc(c.id)}" tabindex="0" role="button"` : ""}>
@@ -302,8 +303,12 @@ async function stHighlightOnMap(id, title) {
       .map(k => [k, found[k].length]).sort((a, b) => b[1] - a[1])[0];
 
     if (!best[1]) {
-      alert("В этой проверке нет объектов, которые есть на карте — " +
-            "она о департаментах, ссылках или связях.");
+      // Не утверждаем причину: строки могут быть о департаментах и ссылках,
+      // которых на карте нет, а могут — об авторах, чьи идентификаторы просто
+      // не совпали с ключами карты. Снаружи эти случаи неразличимы.
+      alert("Не удалось сопоставить строки этой проверки с объектами на карте: "
+          + "либо она о сущностях, которых на карте нет (департаменты, ссылки), "
+          + "либо идентификаторы в базе не совпадают с ключами карты.");
       return;
     }
 
