@@ -57,6 +57,7 @@ from tests.bench.universe import (
     UNIDENTIFIED_ORCID,
     UNIDENTIFIED_WORK,
     UNTITLED_WORK_IDS,
+    RUSSIAN_NAMES_CATALOG,
     build_universe,
     repo_github_id,
 )
@@ -75,6 +76,9 @@ def bench(tmp_path_factory) -> SimpleNamespace:
     universe = build_universe()
     (data_dir / "static" / "departments_catalog.json").write_text(
         json.dumps(universe["departments_catalog"], ensure_ascii=False), encoding="utf-8")
+    (data_dir / "static" / "russian_names.csv").write_text(
+        "name_ru,surname,name,patronymic,degree\n"
+        + "".join(f"{row}\n" for row in RUSSIAN_NAMES_CATALOG), encoding="utf-8")
 
     config = Settings(data_dir=data_dir)
     raw = RawStore(config.raw_dir, GROUP)
@@ -458,6 +462,21 @@ def test_row_written_before_a_rename_folds_into_the_canonical_repository(bench):
     # Both names stay citable, and the publication of the old row survives.
     assert STALE_REPO_URL in survivor.cited_urls
     assert STALE_REPO_PUBLICATION in survivor.publication_ids
+
+
+# --- russian names -----------------------------------------------------------------------
+
+def test_russian_name_from_staff_catalog(bench):
+    oleg = bench.persons["A5000000006"]
+    assert oleg.name_ru == "Иванов Олег Петрович"
+    assert (oleg.first_name_ru, oleg.second_name_ru, oleg.surname_ru) == ("Олег", "Петрович", "Иванов")
+    assert oleg.degree == "к.т.н."
+
+
+def test_russian_name_transliteration_fallback(bench):
+    pavel = bench.persons["A5000000007"]  # "Pavel Ivanov" is not in the catalog
+    assert pavel.name_ru == "Павел Иванов"
+    assert pavel.surname_ru is None  # parts are never guessed from word order
 
 
 # --- departments -----------------------------------------------------------------------
