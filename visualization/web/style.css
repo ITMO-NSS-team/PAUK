@@ -423,3 +423,105 @@ a:hover { text-decoration-color: var(--text); }
 .sp-pie-legend { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
 .sp-pie-legend-item { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
 .sp-pie-legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+/* ---------- tab 5: DB health ----------
+   Same grayscale rule as the rest of the chrome: severity is carried by the
+   gray step of the dot (darkest = problem) and by an explicit label, never by
+   hue — the map's department colors stay the only color on the page. */
+#stats-page {
+  display: none;
+  position: absolute; inset: 60px 0 0 0;
+  z-index: 7; background: var(--bg);
+  overflow-y: auto; overscroll-behavior: none;
+}
+#stats-page.visible { display: block; }
+
+.st-wrap { max-width: 1080px; margin: 0 auto; padding: 26px 24px 80px; }
+.st-empty { padding: 40px 0; color: var(--muted); font-size: 14px; line-height: 1.8; }
+
+.st-head {
+  display: flex; flex-wrap: wrap; gap: 14px 24px;
+  align-items: flex-end; justify-content: space-between; margin-bottom: 20px;
+}
+.st-title { font-size: 22px; font-weight: 800; letter-spacing: -.02em; }
+.st-meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.st-head-right { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.st-verdict { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.st-v-n { font-size: 19px; font-weight: 800; }
+.st-v-k { font-size: 11px; color: var(--muted); margin-right: 10px; }
+
+.st-btn {
+  font-family: inherit; font-size: 12px; font-weight: 700;
+  padding: 8px 15px; border-radius: 9px; cursor: pointer;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); transition: background .15s, border-color .15s;
+}
+.st-btn:hover:not(:disabled) { background: var(--surface-2); border-color: var(--faint); }
+.st-btn:disabled { opacity: .55; cursor: default; }
+.st-empty .st-btn { margin-left: 8px; }
+
+.st-err {
+  font-size: 12px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-left: 3px solid var(--text);
+  border-radius: 8px; padding: 9px 13px; margin-bottom: 16px;
+}
+
+.st-tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 22px; }
+.st-tile {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 16px;
+}
+.st-tile-n { font-size: 24px; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; }
+.st-tile-k { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+.st-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.st-col, .st-block {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px;
+}
+.st-block { margin-bottom: 10px; }
+.st-col-h {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--faint); margin-bottom: 12px;
+}
+
+.st-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 14px; padding: 6px 0; border-top: 1px solid var(--border);
+}
+.st-col-h + .st-row { border-top: 0; padding-top: 0; }
+.st-row-k { font-size: 13px; font-weight: 600; min-width: 0; }
+.st-row-n { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.st-row-note { font-size: 11px; font-weight: 400; color: var(--muted); margin-left: 7px; }
+
+.st-checks-h { font-size: 16px; font-weight: 800; margin: 26px 0 10px; letter-spacing: -.01em; }
+
+.st-check {
+  display: grid; grid-template-columns: 10px 1fr auto;
+  gap: 10px; align-items: start;
+  padding: 10px 0; border-top: 1px solid var(--border);
+}
+.st-col-h + .st-check { border-top: 0; }
+.st-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; background: var(--faint); }
+.st-fail .st-dot { background: var(--text); }
+.st-warn .st-dot { background: var(--muted); }
+.st-ok   .st-dot { background: var(--surface-2); border: 1px solid var(--border); }
+.st-check-top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.st-check-t { font-size: 13px; }
+.st-fail .st-check-t { font-weight: 700; }
+.st-warn .st-check-t { font-weight: 600; }
+.st-ok   .st-check-t { color: var(--muted); }
+.st-check-v { font-size: 13px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.st-ok .st-check-v { color: var(--muted); font-weight: 600; }
+.st-check-pct { font-size: 11px; font-weight: 600; color: var(--muted); }
+.st-check-hint { font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.45; max-width: 70ch; }
+.st-check-st {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .06em; font-weight: 700;
+  color: var(--muted); padding-top: 3px; white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .st-tiles { grid-template-columns: repeat(2, 1fr); }
+  .st-cols  { grid-template-columns: 1fr; }
+  .st-check-st { display: none; }
+}
