@@ -11,13 +11,23 @@ class Funding(BaseModel):
     grant_id: str | None = None
 
 
+class VersionAuthor(BaseModel):
+    """One author of one version, as that record listed them."""
+
+    person_id: str
+    name: str | None = None
+    position: int | None = None
+
+
 class PublicationVersion(BaseModel):
     """One place a work appeared: a preprint, a dataset deposit, a journal
     version of record, or a duplicate OpenAlex record of any of those.
 
     The dedup stage folds such records into a single Publication and keeps
     one entry here per record — including the surviving one — so that no
-    venue, DOI or OpenAlex id is lost by merging.
+    venue, DOI, abstract or author list is lost by merging. This is a
+    ledger, not the graph: nodes and AUTHORED edges are always drawn from
+    the merged, current state of the surviving publication.
     """
 
     openalex_id: str
@@ -28,6 +38,8 @@ class PublicationVersion(BaseModel):
     year: int | None = None
     openalex_url: str | None = None
     pdf_url: str | None = None
+    abstract: str | None = None
+    authors: list[VersionAuthor] = Field(default_factory=list)
 
 
 class Publication(BaseModel):

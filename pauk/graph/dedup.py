@@ -53,6 +53,60 @@ def _ordinal(value) -> int:
         return date.min.toordinal()
 
 
+def _node_version(row: dict) -> dict:
+    """A version-ledger entry for one Publication node as it stands now.
+
+    Captured before a fold moves the node's AUTHORED edges away, so the
+    entry records the author list this record itself carried.
+    """
+    authors = [
+        {key: value for key, value in author.items() if value is not None}
+        for author in sorted(
+            row.get("authors") or [],
+            key=lambda a: (a.get("position") is None, a.get("position"), a.get("person_id")),
+        )
+    ]
+    entry = {
+        "openalex_id": row["id"],
+        "title": row.get("title"),
+        "doi": row.get("doi"),
+        "journal": row.get("journal"),
+        "publication_date": str(row["publication_date"]) if row.get("publication_date") else None,
+        "year": row.get("year"),
+        "openalex_url": row.get("openalex_url"),
+        "pdf_url": row.get("pdf_url"),
+        "abstract": row.get("abstract"),
+        "authors": authors or None,
+    }
+    return {key: value for key, value in entry.items() if value is not None}
+
+
+def _merged_versions_json(canonical: dict, duplicates: list[dict]) -> str:
+    """The canonical node's version ledger after folding `duplicates` in.
+
+    Entries already in a ledger win (the per-group stage wrote them with the
+    author list as of that merge); live node state only fills what is
+    missing, and every folded record contributes its own entry.
+    """
+    by_id: dict[str, dict] = {}
+
+    def absorb(entry: dict) -> None:
+        existing = by_id.setdefault(entry.get("openalex_id"), entry)
+        if existing is not entry:
+            for key, value in entry.items():
+                existing.setdefault(key, value)
+
+    for row in (canonical, *duplicates):
+        try:
+            stored = json.loads(row.get("versions") or "[]")
+        except json.JSONDecodeError:
+            stored = []
+        for entry in stored:
+            absorb(entry)
+        absorb(_node_version(row))
+    return json.dumps(list(by_id.values()), ensure_ascii=False)
+
+
 def _keyed_pairs(rows: list[dict], key_functions) -> tuple[list[tuple[str, str]], dict[frozenset, str]]:
     """Pair node rows that share a key; remember which rule paired them."""
     pairs: list[tuple[str, str]] = []
@@ -207,7 +261,13 @@ def dedup_graph_publications(client) -> tuple[int, list[dict]]:
                     rule for pair, rule in pair_rules.items() if duplicate["id"] in pair
                 }),
             })
-        canonical_updates.append((canonical["id"], {"merged_ids": merged_ids}))
+        canonical_updates.append((canonical["id"], {
+            "merged_ids": merged_ids,
+            # The folded records' venues, abstracts and author lists survive
+            # on the canonical node; the graph itself is still drawn from the
+            # merged, current state.
+            "versions": _merged_versions_json(canonical, duplicates),
+        }))
 
     for chunk in chunked(canonical_updates):
         client.upsert_nodes_batch("Publication", chunk)

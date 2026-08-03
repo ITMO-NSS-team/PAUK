@@ -63,7 +63,7 @@ from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Iterator
 from datetime import date, datetime, timezone
 
-from pauk.models import Person, Publication, PublicationVersion, RepoLink, Repository
+from pauk.models import Person, Publication, PublicationVersion, RepoLink, Repository, VersionAuthor
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.normalize import _merge_person
 from pauk.storage.atomic import AtomicWriter
@@ -320,7 +320,8 @@ def _union(*lists: Iterable[str]) -> list[str]:
     return list(dict.fromkeys(value for values in lists for value in values))
 
 
-def _version_of(publication: Publication) -> PublicationVersion:
+def _version_of(publication: Publication,
+                authors: Iterable[VersionAuthor] = ()) -> PublicationVersion:
     return PublicationVersion(
         openalex_id=publication.id,
         title=publication.title,
@@ -330,18 +331,32 @@ def _version_of(publication: Publication) -> PublicationVersion:
         year=publication.year,
         openalex_url=publication.openalex_url,
         pdf_url=publication.pdf_url,
+        abstract=publication.abstract,
+        authors=list(authors),
     )
 
 
 def _merge_versions(*sources: Iterable[PublicationVersion]) -> list[PublicationVersion]:
+    """One entry per record. The first source naming a record wins; later
+    sources only fill fields it left empty — which is how ledger entries
+    written before authors and abstracts were tracked gain them."""
     merged: dict[str, PublicationVersion] = {}
     for versions in sources:
         for version in versions:
-            merged.setdefault(version.openalex_id, version)
+            existing = merged.setdefault(version.openalex_id, version)
+            if existing is version:
+                continue
+            for field in ("title", "doi", "journal", "publication_date",
+                          "year", "openalex_url", "pdf_url", "abstract"):
+                if getattr(existing, field) is None:
+                    setattr(existing, field, getattr(version, field))
+            if not existing.authors:
+                existing.authors = version.authors
     return list(merged.values())
 
 
-def _merge_publication(base: Publication, extra: Publication) -> Publication:
+def _merge_publication(base: Publication, extra: Publication,
+                       extra_authors: Iterable[VersionAuthor] = ()) -> Publication:
     """Fold one publication record into the record that survives.
 
     The surviving row keeps its own identity and bibliographic fields (it
@@ -350,7 +365,8 @@ def _merge_publication(base: Publication, extra: Publication) -> Publication:
     an abstract or a PDF link present on only one record is never lost.
     """
     base.has_code = base.has_code or extra.has_code
-    base.versions = _merge_versions(base.versions, extra.versions, [_version_of(extra)])
+    base.versions = _merge_versions(base.versions, extra.versions,
+                                    [_version_of(extra, extra_authors)])
     base.merged_ids = _union(base.merged_ids, extra.merged_ids)
     base.department_ids = _union(base.department_ids, extra.department_ids)
     for link in extra.mentions_links:
@@ -419,11 +435,19 @@ class DedupStage(EnrichmentStage):
 
         # The best-documented record survives, so authorship counts decide
         # between records of one DOI (OpenAlex re-indexing leaves one of them
-        # without any authors at all).
+        # without any authors at all). The per-record author lists go into the
+        # version ledger before merging repoints them all to the survivor.
         author_counts: Counter[str] = Counter()
+        version_authors: dict[str, list[VersionAuthor]] = {}
         for person in self.prepared.read_models("persons", Person):
             for authorship in person.authored:
                 author_counts[authorship.publication_id] += 1
+                version_authors.setdefault(authorship.publication_id, []).append(
+                    VersionAuthor(person_id=person.id, name=person.name_en,
+                                  position=authorship.position))
+        for authors in version_authors.values():
+            authors.sort(key=lambda author: (author.position is None,
+                                             author.position, author.person_id))
 
         pairs = self._pairs_by_key(publications, in_scope, (
             lambda publication: _norm_doi(publication.doi),
@@ -450,11 +474,14 @@ class DedupStage(EnrichmentStage):
                 ),
             )
             canonical, duplicates = ranked[0], ranked[1:]
-            canonical.versions = _merge_versions(canonical.versions, [_version_of(canonical)])
+            canonical.versions = _merge_versions(
+                canonical.versions,
+                [_version_of(canonical, version_authors.get(canonical.id, ()))])
             for duplicate in duplicates:
                 logger.info("dedup: merging publication %s (%s) into %s (%s)",
                             duplicate.id, duplicate.journal, canonical.id, canonical.journal)
-                _merge_publication(canonical, duplicate)
+                _merge_publication(canonical, duplicate,
+                                   version_authors.get(duplicate.id, ()))
                 canonical.merged_ids = _union(canonical.merged_ids, [duplicate.id])
                 id_map[duplicate.id] = canonical.id
             self._record_state(canonical, len(duplicates))

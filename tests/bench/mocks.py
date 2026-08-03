@@ -211,14 +211,24 @@ class RecordingNeo4jClient:
 
     def fetch_publications_for_dedup(self) -> list[dict]:
         """Mirror of Neo4jClient.fetch_publications_for_dedup."""
-        return [{
-            "id": publication_id,
-            **{field: props.get(field) for field in (
-                "doi", "title", "publication_date", "merged_ids")},
-            "author_count": sum(
-                1 for (_src, rel_type, tgt_primary, _sid, tgt_id) in self.edges
-                if rel_type == "AUTHORED" and tgt_primary == "Publication" and tgt_id == publication_id),
-        } for publication_id, props in self.nodes.get("Publication", {}).items()]
+        rows = []
+        for publication_id, props in self.nodes.get("Publication", {}).items():
+            authors = [
+                {"person_id": src_id,
+                 "name": self.nodes.get("Person", {}).get(src_id, {}).get("name_en"),
+                 "position": edge_props.get("position")}
+                for (_src, rel_type, tgt_primary, src_id, tgt_id), edge_props in self.edges.items()
+                if rel_type == "AUTHORED" and tgt_primary == "Publication" and tgt_id == publication_id
+            ]
+            rows.append({
+                "id": publication_id,
+                **{field: props.get(field) for field in (
+                    "doi", "title", "journal", "publication_date", "year",
+                    "openalex_url", "pdf_url", "abstract", "versions", "merged_ids")},
+                "author_count": len(authors),
+                "authors": authors,
+            })
+        return rows
 
     def fetch_repositories_for_dedup(self) -> list[dict]:
         """Mirror of Neo4jClient.fetch_repositories_for_dedup."""

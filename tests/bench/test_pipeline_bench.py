@@ -373,6 +373,10 @@ def test_versions_are_json_text(bench):
     props = bench.graph.nodes["Publication"]["W70000000114"]
     assert isinstance(props["versions"], str)
     assert "Synthetic Preprint Server" in props["versions"]
+    # Each version entry records the author list that record itself carried.
+    versions = {entry["openalex_id"]: entry for entry in json.loads(props["versions"])}
+    assert {a["person_id"] for a in versions["W70000000113"]["authors"]} == \
+        {"A5000000024", "A5000000025"}
 
 
 # --- records OpenAlex has not finished processing ------------------------------------------

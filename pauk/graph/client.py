@@ -245,19 +245,27 @@ class Neo4jClient:
             )
             for other_label, rel_type in incoming
         ]
-        # Same trick on the nodes themselves: whatever the duplicate knew and
-        # the canonical does not (a pdf_url, an abstract) moves over before
-        # the duplicate is deleted; the canonical's own values — including its
-        # id — are restored on top.
-        fill_query = cast(
+        # The nodes themselves cannot use that trick: copying properties(dup)
+        # wholesale would momentarily set canonical.id to the duplicate's id
+        # while the duplicate node still exists, tripping the uniqueness
+        # constraint. The gap-filling is computed in Python instead, where
+        # the identity keys are simply excluded.
+        props_query = cast(
             LiteralString,
             f"""
             UNWIND $batch AS row
             MATCH (dup:{label} {{id: row.dup_id}})
             MATCH (canonical:{label} {{id: row.canonical_id}})
-            WITH canonical, dup, properties(canonical) AS keep
-            SET canonical += properties(dup)
-            SET canonical += keep
+            RETURN row.canonical_id AS canonical_id,
+                   properties(dup) AS dup_props, properties(canonical) AS canonical_props
+            """,
+        )
+        fill_query = cast(
+            LiteralString,
+            f"""
+            UNWIND $rows AS row
+            MATCH (canonical:{label} {{id: row.canonical_id}})
+            SET canonical += row.fill
             SET canonical.updated_at = datetime()
             """,
         )
@@ -275,9 +283,19 @@ class Neo4jClient:
         )
 
         def merge(tx) -> int:
+            fill_rows = []
+            for record in tx.run(props_query, batch=batch):
+                fill = {
+                    key: value for key, value in record["dup_props"].items()
+                    if key not in ("id", "created_at", "updated_at")
+                    and record["canonical_props"].get(key) is None
+                }
+                if fill:
+                    fill_rows.append({"canonical_id": record["canonical_id"], "fill": fill})
             for query in move_queries:
                 tx.run(query, batch=batch).consume()
-            tx.run(fill_query, batch=batch).consume()
+            if fill_rows:
+                tx.run(fill_query, rows=fill_rows).consume()
             return tx.run(delete_query, batch=batch).single()["removed"]
 
         with self.driver.session() as session:
@@ -309,15 +327,23 @@ class Neo4jClient:
     def fetch_publications_for_dedup(self) -> list[dict]:
         """Every Publication node with the fields the merge rules consume.
 
-        author_count feeds the ranking: between records of one work the
-        best-documented one survives.
+        author_count feeds the ranking (between records of one work the
+        best-documented one survives); the bibliographic fields and the
+        author list feed the version ledger a fold writes onto the
+        canonical node before the duplicate disappears.
         """
         query = """
             MATCH (p:Publication)
-            OPTIONAL MATCH (a:Person)-[:AUTHORED]->(p)
+            OPTIONAL MATCH (a:Person)-[authored:AUTHORED]->(p)
             RETURN p.id AS id, p.doi AS doi, p.title AS title,
-                   p.publication_date AS publication_date,
-                   p.merged_ids AS merged_ids, count(a) AS author_count
+                   p.journal AS journal, p.publication_date AS publication_date,
+                   p.year AS year, p.openalex_url AS openalex_url,
+                   p.pdf_url AS pdf_url, p.abstract AS abstract,
+                   p.versions AS versions,
+                   p.merged_ids AS merged_ids, count(a) AS author_count,
+                   collect(CASE WHEN a IS NULL THEN NULL ELSE
+                       {person_id: a.id, name: a.name_en, position: authored.position}
+                   END) AS authors
         """
         with self.driver.session() as session:
             return session.execute_read(

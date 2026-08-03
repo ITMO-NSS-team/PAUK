@@ -277,6 +277,32 @@ class PublicationDedupTest(unittest.TestCase):
         self.assertEqual({(v.journal, v.doi) for v in survivor.versions},
                          {("Sensors", "10.3/vor"), ("SSRN Electronic Journal", "10.2/preprint")})
 
+    def test_versions_keep_each_records_own_authors_and_abstract(self):
+        # The ledger must answer "who was on the preprint" even after every
+        # authorship is repointed to the surviving record.
+        preprint = publication("W1", "One work", doi="10.2/preprint", day="2025-06-01")
+        preprint.abstract = "Preprint abstract"
+        vor = publication("W2", "One work", doi="10.3/vor", day="2026-03-13")
+        vor.abstract = "Version-of-record abstract"
+        _, publications = self.run_stage(
+            [preprint, vor],
+            people=[
+                person("A1", "Author One", ["W1", "W2"]),
+                person("A2", "Author Two", ["W2"]),
+            ],
+        )
+        survivor = publications["W2"]
+        by_record = {v.openalex_id: v for v in survivor.versions}
+        self.assertEqual([a.person_id for a in by_record["W1"].authors], ["A1"])
+        self.assertEqual([(a.person_id, a.name) for a in by_record["W2"].authors],
+                         [("A1", "Author One"), ("A2", "Author Two")])
+        self.assertEqual(by_record["W1"].abstract, "Preprint abstract")
+        self.assertEqual(by_record["W2"].abstract, "Version-of-record abstract")
+        # The graph is drawn from the merged state: every author points at
+        # the survivor, regardless of which versions they were listed on.
+        people = {p.id: p for p in self.prepared.read_models("persons", Person)}
+        self.assertEqual([a.publication_id for a in people["A1"].authored], ["W2"])
+
     def test_identical_titles_differing_only_in_case_and_spacing_merge(self):
         _, publications = self.run_stage([
             publication("W1", "Bandage: continuous build", day="2026-01-12"),
@@ -513,6 +539,24 @@ class GraphDedupTest(unittest.TestCase):
         self.assertEqual((applied["entity"], applied["record_a"], applied["merged_into"]),
                          ("publication", "W1", "W2"))
         self.assertEqual(applied["rules"], ["doi"])
+
+    def test_graph_fold_writes_the_folded_records_version_entry(self):
+        # A cross-group fold deletes the duplicate node; its venue, abstract
+        # and author list must land in the canonical's version ledger first.
+        client = RecordingNeo4jClient()
+        w1 = publication("W1", "Same work", doi="10.1/x", day="2026-01-01")
+        w1.abstract = "First-group abstract"
+        self.load_group(client, "q1", [w1], [person("X1", "Author One", ["W1"])])
+        self.load_group(client, "y2026",
+                        [publication("W2", "Same work", doi="10.1/x", day="2026-05-01")],
+                        [person("X1", "Author One", ["W2"]),
+                         person("X2", "Author Two", ["W2"])])
+        dedup_graph_publications(client)
+        ledger = {entry["openalex_id"]: entry
+                  for entry in json.loads(client.nodes["Publication"]["W2"]["versions"])}
+        self.assertEqual(ledger["W1"]["abstract"], "First-group abstract")
+        self.assertEqual([a["person_id"] for a in ledger["W1"]["authors"]], ["X1"])
+        self.assertEqual({a["person_id"] for a in ledger["W2"]["authors"]}, {"X1", "X2"})
 
     def test_cross_group_renamed_repository_folds_in_graph(self):
         client = RecordingNeo4jClient()
