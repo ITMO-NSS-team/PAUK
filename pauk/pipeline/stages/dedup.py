@@ -13,16 +13,37 @@ Persons
     2. Name variant: one person's display name is listed among the other's
        OpenAlex name variants, both are ITMO-affiliated, and they share at
        least one coauthor.
-    3. Same name by default: identical multi-token display names on two
-       ITMO-affiliated persons are one person unless something explicit
-       tells them apart — within one university's author pool a full-name
-       collision is far rarer than an OpenAlex split.
+    3. Identical name plus corroboration: two ITMO-affiliated persons whose
+       full display names match exactly and who also share a coauthor, a
+       department or a research field.
+
+    Merge policy
+    ------------
+    A name is evidence, never proof. Transliteration collapses distinct
+    Russian names onto one Latin string, and the most common surnames
+    (Smirnov, Novikov, Ivanov) collide inside a single university's author
+    pool — an audit of merging on the name alone found "I. V. Smirnov" the
+    medical-anthropology reviewer folded into "I. V. Smirnov" the chemist.
+    So rule 3 requires an independent signal, and a name given as initials
+    ("I. V. Smirnov") is never enough on its own: initials stand for a whole
+    range of first names, multiplying the collisions a full name would not
+    produce.
 
     An explicitly different identity field (ORCID, email, GitHub login,
     OpenReview id, Google Scholar id) always keeps a pair separate. Pairs
-    with weaker evidence (a variant match without a shared coauthor, a
-    namesake outside ITMO, a single-token name) are never merged
-    automatically.
+    with weaker evidence — a variant match without a shared coauthor, a
+    namesake outside ITMO, a single-token name, an identical name with
+    nothing corroborating it — are never merged automatically; they land in
+    the review journal with the reason, and a person who really was split
+    stays split until someone confirms it.
+
+    TODO: the corroboration signals are still coarse. A shared field
+    ("Computer Science") is weak on its own, a shared department is only as
+    good as the affiliation strings behind it, and neither says anything
+    about two namesakes in the same lab. Worth exploring: publication-year
+    ranges that cannot belong to one career, coauthor-graph distance rather
+    than a plain intersection, and per-rule precision measured against the
+    decisions reviewers make in the journal.
 
     Every heuristic decision is journalled to dedup_candidates.jsonl in the
     group directory: applied merges carry status "merged" with the rule(s)
@@ -59,6 +80,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Iterator
 from datetime import date, datetime, timezone
@@ -148,10 +170,20 @@ def _paired_persons(people: list[Person], in_scope: set[str] | None):
                 yield first, second
 
 
+# Names given as initials ("I. V. Smirnov") stand for a whole range of first
+# names, so an identical one says far less than an identical full name.
+INITIALS_NAME = re.compile(r"^(?:\w\.\s*){1,3}\S")
+
+
+def _is_initials_name(name: str) -> bool:
+    return bool(INITIALS_NAME.match(name.strip()))
+
+
 def plan_person_merges(
     people: list[Person],
     trusted_orcid: dict[str, str | None],
     in_scope: set[str] | None = None,
+    fields_of: dict[str, set[str]] | None = None,
 ) -> tuple[list[tuple[Person, list[Person]]], list[dict]]:
     """Decide which persons are one author and which pairs need human eyes.
 
@@ -169,6 +201,7 @@ def plan_person_merges(
         back carry status "held" plus the reasons.
     """
     by_id = {person.id: person for person in people}
+    fields_of = fields_of or {}
 
     pub_authors: dict[str, set[str]] = {}
     for person in people:
@@ -186,6 +219,12 @@ def plan_person_merges(
             cached.discard(person.id)
             coauthor_cache[person.id] = cached
         return cached
+
+    def research_fields(person: Person) -> set[str]:
+        return {
+            field for authorship in person.authored
+            for field in fields_of.get(authorship.publication_id, ())
+        }
 
     merge_pairs: list[tuple[str, str]] = []
     pair_rules: dict[frozenset, str] = {}
@@ -220,12 +259,15 @@ def plan_person_merges(
         both_itmo = first.is_itmo and second.is_itmo
         multi_token = len(first_name.split()) > 1
         shared = (coauthors(first) & coauthors(second)) - {first.id, second.id}
+        shared_departments = set(first.department_ids) & set(second.department_ids)
+        shared_fields = research_fields(first) & research_fields(second)
+        # A name on its own is never enough — see the merge policy above.
+        corroboration = bool(shared or shared_departments or shared_fields)
+        initials_only = _is_initials_name(first.name_en or "")
 
         if variant_evidence and both_itmo and shared:
             plan_pair(first, second, "name_variant")
-        elif same_name and both_itmo and multi_token:
-            # Identical full name and nothing explicit telling them apart:
-            # one person by default.
+        elif same_name and both_itmo and multi_token and not initials_only and corroboration:
             plan_pair(first, second, "same_name")
         elif first.is_itmo or second.is_itmo:
             reasons = []
@@ -233,6 +275,10 @@ def plan_person_merges(
                 reasons.append("only one person is ITMO-affiliated")
             if same_name and both_itmo and not multi_token:
                 reasons.append("single-token display name")
+            if same_name and both_itmo and multi_token and initials_only:
+                reasons.append("name is given as initials")
+            if same_name and both_itmo and multi_token and not initials_only and not corroboration:
+                reasons.append("identical name with nothing corroborating it")
             if variant_evidence and both_itmo and not shared:
                 reasons.append("no shared coauthors")
             report.append({
@@ -240,6 +286,8 @@ def plan_person_merges(
                 "person_a": first.id, "name_a": first.name_en,
                 "person_b": second.id, "name_b": second.name_en,
                 "shared_coauthors": len(shared),
+                "shared_departments": len(shared_departments),
+                "shared_fields": sorted(shared_fields),
                 "held_because": reasons,
             })
 
@@ -659,7 +707,12 @@ class DedupStage(EnrichmentStage):
     def _dedup_persons(self) -> tuple[int, int]:
         people = list(self.prepared.read_models("persons", Person))
         groups, report = plan_person_merges(
-            people, self._trusted_orcids(people), self._person_scope(people))
+            people, self._trusted_orcids(people), self._person_scope(people),
+            fields_of={
+                publication.id: set(publication.fields)
+                for publication in self.prepared.read_models("publications", Publication)
+                if publication.fields
+            })
 
         removed: set[str] = set()
         for canonical, duplicates in groups:

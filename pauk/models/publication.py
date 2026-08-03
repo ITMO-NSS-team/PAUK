@@ -51,6 +51,10 @@ class Publication(BaseModel):
     # Not every work is a paper — a software release archived on Zenodo is a
     # work too, and the code_links stage treats those differently.
     type: str | None = None
+    # OpenAlex topic fields ("Computer Science", "Chemistry"): what the work
+    # is about, coarse enough to be stable. Dedup uses an overlap between
+    # two persons' fields as evidence that they are one researcher.
+    fields: list[str] = Field(default_factory=list)
     journal: str | None = None
     doi: str | None = None
     publication_date: date | None = None

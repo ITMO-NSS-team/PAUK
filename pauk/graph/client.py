@@ -308,17 +308,20 @@ class Neo4jClient:
         """Every Person node with the fields the person merge rules consume.
 
         publication_ids carries the AUTHORED targets so the rules can
-        compute shared coauthors without a second round-trip.
+        compute shared coauthors without a second round-trip, and
+        department_ids the same for a shared department.
         """
         query = """
             MATCH (p:Person)
             OPTIONAL MATCH (p)-[:AUTHORED]->(w:Publication)
+            OPTIONAL MATCH (p)-[:BELONGS_TO]->(d:Department)
             RETURN p.id AS id, p.openalex_id AS openalex_id, p.name_en AS name_en,
                    p.name_variants AS name_variants, p.orcid AS orcid, p.email AS email,
                    p.github AS github, p.openreview AS openreview,
                    p.google_scholar AS google_scholar, p.merged_ids AS merged_ids,
                    'Itmo' IN labels(p) AS is_itmo,
-                   collect(DISTINCT w.id) AS publication_ids
+                   collect(DISTINCT w.id) AS publication_ids,
+                   collect(DISTINCT d.id) AS department_ids
         """
         with self.driver.session() as session:
             return session.execute_read(
@@ -348,6 +351,17 @@ class Neo4jClient:
         with self.driver.session() as session:
             return session.execute_read(
                 lambda tx: [dict(record) for record in tx.run(query)])
+
+    def fetch_publication_fields(self) -> dict[str, set[str]]:
+        """Research fields per publication, for the person merge rules."""
+        query = """
+            MATCH (p:Publication)
+            WHERE size(coalesce(p.fields, [])) > 0
+            RETURN p.id AS id, p.fields AS fields
+        """
+        with self.driver.session() as session:
+            return session.execute_read(
+                lambda tx: {record["id"]: set(record["fields"]) for record in tx.run(query)})
 
     def fetch_repositories_for_dedup(self) -> list[dict]:
         """Every Repository node with the fields the merge rules consume."""

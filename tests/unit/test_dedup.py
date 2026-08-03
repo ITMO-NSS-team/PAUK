@@ -16,11 +16,11 @@ from tests.bench.mocks import RecordingNeo4jClient
 
 
 def person(pid, name, works, *, itmo=True, orcid=None, variants=(), merged=(),
-           email=None, github=None):
+           email=None, github=None, departments=()):
     return Person(
         id=pid, openalex_id=pid, is_itmo=itmo, name_en=name, orcid=orcid,
         name_variants=list(variants), merged_ids=list(merged),
-        email=email, github=github,
+        email=email, github=github, department_ids=list(departments),
         authored=[{"publication_id": w, "position": 1} for w in works],
     )
 
@@ -39,13 +39,14 @@ def repository(rid, name, url, *, github_id=None, cited=(), publications=(), day
 
 
 class DedupStageTest(unittest.TestCase):
-    def run_stage(self, people):
+    def run_stage(self, people, publications=()):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name)
         self.prepared = PreparedStore(root / "prepared", "sample")
         self.raw = RawStore(root / "raw", "sample")
         self.prepared.write_models("persons", people)
+        self.prepared.write_models("publications", publications)
         result = DedupStage(self.prepared, self.raw).run()
         return result, {p.id: p for p in self.prepared.read_models("persons", Person)}
 
@@ -94,23 +95,51 @@ class DedupStageTest(unittest.TestCase):
         self.assertEqual({candidate["person_a"], candidate["person_b"]}, {"A1", "A2"})
         self.assertEqual(candidate["held_because"], ["no shared coauthors"])
 
-    def test_same_display_name_both_itmo_merges_by_default(self):
-        # No shared coauthors needed: an identical full name inside the ITMO
-        # author pool with nothing explicit telling the two apart is one
-        # person by default.
+    def test_same_display_name_alone_is_not_enough_to_merge(self):
+        # Transliteration collapses distinct Russian names onto one Latin
+        # string, so an identical name with nothing behind it is held.
         result, people = self.run_stage([
             person("A1", "Ivan Petrov", ["W1", "W2"]),
             person("A2", "Ivan Petrov", ["W3"]),
         ])
+        self.assertEqual((result["dedup_merged"], len(people)), (0, 2))
+        (held,) = self.journal("held")
+        self.assertEqual(held["held_because"], ["identical name with nothing corroborating it"])
+
+    def test_same_display_name_merges_once_a_shared_field_corroborates_it(self):
+        publications = [publication("W1", "One"), publication("W3", "Three")]
+        publications[0].fields = ["Computer Science"]
+        publications[1].fields = ["Computer Science", "Engineering"]
+        result, people = self.run_stage(
+            [person("A1", "Ivan Petrov", ["W1", "W2"]), person("A2", "Ivan Petrov", ["W3"])],
+            publications=publications,
+        )
         self.assertEqual(result["dedup_merged"], 1)
-        self.assertEqual(set(people), {"A1"})
         self.assertEqual(people["A1"].merged_ids, ["A2"])
-        self.assertEqual(self.journal("held"), [])
-        # The ambiguous merge is journalled as already applied, for review
-        # and possible rollback.
         (applied,) = self.journal("merged")
         self.assertEqual((applied["person_a"], applied["merged_into"], applied["rules"]),
                          ("A2", "A1", ["same_name"]))
+
+    def test_same_display_name_merges_on_a_shared_department(self):
+        result, people = self.run_stage([
+            person("A1", "Ivan Petrov", ["W1"], departments=["dept_x"]),
+            person("A2", "Ivan Petrov", ["W2"], departments=["dept_x"]),
+        ])
+        self.assertEqual(result["dedup_merged"], 1)
+
+    def test_a_name_given_as_initials_never_merges_on_the_name_alone(self):
+        # "I. V. Smirnov" stands for a range of first names; a shared field
+        # is not enough to tell one Smirnov from another.
+        publications = [publication("W1", "One"), publication("W2", "Two")]
+        for row in publications:
+            row.fields = ["Chemistry"]
+        result, people = self.run_stage(
+            [person("A1", "I. V. Smirnov", ["W1"]), person("A2", "I. V. Smirnov", ["W2"])],
+            publications=publications,
+        )
+        self.assertEqual((result["dedup_merged"], len(people)), (0, 2))
+        (held,) = self.journal("held")
+        self.assertEqual(held["held_because"], ["name is given as initials"])
 
     def test_same_name_with_different_orcids_stays_separate(self):
         result, people = self.run_stage([
@@ -517,6 +546,14 @@ class GraphDedupTest(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
 
+    @staticmethod
+    def paper(pid, title, field="Computer Science"):
+        """A publication carrying a research field, so that two persons of
+        the same name have something corroborating the match."""
+        row = publication(pid, title)
+        row.fields = [field]
+        return row
+
     def load_group(self, client, group, publications, people):
         prepared = PreparedStore(self.root / "prepared", group)
         prepared.write_models("publications", publications)
@@ -525,10 +562,12 @@ class GraphDedupTest(unittest.TestCase):
         return prepared
 
     def test_cross_group_namesakes_fold_in_graph(self):
+        # One researcher collected in two periods: the same full name, and
+        # the shared research field corroborates it.
         client = RecordingNeo4jClient()
-        self.load_group(client, "q1", [publication("W1", "Paper one")],
+        self.load_group(client, "q1", [self.paper("W1", "Paper one")],
                         [person("X1", "Julia Borisova", ["W1"])])
-        self.load_group(client, "y2026", [publication("W2", "Paper two")],
+        self.load_group(client, "y2026", [self.paper("W2", "Paper two")],
                         [person("Y1", "Julia Borisova", ["W2"], orcid="0009-0001")])
         removed, report = dedup_graph_persons(client, {})
         self.assertEqual(removed, 1)
@@ -617,9 +656,9 @@ class GraphDedupTest(unittest.TestCase):
 
     def test_republish_of_old_group_does_not_resurrect_folded_person(self):
         client = RecordingNeo4jClient()
-        old_group = self.load_group(client, "q1", [publication("W1", "Paper one")],
+        old_group = self.load_group(client, "q1", [self.paper("W1", "Paper one")],
                                     [person("X1", "Julia Borisova", ["W1"])])
-        self.load_group(client, "y2026", [publication("W2", "Paper two")],
+        self.load_group(client, "y2026", [self.paper("W2", "Paper two")],
                         [person("Y1", "Julia Borisova", ["W2"], orcid="0009-0001")])
         dedup_graph_persons(client, {})
         # The old group's prepared rows still carry X1: republishing them

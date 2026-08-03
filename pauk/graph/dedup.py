@@ -178,6 +178,7 @@ def dedup_graph_persons(client, raw_orcids: dict[str, str | None]) -> tuple[int,
             openreview=row.get("openreview"),
             google_scholar=row.get("google_scholar"),
             merged_ids=list(row.get("merged_ids") or []),
+            department_ids=list(row.get("department_ids") or []),
             authored=[
                 {"publication_id": publication_id, "position": 0}
                 for publication_id in row.get("publication_ids") or []
@@ -189,7 +190,8 @@ def dedup_graph_persons(client, raw_orcids: dict[str, str | None]) -> tuple[int,
         person.id: raw_orcids[person.id] if person.id in raw_orcids else person.orcid
         for person in people
     }
-    groups, report = plan_person_merges(people, trusted_orcid)
+    groups, report = plan_person_merges(
+        people, trusted_orcid, fields_of=client.fetch_publication_fields())
 
     merges: list[tuple[str, str]] = []
     canonical_nodes: dict[bool, list[tuple[str, dict]]] = {True: [], False: []}

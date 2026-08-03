@@ -211,8 +211,20 @@ class RecordingNeo4jClient:
                     tgt_id for (src_primary, rel_type, _tgt, src_id, tgt_id) in self.edges
                     if src_primary == "Person" and rel_type == "AUTHORED" and src_id == person_id
                 }),
+                "department_ids": sorted({
+                    tgt_id for (src_primary, rel_type, _tgt, src_id, tgt_id) in self.edges
+                    if src_primary == "Person" and rel_type == "BELONGS_TO" and src_id == person_id
+                }),
             })
         return rows
+
+    def fetch_publication_fields(self) -> dict[str, set[str]]:
+        """Mirror of Neo4jClient.fetch_publication_fields."""
+        return {
+            publication_id: set(props["fields"])
+            for publication_id, props in self.nodes.get("Publication", {}).items()
+            if props.get("fields")
+        }
 
     def fetch_publications_for_dedup(self) -> list[dict]:
         """Mirror of Neo4jClient.fetch_publications_for_dedup."""

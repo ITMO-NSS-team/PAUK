@@ -113,6 +113,14 @@ def _abstract(work: dict) -> str | None:
     return _clean_markup(" ".join(word for _, word in words))
 
 
+def _fields(work: dict) -> list[str]:
+    """The OpenAlex topic fields a work belongs to, deduplicated."""
+    return list(dict.fromkeys(
+        field for topic in work.get("topics") or []
+        if (field := ((topic.get("field") or {}).get("display_name")))
+    ))
+
+
 def _funding(work: dict) -> list[Funding]:
     return [
         Funding(funder=grant.get("funder_display_name"), grant_id=grant.get("grant_id"))
@@ -205,6 +213,7 @@ class OpenAlexNormalizer:
                     id=work_id,
                     title=_clean_markup(work.get("title")) or "Untitled",
                     type=work.get("type"),
+                    fields=_fields(work),
                     doi=work.get("doi"),
                     openalex_url=work.get("id"),
                     publication_date=date.fromisoformat(pub_date) if pub_date else None,
