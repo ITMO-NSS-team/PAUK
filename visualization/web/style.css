@@ -525,3 +525,82 @@ a:hover { text-decoration-color: var(--text); }
   .st-cols  { grid-template-columns: 1fr; }
   .st-check-st { display: none; }
 }
+
+/* ---------- tab 5: popup with the rows behind a check ---------- */
+.st-clickable { cursor: pointer; }
+.st-clickable:hover, .st-clickable:focus-visible {
+  background: var(--surface-2); outline: none;
+  box-shadow: 0 0 0 6px var(--surface-2);
+}
+.st-check-more {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+  font-weight: 700; color: var(--faint); margin-left: 8px; white-space: nowrap;
+}
+.st-clickable:hover .st-check-more, .st-clickable:focus-visible .st-check-more {
+  color: var(--text);
+}
+
+#st-modal {
+  display: none; position: fixed; inset: 0; z-index: 40;
+  background: rgba(0, 0, 0, .45); padding: 40px 20px;
+  align-items: center; justify-content: center;
+}
+#st-modal.visible { display: flex; }
+.st-modal-box {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .28);
+  width: min(1100px, 100%); max-height: 100%;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.st-modal-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; padding: 16px 18px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.st-modal-title { font-size: 15px; font-weight: 800; letter-spacing: -.01em; }
+.st-modal-sub { font-size: 12px; color: var(--muted); margin-top: 4px; max-width: 70ch; }
+.st-modal-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+.st-modal-x { font-size: 17px; line-height: 1; padding: 6px 11px; }
+
+.st-modal-body { overflow: auto; padding: 0; flex: 1; overscroll-behavior: contain; }
+.st-modal-msg { padding: 28px 18px; color: var(--muted); font-size: 13px; }
+
+.st-table { border-collapse: collapse; width: 100%; font-size: 12px; }
+.st-table th, .st-table td {
+  text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.st-table th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--surface); font-weight: 700; white-space: nowrap;
+  font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted);
+}
+.st-table td { max-width: 460px; overflow-wrap: anywhere; }
+.st-table tbody tr:hover { background: var(--surface); }
+.st-table tbody tr:last-child td { border-bottom: 0; }
+
+@media (max-width: 900px) {
+  #st-modal { padding: 12px; }
+  .st-table td { max-width: 240px; }
+}
+
+/* ---------- tab 5: problem highlighting on the map ---------- */
+#st-hl-bar {
+  display: none; position: absolute; z-index: 9;
+  left: 50%; transform: translateX(-50%); bottom: 22px;
+  align-items: center; gap: 10px; padding: 9px 12px 9px 14px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 999px; box-shadow: var(--shadow);
+  font-size: 12px; max-width: calc(100% - 40px);
+}
+#st-hl-bar.visible { display: flex; }
+.st-hl-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: #e03131; flex-shrink: 0;
+}
+.st-hl-text {
+  font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#st-hl-bar .st-btn { padding: 5px 11px; font-size: 11px; }

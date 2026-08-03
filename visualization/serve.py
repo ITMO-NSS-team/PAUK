@@ -15,10 +15,12 @@ import sys
 import traceback
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8501
 ROOT = Path(__file__).parent / "web"
 API_STATS = "/api/stats"
+API_CHECK = "/api/check"
 
 
 class GzipHandler(SimpleHTTPRequestHandler):
@@ -58,18 +60,63 @@ class GzipHandler(SimpleHTTPRequestHandler):
                 "detail": f"{type(e).__name__}: {e}"})
         self._send_json(200, stats)
 
+    def _check_examples(self):
+        """Rows behind one check — feeds the details popup and its CSV export."""
+        try:
+            import generate_stats
+        except ImportError as e:
+            return self._send_json(503, {
+                "error": "На сервере не установлен драйвер Neo4j — "
+                         "примеры недоступны.",
+                "detail": str(e)})
+
+        qs = parse_qs(urlparse(self.path).query)
+        check_id = (qs.get("id") or [""])[0]
+        try:
+            limit = int((qs.get("limit") or ["0"])[0]) or generate_stats.EXAMPLES_LIMIT_DEFAULT
+        except ValueError:
+            limit = generate_stats.EXAMPLES_LIMIT_DEFAULT
+
+        try:
+            return self._send_json(200, generate_stats.examples(check_id, limit))
+        except KeyError:
+            return self._send_json(404, {"error": f"Неизвестная проверка: {check_id}"})
+        except ValueError as e:
+            return self._send_json(404, {"error": str(e)})
+        except Exception as e:
+            print("check examples failed:", traceback.format_exc(), file=sys.stderr)
+            return self._send_json(503, {
+                "error": "Не удалось получить данные из Neo4j. "
+                         "Проверьте, что база запущена.",
+                "detail": f"{type(e).__name__}: {e}"})
+
     def do_POST(self):
         if self.path.split("?")[0] == API_STATS:
             return self._recompute_stats()
         self.send_error(404)
 
     def do_GET(self):
-        if self.path.split("?")[0] == API_STATS:
+        route = self.path.split("?")[0]
+        if route == API_STATS:
             return self._recompute_stats()
+        if route == API_CHECK:
+            return self._check_examples()
 
         path = self.translate_path(self.path)
         if not Path(path).is_file():
             return super().do_GET()
+
+        # "no-cache" alone tells the browser to revalidate, but with nothing to
+        # revalidate against it may just reuse its copy — which is how an edited
+        # index.html keeps serving the previous version. Give it a validator.
+        st = Path(path).stat()
+        etag = f'"{int(st.st_mtime)}-{st.st_size}"'
+        if self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            return
 
         accepts_gzip = "gzip" in self.headers.get("Accept-Encoding", "")
         data = Path(path).read_bytes()
@@ -91,6 +138,7 @@ class GzipHandler(SimpleHTTPRequestHandler):
         if body is compressed:
             self.send_header("Content-Encoding", "gzip")
         self.send_header("Cache-Control", "no-cache")
+        self.send_header("ETag", etag)
         self.end_headers()
         try:
             self.wfile.write(body)
