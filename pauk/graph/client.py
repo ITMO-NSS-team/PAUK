@@ -37,7 +37,15 @@ class Neo4jClient:
             uri: Bolt connection URI, e.g. "bolt://localhost:7687".
             user: Neo4j username.
             password: Neo4j password.
+
+        Raises:
+            ValueError: If password is empty. Settings.neo4j_password
+                defaults to "" when NEO4J_PASSWORD isn't set, which would
+                otherwise fail late with an opaque driver auth error
+                instead of a clear one here.
         """
+        if not password:
+            raise ValueError("Neo4j password is empty - set NEO4J_PASSWORD in .env")
         self.driver = GraphDatabase.driver(uri, auth=(user, password))
 
     def close(self):
@@ -62,10 +70,6 @@ class Neo4jClient:
             props_clean = {k: v for k, v in properties.items() if k not in ("id", "created_at", "updated_at")}
             batch.append({"node_id": node_id, "properties": props_clean})
 
-        # Cypher can't parameterize identifiers (labels), only literal values,
-        # so the label has to be interpolated into the query text itself.
-        # label_str always comes from our own NODE_REGISTRY/CONSTRAINTS, never
-        # from row data, so this is safe despite not being a LiteralString.
         query = cast(
             LiteralString,
             f"""
@@ -208,9 +212,6 @@ class Neo4jClient:
             rel_props_clean = {k: v for k, v in rel_properties.items() if k not in ("created_at", "updated_at")}
             batch.append({"src_id": src_id, "tgt_id": tgt_id, "rel_properties": rel_props_clean})
 
-        # Same reasoning as in upsert_nodes_batch: labels/rel_type are
-        # interpolated because Cypher can't parameterize identifiers, and
-        # they always come from our own code, not from row data.
         query = cast(
             LiteralString,
             f"""

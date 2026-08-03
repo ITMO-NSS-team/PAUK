@@ -15,3 +15,13 @@ class GitHubClient(HttpClient):
     def get_repository(self, owner: str, name: str) -> dict:
         return self.get_json(f"{self.API_URL}/repos/{owner}/{name}")
 
+    def has_readme(self, owner: str, name: str) -> bool:
+        """Check for a README via GET .../readme (200 = yes, 404 = no).
+
+        Not exposed by the repository payload itself, needs its own call.
+        """
+        response = self.session.get(f"{self.API_URL}/repos/{owner}/{name}/readme", timeout=self.timeout)
+        if response.status_code == 404:
+            return False
+        response.raise_for_status()
+        return True

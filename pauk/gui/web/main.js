@@ -388,11 +388,14 @@ function setTab(t) {
   tab = t;
 
   const isSearch = t === 4;
+  const isStats  = t === 5;
+  const isPage   = isSearch || isStats;   // full-screen tabs that hide the map chrome
   document.getElementById("search-page").classList.toggle("visible", isSearch);
-  document.getElementById("left-panel").style.display  = isSearch ? "none" : "";
-  document.getElementById("right-panel").style.display = isSearch ? "none" : "";
+  document.getElementById("stats-page").classList.toggle("visible", isStats);
+  document.getElementById("left-panel").style.display  = isPage ? "none" : "";
+  document.getElementById("right-panel").style.display = isPage ? "none" : "";
 
-  if (!isSearch) {
+  if (!isPage) {
     const showDept = t === 1;
     for (const l of ["dept-fill", "dept-line", "dept-edges", "dept-focus-edges"])
       map.setLayoutProperty(l, "visibility", showDept ? "visible" : "none");
@@ -410,8 +413,10 @@ function setTab(t) {
     applyEdgeFilter();
     if (t === 3) applyYearFilter();
     renderOverview();
-  } else {
+  } else if (isSearch) {
     spShowLanding();
+  } else {
+    renderStats();
   }
 
   document.querySelectorAll("#tab-toggle button").forEach(b => {
