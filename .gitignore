@@ -11,8 +11,11 @@ __pycache__/
 !data/static/**
 data/raw/*
 data/prepared/*
+data/cache/*
+data/.locks/
 !data/raw/.gitkeep
 !data/prepared/.gitkeep
+!data/cache/.gitkeep
 
 .env
 

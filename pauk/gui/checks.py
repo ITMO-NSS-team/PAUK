@@ -460,21 +460,6 @@ CHECKS = [
             ORDER BY p.year DESC LIMIT $lim""",
     ),
     Check(
-        id="person_multi_dept",
-        group="Противоречия",
-        title="Сотрудник сразу в нескольких департаментах",
-        count="""MATCH (p:Person:Itmo)-[:BELONGS_TO]->(d:Department)
-            WITH p, count(d) AS c WHERE c > 1 RETURN count(p)""",
-        of=_ITMO_TOTAL, warn=0.02, fail=0.10,
-        hint="На карте у человека может быть только один департамент.",
-        examples=f"""MATCH (p:Person:Itmo)-[:BELONGS_TO]->(d:Department)
-            WITH p, collect(coalesce(d.name_ru, d.name_en)) AS ds
-            WHERE size(ds) > 1
-            RETURN p.id AS id, p.name_en AS `Имя (лат.)`, {_FIO} AS `ФИО`,
-                   size(ds) AS `Департаментов`, ds AS `Список`
-            ORDER BY size(ds) DESC LIMIT $lim""",
-    ),
-    Check(
         id="repo_bad_url",
         group="Противоречия",
         title="Репозитории с испорченной ссылкой",

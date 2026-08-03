@@ -203,7 +203,10 @@ async function stDownloadCsv(id) {
 // already carries meaning, and the point here is to stand out against it.
 const ST_HL_COLOR = "#e03131";
 const ST_HL_DIM   = 0.05;
-const ST_HL_LAYERS = ["st-problem-edges", "st-problem-nodes"];
+// Only nodes are marked: every check resolves to offending entities, not to
+// the links between them, so painting incident edges red implied a problem
+// with the relationship that isn't there.
+const ST_HL_LAYERS = ["st-problem-nodes"];
 
 // Ключи узлов карты совпадают с идентификаторами в Neo4j, поэтому их можно
 // вытащить прямо из строк примеров, не заводя отдельный запрос под каждую
@@ -258,11 +261,6 @@ function stApplyHighlight(keys, title) {
 
   ST_HL_LAYERS.forEach(id => { if (map.getLayer(id)) map.removeLayer(id); });
 
-  map.addLayer({
-    id: "st-problem-edges", type: "line", source: "edges",
-    filter: ["any", ["in", ["get", "s"], lit], ["in", ["get", "t"], lit]],
-    paint: { "line-color": ST_HL_COLOR, "line-width": 1.2, "line-opacity": 0.55 },
-  });
   map.addLayer({
     id: "st-problem-nodes", type: "circle", source: "nodes",
     filter: ["in", ["get", "key"], lit],
