@@ -56,6 +56,9 @@ class StagesTest(unittest.TestCase):
         github_client.return_value.get_repository.return_value = {
             "html_url": "https://github.com/org/repo", "name": "repo", "owner": {"login": "org"},
         }
+        # Without this the stage stores the MagicMock itself in Repository.has_readme,
+        # which is typed bool — the row still round-trips, but as a mock repr.
+        github_client.return_value.has_readme.return_value = True
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             prepared = PreparedStore(root / "prepared", "sample")
