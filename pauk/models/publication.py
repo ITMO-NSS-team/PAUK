@@ -34,6 +34,10 @@ class Publication(BaseModel):
 
     id: str
     title: str
+    # OpenAlex work type: "article", "preprint", "software", "dataset", ...
+    # Not every work is a paper — a software release archived on Zenodo is a
+    # work too, and the code_links stage treats those differently.
+    type: str | None = None
     journal: str | None = None
     doi: str | None = None
     publication_date: date | None = None

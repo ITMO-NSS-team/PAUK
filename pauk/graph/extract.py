@@ -190,6 +190,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
         labels="Publication",
         prop_fields=(
             "title",
+            "type",
             "journal",
             "doi",
             "publication_date",

@@ -32,6 +32,11 @@ from tests.bench.mocks import (
     UnexpectedNetworkClient,
 )
 from tests.bench.universe import (
+    ARCHIVE_AUTHOR_AFFILIATION,
+    ARCHIVE_AUTHOR_ID,
+    ARCHIVE_REPO_ID,
+    ARCHIVE_REPO_URL,
+    ARCHIVE_WORK,
     AUTHOR_IDS,
     DEDUP_MERGES,
     MARKUP_TITLE_CLEAN,
@@ -131,14 +136,14 @@ def bench(tmp_path_factory) -> SimpleNamespace:
 # --- collect / normalize -------------------------------------------------------
 
 def test_collect_is_idempotent(bench):
-    assert bench.collected_first == 122
+    assert bench.collected_first == 123
     assert bench.collected_again == 0
 
 
 def test_normalize_counts(bench):
     # Normalization keeps one row per OpenAlex work; duplicate records of one
     # publication are folded later, by the dedup stage.
-    assert bench.normalize_result == {"publications": 122, "persons": 61}
+    assert bench.normalize_result == {"publications": 123, "persons": 61}
     # bench.persons is read after enrichment, i.e. after the dedup stage
     # folded the split authors away.
     openalex_persons = {pid for pid in bench.persons if pid.startswith("A5")}
@@ -399,6 +404,26 @@ def test_publisher_markup_is_stripped_from_the_title(bench):
     assert bench.publications[MARKUP_WORK].title == MARKUP_TITLE_CLEAN
 
 
+def test_a_release_archive_points_at_the_repository_it_archives(bench):
+    # The deposit cites no URL: the repository is named in its title.
+    deposit = bench.publications[ARCHIVE_WORK]
+    assert deposit.code_url == ARCHIVE_REPO_URL
+    (link,) = bench.repo_links[ARCHIVE_WORK].links
+    assert link.llm_reason == "repository_archived_by_this_deposit"
+    repository = bench.repositories[ARCHIVE_REPO_ID]
+    assert ARCHIVE_WORK in repository.publication_ids
+    assert (ARCHIVE_REPO_ID, ARCHIVE_WORK) in bench.graph.edge_pairs("IMPLEMENTS")
+
+
+def test_an_affiliation_the_deposit_omits_comes_from_the_author_record(bench):
+    (authorship,) = [a for a in bench.persons[ARCHIVE_AUTHOR_ID].authored
+                     if a.publication_id == ARCHIVE_WORK]
+    assert authorship.affiliation == ARCHIVE_AUTHOR_AFFILIATION
+    assert authorship.affiliation_source == "openalex"
+    # Re-running the pipeline must not undo the fill.
+    assert bench.snapshot_first == bench.snapshot_second
+
+
 # --- repository dedup --------------------------------------------------------------------
 
 def test_row_written_before_a_rename_folds_into_the_canonical_repository(bench):
@@ -425,7 +450,7 @@ def test_department_matching_including_aliases(bench):
 
 def test_graph_node_counts(bench):
     graph = bench.graph
-    assert len(graph.nodes["Publication"]) == 122 - len(PUBLICATION_MERGES)
+    assert len(graph.nodes["Publication"]) == 123 - len(PUBLICATION_MERGES)
     # 55 OpenAlex authors plus the two of W121 keyed by ORCID and by name.
     assert len(graph.nodes["Person"]) == 57
     assert len(graph.nodes["Repository"]) == 80
@@ -448,12 +473,13 @@ def test_graph_edge_counts(bench):
     assert graph.edge_pairs("AUTHORED") == expected_authored
     # 228 from works W001..W110, 9 from the duplicate-record works (two
     # authors each on W111, W114, W117 and W119, one on W118), 2 keyable
-    # authors on W121 and 2 on W122.
-    assert len(expected_authored) == 241
+    # authors on W121, 2 on W122 and the lone depositor of W123.
+    assert len(expected_authored) == 242
 
-    assert len(graph.edge_pairs("MENTIONS_LINK")) == 82 + 3  # repos + candidates
-    # 82 plus the publication inherited from the pre-rename repository row.
-    assert len(graph.edge_pairs("IMPLEMENTS")) == 83
+    assert len(graph.edge_pairs("MENTIONS_LINK")) == 83 + 3  # repos + candidates
+    # 82 plus the publication inherited from the pre-rename repository row
+    # and the release archive of W123.
+    assert len(graph.edge_pairs("IMPLEMENTS")) == 84
     assert len(graph.edge_pairs("OWNED_BY")) == 80
     assert len(graph.edge_pairs("BELONGS_TO")) == 14
 

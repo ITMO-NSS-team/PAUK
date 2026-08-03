@@ -185,6 +185,7 @@ class OpenAlexNormalizer:
                 normalized_publication = Publication(
                     id=work_id,
                     title=_clean_markup(work.get("title")) or "Untitled",
+                    type=work.get("type"),
                     doi=work.get("doi"),
                     openalex_url=work.get("id"),
                     publication_date=date.fromisoformat(pub_date) if pub_date else None,

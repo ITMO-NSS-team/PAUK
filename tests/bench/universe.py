@@ -75,6 +75,9 @@ Records OpenAlex has not finished processing:
 * W121      every author.id is null — one author is keyed by ORCID, one by
             name, and the one with neither is the only authorship dropped
 * W122      title deposited with publisher markup (<sub>, MathML, <i>)
+* W123      a GitHub release archived on Zenodo: the repository is named
+            only in the title, and the deposit says nothing about where its
+            author works — the author's own OpenAlex record does
 
 Repositories: 80 canonical repos across 16 owners (5 each); all 80 are
 cited at least once. 3 phantom URLs are cited but never existed (404), one
@@ -87,7 +90,19 @@ to the row the new name produced.
 from __future__ import annotations
 
 AUTHOR_IDS = [f"A50000000{i:02d}" for i in range(1, 60)]
-WORK_IDS = [f"W70000000{i:02d}" for i in range(1, 123)]
+WORK_IDS = [f"W70000000{i:02d}" for i in range(1, 124)]
+
+# W123: a GitHub release archived on Zenodo. OpenAlex indexes it as a work of
+# its own, and the deposit names neither the repository as a link nor the
+# author's affiliation — both have to come from elsewhere.
+ARCHIVE_WORK = "W70000000123"
+ARCHIVE_REPO_OWNER, ARCHIVE_REPO_NAME = "BenchOrg8", "AlphaTool"
+ARCHIVE_TITLE = f"{ARCHIVE_REPO_OWNER}/{ARCHIVE_REPO_NAME}: Release v1.2.3"
+ARCHIVE_REPO_ID = f"github_{ARCHIVE_REPO_OWNER.lower()}_{ARCHIVE_REPO_NAME.lower()}"
+ARCHIVE_REPO_URL = f"https://github.com/{ARCHIVE_REPO_OWNER}/{ARCHIVE_REPO_NAME}"
+ARCHIVE_AUTHOR_INDEX = 41
+ARCHIVE_AUTHOR_ID = f"A50000000{ARCHIVE_AUTHOR_INDEX}"
+ARCHIVE_AUTHOR_AFFILIATION = f"External University {ARCHIVE_AUTHOR_INDEX}"
 
 # W121: a record OpenAlex has not disambiguated yet — the authors are listed
 # but every author.id is null, so they can only be keyed by what they carry.
@@ -338,7 +353,10 @@ def build_universe() -> dict:
     for n, work_id in enumerate(WORK_IDS, start=1):
         work: dict = {"id": f"https://openalex.org/{work_id}"}
 
-        if n == 122:
+        if n == 123:
+            work["title"] = ARCHIVE_TITLE
+            work["type"] = "software"
+        elif n == 122:
             work["title"] = MARKUP_TITLE
         elif n not in (13, 118):  # both untitled: a placeholder is not a title
             work["title"] = PUBLICATION_TITLES.get(n, f"Synthetic paper {n:03d}")
@@ -354,6 +372,12 @@ def build_universe() -> dict:
 
         if n == 16:
             work["authorships"] = []
+        elif n == 123:
+            # A self-deposit that names the author but not where they work.
+            work["authorships"] = [
+                {"author": {"id": f"https://openalex.org/{ARCHIVE_AUTHOR_ID}",
+                            "display_name": _author_name(ARCHIVE_AUTHOR_INDEX)}},
+            ]
         elif n == 121:
             # Every author.id is null: one author carries an ORCID, one only a
             # name, one neither — the last cannot be keyed at all.
@@ -424,6 +448,12 @@ def build_universe() -> dict:
             "display_name": _author_name(i) or f"Recovered Name{i:02d}",
             "display_name_alternatives": dedup_alternatives.get(i, [f"A. Surname{i:02d}"]),
         }
+        if i == ARCHIVE_AUTHOR_INDEX:
+            # Their own record knows where they work, unlike their deposit.
+            payload["affiliations"] = [{
+                "institution": {"display_name": ARCHIVE_AUTHOR_AFFILIATION},
+                "years": [2026],
+            }]
         if i == 13:
             payload["orcid"] = "https://orcid.org/0000-0001-0000-0013"
         if i in (51, 52):
