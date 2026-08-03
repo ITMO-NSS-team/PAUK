@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 # Row fields holding nested maps: Neo4j has no nested-map property type, so
 # they are stored as JSON text.
-JSON_TEXT_FIELDS = ("funding", "versions", "counts_by_year")
+JSON_TEXT_FIELDS = ("funding", "versions", "counts_by_year", "affiliations")
 
 
 @dataclass(frozen=True)
@@ -123,6 +123,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "status",
             "created_at",
             "enriched_at",
+            "affiliations",
             "merged_ids",
         ),
         relationships=(
@@ -132,7 +133,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
                 "AUTHORED",
                 "Publication",
                 "publication_id",
-                ("position", "affiliation", "is_corresponding"),
+                ("position", "affiliation", "affiliation_source", "is_corresponding"),
             ),
             RelSpec(
                 "contributed_to",
@@ -172,6 +173,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "status",
             "created_at",
             "enriched_at",
+            "affiliations",
             "merged_ids",
         ),
         relationships=(
@@ -180,7 +182,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
                 "AUTHORED",
                 "Publication",
                 "publication_id",
-                ("position", "affiliation", "is_corresponding"),
+                ("position", "affiliation", "affiliation_source", "is_corresponding"),
             ),
         ),
     ),

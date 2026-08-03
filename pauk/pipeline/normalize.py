@@ -230,8 +230,23 @@ class OpenAlexNormalizer:
                     affiliation="; ".join(authorship.get("raw_affiliation_strings") or []) or None,
                     is_corresponding=bool(authorship.get("is_corresponding")),
                 )
-                if authorship_record not in person.authored:
+                # Matched on (publication, position) rather than on equality:
+                # one author legitimately appears twice on one work, but the
+                # same slot must not come back as a second record just because
+                # the persons stage filled in an affiliation the work omits.
+                existing_authorship = next(
+                    (row for row in person.authored
+                     if row.publication_id == publication_id and row.position == position),
+                    None,
+                )
+                if existing_authorship is None:
                     person.authored.append(authorship_record)
+                    continue
+                existing_authorship.is_corresponding = authorship_record.is_corresponding
+                if authorship_record.affiliation:
+                    # What the work states always wins over a filled-in value.
+                    existing_authorship.affiliation = authorship_record.affiliation
+                    existing_authorship.affiliation_source = None
         self.prepared.write_models("publications", publications.values())
         self.prepared.write_models("persons", persons.values())
         return {"publications": len(publications), "persons": len(persons)}

@@ -1,13 +1,96 @@
 ﻿from datetime import datetime, timezone
 
-from pauk.models import Person, Publication
+from pauk.models import Affiliation, Person, Publication
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.pipeline.normalize import ITMO_ROR_ID
 from pauk.sources import OpenAlexClient
 from pauk.sources.crossref import CrossrefClient
 from pauk.sources.orcid import OrcidClient
 from pauk.sources.openreview import OpenReviewClient
 
 from .base import EnrichmentStage
+
+
+def _openalex_affiliations(payload: dict) -> list[Affiliation]:
+    """Where the author's own OpenAlex record says they worked."""
+    affiliations = []
+    for entry in payload.get("affiliations") or []:
+        institution = entry.get("institution") or {}
+        if institution.get("display_name"):
+            affiliations.append(Affiliation(
+                name=institution["display_name"],
+                ror=(institution.get("ror") or "").rstrip("/").rsplit("/", 1)[-1] or None,
+                years=[int(year) for year in entry.get("years") or []],
+                source="openalex",
+            ))
+    # last_known_institutions carries no years: it is the fallback for works
+    # from a year no affiliation entry covers.
+    for institution in payload.get("last_known_institutions") or []:
+        if institution.get("display_name"):
+            affiliations.append(Affiliation(
+                name=institution["display_name"],
+                ror=(institution.get("ror") or "").rstrip("/").rsplit("/", 1)[-1] or None,
+                source="openalex",
+            ))
+    return affiliations
+
+
+def _orcid_affiliations(record: dict) -> list[Affiliation]:
+    """Employments the author listed on their own ORCID profile."""
+    employments = ((record.get("activities-summary") or {}).get("employments") or {})
+    affiliations = []
+    for group in employments.get("affiliation-group") or []:
+        for summary in group.get("summaries") or []:
+            employment = summary.get("employment-summary") or {}
+            organization = employment.get("organization") or {}
+            name = organization.get("name")
+            if not name:
+                continue
+            disambiguated = organization.get("disambiguated-organization") or {}
+            ror = None
+            if (disambiguated.get("disambiguation-source") or "").upper() == "ROR":
+                ror = (disambiguated.get("disambiguated-organization-identifier") or "").rstrip("/").rsplit("/", 1)[-1]
+            start = ((employment.get("start-date") or {}).get("year") or {}).get("value")
+            end = ((employment.get("end-date") or {}).get("year") or {}).get("value")
+            years = []
+            if start:
+                # An open-ended employment covers everything from its start;
+                # the year picker only needs the range to contain the work.
+                years = list(range(int(start), int(end or datetime.now(timezone.utc).year) + 1))
+            affiliations.append(Affiliation(name=name, ror=ror or None, years=years, source="orcid"))
+    return affiliations
+
+
+def _merge_affiliations(*sources: list[Affiliation]) -> list[Affiliation]:
+    merged: dict[tuple[str, str], Affiliation] = {}
+    for affiliations in sources:
+        for affiliation in affiliations:
+            existing = merged.get((affiliation.name, affiliation.source))
+            if existing is None:
+                merged[(affiliation.name, affiliation.source)] = affiliation
+                continue
+            existing.years = sorted({*existing.years, *affiliation.years})
+            existing.ror = existing.ror or affiliation.ror
+    return list(merged.values())
+
+
+def _affiliation_for_year(affiliations: list[Affiliation], year: int | None) -> Affiliation | None:
+    """The affiliation to place an authorship by.
+
+    An affiliation whose years cover the work wins; failing that the most
+    recently dated one, and failing that one without years at all (that is
+    what last_known_institutions is).
+    """
+    if not affiliations:
+        return None
+    if year is not None:
+        covering = [a for a in affiliations if year in a.years]
+        if covering:
+            return covering[0]
+    dated = [a for a in affiliations if a.years]
+    if dated:
+        return max(dated, key=lambda a: max(a.years))
+    return affiliations[0]
 
 
 class PersonsStage(EnrichmentStage):
@@ -25,6 +108,28 @@ class PersonsStage(EnrichmentStage):
                 if any(authorship.publication_id in self.selection.ids for authorship in person.authored)
             ]
         return []
+
+    def _fill_missing_affiliations(self, person: Person, publications: dict[str, Publication]) -> int:
+        """Place authorships the work itself left without an affiliation.
+
+        Self-deposited records (Zenodo, SSRN) often name a coauthor without
+        saying where they work. The author's own records do know, so the
+        authorship borrows the affiliation of its own year and records that
+        it was filled in rather than stated by the work.
+        """
+        filled = 0
+        for authorship in person.authored:
+            if authorship.affiliation:
+                continue
+            publication = publications.get(authorship.publication_id)
+            affiliation = _affiliation_for_year(
+                person.affiliations, publication.year if publication else None)
+            if affiliation is None:
+                continue
+            authorship.affiliation = affiliation.name
+            authorship.affiliation_source = affiliation.source
+            filled += 1
+        return filled
 
     def run(self) -> dict[str, int]:
         people = list(self.prepared.read_models("persons", Person))
@@ -109,12 +214,21 @@ class PersonsStage(EnrichmentStage):
                         *person.name_variants, *(payload.get("display_name_alternatives") or []),
                     ]))
                     person.orcid = person.orcid or ((payload.get("orcid") or "").rstrip("/").split("/")[-1] or None)
+                    person.affiliations = _merge_affiliations(
+                        person.affiliations, _openalex_affiliations(payload))
                 if person.orcid:
                     record = orcid_client.get_record(person.orcid)
                     self.raw.append("orcid", record, {"orcid": person.orcid})
                     emails = (((record.get("person") or {}).get("emails") or {}).get("email") or [])
                     if not person.email:
                         person.email = next((item.get("email") for item in emails if item.get("email")), None)
+                    person.affiliations = _merge_affiliations(
+                        person.affiliations, _orcid_affiliations(record))
+                # An ITMO affiliation the works never stated still makes the
+                # person ITMO — the ROR is the same identifier normalize uses.
+                person.is_itmo = person.is_itmo or any(
+                    affiliation.ror == ITMO_ROR_ID for affiliation in person.affiliations)
+                self._fill_missing_affiliations(person, publications)
                 if person.is_itmo and person.name_en and self.config.openreview_username and self.config.openreview_password:
                     openreview_payload = openreview.search(person.name_en)
                     self.raw.append("openreview", openreview_payload, {"term": person.name_en})

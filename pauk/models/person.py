@@ -6,6 +6,22 @@ from .processing import ProcessingState
 from .relations import Authorship, Contribution
 
 
+class Affiliation(BaseModel):
+    """Where a person worked, as one source states it.
+
+    Self-deposited records (Zenodo, SSRN) routinely omit the affiliation of
+    some coauthors, leaving the authorship with nothing to place them by.
+    The author's own OpenAlex record and their ORCID employments know it,
+    so both are collected here — `source` keeps the two apart, and `years`
+    is what lets an authorship pick the affiliation of its own year.
+    """
+
+    name: str
+    ror: str | None = None
+    years: list[int] = Field(default_factory=list)
+    source: str
+
+
 class Person(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -25,6 +41,7 @@ class Person(BaseModel):
     openreview: str | None = None
     thesis: str | None = None
     department_ids: list[str] = Field(default_factory=list)
+    affiliations: list[Affiliation] = Field(default_factory=list)
     merged_ids: list[str] = Field(default_factory=list)
     authored: list[Authorship] = Field(default_factory=list)
     contributed_to: list[Contribution] = Field(default_factory=list)
