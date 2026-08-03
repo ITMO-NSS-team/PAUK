@@ -26,21 +26,26 @@ class DepartmentsStage(EnrichmentStage):
                 if self.selection.entity not in {"persons", "publications"}:
                     continue
             state = person.processing.get(self.name)
-            if not self.needs_attempt(state):
-                continue
-            text = " ".join(a.affiliation or "" for a in person.authored).casefold()
-            matched = [d.id for d in departments if d.name_en.casefold() in text or any(v.casefold() in text for v in d.name_variants)]
-            person.department_ids = list(dict.fromkeys([*person.department_ids, *matched]))
-            for authorship in person.authored:
-                pub = by_pub.get(authorship.publication_id)
-                if pub and person.is_itmo:
-                    pub.department_ids = list(dict.fromkeys([*pub.department_ids, *matched]))
-            person.processing[self.name] = ProcessingState(
-                status=ProcessingStatus.COMPLETED if matched else ProcessingStatus.COMPLETED_EMPTY,
-                attempts=(state.attempts if state else 0) + 1,
-                finished_at=datetime.now(timezone.utc), result_count=len(matched),
-            )
-            changed += 1
+            if self.needs_attempt(state):
+                text = " ".join(a.affiliation or "" for a in person.authored).casefold()
+                matched = [d.id for d in departments if d.name_en.casefold() in text or any(v.casefold() in text for v in d.name_variants)]
+                person.department_ids = list(dict.fromkeys([*person.department_ids, *matched]))
+                person.processing[self.name] = ProcessingState(
+                    status=ProcessingStatus.COMPLETED if matched else ProcessingStatus.COMPLETED_EMPTY,
+                    attempts=(state.attempts if state else 0) + 1,
+                    finished_at=datetime.now(timezone.utc), result_count=len(matched),
+                )
+                changed += 1
+            # A publication belongs to the departments of its ITMO authors,
+            # but this stage tracks its state per person: a work collected
+            # after its authors were processed would never be attached
+            # without repeating the (local, idempotent) propagation here.
+            if person.is_itmo and person.department_ids:
+                for authorship in person.authored:
+                    pub = by_pub.get(authorship.publication_id)
+                    if pub:
+                        pub.department_ids = list(dict.fromkeys(
+                            [*pub.department_ids, *person.department_ids]))
         self.prepared.write_models("persons", people)
         self.prepared.write_models("departments", departments)
         self.prepared.write_models("publications", publications)

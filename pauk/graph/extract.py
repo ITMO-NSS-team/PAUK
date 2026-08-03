@@ -227,7 +227,13 @@ def extract_node(row: dict, spec: NodeSpec) -> tuple[str, tuple[str, dict]]:
         Neo4jClient.upsert_nodes_batch.
     """
     node_id = row[spec.id_field]
-    props = {k: row[k] for k in spec.prop_fields if row.get(k) is not None}
+    # An empty list says nothing and must never be written: the upserts
+    # overwrite whatever the node held, so publishing a group whose row has
+    # an empty `merged_ids` would erase the merges a graph-wide dedup pass
+    # recorded there — and the next publish of the other group would then
+    # resurrect the duplicates it folded.
+    props = {k: row[k] for k in spec.prop_fields
+             if row.get(k) is not None and row.get(k) != []}
     # Neo4j properties cannot contain nested maps; lists of them (funding
     # entries, publication versions) are kept as JSON text.
     for field in JSON_TEXT_FIELDS:
