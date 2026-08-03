@@ -204,6 +204,12 @@ class Neo4jClient:
         # Labels and relationship types are interpolated for the same reason
         # as in upsert_relationships_batch: Cypher cannot parameterize
         # identifiers, and these are always our own literals.
+        # "SET new += properties(old); SET new += keep" is the pure-Cypher way
+        # to fill gaps without letting the duplicate win: everything the old
+        # relationship knew is copied in, then the canonical's own values are
+        # laid back on top. Without it, a MERGE that finds an existing
+        # canonical relationship silently drops the duplicate's properties —
+        # e.g. the only AUTHORED edge carrying an affiliation.
         move_queries = [
             cast(
                 LiteralString,
@@ -212,8 +218,11 @@ class Neo4jClient:
                 MATCH (dup:{label} {{id: row.dup_id}})-[old:{rel_type}]->(other:{other_label})
                 MATCH (canonical:{label} {{id: row.canonical_id}})
                 MERGE (canonical)-[new:{rel_type}]->(other)
-                ON CREATE SET new += properties(old), new.created_at = coalesce(old.created_at, datetime()), new.updated_at = datetime()
-                ON MATCH SET new.updated_at = datetime()
+                ON CREATE SET new.created_at = coalesce(old.created_at, datetime())
+                WITH new, old, properties(new) AS keep
+                SET new += properties(old)
+                SET new += keep
+                SET new.updated_at = datetime()
                 DELETE old
                 """,
             )
@@ -226,13 +235,32 @@ class Neo4jClient:
                 MATCH (other:{other_label})-[old:{rel_type}]->(dup:{label} {{id: row.dup_id}})
                 MATCH (canonical:{label} {{id: row.canonical_id}})
                 MERGE (other)-[new:{rel_type}]->(canonical)
-                ON CREATE SET new += properties(old), new.created_at = coalesce(old.created_at, datetime()), new.updated_at = datetime()
-                ON MATCH SET new.updated_at = datetime()
+                ON CREATE SET new.created_at = coalesce(old.created_at, datetime())
+                WITH new, old, properties(new) AS keep
+                SET new += properties(old)
+                SET new += keep
+                SET new.updated_at = datetime()
                 DELETE old
                 """,
             )
             for other_label, rel_type in incoming
         ]
+        # Same trick on the nodes themselves: whatever the duplicate knew and
+        # the canonical does not (a pdf_url, an abstract) moves over before
+        # the duplicate is deleted; the canonical's own values — including its
+        # id — are restored on top.
+        fill_query = cast(
+            LiteralString,
+            f"""
+            UNWIND $batch AS row
+            MATCH (dup:{label} {{id: row.dup_id}})
+            MATCH (canonical:{label} {{id: row.canonical_id}})
+            WITH canonical, dup, properties(canonical) AS keep
+            SET canonical += properties(dup)
+            SET canonical += keep
+            SET canonical.updated_at = datetime()
+            """,
+        )
         # The canonical node must exist — otherwise deleting the duplicate
         # would lose the entity entirely.
         delete_query = cast(
@@ -249,6 +277,7 @@ class Neo4jClient:
         def merge(tx) -> int:
             for query in move_queries:
                 tx.run(query, batch=batch).consume()
+            tx.run(fill_query, batch=batch).consume()
             return tx.run(delete_query, batch=batch).single()["removed"]
 
         with self.driver.session() as session:

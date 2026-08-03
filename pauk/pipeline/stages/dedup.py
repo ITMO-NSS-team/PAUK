@@ -323,6 +323,7 @@ def _union(*lists: Iterable[str]) -> list[str]:
 def _version_of(publication: Publication) -> PublicationVersion:
     return PublicationVersion(
         openalex_id=publication.id,
+        title=publication.title,
         doi=publication.doi,
         journal=publication.journal,
         publication_date=publication.publication_date,
@@ -435,13 +436,16 @@ class DedupStage(EnrichmentStage):
         for members in _grouped(pairs):
             ranked = sorted(
                 (by_id[member] for member in members),
-                # Latest first: the version of record follows its preprint and
-                # the newest deposit supersedes earlier ones. Ties go to the
-                # record carrying the most authorships, then to the smallest
-                # id so the choice never depends on file order.
+                # Best-documented first: a re-indexed duplicate can be both
+                # fresher and nearly empty (one author, a DOI whose PDF is
+                # gone), and its face would replace the full record's. Among
+                # equally documented records the latest wins — the version of
+                # record follows its preprint, the newest deposit supersedes
+                # earlier ones — then the smallest id, so the choice never
+                # depends on file order.
                 key=lambda publication: (
-                    -(publication.publication_date or date.min).toordinal(),
                     -author_counts[publication.id],
+                    -(publication.publication_date or date.min).toordinal(),
                     publication.id,
                 ),
             )

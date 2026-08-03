@@ -291,6 +291,24 @@ class PublicationDedupTest(unittest.TestCase):
         ])
         self.assertEqual(set(publications), {"W1", "W2"})
 
+    def test_a_fresher_but_empty_record_does_not_become_the_face(self):
+        # A re-indexed duplicate can be newer yet carry one author and a DOI
+        # whose PDF is gone; the fuller record must stay canonical.
+        _, publications = self.run_stage(
+            [
+                publication("W1", "One work", doi="10.1/x", day="2026-01-01"),
+                publication("W2", "One work", doi="10.1/broken", day="2026-02-01"),
+            ],
+            people=[
+                person("A1", "Author One", ["W1", "W2"]),
+                person("A2", "Author Two", ["W1"]),
+            ],
+        )
+        self.assertEqual(set(publications), {"W1"})
+        self.assertEqual(publications["W1"].doi, "10.1/x")
+        # The empty record's DOI is still on file, in versions.
+        self.assertEqual({v.doi for v in publications["W1"].versions}, {"10.1/x", "10.1/broken"})
+
     def test_references_follow_the_surviving_publication(self):
         _, _ = self.run_stage(
             [
@@ -310,14 +328,15 @@ class PublicationDedupTest(unittest.TestCase):
             ],
         )
         people = {p.id: p for p in self.prepared.read_models("persons", Person)}
-        # The same authorship on both records collapses into one.
-        self.assertEqual([a.publication_id for a in people["A1"].authored], ["W2"])
-        self.assertEqual([a.publication_id for a in people["A2"].authored], ["W2"])
+        # W1 carries two authorships to W2's one, so it survives, and the
+        # same authorship on both records collapses into one.
+        self.assertEqual([a.publication_id for a in people["A1"].authored], ["W1"])
+        self.assertEqual([a.publication_id for a in people["A2"].authored], ["W1"])
         (repo_row,) = self.prepared.read_models("repositories", Repository)
-        self.assertEqual(repo_row.publication_ids, ["W2"])
+        self.assertEqual(repo_row.publication_ids, ["W1"])
         # Both records' link rows fold into one row keyed by the survivor.
         (links,) = self.prepared.read_models("repo_links", RepoLink)
-        self.assertEqual(links.publication_id, "W2")
+        self.assertEqual(links.publication_id, "W1")
         self.assertEqual({link.url for link in links.links},
                          {"https://github.com/org/repo", "https://github.com/org/other"})
 
@@ -530,6 +549,54 @@ class GraphDedupTest(unittest.TestCase):
         load_jsonl_dir(client, old_group.group_dir)
         self.assertNotIn("X1", client.nodes["Person"])
         self.assertIn(("Y1", "W1"), client.edge_pairs("AUTHORED"))
+
+
+class FoldPropertyPreservationTest(unittest.TestCase):
+    """Folding a duplicate node must not lose what only it knew."""
+
+    def test_edge_attributes_survive_when_the_canonical_edge_already_exists(self):
+        # A1 -AUTHORED{affiliation}-> W1 is folded into A2, which already has
+        # A2 -AUTHORED{position}-> W1: the surviving edge needs both.
+        client = RecordingNeo4jClient()
+        client.upsert_nodes_batch("Publication", [("W1", {})])
+        client.upsert_person_nodes_batch([("A1", {}), ("A2", {})], is_itmo=True)
+        client.upsert_relationships_batch("Person", "Publication", "AUTHORED",
+                                          [("A1", "W1", {"affiliation": "ITMO"})])
+        client.upsert_relationships_batch("Person", "Publication", "AUTHORED",
+                                          [("A2", "W1", {"position": 1})])
+        client.merge_person_nodes_batch([("A1", "A2")])
+        (props,) = [props for key, props in client.edges.items()
+                    if key[3] == "A2" and key[4] == "W1"]
+        self.assertEqual(props, {"position": 1, "affiliation": "ITMO"})
+
+    def test_canonical_edge_values_win_over_the_duplicates(self):
+        client = RecordingNeo4jClient()
+        client.upsert_nodes_batch("Publication", [("W1", {})])
+        client.upsert_person_nodes_batch([("A1", {}), ("A2", {})], is_itmo=True)
+        client.upsert_relationships_batch("Person", "Publication", "AUTHORED",
+                                          [("A1", "W1", {"position": 5, "affiliation": "Old"})])
+        client.upsert_relationships_batch("Person", "Publication", "AUTHORED",
+                                          [("A2", "W1", {"position": 1})])
+        client.merge_person_nodes_batch([("A1", "A2")])
+        (props,) = [props for key, props in client.edges.items()
+                    if key[3] == "A2" and key[4] == "W1"]
+        self.assertEqual(props["position"], 1)
+        self.assertEqual(props["affiliation"], "Old")
+
+    def test_node_properties_only_the_duplicate_knew_move_over(self):
+        # Folding in the graph (cross-group dedup) deletes the duplicate
+        # node; a pdf_url only it carried must reach the canonical first.
+        client = RecordingNeo4jClient()
+        client.upsert_nodes_batch("Publication", [
+            ("W1", {"title": "One work", "doi": "10.1/x"}),
+            ("W2", {"title": "One work", "doi": "10.1/y",
+                    "pdf_url": "https://example.org/w2.pdf"}),
+        ])
+        client.merge_publication_nodes_batch([("W2", "W1")])
+        self.assertNotIn("W2", client.nodes["Publication"])
+        survivor = client.nodes["Publication"]["W1"]
+        self.assertEqual(survivor["pdf_url"], "https://example.org/w2.pdf")
+        self.assertEqual(survivor["doi"], "10.1/x")  # canonical's own value wins
 
 
 class LoaderPersonMergeTest(unittest.TestCase):

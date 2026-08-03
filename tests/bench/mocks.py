@@ -163,8 +163,9 @@ class RecordingNeo4jClient:
 
     def _fold_nodes(self, label: str, merges) -> int:
         """Mirror of Neo4jClient._fold_nodes_batch: move the duplicate node's
-        edges (both directions) onto the canonical node — existing canonical
-        edges win — and delete the duplicate node."""
+        edges (both directions) onto the canonical node and delete the
+        duplicate. On both nodes and edges the canonical's own values win,
+        but anything only the duplicate knew fills the gap."""
         removed = 0
         for dup_id, canonical_id in merges:
             if dup_id == canonical_id:
@@ -176,14 +177,16 @@ class RecordingNeo4jClient:
             for key, props in list(self.edges.items()):
                 src_primary, rel_type, tgt_primary, src_id, tgt_id = key
                 if src_primary == label and src_id == dup_id:
-                    del self.edges[key]
-                    self.edges.setdefault(
-                        (src_primary, rel_type, tgt_primary, canonical_id, tgt_id), props)
+                    moved_key = (src_primary, rel_type, tgt_primary, canonical_id, tgt_id)
                 elif tgt_primary == label and tgt_id == dup_id:
-                    del self.edges[key]
-                    self.edges.setdefault(
-                        (src_primary, rel_type, tgt_primary, src_id, canonical_id), props)
-            del self.nodes[label][dup_id]
+                    moved_key = (src_primary, rel_type, tgt_primary, src_id, canonical_id)
+                else:
+                    continue
+                del self.edges[key]
+                self.edges[moved_key] = {**props, **self.edges.get(moved_key, {})}
+            dup_props = self.nodes[label].pop(dup_id)
+            self.nodes[label][canonical_id] = {
+                **dup_props, **self.nodes[label][canonical_id]}
             if label == "Person":
                 self.person_labels.pop(dup_id, None)
             removed += 1

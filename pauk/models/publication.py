@@ -21,6 +21,7 @@ class PublicationVersion(BaseModel):
     """
 
     openalex_id: str
+    title: str | None = None
     doi: str | None = None
     journal: str | None = None
     publication_date: date | None = None

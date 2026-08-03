@@ -164,7 +164,7 @@ def dedup_graph_publications(client) -> tuple[int, list[dict]]:
     """Fold duplicate Publication nodes across all published groups.
 
     Same evidence as the per-group stage: records sharing a DOI or a
-    non-placeholder title are one work; the latest, then best-documented
+    non-placeholder title are one work; the best-documented, then latest
     record survives.
     """
     rows = client.fetch_publications_for_dedup()
@@ -182,9 +182,11 @@ def dedup_graph_publications(client) -> tuple[int, list[dict]]:
     for members in _grouped(pairs):
         ranked = sorted(
             (by_id[member] for member in members),
+            # Same order as the per-group stage: the best-documented record
+            # is the face, freshness only breaks ties.
             key=lambda row: (
-                -_ordinal(row.get("publication_date")),
                 -(row.get("author_count") or 0),
+                -_ordinal(row.get("publication_date")),
                 row["id"],
             ),
         )
