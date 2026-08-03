@@ -71,6 +71,11 @@ Duplicate publication records for the dedup stage (works W111..W120):
              merge two works
 * W119/W120  one title differing only in letter case and spacing -> merged
 
+Records OpenAlex has not finished processing:
+* W121      every author.id is null — one author is keyed by ORCID, one by
+            name, and the one with neither is the only authorship dropped
+* W122      title deposited with publisher markup (<sub>, MathML, <i>)
+
 Repositories: 80 canonical repos across 16 owners (5 each); all 80 are
 cited at least once. 3 phantom URLs are cited but never existed (404), one
 alias URL redirects to a canonical repo, and some owner payloads miss
@@ -82,7 +87,25 @@ to the row the new name produced.
 from __future__ import annotations
 
 AUTHOR_IDS = [f"A50000000{i:02d}" for i in range(1, 60)]
-WORK_IDS = [f"W70000000{i:02d}" for i in range(1, 121)]
+WORK_IDS = [f"W70000000{i:02d}" for i in range(1, 123)]
+
+# W121: a record OpenAlex has not disambiguated yet — the authors are listed
+# but every author.id is null, so they can only be keyed by what they carry.
+UNIDENTIFIED_WORK = "W70000000121"
+UNIDENTIFIED_ORCID = "0000-0009-0000-0121"
+UNIDENTIFIED_BY_ORCID = f"orcid_{UNIDENTIFIED_ORCID}"
+UNIDENTIFIED_BY_NAME = "Marina Bez Ida"        # no id, no ORCID: keyed by name
+UNIDENTIFIED_NAMELESS = 1                      # neither id nor name: unkeyable
+
+# W122: publisher markup OpenAlex passes through from Crossref verbatim.
+MARKUP_WORK = "W70000000122"
+MARKUP_TITLE = (
+    'Growth of CaF <sub>2</sub> /Si(111) and monolayer '
+    '<mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"> <mml:msub> '
+    "<mml:mi>WSe</mml:mi> <mml:mn>2</mml:mn> </mml:msub> </mml:math> in "
+    "<i>vacuo</i>"
+)
+MARKUP_TITLE_CLEAN = "Growth of CaF2/Si(111) and monolayer WSe2 in vacuo"
 
 # Duplicate publication records (works W111..W120). One work reaches OpenAlex
 # as several records: a re-indexed duplicate of one DOI, a preprint and its
@@ -315,7 +338,9 @@ def build_universe() -> dict:
     for n, work_id in enumerate(WORK_IDS, start=1):
         work: dict = {"id": f"https://openalex.org/{work_id}"}
 
-        if n not in (13, 118):  # both untitled: a placeholder is not a title
+        if n == 122:
+            work["title"] = MARKUP_TITLE
+        elif n not in (13, 118):  # both untitled: a placeholder is not a title
             work["title"] = PUBLICATION_TITLES.get(n, f"Synthetic paper {n:03d}")
         if n != 13:
             work["publication_date"] = PUBLICATION_DATES.get(
@@ -329,6 +354,19 @@ def build_universe() -> dict:
 
         if n == 16:
             work["authorships"] = []
+        elif n == 121:
+            # Every author.id is null: one author carries an ORCID, one only a
+            # name, one neither — the last cannot be keyed at all.
+            work["authorships"] = [
+                {"author": {"id": None, "display_name": "Igor Bez Ida",
+                            "orcid": f"https://orcid.org/{UNIDENTIFIED_ORCID}"},
+                 "institutions": [ITMO_INSTITUTION],
+                 "raw_affiliation_strings": ["ITMO University, St. Petersburg, Russia"]},
+                {"author": {"id": None, "display_name": UNIDENTIFIED_BY_NAME},
+                 "raw_affiliation_strings": ["External University 121"]},
+                {"author": {"id": None, "display_name": None},
+                 "raw_affiliation_strings": ["External University 121"]},
+            ]
         elif n in DUPLICATE_WORK_AUTHORS:
             work["authorships"] = [_authorship(i, n) for i in DUPLICATE_WORK_AUTHORS[n]]
         elif n == 17:
@@ -399,14 +437,16 @@ def build_universe() -> dict:
         doi = work.get("doi", "").removeprefix("https://doi.org/")
         if not doi or doi.startswith("10.9999/"):
             continue
-        author_ids_in_work = [e["author"]["id"].rsplit("/", 1)[-1] for e in work.get("authorships", [])]
+        # author.id is null on records OpenAlex has not disambiguated (W121).
+        author_ids_in_work = [(e["author"].get("id") or "").rsplit("/", 1)[-1]
+                              for e in work.get("authorships", [])]
         both_ivanovs = "A5000000006" in author_ids_in_work and "A5000000007" in author_ids_in_work
         items = []
         for entry in work.get("authorships", []):
             name = entry["author"].get("display_name")
             if not name:
                 continue
-            author_id = entry["author"]["id"].rsplit("/", 1)[-1]
+            author_id = (entry["author"].get("id") or "").rsplit("/", 1)[-1]
             item: dict = {"family": name.split()[-1]}
             if author_id == "A5000000014":
                 item["ORCID"] = "https://orcid.org/0000-0002-0000-0014"
@@ -424,6 +464,9 @@ def build_universe() -> dict:
         "0000-0001-0000-0013": {"person": {"emails": {"email": []}}},
         "0000-0002-0000-0014": {"person": {"emails": {"email": [{"email": "a14@example.org"}]}}},
         "0000-0005-0000-0008": {"person": {}},  # record without an emails block
+        # The author OpenAlex has not disambiguated: no author record to fetch,
+        # but the ORCID they were keyed by still enriches them.
+        UNIDENTIFIED_ORCID: {"person": {"emails": {"email": [{"email": "no.id@example.org"}]}}},
         KOVALEV_ORCID: {"person": {"emails": {"email": []}}},
         FEDOROVA_ORCIDS[58]: {"person": {"emails": {"email": []}}},
         FEDOROVA_ORCIDS[59]: {"person": {"emails": {"email": []}}},

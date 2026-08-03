@@ -34,6 +34,8 @@ from tests.bench.mocks import (
 from tests.bench.universe import (
     AUTHOR_IDS,
     DEDUP_MERGES,
+    MARKUP_TITLE_CLEAN,
+    MARKUP_WORK,
     PHANTOM_URLS,
     PUBLICATION_MERGES,
     REPO_OWNERS,
@@ -41,6 +43,10 @@ from tests.bench.universe import (
     STALE_REPO_ID,
     STALE_REPO_PUBLICATION,
     STALE_REPO_URL,
+    UNIDENTIFIED_BY_NAME,
+    UNIDENTIFIED_BY_ORCID,
+    UNIDENTIFIED_ORCID,
+    UNIDENTIFIED_WORK,
     UNTITLED_WORK_IDS,
     build_universe,
     repo_github_id,
@@ -125,24 +131,27 @@ def bench(tmp_path_factory) -> SimpleNamespace:
 # --- collect / normalize -------------------------------------------------------
 
 def test_collect_is_idempotent(bench):
-    assert bench.collected_first == 120
+    assert bench.collected_first == 122
     assert bench.collected_again == 0
 
 
 def test_normalize_counts(bench):
     # Normalization keeps one row per OpenAlex work; duplicate records of one
     # publication are folded later, by the dedup stage.
-    assert bench.normalize_result == {"publications": 120, "persons": 59}
+    assert bench.normalize_result == {"publications": 122, "persons": 61}
     # bench.persons is read after enrichment, i.e. after the dedup stage
     # folded the split authors away.
-    assert set(bench.persons) == set(AUTHOR_IDS) - set(DEDUP_MERGES)
+    openalex_persons = {pid for pid in bench.persons if pid.startswith("A5")}
+    assert openalex_persons == set(AUTHOR_IDS) - set(DEDUP_MERGES)
+    # Plus the two authors of W121, whom OpenAlex has not disambiguated.
+    assert len(bench.persons) == len(openalex_persons) + 2
 
 
 def test_flaky_affiliation_does_not_split_identity(bench):
     for i in range(1, 6):
         person = bench.persons[f"A50000000{i:02d}"]
         assert person.is_itmo, f"A{i:02d} must be ITMO despite missing affiliations"
-    assert sum(p.is_itmo for p in bench.persons.values()) == 35
+    assert sum(p.is_itmo for p in bench.persons.values()) == 36
 
 
 def test_duplicate_author_entry_kept_per_position(bench):
@@ -361,6 +370,35 @@ def test_versions_are_json_text(bench):
     assert "Synthetic Preprint Server" in props["versions"]
 
 
+# --- records OpenAlex has not finished processing ------------------------------------------
+
+def test_authors_without_an_openalex_id_still_reach_the_graph(bench):
+    authors = [p for p in bench.persons.values()
+               if any(a.publication_id == UNIDENTIFIED_WORK for a in p.authored)]
+    # Three authorships, but the one carrying neither an id nor a name
+    # cannot be keyed to anything.
+    assert len(authors) == 2
+    by_orcid = bench.persons[UNIDENTIFIED_BY_ORCID]
+    assert by_orcid.orcid == UNIDENTIFIED_ORCID
+    assert by_orcid.openalex_id is None and by_orcid.is_itmo
+    by_name = next(p for p in authors if p.name_en == UNIDENTIFIED_BY_NAME)
+    assert by_name.id.startswith("name_") and by_name.openalex_id is None
+    assert {(p.id, UNIDENTIFIED_WORK) for p in authors} <= bench.graph.edge_pairs("AUTHORED")
+
+
+def test_a_person_without_an_openalex_record_is_still_enriched(bench):
+    # Having no author endpoint to call is not a failure, and the ORCID they
+    # were keyed by is still worth following.
+    person = bench.persons[UNIDENTIFIED_BY_ORCID]
+    state = person.processing["persons"]
+    assert state.status != "failed", state.error
+    assert person.email == "no.id@example.org"
+
+
+def test_publisher_markup_is_stripped_from_the_title(bench):
+    assert bench.publications[MARKUP_WORK].title == MARKUP_TITLE_CLEAN
+
+
 # --- repository dedup --------------------------------------------------------------------
 
 def test_row_written_before_a_rename_folds_into_the_canonical_repository(bench):
@@ -387,13 +425,14 @@ def test_department_matching_including_aliases(bench):
 
 def test_graph_node_counts(bench):
     graph = bench.graph
-    assert len(graph.nodes["Publication"]) == 120 - len(PUBLICATION_MERGES)
-    assert len(graph.nodes["Person"]) == 55
+    assert len(graph.nodes["Publication"]) == 122 - len(PUBLICATION_MERGES)
+    # 55 OpenAlex authors plus the two of W121 keyed by ORCID and by name.
+    assert len(graph.nodes["Person"]) == 57
     assert len(graph.nodes["Repository"]) == 80
     assert len(graph.nodes["GitHubProfile"]) == 16
     assert len(graph.nodes["LinkCandidate"]) == 3
     labels = list(graph.person_labels.values())
-    assert labels.count("Itmo") == 35 and labels.count("External") == 20
+    assert labels.count("Itmo") == 36 and labels.count("External") == 21
     for merged_id in DEDUP_MERGES:
         assert merged_id not in graph.nodes["Person"]
 
@@ -407,9 +446,10 @@ def test_graph_edge_counts(bench):
     expected_authored = {(person.id, a.publication_id)
                          for person in bench.persons.values() for a in person.authored}
     assert graph.edge_pairs("AUTHORED") == expected_authored
-    # 228 from works W001..W110 plus 9 from the duplicate-record works: two
-    # authors each on W111, W114, W117 and W119, one on W118.
-    assert len(expected_authored) == 237
+    # 228 from works W001..W110, 9 from the duplicate-record works (two
+    # authors each on W111, W114, W117 and W119, one on W118), 2 keyable
+    # authors on W121 and 2 on W122.
+    assert len(expected_authored) == 241
 
     assert len(graph.edge_pairs("MENTIONS_LINK")) == 82 + 3  # repos + candidates
     # 82 plus the publication inherited from the pre-rename repository row.

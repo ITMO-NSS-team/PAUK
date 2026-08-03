@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+import re
 from collections import OrderedDict
 from datetime import date
 from hashlib import sha1
@@ -9,9 +11,59 @@ from pauk.storage import GroupLock, PreparedStore, RawStore
 
 ITMO_ROR_ID = "04txgxn49"
 
+MATH_BLOCK = re.compile(r"<mml:math\b[^>]*>.*?</mml:math>", re.DOTALL | re.IGNORECASE)
+MATH_LEAF = re.compile(r"<mml:(mi|mn|mo|mtext)\b[^>]*>(.*?)</mml:\1>", re.DOTALL | re.IGNORECASE)
+# "CaF <sub>2</sub>" — the subscript belongs to the formula before it.
+SUBSUP_OPEN = re.compile(r"\s+(<(?:sub|sup)\b[^>]*>)", re.IGNORECASE)
+# "Ag <sub>2</sub> B <sub>5</sub>" — an element symbol between two
+# subscripts continues the same formula, unlike a following word.
+SUBSUP_CHAIN = re.compile(r"(</(?:sub|sup)>)\s+(?=[A-Za-z]{1,2}\s*<(?:sub|sup)\b)", re.IGNORECASE)
+TAG = re.compile(r"<[^>]+>")
+SPACE_AFTER_OPEN = re.compile(r"([(\[])\s+")
+SPACE_BEFORE_TIGHT = re.compile(r"\s+([/,;:.)\]@-])")
+WHITESPACE = re.compile(r"\s+")
+
 
 def _short_id(value: str | None) -> str | None:
     return value.rstrip("/").split("/")[-1] if value else None
+
+
+def _math_text(match: re.Match) -> str:
+    """The text of one MathML formula.
+
+    Only leaf elements carry content, and the whitespace between them is
+    layout rather than text, so leaves are concatenated with nothing in
+    between: "<mml:mi>WSe</mml:mi> <mml:mn>2</mml:mn>" is "WSe2". A space
+    that is a leaf of its own survives — that is how publishers encode the
+    gap in "<mml:mi>a</mml:mi><mml:mi>b</mml:mi><mml:mo> </mml:mo>…",
+    which reads "ab initio".
+    """
+    leaves = MATH_LEAF.findall(match.group(0))
+    if not leaves:
+        return WHITESPACE.sub("", TAG.sub("", match.group(0)))
+    return "".join(text for _element, text in leaves)
+
+
+def _clean_markup(text: str | None) -> str | None:
+    """Drop the publisher markup OpenAlex passes through from Crossref.
+
+    Physics and chemistry publishers deposit formulas as MathML or HTML
+    (<sub>, <sup>) and species names in <i>, and OpenAlex serves the title
+    verbatim — "monolayer <mml:math>…<mml:mi>WSe</mml:mi><mml:mn>2</mml:mn>…"
+    where the title reads "monolayer WSe2". A formula collapses to its own
+    text with the inner spacing removed and stays attached to what it
+    subscripts; everything else just loses its tags.
+    """
+    if not text:
+        return text
+    cleaned = html.unescape(text)
+    cleaned = MATH_BLOCK.sub(_math_text, cleaned)
+    cleaned = SUBSUP_CHAIN.sub(r"\1", cleaned)
+    cleaned = SUBSUP_OPEN.sub(r"\1", cleaned)
+    cleaned = TAG.sub("", cleaned)
+    cleaned = SPACE_AFTER_OPEN.sub(r"\1", cleaned)
+    cleaned = SPACE_BEFORE_TIGHT.sub(r"\1", cleaned)
+    return " ".join(cleaned.split())
 
 
 def _fallback_person_id(author: dict) -> str | None:
@@ -39,7 +91,7 @@ def _abstract(work: dict) -> str | None:
     if not inverted:
         return None
     words = sorted(((position, word) for word, positions in inverted.items() for position in positions))
-    return " ".join(word for _, word in words)
+    return _clean_markup(" ".join(word for _, word in words))
 
 
 def _funding(work: dict) -> list[Funding]:
@@ -132,7 +184,7 @@ class OpenAlexNormalizer:
                 source = ((work.get("primary_location") or {}).get("source") or {})
                 normalized_publication = Publication(
                     id=work_id,
-                    title=work.get("title") or "Untitled",
+                    title=_clean_markup(work.get("title")) or "Untitled",
                     doi=work.get("doi"),
                     openalex_url=work.get("id"),
                     publication_date=date.fromisoformat(pub_date) if pub_date else None,

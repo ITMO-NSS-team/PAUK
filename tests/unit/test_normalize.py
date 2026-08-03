@@ -174,6 +174,45 @@ class NormalizeTest(unittest.TestCase):
             person = next(prepared.read_models("persons", Person))
             self.assertEqual({a.publication_id for a in person.authored}, {"W1", "W2"})
 
+    def test_publisher_markup_is_stripped_from_titles_and_abstracts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = RawStore(root / "raw", "sample")
+            raw.append("openalex_works", {
+                "id": "https://openalex.org/W1",
+                "title": ('Optical probing in monolayer <mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML">'
+                          " <mml:msub> <mml:mi>WSe</mml:mi> <mml:mn>2</mml:mn> </mml:msub> </mml:math> via"
+                          " diffraction"),
+                "abstract_inverted_index": {"Grown": [0], "on": [1], "CaF": [2], "<sub>2</sub>": [3],
+                                            "/Si(111)": [4], "in": [5], "<i>vacuo</i>": [6]},
+                "authorships": [],
+            }, {"work_id": "W1"})
+            prepared = PreparedStore(root / "prepared", "sample")
+            OpenAlexNormalizer(raw, prepared).run()
+            publication = next(prepared.read_models("publications", Publication))
+            self.assertEqual(publication.title,
+                             "Optical probing in monolayer WSe2 via diffraction")
+            self.assertEqual(publication.abstract, "Grown on CaF2/Si(111) in vacuo")
+
+    def test_a_formula_keeps_a_space_that_is_its_own_element(self):
+        # Publishers spell "ab initio" out letter by letter, with the gap
+        # carried by <mml:mo> </mml:mo> — that space is content, not layout.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = RawStore(root / "raw", "sample")
+            raw.append("openalex_works", {
+                "id": "https://openalex.org/W1", "authorships": [],
+                "title": ('Comparison of the <mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML">'
+                          " <mml:mrow> <mml:mi>a</mml:mi> <mml:mi>b</mml:mi> </mml:mrow>"
+                          " <mml:mo> </mml:mo> <mml:mrow> <mml:mi>i</mml:mi> <mml:mi>n</mml:mi>"
+                          " <mml:mi>i</mml:mi> <mml:mi>t</mml:mi> <mml:mi>i</mml:mi> <mml:mi>o</mml:mi>"
+                          " </mml:mrow> </mml:math> QED approaches"),
+            }, {"work_id": "W1"})
+            prepared = PreparedStore(root / "prepared", "sample")
+            OpenAlexNormalizer(raw, prepared).run()
+            publication = next(prepared.read_models("publications", Publication))
+            self.assertEqual(publication.title, "Comparison of the ab initio QED approaches")
+
     def test_re_normalization_preserves_enrichment_files_and_publication_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
