@@ -1,4 +1,4 @@
-"""Fully synthetic test universe: 120 works, 59 authors, 80 repositories.
+"""Fully synthetic test universe: 140 works, 71 authors, 81 repositories.
 
 Deterministic (no randomness) and self-describing: every tricky case the
 pipeline must survive is a named constant here, and `build_universe()`
@@ -7,7 +7,7 @@ returns the raw payloads exactly as the external APIs would serve them.
 Tricky cases covered
 --------------------
 
-Authors (A5000000001..A5000000059, 38 ITMO / 21 external before dedup):
+Authors (A5000000001..A5000000071, 51 ITMO / 20 external before dedup):
 * A01-A05  ITMO affiliation missing on odd-numbered works (identity merge,
            sticky is_itmo)
 * A06/A07  same family name ("Ivanov") on the same work -> the Crossref
@@ -37,7 +37,28 @@ Split-author duplicates for the dedup stage (works W101..W110):
            a coauthor, but their author records carry different ORCIDs ->
            an explicit difference: NOT merged and not even a candidate
 
-Works (W7000000001..W7000000100):
+Identity traps the dedup stage must refuse (works W121..W131):
+* A60/A61  "Lei Li" and "Tao Li": each is the only "Li" on their own work,
+           so the Crossref backfill stamps ONE ORCID onto both prepared
+           rows. Their OpenAlex records know no ORCID, and that raw record
+           is the trusted source -> the poisoned value never merges them
+* A62/A63/A64  "Sergey Popov" (ORCID X), "S. Popov" (no ORCID) and
+           "Sergei Popov" (ORCID Y): the middle record is a legitimate
+           variant of both, so pairwise rules would chain all three into
+           one group spanning two ORCIDs -> the whole group is refused and
+           journalled for review
+* A65/A66  two ITMO persons both named "Kim": a single-token name is not
+           enough evidence -> held, never merged
+* A67      one person, two ITMO departments across two works
+* A68      corresponding author (relationship property on AUTHORED)
+* A69      the ORCID API fails on the first enrichment run and answers on
+           the second -> persons stage FAILED then COMPLETED, email filled
+* A70      ITMO affiliation written in Russian only — known limitation: the
+           departments stage matches name_en and aliases, not name_ru
+* A71      "Nikolay Nikitin", the 2026 half of a person split across
+           collection periods (see universe_2025.py)
+
+Works (W7000000001..W70000000140):
 * W001     GitHub URL with a sentence-ending period
 * W002     GitHub URL with a ".git" suffix
 * W003     GitHub URL with a trailing slash
@@ -71,18 +92,63 @@ Duplicate publication records for the dedup stage (works W111..W120):
              merge two works
 * W119/W120  one title differing only in letter case and spacing -> merged
 
-Repositories: 80 canonical repos across 16 owners (5 each); all 80 are
-cited at least once. 3 phantom URLs are cited but never existed (404), one
-alias URL redirects to a canonical repo, and some owner payloads miss
-`name`/`type`. A row written before a repository was renamed (STALE_REPO_ID)
-is seeded between the two enrichment runs: only GitHub's numeric id ties it
-to the row the new name produced.
+URL shapes and duplicate records with links (works W121..W133):
+* W121     a deep link into a repository (/tree/main/src) plus the plain
+           repository URL -> one repository, one link
+* W122     an owner-only github.com URL is not a repository and must be
+           ignored; the repository URL next to it is not
+* W123     URLs carrying an "#anchor" and a "?query" suffix
+* W124     one live repository and one 404 in the same abstract -> a
+           Repository edge next to a LinkCandidate edge
+* W126     GitHub answers 429 on the first enrichment run and 200 on the
+           second -> the LinkCandidate published in between is promoted to
+           the Repository, keeping the MENTIONS_LINK edge
+* W132/W133  one DOI written as "http://dx.doi.org/...CaseDoi" and
+           "https://doi.org/...casedoi" -> one publication, although the
+           two records carry different titles and list their authors in
+           opposite order
+
+Works collected only by a later run (W134..W138, dated 2027):
+The first collect uses a 2026 period selector and never sees them; they
+arrive through a works-file selector between the two enrichment runs, so
+everything already enriched must stay untouched while they are processed.
+* W134/W135  a preprint carrying the abstract, the PDF link, the grant and
+           the code link merges into a version of record that has none of
+           them -> the surviving row inherits every gap
+* W136     a citation written with an upper-case host ("HTTPS://GitHub.COM")
+           must resolve to the repository, not to a LinkCandidate
+* W137     GitHub serves a payload without `owner` and without `html_url`
+           -> a Repository with no GitHubProfile and no OWNED_BY edge
+* W138     a second publication citing an already-known 404 URL -> ONE
+           LinkCandidate node with two MENTIONS_LINK edges
+
+Works kept for the cross-period bench (W139/W140, see universe_2025.py):
+* W139     the version of record whose preprint was collected in the 2025
+           group -> only the graph-wide dedup can fold them
+* W140     A71 (the 2026 half of a person split across periods) and A70
+
+Repositories: 80 canonical repos across 16 owners (5 each) plus one
+"orphan" payload without an owner block; all 81 are cited at least once.
+4 phantom URLs are cited but never existed (404), one alias URL redirects
+to a canonical repo, and some owner payloads miss `name`/`type`. A row
+written before a repository was renamed (STALE_REPO_ID) is seeded between
+the two enrichment runs: only GitHub's numeric id ties it to the row the
+new name produced.
 """
 
 from __future__ import annotations
 
-AUTHOR_IDS = [f"A50000000{i:02d}" for i in range(1, 60)]
-WORK_IDS = [f"W70000000{i:02d}" for i in range(1, 121)]
+
+def author_id(i: int) -> str:
+    return f"A50000000{i:02d}"
+
+
+def work_id(n: int) -> str:
+    return f"W70000000{n:02d}"
+
+
+AUTHOR_IDS = [author_id(i) for i in range(1, 72)]
+WORK_IDS = [work_id(n) for n in range(1, 141)]
 
 # Duplicate publication records (works W111..W120). One work reaches OpenAlex
 # as several records: a re-indexed duplicate of one DOI, a preprint and its
@@ -95,24 +161,40 @@ PUBLICATION_TITLES = {
     114: "Bench preprint and version of record",
     115: "Bench dataset deposit", 116: "Bench dataset deposit", 117: "Bench dataset deposit",
     119: "Bench Case Variant Study", 120: "  bench case VARIANT   study ",
+    # Merged by DOI alone: the two records were even titled differently.
+    132: "Bench DOI resolver variant", 133: "Bench DOI resolver variant, revised",
+    134: "Bench preprint carrying the full text",
+    135: "Bench preprint carrying the full text",
+    139: "Bench cross-period study",
 }
 PUBLICATION_JOURNALS = {
     111: "Synthetic Journal", 112: "Synthetic Journal",
     113: "Synthetic Preprint Server", 114: "Synthetic Journal",
     115: "Synthetic Data Archive", 116: "Synthetic Data Archive",
     117: "Synthetic Data Archive",
+    134: "Synthetic Preprint Server", 135: "Synthetic Journal",
+    139: "Synthetic Journal",
 }
 PUBLICATION_DOIS = {
     111: DUPLICATE_DOI, 112: DUPLICATE_DOI,
     113: "https://doi.org/10.7777/preprint.113", 114: "https://doi.org/10.7777/vor.114",
     115: "https://doi.org/10.7777/deposit.115", 116: "https://doi.org/10.7777/deposit.116",
     117: "https://doi.org/10.7777/deposit.117",
+    # One DOI, two resolver prefixes and two spellings: bare and lowercase,
+    # they are the same DOI.
+    132: "http://dx.doi.org/10.7777/CaseDoi.132",
+    133: "https://doi.org/10.7777/casedoi.132",
+    134: "https://doi.org/10.7777/preprint.134", 135: "https://doi.org/10.7777/vor.135",
 }
 PUBLICATION_DATES = {
     111: "2026-03-15", 112: "2026-03-15",   # one DOI, one date: authors decide
     113: "2026-02-15", 114: "2026-09-15",   # the version of record comes later
     115: "2026-01-20", 116: "2026-04-20", 117: "2026-07-20",
     119: "2026-06-05", 120: "2026-05-05",
+    132: "2026-02-10", 133: "2026-08-10",
+    134: "2027-01-10", 135: "2027-11-10",   # collected only by the second run
+    136: "2027-02-20", 137: "2027-03-20", 138: "2027-04-20",
+    139: "2026-04-01",
 }
 # Same authors on both records of a work: their authorships must collapse.
 DUPLICATE_WORK_AUTHORS = {
@@ -123,13 +205,20 @@ DUPLICATE_WORK_AUTHORS = {
 }
 # Merged-away work id -> the record that survives.
 PUBLICATION_MERGES = {
-    "W70000000112": "W70000000111",
-    "W70000000113": "W70000000114",
-    "W70000000115": "W70000000117",
-    "W70000000116": "W70000000117",
-    "W70000000120": "W70000000119",
+    work_id(112): work_id(111),
+    work_id(113): work_id(114),
+    work_id(115): work_id(117),
+    work_id(116): work_id(117),
+    work_id(120): work_id(119),
+    work_id(132): work_id(133),
+    work_id(134): work_id(135),
 }
-UNTITLED_WORK_IDS = ("W7000000013", "W70000000118")
+UNTITLED_WORK_IDS = (work_id(13), work_id(118))
+
+# Works the 2026 period selector cannot see: they are dated 2027 and reach
+# the group through a works-file selector between the two enrichment runs.
+INCREMENTAL_WORK_NUMBERS = (134, 135, 136, 137, 138)
+INCREMENTAL_WORK_IDS = tuple(work_id(n) for n in INCREMENTAL_WORK_NUMBERS)
 
 # A repository renamed on GitHub between two runs: the row written before the
 # rename survives in prepared under its old id and URL, and only GitHub's
@@ -137,14 +226,14 @@ UNTITLED_WORK_IDS = ("W7000000013", "W70000000118")
 STALE_REPO_ID = "github_benchorg7_legacy-name"
 STALE_REPO_URL = "https://github.com/BenchOrg7/legacy-name"
 STALE_REPO_CANONICAL_ID = "github_benchorg7_alphatool"
-STALE_REPO_PUBLICATION = "W7000000021"
+STALE_REPO_PUBLICATION = work_id(21)
 
 # Split-author cases: ids merged away by the dedup stage and where they go.
 DEDUP_MERGES = {
-    "A5000000052": "A5000000051",
-    "A5000000054": "A5000000053",
-    "A5000000055": "A5000000053",
-    "A5000000057": "A5000000056",
+    author_id(52): author_id(51),
+    author_id(54): author_id(53),
+    author_id(55): author_id(53),
+    author_id(57): author_id(56),
 }
 # (author index, filler coauthor index) per dedup work W101..W110.
 DEDUP_WORK_AUTHORS = {
@@ -155,6 +244,30 @@ DEDUP_WORK_AUTHORS = {
 }
 KOVALEV_ORCID = "0000-0006-0000-0051"
 FEDOROVA_ORCIDS = {58: "0000-0007-0000-0058", 59: "0000-0007-0000-0059"}
+
+# Authors of the works added for the identity traps and the URL shapes.
+CASE_WORK_AUTHORS = {
+    121: (60, 20), 122: (61, 20),
+    123: (62, 17), 124: (63, 17), 125: (64, 17),
+    126: (65, 18), 127: (66, 18),
+    128: (67, 19), 129: (67, 19),
+    130: (68, 20), 131: (69, 20),
+    132: (22, 21), 133: (21, 22),   # one work, opposite author order
+    134: (24, 25), 135: (24, 25),
+    136: (21, 31), 137: (21, 31), 138: (21, 31),
+    139: (28, 29), 140: (71, 70),
+}
+# The Crossref backfill matches by family name alone: one "Li" per work, so
+# one ORCID lands on two different people. Only the OpenAlex author record
+# (which knows no ORCID for either) can veto that.
+NAMESAKE_ORCID = "0000-0009-0000-0060"
+# Two Popovs with their own ORCIDs, bridged by a third record that has none.
+POPOV_ORCIDS = {62: "0000-0010-0000-0062", 64: "0000-0010-0000-0064"}
+SOKOLOV_ORCID = "0000-0011-0000-0069"
+# The 2026 half of a person split across collection periods.
+NIKITIN_ORCID = "0000-0012-0000-0071"
+# The ORCID API answers only from the second enrichment run on.
+FLAKY_ORCIDS = frozenset({SOKOLOV_ORCID})
 
 ITMO_ROR = "https://ror.org/04txgxn49"
 ITMO_INSTITUTION = {"ror": ITMO_ROR, "display_name": "ITMO University"}
@@ -168,6 +281,17 @@ DEPARTMENTS_CATALOG = [
     {"name_en": "Quantum Computing Lab", "name_ru": "Лаборатория квантовых вычислений", "aliases": ["QC Lab"]},
 ]
 DEPT_NAMES = [d["name_en"] for d in DEPARTMENTS_CATALOG]
+
+# One person writing their affiliation with a different department per work.
+SPECIAL_AFFILIATIONS = {
+    (67, 128): "ITMO University, Faculty of Photonics, St. Petersburg, Russia",
+    (67, 129): "ITMO University, Quantum Computing Lab, St. Petersburg, Russia",
+}
+# Russian-only affiliation: the departments stage compares name_en and the
+# aliases, so this ITMO author ends up without a department.
+RUSSIAN_AFFILIATION = "Университет ИТМО, Институт прикладной информатики, Санкт-Петербург, Россия"
+# (author index, work number) of authorships flagged as corresponding.
+CORRESPONDING_AUTHORSHIPS = frozenset({(68, 130)})
 
 REPO_OWNERS = [f"BenchOrg{i}" for i in range(1, 17)]
 REPO_NAMES = ["AlphaTool", "beta-kit", "GammaLib", "delta.util", "EpsilonNet"]
@@ -183,15 +307,50 @@ CITE_DELETED = "https://github.com/GoneOrg/vanished-repo"
 CITE_WWW = "https://www.github.com/BenchOrg4/AlphaTool"
 PHANTOM_2 = "https://github.com/GoneOrg/never-was"
 PHANTOM_3 = "https://github.com/BenchOrg5/typo-name"
-PHANTOM_URLS = (CITE_DELETED, PHANTOM_2, PHANTOM_3)
+PHANTOM_4 = "https://github.com/GoneOrg/ghost-tool"
+PHANTOM_URLS = (CITE_DELETED, PHANTOM_2, PHANTOM_3, PHANTOM_4)
+
+# A path inside a repository, an owner page, and cosmetic URL suffixes.
+CITE_DEEP_LINK = "https://github.com/BenchOrg8/AlphaTool/tree/main/src"
+CITE_DEEP_PLAIN = "https://github.com/BenchOrg8/AlphaTool"
+CITE_OWNER_ONLY = "https://github.com/BenchOrg9"
+CITE_NEXT_TO_OWNER = "https://github.com/BenchOrg9/beta-kit"
+CITE_ANCHOR = "https://github.com/BenchOrg9/GammaLib#readme"
+CITE_QUERY = "https://github.com/BenchOrg10/AlphaTool?tab=readme-ov-file"
+CITE_MIXED_LIVE = "https://github.com/BenchOrg10/beta-kit"
+CITE_UPPERCASE_HOST = "HTTPS://GitHub.COM/BenchOrg13/EpsilonNet"
+CITE_PREPRINT_REPO = "https://github.com/BenchOrg12/GammaLib"
+
+# GitHub answers 429 for this repository on the first enrichment run only:
+# the publish in between records a LinkCandidate that the next publish must
+# promote into the Repository.
+FLAKY_REPO_URL = "https://github.com/BenchOrg11/AlphaTool"
+FLAKY_REPO_ID = "github_benchorg11_alphatool"
+RATE_LIMITED_ONCE = frozenset({("benchorg11", "alphatool")})
+
+# A payload without `owner` and without `html_url`: the repository exists,
+# but there is nothing to hang a GitHubProfile or an OWNED_BY edge on.
+ORPHAN_REPO_URL = "https://github.com/BenchOrg14/orphan-tool"
+ORPHAN_REPO_ID = "github_benchorg14_orphan-tool"
+SPECIAL_REPO_PAYLOADS = {
+    ("benchorg14", "orphan-tool"): {
+        "id": 900_001,
+        "name": "orphan-tool",
+        "description": None,
+        "stargazers_count": 7,
+    },
+}
 
 RENAMED_ALIASES = {("benchorg3", "old-alpha"): ("benchorg3", "alphatool")}
 
-# Repos already covered by the special works W001..W010 above.
+# Repos already covered by the works with hand-written citations below.
 SPECIALLY_CITED = {
     ("benchorg1", "alphatool"), ("benchorg1", "beta-kit"), ("benchorg1", "gammalib"),
     ("benchorg1", "delta.util"), ("benchorg1", "epsilonnet"),
     ("benchorg2", "gammalib"), ("benchorg3", "alphatool"), ("benchorg4", "alphatool"),
+    ("benchorg8", "alphatool"), ("benchorg9", "beta-kit"), ("benchorg9", "gammalib"),
+    ("benchorg10", "alphatool"), ("benchorg10", "beta-kit"), ("benchorg11", "alphatool"),
+    ("benchorg12", "gammalib"), ("benchorg13", "epsilonnet"),
 }
 
 SPECIAL_CITATIONS: dict[int, list[str]] = {
@@ -210,7 +369,24 @@ SPECIAL_CITATIONS: dict[int, list[str]] = {
     11: ["https://gitlab.com/some/project"],
     19: [PHANTOM_2],
     20: [PHANTOM_3],
+    121: [CITE_DEEP_LINK, CITE_DEEP_PLAIN],
+    122: [CITE_OWNER_ONLY, CITE_NEXT_TO_OWNER],
+    123: [CITE_ANCHOR, CITE_QUERY],
+    124: [CITE_MIXED_LIVE, PHANTOM_4],
+    126: [FLAKY_REPO_URL],
+    134: [CITE_PREPRINT_REPO],
+    136: [CITE_UPPERCASE_HOST],
+    137: [ORPHAN_REPO_URL],
+    138: [PHANTOM_2],
 }
+
+# Works with no abstract at all: nothing for the code_links stage to read.
+NO_ABSTRACT_WORKS = frozenset({12, 135})
+FUNDED_WORKS = {19: "SSF-19", 134: "SSF-134"}
+PDF_WORKS = {20: "https://example.org/w20.pdf", 134: "https://example.org/w134.pdf"}
+# Only works numbered up to here take a repository from the shared pool; the
+# later ones cite exactly what SPECIAL_CITATIONS says and nothing else.
+LAST_FILLER_WORK = 110
 
 
 def _inverted_index(text: str) -> dict[str, list[int]]:
@@ -249,7 +425,7 @@ def _canonical_repos() -> dict[tuple[str, str], dict]:
     return repos
 
 
-def _author_name(i: int) -> str | None:
+def author_name(i: int) -> str | None:
     special = {
         6: "Oleg Ivanov",
         7: "Pavel Ivanov",
@@ -266,15 +442,32 @@ def _author_name(i: int) -> str | None:
         57: "Ivan Volkov",
         58: "Olga Fedorova",
         59: "O. Fedorova",
+        60: "Lei Li",
+        61: "Tao Li",
+        62: "Sergey Popov",
+        63: "S. Popov",
+        64: "Sergei Popov",
+        65: "Kim",
+        66: "Kim",
+        67: "Marina Orlova",
+        68: "Nadezhda Ivanenko",
+        69: "Timur Sokolov",
+        70: "Виктор Лебедев",
+        71: "Nikolay Nikitin",
     }
     if i in special:
         return special[i]
     return f"Author{i:02d} Surname{i:02d}"
 
 
-def _affiliation(i: int, itmo: bool) -> list[str]:
+def _affiliation(i: int, itmo: bool, n: int) -> list[str]:
     if not itmo:
         return [f"External University {i}"]
+    special = SPECIAL_AFFILIATIONS.get((i, n))
+    if special:
+        return [special]
+    if i == 70:
+        return [RUSSIAN_AFFILIATION]
     if i == 18:
         return ["ITMO University, IACS, St. Petersburg, Russia"]           # alias spelling
     if i == 23:
@@ -296,24 +489,45 @@ def _is_itmo(i: int, n: int) -> bool:
 def _authorship(i: int, n: int) -> dict:
     itmo = _is_itmo(i, n)
     author: dict = {"id": f"https://openalex.org/{AUTHOR_IDS[i - 1]}"}
-    name = _author_name(i)
+    name = author_name(i)
     if name is not None:
         author["display_name"] = name
     if i == 11:
         author["display_name_alternatives"] = ["Хосе Альварес-Мюллер"]
-    entry: dict = {"author": author, "raw_affiliation_strings": _affiliation(i, itmo)}
+    entry: dict = {"author": author, "raw_affiliation_strings": _affiliation(i, itmo, n)}
     if itmo:
         entry["institutions"] = [ITMO_INSTITUTION]
+    if (i, n) in CORRESPONDING_AUTHORSHIPS:
+        entry["is_corresponding"] = True
     return entry
+
+
+def _authorships_for(n: int) -> list[dict]:
+    if n == 16:
+        return []
+    if n in DUPLICATE_WORK_AUTHORS:
+        return [_authorship(i, n) for i in DUPLICATE_WORK_AUTHORS[n]]
+    if n == 17:
+        return [_authorship(i, n) for i in (1, 2, 3, 4, 5, 6, 7, 8, 31, 32, 33, 34)]
+    if n == 18:
+        return [_authorship(12, n), _authorship(35, n), _authorship(12, n)]
+    if n in DEDUP_WORK_AUTHORS:
+        return [_authorship(i, n) for i in DEDUP_WORK_AUTHORS[n]]
+    if n in CASE_WORK_AUTHORS:
+        return [_authorship(i, n) for i in CASE_WORK_AUTHORS[n]]
+    first = (n - 1) % 50 + 1
+    second = (n + 16) % 50 + 1
+    ids = [first] if first == second else [first, second]
+    return [_authorship(i, n) for i in ids]
 
 
 def build_universe() -> dict:
     repos = _canonical_repos()
-    remaining = [key for key in repos if key not in SPECIALLY_CITED]  # 72 repos
+    remaining = [key for key in repos if key not in SPECIALLY_CITED]  # 64 repos
 
     works: list[dict] = []
-    for n, work_id in enumerate(WORK_IDS, start=1):
-        work: dict = {"id": f"https://openalex.org/{work_id}"}
+    for n, wid in enumerate(WORK_IDS, start=1):
+        work: dict = {"id": f"https://openalex.org/{wid}"}
 
         if n not in (13, 118):  # both untitled: a placeholder is not a title
             work["title"] = PUBLICATION_TITLES.get(n, f"Synthetic paper {n:03d}")
@@ -327,25 +541,11 @@ def build_universe() -> dict:
         if n in PUBLICATION_JOURNALS:
             work["primary_location"] = {"source": {"display_name": PUBLICATION_JOURNALS[n]}}
 
-        if n == 16:
-            work["authorships"] = []
-        elif n in DUPLICATE_WORK_AUTHORS:
-            work["authorships"] = [_authorship(i, n) for i in DUPLICATE_WORK_AUTHORS[n]]
-        elif n == 17:
-            work["authorships"] = [_authorship(i, n) for i in (1, 2, 3, 4, 5, 6, 7, 8, 31, 32, 33, 34)]
-        elif n == 18:
-            work["authorships"] = [_authorship(12, n), _authorship(35, n), _authorship(12, n)]
-        elif n in DEDUP_WORK_AUTHORS:
-            work["authorships"] = [_authorship(i, n) for i in DEDUP_WORK_AUTHORS[n]]
-        else:
-            first = (n - 1) % 50 + 1
-            second = (n + 16) % 50 + 1
-            ids = [first] if first == second else [first, second]
-            work["authorships"] = [_authorship(i, n) for i in ids]
+        work["authorships"] = _authorships_for(n)
 
-        if n != 12:
+        if n not in NO_ABSTRACT_WORKS:
             urls = SPECIAL_CITATIONS.get(n)
-            if urls is None and n >= 21 and n % 10 != 0 and remaining:
+            if urls is None and 21 <= n <= LAST_FILLER_WORK and n % 10 != 0 and remaining:
                 keys = [remaining.pop(0)]
                 if n % 7 == 0 and remaining:
                     keys.append(remaining.pop(0))
@@ -357,13 +557,15 @@ def build_universe() -> dict:
                     text += " ."
             work["abstract_inverted_index"] = _inverted_index(text)
 
-        if n == 19:
-            work["grants"] = [{"funder_display_name": "Synthetic Science Fund", "grant_id": "SSF-19"}]
-        if n == 20:
-            work["best_oa_location"] = {"pdf_url": "https://example.org/w20.pdf"}
+        if n in FUNDED_WORKS:
+            work["grants"] = [{"funder_display_name": "Synthetic Science Fund",
+                               "grant_id": FUNDED_WORKS[n]}]
+        if n in PDF_WORKS:
+            work["best_oa_location"] = {"pdf_url": PDF_WORKS[n]}
         works.append(work)
 
     assert not remaining, f"universe bug: {len(remaining)} repos never cited"
+    repos.update(SPECIAL_REPO_PAYLOADS)
 
     dedup_alternatives = {
         51: ["D. A. Kovalev"],
@@ -375,15 +577,20 @@ def build_universe() -> dict:
         57: ["I. Volkov"],
         58: ["O. Fedorova"],
         59: [],
+        # The bridge record "S. Popov" is a legitimate variant of both Popovs.
+        62: ["S. Popov"],
+        63: [],
+        64: ["S. Popov"],
+        71: ["N. O. Nikitin"],
     }
     authors_api: dict[str, dict | None] = {}
-    for i, author_id in enumerate(AUTHOR_IDS, start=1):
+    for i, aid in enumerate(AUTHOR_IDS, start=1):
         if i == 16:
-            authors_api[author_id] = None  # endpoint fails
+            authors_api[aid] = None  # endpoint fails
             continue
         payload: dict = {
-            "id": f"https://openalex.org/{author_id}",
-            "display_name": _author_name(i) or f"Recovered Name{i:02d}",
+            "id": f"https://openalex.org/{aid}",
+            "display_name": author_name(i) or f"Recovered Name{i:02d}",
             "display_name_alternatives": dedup_alternatives.get(i, [f"A. Surname{i:02d}"]),
         }
         if i == 13:
@@ -392,33 +599,15 @@ def build_universe() -> dict:
             payload["orcid"] = f"https://orcid.org/{KOVALEV_ORCID}"
         if i in FEDOROVA_ORCIDS:
             payload["orcid"] = f"https://orcid.org/{FEDOROVA_ORCIDS[i]}"
-        authors_api[author_id] = payload
+        if i in POPOV_ORCIDS:
+            payload["orcid"] = f"https://orcid.org/{POPOV_ORCIDS[i]}"
+        if i == 69:
+            payload["orcid"] = f"https://orcid.org/{SOKOLOV_ORCID}"
+        if i == 71:
+            payload["orcid"] = f"https://orcid.org/{NIKITIN_ORCID}"
+        authors_api[aid] = payload
 
-    crossref: dict[str, dict] = {}
-    for work in works:
-        doi = work.get("doi", "").removeprefix("https://doi.org/")
-        if not doi or doi.startswith("10.9999/"):
-            continue
-        author_ids_in_work = [e["author"]["id"].rsplit("/", 1)[-1] for e in work.get("authorships", [])]
-        both_ivanovs = "A5000000006" in author_ids_in_work and "A5000000007" in author_ids_in_work
-        items = []
-        for entry in work.get("authorships", []):
-            name = entry["author"].get("display_name")
-            if not name:
-                continue
-            author_id = entry["author"]["id"].rsplit("/", 1)[-1]
-            item: dict = {"family": name.split()[-1]}
-            if author_id == "A5000000014":
-                item["ORCID"] = "https://orcid.org/0000-0002-0000-0014"
-            if author_id == "A5000000008":
-                item["ORCID"] = "https://orcid.org/0000-0005-0000-0008"  # hyphenated surname, must match
-            if author_id in ("A5000000006", "A5000000007") and both_ivanovs:
-                item["ORCID"] = "https://orcid.org/0000-0003-0000-0067"  # ambiguous on purpose
-            if author_id == "A5000000009":
-                item["family"] = "van der Berg"
-                item["ORCID"] = "https://orcid.org/0000-0004-0000-0009"  # unmatchable
-            items.append(item)
-        crossref[doi] = {"message": {"author": items}}
+    crossref = build_crossref(works)
 
     orcid_records = {
         "0000-0001-0000-0013": {"person": {"emails": {"email": []}}},
@@ -427,6 +616,11 @@ def build_universe() -> dict:
         KOVALEV_ORCID: {"person": {"emails": {"email": []}}},
         FEDOROVA_ORCIDS[58]: {"person": {"emails": {"email": []}}},
         FEDOROVA_ORCIDS[59]: {"person": {"emails": {"email": []}}},
+        NAMESAKE_ORCID: {"person": {"emails": {"email": []}}},
+        POPOV_ORCIDS[62]: {"person": {"emails": {"email": []}}},
+        POPOV_ORCIDS[64]: {"person": {"emails": {"email": []}}},
+        SOKOLOV_ORCID: {"person": {"emails": {"email": [{"email": "t69@example.org"}]}}},
+        NIKITIN_ORCID: {"person": {"emails": {"email": []}}},
     }
 
     return {
@@ -438,3 +632,68 @@ def build_universe() -> dict:
         "orcid": orcid_records,
         "departments_catalog": DEPARTMENTS_CATALOG,
     }
+
+
+def bare_doi(doi: str | None) -> str:
+    """The DOI as MockCrossrefClient keys it: without any resolver prefix."""
+    value = doi or ""
+    for prefix in ("https://doi.org/", "http://doi.org/",
+                   "https://dx.doi.org/", "http://dx.doi.org/"):
+        value = value.removeprefix(prefix)
+    return value
+
+
+def build_crossref(works: list[dict]) -> dict[str, dict]:
+    """Crossref responses for every work whose DOI Crossref knows.
+
+    Only the family name and (sometimes) an ORCID: exactly what the persons
+    stage reads, and exactly the little it has to work with.
+    """
+    crossref: dict[str, dict] = {}
+    for work in works:
+        doi = bare_doi(work.get("doi"))
+        if not doi or doi.startswith("10.9999/"):
+            continue
+        author_ids_in_work = [e["author"]["id"].rsplit("/", 1)[-1] for e in work.get("authorships", [])]
+        both_ivanovs = author_id(6) in author_ids_in_work and author_id(7) in author_ids_in_work
+        items = []
+        for entry in work.get("authorships", []):
+            name = entry["author"].get("display_name")
+            if not name:
+                continue
+            aid = entry["author"]["id"].rsplit("/", 1)[-1]
+            item: dict = {"family": name.split()[-1]}
+            if aid == author_id(14):
+                item["ORCID"] = "https://orcid.org/0000-0002-0000-0014"
+            if aid == author_id(8):
+                item["ORCID"] = "https://orcid.org/0000-0005-0000-0008"  # hyphenated surname, must match
+            if aid in (author_id(6), author_id(7)) and both_ivanovs:
+                item["ORCID"] = "https://orcid.org/0000-0003-0000-0067"  # ambiguous on purpose
+            if aid == author_id(9):
+                item["family"] = "van der Berg"
+                item["ORCID"] = "https://orcid.org/0000-0004-0000-0009"  # unmatchable
+            if aid in (author_id(60), author_id(61)):
+                # One family name, two people, one ORCID: the poisoning the
+                # dedup stage has to see through.
+                item["ORCID"] = f"https://orcid.org/{NAMESAKE_ORCID}"
+            items.append(item)
+        crossref[doi] = {"message": {"author": items}}
+    return crossref
+
+
+def expected_authorship_pairs(works: list[dict] | None = None) -> set[tuple[str, str]]:
+    """(person id, publication id) pairs the raw payloads imply.
+
+    Computed straight from the OpenAlex payloads plus the id remappings the
+    dedup stage is expected to apply, so the graph's AUTHORED edges can be
+    checked against the source data rather than against the pipeline's own
+    output.
+    """
+    pairs: set[tuple[str, str]] = set()
+    for work in works if works is not None else build_universe()["works"]:
+        wid = work["id"].rsplit("/", 1)[-1]
+        publication_id = PUBLICATION_MERGES.get(wid, wid)
+        for entry in work.get("authorships") or []:
+            aid = entry["author"]["id"].rsplit("/", 1)[-1]
+            pairs.add((DEDUP_MERGES.get(aid, aid), publication_id))
+    return pairs
