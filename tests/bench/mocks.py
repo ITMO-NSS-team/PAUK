@@ -7,6 +7,8 @@ from collections import defaultdict
 
 import requests
 
+from pauk.graph.client import _merge_duplicate_properties
+
 
 def _http_404(url: str) -> requests.HTTPError:
     return requests.HTTPError(f"404 Client Error: Not Found for url: {url}")
@@ -15,6 +17,9 @@ def _http_404(url: str) -> requests.HTTPError:
 class MockOpenAlexClient:
     def __init__(self, universe: dict) -> None:
         self.works = {w["id"].rsplit("/", 1)[-1]: w for w in universe["works"]}
+        # Complete records the single-work endpoint serves for works whose
+        # list payload is truncated.
+        self.works_full = dict(universe.get("works_full") or {})
         self.authors_api = universe["authors_api"]
 
     @staticmethod
@@ -23,6 +28,8 @@ class MockOpenAlexClient:
 
     def get_work(self, work_id: str) -> dict:
         normalized = self.normalize_work_id(work_id)
+        if normalized in self.works_full:
+            return self.works_full[normalized]
         if normalized not in self.works:
             raise _http_404(f"https://api.openalex.org/works/{normalized}")
         return self.works[normalized]
@@ -160,6 +167,115 @@ class RecordingNeo4jClient:
             for key, props in moved.items():
                 self.edges.setdefault(key, {}).update(props)
             del self.nodes["LinkCandidate"][candidate_id]
+
+    def _fold_nodes(self, label: str, merges) -> int:
+        """Mirror of Neo4jClient._fold_nodes_batch: move the duplicate node's
+        edges (both directions) onto the canonical node and delete the
+        duplicate. On both nodes and edges the canonical's own values win,
+        but anything only the duplicate knew fills the gap."""
+        removed = 0
+        for dup_id, canonical_id in merges:
+            if dup_id == canonical_id:
+                continue
+            if dup_id not in self.nodes.get(label, {}):
+                continue
+            if canonical_id not in self.nodes.get(label, {}):
+                continue
+            for key, props in list(self.edges.items()):
+                src_primary, rel_type, tgt_primary, src_id, tgt_id = key
+                if src_primary == label and src_id == dup_id:
+                    moved_key = (src_primary, rel_type, tgt_primary, canonical_id, tgt_id)
+                elif tgt_primary == label and tgt_id == dup_id:
+                    moved_key = (src_primary, rel_type, tgt_primary, src_id, canonical_id)
+                else:
+                    continue
+                del self.edges[key]
+                self.edges[moved_key] = {**props, **self.edges.get(moved_key, {})}
+            dup_props = self.nodes[label].pop(dup_id)
+            canonical_props = self.nodes[label][canonical_id]
+            canonical_props.update(_merge_duplicate_properties(label, canonical_props, dup_props))
+            if label == "Person":
+                self.person_labels.pop(dup_id, None)
+            removed += 1
+        return removed
+
+    def fetch_persons_for_dedup(self) -> list[dict]:
+        """Mirror of Neo4jClient.fetch_persons_for_dedup over recorded state."""
+        rows = []
+        for person_id, props in self.nodes.get("Person", {}).items():
+            rows.append({
+                "id": person_id,
+                **{field: props.get(field) for field in (
+                    "openalex_id", "name_en", "name_variants", "orcid", "email",
+                    "github", "openreview", "google_scholar", "merged_ids")},
+                "is_itmo": self.person_labels.get(person_id) == "Itmo",
+                "publication_ids": sorted({
+                    tgt_id for (src_primary, rel_type, _tgt, src_id, tgt_id) in self.edges
+                    if src_primary == "Person" and rel_type == "AUTHORED" and src_id == person_id
+                }),
+                "department_ids": sorted({
+                    tgt_id for (src_primary, rel_type, _tgt, src_id, tgt_id) in self.edges
+                    if src_primary == "Person" and rel_type == "BELONGS_TO" and src_id == person_id
+                }),
+            })
+        return rows
+
+    def fetch_publication_fields(self) -> dict[str, set[str]]:
+        """Mirror of Neo4jClient.fetch_publication_fields."""
+        return {
+            publication_id: set(props["fields"])
+            for publication_id, props in self.nodes.get("Publication", {}).items()
+            if props.get("fields")
+        }
+
+    def fetch_publications_for_dedup(self) -> list[dict]:
+        """Mirror of Neo4jClient.fetch_publications_for_dedup."""
+        rows = []
+        for publication_id, props in self.nodes.get("Publication", {}).items():
+            authors = [
+                {"person_id": src_id,
+                 "name": self.nodes.get("Person", {}).get(src_id, {}).get("name_en"),
+                 "position": edge_props.get("position")}
+                for (_src, rel_type, tgt_primary, src_id, tgt_id), edge_props in self.edges.items()
+                if rel_type == "AUTHORED" and tgt_primary == "Publication" and tgt_id == publication_id
+            ]
+            rows.append({
+                "id": publication_id,
+                **{field: props.get(field) for field in (
+                    "type", "doi", "title", "journal", "publication_date", "year",
+                    "openalex_url", "pdf_url", "abstract", "versions", "merged_ids")},
+                "author_count": len(authors),
+                "authors": authors,
+            })
+        return rows
+
+    def fetch_repositories_for_dedup(self) -> list[dict]:
+        """Mirror of Neo4jClient.fetch_repositories_for_dedup."""
+        return [{
+            "id": repository_id,
+            **{field: props.get(field) for field in (
+                "url", "github_id", "cited_urls", "access_date", "merged_ids")},
+            "publication_count": sum(
+                1 for (src_primary, rel_type, _tgt, src_id, _tid) in self.edges
+                if rel_type == "IMPLEMENTS" and src_primary == "Repository" and src_id == repository_id),
+        } for repository_id, props in self.nodes.get("Repository", {}).items()]
+
+    def fetch_merged_id_map(self, label: str) -> dict[str, str]:
+        """Mirror of Neo4jClient.fetch_merged_id_map over recorded state."""
+        return {
+            merged_id: node_id
+            for node_id, props in self.nodes.get(label, {}).items()
+            for merged_id in props.get("merged_ids") or []
+        }
+
+    def merge_person_nodes_batch(self, merges) -> int:
+        return self._fold_nodes("Person", merges)
+
+    def merge_publication_nodes_batch(self, merges) -> int:
+        return self._fold_nodes("Publication", merges)
+
+    def merge_repository_nodes_batch(self, merges) -> int:
+        return self._fold_nodes("Repository", merges)
 
     def close(self) -> None:
         pass

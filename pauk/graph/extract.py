@@ -19,6 +19,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 
+# Row fields holding nested maps: Neo4j has no nested-map property type, so
+# they are stored as JSON text.
+JSON_TEXT_FIELDS = ("funding", "versions", "counts_by_year", "affiliations")
+
+
 @dataclass(frozen=True)
 class RelSpec:
     """Describes one relationship embedded in a prepared-JSONL row.
@@ -118,6 +123,8 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "status",
             "created_at",
             "enriched_at",
+            "affiliations",
+            "merged_ids",
         ),
         relationships=(
             RelSpec("department_ids", "BELONGS_TO", "Department", None),
@@ -126,7 +133,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
                 "AUTHORED",
                 "Publication",
                 "publication_id",
-                ("position", "affiliation", "is_corresponding"),
+                ("position", "affiliation", "affiliation_source", "is_corresponding"),
             ),
             RelSpec(
                 "contributed_to",
@@ -166,6 +173,8 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "status",
             "created_at",
             "enriched_at",
+            "affiliations",
+            "merged_ids",
         ),
         relationships=(
             RelSpec(
@@ -173,7 +182,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
                 "AUTHORED",
                 "Publication",
                 "publication_id",
-                ("position", "affiliation", "is_corresponding"),
+                ("position", "affiliation", "affiliation_source", "is_corresponding"),
             ),
         ),
     ),
@@ -181,6 +190,8 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
         labels="Publication",
         prop_fields=(
             "title",
+            "type",
+            "fields",
             "journal",
             "doi",
             "publication_date",
@@ -191,6 +202,8 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "openalex_url",
             "pdf_url",
             "abstract",
+            "versions",
+            "merged_ids",
         ),
         relationships=(
             RelSpec("department_ids", "PRODUCED_BY", "Department", None),
@@ -218,6 +231,8 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
         prop_fields=(
             "name",
             "url",
+            "github_id",
+            "cited_urls",
             "description",
             "access_date",
             "has_readme",
@@ -225,6 +240,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "last_updated",
             "license",
             "contributors",
+            "merged_ids",
         ),
         relationships=(
             RelSpec("department_ids", "DEVELOPED_BY", "Department", None),
@@ -263,7 +279,7 @@ def extract_node(row: dict, spec: NodeSpec) -> tuple[str, tuple[str, dict]]:
     """
     node_id = row[spec.id_field]
     props = {k: row[k] for k in spec.prop_fields if row.get(k) is not None}
-    for key in ("funding", "counts_by_year"):
+    for key in JSON_TEXT_FIELDS:
         if isinstance(props.get(key), (list, dict)):
             props[key] = json.dumps(props[key], ensure_ascii=False)
     return spec.labels, (node_id, props)

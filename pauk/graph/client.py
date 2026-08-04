@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import LiteralString, cast
 
@@ -6,6 +7,72 @@ from neo4j import GraphDatabase
 logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 2000
+
+# false and [] are meaningful values rather than missing data.  
+# Keep this explicit per graph label so newly added fields
+# do not accidentally acquire lossy behaviour.
+BOOLEAN_MERGE_FIELDS = {
+    "Publication": {"has_code"},
+    "Repository": {"has_readme"},
+}
+LIST_MERGE_FIELDS = {
+    "Person": {"name_variants", "other_names", "merged_ids"},
+    "Publication": {"fields", "merged_ids"},
+    "Repository": {"cited_urls", "contributors", "merged_ids"},
+}
+JSON_LIST_MERGE_FIELDS = {
+    "Person": {"affiliations"},
+    "Publication": {"funding", "versions"},
+}
+
+
+def _union_values(current: list, extra: list) -> list:
+    """Return an order-preserving union that also supports JSON objects."""
+    merged = list(current)
+    for value in extra:
+        if value not in merged:
+            merged.append(value)
+    return merged
+
+
+def _merge_duplicate_properties(label: str, canonical: dict, duplicate: dict) -> dict:
+    """Build the property updates needed before deleting a duplicate node."""
+    updates = {}
+    bool_fields = BOOLEAN_MERGE_FIELDS.get(label, set())
+    list_fields = LIST_MERGE_FIELDS.get(label, set())
+    json_list_fields = JSON_LIST_MERGE_FIELDS.get(label, set())
+
+    for key, duplicate_value in duplicate.items():
+        if key in {"id", "created_at", "updated_at"}:
+            continue
+        canonical_value = canonical.get(key)
+        if key in bool_fields:
+            if canonical_value is not None or duplicate_value is not None:
+                merged = bool(canonical_value) or bool(duplicate_value)
+                if merged != canonical_value:
+                    updates[key] = merged
+        elif key in list_fields:
+            if isinstance(duplicate_value, list):
+                current = canonical_value if isinstance(canonical_value, list) else []
+                merged = _union_values(current, duplicate_value)
+                if merged != canonical_value:
+                    updates[key] = merged
+        elif key in json_list_fields:
+            try:
+                current = json.loads(canonical_value) if canonical_value is not None else []
+                extra = json.loads(duplicate_value) if duplicate_value is not None else []
+            except (TypeError, json.JSONDecodeError):
+                # A malformed/non-list JSON value is treated as a scalar: a
+                # non-null canonical value still wins rather than being lost.
+                current = extra = None
+            if isinstance(current, list) and isinstance(extra, list):
+                merged = _union_values(current, extra)
+                encoded = json.dumps(merged, ensure_ascii=False)
+                if encoded != canonical_value:
+                    updates[key] = encoded
+        elif canonical_value is None:
+            updates[key] = duplicate_value
+    return updates
 
 
 def chunked(seq: list, size: int = CHUNK_SIZE):
@@ -171,6 +238,266 @@ class Neo4jClient:
 
         with self.driver.session() as session:
             session.execute_write(promote)
+
+    def _fold_nodes_batch(self, label: str, merges: list[tuple[str, str]],
+                          outgoing: tuple[tuple[str, str], ...],
+                          incoming: tuple[tuple[str, str], ...] = ()) -> int:
+        """Fold duplicate nodes of one label into their canonical node.
+
+        The dedup enrichment stage records the ids it merged away on the
+        surviving row (merged_ids). A publish performed before the merge may
+        still hold a node for such an id — move its relationships onto the
+        canonical node (existing canonical relationships win, the duplicate's
+        properties only fill gaps) and delete the duplicate. Rows whose
+        duplicate node does not exist are no-ops.
+
+        Args:
+            label: Node label being folded, e.g. "Person".
+            merges: (duplicate_id, canonical_id) pairs.
+            outgoing: (rel_type, target_label) pairs the node points to.
+            incoming: (source_label, rel_type) pairs pointing at the node.
+
+        Returns:
+            Number of duplicate nodes that were actually removed.
+        """
+        batch = [
+            {"dup_id": dup_id, "canonical_id": canonical_id}
+            for dup_id, canonical_id in merges
+            if dup_id != canonical_id
+        ]
+        if not batch:
+            return 0
+
+        # Labels and relationship types are interpolated for the same reason
+        # as in upsert_relationships_batch: Cypher cannot parameterize
+        # identifiers, and these are always our own literals.
+        # "SET new += properties(old); SET new += keep" is the pure-Cypher way
+        # to fill gaps without letting the duplicate win: everything the old
+        # relationship knew is copied in, then the canonical's own values are
+        # laid back on top. Without it, a MERGE that finds an existing
+        # canonical relationship silently drops the duplicate's properties —
+        # e.g. the only AUTHORED edge carrying an affiliation.
+        move_queries = [
+            cast(
+                LiteralString,
+                f"""
+                UNWIND $batch AS row
+                MATCH (dup:{label} {{id: row.dup_id}})-[old:{rel_type}]->(other:{other_label})
+                MATCH (canonical:{label} {{id: row.canonical_id}})
+                MERGE (canonical)-[new:{rel_type}]->(other)
+                ON CREATE SET new.created_at = coalesce(old.created_at, datetime())
+                WITH new, old, properties(new) AS keep
+                SET new += properties(old)
+                SET new += keep
+                SET new.updated_at = datetime()
+                DELETE old
+                """,
+            )
+            for rel_type, other_label in outgoing
+        ] + [
+            cast(
+                LiteralString,
+                f"""
+                UNWIND $batch AS row
+                MATCH (other:{other_label})-[old:{rel_type}]->(dup:{label} {{id: row.dup_id}})
+                MATCH (canonical:{label} {{id: row.canonical_id}})
+                MERGE (other)-[new:{rel_type}]->(canonical)
+                ON CREATE SET new.created_at = coalesce(old.created_at, datetime())
+                WITH new, old, properties(new) AS keep
+                SET new += properties(old)
+                SET new += keep
+                SET new.updated_at = datetime()
+                DELETE old
+                """,
+            )
+            for other_label, rel_type in incoming
+        ]
+        # The nodes themselves cannot use that trick: copying properties(dup)
+        # wholesale would momentarily set canonical.id to the duplicate's id
+        # while the duplicate node still exists, tripping the uniqueness
+        # constraint. The field-specific merge is computed in Python instead.
+        props_query = cast(
+            LiteralString,
+            f"""
+            UNWIND $batch AS row
+            MATCH (dup:{label} {{id: row.dup_id}})
+            MATCH (canonical:{label} {{id: row.canonical_id}})
+            RETURN row.dup_id AS dup_id, row.canonical_id AS canonical_id,
+                   properties(dup) AS dup_props, properties(canonical) AS canonical_props
+            """,
+        )
+        fill_query = cast(
+            LiteralString,
+            f"""
+            UNWIND $rows AS row
+            MATCH (canonical:{label} {{id: row.canonical_id}})
+            SET canonical += row.fill
+            SET canonical.updated_at = datetime()
+            """,
+        )
+        # The canonical node must exist — otherwise deleting the duplicate
+        # would lose the entity entirely.
+        delete_query = cast(
+            LiteralString,
+            f"""
+            UNWIND $batch AS row
+            MATCH (dup:{label} {{id: row.dup_id}})
+            MATCH (:{label} {{id: row.canonical_id}})
+            DETACH DELETE dup
+            RETURN count(dup) AS removed
+            """,
+        )
+
+        def merge(tx) -> int:
+            records = {(record["dup_id"], record["canonical_id"]): record
+                       for record in tx.run(props_query, batch=batch)}
+            working_props: dict[str, dict] = {}
+            fills: dict[str, dict] = {}
+            for row in batch:
+                record = records.get((row["dup_id"], row["canonical_id"]))
+                if record is None:
+                    continue
+                canonical_id = record["canonical_id"]
+                canonical = working_props.setdefault(canonical_id, dict(record["canonical_props"]))
+                fill = _merge_duplicate_properties(label, canonical, record["dup_props"])
+                if fill:
+                    canonical.update(fill)
+                    fills.setdefault(canonical_id, {}).update(fill)
+            fill_rows = [{"canonical_id": canonical_id, "fill": fill}
+                         for canonical_id, fill in fills.items()]
+            for query in move_queries:
+                tx.run(query, batch=batch).consume()
+            if fill_rows:
+                tx.run(fill_query, rows=fill_rows).consume()
+            return tx.run(delete_query, batch=batch).single()["removed"]
+
+        with self.driver.session() as session:
+            removed = session.execute_write(merge)
+        if removed:
+            logger.info("%s: folded %d duplicate node(s) into their canonical node", label, removed)
+        return removed
+
+    def fetch_persons_for_dedup(self) -> list[dict]:
+        """Every Person node with the fields the person merge rules consume.
+
+        publication_ids carries the AUTHORED targets so the rules can
+        compute shared coauthors without a second round-trip, and
+        department_ids the same for a shared department.
+        """
+        query = """
+            MATCH (p:Person)
+            OPTIONAL MATCH (p)-[:AUTHORED]->(w:Publication)
+            OPTIONAL MATCH (p)-[:BELONGS_TO]->(d:Department)
+            RETURN p.id AS id, p.openalex_id AS openalex_id, p.name_en AS name_en,
+                   p.name_variants AS name_variants, p.orcid AS orcid, p.email AS email,
+                   p.github AS github, p.openreview AS openreview,
+                   p.google_scholar AS google_scholar, p.merged_ids AS merged_ids,
+                   'Itmo' IN labels(p) AS is_itmo,
+                   collect(DISTINCT w.id) AS publication_ids,
+                   collect(DISTINCT d.id) AS department_ids
+        """
+        with self.driver.session() as session:
+            return session.execute_read(
+                lambda tx: [dict(record) for record in tx.run(query)])
+
+    def fetch_publications_for_dedup(self) -> list[dict]:
+        """Every Publication node with the fields the merge rules consume.
+
+        author_count feeds the ranking (between records of one work the
+        best-documented one survives); the bibliographic fields and the
+        author list feed the version ledger a fold writes onto the
+        canonical node before the duplicate disappears.
+        """
+        query = """
+            MATCH (p:Publication)
+            OPTIONAL MATCH (a:Person)-[authored:AUTHORED]->(p)
+            RETURN p.id AS id, p.type AS type, p.doi AS doi, p.title AS title,
+                   p.journal AS journal, p.publication_date AS publication_date,
+                   p.year AS year, p.openalex_url AS openalex_url,
+                   p.pdf_url AS pdf_url, p.abstract AS abstract,
+                   p.versions AS versions,
+                   p.merged_ids AS merged_ids, count(a) AS author_count,
+                   collect(CASE WHEN a IS NULL THEN NULL ELSE
+                       {person_id: a.id, name: a.name_en, position: authored.position}
+                   END) AS authors
+        """
+        with self.driver.session() as session:
+            return session.execute_read(
+                lambda tx: [dict(record) for record in tx.run(query)])
+
+    def fetch_publication_fields(self) -> dict[str, set[str]]:
+        """Research fields per publication, for the person merge rules."""
+        query = """
+            MATCH (p:Publication)
+            WHERE size(coalesce(p.fields, [])) > 0
+            RETURN p.id AS id, p.fields AS fields
+        """
+        with self.driver.session() as session:
+            return session.execute_read(
+                lambda tx: {record["id"]: set(record["fields"]) for record in tx.run(query)})
+
+    def fetch_repositories_for_dedup(self) -> list[dict]:
+        """Every Repository node with the fields the merge rules consume."""
+        query = """
+            MATCH (r:Repository)
+            OPTIONAL MATCH (r)-[:IMPLEMENTS]->(w:Publication)
+            RETURN r.id AS id, r.url AS url, r.github_id AS github_id,
+                   r.cited_urls AS cited_urls, r.access_date AS access_date,
+                   r.merged_ids AS merged_ids, count(w) AS publication_count
+        """
+        with self.driver.session() as session:
+            return session.execute_read(
+                lambda tx: [dict(record) for record in tx.run(query)])
+
+    def fetch_merged_id_map(self, label: str) -> dict[str, str]:
+        """Map of merged-away id to canonical id stored on `label` nodes.
+
+        The loader uses this after every publish to re-fold ids that an
+        older group's rows just resurrected (the group was published before
+        a graph-wide dedup folded those ids elsewhere).
+        """
+        query = cast(
+            LiteralString,
+            f"""
+            MATCH (n:{label})
+            WHERE size(coalesce(n.merged_ids, [])) > 0
+            UNWIND n.merged_ids AS merged_id
+            RETURN merged_id, n.id AS canonical_id
+            """,
+        )
+        with self.driver.session() as session:
+            return session.execute_read(
+                lambda tx: {record["merged_id"]: record["canonical_id"] for record in tx.run(query)})
+
+    def merge_person_nodes_batch(self, merges: list[tuple[str, str]]) -> int:
+        """Fold duplicate Person nodes into their canonical person."""
+        return self._fold_nodes_batch("Person", merges, outgoing=(
+            ("AUTHORED", "Publication"),
+            ("BELONGS_TO", "Department"),
+            ("CONTRIBUTED_TO", "Repository"),
+        ))
+
+    def merge_publication_nodes_batch(self, merges: list[tuple[str, str]]) -> int:
+        """Fold duplicate Publication nodes into the surviving publication."""
+        return self._fold_nodes_batch("Publication", merges, outgoing=(
+            ("PRODUCED_BY", "Department"),
+            ("MENTIONS_LINK", "Repository"),
+            ("MENTIONS_LINK", "LinkCandidate"),
+        ), incoming=(
+            ("Person", "AUTHORED"),
+            ("Repository", "IMPLEMENTS"),
+        ))
+
+    def merge_repository_nodes_batch(self, merges: list[tuple[str, str]]) -> int:
+        """Fold duplicate Repository nodes into the surviving repository."""
+        return self._fold_nodes_batch("Repository", merges, outgoing=(
+            ("IMPLEMENTS", "Publication"),
+            ("OWNED_BY", "GitHubProfile"),
+            ("DEVELOPED_BY", "Department"),
+        ), incoming=(
+            ("Publication", "MENTIONS_LINK"),
+            ("Person", "CONTRIBUTED_TO"),
+        ))
 
     def upsert_relationships_batch(
         self,

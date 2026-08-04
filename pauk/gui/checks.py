@@ -49,6 +49,11 @@ _DEPT_TOTAL = "MATCH (d:Department) RETURN count(d)"
 _FIO = ("trim(coalesce(p.surname_ru,'') + ' ' + coalesce(p.first_name_ru,'') "
         "+ ' ' + coalesce(p.second_name_ru,''))")
 
+# publication_date is an ISO string today, but the loader may store it as a
+# Neo4j date. `.year` works only on the latter and raises a TypeError on the
+# former, so go through toString(), which is the ISO text either way.
+_PUB_YEAR = "toInteger(left(toString(p.publication_date), 4))"
+
 CHECKS = [
     # ---------------- gaps ----------------
     Check(
@@ -530,10 +535,11 @@ CHECKS = [
         id="year_mismatch",
         group="Противоречия",
         title="Год не совпадает с датой публикации",
-        count="MATCH (p:Publication) WHERE p.year <> p.publication_date.year "
-                 "RETURN count(p)",
+        count=f"MATCH (p:Publication) WHERE p.publication_date IS NOT NULL "
+              f"AND p.year <> {_PUB_YEAR} RETURN count(p)",
         of=None, warn=1, fail=50, hint=None,
-        examples="""MATCH (p:Publication) WHERE p.year <> p.publication_date.year
+        examples=f"""MATCH (p:Publication) WHERE p.publication_date IS NOT NULL
+            AND p.year <> {_PUB_YEAR}
             RETURN p.id AS id, p.title AS `Публикация`, p.year AS `Поле year`,
                    toString(p.publication_date) AS `Дата публикации` LIMIT $lim""",
     ),

@@ -7,6 +7,10 @@ class Authorship(BaseModel):
     publication_id: str
     position: int | None = None
     affiliation: str | None = None
+    # None while the affiliation is the one the work itself states; set when
+    # it had none and the persons stage filled it from the author's own
+    # records ("openalex" / "orcid").
+    affiliation_source: str | None = None
     is_corresponding: bool = False
 
 

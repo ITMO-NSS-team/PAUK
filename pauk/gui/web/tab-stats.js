@@ -118,12 +118,29 @@ function stCloseModal() {
 
 function stEscClose(e) { if (e.key === "Escape") stCloseModal(); }
 
+// Read an /api/ response. Parsing before checking the status turns any
+// non-JSON answer — the HTML 404 a static-only server gives when it has no
+// /api/ routes, a proxy error page — into an unreadable parser message
+// ("Unexpected token '<'"), so decode the body first and only then decide.
+async function stApiJson(response) {
+  const text = await response.text();
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    throw new Error(response.ok
+      ? "Сервер ответил не JSON — похоже, перед API стоит что-то ещё."
+      : `Сервер ответил ${response.status} без JSON — вероятно, запущена ` +
+        "старая версия pauk.gui.serve, в которой ещё нет /api/. Перезапустите её.");
+  }
+  if (!response.ok) throw new Error(body.error || `Сервер вернул ошибку ${response.status}`);
+  return body;
+}
+
 async function stFetchExamples(id, limit) {
   const r = await fetch(`/api/check?id=${encodeURIComponent(id)}&limit=${limit}`,
                         { cache: "no-store" });
-  const body = await r.json();
-  if (!r.ok) throw new Error(body.error || "Сервер вернул ошибку");
-  return body;
+  return stApiJson(r);
 }
 
 async function stOpenExamples(id) {
@@ -337,9 +354,7 @@ async function stRecompute() {
   renderStats();
   try {
     const r = await fetch("/api/stats", { method: "POST", cache: "no-store" });
-    const body = await r.json();
-    if (!r.ok) throw new Error(body.error || "Сервер вернул ошибку");
-    window.STATS = body;
+    window.STATS = await stApiJson(r);
   } catch (e) {
     _stError = e.message === "Failed to fetch"
       ? "Сервер недоступен — показаны сохранённые числа."

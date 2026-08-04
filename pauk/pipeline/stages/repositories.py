@@ -85,6 +85,9 @@ class RepositoriesStage(EnrichmentStage):
                     self.raw.append("github", payload, {"repository": url})
                     repo.url = payload.get("html_url") or url
                     repo.name = payload.get("name") or name
+                    # Survives renames and owner transfers — the dedup stage
+                    # uses it to recognise rows created before a rename.
+                    repo.github_id = payload.get("id")
                     repo.description = payload.get("description")
                     repo.stars_num = payload.get("stargazers_count")
                     repo.has_readme = client.has_readme(owner, name)
