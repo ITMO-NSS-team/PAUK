@@ -76,20 +76,71 @@ def _fold(value: str) -> str:
 _REVERSE_RULES: tuple[tuple[str, str], ...] = (
     ("shch", "щ"), ("sch", "щ"),
     ("yo", "ё"), ("jo", "ё"),
+    # A y/i closing a diphthong before a consonant is й (Zaytsev, Voytenko,
+    # Seyfullin). Before a vowel it is not (Nikolayev stays Николаев), and
+    # plain "ai" only closes one before "ts" — otherwise Mikhail would turn
+    # into Михайл.
+    (r"ay(?=[bcdfghjklmnpqrstvwxz])", "ай"),
+    (r"ey(?=[bcdfghjklmnpqrstvwxz])", "ей"),
+    (r"oy(?=[bcdfghjklmnpqrstvwxz])", "ой"),
+    (r"ai(?=ts)", "ай"), (r"ei(?=ts)", "ей"),
     ("zh", "ж"), ("kh", "х"), ("ts", "ц"), ("ch", "ч"), ("sh", "ш"),
-    (r"(?<=[bcdfghklmnpqrstvwxz])ya", "ья"),
-    (r"(?<=[bcdfghklmnpqrstvwxz])yu", "ью"),
+    # ya spells ья only after the consonants where a soft sign dominates
+    # (Ulyanov, Lukyanov, Kasyanov, Tretyakov, Dyakonov). After the others
+    # it is plain я — Kudryavtsev, Ryabov, Myasnikov — and yu after any
+    # consonant is plain ю (Kolyubin, Klyuev).
+    (r"(?<=[dklnstz])ya", "ья"),
     ("yu", "ю"), ("ju", "ю"), ("ya", "я"), ("ja", "я"),
     (r"^iu", "ю"),
     (r"iy$", "ий"), (r"ij$", "ий"), (r"yy$", "ый"), (r"yj$", "ый"),
+    # A closing "yi" is the ый ending (Rudyi, Bezrodnyi); inside a word the
+    # same pair is a soft sign (Ilyina).
+    (r"yi$", "ый"), (r"(?<=[bcdfghklmnpqrstvwxz])yi", "ьи"),
     (r"iia$", "ия"), (r"ii$", "ий"),
     (r"aia$", "ая"), (r"ia$", "ия"),
+    (r"ei$", "ей"), (r"ai$", "ай"),
     (r"(?<=[bcdfghklmnpqrstvwxz])y$", "ий"),
     # Two-char lookbehind keeps two-letter names ("Li") out of this rule.
     (r"(?<=\w[bcdfghklmnpqrstvwxz])i$", "ий"),
-    (r"^y(?=[aeiou])", "й"), (r"y$", "й"),
+    # "y" joining two vowels is a hiatus filler, not a letter of its own
+    # (Nikolayev, Sergeyev); after a consonant before "e" it is a soft sign
+    # (Vasilyev, Grigoryev).
+    (r"(?<=[bcdfghklmnpqrstvwxz])y(?=e)", "ь"),
+    (r"(?<=[aeiou])y(?=[aeiou])", ""),
+    # Leading "ye" is е (Yevgeny, Yelena); leading ya/yu are already gone.
+    (r"^ye", "е"), (r"y$", "й"),
     ("x", "кс"),
 )
+
+# Common given names whose per-character transliteration comes out wrong
+# ("Ilya" -> "Илия", "Olga" -> "Олга", "Alexander" -> "Александер"). Keyed
+# by the folded romanized form, so every spelling variant (Ilya/Ilia/Ilja,
+# Pyotr/Petr, Tatiana/Tatyana) lands on one entry. These are common first
+# names, not personal data — they can live in the repository.
+_GIVEN_NAMES = {
+    "ilia": "Илья",
+    "olga": "Ольга",
+    "igor": "Игорь",
+    "daria": "Дарья",
+    "tatiana": "Татьяна",
+    "petr": "Пётр",
+    "piotr": "Пётр",
+    "fedor": "Фёдор",
+    "semen": "Семён",
+    "liubov": "Любовь",
+    "ielena": "Елена",
+    "iakov": "Яков",
+    "aleksander": "Александр",
+    "aleksandr": "Александр",
+    "eugene": "Евгений",
+    "viacheslav": "Вячеслав",
+    "liudmila": "Людмила",
+    "eduard": "Эдуард",
+    "artem": "Артём",
+    "olesia": "Олеся",
+    "nikita": "Никита",
+    "lev": "Лев",
+}
 
 _SINGLE = {
     "a": "а", "b": "б", "c": "к", "d": "д", "e": "е", "f": "ф", "g": "г",
@@ -106,15 +157,25 @@ def _word_to_cyrillic(word: str) -> str:
         # converted string, so lookbehinds list Latin consonants only.
         lower = re.sub(pattern, replacement, lower)
     converted = "".join(_SINGLE.get(ch, ch) for ch in lower)
+    # "S.S." is initials, not a word that merely starts with a capital.
+    if word.isupper():
+        return converted.upper()
     if word[:1].isupper():
         converted = converted[:1].upper() + converted[1:]
     return converted
 
 
+def _part_to_cyrillic(part: str) -> str:
+    known = _GIVEN_NAMES.get(_fold(part))
+    if known is None:
+        return _word_to_cyrillic(part)
+    return known if part[:1].isupper() else known.casefold()
+
+
 def to_cyrillic(name: str) -> str:
     """Reverse-transliterate a romanized Russian name, word by word."""
     return " ".join(
-        "-".join(_word_to_cyrillic(part) for part in word.split("-"))
+        "-".join(_part_to_cyrillic(part) for part in word.split("-"))
         for word in name.split()
     )
 

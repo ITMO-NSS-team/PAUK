@@ -110,13 +110,80 @@ class ToCyrillicTest(unittest.TestCase):
             ("Julia", "Юлия"),
             ("Tatyana", "Татьяна"),
             ("Alexey", "Алексей"),
+            ("Aleksei", "Алексей"),
             ("Mikhail", "Михаил"),
+            ("Nikolai", "Николай"),
             ("Shcherbakov", "Щербаков"),
             ("Tsvetkova", "Цветкова"),
             ("Petrova-Sidorova", "Петрова-Сидорова"),
-            ("Wei Wang", "Веи Ванг"),
+            # Non-Russian names go through the same rules; the result is
+            # only ever a readable approximation.
+            ("Wei Wang", "Вей Ванг"),
         ):
-            self.assertEqual(to_cyrillic(latin), cyrillic)
+            self.assertEqual(to_cyrillic(latin), cyrillic, latin)
+
+    def test_given_names_that_per_character_rules_get_wrong(self):
+        # Names the letter rules cannot reach: a soft sign with no letter
+        # of its own ("Ilya", "Olga"), ё written as e, or a Latinized form
+        # ("Alexander", "Eugene").
+        for latin, cyrillic in (
+            ("Ilya", "Илья"),
+            ("Olga", "Ольга"),
+            ("Igor", "Игорь"),
+            ("Daria", "Дарья"),
+            ("Petr", "Пётр"),
+            ("Fedor", "Фёдор"),
+            ("Semen", "Семён"),
+            ("Artem", "Артём"),
+            ("Alexander", "Александр"),
+            ("Eugene", "Евгений"),
+            ("Vyacheslav", "Вячеслав"),
+            ("Lyubov", "Любовь"),
+            ("Nikita", "Никита"),
+        ):
+            self.assertEqual(to_cyrillic(latin), cyrillic, latin)
+
+    def test_every_spelling_variant_reaches_one_entry(self):
+        for spelling in ("Ilya", "Ilia", "Ilja", "Iliya"):
+            self.assertEqual(to_cyrillic(spelling), "Илья", spelling)
+        for spelling in ("Tatiana", "Tatyana"):
+            self.assertEqual(to_cyrillic(spelling), "Татьяна", spelling)
+        for spelling in ("Alexander", "Aleksandr", "Aleksander"):
+            self.assertEqual(to_cyrillic(spelling), "Александр", spelling)
+
+    def test_diphthongs_and_soft_signs_in_surnames(self):
+        for latin, cyrillic in (
+            ("Zaytsev", "Зайцев"),        # y closing a diphthong
+            ("Zaitsev", "Зайцев"),        # the same surname spelled with i
+            ("Voytenko", "Войтенко"),
+            ("Nikolayev", "Николаев"),    # y between vowels is not a letter
+            ("Sergeyev", "Сергеев"),
+            ("Vasilyev", "Васильев"),     # y after a consonant before e
+            ("Grigoryev", "Григорьев"),
+            ("Ulyanov", "Ульянов"),
+            ("Lukyanov", "Лукьянов"),
+            ("Tretyakov", "Третьяков"),
+            ("Kudryavtseva", "Кудрявцева"),  # ...but after r it is plain я
+            ("Ryabov", "Рябов"),
+            ("Myasnikov", "Мясников"),
+            ("Kolyubin", "Колюбин"),      # ...and yu after a consonant is ю
+            ("Yevgeny", "Евгений"),       # leading ye
+            ("Mikhail", "Михаил"),        # "ai" here is two vowels, not ай
+            ("Rudyi", "Рудый"),           # closing yi is the ый ending
+            ("Bezrodnyi", "Безродный"),
+            ("Ilyina", "Ильина"),         # ...inside a word it is a soft sign
+        ):
+            self.assertEqual(to_cyrillic(latin), cyrillic, latin)
+
+    def test_initials_keep_their_case(self):
+        self.assertEqual(to_cyrillic("S.S. Rudyi"), "С.С. Рудый")
+        self.assertEqual(to_cyrillic("A. A. Musaev"), "А. А. Мусаев")
+
+    def test_dictionary_applies_per_word_not_to_surnames(self):
+        # "Lev" is a given name here and a surname stem elsewhere; the
+        # dictionary is per word, so the surname keeps its own rules.
+        self.assertEqual(to_cyrillic("Lev Utkin"), "Лев Уткин")
+        self.assertEqual(to_cyrillic("Olga Ilina"), "Ольга Илина")
 
 
 if __name__ == "__main__":
