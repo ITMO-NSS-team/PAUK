@@ -16,6 +16,12 @@ Persons
     3. Identical name plus corroboration: two ITMO-affiliated persons whose
        full display names match exactly and who also share a coauthor, a
        department or a research field.
+    4. Staff record: two ITMO-affiliated persons whose names resolve to the
+       same row of the official ITMO staff catalog. One row is one employee,
+       so this survives the spellings the other rules cannot bridge — the
+       four records "Alexey Valentinovich Dukhanov", "Aleksei Dukhanov",
+       "Alexey Dukhanov" and "A. V. Dukhanov" share neither a display name
+       nor a coauthor, and every one of them is that one employee.
 
     Merge policy
     ------------
@@ -30,7 +36,8 @@ Persons
     produce.
 
     An explicitly different identity field (ORCID, email, GitHub login,
-    OpenReview id, Google Scholar id) always keeps a pair separate. Pairs
+    OpenReview id, Google Scholar id, staff record) always keeps a pair
+    separate — two official records are two employees. Pairs
     with weaker evidence — a variant match without a shared coauthor, a
     namesake outside ITMO, a single-token name, an identical name with
     nothing corroborating it — are never merged automatically; they land in
@@ -88,7 +95,7 @@ from datetime import date, datetime, timezone
 from pauk.models import Person, Publication, PublicationVersion, RepoLink, Repository, VersionAuthor
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.normalize import (
-    ORG_AUTHOR_NAME,
+    NOT_A_PERSON_NAME,
     _abstract,
     _fallback_person_id,
     _merge_person,
@@ -98,6 +105,7 @@ from pauk.storage.atomic import AtomicWriter
 from pauk.urls import normalize_repo_url
 
 from .base import EnrichmentStage
+from .russian_names import RussianNamesCatalog, catalog_path
 
 logger = logging.getLogger(__name__)
 
@@ -153,24 +161,32 @@ def _profiles_conflict(first: Person, second: Person) -> bool:
     )
 
 
-def _paired_persons(people: list[Person], in_scope: set[str] | None):
+def _paired_persons(people: list[Person], in_scope: set[str] | None,
+                    staff_ids: dict[str, str] | None = None):
     """Yield person pairs worth comparing.
 
     Blocking keeps this quadratic only within small buckets: name-based
-    pairs must share a name token, ORCID pairs are grouped exactly.
+    pairs must share a name token, ORCID and staff-record pairs are grouped
+    exactly. Staff records need a bucket of their own because the spellings
+    they reconcile ("Aleksei Dukhanov", "Alexey Duhanov") often share no
+    token at all — which is the whole reason the catalog can see them.
     """
     by_orcid: dict[str, list[Person]] = {}
     by_token: dict[str, list[Person]] = {}
+    by_staff: dict[str, list[Person]] = {}
     for person in people:
         if person.orcid:
             by_orcid.setdefault(person.orcid, []).append(person)
+        staff_id = (staff_ids or {}).get(person.id)
+        if staff_id:
+            by_staff.setdefault(staff_id, []).append(person)
         for name in (person.name_en, *person.name_variants):
             for token in _norm(name).replace(",", " ").split():
                 if len(token) > 2:
                     by_token.setdefault(token, []).append(person)
 
     emitted: set[tuple[str, str]] = set()
-    for bucket in (*by_orcid.values(), *by_token.values()):
+    for bucket in (*by_orcid.values(), *by_token.values(), *by_staff.values()):
         unique = list({person.id: person for person in bucket}.values())
         for i, first in enumerate(unique):
             for second in unique[i + 1:]:
@@ -197,12 +213,18 @@ def plan_person_merges(
     trusted_orcid: dict[str, str | None],
     in_scope: set[str] | None = None,
     fields_of: dict[str, set[str]] | None = None,
+    staff_ids: dict[str, str] | None = None,
 ) -> tuple[list[tuple[Person, list[Person]]], list[dict]]:
     """Decide which persons are one author and which pairs need human eyes.
 
     Shared by the per-group dedup stage and the graph-wide pass (pauk
     dedup graph): both feed Person rows in, only the storage they apply the
     result to differs.
+
+    Args:
+        staff_ids: Staff-record identity per person id, for the people the
+            official catalog resolves unambiguously (see staff_identities).
+            Absent entries simply leave rule 4 out of that person's pairs.
 
     Returns:
         (groups, report): groups as (canonical, duplicates) tuples — the
@@ -215,6 +237,7 @@ def plan_person_merges(
     """
     by_id = {person.id: person for person in people}
     fields_of = fields_of or {}
+    staff_ids = staff_ids or {}
 
     pub_authors: dict[str, set[str]] = {}
     for person in people:
@@ -247,7 +270,7 @@ def plan_person_merges(
         merge_pairs.append((first.id, second.id))
         pair_rules[frozenset((first.id, second.id))] = rule
 
-    for first, second in _paired_persons(people, in_scope):
+    for first, second in _paired_persons(people, in_scope, staff_ids):
         first_orcid = trusted_orcid.get(first.id)
         second_orcid = trusted_orcid.get(second.id)
         if first_orcid and second_orcid:
@@ -256,9 +279,15 @@ def plan_person_merges(
             # Different ORCIDs are explicit evidence of two distinct
             # people — never merge and not worth reporting either.
             continue
+        first_staff, second_staff = staff_ids.get(first.id), staff_ids.get(second.id)
+        # Two official staff records are two employees, however alike the
+        # romanized names look. Like a differing ORCID, this needs no report.
+        if first_staff and second_staff and first_staff != second_staff:
+            continue
         if _profiles_conflict(first, second):
             continue
 
+        same_staff = bool(first_staff and first_staff == second_staff)
         first_name, second_name = _norm(first.name_en), _norm(second.name_en)
         if not first_name or not second_name:
             continue
@@ -267,7 +296,7 @@ def plan_person_merges(
             and (first_name in _variant_set(second) or second_name in _variant_set(first))
         )
         same_name = first_name == second_name
-        if not variant_evidence and not same_name:
+        if not variant_evidence and not same_name and not same_staff:
             continue
         both_itmo = first.is_itmo and second.is_itmo
         multi_token = len(first_name.split()) > 1
@@ -278,7 +307,9 @@ def plan_person_merges(
         corroboration = bool(shared or shared_departments or shared_fields)
         initials_only = _is_initials_name(first.name_en or "")
 
-        if variant_evidence and both_itmo and shared:
+        if same_staff and both_itmo:
+            plan_pair(first, second, "staff_catalog")
+        elif variant_evidence and both_itmo and shared:
             plan_pair(first, second, "name_variant")
         elif same_name and both_itmo and multi_token and not initials_only and corroboration:
             plan_pair(first, second, "same_name")
@@ -310,7 +341,7 @@ def plan_person_merges(
         # each legitimately pair with a bridge person M yet differ from
         # each other. A group spanning more than one ORCID (or any other
         # explicit identity value) is refused whole, for manual review.
-        conflict = _group_conflict(members, by_id, trusted_orcid)
+        conflict = _group_conflict(members, by_id, trusted_orcid, staff_ids)
         if conflict:
             field, values = conflict
             logger.warning(
@@ -345,11 +376,15 @@ def plan_person_merges(
 def _group_conflict(
     members: list[str], by_id: dict[str, Person],
     trusted_orcid: dict[str, str | None],
+    staff_ids: dict[str, str] | None = None,
 ) -> tuple[str, set[str]] | None:
     """The first identity field whose values split the group, if any."""
     orcids = {trusted_orcid.get(member) for member in members} - {None}
     if len(orcids) > 1:
         return "ORCID", orcids
+    staff = {(staff_ids or {}).get(member) for member in members} - {None}
+    if len(staff) > 1:
+        return "staff record", staff
     for field in PROFILE_FIELDS:
         values = {getattr(by_id[member], field) for member in members} - {None}
         if len(values) > 1:
@@ -381,6 +416,19 @@ def _grouped(pairs: Iterable[tuple[str, str]]) -> Iterator[list[str]]:
     for members in groups.values():
         if len(members) > 1:
             yield members
+
+
+def staff_identities(catalog: RussianNamesCatalog | None,
+                     people: Iterable[Person]) -> dict[str, str]:
+    """Staff-record identity per person id, for the ones the catalog knows.
+
+    An empty mapping — no catalog on this deployment, or nobody matched —
+    simply leaves rule 4 out of the merge decision.
+    """
+    if catalog is None:
+        return {}
+    return {person.id: staff_id for person in people
+            if (staff_id := catalog.staff_id(person))}
 
 
 def _union(*lists: Iterable[str]) -> list[str]:
@@ -526,7 +574,7 @@ class DedupStage(EnrichmentStage):
                 authors = []
                 for position, authorship in enumerate(work.get("authorships") or [], start=1):
                     author = authorship.get("author") or {}
-                    if ORG_AUTHOR_NAME.search(author.get("display_name") or ""):
+                    if NOT_A_PERSON_NAME.search(author.get("display_name") or ""):
                         continue
                     person_id = _short_id(author.get("id")) or _fallback_person_id(author)
                     person = known_persons.get(person_id) if person_id else None
@@ -717,7 +765,8 @@ class DedupStage(EnrichmentStage):
                 publication.id: set(publication.fields)
                 for publication in self.prepared.read_models("publications", Publication)
                 if publication.fields
-            })
+            },
+            staff_ids=self._staff_ids(people))
 
         removed: set[str] = set()
         for canonical, duplicates in groups:
@@ -743,6 +792,19 @@ class DedupStage(EnrichmentStage):
             logger.info("dedup: review journal in %s — %d merge(s) applied, %d pair(s) held",
                         report_path, len(removed), held)
         return len(removed), held
+
+    def _staff_ids(self, people: list[Person]) -> dict[str, str]:
+        """Staff-record identity per person, empty without a staff catalog.
+
+        The naming stage refuses to run without the catalog; this one only
+        loses rule 4 and says so, because a group can legitimately be
+        deduplicated on a machine that does not carry the personal data.
+        """
+        path = catalog_path(self.config)
+        catalog = RussianNamesCatalog.load_if_present(path)
+        if catalog is None:
+            logger.info("dedup: no staff catalog at %s — merging on names and profiles alone", path)
+        return staff_identities(catalog, people)
 
     def _trusted_orcids(self, people: list[Person]) -> dict[str, str | None]:
         """ORCID per person id, preferring the raw OpenAlex author record.

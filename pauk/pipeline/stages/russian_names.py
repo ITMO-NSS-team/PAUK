@@ -23,6 +23,12 @@ Cyrillic form in two steps:
    set on this path — guessing name parts from word order is not
    reliable enough to store.
 
+A catalog match is also an identity statement, not just a name: one row
+is one employee, so two person records that resolve to the same row are
+one researcher however their romanized names were spelled. The dedup
+stage folds on that (see staff_id below and rule 4 in dedup.py), which
+is why the matching lives here but is reachable before naming runs.
+
 The catalog contains personal data and is therefore never committed; the
 stage refuses to run (and thereby stops the pipeline) when the file is
 missing. Default location: data/static/russian_names.csv, overridable
@@ -48,6 +54,12 @@ logger = logging.getLogger(__name__)
 
 CATALOG_FILENAME = "russian_names.csv"
 AMBIGUOUS_FILENAME = "russian_names_ambiguous.jsonl"
+
+
+def catalog_path(config) -> Path:
+    """Where the staff catalog lives for this configuration."""
+    return Path(config.russian_names_file or config.static_dir / CATALOG_FILENAME)
+
 
 # --- folded transliteration space for matching --------------------------------
 
@@ -193,21 +205,38 @@ def to_cyrillic(name: str) -> str:
 # --- staff catalog --------------------------------------------------------------
 
 
+def _record_id(row: dict) -> str:
+    """Stable identity of one catalog record, in the folded name space."""
+    return "|".join(_fold(row.get(field) or "")
+                    for field in ("surname", "name", "patronymic"))
+
+
 class RussianNamesCatalog:
     """Official staff records indexed by folded romanized name keys."""
 
     def __init__(self, rows: list[dict]) -> None:
         self.rows = rows
         keyed: dict[str, list[dict]] = {}
+        spelled_out: set[str] = set()
         for row in rows:
-            for key in self._keys(row):
+            for key, spells_the_name_out in self._keyed_forms(row).items():
                 keyed.setdefault(key, []).append(row)
+                if spells_the_name_out:
+                    spelled_out.add(key)
         # Two rows behind one key = namesakes: matching would hand one
         # person the other's official record. The key is unusable, but the
         # records behind it are what a human needs to resolve the case, so
         # they stay reachable for the review journal.
         self.by_key = {key: rows[0] for key, rows in keyed.items() if len(rows) == 1}
         self.ambiguous_by_key = {key: rows for key, rows in keyed.items() if len(rows) > 1}
+        # Identity is claimed only from the forms that spell the given name
+        # out. "A. Duhanov" is good enough to write a name onto a card, but
+        # it stands for every Duhanov whose given name starts with an A —
+        # including the ones this catalog does not list at all — so folding
+        # two person records on it would be the namesake bug all over again.
+        self.identity_by_key = {
+            key: row for key, row in self.by_key.items() if key in spelled_out
+        }
 
     @classmethod
     def load(cls, path: Path) -> "RussianNamesCatalog":
@@ -220,31 +249,97 @@ class RussianNamesCatalog:
             rows = [row for row in csv.DictReader(fh) if (row.get("surname") or "").strip()]
         return cls(rows)
 
+    @classmethod
+    def load_if_present(cls, path: Path) -> RussianNamesCatalog | None:
+        """The catalog when it is on disk, None when it is not.
+
+        Naming cannot proceed without the catalog and calls load(); dedup
+        treats it as one signal among several and has to keep working on
+        deployments (and test runs) that do not carry the file.
+        """
+        return cls.load(path) if path.exists() else None
+
     @staticmethod
-    def _keys(row: dict) -> set[str]:
+    def _keyed_forms(row: dict) -> dict[str, bool]:
+        """Every folded form of one record -> does it spell the given name out.
+
+        The initials forms are listed last on purpose: when a record's own
+        given name is a single letter, its "spelled out" form is the same
+        string as its initials form, and the later, stricter value wins.
+        """
         first = _fold(row.get("name") or "")
         surname = _fold(row.get("surname") or "")
         patronymic = _fold(row.get("patronymic") or "")
         if not first or not surname:
-            return set()
-        keys = {f"{first} {surname}", f"{surname} {first}"}
+            return {}
+        spelled = len(first) > 1
+        forms = {f"{first} {surname}": spelled, f"{surname} {first}": spelled}
         if patronymic:
-            keys |= {
-                f"{first} {patronymic} {surname}",
-                f"{surname} {first} {patronymic}",
-                f"{first} {patronymic[:1]} {surname}",
-                f"{first[:1]} {patronymic[:1]} {surname}",
-            }
-        keys.add(f"{first[:1]} {surname}")
-        return keys
+            forms[f"{first} {patronymic} {surname}"] = spelled
+            forms[f"{surname} {first} {patronymic}"] = spelled
+            forms[f"{first} {patronymic[:1]} {surname}"] = spelled
+            forms[f"{first[:1]} {patronymic[:1]} {surname}"] = False
+        forms[f"{first[:1]} {surname}"] = False
+        return forms
+
+    def staff_id(self, person: Person) -> str | None:
+        """The staff record this person certainly is, if the catalog says so.
+
+        Unlike match(), which will name a card from an initials-only hit,
+        this only answers on a form that spells the given name out — it is
+        what dedup folds person records on — and only when no other spelling
+        of the same person argues against the record.
+        """
+        for name in (person.name_en, *person.name_variants):
+            if not name:
+                continue
+            row = self.identity_by_key.get(_fold(name))
+            if row is not None:
+                return None if self._contradicts(person.name_en, row) else _record_id(row)
+        return None
+
+    @staticmethod
+    def _contradicts(name: str | None, row: dict) -> bool:
+        """Whether this name states a patronymic the record does not have.
+
+        "A. D. Dmitriev" is not Дмитриев Алексей Андреевич, however well
+        another of his spellings ("Alexey Dmitriev") fits that record: in a
+        name written down to initials the middle one is the only part left
+        carrying information, and here it disagrees. Refusing costs a merge;
+        accepting would hand one employee another's publications.
+
+        Only the record's own display name is asked. OpenAlex collects
+        display_name_alternatives from wherever an author was cited, so a
+        single stray spelling from a mis-attributed paper sits in the list
+        of half these people — enough to make one of them contradict
+        anything, and not enough to be believed over the record itself.
+
+        The match is a prefix test because an initial does not survive
+        folding as one letter: "Yu." becomes "iu", "Zh." becomes "zh".
+        """
+        patronymic = _fold(row.get("patronymic") or "")
+        surname = _fold(row.get("surname") or "")
+        tokens = _fold(name or "").split()
+        if not patronymic or len(tokens) != 3 or tokens[-1] != surname:
+            return False
+        return not patronymic.startswith(tokens[1])
 
     def match(self, person: Person) -> dict | None:
+        """The official record to name this person from, if there is one.
+
+        Looser than staff_id: an initials-only hit is enough to fill a card,
+        because being wrong here shows a wrong patronymic rather than
+        handing one employee another's publications. A record the display
+        name argues against is refused all the same — writing "Дмитриев
+        Алексей Андреевич" under "A. D. Dmitriev" states something about a
+        real person that the one piece of evidence available denies.
+        """
         for name in (person.name_en, *person.name_variants):
             if not name:
                 continue
             row = self.by_key.get(_fold(name))
             if row is not None:
-                return row
+                return None if self._contradicts(person.name_en, row) else row
         return None
 
     def namesakes(self, person: Person) -> tuple[str, list[dict]] | None:
@@ -287,9 +382,7 @@ class RussianNamesStage(EnrichmentStage):
     name = "russian_names"
 
     def run(self) -> dict[str, int]:
-        catalog_path = Path(self.config.russian_names_file or
-                            self.config.static_dir / CATALOG_FILENAME)
-        catalog = RussianNamesCatalog.load(catalog_path)
+        catalog = RussianNamesCatalog.load(catalog_path(self.config))
 
         people = list(self.prepared.read_models("persons", Person))
         changed = matched = transliterated = 0
@@ -314,6 +407,18 @@ class RussianNamesStage(EnrichmentStage):
                 matched += 1
             else:
                 person.name_ru = to_cyrillic(person.name_en)
+                if person.surname_ru:
+                    # Only a catalog match sets the parts, so finding them
+                    # here means an earlier run reached a record this one
+                    # refuses. They are that decision's output and go with
+                    # it: author_label reads them ahead of name_ru and
+                    # would keep signing the card from a withdrawn record.
+                    # A merge that brought a matching spelling in gets them
+                    # back through that spelling on this very pass.
+                    person.first_name_ru = None
+                    person.second_name_ru = None
+                    person.surname_ru = None
+                    person.degree = None
                 transliterated += 1
                 collision = catalog.namesakes(person)
                 if collision is not None:

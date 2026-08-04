@@ -27,6 +27,7 @@ import argparse
 import json
 import logging
 import random
+import re
 import time
 from collections import Counter, defaultdict
 from itertools import combinations
@@ -61,13 +62,36 @@ from .layout import (
 logger = logging.getLogger(__name__)
 
 
+PATRONYMIC_ENDING = re.compile(r"(ович|евич|ьич|овна|евна|ична)$", re.IGNORECASE)
+
+
+def _is_surname_first(words: list[str]) -> bool:
+    """Whether a written-out name runs "Фамилия Имя Отчество".
+
+    A source that supplies the Cyrillic full name uses that order
+    ("Кучин Михаил Дмитриевич"), and it is the one case reading the
+    surname off the end gets backwards. The patronymic gives it away: in
+    given-name-first order it sits in the middle ("Виктория Вадимовна
+    Юношева"), so a name whose last word is a patronymic and whose middle
+    word is not runs the other way. Surnames that end the same way
+    ("Олехнович", "Масалович") stay safe — they come with an initial or
+    a patronymic of their own before them, never as the third of three
+    spelled-out words.
+    """
+    return (len(words) == 3
+            and all(len(word) > 1 and "." not in word for word in words)
+            and bool(PATRONYMIC_ENDING.search(words[-1]))
+            and not PATRONYMIC_ENDING.search(words[1]))
+
+
 def split_full_name(full_name) -> tuple[str, str, str]:
     """Split a written-out name into (surname, given, patronymic).
 
-    Sources write a person either as "Никитин, Николай О." or, far more
-    often, given-name-first ("Виктория Вадимовна Юношева"); the surname is
-    what precedes the comma, or the last word. Lowercase particles ("ван
-    дер") are not initials, so they never become one.
+    Sources write a person as "Никитин, Николай О.", as "Кучин Михаил
+    Дмитриевич", or — far more often — given-name-first ("Виктория
+    Вадимовна Юношева"); the surname is what precedes the comma, opens a
+    surname-first name, or ends the rest. Lowercase particles ("ван дер")
+    are not initials, so they never become one.
     """
     text = " ".join((full_name or "").split())
     if not text:
@@ -75,8 +99,9 @@ def split_full_name(full_name) -> tuple[str, str, str]:
     if "," in text:
         surname, _, rest = text.partition(",")
         parts = rest.split()
+    elif _is_surname_first(words := text.split()):
+        surname, parts = words[0], words[1:]
     else:
-        words = text.split()
         surname, parts = words[-1], words[:-1]
     parts = [part for part in parts if part[:1].isupper()]
     return surname.strip(), (parts[0] if parts else ""), (parts[1] if len(parts) > 1 else "")

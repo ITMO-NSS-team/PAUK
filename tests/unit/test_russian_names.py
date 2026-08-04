@@ -7,6 +7,7 @@ import json
 from pauk.models import Person
 from pauk.pipeline.stages.russian_names import (
     AMBIGUOUS_FILENAME,
+    RussianNamesCatalog,
     RussianNamesStage,
     to_cyrillic,
 )
@@ -157,6 +158,23 @@ class RussianNamesStageTest(unittest.TestCase):
         self.assertEqual(people["A1"].name_ru, "Павел В. Жуков")
         self.assertIsNone(people["A1"].surname_ru)  # parts are never guessed
 
+    def test_a_withdrawn_record_takes_its_parts_with_it(self):
+        # The rule tightened between runs: this spelling no longer names
+        # anyone, and the official parts must not outlive the match that
+        # wrote them — the card is signed from them, not from name_ru.
+        catalog = ["Дмитриев Алексей Андреевич,Дмитриев,Алексей,Андреевич,к.т.н."]
+        _, people = self.run_stage([person("A1", "Alexey A. Dmitriev")], catalog)
+        self.assertEqual(people["A1"].surname_ru, "Дмитриев")
+
+        named = people["A1"]
+        named.name_en = "A. D. Dmitriev"
+        named.processing = {}
+        _, people = self.run_stage([named], catalog)
+        row = people["A1"]
+        self.assertEqual(row.name_ru, "А. Д. Дмитриев")
+        self.assertEqual((row.first_name_ru, row.second_name_ru, row.surname_ru, row.degree),
+                         (None, None, None, None))
+
     def test_existing_degree_is_not_overwritten(self):
         _, people = self.run_stage(
             [person("A1", "Nikolay O. Nikitin", degree="PhD")],
@@ -258,6 +276,88 @@ class ToCyrillicTest(unittest.TestCase):
         # dictionary is per word, so the surname keeps its own rules.
         self.assertEqual(to_cyrillic("Lev Utkin"), "Лев Уткин")
         self.assertEqual(to_cyrillic("Olga Ilina"), "Ольга Илина")
+
+
+class StaffIdentityTest(unittest.TestCase):
+    """What the catalog is willing to claim as an identity, which is a
+    stricter question than what it is willing to write onto a card: dedup
+    folds two person records together on this answer."""
+
+    @staticmethod
+    def catalog(*rows):
+        return RussianNamesCatalog([
+            dict(zip(("name_ru", "surname", "name", "patronymic", "degree"), row))
+            for row in rows
+        ])
+
+    def dukhanov(self):
+        return self.catalog(("Духанов Алексей Валентинович", "Духанов",
+                             "Алексей", "Валентинович", "д.т.н."))
+
+    def test_every_spelling_of_one_record_claims_one_identity(self):
+        catalog = self.dukhanov()
+        identities = {
+            catalog.staff_id(person(f"A{index}", name))
+            for index, name in enumerate(
+                ("Alexey Valentinovich Dukhanov", "Aleksei Dukhanov", "Alexey Dukhanov"))
+        }
+        self.assertEqual(len(identities), 1)
+        self.assertNotIn(None, identities)
+
+    def test_initials_name_a_card_but_claim_no_identity(self):
+        catalog = self.dukhanov()
+        initials = person("A1", "A. V. Dukhanov")
+        self.assertIsNone(catalog.staff_id(initials))
+        self.assertIsNotNone(catalog.match(initials))
+
+    def test_a_record_the_name_argues_against_names_nobody(self):
+        # Naming is the looser question, but not this loose: the card would
+        # state a full name and a degree belonging to somebody else.
+        catalog = self.catalog(
+            ("Дмитриев Алексей Андреевич", "Дмитриев", "Алексей", "Андреевич", "к.т.н."))
+        self.assertIsNone(catalog.match(person(
+            "A1", "A. D. Dmitriev", variants=["A. D. Dmitriev", "Alexey Dmitriev"])))
+
+    def test_a_spelled_out_variant_restores_the_claim(self):
+        catalog = self.dukhanov()
+        self.assertEqual(
+            catalog.staff_id(person("A1", "A. V. Dukhanov",
+                                    variants=["A. V. Dukhanov", "Alexey Dukhanov"])),
+            catalog.staff_id(person("A2", "Aleksei Dukhanov")))
+
+    def test_a_disagreeing_middle_initial_withdraws_the_claim(self):
+        # OpenAlex knows this author as "Alexey Dmitriev" too, which fits the
+        # record — but A.D. is not A.A., and one of them is somebody else.
+        catalog = self.catalog(
+            ("Дмитриев Алексей Андреевич", "Дмитриев", "Алексей", "Андреевич", ""))
+        self.assertIsNone(catalog.staff_id(person(
+            "A1", "A. D. Dmitriev", variants=["A. D. Dmitriev", "Alexey Dmitriev"])))
+        self.assertIsNotNone(catalog.staff_id(person(
+            "A2", "A. A. Dmitriev", variants=["A. A. Dmitriev", "Alexey Dmitriev"])))
+
+    def test_an_initial_that_folds_to_two_letters_still_agrees(self):
+        # "Yu." is one initial, but folding writes it with two letters
+        # ("iu") — it must still read as Юрьевич and veto nothing.
+        catalog = self.catalog(
+            ("Кохановский Алексей Юрьевич", "Кохановский", "Алексей", "Юрьевич", ""))
+        self.assertIsNotNone(catalog.staff_id(person(
+            "A1", "A. Yu. Kokhanovskiy", variants=["Alexey Kokhanovskiy"])))
+        self.assertIsNotNone(catalog.staff_id(person("A2", "Alexey Y. Kokhanovsky")))
+
+    def test_a_stray_variant_does_not_overrule_the_record_itself(self):
+        # OpenAlex hangs the spellings of a mis-attributed paper on an
+        # author record; "V D Kravtsov" is one, and the record is not.
+        catalog = self.catalog(
+            ("Кравцов Василий Андреевич", "Кравцов", "Василий", "Андреевич", ""))
+        self.assertIsNotNone(catalog.staff_id(person(
+            "A1", "Vasily Kravtsov",
+            variants=["Kravtsov, V.", "Kravtsov, Vasily", "V D Kravtsov"])))
+
+    def test_namesakes_in_the_catalog_claim_nothing(self):
+        catalog = self.catalog(
+            ("Никитин Андрей Алексеевич", "Никитин", "Андрей", "Алексеевич", ""),
+            ("Никитин Андрей Викторович", "Никитин", "Андрей", "Викторович", ""))
+        self.assertIsNone(catalog.staff_id(person("A1", "Andrey Nikitin")))
 
 
 if __name__ == "__main__":

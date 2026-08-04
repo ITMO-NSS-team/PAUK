@@ -21,6 +21,19 @@ class AuthorLabelTest(unittest.TestCase):
         self.assertEqual(label(name_ru="Валерия А. Пьянченкова"), "Пьянченкова В.А.")
         self.assertEqual(label(name_ru="А. А. Мусаев"), "Мусаев А.А.")
 
+    def test_a_cyrillic_full_name_reads_surname_first(self):
+        # The source wrote "Фамилия Имя Отчество"; reading the surname off
+        # the end would sign the card "Дмитриевич К.М.".
+        self.assertEqual(label(name_en="Кучин Михаил Дмитриевич"), "Кучин М.Д.")
+        self.assertEqual(label(name_ru="Муслимов Тагир Забирович"), "Муслимов Т.З.")
+
+    def test_a_surname_ending_like_a_patronymic_is_not_one(self):
+        # Олехнович and Масалович are surnames. The first arrives with an
+        # initial, the second behind a patronymic of its own — neither is
+        # the third of three spelled-out words.
+        self.assertEqual(label(name_ru="Роман О. Олехнович"), "Олехнович Р.О.")
+        self.assertEqual(label(name_ru="Мария Ивановна Масалович"), "Масалович М.И.")
+
     def test_without_a_patronymic_the_given_name_stays_written_out(self):
         self.assertEqual(label(name_ru="Мария Горизонтова"), "Горизонтова Мария")
         self.assertEqual(label(surname="Борисова", given="Юлия"), "Борисова Юлия")
