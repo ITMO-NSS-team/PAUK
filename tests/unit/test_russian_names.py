@@ -2,8 +2,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import json
+
 from pauk.models import Person
-from pauk.pipeline.stages.russian_names import RussianNamesStage, to_cyrillic
+from pauk.pipeline.stages.russian_names import (
+    AMBIGUOUS_FILENAME,
+    RussianNamesStage,
+    to_cyrillic,
+)
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
 
@@ -29,6 +35,11 @@ class RussianNamesStageTest(unittest.TestCase):
         self.prepared.write_models("persons", people)
         result = RussianNamesStage(self.prepared, self.raw, config).run()
         return result, {p.id: p for p in self.prepared.read_models("persons", Person)}
+
+    def ambiguous(self):
+        path = self.prepared.group_dir / AMBIGUOUS_FILENAME
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
+                if line.strip()]
 
     def test_missing_catalog_stops_the_stage(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -79,6 +90,66 @@ class RussianNamesStageTest(unittest.TestCase):
         )
         self.assertEqual(result["names_from_catalog"], 0)
         self.assertEqual(people["A1"].name_ru, "Иван Смирнов")  # transliterated
+
+    def test_namesakes_are_journalled_with_their_candidates(self):
+        result, _ = self.run_stage(
+            [person("A1", "Ivan Smirnov"), person("A2", "Pavel Zhukov")],
+            [
+                "Смирнов Иван Петрович,Смирнов,Иван,Петрович,к.т.н.",
+                "Смирнов Иван Васильевич,Смирнов,Иван,Васильевич,д.х.н.",
+            ],
+        )
+        self.assertEqual(result["names_ambiguous"], 1)
+        (row,) = self.ambiguous()
+        self.assertEqual((row["person"], row["name_en"]), ("A1", "Ivan Smirnov"))
+        self.assertEqual([c["name_ru"] for c in row["candidates"]],
+                         ["Смирнов Иван Петрович", "Смирнов Иван Васильевич"])
+        self.assertEqual([c["degree"] for c in row["candidates"]], ["к.т.н.", "д.х.н."])
+
+    def test_initial_only_collision_with_a_different_given_name_is_not_reported(self):
+        # "A. Polyakov" keys collide with every namesake, but a person
+        # written out as Andrey matches none of them — they are simply
+        # absent from the catalog, not an ambiguity anyone can resolve.
+        result, _ = self.run_stage(
+            [person("A1", "Andrey Polyakov")],
+            [
+                "Поляков Антон Александрович,Поляков,Антон,Александрович,",
+                "Поляков Александр Сергеевич,Поляков,Александр,Сергеевич,",
+            ],
+        )
+        self.assertEqual(result["names_ambiguous"], 0)
+        self.assertEqual(self.ambiguous(), [])
+
+    def test_initials_only_person_is_still_reported(self):
+        result, _ = self.run_stage(
+            [person("A1", "A. Polyakov")],
+            [
+                "Поляков Антон Александрович,Поляков,Антон,Александрович,",
+                "Поляков Александр Сергеевич,Поляков,Александр,Сергеевич,",
+            ],
+        )
+        self.assertEqual(result["names_ambiguous"], 1)
+
+    def test_an_initials_variant_does_not_resurrect_a_ruled_out_person(self):
+        # The collision happens on the "A. Polyakov" variant, but the
+        # person is written out as Andrey elsewhere — still not a case
+        # anyone can resolve.
+        result, _ = self.run_stage(
+            [person("A1", "Andrey Polyakov", variants=["A. Polyakov"])],
+            [
+                "Поляков Антон Александрович,Поляков,Антон,Александрович,",
+                "Поляков Александр Сергеевич,Поляков,Александр,Сергеевич,",
+            ],
+        )
+        self.assertEqual(result["names_ambiguous"], 0)
+
+    def test_journal_is_rewritten_each_run(self):
+        # A name that stopped being ambiguous must not linger in the file.
+        self.run_stage(
+            [person("A1", "Ivan Smirnov")],
+            ["Смирнов Иван Петрович,Смирнов,Иван,Петрович,к.т.н."],
+        )
+        self.assertEqual(self.ambiguous(), [])
 
     def test_transliteration_fallback(self):
         result, people = self.run_stage([person("A1", "Pavel V. Zhukov")], [])

@@ -11,7 +11,9 @@ Cyrillic form in two steps:
    (Alexey/Aleksei, Yulia/Julia/Iuliia) and initials ("N. O. Nikitin").
    A match fills the official full name, its parts and the academic
    degree. Keys that fit more than one catalog row are dropped entirely —
-   a namesake must never inherit someone else's official record.
+   a namesake must never inherit someone else's official record — and the
+   people they blocked are written to russian_names_ambiguous.jsonl with
+   their candidate records, since that is the one gap a human can close.
 
 2. Transliteration fallback. Names the catalog does not know are
    reverse-transliterated ("Pavel Ivanov" -> "Павел Иванов") with a
@@ -30,6 +32,7 @@ via PAUK_RUSSIAN_NAMES_FILE.
 from __future__ import annotations
 
 import csv
+import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -37,12 +40,14 @@ from pathlib import Path
 
 from pauk.models import Person
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.storage.atomic import AtomicWriter
 
 from .base import EnrichmentStage
 
 logger = logging.getLogger(__name__)
 
 CATALOG_FILENAME = "russian_names.csv"
+AMBIGUOUS_FILENAME = "russian_names_ambiguous.jsonl"
 
 # --- folded transliteration space for matching --------------------------------
 
@@ -188,13 +193,16 @@ class RussianNamesCatalog:
 
     def __init__(self, rows: list[dict]) -> None:
         self.rows = rows
-        keyed: dict[str, dict | None] = {}
+        keyed: dict[str, list[dict]] = {}
         for row in rows:
             for key in self._keys(row):
-                # Two rows behind one key = namesakes: matching would hand
-                # one person the other's official record. Drop the key.
-                keyed[key] = row if key not in keyed else None
-        self.by_key = {key: row for key, row in keyed.items() if row is not None}
+                keyed.setdefault(key, []).append(row)
+        # Two rows behind one key = namesakes: matching would hand one
+        # person the other's official record. The key is unusable, but the
+        # records behind it are what a human needs to resolve the case, so
+        # they stay reachable for the review journal.
+        self.by_key = {key: rows[0] for key, rows in keyed.items() if len(rows) == 1}
+        self.ambiguous_by_key = {key: rows for key, rows in keyed.items() if len(rows) > 1}
 
     @classmethod
     def load(cls, path: Path) -> "RussianNamesCatalog":
@@ -234,6 +242,41 @@ class RussianNamesCatalog:
                 return row
         return None
 
+    def namesakes(self, person: Person) -> tuple[str, list[dict]] | None:
+        """The catalog records this person's name could equally well be.
+
+        Returned only when nothing matched: a name that fits several
+        official records is the one case a human can actually resolve —
+        the records differ by patronymic, and someone who knows the
+        faculty can say which one it is.
+        """
+        names = [name for name in (person.name_en, *person.name_variants) if name]
+        for name in names:
+            rows = self.ambiguous_by_key.get(_fold(name))
+            if rows and self._could_be_any_of(names, rows):
+                return name, rows
+        return None
+
+    @staticmethod
+    def _could_be_any_of(names: list[str], rows: list[dict]) -> bool:
+        """Whether a written-out given name agrees with any candidate.
+
+        Keys built from a first initial ("A. Polyakov") collide with every
+        namesake in the catalog, so "Andrey Polyakov" trips over records
+        for Anton and Alexander. The decision weighs every spelling the
+        person is known by, not just the one that collided — an initials
+        variant says nothing when the name is spelled out elsewhere and
+        matches none of the records: that person is simply absent from the
+        catalog, not a case anyone can resolve.
+        """
+        surnames = {_fold(row.get("surname") or "") for row in rows}
+        given_names = {_fold(row.get("name") or "") for row in rows}
+        spelled_out = {
+            token for name in names for token in _fold(name).split()
+            if len(token) > 1 and token not in surnames
+        }
+        return not spelled_out or bool(spelled_out & given_names)
+
 
 class RussianNamesStage(EnrichmentStage):
     name = "russian_names"
@@ -245,6 +288,7 @@ class RussianNamesStage(EnrichmentStage):
 
         people = list(self.prepared.read_models("persons", Person))
         changed = matched = transliterated = 0
+        ambiguous: list[dict] = []
         for person in people:
             if not self.selected("persons", person.id):
                 continue
@@ -266,14 +310,37 @@ class RussianNamesStage(EnrichmentStage):
             else:
                 person.name_ru = to_cyrillic(person.name_en)
                 transliterated += 1
+                collision = catalog.namesakes(person)
+                if collision is not None:
+                    matched_name, rows = collision
+                    ambiguous.append({
+                        "person": person.id,
+                        "name_en": person.name_en,
+                        "matched_name": matched_name,
+                        "name_ru": person.name_ru,
+                        "candidates": [
+                            {"name_ru": (row.get("name_ru") or "").strip(),
+                             "degree": (row.get("degree") or "").strip() or None}
+                            for row in rows
+                        ],
+                        "held_because": "the catalog holds several records under this name",
+                    })
             person.processing[self.name] = self._state(state, ProcessingStatus.COMPLETED, 1)
             changed += 1
         if changed:
             self.prepared.write_models("persons", people)
-        logger.info("russian_names: %d from the catalog, %d transliterated",
-                    matched, transliterated)
+
+        journal_path = self.prepared.group_dir / AMBIGUOUS_FILENAME
+        with AtomicWriter(journal_path) as fh:
+            for row in ambiguous:
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        logger.info("russian_names: %d from the catalog, %d transliterated", matched, transliterated)
+        if ambiguous:
+            logger.info("russian_names: %d name(s) fit several catalog records — see %s",
+                        len(ambiguous), journal_path)
         return {"russian_names": changed, "names_from_catalog": matched,
-                "names_transliterated": transliterated}
+                "names_transliterated": transliterated,
+                "names_ambiguous": len(ambiguous)}
 
     @staticmethod
     def _state(previous: ProcessingState | None, status: ProcessingStatus,
