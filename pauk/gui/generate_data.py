@@ -61,25 +61,48 @@ from .layout import (
 logger = logging.getLogger(__name__)
 
 
-def author_label(surname_ru, first_name_ru, second_name_ru, name_en, name_ru=None) -> str:
-    """Surname + initials from Russian name fields.
+def split_full_name(full_name) -> tuple[str, str, str]:
+    """Split a written-out name into (surname, given, patronymic).
 
-    Falls back to name_ru — the whole Russian name, which the
-    russian_names stage fills by transliteration when the staff catalog
-    has no record and therefore no separate name parts — and to name_en
-    when even that is missing.
+    Sources write a person either as "Никитин, Николай О." or, far more
+    often, given-name-first ("Виктория Вадимовна Юношева"); the surname is
+    what precedes the comma, or the last word. Lowercase particles ("ван
+    дер") are not initials, so they never become one.
     """
-    if surname_ru:
-        label = surname_ru
-        if first_name_ru:
-            label += f" {first_name_ru[0]}."
-            if second_name_ru:
-                label += f"{second_name_ru[0]}."
-        elif second_name_ru:
-            # first_name_ru is empty, but second_name_ru holds the initials
-            label += f" {second_name_ru[0]}."
-        return label
-    return name_ru or name_en or ""
+    text = " ".join((full_name or "").split())
+    if not text:
+        return "", "", ""
+    if "," in text:
+        surname, _, rest = text.partition(",")
+        parts = rest.split()
+    else:
+        words = text.split()
+        surname, parts = words[-1], words[:-1]
+    parts = [part for part in parts if part[:1].isupper()]
+    return surname.strip(), (parts[0] if parts else ""), (parts[1] if len(parts) > 1 else "")
+
+
+def author_label(surname_ru, first_name_ru, second_name_ru, name_en, name_ru=None) -> str:
+    """One shape for every author: surname first, then initials.
+
+    "Никитин Н.О." whenever a patronymic is known — from the staff
+    catalog, or from a transliterated full name that carries one. With
+    only a given name there is nothing to abbreviate against, so it stays
+    written out ("Горизонтова Мария"); the label still starts with the
+    surname, which is what keeps the lists sorted and scannable.
+    """
+    surname, given, patronymic = surname_ru or "", first_name_ru or "", second_name_ru or ""
+    if not surname:
+        surname, given, patronymic = split_full_name(name_ru or name_en)
+    if not surname:
+        return name_ru or name_en or ""
+    if given and patronymic:
+        return f"{surname} {given[0].upper()}.{patronymic[0].upper()}."
+    if patronymic:  # only the patronymic survived — treat it as the initial
+        return f"{surname} {patronymic[0].upper()}."
+    if given:
+        return f"{surname} {given}"
+    return surname
 
 
 def author_variants(row) -> list[str]:
