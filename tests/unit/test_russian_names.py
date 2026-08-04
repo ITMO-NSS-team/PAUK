@@ -249,6 +249,9 @@ class ToCyrillicTest(unittest.TestCase):
     def test_initials_keep_their_case(self):
         self.assertEqual(to_cyrillic("S.S. Rudyi"), "С.С. Рудый")
         self.assertEqual(to_cyrillic("A. A. Musaev"), "А. А. Мусаев")
+        # Glued initials are capitalized one by one, not once per word.
+        self.assertEqual(to_cyrillic("I.Yu. Nikitin"), "И.Ю. Никитин")
+        self.assertEqual(to_cyrillic("A.V.Petrov"), "А.В.Петров")
 
     def test_dictionary_applies_per_word_not_to_surnames(self):
         # "Lev" is a given name here and a surname stem elsewhere; the

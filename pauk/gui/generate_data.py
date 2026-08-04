@@ -364,6 +364,7 @@ def build_graph_data(db, seed: int):
                 "name_variants": author_variants(row),
                 "degree": row["degree"] or "",
                 "github": row["github"] or "",
+                "orcid": row.get("orcid") or "",
                 "pubs_count": pubs_count[pid_],
                 "rank": rank_a[pid_],
                 "gx": x,

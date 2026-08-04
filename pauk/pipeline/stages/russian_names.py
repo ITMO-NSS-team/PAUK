@@ -172,9 +172,14 @@ def _word_to_cyrillic(word: str) -> str:
 
 def _part_to_cyrillic(part: str) -> str:
     known = _GIVEN_NAMES.get(_fold(part))
-    if known is None:
-        return _word_to_cyrillic(part)
-    return known if part[:1].isupper() else known.casefold()
+    if known is not None:
+        return known if part[:1].isupper() else known.casefold()
+    if "." in part:
+        # "I.Yu." is two initials glued together, and each one is
+        # capitalized on its own — converting the whole thing as one word
+        # would leave "И.ю.".
+        return ".".join(_word_to_cyrillic(piece) if piece else "" for piece in part.split("."))
+    return _word_to_cyrillic(part)
 
 
 def to_cyrillic(name: str) -> str:

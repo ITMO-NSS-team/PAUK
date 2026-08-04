@@ -69,6 +69,7 @@ function showAuthorProfile(key) {
     </div>
     ${n.degree ? `<div class="card-row"><b>Степень</b> ${esc(n.degree)}</div>` : ""}
     ${n.github ? `<div class="card-row"><b>GitHub</b> <a href="https://github.com/${esc(n.github)}" target="_blank">${esc(n.github)}</a></div>` : ""}
+    ${n.orcid ? `<div class="card-row"><b>ORCID</b> <a href="https://orcid.org/${esc(n.orcid)}" target="_blank">${esc(n.orcid)}</a></div>` : ""}
     <div class="stat-grid" style="margin-top:14px">
       <div class="stat"><div class="stat-num">${n.pubs_count || pubs.length}</div><div class="stat-lbl">публикаций</div></div>
       <div class="stat"><div class="stat-num">${coauthMap.size}</div><div class="stat-lbl">соавторов</div></div>
