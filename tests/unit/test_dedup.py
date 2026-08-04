@@ -427,15 +427,15 @@ class PublicationDedupTest(unittest.TestCase):
             ],
         )
         people = {p.id: p for p in self.prepared.read_models("persons", Person)}
-        # W1 carries two authorships to W2's one, so it survives, and the
-        # same authorship on both records collapses into one.
-        self.assertEqual([a.publication_id for a in people["A1"].authored], ["W1"])
-        self.assertEqual([a.publication_id for a in people["A2"].authored], ["W1"])
+        # W2 is newer, so it survives before the author-count tie-breaker;
+        # the same authorship on both records still collapses into one.
+        self.assertEqual([a.publication_id for a in people["A1"].authored], ["W2"])
+        self.assertEqual([a.publication_id for a in people["A2"].authored], ["W2"])
         (repo_row,) = self.prepared.read_models("repositories", Repository)
-        self.assertEqual(repo_row.publication_ids, ["W1"])
+        self.assertEqual(repo_row.publication_ids, ["W2"])
         # Both records' link rows fold into one row keyed by the survivor.
         (links,) = self.prepared.read_models("repo_links", RepoLink)
-        self.assertEqual(links.publication_id, "W1")
+        self.assertEqual(links.publication_id, "W2")
         self.assertEqual({link.url for link in links.links},
                          {"https://github.com/org/repo", "https://github.com/org/other"})
 
