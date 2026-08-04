@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import LiteralString, cast
 
@@ -6,6 +7,72 @@ from neo4j import GraphDatabase
 logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 2000
+
+# false and [] are meaningful values rather than missing data.  
+# Keep this explicit per graph label so newly added fields
+# do not accidentally acquire lossy behaviour.
+BOOLEAN_MERGE_FIELDS = {
+    "Publication": {"has_code"},
+    "Repository": {"has_readme"},
+}
+LIST_MERGE_FIELDS = {
+    "Person": {"name_variants", "other_names", "merged_ids"},
+    "Publication": {"fields", "merged_ids"},
+    "Repository": {"cited_urls", "contributors", "merged_ids"},
+}
+JSON_LIST_MERGE_FIELDS = {
+    "Person": {"affiliations"},
+    "Publication": {"funding", "versions"},
+}
+
+
+def _union_values(current: list, extra: list) -> list:
+    """Return an order-preserving union that also supports JSON objects."""
+    merged = list(current)
+    for value in extra:
+        if value not in merged:
+            merged.append(value)
+    return merged
+
+
+def _merge_duplicate_properties(label: str, canonical: dict, duplicate: dict) -> dict:
+    """Build the property updates needed before deleting a duplicate node."""
+    updates = {}
+    bool_fields = BOOLEAN_MERGE_FIELDS.get(label, set())
+    list_fields = LIST_MERGE_FIELDS.get(label, set())
+    json_list_fields = JSON_LIST_MERGE_FIELDS.get(label, set())
+
+    for key, duplicate_value in duplicate.items():
+        if key in {"id", "created_at", "updated_at"}:
+            continue
+        canonical_value = canonical.get(key)
+        if key in bool_fields:
+            if canonical_value is not None or duplicate_value is not None:
+                merged = bool(canonical_value) or bool(duplicate_value)
+                if merged != canonical_value:
+                    updates[key] = merged
+        elif key in list_fields:
+            if isinstance(duplicate_value, list):
+                current = canonical_value if isinstance(canonical_value, list) else []
+                merged = _union_values(current, duplicate_value)
+                if merged != canonical_value:
+                    updates[key] = merged
+        elif key in json_list_fields:
+            try:
+                current = json.loads(canonical_value) if canonical_value is not None else []
+                extra = json.loads(duplicate_value) if duplicate_value is not None else []
+            except (TypeError, json.JSONDecodeError):
+                # A malformed/non-list JSON value is treated as a scalar: a
+                # non-null canonical value still wins rather than being lost.
+                current = extra = None
+            if isinstance(current, list) and isinstance(extra, list):
+                merged = _union_values(current, extra)
+                encoded = json.dumps(merged, ensure_ascii=False)
+                if encoded != canonical_value:
+                    updates[key] = encoded
+        elif canonical_value is None:
+            updates[key] = duplicate_value
+    return updates
 
 
 def chunked(seq: list, size: int = CHUNK_SIZE):
@@ -248,15 +315,14 @@ class Neo4jClient:
         # The nodes themselves cannot use that trick: copying properties(dup)
         # wholesale would momentarily set canonical.id to the duplicate's id
         # while the duplicate node still exists, tripping the uniqueness
-        # constraint. The gap-filling is computed in Python instead, where
-        # the identity keys are simply excluded.
+        # constraint. The field-specific merge is computed in Python instead.
         props_query = cast(
             LiteralString,
             f"""
             UNWIND $batch AS row
             MATCH (dup:{label} {{id: row.dup_id}})
             MATCH (canonical:{label} {{id: row.canonical_id}})
-            RETURN row.canonical_id AS canonical_id,
+            RETURN row.dup_id AS dup_id, row.canonical_id AS canonical_id,
                    properties(dup) AS dup_props, properties(canonical) AS canonical_props
             """,
         )
@@ -283,15 +349,22 @@ class Neo4jClient:
         )
 
         def merge(tx) -> int:
-            fill_rows = []
-            for record in tx.run(props_query, batch=batch):
-                fill = {
-                    key: value for key, value in record["dup_props"].items()
-                    if key not in ("id", "created_at", "updated_at")
-                    and record["canonical_props"].get(key) is None
-                }
+            records = {(record["dup_id"], record["canonical_id"]): record
+                       for record in tx.run(props_query, batch=batch)}
+            working_props: dict[str, dict] = {}
+            fills: dict[str, dict] = {}
+            for row in batch:
+                record = records.get((row["dup_id"], row["canonical_id"]))
+                if record is None:
+                    continue
+                canonical_id = record["canonical_id"]
+                canonical = working_props.setdefault(canonical_id, dict(record["canonical_props"]))
+                fill = _merge_duplicate_properties(label, canonical, record["dup_props"])
                 if fill:
-                    fill_rows.append({"canonical_id": record["canonical_id"], "fill": fill})
+                    canonical.update(fill)
+                    fills.setdefault(canonical_id, {}).update(fill)
+            fill_rows = [{"canonical_id": canonical_id, "fill": fill}
+                         for canonical_id, fill in fills.items()]
             for query in move_queries:
                 tx.run(query, batch=batch).consume()
             if fill_rows:

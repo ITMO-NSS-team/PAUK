@@ -7,6 +7,8 @@ from collections import defaultdict
 
 import requests
 
+from pauk.graph.client import _merge_duplicate_properties
+
 
 def _http_404(url: str) -> requests.HTTPError:
     return requests.HTTPError(f"404 Client Error: Not Found for url: {url}")
@@ -190,8 +192,8 @@ class RecordingNeo4jClient:
                 del self.edges[key]
                 self.edges[moved_key] = {**props, **self.edges.get(moved_key, {})}
             dup_props = self.nodes[label].pop(dup_id)
-            self.nodes[label][canonical_id] = {
-                **dup_props, **self.nodes[label][canonical_id]}
+            canonical_props = self.nodes[label][canonical_id]
+            canonical_props.update(_merge_duplicate_properties(label, canonical_props, dup_props))
             if label == "Person":
                 self.person_labels.pop(dup_id, None)
             removed += 1

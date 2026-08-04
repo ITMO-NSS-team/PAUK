@@ -715,6 +715,29 @@ class FoldPropertyPreservationTest(unittest.TestCase):
         self.assertEqual(survivor["pdf_url"], "https://example.org/w2.pdf")
         self.assertEqual(survivor["doi"], "10.1/x")  # canonical's own value wins
 
+    def test_publication_boolean_and_json_list_properties_are_merged(self):
+        client = RecordingNeo4jClient()
+        client.upsert_nodes_batch("Publication", [
+            ("W1", {"has_code": False, "funding": "[]"}),
+            ("W2", {"has_code": True,
+                    "funding": '[{"funder": "Science Fund", "grant_id": "G-1"}]'}),
+        ])
+        client.merge_publication_nodes_batch([("W2", "W1")])
+        survivor = client.nodes["Publication"]["W1"]
+        self.assertTrue(survivor["has_code"])
+        self.assertEqual(survivor["funding"], '[{"funder": "Science Fund", "grant_id": "G-1"}]')
+
+    def test_repository_boolean_and_list_properties_are_merged(self):
+        client = RecordingNeo4jClient()
+        client.upsert_nodes_batch("Repository", [
+            ("old", {"has_readme": True, "contributors": ["alice", "bob"]}),
+            ("new", {"has_readme": False, "contributors": []}),
+        ])
+        client.merge_repository_nodes_batch([("old", "new")])
+        survivor = client.nodes["Repository"]["new"]
+        self.assertTrue(survivor["has_readme"])
+        self.assertEqual(survivor["contributors"], ["alice", "bob"])
+
 
 class LoaderPersonMergeTest(unittest.TestCase):
     def test_previously_published_duplicate_node_is_folded(self):
