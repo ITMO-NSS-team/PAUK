@@ -54,9 +54,15 @@ function showAuthorProfile(key) {
   const yearCounts = {};
   pubs.forEach(p => { if (p.year) yearCounts[p.year] = (yearCounts[p.year] || 0) + 1; });
 
+  const variants = n.name_variants || [];
   let html = `
     <span class="card-kind">автор</span>
     <h2 class="card-title">${esc(n.label)}</h2>
+    ${n.name_en && n.name_en !== n.label ? `<div class="card-subtitle">${esc(n.name_en)}</div>` : ""}
+    ${variants.length ? `<details class="name-variants">
+      <summary>Другие написания <span class="tag gray">${variants.length}</span></summary>
+      <ul>${variants.map(v => `<li>${esc(v)}</li>`).join("")}</ul>
+    </details>` : ""}
     <div class="profile-dept">
       <span class="dept-dot" style="background:${deptColor}"></span>
       ${esc(deptObj?.name || "Без департамента")}

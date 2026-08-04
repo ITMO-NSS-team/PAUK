@@ -61,8 +61,14 @@ from .layout import (
 logger = logging.getLogger(__name__)
 
 
-def author_label(surname_ru, first_name_ru, second_name_ru, name_en) -> str:
-    """Surname + initials from Russian name fields, fallback — name_en."""
+def author_label(surname_ru, first_name_ru, second_name_ru, name_en, name_ru=None) -> str:
+    """Surname + initials from Russian name fields.
+
+    Falls back to name_ru — the whole Russian name, which the
+    russian_names stage fills by transliteration when the staff catalog
+    has no record and therefore no separate name parts — and to name_en
+    when even that is missing.
+    """
     if surname_ru:
         label = surname_ru
         if first_name_ru:
@@ -73,7 +79,30 @@ def author_label(surname_ru, first_name_ru, second_name_ru, name_en) -> str:
             # first_name_ru is empty, but second_name_ru holds the initials
             label += f" {second_name_ru[0]}."
         return label
-    return name_en or ""
+    return name_ru or name_en or ""
+
+
+def author_variants(row) -> list[str]:
+    """Other spellings of this person's name, without the ones on show.
+
+    The card already displays the label, the romanized name and the full
+    Russian name; everything else OpenAlex knows about this author (and
+    the full Russian name when the label is only surname + initials) goes
+    into the collapsed list.
+    """
+    shown = {
+        (row.get("name_en") or "").strip().casefold(),
+        author_label(row["surname_ru"], row["first_name_ru"],
+                     row["second_name_ru"], row["name_en"], row.get("name_ru")).casefold(),
+    }
+    candidates = [row.get("name_ru") or "", *(row.get("name_variants") or [])]
+    variants = []
+    for value in candidates:
+        cleaned = " ".join((value or "").split())
+        if cleaned and cleaned.casefold() not in shown:
+            shown.add(cleaned.casefold())
+            variants.append(cleaned)
+    return variants
 
 
 def build_graph_data(db, seed: int):
@@ -303,7 +332,13 @@ def build_graph_data(db, seed: int):
                 "key": pid_,
                 "kind": "author",
                 "dept": g(author_dept[pid_]),
-                "label": author_label(row["surname_ru"], row["first_name_ru"], row["second_name_ru"], row["name_en"]),
+                "label": author_label(row["surname_ru"], row["first_name_ru"], row["second_name_ru"],
+                                      row["name_en"], row.get("name_ru")),
+                # The profile card shows the romanized name the sources use
+                # plus every other spelling seen for this person.
+                "name_en": row["name_en"] or "",
+                "name_ru": row.get("name_ru") or "",
+                "name_variants": author_variants(row),
                 "degree": row["degree"] or "",
                 "github": row["github"] or "",
                 "pubs_count": pubs_count[pid_],
