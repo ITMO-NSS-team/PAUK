@@ -242,7 +242,7 @@ class RecordingNeo4jClient:
             rows.append({
                 "id": publication_id,
                 **{field: props.get(field) for field in (
-                    "doi", "title", "journal", "publication_date", "year",
+                    "type", "doi", "title", "journal", "publication_date", "year",
                     "openalex_url", "pdf_url", "abstract", "versions", "merged_ids")},
                 "author_count": len(authors),
                 "authors": authors,

@@ -28,6 +28,7 @@ from pauk.pipeline.stages.dedup import (
     _grouped,
     _norm,
     _norm_doi,
+    _publication_rank_key,
     _union,
     plan_person_merges,
 )
@@ -222,9 +223,10 @@ def dedup_graph_persons(client, raw_orcids: dict[str, str | None]) -> tuple[int,
 def dedup_graph_publications(client) -> tuple[int, list[dict]]:
     """Fold duplicate Publication nodes across all published groups.
 
-    Same evidence as the per-group stage: records sharing a DOI or a
-    non-placeholder title are one work; the best-documented, then latest
-    record survives.
+    Same evidence and representative ranking as the per-group stage:
+    records sharing a DOI or non-placeholder title are one work; an article
+    wins over other types, which win over a preprint, then date and author
+    count break ties.
     """
     rows = client.fetch_publications_for_dedup()
     by_id = {row["id"]: row for row in rows}
@@ -241,11 +243,10 @@ def dedup_graph_publications(client) -> tuple[int, list[dict]]:
     for members in _grouped(pairs):
         ranked = sorted(
             (by_id[member] for member in members),
-            # Same order as the per-group stage: the best-documented record
-            # is the face, freshness only breaks ties.
-            key=lambda row: (
-                -(row.get("author_count") or 0),
-                -_ordinal(row.get("publication_date")),
+            key=lambda row: _publication_rank_key(
+                row.get("type"),
+                _ordinal(row.get("publication_date")),
+                row.get("author_count") or 0,
                 row["id"],
             ),
         )

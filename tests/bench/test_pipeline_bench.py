@@ -334,6 +334,7 @@ def test_one_doi_re_indexed_twice_is_one_publication(bench):
 def test_preprint_folds_into_version_of_record_keeping_both_venues(bench):
     assert "W70000000113" not in bench.publications
     survivor = bench.publications["W70000000114"]
+    assert survivor.type == "article"
     assert (survivor.journal, survivor.doi) == ("Synthetic Journal",
                                                 "https://doi.org/10.7777/vor.114")
     assert {(v.journal, v.doi) for v in survivor.versions} == {

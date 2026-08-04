@@ -25,8 +25,8 @@ def person(pid, name, works, *, itmo=True, orcid=None, variants=(), merged=(),
     )
 
 
-def publication(pid, title, *, doi=None, journal=None, day="2026-01-01"):
-    return Publication(id=pid, title=title, doi=doi, journal=journal, publication_date=day)
+def publication(pid, title, *, doi=None, journal=None, type=None, day="2026-01-01"):
+    return Publication(id=pid, title=title, doi=doi, journal=journal, type=type, publication_date=day)
 
 
 def repository(rid, name, url, *, github_id=None, cited=(), publications=(), day=None):
@@ -380,9 +380,7 @@ class PublicationDedupTest(unittest.TestCase):
         self.assertEqual([a.person_id for a in ledger["W2"].authors], ["A1"])
         self.assertEqual(ledger["W2"].abstract, "Older abstract")
 
-    def test_a_fresher_but_empty_record_does_not_become_the_face(self):
-        # A re-indexed duplicate can be newer yet carry one author and a DOI
-        # whose PDF is gone; the fuller record must stay canonical.
+    def test_a_fresher_record_becomes_the_face_before_author_count(self):
         _, publications = self.run_stage(
             [
                 publication("W1", "One work", doi="10.1/x", day="2026-01-01"),
@@ -393,10 +391,22 @@ class PublicationDedupTest(unittest.TestCase):
                 person("A2", "Author Two", ["W1"]),
             ],
         )
+        self.assertEqual(set(publications), {"W2"})
+        self.assertEqual(publications["W2"].doi, "10.1/broken")
+        self.assertEqual({v.doi for v in publications["W2"].versions}, {"10.1/x", "10.1/broken"})
+
+    def test_article_beats_newer_preprint_before_date_and_author_count(self):
+        _, publications = self.run_stage(
+            [
+                publication("W1", "One work", doi="10.1/x", type="article", day="2026-01-01"),
+                publication("W2", "One work", doi="10.1/y", type="preprint", day="2026-12-01"),
+            ],
+            people=[
+                person("A1", "Author One", ["W1", "W2"]),
+                person("A2", "Author Two", ["W2"]),
+            ],
+        )
         self.assertEqual(set(publications), {"W1"})
-        self.assertEqual(publications["W1"].doi, "10.1/x")
-        # The empty record's DOI is still on file, in versions.
-        self.assertEqual({v.doi for v in publications["W1"].versions}, {"10.1/x", "10.1/broken"})
 
     def test_references_follow_the_surviving_publication(self):
         _, _ = self.run_stage(
@@ -612,6 +622,22 @@ class GraphDedupTest(unittest.TestCase):
         self.assertEqual((applied["entity"], applied["record_a"], applied["merged_into"]),
                          ("publication", "W1", "W2"))
         self.assertEqual(applied["rules"], ["doi"])
+
+    def test_graph_article_beats_newer_preprint_before_author_count(self):
+        client = RecordingNeo4jClient()
+        self.load_group(client, "q1", [
+            publication("W1", "Same work", doi="10.1/x", type="article", day="2026-01-01"),
+        ], [person("X1", "Author One", ["W1"])])
+        self.load_group(client, "y2026", [
+            publication("W2", "Same work", doi="10.1/x", type="preprint", day="2026-12-01"),
+        ], [
+            person("X1", "Author One", ["W2"]),
+            person("X2", "Author Two", ["W2"]),
+        ])
+        removed, _report = dedup_graph_publications(client)
+        self.assertEqual(removed, 1)
+        self.assertIn("W1", client.nodes["Publication"])
+        self.assertNotIn("W2", client.nodes["Publication"])
 
     def test_graph_fold_writes_the_folded_records_version_entry(self):
         # A cross-group fold deletes the duplicate node; its venue, abstract

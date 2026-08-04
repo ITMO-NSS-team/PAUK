@@ -380,6 +380,10 @@ def build_universe() -> dict:
         if n != 13:
             work["publication_date"] = PUBLICATION_DATES.get(
                 n, f"2026-{(n - 1) % 12 + 1:02d}-15")
+        if n == 113:
+            work["type"] = "preprint"
+        elif n == 114:
+            work["type"] = "article"
         if n == 15:
             work["doi"] = "https://doi.org/10.9999/unknown-to-crossref"
         elif n not in (13, 14):

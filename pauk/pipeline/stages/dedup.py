@@ -111,6 +111,19 @@ DOI_PREFIXES = ("https://doi.org/", "http://doi.org/",
                 "https://dx.doi.org/", "http://dx.doi.org/", "doi:")
 
 
+def _publication_rank_key(publication_type: str | None, publication_date_ordinal: int,
+                          author_count: int, publication_id: str) -> tuple[int, int, int, str]:
+    """Sort key for the representative record of one work.
+
+    A journal article is the preferred face of a work and a preprint the
+    least preferred one. Other OpenAlex work types (and a missing type) are
+    deliberately equal between those two extremes. Within a status, newer
+    records win, then the record with more authors; the id makes ties stable.
+    """
+    status_rank = {"article": 0, "preprint": 2}.get((publication_type or "").casefold(), 1)
+    return status_rank, -publication_date_ordinal, -author_count, publication_id
+
+
 def _norm(name: str | None) -> str:
     return " ".join((name or "").split()).casefold()
 
@@ -429,7 +442,7 @@ def _merge_publication(base: Publication, extra: Publication,
     for grant in extra.funding:
         if grant not in base.funding:
             base.funding.append(grant)
-    for field in ("code_url", "doi", "journal", "publication_date", "year",
+    for field in ("type", "code_url", "doi", "journal", "publication_date", "year",
                   "openalex_url", "pdf_url", "abstract"):
         if getattr(base, field) is None:
             setattr(base, field, getattr(extra, field))
@@ -541,10 +554,8 @@ class DedupStage(EnrichmentStage):
         by_id = {publication.id: publication for publication in publications}
         in_scope = self._scope("publications", set(by_id))
 
-        # The best-documented record survives, so authorship counts decide
-        # between records of one DOI (OpenAlex re-indexing leaves one of them
-        # without any authors at all). The per-record author lists go into the
-        # version ledger before merging repoints them all to the survivor.
+        # The per-record author lists go into the version ledger before
+        # merging repoints them all to the survivor.
         author_counts: Counter[str] = Counter()
         version_authors: dict[str, list[VersionAuthor]] = {}
         known_persons: dict[str, Person] = {}
@@ -573,16 +584,10 @@ class DedupStage(EnrichmentStage):
         for members in _grouped(pairs):
             ranked = sorted(
                 (by_id[member] for member in members),
-                # Best-documented first: a re-indexed duplicate can be both
-                # fresher and nearly empty (one author, a DOI whose PDF is
-                # gone), and its face would replace the full record's. Among
-                # equally documented records the latest wins — the version of
-                # record follows its preprint, the newest deposit supersedes
-                # earlier ones — then the smallest id, so the choice never
-                # depends on file order.
-                key=lambda publication: (
-                    -author_counts[publication.id],
-                    -(publication.publication_date or date.min).toordinal(),
+                key=lambda publication: _publication_rank_key(
+                    publication.type,
+                    (publication.publication_date or date.min).toordinal(),
+                    author_counts[publication.id],
                     publication.id,
                 ),
             )

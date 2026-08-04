@@ -411,7 +411,7 @@ class Neo4jClient:
         query = """
             MATCH (p:Publication)
             OPTIONAL MATCH (a:Person)-[authored:AUTHORED]->(p)
-            RETURN p.id AS id, p.doi AS doi, p.title AS title,
+            RETURN p.id AS id, p.type AS type, p.doi AS doi, p.title AS title,
                    p.journal AS journal, p.publication_date AS publication_date,
                    p.year AS year, p.openalex_url AS openalex_url,
                    p.pdf_url AS pdf_url, p.abstract AS abstract,
