@@ -198,6 +198,36 @@ class RussianNamesStageTest(unittest.TestCase):
             )
             self.assertEqual(people["A1"].surname_ru, "Богатырев", spelling)
 
+    def test_a_cyrillic_full_name_fills_the_parts_without_the_catalog(self):
+        for spelling in ("Илья Алексеевич Суров", "Суров Илья Алексеевич",
+                         "Суров, Илья Алексеевич"):
+            result, people = self.run_stage([person("A1", spelling)], [])
+            self.assertEqual(result["names_from_own_spelling"], 1, spelling)
+            row = people["A1"]
+            self.assertEqual((row.surname_ru, row.first_name_ru, row.second_name_ru),
+                             ("Суров", "Илья", "Алексеевич"), spelling)
+            self.assertEqual(row.name_ru, "Суров Илья Алексеевич", spelling)
+
+    def test_a_full_name_is_read_from_a_variant_too(self):
+        _, people = self.run_stage(
+            [person("A1", "A. V. Malyshev", variants=["Алексей Владимирович Малышев"])], [])
+        self.assertEqual(people["A1"].second_name_ru, "Владимирович")
+
+    def test_a_surname_ending_like_a_patronymic_invents_nothing(self):
+        # Томкович is a surname; reading "М. В. Томкович" as a full name
+        # would hand the person a patronymic nobody stated.
+        for spelling in ("М. В. Томкович", "Е.И. Олехнович", "Ольга Бабич"):
+            result, people = self.run_stage([person("A1", spelling)], [])
+            self.assertEqual(result["names_from_own_spelling"], 0, spelling)
+            self.assertIsNone(people["A1"].second_name_ru, spelling)
+
+    def test_the_catalog_wins_over_the_authors_own_spelling(self):
+        _, people = self.run_stage(
+            [person("A1", "Суров Илья Алексеевич")],
+            ["Суров Илья Алексеевич,Суров,Илья,Алексеевич,к.ф.-м.н."],
+        )
+        self.assertEqual(people["A1"].degree, "к.ф.-м.н.")
+
     def test_english_spellings_of_a_given_name_match(self):
         for spelling, catalog_row in (
             ("Alexander Ivanov", "Иванов Александр Петрович,Иванов,Александр,Петрович,"),

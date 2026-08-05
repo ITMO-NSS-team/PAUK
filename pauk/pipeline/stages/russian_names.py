@@ -253,6 +253,44 @@ def to_cyrillic(name: str) -> str:
     )
 
 
+# --- full names OpenAlex already carries in Cyrillic ----------------------------
+
+# A patronymic suffix is not enough on its own: Бабич, Томкович and Ходасевич
+# are surnames that end the same way. Position settles it — see _cyrillic_parts.
+_PATRONYMIC = re.compile(
+    r"^[А-ЯЁ][а-яё]+(?:ович|овна|евич|евна|ьевич|ьевна|иевич|иевна|инична|ична)$")
+_CYRILLIC_WORD = re.compile(r"^[А-ЯЁ][а-яё]+$")
+
+
+def _cyrillic_parts(name: str) -> tuple[str, str, str] | None:
+    """(surname, given name, patronymic) when a name spells all three out.
+
+    OpenAlex serves some authors under their Russian name, in either order
+    ("Илья Алексеевич Суров", "Куликов Кирилл Сергеевич", and the same with
+    a comma after the surname). Three full words are required: "М. В.
+    Томкович" is initials and a surname that merely looks like a patronymic,
+    and reading it as one would invent an patronymic for the person.
+    """
+    words = [word for word in name.replace(",", " ").split() if word]
+    if len(words) != 3 or not all(_CYRILLIC_WORD.match(word) for word in words):
+        return None
+    first, second, third = words
+    if _PATRONYMIC.match(second) and not _PATRONYMIC.match(third):
+        return third, first, second
+    if _PATRONYMIC.match(third) and not _PATRONYMIC.match(second):
+        return first, second, third
+    return None
+
+
+def cyrillic_full_name(person: Person) -> tuple[str, str, str] | None:
+    """The first spelling of this person that carries a full Russian name."""
+    for name in (person.name_en, *person.name_variants):
+        parts = _cyrillic_parts(name) if name else None
+        if parts is not None:
+            return parts
+    return None
+
+
 # --- staff catalog --------------------------------------------------------------
 
 
@@ -455,7 +493,7 @@ class RussianNamesStage(EnrichmentStage):
         catalog = RussianNamesCatalog.load(catalog_path(self.config))
 
         people = list(self.prepared.read_models("persons", Person))
-        changed = matched = transliterated = 0
+        changed = matched = transliterated = from_own_spelling = 0
         ambiguous: list[dict] = []
         for person in people:
             if not self.selected("persons", person.id):
@@ -475,6 +513,16 @@ class RussianNamesStage(EnrichmentStage):
                 person.surname_ru = (row.get("surname") or "").strip() or None
                 person.degree = person.degree or (row.get("degree") or "").strip() or None
                 matched += 1
+            elif (parts := cyrillic_full_name(person)) is not None:
+                # The catalog does not know this person, but one of their
+                # own spellings does: a name written out in Cyrillic states
+                # the patronymic the transliteration path can never guess.
+                surname, first_name, patronymic = parts
+                person.surname_ru = surname
+                person.first_name_ru = first_name
+                person.second_name_ru = patronymic
+                person.name_ru = f"{surname} {first_name} {patronymic}"
+                from_own_spelling += 1
             else:
                 person.name_ru = to_cyrillic(person.name_en)
                 if person.surname_ru:
@@ -514,11 +562,13 @@ class RussianNamesStage(EnrichmentStage):
         with AtomicWriter(journal_path) as fh:
             for row in ambiguous:
                 fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-        logger.info("russian_names: %d from the catalog, %d transliterated", matched, transliterated)
+        logger.info("russian_names: %d from the catalog, %d from the author's own spelling, "
+                    "%d transliterated", matched, from_own_spelling, transliterated)
         if ambiguous:
             logger.info("russian_names: %d name(s) fit several catalog records — see %s",
                         len(ambiguous), journal_path)
         return {"russian_names": changed, "names_from_catalog": matched,
+                "names_from_own_spelling": from_own_spelling,
                 "names_transliterated": transliterated,
                 "names_ambiguous": len(ambiguous)}
 
