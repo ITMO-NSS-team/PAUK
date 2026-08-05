@@ -198,6 +198,23 @@ class RussianNamesStageTest(unittest.TestCase):
             )
             self.assertEqual(people["A1"].surname_ru, "Богатырев", spelling)
 
+    def test_english_spellings_of_a_given_name_match(self):
+        for spelling, catalog_row in (
+            ("Alexander Ivanov", "Иванов Александр Петрович,Иванов,Александр,Петрович,"),
+            ("Victoria Ivanova", "Иванова Виктория Петровна,Иванова,Виктория,Петровна,"),
+            ("Peter Ivanov", "Иванов Пётр Петрович,Иванов,Пётр,Петрович,"),
+        ):
+            _, people = self.run_stage([person("A1", spelling)], [catalog_row])
+            self.assertEqual(people["A1"].name_ru, catalog_row.split(",")[0], spelling)
+
+    def test_ch_is_not_read_as_a_latin_c(self):
+        # The rule that turns "c" into к must leave the ч and щ digraphs alone.
+        _, people = self.run_stage(
+            [person("A1", "Ivan Chernyshov")],
+            ["Чернышов Иван Петрович,Чернышов,Иван,Петрович,"],
+        )
+        self.assertEqual(people["A1"].surname_ru, "Чернышов")
+
     def test_an_initial_that_folds_to_two_characters_still_matches(self):
         # "Ю" folds to "iu", so a record keyed by the first character of the
         # folded patronymic alone is unreachable from a "Yu." citation.

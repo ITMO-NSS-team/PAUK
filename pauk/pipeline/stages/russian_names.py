@@ -77,6 +77,10 @@ _FOLD_RULES = (
     ("shch", "sch"), ("kh", "h"), ("x", "ks"),
     ("yo", "e"), ("yu", "iu"), ("ya", "ia"),
     ("j", "i"), ("y", "i"),
+    # An author cited under the English form of their name carries a letter
+    # the Russian one does not: Alexander is Александр, Valentine is
+    # Валентин, Peter is Пётр.
+    ("nder", "ndr"), ("ine", "in"), ("eter", "etr"),
 )
 
 # Cyrillic letters that look exactly like a Latin one. OpenAlex names arrive
@@ -129,6 +133,9 @@ def _fold(value: str) -> str:
     folded = "".join(_CYR_TO_LAT.get(ch, ch) for ch in folded)
     for src, dst in _FOLD_RULES:
         folded = folded.replace(src, dst)
+    # A lone Latin "c" spells к in a romanized Russian name (Victoria,
+    # Nicolay); in "ch" it is ч and in "sch" щ, so both keep their spelling.
+    folded = re.sub(r"c(?!h)", "k", folded)
     return re.sub(r"i{2,}", "i", folded)
 
 
