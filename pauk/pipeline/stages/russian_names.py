@@ -79,9 +79,53 @@ _FOLD_RULES = (
     ("j", "i"), ("y", "i"),
 )
 
+# Cyrillic letters that look exactly like a Latin one. OpenAlex names arrive
+# with a few of them mixed into an otherwise Latin spelling and the other way
+# round, and the two alphabets do not fold alike — Cyrillic "В" gives "v"
+# where Latin "B" gives "b" — so "V.A. Вogatyrev" never reaches its record.
+_HOMOGLYPHS = {
+    "А": "A", "В": "B", "С": "C", "Е": "E", "Н": "H", "К": "K", "М": "M",
+    "О": "O", "Р": "P", "Т": "T", "Х": "X",
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y",
+}
+_HOMOGLYPHS_TO_CYRILLIC = {latin: cyrillic for cyrillic, latin in _HOMOGLYPHS.items()}
+
+
+def _is_cyrillic(char: str) -> bool:
+    return "Ѐ" <= char <= "ӿ"
+
+
+def _alphabet_vote(text: str) -> int:
+    """+1 when the text reads as Latin, -1 as Cyrillic, 0 when undecided.
+
+    Homoglyphs cast no vote: they are the characters in question, and in
+    "А. А. Маrmalyuk" they outnumber the letters that settle the spelling.
+    """
+    latin = sum(1 for char in text if char.isalpha() and not _is_cyrillic(char)
+                and char not in _HOMOGLYPHS_TO_CYRILLIC)
+    cyrillic = sum(1 for char in text if _is_cyrillic(char) and char not in _HOMOGLYPHS)
+    return (latin > cyrillic) - (cyrillic > latin)
+
+
+def _unmix_alphabets(value: str) -> str:
+    """Move homoglyphs into the alphabet their own word is written in.
+
+    The vote is per word rather than per name: "Maria Алексеевна Yaroslavova"
+    is two Latin words around a Cyrillic one, and a whole-name vote rewrites
+    the patronymic into a mixture that folds to a worse key than before. A
+    word that is nothing but initials has no vote and follows the name.
+    """
+    whole = _alphabet_vote(value)
+    words = []
+    for word in value.split(" "):
+        vote = _alphabet_vote(word) or whole
+        table = _HOMOGLYPHS if vote > 0 else _HOMOGLYPHS_TO_CYRILLIC if vote < 0 else {}
+        words.append("".join(table.get(char, char) for char in word))
+    return " ".join(words)
+
 
 def _fold(value: str) -> str:
-    folded = " ".join(value.replace(".", " ").split()).casefold()
+    folded = " ".join(_unmix_alphabets(value).replace(".", " ").split()).casefold()
     folded = "".join(_CYR_TO_LAT.get(ch, ch) for ch in folded)
     for src, dst in _FOLD_RULES:
         folded = folded.replace(src, dst)
