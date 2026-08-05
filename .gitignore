@@ -27,9 +27,3 @@ data/.locks/
 *.swo
 
 logs/
-
-# Generated GUI data — rebuilt from Neo4j via generate_data.py/generate_stats.py,
-# not source. See README "GUI" section.
-pauk/gui/web/graph-data.js
-pauk/gui/web/graph-search.js
-pauk/gui/web/graph-stats.js
