@@ -304,26 +304,45 @@ class RussianNamesCatalog:
         return cls.load(path) if path.exists() else None
 
     @staticmethod
-    def _keyed_forms(row: dict) -> dict[str, bool]:
+    def _initials(name: str, folded: str) -> set[str]:
+        """Every folded form the initial of this name part can arrive as.
+
+        A Cyrillic letter does not always fold to a single character, so an
+        initial has two readings: "Ю" folds to "iu" and reaches a citation
+        spelling it "Yu.", while a citation that shortened the same name to
+        "Y." folds to "i" and needs the first character alone. Both are
+        keyed — Юрьевна is 167 records here, and keying only one of them
+        put all of them out of reach of half their citations.
+        """
+        return {form for form in (folded[:1], _fold(name[:1]) if name else "") if form}
+
+    @classmethod
+    def _keyed_forms(cls, row: dict) -> dict[str, bool]:
         """Every folded form of one record -> does it spell the given name out.
 
         The initials forms are listed last on purpose: when a record's own
         given name is a single letter, its "spelled out" form is the same
         string as its initials form, and the later, stricter value wins.
         """
-        first = _fold(row.get("name") or "")
+        first_name = (row.get("name") or "").strip()
+        patronymic_name = (row.get("patronymic") or "").strip()
+        first = _fold(first_name)
         surname = _fold(row.get("surname") or "")
-        patronymic = _fold(row.get("patronymic") or "")
+        patronymic = _fold(patronymic_name)
         if not first or not surname:
             return {}
         spelled = len(first) > 1
+        first_initials = cls._initials(first_name, first)
         forms = {f"{first} {surname}": spelled, f"{surname} {first}": spelled}
         if patronymic:
             forms[f"{first} {patronymic} {surname}"] = spelled
             forms[f"{surname} {first} {patronymic}"] = spelled
-            forms[f"{first} {patronymic[:1]} {surname}"] = spelled
-            forms[f"{first[:1]} {patronymic[:1]} {surname}"] = False
-        forms[f"{first[:1]} {surname}"] = False
+            for patronymic_initial in cls._initials(patronymic_name, patronymic):
+                forms[f"{first} {patronymic_initial} {surname}"] = spelled
+                for first_initial in first_initials:
+                    forms[f"{first_initial} {patronymic_initial} {surname}"] = False
+        for first_initial in first_initials:
+            forms[f"{first_initial} {surname}"] = False
         return forms
 
     def staff_id(self, person: Person) -> str | None:

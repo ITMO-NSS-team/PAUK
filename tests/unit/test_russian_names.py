@@ -188,6 +188,35 @@ class RussianNamesStageTest(unittest.TestCase):
                                   Settings(data_dir=Path(self.tmp.name))).run()
         self.assertEqual(again["russian_names"], 0)
 
+    def test_a_cyrillic_letter_inside_a_latin_name_still_matches(self):
+        # The В, С and Х here are Cyrillic; they fold to v, s and h where
+        # their Latin lookalikes fold to b, c and ks.
+        for spelling in ("V.A. Вogatyrev", "Vladimir А. Вogatyrev", "V. А. Bogatyrev"):
+            _, people = self.run_stage(
+                [person("A1", spelling)],
+                ["Богатырев Владимир Анатольевич,Богатырев,Владимир,Анатольевич,д.т.н."],
+            )
+            self.assertEqual(people["A1"].surname_ru, "Богатырев", spelling)
+
+    def test_an_initial_that_folds_to_two_characters_still_matches(self):
+        # "Ю" folds to "iu", so a record keyed by the first character of the
+        # folded patronymic alone is unreachable from a "Yu." citation.
+        for spelling in ("Olga Yu. Orlova", "O.Yu. Orlova", "O. Y. Orlova"):
+            _, people = self.run_stage(
+                [person("A1", spelling)],
+                ["Орлова Ольга Юрьевна,Орлова,Ольга,Юрьевна,"],
+            )
+            self.assertEqual(people["A1"].name_ru, "Орлова Ольга Юрьевна", spelling)
+
+    def test_a_cyrillic_word_between_latin_ones_is_left_alone(self):
+        # Deciding the alphabet over the whole name would rewrite the
+        # patronymic into a mixture and lose the record.
+        _, people = self.run_stage(
+            [person("A1", "Maria Алексеевна Yaroslavova")],
+            ["Ярославова Мария Алексеевна,Ярославова,Мария,Алексеевна,"],
+        )
+        self.assertEqual(people["A1"].name_ru, "Ярославова Мария Алексеевна")
+
 
 class ToCyrillicTest(unittest.TestCase):
     def test_common_romanizations(self):
