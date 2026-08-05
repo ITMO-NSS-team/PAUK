@@ -9,7 +9,14 @@ from pauk.graph.dedup import (
     dedup_graph_repositories,
 )
 from pauk.graph.jsonl_loader import load_jsonl_dir
-from pauk.models import Person, Publication, PublicationVersion, RepoLink, Repository
+from pauk.models import (
+    Affiliation,
+    Person,
+    Publication,
+    PublicationVersion,
+    RepoLink,
+    Repository,
+)
 from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage
 from pauk.pipeline.stages.russian_names import RussianNamesCatalog
 from pauk.settings import Settings
@@ -130,6 +137,56 @@ class DedupStageTest(unittest.TestCase):
         (applied,) = self.journal("merged")
         self.assertEqual((applied["person_a"], applied["merged_into"], applied["rules"]),
                          ("A2", "A1", ["same_name"]))
+
+    def test_a_contradicting_initial_outweighs_a_name_variant(self):
+        # The variant "A. S. Ivanov" pairs the two, but the display names
+        # state V against S: the record listing that variant is not one man.
+        result, people = self.run_stage([
+            person("A1", "A. S. Ivanov", ["W1"]),
+            person("A2", "А. В. Иванов", ["W2"], variants=["A. S. Ivanov", "A. V. Ivanov"]),
+            person("A3", "Maria Sidorova", ["W1", "W2"]),
+        ])
+        self.assertEqual((result["dedup_merged"], len(people)), (0, 3))
+
+    def test_an_initial_agrees_with_the_name_it_stands_for(self):
+        result, people = self.run_stage([
+            person("A1", "Andrei Ivanov", ["W1"]),
+            person("A2", "A. Ivanov", ["W2"], variants=["Andrei Ivanov"]),
+            person("A3", "Maria Sidorova", ["W1", "W2"]),
+        ])
+        self.assertEqual(result["dedup_merged"], 1)
+        self.assertEqual(people["A1"].merged_ids, ["A2"])
+
+    def test_coauthors_of_one_shared_work_corroborate_nothing(self):
+        # Both records sit on W1, so its whole author list is shared by
+        # construction and says nothing about the two being one person.
+        result, people = self.run_stage([
+            person("A1", "Yong Li", ["W1"]),
+            person("A2", "Yong Li", ["W1"]),
+            person("A3", "Maria Sidorova", ["W1"]),
+        ])
+        self.assertEqual((result["dedup_merged"], len(people)), (0, 3))
+
+    def test_an_orcid_from_the_backfill_still_keeps_two_people_apart(self):
+        result, people = self.run_stage([
+            person("A1", "Ivan Petrov", ["W1"], orcid="0000-0002-1111-1111"),
+            person("A2", "Ivan Petrov", ["W2"], orcid="0000-0003-2222-2222"),
+            person("A3", "Maria Sidorova", ["W1", "W2"]),
+        ])
+        self.assertEqual((result["dedup_merged"], len(people)), (0, 3))
+
+    def test_a_record_pooling_hundreds_of_institutions_merges_with_nothing(self):
+        pooled = person("A2", "Ivan Petrov", ["W2"])
+        pooled.affiliations = [
+            Affiliation(name=f"Institution {number}", source="openalex")
+            for number in range(40)
+        ]
+        result, people = self.run_stage([
+            person("A1", "Ivan Petrov", ["W1"]),
+            pooled,
+            person("A3", "Maria Sidorova", ["W1", "W2"]),
+        ])
+        self.assertEqual((result["dedup_merged"], len(people)), (0, 3))
 
     def test_one_cyrillic_letter_does_not_split_a_name(self):
         # The А of the second name is Cyrillic. Both spellings are one name

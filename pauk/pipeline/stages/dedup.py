@@ -105,7 +105,7 @@ from pauk.storage.atomic import AtomicWriter
 from pauk.urls import normalize_repo_url
 
 from .base import EnrichmentStage
-from .russian_names import RussianNamesCatalog, _unmix_alphabets, catalog_path
+from .russian_names import RussianNamesCatalog, _fold, _unmix_alphabets, catalog_path
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +169,47 @@ def _profiles_conflict(first: Person, second: Person) -> bool:
         and getattr(first, field) != getattr(second, field)
         for field in PROFILE_FIELDS
     )
+
+
+def _initials_conflict(first: Person, second: Person) -> bool:
+    """Whether an initial in one display name rules out the other name.
+
+    An OpenAlex record is not always one person: the one displayed as
+    "А. В. Иванов" also lists "A S Ivanov" among its variants, and that
+    variant alone pairs it with a real A. S. Ivanov. The display names
+    settle it — an initial V where the other name says S is two people,
+    whatever a variant claims.
+
+    Only initials are judged here. Two names spelled out ("Ivan Petrov",
+    "Igor Petrov") may still be one person under a rule that has better
+    evidence than the name; an initial, by contrast, states one letter and
+    states it plainly. Comparison runs in the folded space, so a Cyrillic
+    "В" meets a Latin "V", and an initial never contradicts the name it
+    abbreviates: "Andrei Ivanov" agrees with "A. V. Ivanov".
+    """
+    first_tokens = _fold(first.name_en or "").split()
+    second_tokens = _fold(second.name_en or "").split()
+    if len(first_tokens) < 2 or len(second_tokens) < 2 or first_tokens[-1] != second_tokens[-1]:
+        return False
+    # Names of unequal length are compared over the parts they both have:
+    # "A. Ivanov" states nothing about the middle name of "A. V. Ivanov".
+    return any(
+        (len(one) == 1 or len(other) == 1)
+        and not (one.startswith(other) or other.startswith(one))
+        for one, other in zip(first_tokens[:-1], second_tokens[:-1], strict=False)
+    )
+
+
+# An author record listing far more institutions than it has works is not a
+# person: OpenAlex pools authors it cannot tell apart under one common name,
+# and one such record here carries 1752 institutions across two works. It can
+# be merged with nothing, since it already stands for a crowd.
+JUNK_AFFILIATION_RATIO = 30
+
+
+def _is_pooled_record(person: Person) -> bool:
+    institutions = {affiliation.name for affiliation in person.affiliations}
+    return len(institutions) > JUNK_AFFILIATION_RATIO * max(len(person.authored), 1)
 
 
 def _paired_persons(people: list[Person], in_scope: set[str] | None,
@@ -256,7 +297,14 @@ def plan_person_merges(
 
     coauthor_cache: dict[str, set[str]] = {}
 
-    def coauthors(person: Person) -> set[str]:
+    def coauthors(person: Person, *, excluding: frozenset[str] = frozenset()) -> set[str]:
+        if excluding:
+            found = set()
+            for authorship in person.authored:
+                if authorship.publication_id not in excluding:
+                    found |= pub_authors.get(authorship.publication_id, set())
+            found.discard(person.id)
+            return found
         cached = coauthor_cache.get(person.id)
         if cached is None:
             cached = set()
@@ -265,6 +313,22 @@ def plan_person_merges(
             cached.discard(person.id)
             coauthor_cache[person.id] = cached
         return cached
+
+    def corroborating_coauthors(first: Person, second: Person) -> set[str]:
+        """Coauthors the two share outside the works they wrote together.
+
+        A pair listed on one work shares that work's whole author list by
+        construction — the two "Yong Li" of W7166343300 come out with four
+        coauthors in common and no evidence between them. Only coauthors
+        each of them also met elsewhere say anything about identity.
+        """
+        together = frozenset(
+            {authorship.publication_id for authorship in first.authored}
+            & {authorship.publication_id for authorship in second.authored}
+        )
+        shared = (coauthors(first, excluding=together)
+                  & coauthors(second, excluding=together))
+        return shared - {first.id, second.id}
 
     def research_fields(person: Person) -> set[str]:
         return {
@@ -281,11 +345,24 @@ def plan_person_merges(
         pair_rules[frozenset((first.id, second.id))] = rule
 
     for first, second in _paired_persons(people, in_scope, staff_ids):
+        # A pooled record stands for everyone OpenAlex could not tell apart,
+        # so it is nobody in particular and merges with nothing.
+        if _is_pooled_record(first) or _is_pooled_record(second):
+            continue
+        # Two names that disagree on a part both spell out are two people,
+        # however well a name variant of one fits the other.
+        if _initials_conflict(first, second):
+            continue
         first_orcid = trusted_orcid.get(first.id)
         second_orcid = trusted_orcid.get(second.id)
-        if first_orcid and second_orcid:
-            if first_orcid == second_orcid:
-                plan_pair(first, second, "orcid")
+        if first_orcid and second_orcid and first_orcid == second_orcid:
+            plan_pair(first, second, "orcid")
+            continue
+        # Merging asks for the trusted ORCID, refusing takes any one on
+        # record: an ORCID the crossref backfill supplied is weak evidence
+        # that two persons are one, and full evidence that they are not.
+        if (first_orcid or first.orcid) and (second_orcid or second.orcid) \
+                and (first_orcid or first.orcid) != (second_orcid or second.orcid):
             # Different ORCIDs are explicit evidence of two distinct
             # people — never merge and not worth reporting either.
             continue
@@ -310,7 +387,7 @@ def plan_person_merges(
             continue
         both_itmo = first.is_itmo and second.is_itmo
         multi_token = len(first_name.split()) > 1
-        shared = (coauthors(first) & coauthors(second)) - {first.id, second.id}
+        shared = corroborating_coauthors(first, second)
         shared_departments = set(first.department_ids) & set(second.department_ids)
         shared_fields = research_fields(first) & research_fields(second)
         # A name on its own is never enough — see the merge policy above.
