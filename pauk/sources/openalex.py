@@ -35,7 +35,7 @@ class OpenAlexClient(HttpClient):
         )
         while cursor:
             page = self.get_json(self.WORKS_URL, params=self._params(
-                filter=filters, sort="publication_date:desc", per_page=200, cursor=cursor,
+                filter=filters, sort="publication_date:desc", per_page=100, cursor=cursor,
             ))
             yield from page.get("results", [])
             cursor = page.get("meta", {}).get("next_cursor")

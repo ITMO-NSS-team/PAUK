@@ -9,9 +9,12 @@ class OpenReviewClient(HttpClient):
     def _login(self) -> None:
         if self.token or not (self.username and self.password):
             return
-        data = self.session.post("https://api.openreview.net/login", json={"id": self.username, "password": self.password}, timeout=self.timeout)
-        data.raise_for_status()
-        self.token = data.json()["token"]
+        data = self.request_json(
+            "POST",
+            "https://api.openreview.net/login",
+            json={"id": self.username, "password": self.password},
+        )
+        self.token = data["token"]
         self.session.headers["Authorization"] = f"Bearer {self.token}"
 
     def search(self, term: str) -> dict:
