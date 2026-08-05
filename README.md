@@ -100,5 +100,6 @@ pauk publish graph --group 2026-07-31__W2741809807
 
 ```bash
 python -m pauk.gui.generate_data
+python -m pauk.gui.generate_stats
 python -m pauk.gui.serve
 ```
