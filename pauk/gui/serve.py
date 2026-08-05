@@ -25,6 +25,21 @@ ROOT = Path(__file__).parent / "web"
 API_STATS = "/api/stats"
 API_CHECK = "/api/check"
 
+REQUIRED_FILES = {
+    "graph-data.js": "python -m pauk.gui.generate_data",
+    "graph-search.js": "python -m pauk.gui.generate_data",
+    "graph-stats.js": "python -m pauk.gui.generate_stats",
+}
+
+
+def _warn_missing_generated_files():
+    missing = {name: cmd for name, cmd in REQUIRED_FILES.items() if not (ROOT / name).is_file()}
+    if not missing:
+        return
+    logger.warning("Generated files not found, the page will be incomplete:")
+    for cmd in dict.fromkeys(missing.values()):
+        logger.warning("  %s", cmd)
+
 
 class GzipHandler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
@@ -167,6 +182,7 @@ class GzipHandler(SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+    _warn_missing_generated_files()
     # threaded: a slow/large download (graph-data.js is 5MB+) from one client
     # must not block every other request behind it
     server = ThreadingHTTPServer(("", PORT), GzipHandler)
