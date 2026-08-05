@@ -131,6 +131,16 @@ class DedupStageTest(unittest.TestCase):
         self.assertEqual((applied["person_a"], applied["merged_into"], applied["rules"]),
                          ("A2", "A1", ["same_name"]))
 
+    def test_one_cyrillic_letter_does_not_split_a_name(self):
+        # The А of the second name is Cyrillic. Both spellings are one name
+        # to a reader, and casefold() alone keeps them apart.
+        result, people = self.run_stage(
+            [person("A1", "Alexander Shtil", ["W1"], departments=["d1"]),
+             person("A2", "Аlexander Shtil", ["W2"], departments=["d1"])],
+        )
+        self.assertEqual(result["dedup_merged"], 1)
+        self.assertEqual(people["A1"].merged_ids, ["A2"])
+
     def test_same_display_name_merges_on_a_shared_department(self):
         result, people = self.run_stage([
             person("A1", "Ivan Petrov", ["W1"], departments=["dept_x"]),

@@ -105,7 +105,7 @@ from pauk.storage.atomic import AtomicWriter
 from pauk.urls import normalize_repo_url
 
 from .base import EnrichmentStage
-from .russian_names import RussianNamesCatalog, catalog_path
+from .russian_names import RussianNamesCatalog, _unmix_alphabets, catalog_path
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +136,16 @@ def _norm(name: str | None) -> str:
     return " ".join((name or "").split()).casefold()
 
 
+def _norm_name(name: str | None) -> str:
+    """A person's name, with mixed alphabets settled before comparing.
+
+    OpenAlex serves the same author both as "Alexander A. Shtil" and with a
+    Cyrillic А in place of the Latin one. The two are one name to a reader
+    and two to casefold(), so the pair never reaches a merge rule.
+    """
+    return _norm(_unmix_alphabets(name or ""))
+
+
 def _norm_doi(doi: str | None) -> str | None:
     """Bare lowercase DOI, so a resolver prefix never splits one work."""
     value = _norm(doi)
@@ -145,7 +155,7 @@ def _norm_doi(doi: str | None) -> str | None:
 
 
 def _variant_set(person: Person) -> set[str]:
-    return {_norm(variant) for variant in person.name_variants if _norm(variant)}
+    return {_norm_name(variant) for variant in person.name_variants if _norm_name(variant)}
 
 
 # Identity fields a person can carry explicitly; two persons differing in any
@@ -181,7 +191,7 @@ def _paired_persons(people: list[Person], in_scope: set[str] | None,
         if staff_id:
             by_staff.setdefault(staff_id, []).append(person)
         for name in (person.name_en, *person.name_variants):
-            for token in _norm(name).replace(",", " ").split():
+            for token in _norm_name(name).replace(",", " ").split():
                 if len(token) > 2:
                     by_token.setdefault(token, []).append(person)
 
@@ -288,7 +298,7 @@ def plan_person_merges(
             continue
 
         same_staff = bool(first_staff and first_staff == second_staff)
-        first_name, second_name = _norm(first.name_en), _norm(second.name_en)
+        first_name, second_name = _norm_name(first.name_en), _norm_name(second.name_en)
         if not first_name or not second_name:
             continue
         variant_evidence = (
