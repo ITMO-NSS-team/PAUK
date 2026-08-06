@@ -1,11 +1,14 @@
-﻿[
+[
   {
     "faculty_id": 87,
     "school_en": "Faculty of Technological Management and Innovations",
     "school_ru": "Факультет технологического менеджмента и инноваций",
     "name_en": "Faculty of Technological Management and Innovations",
     "name_ru": "Факультет технологического менеджмента и инноваций",
-    "aliases": []
+    "aliases": [
+      "Faculty of Technology Management and Innovation",
+      "Faculty of Technology and Innovation Management"
+    ]
   },
   {
     "faculty_id": 115,
@@ -15,7 +18,8 @@
     "name_ru": "Институт «Высшая инженерно-техническая школа»",
     "aliases": [
       "Higher Engineering School",
-      "Институт Высшая инженерная школа"
+      "Институт Высшая инженерная школа",
+      "Institute High School of Engineering"
     ]
   },
   {
@@ -61,7 +65,8 @@
     "name_en": "Educational Center \"Energy-Efficient Engineering Systems\"",
     "name_ru": "Образовательный центр \"Энергоэффективные инженерные системы\"",
     "aliases": [
-      "Educational Center for Energy Efficient Engineering Systems"
+      "Educational Center for Energy Efficient Engineering Systems",
+      "Educational Center Energy Efficient Engineering Systems"
     ]
   },
   {
@@ -148,7 +153,8 @@
     "name_en": "Research Center of Light-Guided Photonics",
     "name_ru": "Научно-исследовательский центр световодной фотоники",
     "aliases": [
-      "Research Center for Waveguide Photonics"
+      "Research Center for Waveguide Photonics",
+      "Department of Light-Guided Photonics"
     ]
   },
   {
@@ -230,7 +236,11 @@
     "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Faculty of Control Systems and Robotics",
     "name_ru": "Факультет систем управления и робототехники",
-    "aliases": []
+    "aliases": [
+      "Faculty of Control System and Robotics",
+      "Department of Control Systems and Robotics",
+      "Faculty of Control Systems and Industrial Robotics"
+    ]
   },
   {
     "faculty_id": 105,
@@ -242,7 +252,10 @@
       "FBIT",
       "ФБИТ",
       "Факультет защищённых информационных технологий",
-      "Department of Secure Information Technologies"
+      "Department of Secure Information Technologies",
+      "Faculty of IT-Security",
+      "Faculty of Information Technology Security",
+      "Faculty of Information Security and Computer Technologies"
     ]
   },
   {
@@ -530,7 +543,10 @@
     "school_ru": "Мегафакультет наук о жизни",
     "name_en": "Center for Chemical Engineering",
     "name_ru": "Центр химической инженерии",
-    "aliases": []
+    "aliases": [
+      "Chemical Engineering Center",
+      "Center of Chemical Engineering"
+    ]
   },
   {
     "faculty_id": null,
@@ -593,7 +609,8 @@
     "name_ru": "Факультет экотехнологий",
     "aliases": [
       "Faculty of Ecotechnology",
-      "Faculty of Ecotechnologies (Green Tech)"
+      "Faculty of Ecotechnologies (Green Tech)",
+      "Faculty of Energy and Ecotechnology"
     ]
   },
   {
@@ -610,7 +627,9 @@
     "school_ru": "Мегафакультет наук о жизни",
     "name_en": "International Research Institute of Bioengineering",
     "name_ru": "Международный научно-исследовательский институт биоинженерии",
-    "aliases": []
+    "aliases": [
+      "International Scientific and Research Institute of Bioengineering"
+    ]
   },
   {
     "faculty_id": null,
@@ -647,7 +666,8 @@
     "name_en": "Infochemistry Scientific Center",
     "name_ru": "Научно-образовательный центр инфохимии",
     "aliases": [
-      "Research and Educational Center for InfoChemistry"
+      "Research and Educational Center for InfoChemistry",
+      "Infochemistry Research Center"
     ]
   },
   {
@@ -656,7 +676,9 @@
     "school_ru": "Мегафакультет наук о жизни",
     "name_en": "Research Center for Bioengineering",
     "name_ru": "Научно-исследовательский центр биоинженерии",
-    "aliases": []
+    "aliases": [
+      "Center for Bioengineering"
+    ]
   },
   {
     "faculty_id": 116,
@@ -690,7 +712,12 @@
     "school_ru": "Физико-технический мегафакультет",
     "name_en": "Center for Information Optical Technologies",
     "name_ru": "Центр \"Информационные оптические технологии\"",
-    "aliases": []
+    "aliases": [
+      "Center of Information Optical Technologies",
+      "Center of Information Optical Technology",
+      "Information Optical Technologies Center",
+      "Center of Optical Information Technologies"
+    ]
   },
   {
     "faculty_id": 487,
@@ -722,7 +749,9 @@
     "school_ru": "Физико-технический мегафакультет",
     "name_en": "International Institute of Photonics and Optoinformatics",
     "name_ru": "Международный институт \"Фотоника и оптоинформатика\"",
-    "aliases": []
+    "aliases": [
+      "Institute of Photonics and Optical Information Technologies"
+    ]
   },
   {
     "faculty_id": null,
@@ -774,7 +803,10 @@
     "name_en": "International Research and Educational Center for Physics of Nanostructures",
     "name_ru": "Международный научно-образовательный центр физики наноструктур",
     "aliases": [
-      "International Scientific and Educational Center for Physics of Nanostructures"
+      "International Scientific and Educational Center for Physics of Nanostructures",
+      "International Research and Education Centre for Physics of Nanostructures",
+      "International Research and Education Center for Physics of Nanostructures",
+      "PhysNano Department"
     ]
   },
   {
@@ -792,7 +824,8 @@
     "name_en": "International Scientific Center for Nanophotonics and Metamaterials",
     "name_ru": "Международный научный центр нанофотоники и метаматериалов",
     "aliases": [
-      "International Joint Research Center for Nanophotonics and Metamaterials"
+      "International Joint Research Center for Nanophotonics and Metamaterials",
+      "Department of Nanophotonics and Metamaterials"
     ]
   },
   {
@@ -959,7 +992,8 @@
     "name_en": "Research and Educational Center for Photonics and Optical IT",
     "name_ru": "Научно-образовательный центр фотоники и оптоинформатики",
     "aliases": [
-      "Center for Photonics and Optical IT"
+      "Center for Photonics and Optical IT",
+      "Research and Educational Center for Photonics and Optoinformatics"
     ]
   },
   {
@@ -968,7 +1002,9 @@
     "school_ru": "Физико-технический мегафакультет",
     "name_en": "Research Center for Optical Materials Science",
     "name_ru": "Научно-исследовательский центр оптического материаловедения",
-    "aliases": []
+    "aliases": [
+      "Research Center for Optical Material Engineering"
+    ]
   },
   {
     "faculty_id": 106,
@@ -987,7 +1023,8 @@
     "aliases": [
       "Faculty of Digital Transformations",
       "Faculty of AI Technologies",
-      "Факультет цифровых трансформаций"
+      "Факультет цифровых трансформаций",
+      "Faculty of Digital Transformation"
     ]
   },
   {
@@ -997,7 +1034,8 @@
     "name_en": "Center for E-Government Technologies",
     "name_ru": "Центр технологий электронного правительства",
     "aliases": [
-      "Centre for e-Government Technologies"
+      "Centre for e-Government Technologies",
+      "eGovernance Center"
     ]
   },
   {
@@ -1008,7 +1046,8 @@
     "name_ru": "Факультет прикладной информатики",
     "aliases": [
       "Faculty of Infocommunication Technologies",
-      "Факультет инфокоммуникационных технологий"
+      "Факультет инфокоммуникационных технологий",
+      "Department of Infocommunication Technologies"
     ]
   },
   {
@@ -1026,7 +1065,9 @@
     "name_en": "Information Technologies and Programming Faculty",
     "name_ru": "Факультет информационных технологий и программирования",
     "aliases": [
-      "Faculty of Information Technologies and Programming"
+      "Faculty of Information Technologies and Programming",
+      "Information Technology and Programming Faculty",
+      "Faculty of Information Technology and Programming"
     ]
   },
   {
@@ -1054,7 +1095,10 @@
     "school_ru": "Мегафакультет трансляционных информационных технологий",
     "name_en": "Institute of Design & Urban Studies",
     "name_ru": "Институт дизайна и урбанистики",
-    "aliases": []
+    "aliases": [
+      "Institute of Design and Urban Studies",
+      "Institute for Design and Urban Studies"
+    ]
   },
   {
     "faculty_id": 509,
@@ -1073,5 +1117,92 @@
     "name_en": "School of Translational Information Technologies",
     "name_ru": "Мегафакультет трансляционных информационных технологий",
     "aliases": []
+  },
+  {
+    "faculty_id": null,
+    "school_en": "School of Life Sciences",
+    "school_ru": "Мегафакультет наук о жизни",
+    "name_en": "Solution Chemistry of Advanced Materials and Technologies (SCAMT) Institute",
+    "name_ru": "Институт химии растворов передовых материалов и технологий (SCAMT)",
+    "aliases": [
+      "SCAMT Institute",
+      "International Institute Solution Chemistry of Advanced Materials and Technologies",
+      "Laboratory of Solution Chemistry of Advanced Materials and Technologies",
+      "Institute of Solution Chemistry of Advanced Materials and Technologies"
+    ]
+  },
+  {
+    "faculty_id": null,
+    "school_en": "School of Life Sciences",
+    "school_ru": "Мегафакультет наук о жизни",
+    "name_en": "Faculty of Cryogenic Engineering",
+    "name_ru": "Факультет криогенной техники и технологий",
+    "aliases": [
+      "Cryogenic Engineering Department"
+    ]
+  },
+  {
+    "faculty_id": null,
+    "school_en": "School of Life Sciences",
+    "school_ru": "Мегафакультет наук о жизни",
+    "name_en": "Faculty of Food Biotechnologies and Engineering",
+    "name_ru": "Факультет пищевых биотехнологий и инженерии",
+    "aliases": [
+      "Department of Food Biotechnology and Engineering"
+    ]
+  },
+  {
+    "faculty_id": null,
+    "school_en": "School of Translational Information Technologies",
+    "school_ru": "Мегафакультет трансляционных информационных технологий",
+    "name_en": "Research Center \"Strong Artificial Intelligence in Industry\"",
+    "name_ru": "Исследовательский центр «Сильный искусственный интеллект в промышленности»",
+    "aliases": []
+  },
+  {
+    "faculty_id": null,
+    "school_en": "School of Physics and Engineering",
+    "school_ru": "Физико-технический мегафакультет",
+    "name_en": "Faculty of Laser Photonics and Optoelectronics",
+    "name_ru": "Факультет лазерной фотоники и оптоэлектроники",
+    "aliases": []
+  },
+  {
+    "faculty_id": null,
+    "school_en": "School of Physics and Engineering",
+    "school_ru": "Физико-технический мегафакультет",
+    "name_en": "Faculty of Applied Optics",
+    "name_ru": "Факультет прикладной оптики",
+    "aliases": [
+      "Department of Applied Optics"
+    ]
+  },
+  {
+    "faculty_id": null,
+    "school_en": "School of Computer Technologies and Control",
+    "school_ru": "Мегафакультет компьютерных технологий и управления",
+    "name_en": "Department of Computer Technologies",
+    "name_ru": "Кафедра компьютерных технологий",
+    "aliases": [
+      "Computer Technologies Department"
+    ]
+  },
+  {
+    "faculty_id": null,
+    "school_en": "National Center for Quantum Internet",
+    "school_ru": "Национальный центр квантового интернета",
+    "name_en": "National Center for Quantum Internet",
+    "name_ru": "Национальный центр квантового интернета",
+    "aliases": []
+  },
+  {
+    "faculty_id": null,
+    "school_en": "School of Life Sciences",
+    "school_ru": "Мегафакультет наук о жизни",
+    "name_en": "Center for Artificial Intelligence in Chemistry",
+    "name_ru": "Центр искусственного интеллекта в химии",
+    "aliases": [
+      "Center for AI in Chemistry"
+    ]
   }
 ]
