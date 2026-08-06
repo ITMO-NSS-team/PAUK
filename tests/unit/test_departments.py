@@ -3,12 +3,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from pauk.graph.extract import NODE_REGISTRY, extract_relationships
 from pauk.models import Department, Organization, Person, Publication
 from pauk.models.processing import ProcessingStatus
 from pauk.models.relations import Authorship
 from pauk.pipeline.stages.departments import DepartmentsStage
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
+from pauk.storage.static import StaticStore
 
 
 def _prepare(root: Path, persons, publications) -> PreparedStore:
@@ -143,10 +145,11 @@ class DepartmentsStageTest(unittest.TestCase):
             root = Path(tmp)
             catalog = [
                 {
+                    "uid": "fac-sit",
                     "name_en": "Faculty of Secure Information Technologies",
                     "name_ru": "",
                     "kind": "faculty",
-                    "parent": "ITMO University",
+                    "parent": None,
                     "aliases": ["FBIT"],
                 }
             ]
@@ -169,9 +172,27 @@ class DepartmentHierarchyTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             catalog = [
-                {"name_en": "ITMO University", "name_ru": "Университет ИТМО", "kind": "organization", "parent": None},
-                {"name_en": "School of X", "name_ru": "Школа X", "kind": "megafaculty", "parent": "ITMO University"},
-                {"name_en": "Faculty of Y", "name_ru": "Факультет Y", "kind": "faculty", "parent": "School of X"},
+                {
+                    "uid": "itmo",
+                    "name_en": "ITMO University",
+                    "name_ru": "Университет ИТМО",
+                    "kind": "organization",
+                    "parent": None,
+                },
+                {
+                    "uid": "school-x",
+                    "name_en": "School of X",
+                    "name_ru": "Школа X",
+                    "kind": "megafaculty",
+                    "parent": "itmo",
+                },
+                {
+                    "uid": "faculty-y",
+                    "name_en": "Faculty of Y",
+                    "name_ru": "Факультет Y",
+                    "kind": "faculty",
+                    "parent": "school-x",
+                },
             ]
             prepared = _run_catalog(root, catalog, [], [])
             d = {x.name_en: x for x in prepared.read_models("departments", Department)}
@@ -192,10 +213,34 @@ class DepartmentHierarchyTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             catalog = [
-                {"name_en": "ITMO University", "name_ru": "Университет ИТМО", "kind": "organization", "parent": None},
-                {"name_en": "School of X", "name_ru": "Школа X", "kind": "megafaculty", "parent": "ITMO University"},
-                {"name_en": "Faculty of Y", "name_ru": "Факультет Y", "kind": "faculty", "parent": "School of X"},
-                {"name_en": "Department of Z", "name_ru": "Кафедра Z", "kind": "department", "parent": "Faculty of Y"},
+                {
+                    "uid": "itmo",
+                    "name_en": "ITMO University",
+                    "name_ru": "Университет ИТМО",
+                    "kind": "organization",
+                    "parent": None,
+                },
+                {
+                    "uid": "school-x",
+                    "name_en": "School of X",
+                    "name_ru": "Школа X",
+                    "kind": "megafaculty",
+                    "parent": "itmo",
+                },
+                {
+                    "uid": "faculty-y",
+                    "name_en": "Faculty of Y",
+                    "name_ru": "Факультет Y",
+                    "kind": "faculty",
+                    "parent": "school-x",
+                },
+                {
+                    "uid": "dept-z",
+                    "name_en": "Department of Z",
+                    "name_ru": "Кафедра Z",
+                    "kind": "department",
+                    "parent": "faculty-y",
+                },
             ]
             prepared = _run_catalog(root, catalog, [], [])
             d = {x.name_en: x for x in prepared.read_models("departments", Department)}
@@ -204,6 +249,47 @@ class DepartmentHierarchyTest(unittest.TestCase):
             self.assertEqual(d["Faculty of Y"].parent_id, d["School of X"].id)
             self.assertEqual(d["Department of Z"].parent_id, d["Faculty of Y"].id)
 
+    def test_unknown_parent_uid_raises(self):
+        # A parent uid that names no entry is a catalogue typo — fail loudly rather
+        # than silently orphan the unit (its PART_OF edge would just drop at load).
+        with tempfile.TemporaryDirectory() as tmp:
+            static = Path(tmp) / "static"
+            static.mkdir(parents=True)
+            (static / "departments_catalog.json").write_text(
+                json.dumps(
+                    [
+                        {"uid": "itmo", "name_en": "ITMO University", "kind": "organization", "parent": None},
+                        {"uid": "faculty-y", "name_en": "Faculty of Y", "kind": "faculty", "parent": "typo-uid"},
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(ValueError):
+                StaticStore(static).departments()
+
+    def test_catalog_chain_materialises_graph_edges(self):
+        # Cross the seam static.py -> extract.py: a 3-level catalogue chain must
+        # yield the matching PART_OF edges (Department->Department, Department->Organization).
+        with tempfile.TemporaryDirectory() as tmp:
+            static = Path(tmp) / "static"
+            static.mkdir(parents=True)
+            (static / "departments_catalog.json").write_text(
+                json.dumps(
+                    [
+                        {"uid": "itmo", "name_en": "ITMO University", "kind": "organization", "parent": None},
+                        {"uid": "school-x", "name_en": "School of X", "kind": "megafaculty", "parent": "itmo"},
+                        {"uid": "faculty-y", "name_en": "Faculty of Y", "kind": "faculty", "parent": "school-x"},
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            edges: dict = {}
+            for dept in StaticStore(static).departments():
+                for key, rels in extract_relationships(dept.model_dump(), NODE_REGISTRY["department"]).items():
+                    edges.setdefault(key, []).extend(rels)
+            self.assertEqual(edges[("Department", "Organization", "PART_OF", "id")], [("school-x", "itmo", {})])
+            self.assertEqual(edges[("Department", "Department", "PART_OF", "id")], [("faculty-y", "school-x", {})])
+
     def test_organization_is_separate_node_and_not_matched(self):
         # The root organisation is emitted as an Organization, never a Department,
         # so its name cannot attach an author to it.
@@ -211,14 +297,22 @@ class DepartmentHierarchyTest(unittest.TestCase):
             root = Path(tmp)
             catalog = [
                 {
+                    "uid": "itmo",
                     "name_en": "ITMO University",
                     "name_ru": "Университет ИТМО",
                     "kind": "organization",
                     "parent": None,
+                    "ror_id": "https://ror.org/04txgxn49",
                     "country": "Russia",
                     "type": "university",
                 },
-                {"name_en": "Faculty of Y", "name_ru": "Факультет Y", "kind": "faculty", "parent": "ITMO University"},
+                {
+                    "uid": "faculty-y",
+                    "name_en": "Faculty of Y",
+                    "name_ru": "Факультет Y",
+                    "kind": "faculty",
+                    "parent": "itmo",
+                },
             ]
             person = Person(
                 id="P1",
@@ -227,6 +321,7 @@ class DepartmentHierarchyTest(unittest.TestCase):
             )
             prepared = _run_catalog(root, catalog, [person], [Publication(id="W1", title="t")])
             org = list(prepared.read_models("organizations", Organization))[0]
+            self.assertEqual(org.ror_id, "https://ror.org/04txgxn49")
             self.assertEqual(org.country, "Russia")
             self.assertEqual(org.type, "university")
             matched = {p.id: p for p in prepared.read_models("persons", Person)}["P1"]
@@ -326,10 +421,11 @@ class DepartmentContextAliasTest(unittest.TestCase):
             root = Path(tmp)
             catalog = [
                 {
+                    "uid": "fac-phys",
                     "name_en": "Faculty of Physics",
                     "name_ru": "Факультет физики",
                     "kind": "faculty",
-                    "parent": "ITMO University",
+                    "parent": None,
                     "aliases": [],
                     "context_aliases": ["Department of Physics"],
                 }

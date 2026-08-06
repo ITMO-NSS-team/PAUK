@@ -120,6 +120,11 @@ ROOT_EN = "ITMO University"
 ROOT_RU = "Университет ИТМО"
 
 
+def _slug(name: str) -> str:
+    """Human-readable, stable uid from a name (graph node id, referenced by parent)."""
+    return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-"))
+
+
 def _kind(name: str) -> str:
     """Coarse hierarchy level from a unit name, for graph styling."""
     low = name.lower()
@@ -160,13 +165,14 @@ def build_catalog() -> list[dict]:
         if not name_en:
             no_en += 1
         is_top = u["school_ru"] == u["name_ru"]
-        parent = ROOT_EN if is_top else (school_en.get(u["school_ru"]) or u["school_ru"])
+        parent_name = ROOT_EN if is_top else (school_en.get(u["school_ru"]) or u["school_ru"])
         catalog.append(
             {
+                "uid": _slug(name_en),
                 "name_en": name_en,
                 "name_ru": u["name_ru"],
                 "kind": _kind(name_en or u["name_ru"]),
-                "parent": parent,
+                "parent": _slug(parent_name),
                 "aliases": [],
                 "context_aliases": [],
             }
@@ -176,6 +182,7 @@ def build_catalog() -> list[dict]:
     # fill ror_id by hand from the ROR registry.
     catalog.append(
         {
+            "uid": _slug(ROOT_EN),
             "name_en": ROOT_EN,
             "name_ru": ROOT_RU,
             "kind": "organization",

@@ -1,15 +1,9 @@
 from __future__ import annotations
 
 import json
-from hashlib import sha256
 from pathlib import Path
 
 from pauk.models import Department, Organization
-
-
-def _identifier(prefix: str, name: str) -> str:
-    """Deterministic id derived from a name, so graph links stay stable across runs."""
-    return f"{prefix}_{sha256(name.casefold().encode()).hexdigest()[:12]}"
 
 
 class StaticStore:
@@ -22,26 +16,31 @@ class StaticStore:
             with path.open(encoding="utf-8") as fh:
                 return [Department.model_validate(json.loads(line)) for line in fh if line.strip()]
 
-        # The historical ITMO catalogue is retained as a versioned static
-        # source.  IDs are deterministically derived from the official name,
-        # so graph links remain stable across runs without SQLite.
+        # The catalogue is the versioned static source. Each entry carries a
+        # human-readable `uid` used directly as the graph node id and referenced
+        # by `parent`, so a unit is never repeated and stays cheap to rename.
         entries = self._catalog_entries()
-        kind_by_name = {(e.get("name_en") or "").strip(): (e.get("kind") or "").strip() for e in entries}
+        kind_by_uid = {(e.get("uid") or "").strip(): (e.get("kind") or "").strip() for e in entries}
         departments: list[Department] = []
         for entry in entries:
+            uid = (entry.get("uid") or "").strip()
             name_en = (entry.get("name_en") or "").strip()
-            if not name_en or (entry.get("kind") or "").strip() == "organization":
+            if not uid or not name_en or (entry.get("kind") or "").strip() == "organization":
                 continue
             parent = (entry.get("parent") or "").strip()
-            # A unit is PART_OF its parent: the Organisation if the parent is one,
-            # otherwise the parent Department. At most one link id is set.
-            if parent and kind_by_name.get(parent) == "organization":
-                parent_id, organization_id = None, _identifier("org", parent)
+            if parent and parent not in kind_by_uid:
+                # A typo here would otherwise become a silently orphaned unit (its
+                # PART_OF edge drops at load time); fail loudly instead.
+                raise ValueError(f"department {uid!r} has unknown parent uid {parent!r}")
+            # A unit is PART_OF its parent (referenced by uid): the Organisation if
+            # the parent is one, otherwise the parent Department. One link id at most.
+            if parent and kind_by_uid.get(parent) == "organization":
+                parent_id, organization_id = None, parent
             else:
-                parent_id, organization_id = (_identifier("dept", parent) if parent else None), None
+                parent_id, organization_id = (parent or None), None
             departments.append(
                 Department(
-                    id=_identifier("dept", name_en),
+                    id=uid,
                     name_en=name_en,
                     name_ru=(entry.get("name_ru") or "").strip() or None,
                     name_variants=entry.get("aliases") or [],
@@ -67,12 +66,13 @@ class StaticStore:
         for entry in self._catalog_entries():
             if (entry.get("kind") or "").strip() != "organization":
                 continue
+            uid = (entry.get("uid") or "").strip()
             name_en = (entry.get("name_en") or "").strip()
-            if not name_en:
+            if not uid or not name_en:
                 continue
             organizations.append(
                 Organization(
-                    id=_identifier("org", name_en),
+                    id=uid,
                     name_en=name_en,
                     name_ru=(entry.get("name_ru") or "").strip() or None,
                     ror_id=(entry.get("ror_id") or "").strip() or None,
