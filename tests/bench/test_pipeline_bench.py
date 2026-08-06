@@ -9,7 +9,7 @@ case from tests/bench/universe.py is supposed to produce.
 from __future__ import annotations
 
 import json
-from hashlib import sha256
+import re
 from types import SimpleNamespace
 from unittest import mock
 
@@ -65,7 +65,8 @@ GROUP = "bench"
 
 
 def dept_id(name_en: str) -> str:
-    return f"dept_{sha256(name_en.casefold().encode()).hexdigest()[:12]}"
+    # Department node id is the human-readable slug uid derived from name_en.
+    return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", name_en.lower()).strip("-"))
 
 
 @pytest.fixture(scope="module")
@@ -74,7 +75,8 @@ def bench(tmp_path_factory) -> SimpleNamespace:
     (data_dir / "static").mkdir()
     universe = build_universe()
     (data_dir / "static" / "departments_catalog.json").write_text(
-        json.dumps(universe["departments_catalog"], ensure_ascii=False), encoding="utf-8")
+        json.dumps(universe["departments_catalog"], ensure_ascii=False), encoding="utf-8"
+    )
 
     config = Settings(data_dir=data_dir)
     raw = RawStore(config.raw_dir, GROUP)
@@ -102,13 +104,22 @@ def bench(tmp_path_factory) -> SimpleNamespace:
         # A repository renamed on GitHub after an earlier run: that run's row
         # kept the old id and URL, so only the numeric id can tie it to the
         # row the new name produced. Seeded here, folded by the re-run below.
-        prepared.write_models("repositories", [*repos_after_first.values(), Repository(
-            id=STALE_REPO_ID, name="legacy-name", url=STALE_REPO_URL,
-            github_id=repo_github_id("BenchOrg7", "AlphaTool"),
-            cited_urls=[STALE_REPO_URL], owner_login="BenchOrg7",
-            publication_ids=[STALE_REPO_PUBLICATION],
-            processing={"repositories": {"status": "completed", "attempts": 1}},
-        )])
+        prepared.write_models(
+            "repositories",
+            [
+                *repos_after_first.values(),
+                Repository(
+                    id=STALE_REPO_ID,
+                    name="legacy-name",
+                    url=STALE_REPO_URL,
+                    github_id=repo_github_id("BenchOrg7", "AlphaTool"),
+                    cited_urls=[STALE_REPO_URL],
+                    owner_login="BenchOrg7",
+                    publication_ids=[STALE_REPO_PUBLICATION],
+                    processing={"repositories": {"status": "completed", "attempts": 1}},
+                ),
+            ],
+        )
         Enricher(prepared, raw, config).run()  # re-run: completed rows must not change
     finally:
         for p in patches:
@@ -138,6 +149,7 @@ def bench(tmp_path_factory) -> SimpleNamespace:
 
 
 # --- collect / normalize -------------------------------------------------------
+
 
 def test_collect_is_idempotent(bench):
     assert bench.collected_first == 124
@@ -180,6 +192,7 @@ def test_untitled_and_dateless_work(bench):
 
 # --- code_links -----------------------------------------------------------------
 
+
 def test_url_junk_is_stripped(bench):
     assert bench.publications["W7000000001"].code_url == "https://github.com/BenchOrg1/AlphaTool"
     assert bench.publications["W7000000002"].code_url == "https://github.com/BenchOrg1/beta-kit"
@@ -205,11 +218,10 @@ def test_work_without_abstract_is_completed_empty(bench):
 
 # --- repositories -----------------------------------------------------------------
 
+
 def test_exactly_80_repositories_enriched(bench):
-    completed = [r for r in bench.repositories.values()
-                 if r.processing["repositories"].status == "completed"]
-    failed = [r for r in bench.repositories.values()
-              if r.processing["repositories"].status == "failed"]
+    completed = [r for r in bench.repositories.values() if r.processing["repositories"].status == "completed"]
+    failed = [r for r in bench.repositories.values() if r.processing["repositories"].status == "failed"]
     assert len(completed) == 80
     assert len(failed) == 3
     urls = [r.url for r in completed]
@@ -217,8 +229,9 @@ def test_exactly_80_repositories_enriched(bench):
 
 
 def test_case_variants_resolve_to_one_repository(bench):
-    matches = [r for r in bench.repositories.values()
-               if normalize_repo_url(r.url) == "https://github.com/benchorg2/gammalib"]
+    matches = [
+        r for r in bench.repositories.values() if normalize_repo_url(r.url) == "https://github.com/benchorg2/gammalib"
+    ]
     assert len(matches) == 1
     assert matches[0].url == "https://github.com/BenchOrg2/GammaLib"
 
@@ -258,6 +271,7 @@ def test_github_profiles_one_per_owner(bench):
 
 # --- persons enrichment --------------------------------------------------------------
 
+
 def test_crossref_orcid_matching(bench):
     assert bench.persons["A5000000014"].orcid == "0000-0002-0000-0014"
     assert bench.persons["A5000000014"].email == "a14@example.org"
@@ -286,6 +300,7 @@ def test_crossref_states(bench):
 
 # --- dedup ------------------------------------------------------------------------------
 
+
 def test_orcid_split_author_is_merged(bench):
     assert "A5000000052" not in bench.persons
     canonical = bench.persons["A5000000051"]
@@ -301,7 +316,10 @@ def test_variant_split_merges_transitively_including_cyrillic(bench):
     canonical = bench.persons["A5000000053"]
     assert canonical.merged_ids == ["A5000000054", "A5000000055"]
     assert {a.publication_id for a in canonical.authored} == {
-        "W70000000103", "W70000000104", "W70000000105", "W70000000110",
+        "W70000000103",
+        "W70000000104",
+        "W70000000105",
+        "W70000000110",
     }
     assert {"E. Smirnova", "Екатерина Смирнова"} <= set(canonical.name_variants)
 
@@ -316,13 +334,13 @@ def test_same_name_without_distinguishing_marks_merges_by_default(bench):
 def test_conflicting_orcids_stay_separate_and_unreported(bench):
     assert "A5000000058" in bench.persons and "A5000000059" in bench.persons
     candidates_path = bench.config.prepared_dir / GROUP / "dedup_candidates.jsonl"
-    rows = [json.loads(line) for line in candidates_path.read_text(encoding="utf-8").splitlines()
-            if line.strip()]
+    rows = [json.loads(line) for line in candidates_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     pairs = {frozenset((row["person_a"], row["person_b"])) for row in rows}
     assert frozenset(("A5000000058", "A5000000059")) not in pairs
 
 
 # --- publication dedup -------------------------------------------------------------------
+
 
 def test_one_doi_re_indexed_twice_is_one_publication(bench):
     assert "W70000000112" not in bench.publications
@@ -335,8 +353,7 @@ def test_preprint_folds_into_version_of_record_keeping_both_venues(bench):
     assert "W70000000113" not in bench.publications
     survivor = bench.publications["W70000000114"]
     assert survivor.type == "article"
-    assert (survivor.journal, survivor.doi) == ("Synthetic Journal",
-                                                "https://doi.org/10.7777/vor.114")
+    assert (survivor.journal, survivor.doi) == ("Synthetic Journal", "https://doi.org/10.7777/vor.114")
     assert {(v.journal, v.doi) for v in survivor.versions} == {
         ("Synthetic Journal", "https://doi.org/10.7777/vor.114"),
         ("Synthetic Preprint Server", "https://doi.org/10.7777/preprint.113"),
@@ -365,8 +382,11 @@ def test_title_case_and_spacing_variants_are_one_publication(bench):
 
 def test_authorships_follow_the_surviving_publication(bench):
     for author_id in ("A5000000024", "A5000000025"):
-        works = [a.publication_id for a in bench.persons[author_id].authored
-                 if a.publication_id in {"W70000000113", "W70000000114"}]
+        works = [
+            a.publication_id
+            for a in bench.persons[author_id].authored
+            if a.publication_id in {"W70000000113", "W70000000114"}
+        ]
         # One authorship, not one per merged record.
         assert works == ["W70000000114"]
 
@@ -382,15 +402,14 @@ def test_versions_are_json_text(bench):
     assert "Synthetic Preprint Server" in props["versions"]
     # Each version entry records the author list that record itself carried.
     versions = {entry["openalex_id"]: entry for entry in json.loads(props["versions"])}
-    assert {a["person_id"] for a in versions["W70000000113"]["authors"]} == \
-        {"A5000000024", "A5000000025"}
+    assert {a["person_id"] for a in versions["W70000000113"]["authors"]} == {"A5000000024", "A5000000025"}
 
 
 # --- records OpenAlex has not finished processing ------------------------------------------
 
+
 def test_authors_without_an_openalex_id_still_reach_the_graph(bench):
-    authors = [p for p in bench.persons.values()
-               if any(a.publication_id == UNIDENTIFIED_WORK for a in p.authored)]
+    authors = [p for p in bench.persons.values() if any(a.publication_id == UNIDENTIFIED_WORK for a in p.authored)]
     # Three authorships, but the one carrying neither an id nor a name
     # cannot be keyed to anything.
     assert len(authors) == 2
@@ -441,8 +460,7 @@ def test_a_release_archive_points_at_the_repository_it_archives(bench):
 
 
 def test_an_affiliation_the_deposit_omits_comes_from_the_author_record(bench):
-    (authorship,) = [a for a in bench.persons[ARCHIVE_AUTHOR_ID].authored
-                     if a.publication_id == ARCHIVE_WORK]
+    (authorship,) = [a for a in bench.persons[ARCHIVE_AUTHOR_ID].authored if a.publication_id == ARCHIVE_WORK]
     assert authorship.affiliation == ARCHIVE_AUTHOR_AFFILIATION
     assert authorship.affiliation_source == "openalex"
     # Re-running the pipeline must not undo the fill.
@@ -450,6 +468,7 @@ def test_an_affiliation_the_deposit_omits_comes_from_the_author_record(bench):
 
 
 # --- repository dedup --------------------------------------------------------------------
+
 
 def test_row_written_before_a_rename_folds_into_the_canonical_repository(bench):
     assert STALE_REPO_ID not in bench.repositories
@@ -463,6 +482,7 @@ def test_row_written_before_a_rename_folds_into_the_canonical_repository(bench):
 
 # --- departments -----------------------------------------------------------------------
 
+
 def test_department_matching_including_aliases(bench):
     assert bench.persons["A5000000017"].department_ids == [dept_id("Institute of Applied Computer Science")]
     assert bench.persons["A5000000018"].department_ids == [dept_id("Institute of Applied Computer Science")]
@@ -472,6 +492,7 @@ def test_department_matching_including_aliases(bench):
 
 
 # --- graph load --------------------------------------------------------------------------
+
 
 def test_graph_node_counts(bench):
     graph = bench.graph
@@ -494,8 +515,7 @@ def test_link_candidates_are_exactly_the_phantoms(bench):
 
 def test_graph_edge_counts(bench):
     graph = bench.graph
-    expected_authored = {(person.id, a.publication_id)
-                         for person in bench.persons.values() for a in person.authored}
+    expected_authored = {(person.id, a.publication_id) for person in bench.persons.values() for a in person.authored}
     assert graph.edge_pairs("AUTHORED") == expected_authored
     # 228 from works W001..W110, 9 from the duplicate-record works (two
     # authors each on W111, W114, W117 and W119, one on W118), 2 keyable
