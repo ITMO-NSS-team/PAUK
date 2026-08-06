@@ -37,9 +37,14 @@ class Repository(BaseModel):
     id: str
     name: str
     url: str
+    # GitHub's own numeric id: stable across renames and owner transfers,
+    # which is what lets the dedup stage recognise rows created before a
+    # rename as the same repository.
+    github_id: int | None = None
     # URLs this repo was cited by before canonicalization (renames, case
     # variants) — lets the graph loader resolve old links to this node.
     cited_urls: list[str] = Field(default_factory=list)
+    merged_ids: list[str] = Field(default_factory=list)
     description: str | None = None
     access_date: date | None = None
     has_readme: bool = False

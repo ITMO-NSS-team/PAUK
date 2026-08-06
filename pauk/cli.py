@@ -88,6 +88,9 @@ def main() -> None:
     input_group = p.add_mutually_exclusive_group(required=True)
     input_group.add_argument("--group")
     input_group.add_argument("--input")
+    p = sub.add_parser("dedup")
+    p.add_argument("target", choices=["graph"],
+                   help="deduplicate persons across every published group in the graph")
     p = sub.add_parser("cache")
     cache_sub = p.add_subparsers(dest="cache_command", required=True)
     p = cache_sub.add_parser("export")
@@ -111,6 +114,9 @@ def main() -> None:
         from pauk.graph.load import load_jsonl_group
         group, _selection = (validate_group(args.group), None) if args.group else _input_group_and_selection(args.input)
         load_jsonl_group(settings, group)
+    elif args.command == "dedup":
+        from pauk.graph.dedup import run_graph_dedup
+        print(run_graph_dedup(settings))
     else:
         from pauk.cache import GraphSnapshotExporter
         print(GraphSnapshotExporter(settings).export(args.output))

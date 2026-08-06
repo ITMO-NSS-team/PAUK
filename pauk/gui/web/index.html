@@ -96,7 +96,7 @@
 
   <header id="topbar">
     <div id="tab-toggle">
-      <button data-tab="1" class="active">Персоналии</button><button data-tab="3">Публикации</button><button data-tab="2">Репозитории</button><button data-tab="4">Поиск</button>
+      <button data-tab="1" class="active">Персоналии</button><button data-tab="3">Публикации</button><button data-tab="2">Репозитории</button><button data-tab="4">Поиск</button><button data-tab="5">Здоровье БД</button>
     </div>
     <div class="topbar-right">
       <button class="topbar-icon-btn" id="export-btn" title="Скачать карту как PNG">
@@ -162,6 +162,9 @@
     <div id="sp-main"></div>
   </div>
 
+  <!-- Tab 5: DB stats + health checks (full-screen, on top of the map) -->
+  <div id="stats-page"></div>
+
   <script defer src="vendor/maplibre-gl.js"></script>
   <script defer src="vendor/d3.min.js"></script>
   <script defer src="graph-data.js"></script>
@@ -173,6 +176,8 @@
   <script defer src="tab-authors.js"></script>
   <script defer src="tab-repos.js"></script>
   <script defer src="tab-pubs.js"></script>
+  <script defer src="graph-stats.js"></script>
+  <script defer src="tab-stats.js"></script>
   <script defer src="search.js"></script>
   <script defer src="main.js"></script>
   <script defer src="graph-search.js"></script>

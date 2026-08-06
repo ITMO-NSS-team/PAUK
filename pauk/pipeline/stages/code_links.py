@@ -11,6 +11,13 @@ from .base import EnrichmentStage
 
 GITHUB_URL = re.compile(r"https?://(?:www\.)?github\.com/[\w.-]+/[\w.-]+", re.IGNORECASE)
 
+# Work types that are a deposit of something rather than a paper about it.
+DEPOSIT_TYPES = {"software", "dataset"}
+# How GitHub titles the snapshot it archives on Zenodo for a release:
+# "asl/BandageNG: Continuous build". The owner/name part carries no spaces,
+# which keeps titles like "A/B testing: results" out.
+REPOSITORY_ARCHIVE = re.compile(r"^([\w.-]+)/([\w.-]+):\s")
+
 
 def _canonical_github_url(url: str) -> str:
     """Store www.github.com links under GitHub's canonical host."""
@@ -18,6 +25,23 @@ def _canonical_github_url(url: str) -> str:
     if parsed.netloc.lower() == "www.github.com":
         return parsed._replace(netloc="github.com").geturl()
     return url
+
+
+def _archived_repository_url(publication: Publication) -> str | None:
+    """The repository a software or dataset deposit is an archive of.
+
+    Zenodo mints a DOI for every GitHub release, and OpenAlex indexes each
+    one as a work of its own — which is why "asl/BandageNG: Continuous
+    build" sits in the graph looking like a paper. The repository it
+    archives is named in the title, so the deposit can point at it instead
+    of standing alone.
+    """
+    if publication.type not in DEPOSIT_TYPES:
+        return None
+    match = REPOSITORY_ARCHIVE.match(publication.title or "")
+    if not match:
+        return None
+    return f"https://github.com/{match.group(1)}/{match.group(2)}"
 
 
 class CodeLinksStage(EnrichmentStage):
@@ -41,9 +65,10 @@ class CodeLinksStage(EnrichmentStage):
             # rstrip(".") drops sentence-ending periods the regex captures
             # ("code at https://github.com/org/repo." -> repo name "repo.");
             # ".git" is a clone-URL suffix, never part of a repo name.
+            archived = _archived_repository_url(pub)
             urls = list(dict.fromkeys(
                 _canonical_github_url(url.rstrip(".").removesuffix(".git"))
-                for url in GITHUB_URL.findall(pub.abstract or "")
+                for url in ([archived] if archived else []) + GITHUB_URL.findall(pub.abstract or "")
             ))
             pub.has_code = bool(urls)
             pub.code_url = urls[0] if urls else None
@@ -53,8 +78,9 @@ class CodeLinksStage(EnrichmentStage):
                 finished_at=datetime.now(timezone.utc), result_count=len(urls),
             )
             links_by_publication[pub.id] = RepoLink(publication_id=pub.id, links=[
-                CodeLink(url=url, host=urlparse(url).netloc, is_relevant=True,
-                         llm_confidence=1.0, llm_reason="github_url_in_abstract")
+                CodeLink(url=url, host=urlparse(url).netloc, is_relevant=True, llm_confidence=1.0,
+                         llm_reason=("repository_archived_by_this_deposit" if url == archived
+                                     else "github_url_in_abstract"))
                 for url in urls
             ])
             changed += 1

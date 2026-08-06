@@ -56,6 +56,9 @@ class StagesTest(unittest.TestCase):
         github_client.return_value.get_repository.return_value = {
             "html_url": "https://github.com/org/repo", "name": "repo", "owner": {"login": "org"},
         }
+        # Without this the stage stores the MagicMock itself in Repository.has_readme,
+        # which is typed bool — the row still round-trips, but as a mock repr.
+        github_client.return_value.has_readme.return_value = True
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             prepared = PreparedStore(root / "prepared", "sample")
@@ -82,6 +85,28 @@ class StagesTest(unittest.TestCase):
             self.assertEqual(result["publications"], 1)
             rows = {row.id: row for row in prepared.read_models("publications", Publication)}
             self.assertEqual(rows["W1"].processing["code_links"].attempts, 2)
+
+    def test_software_deposit_links_to_the_repository_it_archives(self):
+        # Zenodo mints a DOI per GitHub release, so the archive shows up as a
+        # work of its own; the repository it archives is named in the title.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prepared = PreparedStore(root / "prepared", "sample")
+            raw = RawStore(root / "raw", "sample")
+            prepared.write_models("publications", [
+                Publication(id="W1", title="asl/BandageNG: Continuous build", type="software"),
+                Publication(id="W2", title="A/B testing: what we measured", type="dataset"),
+                Publication(id="W3", title="ablab/spades: Release v4.3.0", type="article"),
+            ])
+            CodeLinksStage(prepared, raw).run()
+            rows = {r.id: r for r in prepared.read_models("publications", Publication)}
+            self.assertEqual(rows["W1"].code_url, "https://github.com/asl/BandageNG")
+            links = {r.publication_id: r for r in prepared.read_models("repo_links", RepoLink)}
+            self.assertEqual(links["W1"].links[0].llm_reason, "repository_archived_by_this_deposit")
+            # A title with a space before the colon is prose, not owner/name,
+            # and a plain article is never read as an archive.
+            self.assertIsNone(rows["W2"].code_url)
+            self.assertIsNone(rows["W3"].code_url)
 
     def test_code_links_respects_publication_input_scope(self):
         with tempfile.TemporaryDirectory() as tmp:
