@@ -10,6 +10,11 @@ class Department(BaseModel):
     # organisations. Unlike name_variants they match ONLY inside an affiliation
     # segment that carries an ITMO marker, so they cannot pull in co-affiliations.
     context_aliases: list[str] = Field(default_factory=list)
-    # Top-level unit (megafaculty/institute); becomes a PART_OF edge in the graph.
-    # None when the unit's school is unknown. See School.
-    school_id: str | None = None
+    # Recursive hierarchy: this unit is PART_OF exactly one parent. A sub-unit
+    # points at its parent Department via parent_id; a top-level unit points at
+    # its Organization via organization_id. At most one of the two is set.
+    parent_id: str | None = None
+    organization_id: str | None = None
+    # Level in the hierarchy — megafaculty | school | faculty | institute |
+    # center | department | lab | unit. Used for graph styling.
+    kind: str | None = None

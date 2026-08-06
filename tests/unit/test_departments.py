@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pauk.models import Department, Person, Publication, School
+from pauk.models import Department, Organization, Person, Publication
 from pauk.models.processing import ProcessingStatus
 from pauk.models.relations import Authorship
 from pauk.pipeline.stages.departments import DepartmentsStage
@@ -117,64 +117,120 @@ class DepartmentsStageTest(unittest.TestCase):
             )
             self.assertEqual(persons["P1"].department_ids, ["d1"])
 
+    def test_no_match_records_completed_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            person = Person(
+                id="P1",
+                is_itmo=True,
+                authored=[Authorship(publication_id="W1", affiliation="Some Foreign University, UK")],
+            )
+            persons, _ = _run(
+                root,
+                [Department(id="d1", name_en="Faculty of Physics")],
+                [person],
+                [Publication(id="W1", title="t")],
+            )
+            state = persons["P1"].processing["departments"]
+            self.assertEqual(persons["P1"].department_ids, [])
+            self.assertEqual(state.status, ProcessingStatus.COMPLETED_EMPTY)
+            self.assertEqual(state.result_count, 0)
 
-class DepartmentHierarchyTest(unittest.TestCase):
-    def test_catalog_derives_school_id_and_emits_school_nodes(self):
-        # Two units under one school_en → both departments share one school_id,
-        # and a single School node is emitted for the graph PART_OF edge.
+    def test_catalog_alias_becomes_name_variant_and_matches(self):
+        # aliases in the catalogue are loaded as name_variants (static.py) and then
+        # drive matching — exercise the two together, not just a hand-built model.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             catalog = [
                 {
-                    "school_en": "School of X",
-                    "school_ru": "Школа X",
-                    "name_en": "School of X",
-                    "name_ru": "Школа X",
-                    "aliases": [],
-                },
-                {
-                    "school_en": "School of X",
-                    "school_ru": "Школа X",
-                    "name_en": "Faculty of Y",
-                    "name_ru": "Факультет Y",
-                    "aliases": [],
-                },
+                    "name_en": "Faculty of Secure Information Technologies",
+                    "name_ru": "",
+                    "kind": "faculty",
+                    "parent": "ITMO University",
+                    "aliases": ["FBIT"],
+                }
             ]
             person = Person(
                 id="P1",
                 is_itmo=True,
-                authored=[
-                    Authorship(publication_id="W1", affiliation="Faculty of Y, ITMO University"),
-                ],
+                authored=[Authorship(publication_id="W1", affiliation="FBIT, ITMO University")],
             )
             prepared = _run_catalog(root, catalog, [person], [Publication(id="W1", title="t")])
-
             departments = {d.name_en: d for d in prepared.read_models("departments", Department)}
-            schools = list(prepared.read_models("schools", School))
-            faculty = departments["Faculty of Y"]
+            self.assertEqual(departments["Faculty of Secure Information Technologies"].name_variants, ["FBIT"])
+            matched = {p.id: p for p in prepared.read_models("persons", Person)}["P1"]
+            self.assertTrue(matched.department_ids)
 
-            self.assertIsNotNone(faculty.school_id)
-            self.assertEqual(faculty.school_id, departments["School of X"].school_id)
-            self.assertEqual([s.name_en for s in schools], ["School of X"])
-            self.assertEqual(schools[0].id, faculty.school_id)
-            self.assertEqual(schools[0].name_ru, "Школа X")
 
-    def test_units_without_school_have_no_school_id(self):
+class DepartmentHierarchyTest(unittest.TestCase):
+    def test_top_unit_links_to_organization_subunit_to_parent(self):
+        # A megafaculty is PART_OF the Organization (organization_id); a faculty
+        # under it is PART_OF that megafaculty Department (parent_id).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            catalog = [
+                {"name_en": "ITMO University", "name_ru": "Университет ИТМО", "kind": "organization", "parent": None},
+                {"name_en": "School of X", "name_ru": "Школа X", "kind": "megafaculty", "parent": "ITMO University"},
+                {"name_en": "Faculty of Y", "name_ru": "Факультет Y", "kind": "faculty", "parent": "School of X"},
+            ]
+            prepared = _run_catalog(root, catalog, [], [])
+            d = {x.name_en: x for x in prepared.read_models("departments", Department)}
+            orgs = list(prepared.read_models("organizations", Organization))
+
+            self.assertEqual([o.name_en for o in orgs], ["ITMO University"])
+            self.assertNotIn("ITMO University", d)  # the org is not a Department
+            school = d["School of X"]
+            self.assertEqual(school.organization_id, orgs[0].id)
+            self.assertIsNone(school.parent_id)
+            faculty = d["Faculty of Y"]
+            self.assertEqual(faculty.parent_id, school.id)
+            self.assertIsNone(faculty.organization_id)
+
+    def test_multi_level_chain_resolves_each_parent(self):
+        # organization -> megafaculty -> faculty -> department, each linking to
+        # the level directly above (org via organization_id, rest via parent_id).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            catalog = [
+                {"name_en": "ITMO University", "name_ru": "Университет ИТМО", "kind": "organization", "parent": None},
+                {"name_en": "School of X", "name_ru": "Школа X", "kind": "megafaculty", "parent": "ITMO University"},
+                {"name_en": "Faculty of Y", "name_ru": "Факультет Y", "kind": "faculty", "parent": "School of X"},
+                {"name_en": "Department of Z", "name_ru": "Кафедра Z", "kind": "department", "parent": "Faculty of Y"},
+            ]
+            prepared = _run_catalog(root, catalog, [], [])
+            d = {x.name_en: x for x in prepared.read_models("departments", Department)}
+            org = list(prepared.read_models("organizations", Organization))[0]
+            self.assertEqual(d["School of X"].organization_id, org.id)
+            self.assertEqual(d["Faculty of Y"].parent_id, d["School of X"].id)
+            self.assertEqual(d["Department of Z"].parent_id, d["Faculty of Y"].id)
+
+    def test_organization_is_separate_node_and_not_matched(self):
+        # The root organisation is emitted as an Organization, never a Department,
+        # so its name cannot attach an author to it.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             catalog = [
                 {
-                    "school_en": "",
-                    "school_ru": "",
-                    "name_en": "Standalone Lab",
-                    "name_ru": "Лаборатория",
-                    "aliases": [],
-                }
+                    "name_en": "ITMO University",
+                    "name_ru": "Университет ИТМО",
+                    "kind": "organization",
+                    "parent": None,
+                    "country": "Russia",
+                    "type": "university",
+                },
+                {"name_en": "Faculty of Y", "name_ru": "Факультет Y", "kind": "faculty", "parent": "ITMO University"},
             ]
-            prepared = _run_catalog(root, catalog, [], [])
-            departments = list(prepared.read_models("departments", Department))
-            self.assertEqual(departments[0].school_id, None)
-            self.assertEqual(list(prepared.read_models("schools", School)), [])
+            person = Person(
+                id="P1",
+                is_itmo=True,
+                authored=[Authorship(publication_id="W1", affiliation="ITMO University, Saint Petersburg")],
+            )
+            prepared = _run_catalog(root, catalog, [person], [Publication(id="W1", title="t")])
+            org = list(prepared.read_models("organizations", Organization))[0]
+            self.assertEqual(org.country, "Russia")
+            self.assertEqual(org.type, "university")
+            matched = {p.id: p for p in prepared.read_models("persons", Person)}["P1"]
+            self.assertEqual(matched.department_ids, [])
 
 
 class DepartmentContextAliasTest(unittest.TestCase):
@@ -213,6 +269,37 @@ class DepartmentContextAliasTest(unittest.TestCase):
                 [],
             )
 
+    def test_context_alias_matches_when_itmo_marker_precedes(self):
+        # Org-first order: the ITMO marker in the previous part still licenses it.
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self._match(Path(tmp), "ITMO University, Department of Physics"), ["d1"])
+
+    def test_context_alias_matches_in_same_part_as_marker(self):
+        # No comma between the name and the org — both sit in one part.
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self._match(Path(tmp), "Department of Physics ITMO University, Saint Petersburg"), ["d1"])
+
+    def test_context_alias_isolated_across_affiliations(self):
+        # A generic alias in one authorship must not borrow an ITMO marker from a
+        # different authorship — parts are collected per affiliation.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            person = Person(
+                id="P1",
+                is_itmo=True,
+                authored=[
+                    Authorship(publication_id="W1", affiliation="Department of Physics, University of Oxford"),
+                    Authorship(publication_id="W2", affiliation="ITMO University, Saint Petersburg"),
+                ],
+            )
+            persons, _ = _run(
+                root,
+                [self._dept()],
+                [person],
+                [Publication(id="W1", title="t"), Publication(id="W2", title="t")],
+            )
+            self.assertEqual(persons["P1"].department_ids, [])
+
     def test_context_alias_prefers_longest_match_in_part(self):
         # "Department of Physics" must not fire inside "Department of Physics and
         # Engineering" — only the more specific unit is credited for that part.
@@ -239,10 +326,10 @@ class DepartmentContextAliasTest(unittest.TestCase):
             root = Path(tmp)
             catalog = [
                 {
-                    "school_en": "",
-                    "school_ru": "",
                     "name_en": "Faculty of Physics",
                     "name_ru": "Факультет физики",
+                    "kind": "faculty",
+                    "parent": "ITMO University",
                     "aliases": [],
                     "context_aliases": ["Department of Physics"],
                 }

@@ -5,7 +5,8 @@ from .client import Neo4jClient
 CONSTRAINTS: list[tuple[str, str]] = [
     ("Person", "id"),
     ("Department", "id"),
-    ("School", "id"),
+    ("Organization", "id"),
+    ("Organization", "name_en"),
     ("Publication", "id"),
     ("Repository", "id"),
     ("GitHubProfile", "id"),

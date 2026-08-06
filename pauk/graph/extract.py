@@ -18,7 +18,6 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-
 # Row fields holding nested maps: Neo4j has no nested-map property type, so
 # they are stored as JSON text.
 JSON_TEXT_FIELDS = ("funding", "versions", "counts_by_year", "affiliations")
@@ -84,12 +83,17 @@ class NodeSpec:
 NODE_REGISTRY: dict[str, NodeSpec] = {
     "department": NodeSpec(
         labels="Department",
-        prop_fields=("name_en", "name_ru", "name_variants", "school_id"),
-        relationships=(RelSpec("school_id", "PART_OF", "School", None, scalar=True),),
+        prop_fields=("name_en", "name_ru", "name_variants", "kind", "parent_id", "organization_id"),
+        # A unit is PART_OF exactly one parent: a sub-unit points at its parent
+        # Department (recursive hierarchy), a top-level unit at its Organization.
+        relationships=(
+            RelSpec("parent_id", "PART_OF", "Department", None, scalar=True),
+            RelSpec("organization_id", "PART_OF", "Organization", None, scalar=True),
+        ),
     ),
-    "school": NodeSpec(
-        labels="School",
-        prop_fields=("name_en", "name_ru"),
+    "organization": NodeSpec(
+        labels="Organization",
+        prop_fields=("name_en", "name_ru", "ror_id", "country", "type"),
     ),
     "itmo_person": NodeSpec(
         labels="Person:Itmo",

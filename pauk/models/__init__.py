@@ -1,9 +1,9 @@
 from .department import Department
+from .organization import Organization
 from .person import Affiliation, Person
 from .publication import Funding, Publication, PublicationVersion, VersionAuthor
 from .relations import Authorship, Contribution, MentionsLink
 from .repository import CodeLink, GitHubProfile, LinkCandidate, RepoLink, Repository
-from .school import School
 
 __all__ = [
     "Affiliation",
@@ -11,11 +11,11 @@ __all__ = [
     "CodeLink",
     "Contribution",
     "Department",
-    "School",
     "Funding",
     "GitHubProfile",
     "LinkCandidate",
     "MentionsLink",
+    "Organization",
     "Person",
     "Publication",
     "PublicationVersion",

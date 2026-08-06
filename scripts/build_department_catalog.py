@@ -114,8 +114,41 @@ def official_en_by_id(html: str) -> dict[int, str]:
     return {int(fid): _clean(name) for fid, name in _LINK_RE.findall(html)}
 
 
+# Root organisation node: every top-level unit hangs off it (parent), and it is
+# the one entry StaticStore keeps out of affiliation matching (kind=organization).
+ROOT_EN = "ITMO University"
+ROOT_RU = "Университет ИТМО"
+
+
+def _kind(name: str) -> str:
+    """Coarse hierarchy level from a unit name, for graph styling."""
+    low = name.lower()
+    if low.startswith("school of") or "мегафак" in low:
+        return "megafaculty"
+    if "higher school" in low or low.endswith(" school") or "engineering school" in low:
+        return "school"
+    if low.startswith("faculty") or low.startswith("факультет"):
+        return "faculty"
+    if low.startswith("department") or low.startswith("кафедра") or low.startswith("департамент"):
+        return "department"
+    if "laborator" in low or "лаборатори" in low:
+        return "lab"
+    if low.startswith("institute") or low.endswith("institute") or "институт" in low:
+        return "institute"
+    if "center" in low or "centre" in low or "центр" in low:
+        return "center"
+    return "unit"
+
+
 def build_catalog() -> list[dict]:
-    """Assemble the draft: RU tree (hierarchy) + official EN by id; leaf EN empty."""
+    """Assemble the draft in the schema StaticStore reads: name_en/name_ru/kind/
+    parent/aliases/context_aliases, plus one root organisation entry.
+
+    `parent` references a unit by its English name (that is how StaticStore derives
+    parent_id). Top-level units point at the ROOT_EN organisation; sub-units point
+    at their megafaculty's EN name. A megafaculty with no official EN yet leaves an
+    unresolved parent for its children until the EN name is filled in by hand.
+    """
     ru_units = parse_ru_tree(fetch(STRUCTURE_URL_RU))
     en_by_id = official_en_by_id(fetch(STRUCTURE_URL_EN))
     school_en = {u["name_ru"]: en_by_id.get(u["faculty_id"], "") for u in ru_units if u["school_ru"] == u["name_ru"]}
@@ -126,17 +159,32 @@ def build_catalog() -> list[dict]:
         name_en = en_by_id.get(u["faculty_id"], "")
         if not name_en:
             no_en += 1
+        is_top = u["school_ru"] == u["name_ru"]
+        parent = ROOT_EN if is_top else (school_en.get(u["school_ru"]) or u["school_ru"])
         catalog.append(
             {
-                "faculty_id": u["faculty_id"],
-                "school_en": school_en.get(u["school_ru"], ""),
-                "school_ru": u["school_ru"],
                 "name_en": name_en,
                 "name_ru": u["name_ru"],
+                "kind": _kind(name_en or u["name_ru"]),
+                "parent": parent,
                 "aliases": [],
+                "context_aliases": [],
             }
         )
-    catalog.sort(key=lambda d: (d["school_ru"].lower(), d["name_ru"].lower()))
+    catalog.sort(key=lambda d: (d["parent"] or "", d["name_ru"].lower()))
+    # The root organisation is an Organization node (not matched, no aliases):
+    # fill ror_id by hand from the ROR registry.
+    catalog.append(
+        {
+            "name_en": ROOT_EN,
+            "name_ru": ROOT_RU,
+            "kind": "organization",
+            "parent": None,
+            "ror_id": "",
+            "country": "Russia",
+            "type": "university",
+        }
+    )
     logger.warning("without official EN (fill via LLM RU->EN + manual): %d of %d", no_en, len(catalog))
     return catalog
 

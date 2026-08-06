@@ -9,7 +9,6 @@ from pydantic import BaseModel
 
 from .atomic import AtomicWriter
 
-
 M = TypeVar("M", bound=BaseModel)
 
 
@@ -18,7 +17,7 @@ class PreparedStore:
         "publications": "publications.jsonl",
         "persons": "persons.jsonl",
         "departments": "departments.jsonl",
-        "schools": "schools.jsonl",
+        "organizations": "organizations.jsonl",
         "repositories": "repositories.jsonl",
         "github_profiles": "github_profiles.jsonl",
         "repo_links": "repo_links.jsonl",

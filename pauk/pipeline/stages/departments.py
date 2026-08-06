@@ -47,7 +47,10 @@ class DepartmentsStage(EnrichmentStage):
     def run(self) -> dict[str, int]:
         store = StaticStore(self.config.static_dir)
         departments = store.departments()
-        schools = store.schools()
+        organizations = store.organizations()
+        # Root organisations (ITMO, co-affiliations) are separate Organization
+        # nodes, never in `departments`, so every unit here is matchable. Matching
+        # the org name itself is undesirable anyway (it is in almost every affiliation).
         matchers = [(d.id, _match_names(d)) for d in departments]
         ctx_matchers = [(d.id, _context_names(d)) for d in departments if d.context_aliases]
         people = list(self.prepared.read_models("persons", Person))
@@ -104,6 +107,6 @@ class DepartmentsStage(EnrichmentStage):
             changed += 1
         self.prepared.write_models("persons", people)
         self.prepared.write_models("departments", departments)
-        self.prepared.write_models("schools", schools)
+        self.prepared.write_models("organizations", organizations)
         self.prepared.write_models("publications", publications)
-        return {"persons": changed, "departments": len(departments), "schools": len(schools)}
+        return {"persons": changed, "departments": len(departments), "organizations": len(organizations)}

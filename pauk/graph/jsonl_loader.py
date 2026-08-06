@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 FILE_SPECS: dict[str, str] = {
     "departments.jsonl": "department",
-    "schools.jsonl": "school",
+    "organizations.jsonl": "organization",
     "publications.jsonl": "publication",
     "repositories.jsonl": "repository",
     "github_profiles.jsonl": "github_profile",

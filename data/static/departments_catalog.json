@@ -1,68 +1,63 @@
 ﻿[
   {
-    "faculty_id": 87,
-    "school_en": "Faculty of Technological Management and Innovations",
-    "school_ru": "Факультет технологического менеджмента и инноваций",
     "name_en": "Faculty of Technological Management and Innovations",
     "name_ru": "Факультет технологического менеджмента и инноваций",
     "aliases": [
       "Faculty of Technology Management and Innovation",
       "Faculty of Technology and Innovation Management",
       "Faculty of Technological Management and Innovation"
-    ]
+    ],
+    "kind": "faculty",
+    "parent": "ITMO University"
   },
   {
-    "faculty_id": 115,
-    "school_en": "Higher School of Engineering and Technology",
-    "school_ru": "Институт «Высшая инженерно-техническая школа»",
     "name_en": "Higher School of Engineering and Technology",
     "name_ru": "Институт «Высшая инженерно-техническая школа»",
     "aliases": [
+      "Институт Высшая инженерная школа"
+    ],
+    "kind": "school",
+    "parent": "ITMO University",
+    "context_aliases": [
       "Higher Engineering School",
-      "Институт Высшая инженерная школа",
       "Institute High School of Engineering"
     ]
   },
   {
-    "faculty_id": 17,
-    "school_en": "Institute of International Development and Partnership",
-    "school_ru": "Институт международного развития и партнёрства",
     "name_en": "Institute of International Development and Partnership",
     "name_ru": "Институт международного развития и партнёрства",
-    "aliases": []
+    "aliases": [],
+    "kind": "institute",
+    "parent": "ITMO University"
   },
   {
-    "faculty_id": 125,
-    "school_en": "ITMO Advanced Engineering School in Interdisciplinary Engineering",
-    "school_ru": "Передовая инженерная школа междисциплинарного инжиниринга",
     "name_en": "ITMO Advanced Engineering School in Interdisciplinary Engineering",
     "name_ru": "Передовая инженерная школа междисциплинарного инжиниринга",
     "aliases": [
-      "Advanced Engineering School",
       "PISH",
       "ПИШ"
+    ],
+    "kind": "school",
+    "parent": "ITMO University",
+    "context_aliases": [
+      "Advanced Engineering School"
     ]
   },
   {
-    "faculty_id": 484,
-    "school_en": "Center for Social and Human Sciences",
-    "school_ru": "Центр социальных и гуманитарных наук",
     "name_en": "Center for Social and Human Sciences",
     "name_ru": "Центр социальных и гуманитарных наук",
-    "aliases": []
+    "aliases": [],
+    "kind": "center",
+    "parent": "ITMO University"
   },
   {
-    "faculty_id": 455,
-    "school_en": "Educational Center \"Energy-Efficient Engineering Systems\"",
-    "school_ru": "Образовательный центр \"Энергоэффективные инженерные системы\"",
     "name_en": "Center for Project Activities and Commercialization",
     "name_ru": "Центр проектной деятельности и коммерциализации",
-    "aliases": []
+    "aliases": [],
+    "kind": "center",
+    "parent": "Educational Center \"Energy-Efficient Engineering Systems\""
   },
   {
-    "faculty_id": 497,
-    "school_en": "Educational Center \"Energy-Efficient Engineering Systems\"",
-    "school_ru": "Образовательный центр \"Энергоэффективные инженерные системы\"",
     "name_en": "Educational Center \"Energy-Efficient Engineering Systems\"",
     "name_ru": "Образовательный центр \"Энергоэффективные инженерные системы\"",
     "aliases": [
@@ -70,125 +65,111 @@
       "Educational Center Energy Efficient Engineering Systems",
       "Educational Center Energy-Efficient Engineering Systems",
       "Educational Center Energy-Efficient Engineering System"
-    ]
+    ],
+    "kind": "center",
+    "parent": "ITMO University"
   },
   {
-    "faculty_id": null,
-    "school_en": "Educational Center \"Energy-Efficient Engineering Systems\"",
-    "school_ru": "Образовательный центр \"Энергоэффективные инженерные системы\"",
     "name_en": "Interfaculty Laboratory of Translational Technologies in Education",
     "name_ru": "Межфакультетская лаборатория \"Трансляционные технологии в образовании\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "Educational Center \"Energy-Efficient Engineering Systems\""
   },
   {
-    "faculty_id": 436,
-    "school_en": "Higher School of Engineering and Technology",
-    "school_ru": "Институт «Высшая инженерно-техническая школа»",
     "name_en": "Center for Development of the Institute of Intellectual Property",
     "name_ru": "Центр развития института интеллектуальной собственности",
     "aliases": [
       "Center for the Development of the Institute of Intellectual Property"
-    ]
+    ],
+    "kind": "center",
+    "parent": "Higher School of Engineering and Technology"
   },
   {
-    "faculty_id": null,
-    "school_en": "Higher School of Engineering and Technology",
-    "school_ru": "Институт «Высшая инженерно-техническая школа»",
     "name_en": "Laboratory of Assembly and Adjustment of Waveguide Photonics Devices",
     "name_ru": "Лаборатория сборки и юстировки устройств световодной фотоники",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "Higher School of Engineering and Technology"
   },
   {
-    "faculty_id": null,
-    "school_en": "Higher School of Engineering and Technology",
-    "school_ru": "Институт «Высшая инженерно-техническая школа»",
     "name_en": "Laboratory of Fiber Bragg Grating Recording",
     "name_ru": "Лаборатория записи волоконных брэгговских решеток",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "Higher School of Engineering and Technology"
   },
   {
-    "faculty_id": null,
-    "school_en": "Higher School of Engineering and Technology",
-    "school_ru": "Институт «Высшая инженерно-техническая школа»",
     "name_en": "Laboratory of Modeling and Programming",
     "name_ru": "Лаборатория моделирования и программирования",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "Higher School of Engineering and Technology"
   },
   {
-    "faculty_id": null,
-    "school_en": "Higher School of Engineering and Technology",
-    "school_ru": "Институт «Высшая инженерно-техническая школа»",
     "name_en": "Laboratory of Programmable Electronics",
     "name_ru": "Лаборатория программируемой электроники",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "Higher School of Engineering and Technology"
   },
   {
-    "faculty_id": null,
-    "school_en": "Higher School of Engineering and Technology",
-    "school_ru": "Институт «Высшая инженерно-техническая школа»",
     "name_en": "Laboratory of Technological Methods and Devices",
     "name_ru": "Лаборатория технологических методов и устройств",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "Higher School of Engineering and Technology"
   },
   {
-    "faculty_id": null,
-    "school_en": "Higher School of Engineering and Technology",
-    "school_ru": "Институт «Высшая инженерно-техническая школа»",
     "name_en": "Laboratory of Waveguide Photonics",
     "name_ru": "Лаборатория световодной фотоники",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "Higher School of Engineering and Technology"
   },
   {
-    "faculty_id": 506,
-    "school_en": "Higher School of Engineering and Technology",
-    "school_ru": "Институт «Высшая инженерно-техническая школа»",
     "name_en": "Scientific and Production Center \"Precision Electromechanics\"",
     "name_ru": "Научно-производственный центр \"Прецизионная электромеханика\"",
     "aliases": [
       "Research and Production Center for Precision Electromechanics",
       "Research and Production Center Precision Electromechanics"
-    ]
+    ],
+    "kind": "center",
+    "parent": "Higher School of Engineering and Technology"
   },
   {
-    "faculty_id": 457,
-    "school_en": "Higher School of Engineering and Technology",
-    "school_ru": "Институт «Высшая инженерно-техническая школа»",
     "name_en": "Research Center of Light-Guided Photonics",
     "name_ru": "Научно-исследовательский центр световодной фотоники",
     "aliases": [
       "Research Center for Waveguide Photonics",
       "Department of Light-Guided Photonics",
       "Research Institute of Light-Guided Photonics"
-    ]
+    ],
+    "kind": "center",
+    "parent": "Higher School of Engineering and Technology"
   },
   {
-    "faculty_id": 508,
-    "school_en": "Innovative Industrial Center of Gazprom Neft - ITMO University",
-    "school_ru": "Инновационный индустриальный центр ПАО \"Газпром нефть\" - Университет ИТМО",
     "name_en": "Innovative Industrial Center of Gazprom Neft - ITMO University",
     "name_ru": "Инновационный индустриальный центр ПАО \"Газпром нефть\" - Университет ИТМО",
-    "aliases": []
+    "aliases": [],
+    "kind": "center",
+    "parent": "ITMO University"
   },
   {
-    "faculty_id": 514,
-    "school_en": "Innovative Industrial Center of Gazprom Neft - ITMO University",
-    "school_ru": "Инновационный индустриальный центр ПАО \"Газпром нефть\" - Университет ИТМО",
     "name_en": "Research and Educational Center Gazprom Neft-ITMO",
     "name_ru": "Научно-образовательный центр \"Газпром нефть-ИТМО\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "center",
+    "parent": "Innovative Industrial Center of Gazprom Neft - ITMO University"
   },
   {
-    "faculty_id": null,
-    "school_en": "National Center for Cognitive Research",
-    "school_ru": "Национальный центр когнитивных разработок",
     "name_en": "Laboratory of Composite Artificial Intelligence",
     "name_ru": "Лаборатория композитного искусственного интеллекта",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "National Center for Cognitive Research"
   },
   {
-    "faculty_id": 480,
-    "school_en": "National Center for Cognitive Research",
-    "school_ru": "Национальный центр когнитивных разработок",
     "name_en": "National Center for Cognitive Research",
     "name_ru": "Национальный центр когнитивных разработок",
     "aliases": [
@@ -198,46 +179,41 @@
       "National Centre for Cognitive Research",
       "National Center for Cognitive Studies",
       "National Centre for Cognitive Technologies"
-    ]
+    ],
+    "kind": "center",
+    "parent": "ITMO University"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Center for Collective Use of Prototyping and Industrial Design",
     "name_ru": "Центр коллективного пользования \"Прототипирования и промышленного дизайна\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "center",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Center for Educational and Scientific-Technological Infrastructure",
     "name_ru": "Центр образовательной и научно-технологической инфраструктуры",
-    "aliases": []
+    "aliases": [],
+    "kind": "center",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": 405,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Center for Usability and Mixed Reality",
     "name_ru": "Центр юзабилити и смешанной реальности",
     "aliases": [
       "Center of Usability and Mixed Reality"
-    ]
+    ],
+    "kind": "center",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Educational-Scientific-Production Center for Digital Industrial Technologies",
     "name_ru": "Учебно-научно-производственный центр \"Цифровые промышленные технологии\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "center",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": 103,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Faculty of Control Systems and Robotics",
     "name_ru": "Факультет систем управления и робототехники",
     "aliases": [
@@ -252,12 +228,11 @@
     "context_aliases": [
       "Department of Control Systems and Informatics",
       "Department of Control Systems and Industrial Robotics"
-    ]
+    ],
+    "kind": "faculty",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": 105,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Faculty of Secure Information Technologies",
     "name_ru": "Факультет безопасности информационных технологий",
     "aliases": [
@@ -274,12 +249,11 @@
     ],
     "context_aliases": [
       "Information Security Department"
-    ]
+    ],
+    "kind": "faculty",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": 104,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Faculty of Software Engineering and Computer Systems",
     "name_ru": "Факультет программной инженерии и компьютерной техники",
     "aliases": [
@@ -294,277 +268,244 @@
       "Faculty of Software Engineering and Computer System",
       "Faculty of Software and Computer Engineering",
       "Software Engineering and Computers Systems Faculty"
-    ]
+    ],
+    "kind": "faculty",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": 117,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Institute of Advanced Data Transfer Systems",
     "name_ru": "Институт перспективных систем передачи данных",
     "aliases": [
       "Institute of Advansed Data Transfer Systems",
       "Institute of Advanced Data Transfer System",
       "Institute of Advanced Data Transfer"
-    ]
+    ],
+    "kind": "institute",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": 119,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Institute of Information and Navigation Systems",
     "name_ru": "Институт информационно-навигационных систем",
-    "aliases": []
+    "aliases": [],
+    "kind": "institute",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": 120,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Institute of Intelligent Industrial Technologies",
     "name_ru": "Институт интеллектуальных промышленных технологий",
-    "aliases": []
+    "aliases": [],
+    "kind": "institute",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Cross-Industry Scientific-Educational Center for Security and Reliability of Critical Digital Technologies",
     "name_ru": "Межотраслевой научно-образовательный центр \"Безопасность и надежность критических цифровых технологий\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "center",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": 410,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "International Educational Scientific Center Autodesk",
     "name_ru": "Международный образовательный научный центр \"Autodesk\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "center",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "International Laboratory of Architecture and Design Methods for Embedded Systems and Systems on Chip",
     "name_ru": "Международная лаборатория \"Архитектура и методы проектирования встраиваемых систем и систем на кристалле\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "International Laboratory of Biomechatronics and Energy-Efficient Robotics",
     "name_ru": "Международная лаборатория \"Биомехатроники и энергоэффективной робототехники\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "International Laboratory of Geometric Methods of Control and Applications",
     "name_ru": "Международная лаборатория \"Геометрические методы управления и приложения\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "International Laboratory of Integrated Orientation and Navigation Systems",
     "name_ru": "Международная лаборатория \"Интегрированные системы ориентации и навигации\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "International Laboratory of Multi-Agent, Distributed and Networked Systems Management",
     "name_ru": "Международная лаборатория \"Управление многоагентными, распределенными и сетевыми системами\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "International Laboratory of Power Electronics and Automated Electric Drive",
     "name_ru": "Международная лаборатория \"Силовая электроника и автоматизированный электропривод\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "International Scientific Center for Nonlinear and Adaptive Control Systems",
     "name_ru": "Международный научный центр \"Нелинейные и адаптивные системы управления\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "center",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Laboratory of Cloud Solutions and Modeling",
     "name_ru": "Лаборатория облачных решений и моделирования",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Laboratory of Computer Engineering",
     "name_ru": "Лаборатория компьютерной инженерии",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Laboratory of Cryptographic Methods for Information Protection",
     "name_ru": "Лаборатория криптографических методов защиты информации",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Laboratory of Cyber-Physical Systems",
     "name_ru": "Лаборатория киберфизических систем",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Laboratory of Data Transmission System Assembly Technologies",
     "name_ru": "Лаборатория технологий сборки систем передачи данных",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Laboratory of Laser Systems",
     "name_ru": "Лаборатория лазерных систем",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Laboratory of Optoelectronic Support for Cyber-Physical Systems",
     "name_ru": "Лаборатория оптоэлектронного обеспечения киберфизических систем",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Laboratory of Single-Photon Detectors and Generators",
     "name_ru": "Лаборатория однофотонных детекторов и генераторов",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Laboratory of Validation and Verification of Complex Technical Systems",
     "name_ru": "Лаборатория валидации и верификации сложных технических систем",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Laboratory of Youth Robotics",
     "name_ru": "Лаборатория молодежной робототехники",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Research Center for Advanced Functional Materials and Laser Communication Systems",
     "name_ru": "Научно-исследовательский центр перспективных функциональных материалов и лазерных коммуникационных систем",
     "aliases": [
       "Research Center of Advanced Functional Materials and Laser Communication Systems",
       "Research centre of advanced functional materials and laser communication systems"
-    ]
+    ],
+    "kind": "center",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": 459,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Research Center for Quality Control Technologies in the Aerospace Industry",
     "name_ru": "Научно-исследовательский центр технологий контроля качества ракетно-космической техники",
     "aliases": [
       "Research Center for Quality Control Technologies in Rocket and Space Technology"
-    ]
+    ],
+    "kind": "center",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Research Center for Radio-Photon Data Transmission Systems",
     "name_ru": "Научно-исследовательский центр радиофотонных систем передачи данных",
-    "aliases": []
+    "aliases": [],
+    "kind": "center",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Research Laboratory of Spectroscopy of Biological Objects",
     "name_ru": "Научно-исследовательская лаборатория спектроскопии биологических объектов",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Research Laboratory of Technogenic Safety",
     "name_ru": "Научно-исследовательская лаборатория \"Техногенной безопасности\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Research Scientific-Production Laboratory of Optical and Laser Technologies",
     "name_ru": "Исследовательская научно-производственная лаборатория \"Оптические и лазерные технологии\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": 1,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "School of Computer Technologies and Control",
     "name_ru": "Мегафакультет компьютерных технологий и управления",
-    "aliases": []
+    "aliases": [],
+    "kind": "megafaculty",
+    "parent": "ITMO University"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Scientific and Technological Laboratory of Digital Production Technology",
     "name_ru": "Научно-технологическая лаборатория технологии цифрового производства",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
     "name_en": "Transnational Scientific-Educational Laboratory of Advanced Material Research Methods UniFEL",
     "name_ru": "Транснациональная научно-образовательная лаборатория перспективных методов исследования материалов UniFEL",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Computer Technologies and Control"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "Center for Artificial Intelligence in Agrobiotechnology",
     "name_ru": "Центр искусственного интеллекта в агробиотехнологиях",
-    "aliases": []
+    "aliases": [],
+    "kind": "center",
+    "parent": "School of Life Sciences"
   },
   {
-    "faculty_id": 496,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "Center for Chemical Engineering",
     "name_ru": "Центр химической инженерии",
     "aliases": [
@@ -572,68 +513,65 @@
       "Center of Chemical Engineering",
       "Chemical Engineerin Center",
       "Chemical Engineering Centre"
-    ]
+    ],
+    "kind": "center",
+    "parent": "School of Life Sciences"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "Center for Engineering Developments",
     "name_ru": "Центр инженерных разработок",
-    "aliases": []
+    "aliases": [],
+    "kind": "center",
+    "parent": "School of Life Sciences"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "Center for Molecular and Biological Technologies",
     "name_ru": "Центр молекулярных и биологических технологий",
-    "aliases": []
+    "aliases": [],
+    "kind": "center",
+    "parent": "School of Life Sciences"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "Center for Educational Neuroscience",
     "name_ru": "Центр нейронаук в образовании",
     "aliases": [
       "Center for Neuroscience in Education",
       "Center for Educational Neuroscience (CEdNe)"
-    ]
+    ],
+    "kind": "center",
+    "parent": "School of Life Sciences"
   },
   {
-    "faculty_id": 444,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "Educational and Scientific Center for Life Sciences",
     "name_ru": "Образовательно-научный центр наук о жизни",
-    "aliases": []
+    "aliases": [],
+    "kind": "center",
+    "parent": "School of Life Sciences"
   },
   {
-    "faculty_id": 98,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "Faculty of Biotechnologies",
     "name_ru": "Факультет биотехнологий",
     "aliases": [
-      "Faculty of Biotechnology"
+      "Faculty of Biotechnology",
+      "Факультет пищевых биотехнологий и инженерии",
+      "Faculty of Food Biotechnologies and Engineering",
+      "Faculty of Food Biotechnology and Engineering",
+      "Department of Food Biotechnology and Engineering"
     ],
     "context_aliases": [
       "Department of Biotechnology"
-    ]
+    ],
+    "kind": "faculty",
+    "parent": "School of Life Sciences"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "Faculty of Chemical Bioengineering",
     "name_ru": "Факультет химбиоинженерии",
-    "aliases": []
+    "aliases": [],
+    "kind": "faculty",
+    "parent": "School of Life Sciences"
   },
   {
-    "faculty_id": 118,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "Faculty of Ecotechnologies",
     "name_ru": "Факультет экотехнологий",
     "aliases": [
@@ -641,30 +579,27 @@
       "Faculty of Ecotechnologies (Green Tech)",
       "Faculty of Energy and Ecotechnology",
       "Department of Ecotechnologies"
-    ]
+    ],
+    "kind": "faculty",
+    "parent": "School of Life Sciences"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "International Laboratory of Biopolymer and Biosystem Modeling",
     "name_ru": "Международная лаборатория моделирования биополимеров и биосистем",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Life Sciences"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "International Research Institute of Bioengineering",
     "name_ru": "Международный научно-исследовательский институт биоинженерии",
     "aliases": [
       "International Scientific and Research Institute of Bioengineering"
-    ]
+    ],
+    "kind": "unit",
+    "parent": "School of Life Sciences"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "International Research Center \"Biotechnologies of the Third Millennium\"",
     "name_ru": "Международный научный центр \"Биотехнологии третьего тысячелетия\"",
     "aliases": [
@@ -672,77 +607,69 @@
       "International Research Centre Biotechnologies of the Third Millennium",
       "International Research Center 'Biotechnologies of the Third Millennium'",
       "Biotechnologies of the Third Millennium"
-    ]
+    ],
+    "kind": "center",
+    "parent": "School of Life Sciences"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "Laboratory of Intelligent Technologies in Infochemistry",
     "name_ru": "Лаборатория интеллектуальных технологий в инфохимии",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Life Sciences"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "Laboratory of Laser Nonlinear Crystals",
     "name_ru": "Лаборатория лазерных нелинейных кристаллов",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Life Sciences"
   },
   {
-    "faculty_id": 489,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "Infochemistry Scientific Center",
     "name_ru": "Научно-образовательный центр инфохимии",
     "aliases": [
       "Research and Educational Center for InfoChemistry",
       "Infochemistry Research Center",
       "Infochemistry Scientific Centre"
-    ]
+    ],
+    "kind": "center",
+    "parent": "School of Life Sciences"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "Research Center for Bioengineering",
     "name_ru": "Научно-исследовательский центр биоинженерии",
     "aliases": [
       "Center for Bioengineering",
       "Research Center of Bioengineering"
-    ]
+    ],
+    "kind": "center",
+    "parent": "School of Life Sciences"
   },
   {
-    "faculty_id": 116,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "School of Life Sciences",
     "name_ru": "Мегафакультет наук о жизни",
-    "aliases": []
+    "aliases": [],
+    "kind": "megafaculty",
+    "parent": "ITMO University"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "Scientific Laboratory of Safe Technologies for Processing Polymer Materials",
     "name_ru": "Научная лаборатория безопасных технологий переработки полимерных материалов",
     "aliases": [
       "Scientific Laboratory of Safe Technologies for Polymer Materials Processing"
-    ]
+    ],
+    "kind": "lab",
+    "parent": "School of Life Sciences"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Center for Collective Use of Nanotechnology",
     "name_ru": "Центр коллективного пользования \"Нанотехнологии\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "center",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Center for Information Optical Technologies",
     "name_ru": "Центр \"Информационные оптические технологии\"",
     "aliases": [
@@ -754,94 +681,84 @@
       "Centre of Information and Optical Technologies",
       "Centre of Optical Information Technologies",
       "Centre for Optical Information Technologies"
-    ]
+    ],
+    "kind": "center",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": 487,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Engineering Center for Photonics and Optoelectronics",
     "name_ru": "Инжиниринговый центр фотоники и оптоэлектроники",
-    "aliases": []
+    "aliases": [],
+    "kind": "center",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": 108,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Faculty of Physics",
     "name_ru": "Физический факультет",
     "aliases": [],
     "context_aliases": [
       "Department of Physics"
-    ]
+    ],
+    "kind": "faculty",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": 121,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Institute of Laser Technologies",
     "name_ru": "Институт лазерных технологий",
     "aliases": [
       "Institute of Laser Technology"
-    ]
+    ],
+    "kind": "institute",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "International Institute of Photonics and Optoinformatics",
     "name_ru": "Международный институт \"Фотоника и оптоинформатика\"",
     "aliases": [
       "Institute of Photonics and Optical Information Technologies"
-    ]
+    ],
+    "kind": "unit",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "International Laboratory of Hybrid Nanostructures for Biomedicine",
     "name_ru": "Международная лаборатория \"Гибридные наноструктуры для биомедицины\"",
     "aliases": [
       "International Laboratory Hybrid Nanostructures for Biomedicine",
       "Laboratory of Hybrid nanostructures for biomedicine"
-    ]
+    ],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "International Laboratory of Lighting Design of Urban Environment",
     "name_ru": "Международная лаборатория светового дизайна городской среды",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "International Laboratory of Mathematical Methods for Research of Complex Physical Systems",
     "name_ru": "Международная лаборатория математических методов исследования сложных физических систем",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "International Laboratory of Network Technologies in Distributed Computer Systems",
     "name_ru": "Международная лаборатория сетевых технологий в распределенных компьютерных системах",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "International Laboratory of Technosphere Safety",
     "name_ru": "Международная лаборатория техносферной безопасности",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": 513,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "International Research and Educational Center for Physics of Nanostructures",
     "name_ru": "Международный научно-образовательный центр физики наноструктур",
     "aliases": [
@@ -851,20 +768,18 @@
       "PhysNano Department",
       "International Research and Educational Centre for Physics of Nanostructures",
       "International and Educational Center for Physics of Nanostructures"
-    ]
+    ],
+    "kind": "center",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "International Scientific and Technical Center for Computational Optics, Photonics and Image Visualization",
     "name_ru": "Международный научно-технический центр \"Вычислительная оптика, фотоника и визуализация изображений\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "center",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "International Scientific Center for Nanophotonics and Metamaterials",
     "name_ru": "Международный научный центр нанофотоники и метаматериалов",
     "aliases": [
@@ -872,169 +787,149 @@
       "Department of Nanophotonics and Metamaterials",
       "Department of Nano-Photonics and Metamaterials",
       "Department of Nanophotonics and Metamatarials"
-    ]
+    ],
+    "kind": "center",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "International Scientific Center for Optical and Quantum Informatics, Biophotonics",
     "name_ru": "Международный научный центр оптической и квантовой информатики, биофотоники",
-    "aliases": []
+    "aliases": [],
+    "kind": "center",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "International Scientific Laboratory of Laser Micro- and Nanotechnologies",
     "name_ru": "Международная научная лаборатория лазерных микро- и нанотехнологий",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "International Scientific Laboratory of Modern Photonic Materials and Technologies",
     "name_ru": "Международная научная лаборатория современных фотонных материалов и технологий",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "International Scientific Laboratory of Photoprocesses in Mesoscopic Systems",
     "name_ru": "Международная научная лаборатория фотопроцессов в мезоскопических системах",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Laboratory of Anisotropic and Optically Active Nanostructures",
     "name_ru": "Лаборатория \"Анизотропные и оптически активные наноструктуры\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Laboratory of Biomedical Laser Technologies",
     "name_ru": "Лаборатория биомедицинских лазерных технологий",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Laboratory of Cultural Heritage Studies",
     "name_ru": "Лаборатория изучения культурного наследия",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Laboratory of Digital and Display Holography",
     "name_ru": "Лаборатория цифровой и изобразительной голографии",
     "aliases": [
       "Laboratory of Digital and Visual Holography"
-    ]
+    ],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Laboratory of Femtosecond Optics and Femtotechnologies",
     "name_ru": "Лаборатория фемтосекундной оптики и фемтотехнологий",
     "aliases": [
       "International Laboratory of Femtosecond Optics and Femtotechnologies",
       "Laboratory of Femtosecond and Femtotechnologies"
-    ]
+    ],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Laboratory of Light-Emitting Carbon Quantum Nanostructures",
     "name_ru": "Лаборатория \"Светоизлучающие углеродные квантовые наноструктуры\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Laboratory of Magnetic Resonance in Medicine",
     "name_ru": "Лаборатория магнитного резонанса в медицине",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Laboratory of Nonlinear Optics of Condensed Media",
     "name_ru": "Лаборатория \"Нелинейная оптика конденсированных сред\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Laboratory of Optics of Quantum Nanostructures",
     "name_ru": "Лаборатория \"Оптика квантовых наноструктур\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Laboratory of Photonics of Functional Nanomaterials",
     "name_ru": "Лаборатория фотоники функциональных наноматериалов",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Laboratory of Production Laser Technologies",
     "name_ru": "Лаборатория производственных лазерных технологий",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Laboratory of Quantum Informatics",
     "name_ru": "Лаборатория квантовой информатики",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Laboratory of Quantum Processes and Measurements",
     "name_ru": "Лаборатория квантовых процессов и измерений",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Laboratory of Surface Photophysics",
     "name_ru": "Лаборатория \"Фотофизика поверхности\"",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Laboratory of Wireless Devices for MRI",
     "name_ru": "Лаборатория беспроводных устройств для МРТ",
-    "aliases": []
+    "aliases": [],
+    "kind": "lab",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": 124,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Research and Educational Center for Photonics and Optical IT",
     "name_ru": "Научно-образовательный центр фотоники и оптоинформатики",
     "aliases": [
@@ -1043,22 +938,20 @@
       "Research and Education Center of Photonics and Optical IT",
       "Research and Education Center for Photonics and Optoinformatics",
       "Faculty of Photonics"
-    ]
+    ],
+    "kind": "center",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": 458,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Research Center for Optical Materials Science",
     "name_ru": "Научно-исследовательский центр оптического материаловедения",
     "aliases": [
       "Research Center for Optical Material Engineering"
-    ]
+    ],
+    "kind": "center",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": 106,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "School of Physics and Engineering",
     "name_ru": "Физико-технический мегафакультет",
     "aliases": [
@@ -1069,12 +962,11 @@
       "Department of Physics and Engineering",
       "Department of Physics & Engineering",
       "Department of Physics and Technology"
-    ]
+    ],
+    "kind": "megafaculty",
+    "parent": "ITMO University"
   },
   {
-    "faculty_id": 114,
-    "school_en": "School of Translational Information Technologies",
-    "school_ru": "Мегафакультет трансляционных информационных технологий",
     "name_en": "Artificial Intelligence Technologies Faculty",
     "name_ru": "Факультет технологий искусственного интеллекта",
     "aliases": [
@@ -1082,23 +974,21 @@
       "Faculty of AI Technologies",
       "Факультет цифровых трансформаций",
       "Faculty of Digital Transformation"
-    ]
+    ],
+    "kind": "unit",
+    "parent": "School of Translational Information Technologies"
   },
   {
-    "faculty_id": 406,
-    "school_en": "School of Translational Information Technologies",
-    "school_ru": "Мегафакультет трансляционных информационных технологий",
     "name_en": "Center for E-Government Technologies",
     "name_ru": "Центр технологий электронного правительства",
     "aliases": [
       "Centre for e-Government Technologies",
       "eGovernance Center"
-    ]
+    ],
+    "kind": "center",
+    "parent": "School of Translational Information Technologies"
   },
   {
-    "faculty_id": 19,
-    "school_en": "School of Translational Information Technologies",
-    "school_ru": "Мегафакультет трансляционных информационных технологий",
     "name_en": "Faculty of Applied Informatics",
     "name_ru": "Факультет прикладной информатики",
     "aliases": [
@@ -1106,82 +996,80 @@
       "Факультет инфокоммуникационных технологий",
       "Department of Infocommunication Technologies",
       "Faculty of Appliend Informatics"
-    ]
+    ],
+    "kind": "faculty",
+    "parent": "School of Translational Information Technologies"
   },
   {
-    "faculty_id": 477,
-    "school_en": "School of Translational Information Technologies",
-    "school_ru": "Мегафакультет трансляционных информационных технологий",
     "name_en": "Higher School of Digital Culture",
     "name_ru": "Высшая школа цифровой культуры",
-    "aliases": []
+    "aliases": [],
+    "kind": "school",
+    "parent": "School of Translational Information Technologies"
   },
   {
-    "faculty_id": 7,
-    "school_en": "School of Translational Information Technologies",
-    "school_ru": "Мегафакультет трансляционных информационных технологий",
     "name_en": "Information Technologies and Programming Faculty",
     "name_ru": "Факультет информационных технологий и программирования",
     "aliases": [
       "Faculty of Information Technologies and Programming",
       "Information Technology and Programming Faculty",
-      "Faculty of Information Technology and Programming"
-    ]
+      "Faculty of Information Technology and Programming",
+      "Кафедра компьютерных технологий"
+    ],
+    "context_aliases": [
+      "Department of Computer Technologies",
+      "Computer Technologies Department",
+      "Center for Computer Technologies"
+    ],
+    "kind": "unit",
+    "parent": "School of Translational Information Technologies"
   },
   {
-    "faculty_id": 127,
-    "school_en": "School of Translational Information Technologies",
-    "school_ru": "Мегафакультет трансляционных информационных технологий",
     "name_en": "Institute for Artificial Intelligence",
     "name_ru": "Институт искусственного интеллекта",
     "aliases": [
       "AI Institute",
       "Institute of Artificial Intelligence"
-    ]
+    ],
+    "kind": "institute",
+    "parent": "School of Translational Information Technologies"
   },
   {
-    "faculty_id": 123,
-    "school_en": "School of Translational Information Technologies",
-    "school_ru": "Мегафакультет трансляционных информационных технологий",
     "name_en": "Institute of Applied Computer Science",
     "name_ru": "Институт прикладных компьютерных наук",
-    "aliases": []
+    "aliases": [],
+    "kind": "institute",
+    "parent": "School of Translational Information Technologies"
   },
   {
-    "faculty_id": 88,
-    "school_en": "School of Translational Information Technologies",
-    "school_ru": "Мегафакультет трансляционных информационных технологий",
     "name_en": "Institute of Design & Urban Studies",
     "name_ru": "Институт дизайна и урбанистики",
     "aliases": [
       "Institute of Design and Urban Studies",
       "Institute for Design and Urban Studies"
-    ]
+    ],
+    "kind": "institute",
+    "parent": "School of Translational Information Technologies"
   },
   {
-    "faculty_id": 509,
-    "school_en": "School of Translational Information Technologies",
-    "school_ru": "Мегафакультет трансляционных информационных технологий",
     "name_en": "Game Development School",
     "name_ru": "Школа разработки видеоигр",
     "aliases": [
       "School of Game Development"
-    ]
+    ],
+    "kind": "school",
+    "parent": "School of Translational Information Technologies"
   },
   {
-    "faculty_id": 107,
-    "school_en": "School of Translational Information Technologies",
-    "school_ru": "Мегафакультет трансляционных информационных технологий",
     "name_en": "School of Translational Information Technologies",
     "name_ru": "Мегафакультет трансляционных информационных технологий",
-    "aliases": []
+    "aliases": [],
+    "kind": "megafaculty",
+    "parent": "ITMO University"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "Solution Chemistry of Advanced Materials and Technologies (SCAMT) Institute",
-    "name_ru": "Институт химии растворов передовых материалов и технологий (SCAMT)",
+    "name_ru": "Институт SCAMT",
     "aliases": [
       "SCAMT Institute",
       "International Institute Solution Chemistry of Advanced Materials and Technologies",
@@ -1189,92 +1077,78 @@
       "Institute of Solution Chemistry of Advanced Materials and Technologies",
       "Solution Chemistry of Advanced Materials and Technologies",
       "International Institute Solution Chemistry of Advanced Materials and Technology",
-      "International Research Center SCAMT"
-    ]
+      "International Research Center SCAMT",
+      "Растворная химия передовых материалов и технологий",
+      "Международный научный центр SCAMT",
+      "SCAMT"
+    ],
+    "kind": "institute",
+    "parent": "School of Life Sciences"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "Faculty of Cryogenic Engineering",
-    "name_ru": "Факультет криогенной техники и технологий",
+    "name_ru": "Факультет низкотемпературной энергетики",
     "aliases": [
-      "Cryogenic Engineering Department"
-    ]
+      "Cryogenic Engineering Department",
+      "Факультет холодильной, криогенной техники и кондиционирования",
+      "ФНТЭ"
+    ],
+    "kind": "faculty",
+    "parent": "School of Life Sciences"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
-    "name_en": "Faculty of Food Biotechnologies and Engineering",
-    "name_ru": "Факультет пищевых биотехнологий и инженерии",
-    "aliases": [
-      "Department of Food Biotechnology and Engineering",
-      "Faculty of Food Biotechnology and Engineering"
-    ]
-  },
-  {
-    "faculty_id": null,
-    "school_en": "School of Translational Information Technologies",
-    "school_ru": "Мегафакультет трансляционных информационных технологий",
     "name_en": "Research Center \"Strong Artificial Intelligence in Industry\"",
     "name_ru": "Исследовательский центр «Сильный искусственный интеллект в промышленности»",
     "aliases": [
       "Research Center Strong Artificial Intelligence in Industry"
-    ]
+    ],
+    "kind": "center",
+    "parent": "School of Translational Information Technologies"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Faculty of Laser Photonics and Optoelectronics",
     "name_ru": "Факультет лазерной фотоники и оптоэлектроники",
     "aliases": [
       "Faculty of Lazer Photonics and Optoelectronics"
-    ]
+    ],
+    "kind": "faculty",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Physics and Engineering",
-    "school_ru": "Физико-технический мегафакультет",
     "name_en": "Faculty of Applied Optics",
     "name_ru": "Факультет прикладной оптики",
     "aliases": [
       "Department of Applied Optics",
       "Faculty of Applied Optic"
-    ]
-  },
-  {
-    "faculty_id": null,
-    "school_en": "School of Computer Technologies and Control",
-    "school_ru": "Мегафакультет компьютерных технологий и управления",
-    "name_en": "Department of Computer Technologies",
-    "name_ru": "Кафедра компьютерных технологий",
-    "aliases": [
-      "Computer Technologies Department"
     ],
-    "context_aliases": [
-      "Center for Computer Technologies"
-    ]
+    "kind": "faculty",
+    "parent": "School of Physics and Engineering"
   },
   {
-    "faculty_id": null,
-    "school_en": "National Center for Quantum Internet",
-    "school_ru": "Национальный центр квантового интернета",
     "name_en": "National Center for Quantum Internet",
     "name_ru": "Национальный центр квантового интернета",
     "aliases": [
       "National Center of Quantum Internet"
-    ]
+    ],
+    "kind": "center",
+    "parent": "ITMO University"
   },
   {
-    "faculty_id": null,
-    "school_en": "School of Life Sciences",
-    "school_ru": "Мегафакультет наук о жизни",
     "name_en": "Center for Artificial Intelligence in Chemistry",
     "name_ru": "Центр искусственного интеллекта в химии",
     "aliases": [
       "Center for AI in Chemistry"
-    ]
+    ],
+    "kind": "center",
+    "parent": "School of Life Sciences"
+  },
+  {
+    "name_en": "ITMO University",
+    "name_ru": "Университет ИТМО",
+    "kind": "organization",
+    "parent": null,
+    "ror_id": "https://ror.org/04txgxn49",
+    "country": "Russia",
+    "type": "university"
   }
 ]
