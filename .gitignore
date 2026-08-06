@@ -9,6 +9,7 @@ __pycache__/
 *.jsonl
 !data/static/
 !data/static/**
+data/static/*.draft.json
 data/raw/*
 data/prepared/*
 data/cache/*

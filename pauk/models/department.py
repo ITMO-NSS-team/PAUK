@@ -6,4 +6,6 @@ class Department(BaseModel):
     name_en: str
     name_ru: str | None = None
     name_variants: list[str] = Field(default_factory=list)
-
+    # Top-level unit (megafaculty/institute); becomes a PART_OF edge in the graph.
+    # None when the unit's school is unknown. See School.
+    school_id: str | None = None

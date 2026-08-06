@@ -18,6 +18,7 @@ class PreparedStore:
         "publications": "publications.jsonl",
         "persons": "persons.jsonl",
         "departments": "departments.jsonl",
+        "schools": "schools.jsonl",
         "repositories": "repositories.jsonl",
         "github_profiles": "github_profiles.jsonl",
         "repo_links": "repo_links.jsonl",

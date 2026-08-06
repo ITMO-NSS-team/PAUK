@@ -84,7 +84,12 @@ class NodeSpec:
 NODE_REGISTRY: dict[str, NodeSpec] = {
     "department": NodeSpec(
         labels="Department",
-        prop_fields=("name_en", "name_ru", "name_variants"),
+        prop_fields=("name_en", "name_ru", "name_variants", "school_id"),
+        relationships=(RelSpec("school_id", "PART_OF", "School", None, scalar=True),),
+    ),
+    "school": NodeSpec(
+        labels="School",
+        prop_fields=("name_en", "name_ru"),
     ),
     "itmo_person": NodeSpec(
         labels="Person:Itmo",

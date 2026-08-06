@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 FILE_SPECS: dict[str, str] = {
     "departments.jsonl": "department",
+    "schools.jsonl": "school",
     "publications.jsonl": "publication",
     "repositories.jsonl": "repository",
     "github_profiles.jsonl": "github_profile",
@@ -221,9 +222,11 @@ def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
     # ids that were since folded into another group's canonical node — the
     # upserts above just resurrected them, relationships included. Fold
     # them right back using the merged_ids maps stored on canonical nodes.
-    for label, fold in (("Person", client.merge_person_nodes_batch),
-                        ("Publication", client.merge_publication_nodes_batch),
-                        ("Repository", client.merge_repository_nodes_batch)):
+    for label, fold in (
+        ("Person", client.merge_person_nodes_batch),
+        ("Publication", client.merge_publication_nodes_batch),
+        ("Repository", client.merge_repository_nodes_batch),
+    ):
         alias_pairs = [
             (merged_id, canonical_id)
             for merged_id, canonical_id in client.fetch_merged_id_map(label).items()
