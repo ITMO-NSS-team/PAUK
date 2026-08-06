@@ -41,6 +41,7 @@ def _normalize_ligatures(text: str) -> str:
 
 DEPOSIT_TYPES = {"software", "dataset"}
 REPOSITORY_ARCHIVE = re.compile(r"^([\w.-]+)/([\w.-]+):\s")
+ARCHIVED_DEPOSIT_REASON = "repository_archived_by_this_deposit"
 
 
 def _canonical_github_url(url: str) -> str:
@@ -220,10 +221,13 @@ class CodeLinksStage(EnrichmentStage):
                 finished_at=datetime.now(UTC), result_count=len(urls), error=pdf_error,
             )
             links_by_publication[pub.id] = RepoLink(publication_id=pub.id, links=[
+                # The deposit's own archived repo is a deterministic fact, not
+                # a judgment call - everything else is left unclassified
+                # (is_relevant=None) for the link_relevance stage to decide.
                 CodeLink(url=url, host=urlparse(url).netloc, occurrences=occurrences,
-                         is_relevant=True, llm_confidence=1.0,
-                         llm_reason=("repository_archived_by_this_deposit" if url == archived
-                                     else "github_url_in_text"))
+                         **({"is_relevant": True, "llm_confidence": 1.0,
+                             "llm_reason": ARCHIVED_DEPOSIT_REASON}
+                            if url == archived else {}))
                 for url, occurrences in occurrences_by_url.items()
             ])
             changed += 1

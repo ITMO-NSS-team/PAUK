@@ -15,6 +15,7 @@ from pauk.pipeline.stages.code_links import (
     _normalize_ligatures,
     _occurrences_in_text,
 )
+from pauk.pipeline.stages.link_relevance import LinkRelevanceStage
 from pauk.pipeline.stages.repositories import RepositoriesStage
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
@@ -61,6 +62,10 @@ class StagesTest(unittest.TestCase):
             self.assertEqual(rows["W1"].processing["code_links"].status, ProcessingStatus.COMPLETED)
             self.assertEqual(rows["W2"].processing["code_links"].status, ProcessingStatus.COMPLETED_EMPTY)
             self.assertTrue(rows["W1"].has_code)
+            links = {r.publication_id: r for r in prepared.read_models("repo_links", RepoLink)}
+            # code_links only records what was found; whether it's the
+            # authors' own artifact is link_relevance's call, not this stage's.
+            self.assertIsNone(links["W1"].links[0].is_relevant)
 
     def test_code_links_strips_sentence_ending_period_from_url(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -142,6 +147,85 @@ class StagesTest(unittest.TestCase):
             # and a plain article is never read as an archive.
             self.assertIsNone(rows["W2"].code_url)
             self.assertIsNone(rows["W3"].code_url)
+
+    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
+    def test_link_relevance_classifies_pending_links(self, openrouter_client):
+        openrouter_client.return_value.chat_json.return_value = {
+            "is_authors_artifact": True, "confidence": 0.9, "reason": "authors say so",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prepared = PreparedStore(root / "prepared", "sample")
+            raw = RawStore(root / "raw", "sample")
+            prepared.write_models("publications", [Publication(id="W1", title="paper")])
+            prepared.write_models("repo_links", [
+                RepoLink(publication_id="W1", links=[CodeLink(url="https://github.com/org/repo")]),
+            ])
+            LinkRelevanceStage(prepared, raw).run()
+            rows = {r.id: r for r in prepared.read_models("publications", Publication)}
+            self.assertEqual(rows["W1"].processing["link_relevance"].status, ProcessingStatus.COMPLETED)
+            link = next(prepared.read_models("repo_links", RepoLink)).links[0]
+            self.assertTrue(link.is_relevant)
+            self.assertEqual(link.llm_confidence, 0.9)
+            self.assertEqual(link.llm_reason, "authors say so")
+
+    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
+    def test_link_relevance_skips_already_classified_links(self, openrouter_client):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prepared = PreparedStore(root / "prepared", "sample")
+            raw = RawStore(root / "raw", "sample")
+            prepared.write_models("publications", [Publication(id="W1", title="paper")])
+            prepared.write_models("repo_links", [
+                RepoLink(publication_id="W1", links=[CodeLink(
+                    url="https://github.com/asl/BandageNG", is_relevant=True,
+                    llm_confidence=1.0, llm_reason="repository_archived_by_this_deposit")]),
+            ])
+            result = LinkRelevanceStage(prepared, raw).run()
+            self.assertEqual(result["publications"], 0)
+            openrouter_client.return_value.chat_json.assert_not_called()
+
+    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
+    def test_link_relevance_force_rejudges_llm_verdicts_but_not_the_archived_deposit(self, openrouter_client):
+        openrouter_client.return_value.chat_json.return_value = {
+            "is_authors_artifact": False, "confidence": 0.5, "reason": "re-judged",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prepared = PreparedStore(root / "prepared", "sample")
+            raw = RawStore(root / "raw", "sample")
+            prepared.write_models("publications", [Publication(id="W1", title="paper")])
+            prepared.write_models("repo_links", [
+                RepoLink(publication_id="W1", links=[
+                    CodeLink(url="https://github.com/asl/BandageNG", is_relevant=True,
+                              llm_confidence=1.0, llm_reason="repository_archived_by_this_deposit"),
+                    CodeLink(url="https://github.com/org/repo", is_relevant=True,
+                              llm_confidence=0.9, llm_reason="an earlier model's verdict"),
+                ]),
+            ])
+            LinkRelevanceStage(prepared, raw, force=True).run()
+            self.assertEqual(openrouter_client.return_value.chat_json.call_count, 1)
+            links = {link.url: link for link in next(prepared.read_models("repo_links", RepoLink)).links}
+            self.assertEqual(links["https://github.com/asl/BandageNG"].llm_reason,
+                              "repository_archived_by_this_deposit")
+            self.assertEqual(links["https://github.com/org/repo"].llm_reason, "re-judged")
+
+    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
+    def test_link_relevance_marks_failed_when_the_llm_call_fails(self, openrouter_client):
+        openrouter_client.return_value.chat_json.return_value = None
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prepared = PreparedStore(root / "prepared", "sample")
+            raw = RawStore(root / "raw", "sample")
+            prepared.write_models("publications", [Publication(id="W1", title="paper")])
+            prepared.write_models("repo_links", [
+                RepoLink(publication_id="W1", links=[CodeLink(url="https://github.com/org/repo")]),
+            ])
+            LinkRelevanceStage(prepared, raw).run()
+            rows = {r.id: r for r in prepared.read_models("publications", Publication)}
+            self.assertEqual(rows["W1"].processing["link_relevance"].status, ProcessingStatus.FAILED)
+            link = next(prepared.read_models("repo_links", RepoLink)).links[0]
+            self.assertIsNone(link.is_relevant)
 
     def test_code_links_respects_publication_input_scope(self):
         with tempfile.TemporaryDirectory() as tmp:
