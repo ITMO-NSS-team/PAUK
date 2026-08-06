@@ -41,6 +41,7 @@ class StaticStore:
                     name_en=name_en,
                     name_ru=(entry.get("name_ru") or "").strip() or None,
                     name_variants=entry.get("aliases") or [],
+                    context_aliases=entry.get("context_aliases") or [],
                     school_id=_school_id(entry.get("school_en")),
                 )
             )

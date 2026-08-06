@@ -177,5 +177,83 @@ class DepartmentHierarchyTest(unittest.TestCase):
             self.assertEqual(list(prepared.read_models("schools", School)), [])
 
 
+class DepartmentContextAliasTest(unittest.TestCase):
+    def _dept(self) -> Department:
+        return Department(id="d1", name_en="Faculty of Physics", context_aliases=["Department of Physics"])
+
+    def _person(self, affiliation: str) -> Person:
+        return Person(
+            id="P1",
+            is_itmo=True,
+            authored=[Authorship(publication_id="W1", affiliation=affiliation)],
+        )
+
+    def _match(self, root: Path, affiliation: str) -> list[str]:
+        persons, _ = _run(root, [self._dept()], [self._person(affiliation)], [Publication(id="W1", title="t")])
+        return persons["P1"].department_ids
+
+    def test_context_alias_matches_inside_itmo_segment(self):
+        # "Department of Physics" is generic; it matches when its segment names ITMO.
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(
+                self._match(Path(tmp), "Department of Physics, ITMO University, Saint Petersburg"),
+                ["d1"],
+            )
+
+    def test_context_alias_ignored_in_foreign_segment(self):
+        # The same generic name in a non-ITMO segment must not match a co-affiliation.
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self._match(Path(tmp), "Department of Physics, University of Oxford, UK"), [])
+
+    def test_context_alias_not_matched_across_segment_boundary(self):
+        # An ITMO marker in a different segment does not license the generic name.
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(
+                self._match(Path(tmp), "Department of Physics, University of Oxford\nITMO University"),
+                [],
+            )
+
+    def test_context_alias_prefers_longest_match_in_part(self):
+        # "Department of Physics" must not fire inside "Department of Physics and
+        # Engineering" — only the more specific unit is credited for that part.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            person = self._person("Department of Physics and Engineering, ITMO University")
+            persons, _ = _run(
+                root,
+                [
+                    Department(id="phys", name_en="Faculty of Physics", context_aliases=["Department of Physics"]),
+                    Department(
+                        id="school",
+                        name_en="School of Physics and Engineering",
+                        context_aliases=["Department of Physics and Engineering"],
+                    ),
+                ],
+                [person],
+                [Publication(id="W1", title="t")],
+            )
+            self.assertEqual(persons["P1"].department_ids, ["school"])
+
+    def test_context_alias_loaded_from_catalog(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            catalog = [
+                {
+                    "school_en": "",
+                    "school_ru": "",
+                    "name_en": "Faculty of Physics",
+                    "name_ru": "Факультет физики",
+                    "aliases": [],
+                    "context_aliases": ["Department of Physics"],
+                }
+            ]
+            person = self._person("Department of Physics, ITMO University")
+            prepared = _run_catalog(root, catalog, [person], [Publication(id="W1", title="t")])
+            departments = {d.name_en: d for d in prepared.read_models("departments", Department)}
+            self.assertEqual(departments["Faculty of Physics"].context_aliases, ["Department of Physics"])
+            matched = {p.id: p for p in prepared.read_models("persons", Person)}["P1"]
+            self.assertTrue(matched.department_ids)
+
+
 if __name__ == "__main__":
     unittest.main()

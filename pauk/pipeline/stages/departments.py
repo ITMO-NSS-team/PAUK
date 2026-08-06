@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 
 from pauk.models import Department, Person, Publication
@@ -5,6 +6,15 @@ from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.storage.static import StaticStore
 
 from .base import EnrichmentStage
+
+# Affiliations read "<department>, <organisation>, <address>"; splitting on these
+# separators yields those parts, so an ITMO marker can be located next to a name.
+_PART_SPLIT = re.compile(r"[\n;,]")
+# A part carrying this marker is trusted ITMO context. A generic context_alias is
+# accepted only when such a marker sits in its own or an adjacent part (i.e. the
+# organisation right beside the department), never merely elsewhere in the blob —
+# that is what keeps a co-affiliated "Department of Physics, SPbU" from matching.
+_ITMO_MARKER = re.compile(r"\bitmo\b|\bifmo\b|итмо|information technolog\w*,?\s*mechanics", re.IGNORECASE)
 
 
 def _match_names(department: Department) -> list[str]:
@@ -20,6 +30,17 @@ def _match_names(department: Department) -> list[str]:
     return [name.casefold() for name in names if name]
 
 
+def _context_names(department: Department) -> list[str]:
+    """Casefolded generic aliases matched only next to an ITMO marker.
+
+    Names like "Department of Physics" also name foreign units, so matching them
+    against the whole affiliation blob would pull in co-affiliations. Requiring an
+    ITMO marker in the same or an adjacent part recovers the ITMO authors without
+    that cost.
+    """
+    return [name.casefold() for name in department.context_aliases if name]
+
+
 class DepartmentsStage(EnrichmentStage):
     name = "departments"
 
@@ -28,6 +49,7 @@ class DepartmentsStage(EnrichmentStage):
         departments = store.departments()
         schools = store.schools()
         matchers = [(d.id, _match_names(d)) for d in departments]
+        ctx_matchers = [(d.id, _context_names(d)) for d in departments if d.context_aliases]
         people = list(self.prepared.read_models("persons", Person))
         publications = list(self.prepared.read_models("publications", Publication))
         by_pub = {p.id: p for p in publications}
@@ -45,8 +67,29 @@ class DepartmentsStage(EnrichmentStage):
             state = person.processing.get(self.name)
             if not self.needs_attempt(state):
                 continue
-            text = " ".join(a.affiliation or "" for a in person.authored).casefold()
+            affiliations = [a.affiliation or "" for a in person.authored]
+            text = " ".join(affiliations).casefold()
             matched = [dept_id for dept_id, names in matchers if any(name in text for name in names)]
+            # ITMO-context pass: generic aliases match only in a part adjacent to an
+            # ITMO marker, so a co-affiliated foreign department cannot pull them in.
+            if ctx_matchers:
+                itmo_parts: list[str] = []
+                for affiliation in affiliations:
+                    parts = _PART_SPLIT.split(affiliation)
+                    marked = {i for i, part in enumerate(parts) if _ITMO_MARKER.search(part)}
+                    if not marked:
+                        continue
+                    itmo_parts += [part.casefold() for i, part in enumerate(parts) if marked & {i - 1, i, i + 1}]
+                for part in itmo_parts:
+                    hits = [(dept_id, name) for dept_id, names in ctx_matchers for name in names if name in part]
+                    # Keep the most specific alias per part: drop one that is merely a
+                    # substring of a longer co-matching alias ("Department of Physics"
+                    # inside "Department of Physics and Engineering").
+                    matched += [
+                        dept_id
+                        for dept_id, name in hits
+                        if not any(name != other and name in other for _, other in hits)
+                    ]
             person.department_ids = list(dict.fromkeys([*person.department_ids, *matched]))
             for authorship in person.authored:
                 pub = by_pub.get(authorship.publication_id)

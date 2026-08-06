@@ -248,6 +248,10 @@
       "Faculty od Control Systems and Robotics",
       "Department of Control System and Robotics",
       "Faculty Control Systems and Robotics"
+    ],
+    "context_aliases": [
+      "Department of Control Systems and Informatics",
+      "Department of Control Systems and Industrial Robotics"
     ]
   },
   {
@@ -267,6 +271,9 @@
       "Secure Information Technologies Department",
       "Faculty of Information Technology and Security",
       "Faculty of Secure IT"
+    ],
+    "context_aliases": [
+      "Information Security Department"
     ]
   },
   {
@@ -610,6 +617,9 @@
     "name_ru": "Факультет биотехнологий",
     "aliases": [
       "Faculty of Biotechnology"
+    ],
+    "context_aliases": [
+      "Department of Biotechnology"
     ]
   },
   {
@@ -760,7 +770,10 @@
     "school_ru": "Физико-технический мегафакультет",
     "name_en": "Faculty of Physics",
     "name_ru": "Физический факультет",
-    "aliases": []
+    "aliases": [],
+    "context_aliases": [
+      "Department of Physics"
+    ]
   },
   {
     "faculty_id": 121,
@@ -1051,6 +1064,11 @@
     "aliases": [
       "School of Physcis and Engineering",
       "School of Photonics"
+    ],
+    "context_aliases": [
+      "Department of Physics and Engineering",
+      "Department of Physics & Engineering",
+      "Department of Physics and Technology"
     ]
   },
   {
@@ -1234,6 +1252,9 @@
     "name_ru": "Кафедра компьютерных технологий",
     "aliases": [
       "Computer Technologies Department"
+    ],
+    "context_aliases": [
+      "Center for Computer Technologies"
     ]
   },
   {
