@@ -65,6 +65,7 @@ class Publication(BaseModel):
     openalex_url: str | None = None
     pdf_url: str | None = None
     abstract: str | None = None
+    full_text: str | None = None
     department_ids: list[str] = Field(default_factory=list)
     mentions_links: list[MentionsLink] = Field(default_factory=list)
     # Every record folded into this publication (see PublicationVersion) and

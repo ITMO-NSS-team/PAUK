@@ -21,11 +21,15 @@ class LinkCandidate(BaseModel):
     host: str | None = None
 
 
+class LinkOccurrence(BaseModel):
+    context: str | None = None
+    page_number: int | None = None
+
+
 class CodeLink(BaseModel):
     url: str
     host: str | None = None
-    context: str | None = None
-    page_number: int | None = None
+    occurrences: list[LinkOccurrence] = Field(default_factory=list)
     is_relevant: bool | None = None
     llm_confidence: float | None = None
     llm_reason: str | None = None

@@ -19,12 +19,20 @@ class NormalizeRepoUrlTest(unittest.TestCase):
 class ExtractRepoLinksTest(unittest.TestCase):
     def test_known_repository_matched_case_insensitively_by_stored_url(self):
         known = {normalize_repo_url("https://github.com/Org/Repo"): "https://github.com/Org/Repo"}
-        row = {"publication_id": "W1", "links": [{"url": "https://github.com/org/repo", "context": "code"}]}
+        row = {"publication_id": "W1", "links": [{
+            "url": "https://github.com/org/repo",
+            "occurrences": [{"context": "code", "page_number": None}, {"context": "again", "page_number": 3}],
+        }]}
         candidates, repo_edges, candidate_edges, promotions = extract_repo_links(row, known)
         self.assertEqual(candidates, [])
         self.assertEqual(candidate_edges, [])
-        # The edge targets the URL as stored on the Repository node.
-        self.assertEqual(repo_edges, [("W1", "https://github.com/Org/Repo", {"context": "code"})])
+        # The edge targets the URL as stored on the Repository node. Occurrences
+        # flatten to parallel arrays; page_number=None (abstract) becomes 0
+        # since Neo4j array properties can't hold null.
+        self.assertEqual(repo_edges, [(
+            "W1", "https://github.com/Org/Repo",
+            {"context": ["code", "again"], "page_number": [0, 3]},
+        )])
         self.assertEqual(promotions, [("https://github.com/org/repo", "https://github.com/Org/Repo")])
 
     def test_unknown_url_becomes_link_candidate(self):

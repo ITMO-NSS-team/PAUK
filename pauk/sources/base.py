@@ -12,8 +12,8 @@ class HttpClient:
         self.session = requests.Session()
         self.session.headers.update(headers or {})
 
-    def get_json(self, url: str, *, params: dict[str, Any] | None = None,
-                 retries: int = 3) -> dict[str, Any]:
+    def _get(self, url: str, *, params: dict[str, Any] | None = None,
+              retries: int = 3) -> requests.Response:
         for attempt in range(retries + 1):
             try:
                 response = self.session.get(url, params=params, timeout=self.timeout)
@@ -23,9 +23,16 @@ class HttpClient:
                     time.sleep(delay)
                     continue
                 response.raise_for_status()
-                return response.json()
+                return response
             except requests.RequestException:
                 if attempt == retries:
                     raise
                 time.sleep(min(60, 2 ** attempt))
         raise RuntimeError(f"unreachable retry state for {url}")
+
+    def get_json(self, url: str, *, params: dict[str, Any] | None = None,
+                 retries: int = 3) -> dict[str, Any]:
+        return self._get(url, params=params, retries=retries).json()
+
+    def get_bytes(self, url: str, *, retries: int = 3) -> bytes:
+        return self._get(url, retries=retries).content

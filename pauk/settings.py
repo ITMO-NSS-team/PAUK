@@ -6,7 +6,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-
 ROOT_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT_DIR / ".env")
 
@@ -22,6 +21,7 @@ class Settings:
     neo4j_user: str = os.getenv("NEO4J_USER", "neo4j")
     neo4j_password: str = os.getenv("NEO4J_PASSWORD", "")
     request_timeout: int = int(os.getenv("PAUK_REQUEST_TIMEOUT", "30"))
+    pdf_crawler_url: str = os.getenv("PAUK_PDF_CRAWLER_URL", "")
 
     @property
     def static_dir(self) -> Path:
@@ -38,6 +38,10 @@ class Settings:
     @property
     def cache_dir(self) -> Path:
         return self.data_dir / "cache"
+
+    @property
+    def pdf_dir(self) -> Path:
+        return self.data_dir / "pdf"
 
 
 settings = Settings()
