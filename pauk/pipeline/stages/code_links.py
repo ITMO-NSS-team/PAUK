@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,6 +28,16 @@ GITHUB_HOST = "github.com"
 _GLUED_TAIL = re.compile(r"\.(?:[A-Z][a-z]+[\w-]*|[A-Z]{2,}[\w-]*|\d+(?:\.\d+)*)$")
 
 CONTEXT_WINDOW = 500
+
+
+def _normalize_ligatures(text: str) -> str:
+    """PDF fonts commonly render "ff"/"fi"/"fl"/... as a single ligature
+    glyph (found on real papers: "caﬀe" vs "caffe" for the same repo, split
+    into two different URLs). NFKC decomposes it back to plain letters -
+    character-for-character, so unlike the line-wrap handling above this
+    can't glue unrelated text together.
+    """
+    return unicodedata.normalize("NFKC", text)
 
 DEPOSIT_TYPES = {"software", "dataset"}
 REPOSITORY_ARCHIVE = re.compile(r"^([\w.-]+)/([\w.-]+):\s")
@@ -86,7 +97,7 @@ def _annotation_context(page: fitz.Page, page_text: str, rect) -> str | None:
     if rect is None:
         return None
     try:
-        visible = cast(str, page.get_text("text", clip=rect)).strip()
+        visible = _normalize_ligatures(cast(str, page.get_text("text", clip=rect))).strip()
     except Exception:
         return None
     if not visible:
@@ -120,7 +131,7 @@ def _extract_pdf(path: Path) -> tuple[list[str], list[dict[str, LinkOccurrence]]
         pages: list[str] = []
         page_occurrences: list[dict[str, LinkOccurrence]] = []
         for page in doc:
-            text = cast(str, page.get_text())
+            text = _normalize_ligatures(cast(str, page.get_text()))
             pages.append(text)
             page_occurrences.append(_pdf_page_occurrences(page, text, len(pages)))
     return pages, page_occurrences
@@ -194,7 +205,7 @@ class CodeLinksStage(EnrichmentStage):
                 # A transient failure on a later retry must not erase text a
                 # previous successful run already extracted.
                 pub.full_text = "\n\n".join(pdf_pages)
-            occurrences_by_url = _collect_occurrences(pub.abstract or "", pdf_page_occurrences)
+            occurrences_by_url = _collect_occurrences(_normalize_ligatures(pub.abstract or ""), pdf_page_occurrences)
             if archived and archived not in occurrences_by_url:
                 # The deposit's own archived repo takes priority - it's what
                 # code_url should point at, same as before this stage read PDFs.

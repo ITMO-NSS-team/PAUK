@@ -9,7 +9,12 @@ import fitz
 from pauk.models import CodeLink, Publication, RepoLink
 from pauk.models.processing import ProcessingStatus
 from pauk.pipeline.stages.base import PreparedSelection
-from pauk.pipeline.stages.code_links import CodeLinksStage, _collect_occurrences, _occurrences_in_text
+from pauk.pipeline.stages.code_links import (
+    CodeLinksStage,
+    _collect_occurrences,
+    _normalize_ligatures,
+    _occurrences_in_text,
+)
 from pauk.pipeline.stages.repositories import RepositoriesStage
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
@@ -415,6 +420,20 @@ class GithubUrlRegexTest(unittest.TestCase):
         # The accepted trade-off: safer than gluing unrelated text onto a match.
         found = _occurrences_in_text("code at https://github.com/org/\nrepo for details", None)
         self.assertEqual(found, {})
+
+
+class NormalizeLigaturesTest(unittest.TestCase):
+    def test_decomposes_common_ligatures(self):
+        self.assertEqual(_normalize_ligatures("caﬀe"), "caffe")
+        self.assertEqual(_normalize_ligatures("eﬃcient"), "efficient")
+
+    def test_two_ligature_variants_of_the_same_repo_collapse_to_one_url(self):
+        # Real bug, found on an actual paper (SSD, arXiv:1512.02325): PDF fonts
+        # render "ff" as one glyph (U+FB00), which \w matches as a letter, so
+        # "caﬀe" and "caffe" used to become two different repos.
+        text = "See https://github.com/weiliu89/caﬀe and also https://github.com/weiliu89/caffe."
+        found = _occurrences_in_text(_normalize_ligatures(text), None)
+        self.assertEqual(list(found), ["https://github.com/weiliu89/caffe"])
 
 
 if __name__ == "__main__":
