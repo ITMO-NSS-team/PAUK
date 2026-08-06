@@ -24,14 +24,11 @@ GITHUB_URL = re.compile(
 _EMBEDDED_WRAP = re.compile(r"-\n[ \t]*")
 URL_TRAILING_PUNCT = ".,;:!?)]}>\"'-"
 GITHUB_HOST = "github.com"
+_GLUED_TAIL = re.compile(r"\.(?:[A-Z][a-z]+[\w-]*|[A-Z]{2,}[\w-]*|\d+(?:\.\d+)*)$")
 
 CONTEXT_WINDOW = 500
 
-# Work types that are a deposit of something rather than a paper about it.
 DEPOSIT_TYPES = {"software", "dataset"}
-# How GitHub titles the snapshot it archives on Zenodo for a release:
-# "asl/BandageNG: Continuous build". The owner/name part carries no spaces,
-# which keeps titles like "A/B testing: results" out.
 REPOSITORY_ARCHIVE = re.compile(r"^([\w.-]+)/([\w.-]+):\s")
 
 
@@ -53,8 +50,10 @@ def _canonical_github_url(url: str) -> str:
 
 def _clean_match(raw: str) -> str:
     """Drop any embedded line-wrap the match itself spans, strip trailing
-    punctuation, add a scheme if the match was bare, then canonicalize."""
+    punctuation and a glued-on sentence/footnote tail, add a scheme if the
+    match was bare, then canonicalize."""
     url = _EMBEDDED_WRAP.sub("", raw).rstrip(URL_TRAILING_PUNCT)
+    url = _GLUED_TAIL.sub("", url)
     if not url.lower().startswith(("http://", "https://")):
         url = "https://" + url
     return _canonical_github_url(url)

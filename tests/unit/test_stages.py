@@ -395,6 +395,22 @@ class GithubUrlRegexTest(unittest.TestCase):
         found = _occurrences_in_text(text, None)
         self.assertEqual(list(found), ["https://github.com/org/repo"])
 
+    def test_strips_a_sentence_glued_with_no_separator_at_all(self):
+        # No newline anywhere here - a PDF kerning/footnote artifact renders
+        # the next sentence with zero gap after the URL.
+        found = _occurrences_in_text("Available at https://github.com/org/repo.We evaluate it next.", None)
+        self.assertEqual(list(found), ["https://github.com/org/repo"])
+
+    def test_strips_a_footnote_number_glued_after_a_period(self):
+        found = _occurrences_in_text("Code: https://github.com/org/repo.12 citations so far.", None)
+        self.assertEqual(list(found), ["https://github.com/org/repo"])
+
+    def test_keeps_a_bare_trailing_digit_with_no_period(self):
+        # Unsolvable ambiguity, same as the old script: a GitHub repo name can
+        # genuinely end in a digit (detectron2), so this is left alone.
+        found = _occurrences_in_text("Our tool https://github.com/org/repo1 does the job.", None)
+        self.assertEqual(list(found), ["https://github.com/org/repo1"])
+
     def test_does_not_catch_a_url_wrapped_with_no_hyphen(self):
         # The accepted trade-off: safer than gluing unrelated text onto a match.
         found = _occurrences_in_text("code at https://github.com/org/\nrepo for details", None)
