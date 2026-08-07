@@ -4,7 +4,7 @@ import time
 
 import requests
 
-from .base import HttpClient, _parse_retry_after
+from .base import HttpClient
 
 
 class GitHubClient(HttpClient):
@@ -31,7 +31,7 @@ class GitHubClient(HttpClient):
         if delay is not None or response.status_code != 403:
             return delay
 
-        retry_after = _parse_retry_after(response.headers.get("Retry-After"))
+        retry_after = self._parse_retry_after(response.headers.get("Retry-After"))
         if retry_after is not None:
             return retry_after
 
@@ -54,8 +54,10 @@ class GitHubClient(HttpClient):
 
         Not exposed by the repository payload itself, needs its own call.
         """
-        response = self.session.get(f"{self.API_URL}/repos/{owner}/{name}/readme", timeout=self.timeout)
-        if response.status_code == 404:
-            return False
-        response.raise_for_status()
+        try:
+            self.get_json(f"{self.API_URL}/repos/{owner}/{name}/readme")
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 404:
+                return False
+            raise
         return True
