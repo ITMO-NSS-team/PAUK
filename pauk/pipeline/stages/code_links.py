@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from collections import defaultdict
@@ -15,6 +16,8 @@ from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.sources.base import HttpClient
 
 from .base import EnrichmentStage
+
+logger = logging.getLogger(__name__)
 
 _WRAP = r"(?:-\n[ \t]*)?"
 _CHAR = r"(?:-(?!\n)|[\w.])"
@@ -184,10 +187,10 @@ class CodeLinksStage(EnrichmentStage):
             for row in self.prepared.read_models("repo_links", RepoLink)
         }
         group = self.prepared.group_dir.name
-        http = HttpClient(self.config.request_timeout)
+        self.http = HttpClient(self.config.request_timeout)
         # One probe per run, not per publication - an unreachable crawler
         # shouldn't add a failed request to every single row.
-        crawler_available = self._crawler_available(http)
+        self.crawler_available = self._crawler_available()
         changed = 0
         for pub in publications:
             if self.selection is not None and (
@@ -198,9 +201,9 @@ class CodeLinksStage(EnrichmentStage):
             if not self.needs_attempt(state):
                 continue
             archived = _archived_repository_url(pub)
-            needs_pdf = bool(pub.pdf_url) or (crawler_available and bool(pub.doi))
+            needs_pdf = bool(pub.pdf_url) or (self.crawler_available and bool(pub.doi))
             if needs_pdf:
-                pdf_pages, pdf_page_occurrences, pdf_error = self._pdf_pages(http, pub, group, crawler_available)
+                pdf_pages, pdf_page_occurrences, pdf_error = self._pdf_pages(pub, group)
             else:
                 pdf_pages, pdf_page_occurrences, pdf_error = [], [], None
             if pdf_pages:
@@ -236,18 +239,20 @@ class CodeLinksStage(EnrichmentStage):
         self.prepared.write_models("repo_links", links_by_publication.values())
         return {"publications": changed, "repo_links": len(links_by_publication)}
 
-    def _crawler_available(self, http: HttpClient) -> bool:
+    def _crawler_available(self) -> bool:
         """Cheap, no-retry probe - PAUK_PDF_CRAWLER_URL unset means the fallback is off."""
         if not self.config.pdf_crawler_url:
             return False
         try:
-            http.get_bytes(f"{self.config.pdf_crawler_url}/health", retries=0)
+            self.http.get_bytes(f"{self.config.pdf_crawler_url}/health", retries=0)
             return True
-        except Exception:
+        except Exception as exc:
+            logger.warning("code_links: PDF-Crawler-Service unavailable at %s: %s",
+                            self.config.pdf_crawler_url, exc)
             return False
 
     def _pdf_pages(
-        self, http: HttpClient, pub: Publication, group: str, crawler_available: bool,
+        self, pub: Publication, group: str,
     ) -> tuple[list[str], list[dict[str, LinkOccurrence]], str | None]:
         """Download (if not already cached) and extract per-page text + link occurrences.
 
@@ -263,7 +268,7 @@ class CodeLinksStage(EnrichmentStage):
         via_crawler = not pub.pdf_url
         if pub.pdf_url:
             source_url = pub.pdf_url
-        elif crawler_available and pub.doi:
+        elif self.crawler_available and pub.doi:
             source_url = f"{self.config.pdf_crawler_url}/download?" + urlencode({"url": pub.doi})
         else:
             return [], [], None
@@ -273,7 +278,7 @@ class CodeLinksStage(EnrichmentStage):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 tmp = path.with_suffix(".pdf.tmp")
                 kwargs = {"timeout": CRAWLER_DOWNLOAD_TIMEOUT, "retries": 0} if via_crawler else {}
-                tmp.write_bytes(http.get_bytes(source_url, **kwargs))
+                tmp.write_bytes(self.http.get_bytes(source_url, **kwargs))
                 tmp.replace(path)
             pages, page_occurrences = _extract_pdf(path)
             return pages, page_occurrences, None
