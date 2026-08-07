@@ -250,7 +250,7 @@ class StagesTest(unittest.TestCase):
         http_client.return_value.get_bytes.return_value = pdf_bytes
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            config = Settings(data_dir=root / "data")
+            config = Settings(data_dir=root / "data", pdf_crawler_url="")
             prepared = PreparedStore(root / "prepared", "sample")
             raw = RawStore(root / "raw", "sample")
             prepared.write_models("publications", [
@@ -372,7 +372,7 @@ class StagesTest(unittest.TestCase):
     def test_code_links_falls_back_to_crawler_when_no_pdf_url(self, http_client):
         pdf_bytes = _make_pdf_bytes(["From the crawler: https://github.com/org/repo"])
 
-        def get_bytes(url, retries=3):
+        def get_bytes(url, retries=3, timeout=None):
             self.assertTrue(url.startswith("http://crawler.local/api/v1/"))
             if url.endswith("/health"):
                 return b"ok"
@@ -387,7 +387,9 @@ class StagesTest(unittest.TestCase):
             prepared = PreparedStore(root / "prepared", "sample")
             raw = RawStore(root / "raw", "sample")
             prepared.write_models("publications", [
-                Publication(id="W1", title="t", doi="10.1234/abc"),
+                # pub.doi mirrors OpenAlex's `doi` field: already a full
+                # https://doi.org/... URL, not a bare DOI.
+                Publication(id="W1", title="t", doi="https://doi.org/10.1234/abc"),
             ])
             CodeLinksStage(prepared, raw, config=config).run()
 
@@ -410,7 +412,7 @@ class StagesTest(unittest.TestCase):
             ])
 
             # Not configured at all: health is never probed, download never attempted.
-            CodeLinksStage(prepared, raw, config=Settings(data_dir=root / "data")).run()
+            CodeLinksStage(prepared, raw, config=Settings(data_dir=root / "data", pdf_crawler_url="")).run()
             http_client.return_value.get_bytes.assert_not_called()
             rows = {row.id: row for row in prepared.read_models("publications", Publication)}
             self.assertEqual(rows["W1"].processing["code_links"].status, ProcessingStatus.COMPLETED_EMPTY)

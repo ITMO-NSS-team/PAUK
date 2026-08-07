@@ -28,6 +28,7 @@ GITHUB_HOST = "github.com"
 _GLUED_TAIL = re.compile(r"\.(?:[A-Z][a-z]+[\w-]*|[A-Z]{2,}[\w-]*|\d+(?:\.\d+)*)$")
 
 CONTEXT_WINDOW = 500
+CRAWLER_DOWNLOAD_TIMEOUT = 180
 
 
 def _normalize_ligatures(text: str) -> str:
@@ -259,11 +260,11 @@ class CodeLinksStage(EnrichmentStage):
         non-open-access PDF) — the caller still falls back to the
         abstract-only result rather than losing it.
         """
+        via_crawler = not pub.pdf_url
         if pub.pdf_url:
             source_url = pub.pdf_url
         elif crawler_available and pub.doi:
-            source_url = f"{self.config.pdf_crawler_url}/download?" + urlencode(
-                {"url": f"https://doi.org/{pub.doi}"})
+            source_url = f"{self.config.pdf_crawler_url}/download?" + urlencode({"url": pub.doi})
         else:
             return [], [], None
         path = self.config.pdf_dir / group / f"{pub.id}.pdf"
@@ -271,7 +272,8 @@ class CodeLinksStage(EnrichmentStage):
             if not path.exists():
                 path.parent.mkdir(parents=True, exist_ok=True)
                 tmp = path.with_suffix(".pdf.tmp")
-                tmp.write_bytes(http.get_bytes(source_url))
+                kwargs = {"timeout": CRAWLER_DOWNLOAD_TIMEOUT, "retries": 0} if via_crawler else {}
+                tmp.write_bytes(http.get_bytes(source_url, **kwargs))
                 tmp.replace(path)
             pages, page_occurrences = _extract_pdf(path)
             return pages, page_occurrences, None

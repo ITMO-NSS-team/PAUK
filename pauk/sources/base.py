@@ -13,10 +13,10 @@ class HttpClient:
         self.session.headers.update(headers or {})
 
     def _get(self, url: str, *, params: dict[str, Any] | None = None,
-              retries: int = 3) -> requests.Response:
+              retries: int = 3, timeout: int | None = None) -> requests.Response:
         for attempt in range(retries + 1):
             try:
-                response = self.session.get(url, params=params, timeout=self.timeout)
+                response = self.session.get(url, params=params, timeout=timeout or self.timeout)
                 if response.status_code in {429, 500, 502, 503, 504} and attempt < retries:
                     retry_after = response.headers.get("Retry-After")
                     delay = float(retry_after) if retry_after and retry_after.isdigit() else min(60, 2 ** attempt)
@@ -34,5 +34,5 @@ class HttpClient:
                  retries: int = 3) -> dict[str, Any]:
         return self._get(url, params=params, retries=retries).json()
 
-    def get_bytes(self, url: str, *, retries: int = 3) -> bytes:
-        return self._get(url, retries=retries).content
+    def get_bytes(self, url: str, *, retries: int = 3, timeout: int | None = None) -> bytes:
+        return self._get(url, retries=retries, timeout=timeout).content
