@@ -129,7 +129,10 @@ def _unmix_alphabets(value: str) -> str:
 
 
 def _fold(value: str) -> str:
-    folded = " ".join(_unmix_alphabets(value).replace(".", " ").split()).casefold()
+    # Punctuation separates name parts rather than belonging to them: OpenAlex
+    # serves "Ivanov, Ilya" beside "Ilya Ivanov", and a comma left in the
+    # folded key keeps the two apart.
+    folded = " ".join(_unmix_alphabets(value).replace(".", " ").replace(",", " ").split()).casefold()
     folded = "".join(_CYR_TO_LAT.get(ch, ch) for ch in folded)
     for src, dst in _FOLD_RULES:
         folded = folded.replace(src, dst)
@@ -304,6 +307,7 @@ class RussianNamesCatalog:
     """Official staff records indexed by folded romanized name keys."""
 
     def __init__(self, rows: list[dict]) -> None:
+        rows = self._fold_repeated(rows)
         self.rows = rows
         keyed: dict[str, list[dict]] = {}
         spelled_out: set[str] = set()
@@ -326,6 +330,29 @@ class RussianNamesCatalog:
         self.identity_by_key = {
             key: row for key, row in self.by_key.items() if key in spelled_out
         }
+
+    @staticmethod
+    def _fold_repeated(rows: list[dict]) -> list[dict]:
+        """One row per employee, however many times the file lists them.
+
+        A catalog assembled from several sources repeats people, and two
+        rows naming one employee read as two namesakes: the key they share
+        is dropped, and the person it describes stops matching altogether.
+        Repeated rows are merged instead, the fuller value of each field
+        winning, so a record with the degree filled in survives one without.
+        """
+        merged: dict[tuple[str, str, str], dict] = {}
+        for row in rows:
+            key = (_fold(row.get("surname") or ""), _fold(row.get("name") or ""),
+                   _fold(row.get("patronymic") or ""))
+            kept = merged.get(key)
+            if kept is None:
+                merged[key] = dict(row)
+                continue
+            for field, value in row.items():
+                if (value or "").strip() and not (kept.get(field) or "").strip():
+                    kept[field] = value
+        return list(merged.values())
 
     @classmethod
     def load(cls, path: Path) -> "RussianNamesCatalog":
@@ -558,10 +585,20 @@ class RussianNamesStage(EnrichmentStage):
         if changed:
             self.prepared.write_models("persons", people)
 
+        # The journal describes the people this run looked at, so a run that
+        # looked at nobody leaves it alone: a second pass over a finished
+        # group would otherwise empty the one artefact a human works from.
+        # A partial run rewrites only its own rows and keeps the rest.
         journal_path = self.prepared.group_dir / AMBIGUOUS_FILENAME
-        with AtomicWriter(journal_path) as fh:
-            for row in ambiguous:
-                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        if changed:
+            examined = {person.id for person in people
+                        if person.processing.get(self.name) is not None}
+            journal = [row for row in self._journalled(journal_path)
+                       if row.get("person") not in examined]
+            journal.extend(ambiguous)
+            with AtomicWriter(journal_path) as fh:
+                for row in journal:
+                    fh.write(json.dumps(row, ensure_ascii=False) + "\n")
         logger.info("russian_names: %d from the catalog, %d from the author's own spelling, "
                     "%d transliterated", matched, from_own_spelling, transliterated)
         if ambiguous:
@@ -571,6 +608,14 @@ class RussianNamesStage(EnrichmentStage):
                 "names_from_own_spelling": from_own_spelling,
                 "names_transliterated": transliterated,
                 "names_ambiguous": len(ambiguous)}
+
+    @staticmethod
+    def _journalled(path: Path) -> list[dict]:
+        """Rows a previous run left in the ambiguity journal."""
+        if not path.exists():
+            return []
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
+                if line.strip()]
 
     @staticmethod
     def _state(previous: ProcessingState | None, status: ProcessingStatus,

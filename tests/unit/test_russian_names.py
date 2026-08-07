@@ -198,6 +198,42 @@ class RussianNamesStageTest(unittest.TestCase):
             )
             self.assertEqual(people["A1"].surname_ru, "Богатырев", spelling)
 
+    def test_a_name_written_surname_first_with_a_comma_matches(self):
+        # OpenAlex serves "Ivanov, Ilya" beside "Ilya Ivanov"; a comma left
+        # in the folded key keeps the two spellings apart.
+        for spelling in ("Ivanov, Ilya", "Иванов, Илья Петрович"):
+            _, people = self.run_stage(
+                [person("A1", spelling)],
+                ["Иванов Илья Петрович,Иванов,Илья,Петрович,"],
+            )
+            self.assertEqual(people["A1"].name_ru, "Иванов Илья Петрович", spelling)
+
+    def test_one_employee_listed_twice_is_still_one_record(self):
+        # Two rows for one person read as namesakes: their shared key is
+        # dropped and the employee stops matching at all.
+        result, people = self.run_stage(
+            [person("A1", "Ivan Petrov")],
+            ["Петров Иван Сергеевич,Петров,Иван,Сергеевич,",
+             "Петров Иван Сергеевич,Петров,Иван,Сергеевич,к.т.н."],
+        )
+        self.assertEqual(result["names_from_catalog"], 1)
+        self.assertEqual(people["A1"].name_ru, "Петров Иван Сергеевич")
+        # The degree stated by one of the rows survives the merge.
+        self.assertEqual(people["A1"].degree, "к.т.н.")
+        self.assertEqual(self.ambiguous(), [])
+
+    def test_a_run_that_examines_nobody_keeps_the_journal(self):
+        self.run_stage(
+            [person("A1", "Ivan Smirnov")],
+            ["Смирнов Иван Петрович,Смирнов,Иван,Петрович,",
+             "Смирнов Иван Сергеевич,Смирнов,Иван,Сергеевич,"],
+        )
+        self.assertEqual(len(self.ambiguous()), 1)
+        again = RussianNamesStage(self.prepared, self.raw,
+                                  Settings(data_dir=Path(self.tmp.name))).run()
+        self.assertEqual(again["russian_names"], 0)
+        self.assertEqual(len(self.ambiguous()), 1)
+
     def test_a_cyrillic_full_name_fills_the_parts_without_the_catalog(self):
         for spelling in ("Илья Алексеевич Суров", "Суров Илья Алексеевич",
                          "Суров, Илья Алексеевич"):
