@@ -10,7 +10,7 @@ import requests
 
 
 class HttpClient:
-    """Synchronous JSON HTTP client with retry support."""
+    """Synchronous HTTP client with retry support."""
 
     RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
@@ -26,8 +26,18 @@ class HttpClient:
     def request_json(
         self, method: str, url: str, *, params: dict[str, Any] | None = None, json: Any | None = None, retries: int = 3
     ) -> dict[str, Any]:
-        """Send an HTTP request and retry transient failures."""
-        request_kwargs: dict[str, Any] = {"timeout": self.timeout}
+        """Send an HTTP request and retry transient failures, returning decoded JSON."""
+        return self._request(method, url, params=params, json=json, retries=retries).json()
+
+    def get_bytes(self, url: str, *, retries: int = 3, timeout: int | None = None) -> bytes:
+        """Send a GET request and return the raw response body."""
+        return self._request("GET", url, retries=retries, timeout=timeout).content
+
+    def _request(
+        self, method: str, url: str, *, params: dict[str, Any] | None = None, json: Any | None = None,
+        retries: int = 3, timeout: int | None = None,
+    ) -> requests.Response:
+        request_kwargs: dict[str, Any] = {"timeout": timeout or self.timeout}
         if params is not None:
             request_kwargs["params"] = params
         if json is not None:
@@ -47,7 +57,7 @@ class HttpClient:
                 time.sleep(delay)
                 continue
             response.raise_for_status()
-            return response.json()
+            return response
         raise RuntimeError(f"unreachable retry state for {url}")
 
     def _retry_delay(self, response: requests.Response, attempt: int) -> float | None:

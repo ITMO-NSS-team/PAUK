@@ -94,9 +94,13 @@ def extract_repo_links(
             continue
         props = {
             k: link[k]
-            for k in ("context", "page_number", "is_relevant", "llm_confidence", "llm_reason")
+            for k in ("is_relevant", "llm_confidence", "llm_reason")
             if link.get(k) is not None
         }
+        occurrences = link.get("occurrences") or []
+        if occurrences:
+            props["context"] = [o.get("context") or "" for o in occurrences]
+            props["page_number"] = [o.get("page_number") or 0 for o in occurrences]
         stored_url = known_repository_urls.get(normalize_repo_url(url))
         if stored_url is not None:
             repo_edges.append((publication_id, stored_url, props))

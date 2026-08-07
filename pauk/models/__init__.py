@@ -2,7 +2,7 @@ from .department import Department
 from .person import Affiliation, Person
 from .publication import Funding, Publication, PublicationVersion, VersionAuthor
 from .relations import Authorship, Contribution, MentionsLink
-from .repository import CodeLink, GitHubProfile, LinkCandidate, RepoLink, Repository
+from .repository import CodeLink, GitHubProfile, LinkCandidate, LinkOccurrence, RepoLink, Repository
 
 __all__ = [
     "Affiliation",
@@ -13,6 +13,7 @@ __all__ = [
     "Funding",
     "GitHubProfile",
     "LinkCandidate",
+    "LinkOccurrence",
     "MentionsLink",
     "Person",
     "Publication",
