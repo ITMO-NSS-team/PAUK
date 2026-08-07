@@ -1,15 +1,5 @@
 # Схема графа Neo4j
 
-Заменяет удалённые `docs/neo4j/schema_with_back.drawio.png`/`.svg` —
-та диаграмма описывала предложенную Камилем схему (`AFFILIATED_WITH`,
-`OWNS`, `GitHubAccount`), которая не взята в код, см.
-[`../architecture/neo4j-graph.md`](../architecture/neo4j-graph.md). Ниже —
-то, что реально строит `pauk/graph/extract.py::NODE_REGISTRY`.
-
-Текст, не бинарник: рендерится нативно на GitHub и в Obsidian
-(плагин Mermaid), и это ровно то, что видит агент при чтении файла — не
-изображение, которое ему пришлось бы распознавать.
-
 ```mermaid
 classDiagram
     class Person {
@@ -58,6 +48,7 @@ classDiagram
         +abstract
         +versions : JSON
         +merged_ids
+        +full_text
     }
 
     class Repository {
@@ -108,9 +99,3 @@ classDiagram
 (список), `page_number` (список, `0` = абстракт), `is_relevant`,
 `llm_confidence`, `llm_reason`. Подробности и уникальные ключи — в
 [`../architecture/neo4j-graph.md`](../architecture/neo4j-graph.md).
-
-**Не в этом списке, хотя есть на pydantic-модели:**
-`Publication.full_text` — в `NODE_REGISTRY["publication"].prop_fields` его
-нет, поэтому в граф он сегодня не попадает, остаётся только в
-`prepared/<group>/publications.jsonl`. Похоже на недосмотр, не осознанное
-решение — см. issue-трекер.
