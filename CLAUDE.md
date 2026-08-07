@@ -1,1 +1,1 @@
-См. [`AGENTS.md`](AGENTS.md) — единая инструкция в этом репозитории.
+See [`AGENTS.md`](AGENTS.md) - the single instruction file for this repository.

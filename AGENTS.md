@@ -1,81 +1,76 @@
 # AGENTS.md
 
-Инструкция для агента и для человека, впервые открывающего этот репозиторий.
-Здесь — правила и куда смотреть; само устройство системы — в `docs/`, не дублируется тут.
+Instructions for an agent, and for a human opening this repository for the
+first time. Rules and pointers live here; how the system actually works
+lives in `docs/`, not duplicated here.
 
-## Что это за проект
+## What this project is
 
-PAUK собирает публикации ИТМО из OpenAlex, обогащает их (Crossref, ORCID,
-OpenReview, GitHub), находит в них ссылки на код и загружает результат в
-Neo4j. `pauk/gui/` рисует интерактивную карту по этому графу.
+PAUK collects ITMO's publications from OpenAlex, enriches them (Crossref,
+ORCID, OpenReview, GitHub), finds code links in them, and loads the result
+into Neo4j. `pauk/gui/` renders an interactive map of that graph.
 
-Один Python-пакет `pauk/`. Полное описание архитектуры начинается с
+One Python package, `pauk/`. Full architecture starts at
 [`docs/architecture/overview.md`](docs/architecture/overview.md).
 
-## Куда смотреть
+## Where to look
 
-- **`docs/architecture/`** — как устроена система сейчас, по одному файлу
-  на подпакет/стейдж. Начать с `overview.md`.
-- **`docs/journal/`** — почему сделано именно так: решения с датой,
-  проблемой и расплатой. Не текущее состояние — снимок момента принятия
-  решения (если решение с тех пор пересмотрено, в файле есть пометка об
-  этом).
-- **`docs/diagrams/`** — схемы как markdown+Mermaid, не картинки. Не
-  создавайте PNG/SVG для новых диаграмм — модели их не читают, текстовый
-  Mermaid рендерится нативно на GitHub и читается как обычный текст.
-- **`README.md`** — быстрый старт и краткая схема БД для человека, который
-  ничего не читал.
+- **`docs/architecture/`** - how the system works today, one file per
+  subpackage/stage. Start with `overview.md`.
+- **`docs/diagrams/`** - schemas as markdown+Mermaid, not images. Don't
+  create PNG/SVG for new diagrams - models can't read them, and text
+  Mermaid renders natively on GitHub and reads like plain text.
+- **`README.md`** - quick start and a short DB schema for someone who
+  hasn't read anything else.
 
-Перед архитектурным изменением — сначала `docs/architecture/`, не с нуля.
-Если решение противоречит записанному там — либо вы неправы, либо
-документация устарела; в обоих случаях сначала разберитесь, потом
-меняйте код.
+Before an architectural change, check `docs/architecture/` first, don't
+start from scratch. If a decision contradicts what's written there - either
+you're wrong or the docs are stale; either way, sort that out before
+changing code.
 
-## Правила репозитория
+## Repository rules
 
-- **Тесты — `unittest.TestCase`, не pytest-стиль** (фикстуры,
-  `@pytest.mark`, голые `assert`). CI гоняет их через
-  `uv run --with pytest pytest tests/ -q` (pytest как раннер умеет
-  исполнять unittest-тесты), но пишутся они всегда как `unittest.TestCase`.
-  Запуск локально: `uv run python -m unittest discover -s tests/unit`.
-  `tests/bench/` — отдельно, нужен `pytest` в окружении, не входит в
-  обычный прогон.
-- **Линтер — `ruff`**, конфиг в `pyproject.toml`. Перед тем как считать
-  правку готовой: `uv run ruff check <тронутые файлы>`.
-- **Комментарии в коде — на английском**, документация/commit-сообщения/
-  PR-описания — **на русском**. Не смешивать в одном месте.
-- **Комментарий объясняет "почему", не "что".** Если из кода и так видно,
-  что делает строка — комментарий не нужен. Атрибуция человеку/номеру PR
-  в комментарии не пишется — это уровень commit-сообщения, не кода (см.
-  прецедент в `docs/journal/2026-08-01-kamil-schema-stub-fields.md`).
-- **Commit-сообщения**: `type(scope): краткое описание`, тип по смыслу
-  (`feat`/`fix`/`refactor`/`chore`/`docs`), см. `git log` на реальный
-  стиль этого репозитория.
-- **Не переименовывать связи/лейблы Neo4j без крайней необходимости.**
-  `pauk/gui/generate_data.py` находит данные по точным именам связей —
-  тихая рассинхронизация ничего не сломает с ошибкой, просто перестанет
-  находиться `MATCH`. Прецедент — почему схему Камиля не взяли, в
-  `docs/journal/2026-08-01-kamil-schema-stub-fields.md`.
-- **Neo4j-свойства не хранят вложенные map/list-of-map и `null` внутри
-  массива.** Вложенные структуры сериализуются в JSON-текст
-  (`extract.py::JSON_TEXT_FIELDS`), `null` в массиве-свойстве заменяется
-  сентинелом на границе с графом (пример — `page_number=0` вместо `None`
-  для абстракта, см. `docs/architecture/pipeline/code-links.md`).
-- **Агент не пушит и не мержит без явного ревью человека.** Локальные
-  коммиты, запуск тестов, правки в рабочем дереве — свободно; `git push`,
-  тем более `--force`, и слияние PR — только после того, как человек явно
-  подтвердил именно это действие. Ветка, история которой уже опубликована,
-  не переписывается без предупреждения о последствиях.
+- **Tests use `unittest.TestCase`, not pytest style** (fixtures,
+  `@pytest.mark`, bare `assert`). CI runs them through
+  `uv run --with pytest pytest tests/ -q` (pytest as a runner can execute
+  unittest tests), but they're always written as `unittest.TestCase`.
+  Run locally: `uv run python -m unittest discover -s tests/unit`.
+  `tests/bench/` is separate, needs `pytest` in the environment, and isn't
+  part of the normal run.
+- **Linter is `ruff`**, config in `pyproject.toml`. Before calling a change
+  done: `uv run ruff check <changed files>`.
+- **Code comments in English.**
+- **A comment explains "why", not "what".** If the code already makes
+  clear what a line does, skip the comment. Comments don't attribute a
+  person or PR number - that belongs in the commit message, not the code.
+- **Commit messages follow Conventional Commits**: `type(scope): short
+  description`, type by meaning (`feat`/`fix`/`refactor`/`chore`/`docs`) -
+  see `git log` for this repo's actual style.
+- **Don't rename Neo4j relationships/labels without strong reason.**
+  `pauk/gui/generate_data.py` finds data by exact relationship names - a
+  silent mismatch won't break with an error, `MATCH` will just stop
+  finding anything.
+- **Neo4j properties don't store nested map/list-of-map values, or `null`
+  inside an array.** Nested structures serialize to JSON text
+  (`extract.py::JSON_TEXT_FIELDS`); `null` in an array property is
+  replaced with a sentinel at the graph boundary (example -
+  `page_number=0` instead of `None` for the abstract, see
+  `docs/architecture/pipeline/code-links.md`).
+- **No git operations without explicit user approval.** Editing files and
+  running tests in the working tree is free to do; `git commit`, `push`
+  (especially `--force`), creating/switching branches, and merging a PR
+  each need an explicit go-ahead from the user for that specific action -
+  approval for one doesn't carry over to the next. A branch whose history
+  is already published isn't rewritten without a warning about the
+  consequences.
 
-## Прежде чем сказать «готово»
+## Before saying "done"
 
-1. `uv run python -m unittest discover -s tests/unit` — зелёный.
-2. `uv run ruff check <файлы, которые тронули>` — чисто.
-3. Если менялось что-то, что читает `pauk/gui/generate_data.py`
-   (названия узлов/связей/свойств графа) — свериться с
-   `docs/architecture/neo4j-graph.md`, не полагаться на память.
-4. Реальная проверка на живых данных, если меняли извлечение/парсинг —
-   синтетический тест на сконструированных данных систематически
-   пропускает то, что находится только на настоящих (см.
-   `docs/journal/2026-08-06-code-links-pdf-fulltext.md` — три реальных
-   бага нашлись именно так, не на синтетике).
+1. `uv run python -m unittest discover -s tests/unit` - green.
+2. `uv run ruff check <changed files>` - clean.
+3. If something `pauk/gui/generate_data.py` reads changed (graph node,
+   relationship, or property names) - check against
+   `docs/architecture/neo4j-graph.md`, don't rely on memory.
+4. Real check on live data if extraction/parsing changed - a synthetic
+   test on constructed data systematically misses what only shows up on
+   real data.
