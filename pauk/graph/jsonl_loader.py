@@ -17,6 +17,7 @@ from pathlib import Path
 
 from pauk.urls import normalize_repo_url
 
+from .audit import AuditedNeo4jClient
 from .client import Neo4jClient, chunked
 from .extract import NODE_REGISTRY, extract_node, extract_relationships
 
@@ -112,7 +113,7 @@ def extract_repo_links(
     return candidate_nodes, repo_edges, candidate_edges, candidate_promotions
 
 
-def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
+def load_jsonl_dir(client: Neo4jClient | AuditedNeo4jClient, in_dir: Path) -> None:
     """Load every prepared JSONL file found in `in_dir` into Neo4j.
 
     Reads all files first, accumulating nodes and relationships in memory
