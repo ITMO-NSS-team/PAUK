@@ -186,7 +186,7 @@ class CodeLinksStage(EnrichmentStage):
             row.publication_id: row
             for row in self.prepared.read_models("repo_links", RepoLink)
         }
-        group = self.prepared.group_dir.name
+        group = self.prepared.group
         self.http = HttpClient(self.config.request_timeout)
         # One probe per run, not per publication - an unreachable crawler
         # shouldn't add a failed request to every single row.

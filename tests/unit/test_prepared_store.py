@@ -1,0 +1,60 @@
+import unittest
+
+import mongomock
+
+from pauk.models import Publication
+from pauk.storage import PreparedStore
+
+
+class PreparedStoreTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+
+    def test_write_then_read_round_trip(self):
+        store = PreparedStore(self.db, "sample")
+        store.write_models("publications", [Publication(id="W1", title="Paper")])
+        rows = list(store.read_models("publications", Publication))
+        self.assertEqual([r.id for r in rows], ["W1"])
+        self.assertEqual(rows[0].title, "Paper")
+
+    def test_read_is_scoped_to_its_own_group(self):
+        PreparedStore(self.db, "group-a").write_models(
+            "publications", [Publication(id="W1", title="Paper")])
+        other = PreparedStore(self.db, "group-b")
+        self.assertEqual(list(other.read_models("publications", Publication)), [])
+
+    def test_get_models_finds_a_document_regardless_of_group(self):
+        PreparedStore(self.db, "group-a").write_models(
+            "publications", [Publication(id="W1", title="Paper", has_code=True)])
+        store_b = PreparedStore(self.db, "group-b")
+        # group-b never touched W1, so the group-scoped read doesn't see it...
+        self.assertEqual(list(store_b.read_models("publications", Publication)), [])
+        # ...but a targeted lookup by id crosses the group boundary.
+        [found] = list(store_b.get_models("publications", ["W1"], Publication))
+        self.assertEqual(found.id, "W1")
+        self.assertTrue(found.has_code)
+
+    def test_get_models_skips_unknown_ids_without_erroring(self):
+        store = PreparedStore(self.db, "sample")
+        self.assertEqual(list(store.get_models("publications", ["ghost"], Publication)), [])
+
+    def test_second_group_writing_a_row_adds_provenance_without_hiding_it_from_the_first(self):
+        PreparedStore(self.db, "group-a").write_models(
+            "publications", [Publication(id="W1", title="Paper", has_code=True)])
+        store_b = PreparedStore(self.db, "group-b")
+        [existing] = list(store_b.get_models("publications", ["W1"], Publication))
+        existing.abstract = "seen by group b too"
+        store_b.write_models("publications", [existing])
+
+        [seen_by_a] = list(PreparedStore(self.db, "group-a").read_models("publications", Publication))
+        self.assertTrue(seen_by_a.has_code)
+        self.assertEqual(seen_by_a.abstract, "seen by group b too")
+        [seen_by_b] = list(store_b.read_models("publications", Publication))
+        self.assertEqual(seen_by_b.id, "W1")
+
+    def test_write_rows_round_trips_plain_dicts_keyed_by_publication_id(self):
+        # RepoLink has no "id" field of its own - it's keyed by publication_id.
+        store = PreparedStore(self.db, "sample")
+        store.write_rows("repo_links", [{"publication_id": "W1", "links": []}])
+        rows = list(store.read_rows("repo_links"))
+        self.assertEqual(rows, [{"publication_id": "W1", "links": []}])

@@ -9,6 +9,7 @@ dependencies = [
     "networkx>=3.6.1",
     "neo4j>=6.2.0",
     "pydantic>=2.13.4",
+    "pymongo>=4.17.0",
     "pymupdf>=1.27.2.3",
     "python-dotenv>=1.2.2",
     "requests>=2.34.2",
@@ -21,6 +22,7 @@ pauk = "pauk.cli:main"
 
 [dependency-groups]
 dev = [
+    "mongomock>=4.3.0",
     "ruff>=0.14.0",
 ]
 

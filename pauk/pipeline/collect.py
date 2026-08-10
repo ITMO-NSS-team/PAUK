@@ -3,8 +3,7 @@ from __future__ import annotations
 import logging
 
 from pauk.pipeline.selectors import PeriodSelector, WorkSelector, WorksFileSelector
-from pauk.sources import OpenAlexClient
-from pauk.storage import GroupLock, RawStore
+from pauk.storage import RawStore
 
 logger = logging.getLogger(__name__)
 
@@ -28,21 +27,20 @@ def _authors_truncated(work: dict) -> bool:
 
 
 class Collector:
-    def __init__(self, client: OpenAlexClient, raw: RawStore) -> None:
+    def __init__(self, client, raw: RawStore) -> None:
+        """Args: client: An open OpenAlexClient (or a compatible double)."""
         self.client = client
         self.raw = raw
 
     def collect(self, selector: WorkSelector | PeriodSelector | WorksFileSelector) -> int:
-        with GroupLock(self.raw.group_dir.parent.parent, self.raw.group_dir.name):
-            return self._collect(selector)
+        return self._collect(selector)
 
     def refetch_truncated(self) -> int:
         """Re-fetch full author lists for stored works that carry truncated
         ones. Runs as part of every collect; callable on its own to repair a
         group collected before truncation was handled, without re-crawling
         the whole period."""
-        with GroupLock(self.raw.group_dir.parent.parent, self.raw.group_dir.name):
-            return self._refetch_truncated(self._last_payload_by_id())
+        return self._refetch_truncated(self._last_payload_by_id())
 
     def _last_payload_by_id(self) -> dict[str, tuple[dict, dict]]:
         """The latest stored (payload, request) per work id — a repair appends

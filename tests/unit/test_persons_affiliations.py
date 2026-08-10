@@ -3,7 +3,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from pauk.models import Person, Publication
+import mongomock
+
+from pauk.models import Authorship, Person, Publication
 from pauk.pipeline.stages.persons import PersonsStage
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
@@ -45,8 +47,9 @@ class AffiliationBackfillTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name)
-        prepared = PreparedStore(root / "prepared", "sample")
-        raw = RawStore(root / "raw", "sample")
+        db = mongomock.MongoClient()["pauk_test"]
+        prepared = PreparedStore(db, "sample")
+        raw = RawStore(db, "sample")
         prepared.write_models("persons", [person])
         prepared.write_models("publications", publications)
         with patch("pauk.pipeline.stages.persons.OpenAlexClient") as openalex, \
@@ -60,8 +63,8 @@ class AffiliationBackfillTest(unittest.TestCase):
 
     def test_affiliation_of_the_works_own_year_fills_the_gap(self):
         person = Person(id="A1", openalex_id="A1", is_itmo=False, name_en="Anonymous Depositor",
-                        authored=[{"publication_id": "W1", "position": 1},
-                                  {"publication_id": "W2", "position": 1}])
+                        authored=[Authorship(publication_id="W1", position=1),
+                                  Authorship(publication_id="W2", position=1)])
         result = self.run_stage(
             person,
             [Publication(id="W1", title="Old work", year=2019),
@@ -79,8 +82,8 @@ class AffiliationBackfillTest(unittest.TestCase):
 
     def test_an_affiliation_the_work_states_is_left_alone(self):
         person = Person(id="A1", openalex_id="A1", is_itmo=False,
-                        authored=[{"publication_id": "W1", "position": 1,
-                                   "affiliation": "As printed on the paper"}])
+                        authored=[Authorship(publication_id="W1", position=1,
+                                             affiliation="As printed on the paper")])
         result = self.run_stage(
             person, [Publication(id="W1", title="Work", year=2026)],
             openalex_author(affiliations=[(ITMO_INSTITUTION, [2026])]),
@@ -91,7 +94,7 @@ class AffiliationBackfillTest(unittest.TestCase):
 
     def test_an_itmo_affiliation_no_work_stated_still_marks_the_person(self):
         person = Person(id="A1", openalex_id="A1", is_itmo=False,
-                        authored=[{"publication_id": "W1", "position": 1}])
+                        authored=[Authorship(publication_id="W1", position=1)])
         result = self.run_stage(
             person, [Publication(id="W1", title="Deposit without affiliations", year=2026)],
             openalex_author(affiliations=[(ITMO_INSTITUTION, [2026])]),
@@ -100,7 +103,7 @@ class AffiliationBackfillTest(unittest.TestCase):
 
     def test_orcid_employment_fills_what_openalex_does_not_know(self):
         person = Person(id="A1", openalex_id="A1", is_itmo=False, orcid="0000-0001",
-                        authored=[{"publication_id": "W1", "position": 1}])
+                        authored=[Authorship(publication_id="W1", position=1)])
         result = self.run_stage(
             person, [Publication(id="W1", title="Work", year=2024)],
             openalex_author(),  # OpenAlex knows no affiliation at all
@@ -113,7 +116,7 @@ class AffiliationBackfillTest(unittest.TestCase):
 
     def test_last_known_institution_is_the_fallback_for_an_uncovered_year(self):
         person = Person(id="A1", openalex_id="A1", is_itmo=False,
-                        authored=[{"publication_id": "W1", "position": 1}])
+                        authored=[Authorship(publication_id="W1", position=1)])
         result = self.run_stage(
             person, [Publication(id="W1", title="Work of an unknown year")],
             openalex_author(last_known=[ITMO_INSTITUTION]),
@@ -123,7 +126,7 @@ class AffiliationBackfillTest(unittest.TestCase):
 
     def test_nothing_to_fill_from_leaves_the_authorship_empty(self):
         person = Person(id="A1", openalex_id="A1", is_itmo=False,
-                        authored=[{"publication_id": "W1", "position": 1}])
+                        authored=[Authorship(publication_id="W1", position=1)])
         result = self.run_stage(
             person, [Publication(id="W1", title="Work", year=2026)], openalex_author())
         (authorship,) = result.authored

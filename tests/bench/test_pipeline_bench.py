@@ -13,10 +13,13 @@ from hashlib import sha256
 from types import SimpleNamespace
 from unittest import mock
 
+import mongomock
 import pytest
 
-from pauk.graph.jsonl_loader import load_jsonl_dir, normalize_repo_url
+from pauk.graph.jsonl_loader import load_prepared_rows, normalize_repo_url
+from pauk.graph.load import ENTITY_FILES
 from pauk.models import GitHubProfile, Person, Publication, RepoLink, Repository
+from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.collect import Collector
 from pauk.pipeline.enrich import Enricher
 from pauk.pipeline.normalize import OpenAlexNormalizer
@@ -33,15 +36,15 @@ from tests.bench.mocks import (
 )
 from tests.bench.universe import (
     ARCHIVE_AUTHOR_AFFILIATION,
-    CONSORTIUM_FILLERS,
-    CONSORTIUM_ITMO_INDEX,
-    CONSORTIUM_ORG_NAME,
-    CONSORTIUM_WORK,
     ARCHIVE_AUTHOR_ID,
     ARCHIVE_REPO_ID,
     ARCHIVE_REPO_URL,
     ARCHIVE_WORK,
     AUTHOR_IDS,
+    CONSORTIUM_FILLERS,
+    CONSORTIUM_ITMO_INDEX,
+    CONSORTIUM_ORG_NAME,
+    CONSORTIUM_WORK,
     DEDUP_MERGES,
     MARKUP_TITLE_CLEAN,
     MARKUP_WORK,
@@ -77,8 +80,9 @@ def bench(tmp_path_factory) -> SimpleNamespace:
         json.dumps(universe["departments_catalog"], ensure_ascii=False), encoding="utf-8")
 
     config = Settings(data_dir=data_dir)
-    raw = RawStore(config.raw_dir, GROUP)
-    prepared = PreparedStore(config.prepared_dir, GROUP)
+    db = mongomock.MongoClient()["pauk_test"]
+    raw = RawStore(db, GROUP)
+    prepared = PreparedStore(db, GROUP)
 
     openalex = MockOpenAlexClient(universe)
     selector = PeriodSelector("2026-01-01", "2026-12-31")
@@ -107,17 +111,20 @@ def bench(tmp_path_factory) -> SimpleNamespace:
             github_id=repo_github_id("BenchOrg7", "AlphaTool"),
             cited_urls=[STALE_REPO_URL], owner_login="BenchOrg7",
             publication_ids=[STALE_REPO_PUBLICATION],
-            processing={"repositories": {"status": "completed", "attempts": 1}},
+            _processing={"repositories": ProcessingState(status=ProcessingStatus.COMPLETED, attempts=1)},
         )])
         Enricher(prepared, raw, config).run()  # re-run: completed rows must not change
     finally:
         for p in patches:
             p.stop()
 
+    def rows_by_file():
+        return {filename: list(prepared.read_rows(entity)) for entity, filename in ENTITY_FILES.items()}
+
     client = RecordingNeo4jClient()
-    load_jsonl_dir(client, config.prepared_dir / GROUP)
+    load_prepared_rows(client, rows_by_file())
     snapshot_first = client.snapshot()
-    load_jsonl_dir(client, config.prepared_dir / GROUP)
+    load_prepared_rows(client, rows_by_file())
     snapshot_second = client.snapshot()
 
     return SimpleNamespace(
@@ -315,7 +322,7 @@ def test_same_name_without_distinguishing_marks_merges_by_default(bench):
 
 def test_conflicting_orcids_stay_separate_and_unreported(bench):
     assert "A5000000058" in bench.persons and "A5000000059" in bench.persons
-    candidates_path = bench.config.prepared_dir / GROUP / "dedup_candidates.jsonl"
+    candidates_path = bench.config.audit_dir / GROUP / "dedup_candidates.jsonl"
     rows = [json.loads(line) for line in candidates_path.read_text(encoding="utf-8").splitlines()
             if line.strip()]
     pairs = {frozenset((row["person_a"], row["person_b"])) for row in rows}

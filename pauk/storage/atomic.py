@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import time
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -31,41 +30,4 @@ class AtomicWriter:
             os.replace(self._tmp, self.target)
         else:
             self._tmp.unlink(missing_ok=True)
-        return False
-
-
-class GroupLock:
-    """Inter-process lock for a data group during read-modify-write work."""
-
-    def __init__(self, data_dir: Path, group: str, timeout: float = 30.0) -> None:
-        self.path = data_dir / ".locks" / f"{group}.lock"
-        self.timeout = timeout
-        self._acquired = False
-
-    def __enter__(self) -> "GroupLock":
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        deadline = time.monotonic() + self.timeout
-        while True:
-            try:
-                with self.path.open("x", encoding="utf-8") as fh:
-                    fh.write(f"pid={os.getpid()}\n")
-                self._acquired = True
-                return self
-            except FileExistsError:
-                try:
-                    pid_line = self.path.read_text(encoding="utf-8").strip()
-                    pid = int(pid_line.removeprefix("pid="))
-                    os.kill(pid, 0)
-                except (FileNotFoundError, ProcessLookupError, ValueError):
-                    self.path.unlink(missing_ok=True)
-                    continue
-                except PermissionError:
-                    pass
-                if time.monotonic() >= deadline:
-                    raise TimeoutError(f"group is locked by another process: {self.path}")
-                time.sleep(0.1)
-
-    def __exit__(self, exc_type, exc, traceback) -> bool:
-        if self._acquired:
-            self.path.unlink(missing_ok=True)
         return False

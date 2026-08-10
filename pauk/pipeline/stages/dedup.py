@@ -83,7 +83,7 @@ import logging
 import re
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Iterator
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from pauk.models import Person, Publication, PublicationVersion, RepoLink, Repository, VersionAuthor
 from pauk.models.processing import ProcessingState, ProcessingStatus
@@ -176,7 +176,8 @@ def _paired_persons(people: list[Person], in_scope: set[str] | None):
             for second in unique[i + 1:]:
                 if in_scope is not None and first.id not in in_scope and second.id not in in_scope:
                     continue
-                pair = tuple(sorted((first.id, second.id)))
+                lower_id, higher_id = sorted((first.id, second.id))
+                pair = (lower_id, higher_id)
                 if pair in emitted:
                     continue
                 emitted.add(pair)
@@ -347,7 +348,7 @@ def _group_conflict(
     trusted_orcid: dict[str, str | None],
 ) -> tuple[str, set[str]] | None:
     """The first identity field whose values split the group, if any."""
-    orcids = {trusted_orcid.get(member) for member in members} - {None}
+    orcids = {orcid for member in members if (orcid := trusted_orcid.get(member)) is not None}
     if len(orcids) > 1:
         return "ORCID", orcids
     for field in PROFILE_FIELDS:
@@ -735,7 +736,7 @@ class DedupStage(EnrichmentStage):
             self.prepared.write_models("persons", people)
 
         held = sum(1 for row in report if row["status"] == "held")
-        report_path = self.prepared.group_dir / CANDIDATES_FILENAME
+        report_path = self.config.audit_dir / self.prepared.group / CANDIDATES_FILENAME
         with AtomicWriter(report_path) as fh:
             for row in report:
                 fh.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -761,10 +762,7 @@ class DedupStage(EnrichmentStage):
             author_id = (payload.get("id") or "").rstrip("/").rsplit("/", 1)[-1]
             if author_id:
                 raw_orcids[author_id] = (payload.get("orcid") or "").rstrip("/").rsplit("/", 1)[-1] or None
-        return {
-            person.id: raw_orcids[person.id] if person.id in raw_orcids else person.orcid
-            for person in people
-        }
+        return {person.id: raw_orcids.get(person.id, person.orcid) for person in people}
 
     def _person_scope(self, people: list[Person]) -> set[str] | None:
         """Person ids the selection allows to participate in merging."""
@@ -816,6 +814,6 @@ class DedupStage(EnrichmentStage):
         row.processing[self.name] = ProcessingState(
             status=ProcessingStatus.COMPLETED,
             attempts=(state.attempts if state else 0) + 1,
-            finished_at=datetime.now(timezone.utc),
+            finished_at=datetime.now(UTC),
             result_count=merged_count,
         )

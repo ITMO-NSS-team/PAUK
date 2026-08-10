@@ -37,24 +37,29 @@ pauk collect --work <id> | --works-file <файл> | --from <дата> --to <д�
 pauk normalize --group <group>
 ```
 
-Разбирает `data/raw/<group>/openalex_works.jsonl` в
-`publications.jsonl`/`persons.jsonl`. Повторный запуск на той же группе
-безопасен — сохраняет уже собранные enrichment-данные и `_processing`
-существующих строк, мержит их с обновлённым содержимым сырых данных
-(`OpenAlexNormalizer._run()`).
+Разбирает raw-коллекцию MongoDB (`openalex_works`, отфильтровано по
+`group`) в prepared-коллекции `publications`/`persons`. Повторный запуск
+на той же группе безопасен — сохраняет уже собранные enrichment-данные и
+`_processing` существующих строк, мержит их с обновлённым содержимым
+сырых данных (`OpenAlexNormalizer.run()`). Сущности в MongoDB глобальные:
+если тот же work id уже встречался в другой группе, нормализация видит
+его текущее состояние по id (`PreparedStore.get_models`), а не только то,
+что уже накопила именно эта группа — см. [storage.md](storage.md).
 
 ## `enrich`
 
 ```
-pauk enrich [stage] (--group <group> | --input <файл-или-папка>) [--force]
+pauk enrich [stage] --group <group> [--input <файл-с-id> --entity <сущность>] [--force]
 ```
 
 `stage` — имя одного этапа (`pdf`, `persons`, `departments`, `code_links`,
 `repositories`, `dedup`) или `all` (по умолчанию, все по порядку — порядок
-задан `ALL_STAGES` в `pipeline/stages/__init__.py`). `--input` вместо
-`--group` ограничивает прогон конкретным файлом или папкой группы —
-строится `PreparedSelection` по id строк этого файла, остальной пайплайн
-их пропускает. `--force` заставляет перепрогнать строки, чей стейдж уже
+задан `ALL_STAGES` в `pipeline/stages/__init__.py`). `--group` обязателен
+всегда. `--input` (вместе с `--entity`) сужает прогон до конкретных id —
+файл, по одному id на строке (тот же формат, что у `--works-file` для
+`collect`); `--entity` — имя одной из шести prepared-сущностей
+(`PreparedStore.COLLECTIONS`), к которой относятся эти id. `--force`
+заставляет перепрогнать строки, чей стейдж уже
 `COMPLETED`/`COMPLETED_EMPTY`/`NOT_APPLICABLE` — нужен, когда логику
 стейджа поменяли и старые (уже отмеченные завершёнными) строки нужно
 пересчитать заново.
@@ -62,12 +67,14 @@ pauk enrich [stage] (--group <group> | --input <файл-или-папка>) [--
 ## `publish graph`
 
 ```
-pauk publish graph (--group <group> | --input <файл-или-папка>)
+pauk publish graph --group <group>
 ```
 
-Грузит подготовленную группу (или файл/папку) в Neo4j: создаёт
-констрейнты, затем все узлы, затем все связи. См.
-[neo4j-graph.md](neo4j-graph.md).
+Грузит prepared-коллекции группы из MongoDB в Neo4j: создаёт констрейнты,
+затем все узлы, затем все связи. См. [neo4j-graph.md](neo4j-graph.md).
+Отдельный `python -m pauk.graph.load --dir <папка> --format jsonl|csv` —
+самостоятельный инструмент для загрузки внешней папки JSONL/CSV, не
+завязан на MongoDB и на пайплайн вообще.
 
 ## `dedup graph`
 
@@ -91,13 +98,11 @@ pauk cache export [--output <путь>]
 `data/cache/graph_snapshot.json` (или указанный путь) — готовит вход для
 `pauk.gui.generate_data`. См. [cache.md](cache.md).
 
-## `--input` против `--group`: как выбирается `enrich`/`publish`
+## `--input`: точечный выбор строк у `enrich`
 
-`_input_group_and_selection()` принимает либо путь к папке группы внутри
-`data/prepared/`, либо путь к одному из шести JSONL-файлов этой группы.
-Во втором случае строится `PreparedSelection` из id строк этого конкретного
-файла (для `repo_links`/`departments`/`repositories`/`github_profiles` — по
-`id` или `publication_id` из голых dict, без модели; для
-`publications`/`persons` — через полноценные pydantic-модели). Путь обязан
-лежать непосредственно внутри `settings.prepared_dir` — попытка указать
-файл снаружи или на два уровня вложенности кидает `ValueError`.
+`_selection_from_input(path, entity)` читает `path` построчно (один id на
+строку, пустые строки пропускаются) и строит `PreparedSelection(entity,
+ids)` — `EnrichmentStage.selected()` пропускает всё, что не входит в этот
+набор. Не привязан к MongoDB и не требует, чтобы файл лежал где-то
+конкретно — это просто список id, источник которого может быть каким
+угодно (вручную составленный, выгруженный запросом и т.д.).

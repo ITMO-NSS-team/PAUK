@@ -1,6 +1,6 @@
-import tempfile
 import unittest
-from pathlib import Path
+
+import mongomock
 
 from pauk.pipeline.collect import AUTHORSHIP_TRUNCATION_LIMIT, Collector
 from pauk.pipeline.selectors import PeriodSelector
@@ -38,9 +38,8 @@ class FakeOpenAlexClient:
 
 class CollectTruncatedAuthorsTest(unittest.TestCase):
     def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.raw = RawStore(Path(tmp.name) / "raw", "sample")
+        db = mongomock.MongoClient()["pauk_test"]
+        self.raw = RawStore(db, "sample")
 
     def last_payloads(self):
         rows = {}
