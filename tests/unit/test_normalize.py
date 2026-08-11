@@ -174,6 +174,27 @@ class NormalizeTest(unittest.TestCase):
             person = next(prepared.read_models("persons", Person))
             self.assertEqual({a.publication_id for a in person.authored}, {"W1", "W2"})
 
+    def test_null_or_missing_title_becomes_untitled(self):
+        # OpenAlex may serve "title": null. The pre-pauk populate_publications.py
+        # used work.get("title", "No title"), which keeps None on an explicit null
+        # (the default only fills a *missing* key) and later crashed on len(None)
+        # — the bug PR #45 patched. The pauk normalizer uses
+        # `_clean_markup(work.get("title")) or "Untitled"`, so every falsy title
+        # (null, empty string, absent) resolves to "Untitled" without a crash.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = RawStore(root / "raw", "sample")
+            raw.append("openalex_works", {"id": "https://openalex.org/W1", "title": None, "authorships": []},
+                       {"work_id": "W1"})
+            raw.append("openalex_works", {"id": "https://openalex.org/W2", "title": "", "authorships": []},
+                       {"work_id": "W2"})
+            raw.append("openalex_works", {"id": "https://openalex.org/W3", "authorships": []},
+                       {"work_id": "W3"})  # title key absent
+            prepared = PreparedStore(root / "prepared", "sample")
+            OpenAlexNormalizer(raw, prepared).run()
+            titles = {p.id: p.title for p in prepared.read_models("publications", Publication)}
+            self.assertEqual(titles, {"W1": "Untitled", "W2": "Untitled", "W3": "Untitled"})
+
     def test_publisher_markup_is_stripped_from_titles_and_abstracts(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
