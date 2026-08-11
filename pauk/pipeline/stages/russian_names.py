@@ -613,11 +613,23 @@ class RussianNamesStage(EnrichmentStage):
 
     @staticmethod
     def _journalled(path: Path) -> list[dict]:
-        """Rows a previous run left in the ambiguity journal."""
+        """Rows a previous run left in the ambiguity journal.
+
+        A line that does not parse is dropped with a warning rather than
+        raised: the journal is a review artefact, and a run interrupted
+        mid-write must not leave the stage unable to run at all.
+        """
         if not path.exists():
             return []
-        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
-                if line.strip()]
+        rows = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                logger.warning("russian_names: unreadable line in %s, dropped", path.name)
+        return rows
 
     @staticmethod
     def _state(previous: ProcessingState | None, status: ProcessingStatus,

@@ -250,6 +250,18 @@ class RussianNamesStageTest(unittest.TestCase):
         self.rerun_stage()
         self.assertEqual(sorted(row["person"] for row in self.ambiguous()), ["A1", "A2"])
 
+    def test_an_unreadable_journal_line_does_not_stop_the_stage(self):
+        # A run interrupted mid-write leaves a truncated line; the journal is
+        # a review artefact and must not block naming.
+        self.run_stage([person("A1", "Ivan Smirnov")], list(self.NAMESAKE_CATALOG))
+        path = self.prepared.group_dir / AMBIGUOUS_FILENAME
+        path.write_text('{"person": "A9"}\nобрезанная строка{\n', encoding="utf-8")
+        people = {p.id: p for p in self.prepared.read_models("persons", Person)}
+        people["A1"].processing.pop("russian_names")
+        self.prepared.write_models("persons", list(people.values()))
+        self.assertEqual(self.rerun_stage()["russian_names"], 1)
+        self.assertEqual(sorted(row["person"] for row in self.ambiguous()), ["A1", "A9"])
+
     def test_rerunning_one_person_rewrites_only_their_row(self):
         # A run that re-examines A1 replaces A1's row and leaves A2's alone.
         self.run_stage([person("A1", "Ivan Smirnov"), person("A2", "Ivan Petrov")],
