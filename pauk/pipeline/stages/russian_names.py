@@ -522,6 +522,7 @@ class RussianNamesStage(EnrichmentStage):
         people = list(self.prepared.read_models("persons", Person))
         changed = matched = transliterated = from_own_spelling = 0
         ambiguous: list[dict] = []
+        examined: set[str] = set()
         for person in people:
             if not self.selected("persons", person.id):
                 continue
@@ -531,6 +532,7 @@ class RussianNamesStage(EnrichmentStage):
             if not person.name_en:
                 person.processing[self.name] = self._state(state, ProcessingStatus.COMPLETED_EMPTY, 0)
                 changed += 1
+                examined.add(person.id)
                 continue
             row = catalog.match(person)
             if row is not None:
@@ -582,17 +584,17 @@ class RussianNamesStage(EnrichmentStage):
                     })
             person.processing[self.name] = self._state(state, ProcessingStatus.COMPLETED, 1)
             changed += 1
+            examined.add(person.id)
         if changed:
             self.prepared.write_models("persons", people)
 
-        # The journal describes the people this run looked at, so a run that
-        # looked at nobody leaves it alone: a second pass over a finished
-        # group would otherwise empty the one artefact a human works from.
-        # A partial run rewrites only its own rows and keeps the rest.
+        # The journal accumulates across runs: each run replaces the rows of
+        # the people it examined and leaves every other row where it is. A
+        # second pass over a finished group examines nobody and so changes
+        # nothing, and a run that reaches one new person does not erase the
+        # rows an earlier run wrote for the others.
         journal_path = self.prepared.group_dir / AMBIGUOUS_FILENAME
-        if changed:
-            examined = {person.id for person in people
-                        if person.processing.get(self.name) is not None}
+        if examined:
             journal = [row for row in self._journalled(journal_path)
                        if row.get("person") not in examined]
             journal.extend(ambiguous)

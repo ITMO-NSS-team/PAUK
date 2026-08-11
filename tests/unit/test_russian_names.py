@@ -222,17 +222,44 @@ class RussianNamesStageTest(unittest.TestCase):
         self.assertEqual(people["A1"].degree, "к.т.н.")
         self.assertEqual(self.ambiguous(), [])
 
+    NAMESAKE_CATALOG = (
+        "Смирнов Иван Петрович,Смирнов,Иван,Петрович,",
+        "Смирнов Иван Сергеевич,Смирнов,Иван,Сергеевич,",
+        "Петров Иван Петрович,Петров,Иван,Петрович,",
+        "Петров Иван Сергеевич,Петров,Иван,Сергеевич,",
+    )
+
+    def rerun_stage(self):
+        return RussianNamesStage(self.prepared, self.raw,
+                                 Settings(data_dir=Path(self.tmp.name))).run()
+
     def test_a_run_that_examines_nobody_keeps_the_journal(self):
-        self.run_stage(
-            [person("A1", "Ivan Smirnov")],
-            ["Смирнов Иван Петрович,Смирнов,Иван,Петрович,",
-             "Смирнов Иван Сергеевич,Смирнов,Иван,Сергеевич,"],
-        )
+        self.run_stage([person("A1", "Ivan Smirnov")], list(self.NAMESAKE_CATALOG))
         self.assertEqual(len(self.ambiguous()), 1)
-        again = RussianNamesStage(self.prepared, self.raw,
-                                  Settings(data_dir=Path(self.tmp.name))).run()
-        self.assertEqual(again["russian_names"], 0)
-        self.assertEqual(len(self.ambiguous()), 1)
+        self.assertEqual(self.rerun_stage()["russian_names"], 0)
+        self.assertEqual([row["person"] for row in self.ambiguous()], ["A1"])
+
+    def test_a_person_reached_by_a_later_run_joins_the_journal(self):
+        # The incremental case: A1 was journalled by an earlier run and this
+        # one only reaches A2. A1 was not examined now, so their row stands.
+        self.run_stage([person("A1", "Ivan Smirnov")], list(self.NAMESAKE_CATALOG))
+        self.prepared.write_models("persons", [
+            *self.prepared.read_models("persons", Person),
+            person("A2", "Ivan Petrov"),
+        ])
+        self.rerun_stage()
+        self.assertEqual(sorted(row["person"] for row in self.ambiguous()), ["A1", "A2"])
+
+    def test_rerunning_one_person_rewrites_only_their_row(self):
+        # A run that re-examines A1 replaces A1's row and leaves A2's alone.
+        self.run_stage([person("A1", "Ivan Smirnov"), person("A2", "Ivan Petrov")],
+                       list(self.NAMESAKE_CATALOG))
+        self.assertEqual(sorted(row["person"] for row in self.ambiguous()), ["A1", "A2"])
+        people = {p.id: p for p in self.prepared.read_models("persons", Person)}
+        people["A1"].processing.pop("russian_names")
+        self.prepared.write_models("persons", list(people.values()))
+        self.assertEqual(self.rerun_stage()["russian_names"], 1)
+        self.assertEqual(sorted(row["person"] for row in self.ambiguous()), ["A1", "A2"])
 
     def test_a_cyrillic_full_name_fills_the_parts_without_the_catalog(self):
         for spelling in ("Илья Алексеевич Суров", "Суров Илья Алексеевич",
