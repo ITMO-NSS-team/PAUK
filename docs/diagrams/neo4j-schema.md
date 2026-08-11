@@ -24,11 +24,23 @@ classDiagram
         ~ см. models.md
     }
 
+    class Organization {
+        +id : name_en slug (uid)
+        +name_en : unique
+        +name_ru
+        +ror_id
+        +country
+        +type
+    }
+
     class Department {
-        +id : sha256(name_en)
+        +id : name_en slug (uid)
         +name_en
         +name_ru
         +name_variants
+        +kind : megafaculty|faculty|institute|center|department|lab
+        +parent_id : uid родителя-Department
+        +organization_id : uid Organization (верхний уровень)
     }
 
     class Publication {
@@ -92,6 +104,8 @@ classDiagram
     Repository --> Department : DEVELOPED_BY
     Repository --> Publication : IMPLEMENTS
     Repository --> GitHubProfile : OWNED_BY
+    Department --> Department : PART_OF
+    Department --> Organization : PART_OF
 ```
 
 `AUTHORED` несёт `position`/`affiliation`/`affiliation_source`/
@@ -99,3 +113,8 @@ classDiagram
 (список), `page_number` (список, `0` = абстракт), `is_relevant`,
 `llm_confidence`, `llm_reason`. Подробности и уникальные ключи — в
 [`../architecture/neo4j-graph.md`](../architecture/neo4j-graph.md).
+
+Иерархия подразделений рекурсивна: подразделение `PART_OF` своего родителя —
+либо другого `Department` (`parent_id`), либо корневой `Organization`
+(`organization_id`); задано ровно одно из двух. Несколько организаций (ИТМО и
+со-аффилиации) сосуществуют в одном графе как разные корни.
