@@ -3,6 +3,7 @@ from urllib.parse import urlparse
 
 from pauk.models import GitHubProfile, RepoLink, Repository
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.redaction import redact_text
 from pauk.sources.github import GitHubClient
 
 from .base import EnrichmentStage
@@ -114,7 +115,7 @@ class RepositoriesStage(EnrichmentStage):
                         status=ProcessingStatus.FAILED,
                         attempts=(state.attempts if state else 0) + 1,
                         finished_at=datetime.now(UTC),
-                        error=str(exc),
+                        error=redact_text(exc),
                     )
                 changed += 1
         # Re-key fetched rows to their canonical identity: a renamed repo (the

@@ -8,6 +8,26 @@ from typing import Any
 
 import requests
 
+from pauk.redaction import redact_url
+
+
+class HttpRequestError(requests.RequestException):
+    """HTTP failure whose public representation contains no request credentials."""
+
+    def __init__(
+        self,
+        method: str,
+        url: str,
+        *,
+        status_code: int | None = None,
+        cause_type: str | None = None,
+    ) -> None:
+        self.method = method.upper()
+        self.url = redact_url(url)
+        self.status_code = status_code
+        reason = f"HTTP {status_code}" if status_code is not None else (cause_type or "network error")
+        super().__init__(f"{self.method} request to {self.url} failed: {reason}")
+
 
 class HttpClient:
     """Synchronous HTTP client with retry support."""
@@ -37,6 +57,8 @@ class HttpClient:
         self, method: str, url: str, *, params: dict[str, Any] | None = None, json: Any | None = None,
         retries: int = 3, timeout: int | None = None,
     ) -> requests.Response:
+        method = method.upper()
+        safe_url = self._safe_request_url(method, url, params)
         request_kwargs: dict[str, Any] = {"timeout": timeout or self.timeout}
         if params is not None:
             request_kwargs["params"] = params
@@ -45,10 +67,10 @@ class HttpClient:
 
         for attempt in range(retries + 1):
             try:
-                response = self.session.request(method.upper(), url, **request_kwargs)
-            except requests.RequestException:
+                response = self.session.request(method, url, **request_kwargs)
+            except requests.RequestException as exc:
                 if attempt == retries:
-                    raise
+                    raise HttpRequestError(method, safe_url, cause_type=type(exc).__name__) from None
                 time.sleep(self._backoff_delay(attempt))
                 continue
 
@@ -56,9 +78,26 @@ class HttpClient:
             if delay is not None and attempt < retries:
                 time.sleep(delay)
                 continue
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except requests.HTTPError:
+                response_url = response.url if isinstance(response.url, str) else safe_url
+                raise HttpRequestError(
+                    method,
+                    response_url,
+                    status_code=response.status_code,
+                ) from None
             return response
-        raise RuntimeError(f"unreachable retry state for {url}")
+        raise RuntimeError(f"unreachable retry state for {redact_url(url)}")
+
+    @staticmethod
+    def _safe_request_url(method: str, url: str, params: dict[str, Any] | None) -> str:
+        """Build the diagnostic URL once, redacting it before any request can fail."""
+        try:
+            prepared = requests.Request(method, url, params=params).prepare()
+            return redact_url(prepared.url or url)
+        except requests.RequestException:
+            return redact_url(url)
 
     def _retry_delay(self, response: requests.Response, attempt: int) -> float | None:
         """Return the response retry delay, or None if it must not be retried."""

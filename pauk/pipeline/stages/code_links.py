@@ -13,6 +13,7 @@ import fitz
 
 from pauk.models import CodeLink, LinkOccurrence, Publication, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.redaction import redact_text
 from pauk.sources.base import HttpClient
 
 from .base import EnrichmentStage
@@ -283,4 +284,4 @@ class CodeLinksStage(EnrichmentStage):
             pages, page_occurrences = _extract_pdf(path)
             return pages, page_occurrences, None
         except Exception as exc:
-            return [], [], str(exc)
+            return [], [], redact_text(exc)
