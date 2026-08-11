@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from pauk.models import Department, Person, Publication
 from pauk.models.processing import ProcessingState, ProcessingStatus
@@ -101,7 +101,7 @@ class DepartmentsStage(EnrichmentStage):
             person.processing[self.name] = ProcessingState(
                 status=ProcessingStatus.COMPLETED if matched else ProcessingStatus.COMPLETED_EMPTY,
                 attempts=(state.attempts if state else 0) + 1,
-                finished_at=datetime.now(timezone.utc),
+                finished_at=datetime.now(UTC),
                 result_count=len(matched),
             )
             changed += 1
