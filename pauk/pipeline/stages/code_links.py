@@ -188,7 +188,6 @@ class CodeLinksStage(EnrichmentStage):
         }
         group = self.prepared.group
         self.http = HttpClient(self.config.request_timeout)
-        self.pdf_bucket = gridfs.GridFSBucket(self.prepared.db, bucket_name="pdfs")
         # One probe per run, not per publication - an unreachable crawler
         # shouldn't add a failed request to every single row.
         self.crawler_available = self._crawler_available()
@@ -274,13 +273,18 @@ class CodeLinksStage(EnrichmentStage):
         else:
             return [], [], None
         try:
-            existing = next(self.pdf_bucket.find({"filename": pub.id}, sort=[("uploadDate", -1)], limit=1), None)
+            # Built lazily, only when a publication actually needs a PDF -
+            # constructing this eagerly in run() broke every stage run
+            # (mongomock.Database fails gridfs's isinstance check on
+            # construction, before any publication is even looked at).
+            bucket = gridfs.GridFSBucket(self.prepared.db, bucket_name="pdfs")
+            existing = next(bucket.find({"filename": pub.id}, sort=[("uploadDate", -1)], limit=1), None)
             if existing is not None:
-                pdf_bytes = self.pdf_bucket.open_download_stream(existing._id).read()
+                pdf_bytes = bucket.open_download_stream(existing._id).read()
             else:
                 kwargs = {"timeout": CRAWLER_DOWNLOAD_TIMEOUT, "retries": 0} if via_crawler else {}
                 pdf_bytes = self.http.get_bytes(source_url, **kwargs)
-                self.pdf_bucket.upload_from_stream(pub.id, pdf_bytes, metadata={
+                bucket.upload_from_stream(pub.id, pdf_bytes, metadata={
                     "group": group, "fetched_at": datetime.now(UTC).isoformat(),
                 })
             pages, page_occurrences = _extract_pdf(pdf_bytes)
