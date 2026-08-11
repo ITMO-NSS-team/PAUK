@@ -13,10 +13,12 @@ data/static/*.draft.json
 data/raw/*
 data/prepared/*
 data/cache/*
+data/pdf/*
 data/.locks/
 !data/raw/.gitkeep
 !data/prepared/.gitkeep
 !data/cache/.gitkeep
+!data/pdf/.gitkeep
 
 .env
 

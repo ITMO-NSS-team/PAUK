@@ -41,9 +41,17 @@ pauk publish graph --group 2026-07-31__W2741809807
 Флаг `enrich --force` переобрабатывает и строки со статусом `completed`
 (например, после исправления этапа).
 
-Ссылки на код сейчас извлекаются только из абстрактов OpenAlex; поля
-`context` и `page_number` у `MENTIONS_LINK` рассчитаны на разбор PDF,
-который пока не реализован.
+Ссылки на код извлекаются из абстракта и, если есть `pdf_url` (или он
+находится по DOI через `PAUK_PDF_CRAWLER_URL`, см. `.env.example`), из PDF
+постранично (`pauk enrich code_links`, кэш PDF — `data/pdf/<group>/`) —
+и голые упоминания вида `github.com/org/repo`, и настоящие гиперссылки.
+Текст PDF сохраняется в `Publication.full_text`.
+
+`context`/`page_number` у `MENTIONS_LINK` — список вхождений на публикацию
+(абстракт и страницы PDF). Перенос через дефис на границе строки
+склеивается, без дефиса — нет. Если скачать/распарсить PDF не удалось,
+этап помечается `failed` и ретраится при следующем прогоне, но результат
+по абстракту сохраняется.
 
 Каждая строка prepared JSONL содержит `_processing` со статусом этапа:
 `not_started`, `completed`, `completed_empty`, `not_applicable` или `failed`.
