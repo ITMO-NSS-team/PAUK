@@ -273,10 +273,6 @@ class CodeLinksStage(EnrichmentStage):
         else:
             return [], [], None
         try:
-            # Built lazily, only when a publication actually needs a PDF -
-            # constructing this eagerly in run() broke every stage run
-            # (mongomock.Database fails gridfs's isinstance check on
-            # construction, before any publication is even looked at).
             bucket = gridfs.GridFSBucket(self.prepared.db, bucket_name="pdfs")
             existing = next(bucket.find({"filename": pub.id}, sort=[("uploadDate", -1)], limit=1), None)
             if existing is not None:
