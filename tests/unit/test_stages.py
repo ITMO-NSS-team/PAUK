@@ -1,6 +1,8 @@
+import io
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
@@ -48,14 +50,46 @@ def _make_pdf_with_hyperlink(visible_text: str, uri: str, page_text: str = "") -
         doc.close()
 
 
+class FakeGridFsBucket:
+    """Minimal double for gridfs.GridFSBucket - the real one refuses to wrap
+    a mongomock.Database (isinstance check), so tests get this instead.
+    Covers only the calls code_links.py makes."""
+
+    def __init__(self):
+        self._files: list[dict] = []
+        self._next_id = 0
+
+    def find(self, filt, sort=None, limit=None):
+        matches = [f for f in self._files if f["filename"] == filt["filename"]]
+        if sort:
+            field, direction = sort[0]
+            matches.sort(key=lambda f: f[field], reverse=direction == -1)
+        if limit is not None:
+            matches = matches[:limit]
+        return iter(SimpleNamespace(_id=f["_id"]) for f in matches)
+
+    def open_download_stream(self, file_id):
+        return io.BytesIO(next(f["data"] for f in self._files if f["_id"] == file_id))
+
+    def upload_from_stream(self, filename, data, metadata=None):
+        self._next_id += 1
+        self._files.append({
+            "_id": self._next_id, "filename": filename, "data": data,
+            "metadata": metadata, "uploadDate": self._next_id,
+        })
+        return self._next_id
+
+
 class StagesTest(unittest.TestCase):
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
-        # PDF caching (code_links) still writes real files - unrelated to
-        # the raw/prepared Mongo migration.
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
+        self.pdf_bucket = FakeGridFsBucket()
+        patcher = patch("pauk.pipeline.stages.code_links.gridfs.GridFSBucket", return_value=self.pdf_bucket)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def test_code_links_marks_empty_and_found_results(self):
         prepared = PreparedStore(self.db, "sample")
@@ -150,6 +184,8 @@ class StagesTest(unittest.TestCase):
         openrouter_client.return_value.chat_json.return_value = {
             "is_authors_artifact": True, "confidence": 0.9, "reason": "authors say so",
         }
+        openrouter_client.return_value.last_response = {"choices": []}
+        openrouter_client.return_value.last_usage = None
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
         prepared.write_models("publications", [Publication(id="W1", title="paper")])
@@ -163,6 +199,30 @@ class StagesTest(unittest.TestCase):
         self.assertTrue(link.is_relevant)
         self.assertEqual(link.llm_confidence, 0.9)
         self.assertEqual(link.llm_reason, "authors say so")
+
+    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
+    def test_link_relevance_logs_every_llm_call(self, openrouter_client):
+        openrouter_client.return_value.chat_json.return_value = {
+            "is_authors_artifact": True, "confidence": 0.9, "reason": "authors say so",
+        }
+        openrouter_client.return_value.last_response = {"choices": [{"message": {"content": "..."}}]}
+        openrouter_client.return_value.last_usage = {"total_tokens": 42}
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        prepared.write_models("publications", [Publication(id="W1", title="paper")])
+        prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1", links=[CodeLink(url="https://github.com/org/repo")]),
+        ])
+        LinkRelevanceStage(prepared, raw).run()
+
+        [log] = list(self.db["llm_logs_link_relevance"].find({}))
+        self.assertEqual(log["group"], "sample")
+        self.assertIn("https://github.com/org/repo", log["prompt"])
+        self.assertEqual(log["raw_response"], {"choices": [{"message": {"content": "..."}}]})
+        self.assertEqual(log["parsed"], {"is_authors_artifact": True, "confidence": 0.9, "reason": "authors say so"})
+        self.assertEqual(log["usage"], {"total_tokens": 42})
+        self.assertIsNone(log["error"])
+        self.assertEqual(log["context"], {"publication_id": "W1", "url": "https://github.com/org/repo"})
 
     @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
     def test_link_relevance_skips_already_classified_links(self, openrouter_client):
@@ -183,6 +243,8 @@ class StagesTest(unittest.TestCase):
         openrouter_client.return_value.chat_json.return_value = {
             "is_authors_artifact": False, "confidence": 0.5, "reason": "re-judged",
         }
+        openrouter_client.return_value.last_response = {"choices": []}
+        openrouter_client.return_value.last_usage = None
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
         prepared.write_models("publications", [Publication(id="W1", title="paper")])
@@ -204,6 +266,8 @@ class StagesTest(unittest.TestCase):
     @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
     def test_link_relevance_marks_failed_when_the_llm_call_fails(self, openrouter_client):
         openrouter_client.return_value.chat_json.return_value = None
+        openrouter_client.return_value.last_response = None
+        openrouter_client.return_value.last_usage = None
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
         prepared.write_models("publications", [Publication(id="W1", title="paper")])
@@ -251,9 +315,10 @@ class StagesTest(unittest.TestCase):
         self.assertEqual(link.occurrences[0].page_number, 2)
         assert link.occurrences[0].context is not None
         self.assertIn("github.com/org/repo", link.occurrences[0].context)
-        self.assertTrue((config.pdf_dir / "sample" / "W1.pdf").is_file())
+        [stored] = [f for f in self.pdf_bucket._files if f["filename"] == "W1"]
+        self.assertEqual(stored["data"], pdf_bytes)
 
-        # Cached on disk: a forced re-run must not download again.
+        # Cached in GridFS: a forced re-run must not download again.
         http_client.return_value.get_bytes.reset_mock()
         CodeLinksStage(prepared, raw, config=config, force=True).run()
         http_client.return_value.get_bytes.assert_not_called()
@@ -336,7 +401,7 @@ class StagesTest(unittest.TestCase):
         self.assertIn("403", state.error)
         links = [link for row in prepared.read_models("repo_links", RepoLink) for link in row.links]
         self.assertEqual([link.url for link in links], ["https://github.com/org/repo"])
-        self.assertFalse((config.pdf_dir / "sample" / "W1.pdf").exists())
+        self.assertEqual([f for f in self.pdf_bucket._files if f["filename"] == "W1"], [])
 
         # FAILED is retried on the next run even without --force (base.needs_attempt).
         http_client.return_value.get_bytes.side_effect = None

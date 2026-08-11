@@ -58,3 +58,38 @@ class PreparedStoreTest(unittest.TestCase):
         store.write_rows("repo_links", [{"publication_id": "W1", "links": []}])
         rows = list(store.read_rows("repo_links"))
         self.assertEqual(rows, [{"publication_id": "W1", "links": []}])
+
+    def test_first_write_sets_version_to_one_and_creates_no_revision(self):
+        store = PreparedStore(self.db, "sample")
+        store.write_models("publications", [Publication(id="W1", title="Paper")])
+        self.assertEqual(self.db.publications.find_one({"_id": "W1"})["_version"], 1)
+        self.assertEqual(self.db.revisions.count_documents({}), 0)
+
+    def test_rewriting_identical_content_does_not_bump_version_or_create_revision(self):
+        store = PreparedStore(self.db, "sample")
+        store.write_models("publications", [Publication(id="W1", title="Paper")])
+        store.write_models("publications", [Publication(id="W1", title="Paper")])
+        self.assertEqual(self.db.publications.find_one({"_id": "W1"})["_version"], 1)
+        self.assertEqual(self.db.revisions.count_documents({}), 0)
+
+    def test_writing_changed_content_bumps_version_and_archives_old_snapshot(self):
+        store = PreparedStore(self.db, "sample")
+        store.write_models("publications", [Publication(id="W1", title="Paper")])
+        store.write_models("publications", [Publication(id="W1", title="Paper v2")])
+
+        current = self.db.publications.find_one({"_id": "W1"})
+        self.assertEqual(current["_version"], 2)
+        self.assertEqual(current["title"], "Paper v2")
+
+        [revision] = list(self.db.revisions.find({}))
+        self.assertEqual(revision["entity_type"], "publications")
+        self.assertEqual(revision["entity_id"], "W1")
+        self.assertEqual(revision["version"], 1)
+        self.assertEqual(revision["snapshot"]["title"], "Paper")
+        self.assertEqual(revision["replaced_by_group"], "sample")
+
+    def test_version_field_is_not_leaked_through_read_rows(self):
+        store = PreparedStore(self.db, "sample")
+        store.write_models("publications", [Publication(id="W1", title="Paper")])
+        [row] = list(store.read_rows("publications"))
+        self.assertNotIn("_version", row)

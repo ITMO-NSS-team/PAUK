@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pauk.models import Publication, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.sources import OpenRouterClient
+from pauk.storage import LlmLogStore
 
 from .base import EnrichmentStage
 from .code_links import ARCHIVED_DEPOSIT_REASON
@@ -64,6 +65,7 @@ class LinkRelevanceStage(EnrichmentStage):
         publications = {pub.id: pub for pub in self.prepared.read_models("publications", Publication)}
         links_by_publication = list(self.prepared.read_models("repo_links", RepoLink))
         client = OpenRouterClient(self.config.request_timeout, self.config.openrouter_api_key, self.config.llm_model)
+        llm_log = LlmLogStore(self.prepared.db, "llm_logs_link_relevance")
         logger.info("link_relevance: model=%s, %d publication(s) with links to consider",
                     self.config.llm_model, len(links_by_publication))
         changed = 0
@@ -97,7 +99,14 @@ class LinkRelevanceStage(EnrichmentStage):
                 occurrence = link.occurrences[0] if link.occurrences else None
                 context = occurrence.context if occurrence else None
                 page_number = occurrence.page_number if occurrence else None
-                result = client.chat_json(_build_prompt(pub.title, link.url, context, page_number))
+                prompt = _build_prompt(pub.title, link.url, context, page_number)
+                result = client.chat_json(prompt)
+                llm_log.record(
+                    group=self.prepared.group, model=self.config.llm_model, prompt=prompt,
+                    raw_response=client.last_response, parsed=result, usage=client.last_usage,
+                    error=None if result is not None else "no response",
+                    context={"publication_id": pub.id, "url": link.url},
+                )
                 if result is None:
                     error = "llm request failed"
                     logger.warning("link_relevance: %s -> %s: no response from %s",

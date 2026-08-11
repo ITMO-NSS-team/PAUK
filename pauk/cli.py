@@ -14,7 +14,7 @@ from pauk.pipeline.stages import ALL_STAGES
 from pauk.pipeline.stages.base import PreparedSelection
 from pauk.settings import settings
 from pauk.sources import OpenAlexClient
-from pauk.storage import PreparedStore, RawStore, get_mongo_client
+from pauk.storage import PreparedStore, RawStore, ensure_indexes, get_mongo_client
 from pauk.storage.naming import group_name, validate_group
 
 
@@ -91,6 +91,7 @@ def main() -> None:
         mongo = get_mongo_client(settings)
         try:
             db = mongo[settings.mongo_db]
+            ensure_indexes(db)
             if args.command == "run":
                 group = _group(args)
                 _log_result("run", group, PipelineRunner(settings, group, db).run(_selector(args)))
@@ -125,7 +126,9 @@ def main() -> None:
         from pauk.graph.dedup import run_graph_dedup
         mongo = get_mongo_client(settings)
         try:
-            _log_result("dedup graph", None, run_graph_dedup(settings, mongo[settings.mongo_db]))
+            db = mongo[settings.mongo_db]
+            ensure_indexes(db)
+            _log_result("dedup graph", None, run_graph_dedup(settings, db))
         finally:
             mongo.close()
     else:

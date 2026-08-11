@@ -33,6 +33,10 @@ class OpenRouterClient(HttpClient):
         # failed before OpenRouter replied) - read by callers that need to
         # track cost, e.g. the model-comparison script.
         self.last_usage: dict | None = None
+        # The full parsed OpenRouter response body from the most recent
+        # chat_json() call (or None if it failed before OpenRouter replied) -
+        # read by callers that log LLM calls in full (see LlmLogStore).
+        self.last_response: dict | None = None
 
     def chat_json(self, prompt: str) -> dict | None:
         """POST one user message, return the parsed JSON reply or None.
@@ -44,6 +48,7 @@ class OpenRouterClient(HttpClient):
         exactly what went wrong instead of a silent gap in results.
         """
         self.last_usage = None
+        self.last_response = None
         if not self.api_key:
             logger.warning("OpenRouter: OPENROUTER_API_KEY not set, skipping request")
             return None
@@ -64,6 +69,7 @@ class OpenRouterClient(HttpClient):
             logger.warning("OpenRouter: request to %s failed: %s", self.model, exc)
             return None
         payload = response.json()
+        self.last_response = payload
         self.last_usage = payload.get("usage")
         if "error" in payload:
             # Some upstream routes answer HTTP 200 with an error body instead

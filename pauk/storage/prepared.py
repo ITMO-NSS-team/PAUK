@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
+from datetime import UTC, datetime
 from typing import TypeVar
 
 from pydantic import BaseModel
@@ -43,7 +44,7 @@ class PreparedStore:
     def read_rows(self, entity: str) -> Iterator[dict]:
         cursor = self._collection(entity).find(
             {"groups": self.group},
-            {"_id": False, "groups": False},
+            {"_id": False, "groups": False, "_version": False},
         )
         yield from cursor
 
@@ -65,7 +66,7 @@ class PreparedStore:
         key_field = self._key_field(entity)
         cursor = self._collection(entity).find(
             {key_field: {"$in": ids}},
-            {"_id": False, "groups": False},
+            {"_id": False, "groups": False, "_version": False},
         )
         yield from cursor
 
@@ -85,15 +86,32 @@ class PreparedStore:
         """
         key_field = self._key_field(entity)
         collection = self._collection(entity)
+        revisions = self.db.revisions
         written_ids = []
         for row in rows:
             row_id = row[key_field]
             written_ids.append(row_id)
+            before = collection.find_one({"_id": row_id})
+            before_content = {k: v for k, v in (before or {}).items()
+                               if k not in ("_id", "groups", "_version")}
+            if before is not None and before_content == row:
+                collection.update_one({"_id": row_id}, {"$addToSet": {"groups": self.group}})
+                continue
+            new_version = (before or {}).get("_version", 0) + 1
             collection.update_one(
                 {"_id": row_id},
-                {"$set": row, "$addToSet": {"groups": self.group}},
+                {"$set": {**row, "_version": new_version}, "$addToSet": {"groups": self.group}},
                 upsert=True,
             )
+            if before is not None:
+                revisions.insert_one({
+                    "entity_type": entity,
+                    "entity_id": row_id,
+                    "version": before["_version"],
+                    "snapshot": before,
+                    "replaced_by_group": self.group,
+                    "replaced_at": datetime.now(UTC).isoformat(),
+                })
         collection.update_many(
             {"groups": self.group, "_id": {"$nin": written_ids}},
             {"$pull": {"groups": self.group}},

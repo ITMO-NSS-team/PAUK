@@ -5,11 +5,11 @@ import re
 import unicodedata
 from collections import defaultdict
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import cast
 from urllib.parse import urlencode, urlparse
 
 import fitz
+import gridfs
 
 from pauk.models import CodeLink, LinkOccurrence, Publication, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
@@ -130,9 +130,9 @@ def _pdf_page_occurrences(page: fitz.Page, text: str, page_number: int) -> dict[
     return found
 
 
-def _extract_pdf(path: Path) -> tuple[list[str], list[dict[str, LinkOccurrence]]]:
+def _extract_pdf(data: bytes) -> tuple[list[str], list[dict[str, LinkOccurrence]]]:
     """Per-page text (for full_text) and per-page link occurrences."""
-    with fitz.open(str(path)) as doc:
+    with fitz.open(stream=data, filetype="pdf") as doc:
         pages: list[str] = []
         page_occurrences: list[dict[str, LinkOccurrence]] = []
         for page in doc:
@@ -188,6 +188,7 @@ class CodeLinksStage(EnrichmentStage):
         }
         group = self.prepared.group
         self.http = HttpClient(self.config.request_timeout)
+        self.pdf_bucket = gridfs.GridFSBucket(self.prepared.db, bucket_name="pdfs")
         # One probe per run, not per publication - an unreachable crawler
         # shouldn't add a failed request to every single row.
         self.crawler_available = self._crawler_available()
@@ -272,15 +273,17 @@ class CodeLinksStage(EnrichmentStage):
             source_url = f"{self.config.pdf_crawler_url}/download?" + urlencode({"url": pub.doi})
         else:
             return [], [], None
-        path = self.config.pdf_dir / group / f"{pub.id}.pdf"
         try:
-            if not path.exists():
-                path.parent.mkdir(parents=True, exist_ok=True)
-                tmp = path.with_suffix(".pdf.tmp")
+            existing = next(self.pdf_bucket.find({"filename": pub.id}, sort=[("uploadDate", -1)], limit=1), None)
+            if existing is not None:
+                pdf_bytes = self.pdf_bucket.open_download_stream(existing._id).read()
+            else:
                 kwargs = {"timeout": CRAWLER_DOWNLOAD_TIMEOUT, "retries": 0} if via_crawler else {}
-                tmp.write_bytes(self.http.get_bytes(source_url, **kwargs))
-                tmp.replace(path)
-            pages, page_occurrences = _extract_pdf(path)
+                pdf_bytes = self.http.get_bytes(source_url, **kwargs)
+                self.pdf_bucket.upload_from_stream(pub.id, pdf_bytes, metadata={
+                    "group": group, "fetched_at": datetime.now(UTC).isoformat(),
+                })
+            pages, page_occurrences = _extract_pdf(pdf_bytes)
             return pages, page_occurrences, None
         except Exception as exc:
             return [], [], str(exc)

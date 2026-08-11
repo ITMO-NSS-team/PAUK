@@ -32,3 +32,4 @@ build/
 logs/
 
 graphify-out/
+.graphifyignore
