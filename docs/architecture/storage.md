@@ -8,6 +8,9 @@ graph` — чтение и запись сырых ответов внешних
 **Какие файлы задействует:** `pauk/storage/raw.py`, `prepared.py`,
 `mongo.py`, `atomic.py`, `naming.py`, `static.py`.
 
+Схема этого слоя крупным планом (коллекции, оба способа чтения, три
+шага записи) — [`../diagrams/mongodb-storage.md`](../diagrams/mongodb-storage.md).
+
 ## Сущности — глобальные, не по группе
 
 До этого `data/prepared/<group>/publications.jsonl` был снэпшотом

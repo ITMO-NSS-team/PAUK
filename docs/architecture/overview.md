@@ -19,6 +19,9 @@ PAUK собирает публикации ИТМО из OpenAlex, обогащ�
 
 ## Поток данных
 
+Та же схема как подробная Mermaid-диаграмма —
+[`../diagrams/pipeline-flow.md`](../diagrams/pipeline-flow.md).
+
 ```
 OpenAlex API
   │  pauk collect
