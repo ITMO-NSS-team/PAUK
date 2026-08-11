@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 
 from pauk.logging import configure_logging
@@ -44,6 +45,14 @@ def _selection_from_input(path: str, entity: str) -> PreparedSelection:
     return PreparedSelection(entity, ids)
 
 
+logger = logging.getLogger("pauk.cli")
+
+
+def _log_result(action: str, group: str | None, result: dict) -> None:
+    summary = ", ".join(f"{key}={value}" for key, value in result.items()) or "nothing to do"
+    logger.info("%s: %s", f"{action} {group}" if group else action, summary)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="pauk")
     parser.add_argument("--verbose", action="store_true")
@@ -83,15 +92,18 @@ def main() -> None:
         try:
             db = mongo[settings.mongo_db]
             if args.command == "run":
-                print(PipelineRunner(settings, _group(args), db).run(_selector(args)))
+                group = _group(args)
+                _log_result("run", group, PipelineRunner(settings, group, db).run(_selector(args)))
             elif args.command == "collect":
                 group = _group(args)
-                print({"raw_works": Collector(
+                count = Collector(
                     OpenAlexClient(settings.request_timeout, settings.openalex_api_key),
-                    RawStore(db, group)).collect(_selector(args))})
+                    RawStore(db, group)).collect(_selector(args))
+                _log_result("collect", group, {"raw_works": count})
             elif args.command == "normalize":
                 group = validate_group(args.group)
-                print(OpenAlexNormalizer(RawStore(db, group), PreparedStore(db, group)).run())
+                result = OpenAlexNormalizer(RawStore(db, group), PreparedStore(db, group)).run()
+                _log_result("normalize", group, result)
             elif args.command == "enrich":
                 if args.stage != "all" and args.stage not in {stage.name for stage in ALL_STAGES}:
                     parser.error(f"unknown enrichment stage: {args.stage}")
@@ -99,23 +111,27 @@ def main() -> None:
                     parser.error("--input requires --entity (and vice versa)")
                 group = validate_group(args.group)
                 selection = _selection_from_input(args.input, args.entity) if args.input else None
-                print(Enricher(PreparedStore(db, group), RawStore(db, group), settings)
-                      .run(args.stage, selection, args.force))
+                result = Enricher(PreparedStore(db, group), RawStore(db, group), settings) \
+                    .run(args.stage, selection, args.force)
+                _log_result(f"enrich {args.stage}", group, result)
             else:
                 from pauk.graph.load import load_jsonl_group
-                load_jsonl_group(settings, db, validate_group(args.group))
+                group = validate_group(args.group)
+                load_jsonl_group(settings, db, group)
+                logger.info("publish graph %s: done", group)
         finally:
             mongo.close()
     elif args.command == "dedup":
         from pauk.graph.dedup import run_graph_dedup
         mongo = get_mongo_client(settings)
         try:
-            print(run_graph_dedup(settings, mongo[settings.mongo_db]))
+            _log_result("dedup graph", None, run_graph_dedup(settings, mongo[settings.mongo_db]))
         finally:
             mongo.close()
     else:
         from pauk.cache import GraphSnapshotExporter
-        print(GraphSnapshotExporter(settings).export(args.output))
+        path = GraphSnapshotExporter(settings).export(args.output)
+        logger.info("cache export: %s", path)
 
 
 if __name__ == "__main__":

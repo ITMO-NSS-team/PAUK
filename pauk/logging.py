@@ -6,4 +6,6 @@ def configure_logging(verbose: bool = False) -> None:
         level=logging.DEBUG if verbose else logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
+    if not verbose:
+        logging.getLogger("neo4j.notifications").setLevel(logging.ERROR)
 
