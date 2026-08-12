@@ -34,6 +34,40 @@ class AtomicWriter:
         return False
 
 
+def _pid_alive(pid: int) -> bool:
+    """Whether a process with this pid is still running.
+
+    On Windows os.kill(pid, 0) is not a probe: it terminates the target
+    (TerminateProcess with exit code 0) and raises WinError 87 for dead
+    pids, so the owner must be queried without sending anything.
+    """
+    if os.name == "nt":
+        import ctypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        ERROR_ACCESS_DENIED = 5
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            # Access denied means the process exists under another account.
+            return ctypes.get_last_error() == ERROR_ACCESS_DENIED
+        try:
+            code = ctypes.c_ulong()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return False
+            return code.value == STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 class GroupLock:
     """Inter-process lock for a data group during read-modify-write work."""
 
@@ -55,12 +89,12 @@ class GroupLock:
                 try:
                     pid_line = self.path.read_text(encoding="utf-8").strip()
                     pid = int(pid_line.removeprefix("pid="))
-                    os.kill(pid, 0)
-                except (FileNotFoundError, ProcessLookupError, ValueError):
+                except (FileNotFoundError, ValueError):
                     self.path.unlink(missing_ok=True)
                     continue
-                except PermissionError:
-                    pass
+                if not _pid_alive(pid):
+                    self.path.unlink(missing_ok=True)
+                    continue
                 if time.monotonic() >= deadline:
                     raise TimeoutError(f"group is locked by another process: {self.path}")
                 time.sleep(0.1)

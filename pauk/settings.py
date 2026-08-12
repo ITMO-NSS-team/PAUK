@@ -24,6 +24,9 @@ class Settings:
     neo4j_password: str = os.getenv("NEO4J_PASSWORD", "")
     request_timeout: int = int(os.getenv("PAUK_REQUEST_TIMEOUT", "30"))
     pdf_crawler_url: str = os.getenv("PAUK_PDF_CRAWLER_URL", "")
+    # Official ITMO staff records (personal data — never committed).
+    # None means <static_dir>/russian_names.csv.
+    russian_names_file: str | None = os.getenv("PAUK_RUSSIAN_NAMES_FILE") or None
 
     @property
     def static_dir(self) -> Path:

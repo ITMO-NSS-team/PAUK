@@ -27,6 +27,7 @@ import argparse
 import json
 import logging
 import random
+import re
 import time
 from collections import Counter, defaultdict
 from itertools import combinations
@@ -61,19 +62,95 @@ from .layout import (
 logger = logging.getLogger(__name__)
 
 
-def author_label(surname_ru, first_name_ru, second_name_ru, name_en) -> str:
-    """Surname + initials from Russian name fields, fallback — name_en."""
-    if surname_ru:
-        label = surname_ru
-        if first_name_ru:
-            label += f" {first_name_ru[0]}."
-            if second_name_ru:
-                label += f"{second_name_ru[0]}."
-        elif second_name_ru:
-            # first_name_ru is empty, but second_name_ru holds the initials
-            label += f" {second_name_ru[0]}."
-        return label
-    return name_en or ""
+PATRONYMIC_ENDING = re.compile(r"(ович|евич|ьич|овна|евна|ична)$", re.IGNORECASE)
+
+
+def _is_surname_first(words: list[str]) -> bool:
+    """Whether a written-out name runs "Фамилия Имя Отчество".
+
+    A source that supplies the Cyrillic full name uses that order
+    ("Кучин Михаил Дмитриевич"), and it is the one case reading the
+    surname off the end gets backwards. The patronymic gives it away: in
+    given-name-first order it sits in the middle ("Виктория Вадимовна
+    Юношева"), so a name whose last word is a patronymic and whose middle
+    word is not runs the other way. Surnames that end the same way
+    ("Олехнович", "Масалович") stay safe — they come with an initial or
+    a patronymic of their own before them, never as the third of three
+    spelled-out words.
+    """
+    return (len(words) == 3
+            and all(len(word) > 1 and "." not in word for word in words)
+            and bool(PATRONYMIC_ENDING.search(words[-1]))
+            and not PATRONYMIC_ENDING.search(words[1]))
+
+
+def split_full_name(full_name) -> tuple[str, str, str]:
+    """Split a written-out name into (surname, given, patronymic).
+
+    Sources write a person as "Никитин, Николай О.", as "Кучин Михаил
+    Дмитриевич", or — far more often — given-name-first ("Виктория
+    Вадимовна Юношева"); the surname is what precedes the comma, opens a
+    surname-first name, or ends the rest. Lowercase particles ("ван дер")
+    are not initials, so they never become one.
+    """
+    text = " ".join((full_name or "").split())
+    if not text:
+        return "", "", ""
+    if "," in text:
+        surname, _, rest = text.partition(",")
+        parts = rest.split()
+    elif _is_surname_first(words := text.split()):
+        surname, parts = words[0], words[1:]
+    else:
+        surname, parts = words[-1], words[:-1]
+    parts = [part for part in parts if part[:1].isupper()]
+    return surname.strip(), (parts[0] if parts else ""), (parts[1] if len(parts) > 1 else "")
+
+
+def author_label(surname_ru, first_name_ru, second_name_ru, name_en, name_ru=None) -> str:
+    """One shape for every author: surname first, then initials.
+
+    "Никитин Н.О." whenever a patronymic is known — from the staff
+    catalog, or from a transliterated full name that carries one. With
+    only a given name there is nothing to abbreviate against, so it stays
+    written out ("Горизонтова Мария"); the label still starts with the
+    surname, which is what keeps the lists sorted and scannable.
+    """
+    surname, given, patronymic = surname_ru or "", first_name_ru or "", second_name_ru or ""
+    if not surname:
+        surname, given, patronymic = split_full_name(name_ru or name_en)
+    if not surname:
+        return name_ru or name_en or ""
+    if given and patronymic:
+        return f"{surname} {given[0].upper()}.{patronymic[0].upper()}."
+    if patronymic:  # only the patronymic survived — treat it as the initial
+        return f"{surname} {patronymic[0].upper()}."
+    if given:
+        return f"{surname} {given}"
+    return surname
+
+
+def author_variants(row) -> list[str]:
+    """Other spellings of this person's name, without the ones on show.
+
+    The card already displays the label, the romanized name and the full
+    Russian name; everything else OpenAlex knows about this author (and
+    the full Russian name when the label is only surname + initials) goes
+    into the collapsed list.
+    """
+    shown = {
+        (row.get("name_en") or "").strip().casefold(),
+        author_label(row["surname_ru"], row["first_name_ru"],
+                     row["second_name_ru"], row["name_en"], row.get("name_ru")).casefold(),
+    }
+    candidates = [row.get("name_ru") or "", *(row.get("name_variants") or [])]
+    variants = []
+    for value in candidates:
+        cleaned = " ".join((value or "").split())
+        if cleaned and cleaned.casefold() not in shown:
+            shown.add(cleaned.casefold())
+            variants.append(cleaned)
+    return variants
 
 
 def build_graph_data(db, seed: int):
@@ -303,9 +380,16 @@ def build_graph_data(db, seed: int):
                 "key": pid_,
                 "kind": "author",
                 "dept": g(author_dept[pid_]),
-                "label": author_label(row["surname_ru"], row["first_name_ru"], row["second_name_ru"], row["name_en"]),
+                "label": author_label(row["surname_ru"], row["first_name_ru"], row["second_name_ru"],
+                                      row["name_en"], row.get("name_ru")),
+                # The profile card shows the romanized name the sources use
+                # plus every other spelling seen for this person.
+                "name_en": row["name_en"] or "",
+                "name_ru": row.get("name_ru") or "",
+                "name_variants": author_variants(row),
                 "degree": row["degree"] or "",
                 "github": row["github"] or "",
+                "orcid": row.get("orcid") or "",
                 "pubs_count": pubs_count[pid_],
                 "rank": rank_a[pid_],
                 "gx": x,
