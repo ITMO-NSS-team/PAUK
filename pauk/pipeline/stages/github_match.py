@@ -80,6 +80,10 @@ ITMO_IN_TEXT = re.compile(r"\bitmo\b|saint[- ]petersburg|sankt", re.I)
 
 ITMO_EMAIL_DOMAIN = "@itmo.ru"
 
+# An address at the university identifies an employee better than a personal
+# one, so it wins over whatever else the account committed with.
+INSTITUTIONAL_DOMAINS = ("@itmo.ru", "@ifmo.ru")
+
 # A surname shorter than this is an initial or a particle, and matching a
 # login against it would fire on almost anything.
 MIN_SURNAME = 4
@@ -124,6 +128,20 @@ def best_name_similarity(candidates: set[str], author: set[str]) -> tuple[float,
             if similarity > best:
                 best, pair = similarity, (candidate, known)
     return best, pair
+
+
+def pick_email(candidates: set[str]) -> str | None:
+    """The address that best identifies an employee, among those on offer.
+
+    A university address wins outright; otherwise the shortest one, which
+    is a stable way to pick and tends to be the plain `name@host` rather
+    than a numbered alias.
+    """
+    usable = sorted(email for email in candidates if "@" in email and "noreply" not in email)
+    if not usable:
+        return None
+    institutional = [email for email in usable if email.endswith(INSTITUTIONAL_DOMAINS)]
+    return institutional[0] if institutional else min(usable, key=len)
 
 
 def login_carries_surname(login: str, surname: str | None) -> bool:
@@ -342,6 +360,7 @@ class GitHubMatchStage(EnrichmentStage):
             })
 
         stats = {"matched": 0, "review": 0}
+        filled_emails = 0
         for row in decisions:
             stats[row["decision"]] = stats.get(row["decision"], 0) + 1
             if row["decision"] != "matched":
@@ -351,6 +370,13 @@ class GitHubMatchStage(EnrichmentStage):
                 continue
             state = person.processing.get(self.name)
             person.github = person.github or row["login"]
+            # A matched account is the same person, so the address it commits
+            # with is theirs. Only an author without one is filled: whatever
+            # ORCID stated is what they published under.
+            if not person.email:
+                person.email = pick_email(accounts[row["login"]]["emails"])
+                if person.email:
+                    filled_emails += 1
             person.processing[self.name] = ProcessingState(
                 status=ProcessingStatus.COMPLETED,
                 attempts=(state.attempts if state else 0) + 1,
@@ -363,8 +389,9 @@ class GitHubMatchStage(EnrichmentStage):
         with AtomicWriter(journal_path) as handle:
             for row in decisions:
                 handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-        logger.info("github_match: %d matched, %d for review — see %s",
-                    stats["matched"], stats.get("review", 0), journal_path)
+        logger.info("github_match: %d matched, %d for review, %d emails filled — see %s",
+                    stats["matched"], stats.get("review", 0), filled_emails, journal_path)
         return {"github_matched": stats["matched"],
                 "github_review": stats.get("review", 0),
+                "github_emails": filled_emails,
                 "github_accounts": len(accounts)}

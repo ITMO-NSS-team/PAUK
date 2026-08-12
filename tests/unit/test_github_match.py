@@ -10,6 +10,7 @@ from pauk.pipeline.stages.github_match import (
     decide,
     login_carries_surname,
     name_similarity,
+    pick_email,
 )
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
@@ -59,6 +60,23 @@ class NameSimilarityTest(unittest.TestCase):
         # Guarded at the caller: an author whose last word is an initial
         # gets surname=None, and this returns False for it.
         self.assertFalse(login_carries_surname("anything", None))
+
+
+class PickEmailTest(unittest.TestCase):
+    def test_a_university_address_wins(self):
+        self.assertEqual(
+            pick_email({"personal@gmail.com", "ivan@itmo.ru"}), "ivan@itmo.ru")
+
+    def test_noreply_is_not_an_address_for_a_person(self):
+        self.assertIsNone(pick_email({"1234+bob@users.noreply.github.com"}))
+
+    def test_nothing_usable_gives_nothing(self):
+        self.assertIsNone(pick_email(set()))
+        self.assertIsNone(pick_email({"not-an-address"}))
+
+    def test_the_choice_does_not_depend_on_set_order(self):
+        options = {"a.very.long.alias@gmail.com", "ip@mail.ru"}
+        self.assertEqual(pick_email(options), pick_email(set(reversed(list(options)))))
 
 
 class DecideTest(unittest.TestCase):
@@ -158,6 +176,26 @@ class GitHubMatchStageTest(unittest.TestCase):
         )
         self.assertEqual(result["github_accounts"], 0)
         self.assertEqual(result["github_matched"], 0)
+
+    def test_a_matched_account_gives_the_author_an_address(self):
+        # The account commits with an address the author never published.
+        result, people = self.run_stage(
+            [person("A1", "Ivan Petrov", works=["W1"])],
+            [profile("ipetrov", name="Ivan Petrov", emails=["ivan@itmo.ru"],
+                     repos=["https://github.com/ipetrov/tool"])],
+            [repository("ipetrov", "tool", works=["W1"])],
+        )
+        self.assertEqual(result["github_emails"], 1)
+        self.assertEqual(people["A1"].email, "ivan@itmo.ru")
+
+    def test_an_address_the_author_published_is_not_replaced(self):
+        _result, people = self.run_stage(
+            [person("A1", "Ivan Petrov", email="published@orcid.org", works=["W1"])],
+            [profile("ipetrov", name="Ivan Petrov", emails=["ivan@itmo.ru"],
+                     repos=["https://github.com/ipetrov/tool"])],
+            [repository("ipetrov", "tool", works=["W1"])],
+        )
+        self.assertEqual(people["A1"].email, "published@orcid.org")
 
     def test_an_existing_login_is_not_overwritten(self):
         _result, people = self.run_stage(
