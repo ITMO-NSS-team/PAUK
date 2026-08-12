@@ -143,9 +143,11 @@ class JSONLAuditSink:
 def _diff_props(before: dict | None, after: dict | None) -> tuple[dict[str, tuple[Any, Any]], str]:
     """Field-level diff between two property maps for the same entity id."""
     if before is None:
-        return {k: (None, v) for k, v in (after or {}).items() if v is not None}, "created"
+        keys = (after or {}).keys() - TECHNICAL_DIFF_FIELDS
+        return {k: (None, after[k]) for k in keys if after[k] is not None}, "created"
     if after is None:
-        return {k: (v, None) for k, v in before.items() if v is not None}, "deleted"
+        keys = before.keys() - TECHNICAL_DIFF_FIELDS
+        return {k: (before[k], None) for k in keys if before[k] is not None}, "deleted"
     keys = (before.keys() | after.keys()) - TECHNICAL_DIFF_FIELDS
     diff = {k: (before.get(k), after.get(k)) for k in keys if before.get(k) != after.get(k)}
     return diff, "updated"
@@ -213,12 +215,18 @@ class AuditedNeo4jClient:
             entries.append(AuditEntry(now, actor, source, operation, entity_type, entity_id, kind, diff))
         self._sink.write(entries)
 
-    def _fetch_node_props(self, label_str: str, ids: list[str]) -> dict[str, dict]:
+    def _fetch_node_props(self, labels: str | list[str], ids: list[str]) -> dict[str, dict]:
         if not ids:
             return {}
+        label_list = labels if isinstance(labels, list) else [labels]
+        # Match a node carrying ANY of the given labels, not all of them: upsert_nodes_batch can add a label
+        # a node doesn't have yet (e.g. "Person" -> "Person:Itmo"), and the "before" snapshot must still find
+        # the node by whichever label(s) it already carries — otherwise a real update on a node that's about
+        # to gain a label looks like "created" and the old field values are lost from the audit log.
+        label_match = " OR ".join(f"n:{label}" for label in label_list)
         query = cast(
             LiteralString,
-            f"MATCH (n:{label_str}) WHERE n.id IN $ids RETURN n.id AS id, properties(n) AS props",
+            f"MATCH (n) WHERE ({label_match}) AND n.id IN $ids RETURN n.id AS id, properties(n) AS props",
         )
         with self._client.driver.session() as session:
             rows = session.execute_read(lambda tx: [dict(r) for r in tx.run(query, ids=ids)])
@@ -247,15 +255,16 @@ class AuditedNeo4jClient:
     def upsert_nodes_batch(self, labels, nodes: list[tuple[str, dict]]):
         if not nodes:
             return
-        label_str = ":".join(labels) if isinstance(labels, list) else labels
+        label_list = labels if isinstance(labels, list) else [labels]
+        label_str = ":".join(label_list)
         if len(nodes) >= self._diff_threshold:
             self._client.upsert_nodes_batch(labels, nodes)
             self._emit_bulk_summary("upsert_nodes", label_str, len(nodes))
             return
         ids = [node_id for node_id, _ in nodes]
-        before = self._fetch_node_props(label_str, ids)
+        before = self._fetch_node_props(label_list, ids)
         self._client.upsert_nodes_batch(labels, nodes)
-        after = self._fetch_node_props(label_str, ids)
+        after = self._fetch_node_props(label_list, ids)
         self._emit_diffs("upsert_nodes", label_str, before, after)
 
     def upsert_person_nodes_batch(self, nodes: list[tuple[str, dict]], is_itmo: bool):

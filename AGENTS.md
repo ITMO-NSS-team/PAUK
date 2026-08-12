@@ -36,7 +36,12 @@ changing code.
   unittest tests), but they're always written as `unittest.TestCase`.
   Run locally: `uv run python -m unittest discover -s tests/unit`.
   `tests/bench/` is separate, needs `pytest` in the environment, and isn't
-  part of the normal run.
+  part of the normal run. `tests/integration/` is also separate: needs
+  Docker and `testcontainers` (neither is a project dependency), skips
+  itself cleanly via `setUpModule` when either is missing so the plain CI
+  command above still passes untouched. Run explicitly: `uv run --with
+  pytest --with 'testcontainers[neo4j]' python -m pytest tests/integration
+  -q`.
 - **Linter is `ruff`**, config in `pyproject.toml`. Before calling a change
   done: `uv run ruff check <changed files>`.
 - **Code comments in English.**
