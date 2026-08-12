@@ -44,10 +44,13 @@ PROMPT_TEMPLATE = """Ты помогаешь анализировать науч
 def _build_prompt(title: str | None, url: str, context: str | None, page_number: int | None) -> str:
     hint = (
         f"видимый текст PDF, страница {page_number}."
-        if page_number is not None else "абстракт OpenAlex (контекст ограничен)."
+        if page_number is not None
+        else "абстракт OpenAlex (контекст ограничен)."
     )
     return PROMPT_TEMPLATE.format(
-        title=title or "(без названия)", url=url, source_hint=hint,
+        title=title or "(без названия)",
+        url=url,
+        source_hint=hint,
         context=context or "(контекст пустой)",
     )
 
@@ -64,10 +67,18 @@ class LinkRelevanceStage(EnrichmentStage):
     def run(self) -> dict[str, int]:
         publications = {pub.id: pub for pub in self.prepared.read_models("publications", Publication)}
         links_by_publication = list(self.prepared.read_models("repo_links", RepoLink))
-        client = OpenRouterClient(self.config.request_timeout, self.config.openrouter_api_key, self.config.llm_model)
+        client = OpenRouterClient(
+            self.config.request_timeout,
+            self.config.openrouter_api_key,
+            self.config.llm_model,
+            self.config.openrouter_proxy_url,
+        )
         llm_log = LlmLogStore(self.prepared.db, "llm_logs_link_relevance")
-        logger.info("link_relevance: model=%s, %d publication(s) with links to consider",
-                    self.config.llm_model, len(links_by_publication))
+        logger.info(
+            "link_relevance: model=%s, %d publication(s) with links to consider",
+            self.config.llm_model,
+            len(links_by_publication),
+        )
         changed = 0
         for row in links_by_publication:
             pub = publications.get(row.publication_id)
@@ -84,9 +95,9 @@ class LinkRelevanceStage(EnrichmentStage):
             # verdict code_links sets itself (not an LLM call, nothing to
             # re-judge) - e.g. to re-classify with a newly configured model.
             pending = [
-                link for link in row.links
-                if link.is_relevant is None
-                or (self.force and link.llm_reason != ARCHIVED_DEPOSIT_REASON)
+                link
+                for link in row.links
+                if link.is_relevant is None or (self.force and link.llm_reason != ARCHIVED_DEPOSIT_REASON)
             ]
             if not pending:
                 continue
@@ -102,15 +113,20 @@ class LinkRelevanceStage(EnrichmentStage):
                 prompt = _build_prompt(pub.title, link.url, context, page_number)
                 result = client.chat_json(prompt)
                 llm_log.record(
-                    group=self.prepared.group, model=self.config.llm_model, prompt=prompt,
-                    raw_response=client.last_response, parsed=result, usage=client.last_usage,
+                    group=self.prepared.group,
+                    model=self.config.llm_model,
+                    prompt=prompt,
+                    raw_response=client.last_response,
+                    parsed=result,
+                    usage=client.last_usage,
                     error=None if result is not None else "no response",
                     context={"publication_id": pub.id, "url": link.url},
                 )
                 if result is None:
                     error = "llm request failed"
-                    logger.warning("link_relevance: %s -> %s: no response from %s",
-                                    pub.id, link.url, self.config.llm_model)
+                    logger.warning(
+                        "link_relevance: %s -> %s: no response from %s", pub.id, link.url, self.config.llm_model
+                    )
                     continue
                 link.is_relevant = bool(result.get("is_authors_artifact"))
                 try:
@@ -118,15 +134,23 @@ class LinkRelevanceStage(EnrichmentStage):
                 except (TypeError, ValueError):
                     link.llm_confidence = 0.0
                 link.llm_reason = str(result.get("reason") or "").strip() or None
-                logger.info("link_relevance: %s -> %s: %s (confidence=%.2f) %s",
-                            pub.id, link.url, "authors' own" if link.is_relevant else "not authors' own",
-                            link.llm_confidence, link.llm_reason or "")
+                logger.info(
+                    "link_relevance: %s -> %s: %s (confidence=%.2f) %s",
+                    pub.id,
+                    link.url,
+                    "authors' own" if link.is_relevant else "not authors' own",
+                    link.llm_confidence,
+                    link.llm_reason or "",
+                )
                 classified += 1
             pub.processing[self.name] = ProcessingState(
-                status=ProcessingStatus.FAILED if error else (
-                    ProcessingStatus.COMPLETED if classified else ProcessingStatus.COMPLETED_EMPTY),
+                status=ProcessingStatus.FAILED
+                if error
+                else (ProcessingStatus.COMPLETED if classified else ProcessingStatus.COMPLETED_EMPTY),
                 attempts=(state.attempts if state else 0) + 1,
-                finished_at=datetime.now(UTC), result_count=classified, error=error,
+                finished_at=datetime.now(UTC),
+                result_count=classified,
+                error=error,
             )
             changed += 1
         logger.info("link_relevance: done, %d publication(s) processed", changed)

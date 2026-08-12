@@ -25,10 +25,14 @@ def _strip_code_fence(content: str) -> str:
 class OpenRouterClient(HttpClient):
     """Minimal OpenRouter chat-completions client, JSON-object mode only."""
 
-    def __init__(self, timeout: int, api_key: str, model: str) -> None:
+    def __init__(self, timeout: int, api_key: str, model: str, proxy_url: str = "") -> None:
         super().__init__(timeout)
         self.api_key = api_key
         self.model = model
+        # Routes only this client's traffic through a forward proxy (e.g. an
+        # internal tunnel that bypasses a geo-block) - other HttpClient
+        # instances (OpenAlex, Crossref, ...) are untouched.
+        self.proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
         # Token usage from the most recent chat_json() call (or None if it
         # failed before OpenRouter replied) - read by callers that need to
         # track cost, e.g. the model-comparison script.
@@ -63,6 +67,7 @@ class OpenRouterClient(HttpClient):
                     "temperature": 0,
                 },
                 timeout=self.timeout,
+                proxies=self.proxies,
             )
             response.raise_for_status()
         except requests.RequestException as exc:
@@ -77,8 +82,9 @@ class OpenRouterClient(HttpClient):
             # model across providers, and a provider that doesn't support
             # response_format=json_object replies this way) - raise_for_status()
             # above can't catch this, so it's checked explicitly.
-            logger.warning("OpenRouter: %s returned an error body: %s",
-                            self.model, (payload["error"] or {}).get("message"))
+            logger.warning(
+                "OpenRouter: %s returned an error body: %s", self.model, (payload["error"] or {}).get("message")
+            )
             return None
         try:
             content = payload["choices"][0]["message"].get("content")
@@ -93,7 +99,6 @@ class OpenRouterClient(HttpClient):
             # response_format=json_object is meant to guarantee an object,
             # but not every model actually honors it (seen in the wild:
             # gpt-oss-20b wrapping the verdict in a list).
-            logger.warning("OpenRouter: %s replied with %s, not a JSON object",
-                            self.model, type(parsed).__name__)
+            logger.warning("OpenRouter: %s replied with %s, not a JSON object", self.model, type(parsed).__name__)
             return None
         return parsed

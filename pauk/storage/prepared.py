@@ -92,9 +92,12 @@ class PreparedStore:
             row_id = row[key_field]
             written_ids.append(row_id)
             before = collection.find_one({"_id": row_id})
-            before_content = {k: v for k, v in (before or {}).items()
-                               if k not in ("_id", "groups", "_version")}
-            if before is not None and before_content == row:
+            before_content = {k: v for k, v in (before or {}).items() if k not in ("_id", "groups", "_version")}
+            content_changed = before is None or before_content != row
+            # A document written before _version existed has no such field -
+            # even with unchanged content, it still needs one backfilled to
+            # keep the invariant "every stored document carries _version".
+            if not content_changed and before is not None and "_version" in before:
                 collection.update_one({"_id": row_id}, {"$addToSet": {"groups": self.group}})
                 continue
             new_version = (before or {}).get("_version", 0) + 1
@@ -103,15 +106,17 @@ class PreparedStore:
                 {"$set": {**row, "_version": new_version}, "$addToSet": {"groups": self.group}},
                 upsert=True,
             )
-            if before is not None:
-                revisions.insert_one({
-                    "entity_type": entity,
-                    "entity_id": row_id,
-                    "version": before["_version"],
-                    "snapshot": before,
-                    "replaced_by_group": self.group,
-                    "replaced_at": datetime.now(UTC).isoformat(),
-                })
+            if content_changed and before is not None:
+                revisions.insert_one(
+                    {
+                        "entity_type": entity,
+                        "entity_id": row_id,
+                        "version": before.get("_version", 0),
+                        "snapshot": before,
+                        "replaced_by_group": self.group,
+                        "replaced_at": datetime.now(UTC).isoformat(),
+                    }
+                )
         collection.update_many(
             {"groups": self.group, "_id": {"$nin": written_ids}},
             {"$pull": {"groups": self.group}},

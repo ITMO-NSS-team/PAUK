@@ -18,14 +18,14 @@ class PreparedStoreTest(unittest.TestCase):
         self.assertEqual(rows[0].title, "Paper")
 
     def test_read_is_scoped_to_its_own_group(self):
-        PreparedStore(self.db, "group-a").write_models(
-            "publications", [Publication(id="W1", title="Paper")])
+        PreparedStore(self.db, "group-a").write_models("publications", [Publication(id="W1", title="Paper")])
         other = PreparedStore(self.db, "group-b")
         self.assertEqual(list(other.read_models("publications", Publication)), [])
 
     def test_get_models_finds_a_document_regardless_of_group(self):
         PreparedStore(self.db, "group-a").write_models(
-            "publications", [Publication(id="W1", title="Paper", has_code=True)])
+            "publications", [Publication(id="W1", title="Paper", has_code=True)]
+        )
         store_b = PreparedStore(self.db, "group-b")
         # group-b never touched W1, so the group-scoped read doesn't see it...
         self.assertEqual(list(store_b.read_models("publications", Publication)), [])
@@ -40,7 +40,8 @@ class PreparedStoreTest(unittest.TestCase):
 
     def test_second_group_writing_a_row_adds_provenance_without_hiding_it_from_the_first(self):
         PreparedStore(self.db, "group-a").write_models(
-            "publications", [Publication(id="W1", title="Paper", has_code=True)])
+            "publications", [Publication(id="W1", title="Paper", has_code=True)]
+        )
         store_b = PreparedStore(self.db, "group-b")
         [existing] = list(store_b.get_models("publications", ["W1"], Publication))
         existing.abstract = "seen by group b too"
@@ -87,6 +88,29 @@ class PreparedStoreTest(unittest.TestCase):
         self.assertEqual(revision["version"], 1)
         self.assertEqual(revision["snapshot"]["title"], "Paper")
         self.assertEqual(revision["replaced_by_group"], "sample")
+
+    def test_legacy_document_without_version_gets_backfilled_with_no_revision(self):
+        # Simulates a document written before _version existed: same content
+        # a real write_rows call would have produced, but no _version field.
+        row = Publication(id="W1", title="Paper").model_dump(mode="json", by_alias=True, exclude_none=True)
+        self.db.publications.insert_one({"_id": "W1", **row, "groups": ["sample"]})
+        store = PreparedStore(self.db, "sample")
+        store.write_models("publications", [Publication(id="W1", title="Paper")])
+
+        self.assertEqual(self.db.publications.find_one({"_id": "W1"})["_version"], 1)
+        self.assertEqual(self.db.revisions.count_documents({}), 0)
+
+    def test_legacy_document_without_version_that_also_changed_gets_version_one_and_no_crash(self):
+        row = Publication(id="W1", title="Paper").model_dump(mode="json", by_alias=True, exclude_none=True)
+        self.db.publications.insert_one({"_id": "W1", **row, "groups": ["sample"]})
+        store = PreparedStore(self.db, "sample")
+        store.write_models("publications", [Publication(id="W1", title="Paper v2")])
+
+        current = self.db.publications.find_one({"_id": "W1"})
+        self.assertEqual(current["_version"], 1)
+        self.assertEqual(current["title"], "Paper v2")
+        [revision] = list(self.db.revisions.find({}))
+        self.assertEqual(revision["snapshot"]["title"], "Paper")
 
     def test_version_field_is_not_leaked_through_read_rows(self):
         store = PreparedStore(self.db, "sample")
