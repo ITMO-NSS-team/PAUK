@@ -93,7 +93,11 @@ class PreparedStore:
             written_ids.append(row_id)
             before = collection.find_one({"_id": row_id})
             before_content = {k: v for k, v in (before or {}).items() if k not in ("_id", "groups", "_version")}
-            content_changed = before is None or before_content != row
+            # A None value means "clear this field" - stored documents never
+            # carry an explicit null (cleared fields are $unset, not $set to
+            # None), so both sides must drop them to compare like with like.
+            row_content = {k: v for k, v in row.items() if v is not None}
+            content_changed = before is None or before_content != row_content
             # A document written before _version existed has no such field -
             # even with unchanged content, it still needs one backfilled to
             # keep the invariant "every stored document carries _version".
@@ -101,11 +105,14 @@ class PreparedStore:
                 collection.update_one({"_id": row_id}, {"$addToSet": {"groups": self.group}})
                 continue
             new_version = (before or {}).get("_version", 0) + 1
-            collection.update_one(
-                {"_id": row_id},
-                {"$set": {**row, "_version": new_version}, "$addToSet": {"groups": self.group}},
-                upsert=True,
-            )
+            update: dict = {
+                "$set": {**row_content, "_version": new_version},
+                "$addToSet": {"groups": self.group},
+            }
+            unset_fields = {k for k, v in row.items() if v is None}
+            if unset_fields:
+                update["$unset"] = dict.fromkeys(unset_fields, "")
+            collection.update_one({"_id": row_id}, update, upsert=True)
             if content_changed and before is not None:
                 revisions.insert_one(
                     {
@@ -126,4 +133,8 @@ class PreparedStore:
     def write_models(self, entity: str, rows: Iterable[BaseModel]) -> None:
         # mode="json" so date/datetime fields serialize to strings - pymongo's
         # BSON encoder rejects a bare datetime.date (only datetime.datetime).
-        self.write_rows(entity, (row.model_dump(mode="json", by_alias=True, exclude_none=True) for row in rows))
+        # exclude_none=False (the default) so a field cleared to None reaches
+        # write_rows and is $unset - dropping it here would leave the old
+        # value in Mongo forever, since $set only ever touches keys present
+        # in its payload.
+        self.write_rows(entity, (row.model_dump(mode="json", by_alias=True) for row in rows))

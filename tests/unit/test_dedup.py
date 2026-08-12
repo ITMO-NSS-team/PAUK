@@ -1,7 +1,6 @@
 import json
 import tempfile
 import unittest
-from datetime import date
 from pathlib import Path
 
 import mongomock
@@ -13,12 +12,21 @@ from pauk.graph.dedup import (
 )
 from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import ENTITY_FILES
-from pauk.models import Authorship, CodeLink, Person, Publication, PublicationVersion, RepoLink, Repository
-from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.models import (
+    Affiliation,
+    Person,
+    Publication,
+    PublicationVersion,
+    RepoLink,
+    Repository,
+)
 from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage
+from pauk.pipeline.stages.russian_names import RussianNamesCatalog
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
 from tests.bench.mocks import RecordingNeo4jClient
+
+CATALOG_HEADER = "name_ru,surname,name,patronymic,degree\n"
 
 
 def person(pid, name, works, *, itmo=True, orcid=None, variants=(), merged=(),
@@ -27,21 +35,20 @@ def person(pid, name, works, *, itmo=True, orcid=None, variants=(), merged=(),
         id=pid, openalex_id=pid, is_itmo=itmo, name_en=name, orcid=orcid,
         name_variants=list(variants), merged_ids=list(merged),
         email=email, github=github, department_ids=list(departments),
-        authored=[Authorship(publication_id=w, position=1) for w in works],
+        authored=[{"publication_id": w, "position": 1} for w in works],
     )
 
 
 def publication(pid, title, *, doi=None, journal=None, type=None, day="2026-01-01"):
-    return Publication(id=pid, title=title, doi=doi, journal=journal, type=type,
-                       publication_date=date.fromisoformat(day) if day else None)
+    return Publication(id=pid, title=title, doi=doi, journal=journal, type=type, publication_date=day)
 
 
 def repository(rid, name, url, *, github_id=None, cited=(), publications=(), day=None):
     return Repository(
         id=rid, name=name, url=url, github_id=github_id,
         cited_urls=list(cited) or [url], publication_ids=list(publications),
-        access_date=date.fromisoformat(day) if day else None,
-        _processing={"repositories": ProcessingState(status=ProcessingStatus.COMPLETED, attempts=1)},
+        access_date=day,
+        processing={"repositories": {"status": "completed", "attempts": 1}},
     )
 
 
@@ -63,7 +70,11 @@ class DedupStageTest(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.config = Settings(data_dir=Path(tmp.name))
 
-    def run_stage(self, people, publications=()):
+    def run_stage(self, people, publications=(), catalog_rows=None):
+        if catalog_rows is not None:
+            self.config.static_dir.mkdir(parents=True, exist_ok=True)
+            (self.config.static_dir / "russian_names.csv").write_text(
+                CATALOG_HEADER + "".join(f"{row}\n" for row in catalog_rows), encoding="utf-8")
         self.prepared = PreparedStore(self.db, "sample")
         self.raw = RawStore(self.db, "sample")
         self.prepared.write_models("persons", people)
@@ -141,6 +152,66 @@ class DedupStageTest(unittest.TestCase):
         self.assertEqual((applied["person_a"], applied["merged_into"], applied["rules"]),
                          ("A2", "A1", ["same_name"]))
 
+    def test_a_contradicting_initial_outweighs_a_name_variant(self):
+        # The variant "A. S. Ivanov" pairs the two, but the display names
+        # state V against S: the record listing that variant is not one man.
+        result, people = self.run_stage([
+            person("A1", "A. S. Ivanov", ["W1"]),
+            person("A2", "А. В. Иванов", ["W2"], variants=["A. S. Ivanov", "A. V. Ivanov"]),
+            person("A3", "Maria Sidorova", ["W1", "W2"]),
+        ])
+        self.assertEqual((result["dedup_merged"], len(people)), (0, 3))
+
+    def test_an_initial_agrees_with_the_name_it_stands_for(self):
+        result, people = self.run_stage([
+            person("A1", "Andrei Ivanov", ["W1"]),
+            person("A2", "A. Ivanov", ["W2"], variants=["Andrei Ivanov"]),
+            person("A3", "Maria Sidorova", ["W1", "W2"]),
+        ])
+        self.assertEqual(result["dedup_merged"], 1)
+        self.assertEqual(people["A1"].merged_ids, ["A2"])
+
+    def test_coauthors_of_one_shared_work_corroborate_nothing(self):
+        # Both records sit on W1, so its whole author list is shared by
+        # construction and says nothing about the two being one person.
+        result, people = self.run_stage([
+            person("A1", "Yong Li", ["W1"]),
+            person("A2", "Yong Li", ["W1"]),
+            person("A3", "Maria Sidorova", ["W1"]),
+        ])
+        self.assertEqual((result["dedup_merged"], len(people)), (0, 3))
+
+    def test_an_orcid_from_the_backfill_still_keeps_two_people_apart(self):
+        result, people = self.run_stage([
+            person("A1", "Ivan Petrov", ["W1"], orcid="0000-0002-1111-1111"),
+            person("A2", "Ivan Petrov", ["W2"], orcid="0000-0003-2222-2222"),
+            person("A3", "Maria Sidorova", ["W1", "W2"]),
+        ])
+        self.assertEqual((result["dedup_merged"], len(people)), (0, 3))
+
+    def test_a_record_pooling_hundreds_of_institutions_merges_with_nothing(self):
+        pooled = person("A2", "Ivan Petrov", ["W2"])
+        pooled.affiliations = [
+            Affiliation(name=f"Institution {number}", source="openalex")
+            for number in range(40)
+        ]
+        result, people = self.run_stage([
+            person("A1", "Ivan Petrov", ["W1"]),
+            pooled,
+            person("A3", "Maria Sidorova", ["W1", "W2"]),
+        ])
+        self.assertEqual((result["dedup_merged"], len(people)), (0, 3))
+
+    def test_one_cyrillic_letter_does_not_split_a_name(self):
+        # The А of the second name is Cyrillic. Both spellings are one name
+        # to a reader, and casefold() alone keeps them apart.
+        result, people = self.run_stage(
+            [person("A1", "Alexander Shtil", ["W1"], departments=["d1"]),
+             person("A2", "Аlexander Shtil", ["W2"], departments=["d1"])],
+        )
+        self.assertEqual(result["dedup_merged"], 1)
+        self.assertEqual(people["A1"].merged_ids, ["A2"])
+
     def test_same_display_name_merges_on_a_shared_department(self):
         result, people = self.run_stage([
             person("A1", "Ivan Petrov", ["W1"], departments=["dept_x"]),
@@ -161,6 +232,50 @@ class DedupStageTest(unittest.TestCase):
         self.assertEqual((result["dedup_merged"], len(people)), (0, 2))
         (held,) = self.journal("held")
         self.assertEqual(held["held_because"], ["name is given as initials"])
+
+    def test_one_staff_record_folds_spellings_no_other_rule_can_bridge(self):
+        # The four OpenAlex records of one ITMO employee: no two display
+        # names are equal, no work and no department is shared, and only one
+        # record carries an ORCID. Only the staff catalog can see through it.
+        result, people = self.run_stage(
+            [person("A1", "Alexey Valentinovich Dukhanov", ["W1"]),
+             person("A2", "Aleksei Dukhanov", ["W2"]),
+             person("A3", "Alexey Dukhanov", ["W3"]),
+             person("A4", "A. V. Dukhanov", ["W4", "W5"], orcid="0000-0002-1011-9932",
+                    variants=["A. V. Dukhanov", "Alexey Dukhanov"])],
+            catalog_rows=["Духанов Алексей Валентинович,Духанов,Алексей,Валентинович,д.т.н."],
+        )
+        self.assertEqual((result["dedup_merged"], list(people)), (3, ["A4"]))
+        self.assertEqual(sorted(people["A4"].merged_ids), ["A1", "A2", "A3"])
+        self.assertEqual({row["rules"][0] for row in self.journal("merged")}, {"staff_catalog"})
+
+    def test_a_staff_record_is_not_claimed_by_initials_alone(self):
+        # "A. V. Dukhanov" fits every Dukhanov whose given name starts with
+        # an A, including the ones no catalog lists. It still gets named
+        # from the record — it just cannot be folded onto it.
+        result, people = self.run_stage(
+            [person("A1", "Alexey Dukhanov", ["W1"]),
+             person("A2", "A. V. Dukhanov", ["W2"])],
+            catalog_rows=["Духанов Алексей Валентинович,Духанов,Алексей,Валентинович,д.т.н."],
+        )
+        self.assertEqual((result["dedup_merged"], len(people)), (0, 2))
+
+    def test_two_staff_records_are_two_people_whatever_the_variants_say(self):
+        # OpenAlex lists a namesake's name among this author's variants,
+        # and they share a coauthor: without the catalog that merges.
+        people_in = [
+            person("A1", "Ivan Petrov", ["W1"]),
+            person("A2", "Igor Petrov", ["W2"], variants=["Igor Petrov", "Ivan Petrov"]),
+            person("A3", "Maria Sidorova", ["W1", "W2"]),
+        ]
+        result, _people = self.run_stage(people_in)
+        self.assertEqual(result["dedup_merged"], 1)
+
+        result, people = self.run_stage(people_in, catalog_rows=[
+            "Петров Иван Сергеевич,Петров,Иван,Сергеевич,к.т.н.",
+            "Петров Игорь Сергеевич,Петров,Игорь,Сергеевич,",
+        ])
+        self.assertEqual((result["dedup_merged"], len(people)), (0, 3))
 
     def test_same_name_with_different_orcids_stays_separate(self):
         result, people = self.run_stage([
@@ -443,8 +558,8 @@ class PublicationDedupTest(unittest.TestCase):
                                      url="https://github.com/org/repo",
                                      publication_ids=["W1", "W2"])],
             repo_links=[
-                RepoLink(publication_id="W1", links=[CodeLink(url="https://github.com/org/repo")]),
-                RepoLink(publication_id="W2", links=[CodeLink(url="https://github.com/org/other")]),
+                RepoLink(publication_id="W1", links=[{"url": "https://github.com/org/repo"}]),
+                RepoLink(publication_id="W2", links=[{"url": "https://github.com/org/other"}]),
             ],
         )
         people = {p.id: p for p in self.prepared.read_models("persons", Person)}
@@ -612,6 +727,35 @@ class GraphDedupTest(unittest.TestCase):
         (applied,) = [row for row in report if row["status"] == "merged"]
         self.assertEqual((applied["person_a"], applied["merged_into"], applied["rules"]),
                          ("X1", "Y1", ["same_name"]))
+
+    def test_staff_catalog_folds_spellings_across_groups(self):
+        # Two periods, two spellings, nothing in common but the employee.
+        client = RecordingNeo4jClient()
+        self.load_new_group(client, "q1", [publication("W1", "Paper one")],
+                            [person("X1", "Aleksei Dukhanov", ["W1"])])
+        self.load_new_group(client, "y2026", [publication("W2", "Paper two")],
+                            [person("Y1", "Alexey Valentinovich Dukhanov", ["W2"])])
+        catalog = RussianNamesCatalog([{
+            "name_ru": "Духанов Алексей Валентинович", "surname": "Духанов",
+            "name": "Алексей", "patronymic": "Валентинович", "degree": "д.т.н.",
+        }])
+        removed, report = dedup_graph_persons(client, {}, catalog)
+        self.assertEqual(removed, 1)
+        self.assertEqual(client.nodes["Person"]["X1"]["merged_ids"], ["Y1"])
+        self.assertEqual(
+            {pair for pair in client.edge_pairs("AUTHORED") if pair[0] in {"X1", "Y1"}},
+            {("X1", "W1"), ("X1", "W2")})
+        (applied,) = [row for row in report if row["status"] == "merged"]
+        self.assertEqual(applied["rules"], ["staff_catalog"])
+
+    def test_without_a_catalog_the_graph_pass_is_unchanged(self):
+        client = RecordingNeo4jClient()
+        self.load_new_group(client, "q1", [publication("W1", "Paper one")],
+                            [person("X1", "Aleksei Dukhanov", ["W1"])])
+        self.load_new_group(client, "y2026", [publication("W2", "Paper two")],
+                            [person("Y1", "Alexey Valentinovich Dukhanov", ["W2"])])
+        removed, _report = dedup_graph_persons(client, {})
+        self.assertEqual(removed, 0)
 
     def test_raw_orcids_veto_graph_merges_too(self):
         client = RecordingNeo4jClient()

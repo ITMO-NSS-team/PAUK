@@ -114,16 +114,35 @@ CHECKS = [
         id="itmo_no_ru_name",
         group="Пропуски",
         title="Сотрудники без русского ФИО",
-        count="MATCH (p:Person:Itmo) WHERE p.surname_ru IS NULL "
-                 "OR trim(p.surname_ru) = '' RETURN count(p)",
+        count="MATCH (p:Person:Itmo) WHERE p.name_ru IS NULL "
+                 "OR trim(p.name_ru) = '' RETURN count(p)",
         of=_ITMO_TOTAL, warn=0.02, fail=0.10,
-        hint="Показываются латиницей.",
+        hint="Показываются латиницей. Этап russian_names не запускался "
+             "для группы, из которой пришли эти люди.",
         examples="""MATCH (p:Person:Itmo)
-            WHERE p.surname_ru IS NULL OR trim(p.surname_ru) = ''
+            WHERE p.name_ru IS NULL OR trim(p.name_ru) = ''
             OPTIONAL MATCH (p)-[:AUTHORED]->(pub:Publication)
             WITH p, count(pub) AS pubs
             RETURN p.id AS id, p.name_en AS `Имя (лат.)`,
                    coalesce(p.surname_ru,'—') AS `Фамилия (рус.)`, pubs AS `Публикаций`
+            ORDER BY pubs DESC LIMIT $lim""",
+    ),
+    Check(
+        id="itmo_no_patronymic",
+        group="Пропуски",
+        title="Сотрудники без отчества",
+        count="MATCH (p:Person:Itmo) WHERE p.second_name_ru IS NULL "
+                 "OR trim(p.second_name_ru) = '' RETURN count(p)",
+        of=_ITMO_TOTAL, warn=0.25, fail=0.60,
+        hint="Подписываются как «Фамилия Имя» — сокращать до «Фамилия И.О.» нечем. "
+             "Отчество приходит только из справочника сотрудников.",
+        examples="""MATCH (p:Person:Itmo)
+            WHERE p.second_name_ru IS NULL OR trim(p.second_name_ru) = ''
+            OPTIONAL MATCH (p)-[:AUTHORED]->(pub:Publication)
+            WITH p, count(pub) AS pubs
+            RETURN p.id AS id, p.name_en AS `Имя (лат.)`,
+                   coalesce(p.name_ru, '—') AS `ФИО (рус.)`,
+                   coalesce(p.surname_ru,'—') AS `Фамилия`, pubs AS `Публикаций`
             ORDER BY pubs DESC LIMIT $lim""",
     ),
     Check(

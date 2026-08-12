@@ -9,6 +9,8 @@ __pycache__/
 *.jsonl
 !data/static/
 !data/static/**
+# Official staff records — personal data, never committed.
+data/static/russian_names.csv
 data/cache/*
 data/pdf/*
 data/audit/*

@@ -19,14 +19,18 @@ _PreparedModel = TypeVar("_PreparedModel", Publication, Person)
 
 ITMO_ROR_ID = "04txgxn49"
 
-# Metadata sometimes lists an organization in an author slot — ACL Anthology
-# deposits put the venue there ("Association for Computational Linguistics
-# 2026"), consortium papers list their collaborator group. OpenAlex even
-# mints author entities for these; they are not people and never become
-# persons.
-ORG_AUTHOR_NAME = re.compile(
+# Metadata sometimes puts something that is not a person in an author slot:
+# ACL Anthology deposits name the venue there ("Association for Computational
+# Linguistics 2026"), consortium papers name their collaborator group, and a
+# submission form's contact field leaks through as the author's name
+# ("vasilinetc.ira@gmail.com"). OpenAlex mints author entities for all of
+# them; they are not people and never become persons. An address or a link is
+# also a name no transliteration should ever be asked to render.
+NOT_A_PERSON_NAME = re.compile(
     r"\b(association|conference|proceedings|workshop|committee|consortium"
-    r"|collaborat\w*|society)\b",
+    r"|collaborat\w*|society)\b"
+    r"|\S+@\S+"
+    r"|\bhttps?://|\bwww\.",
     re.IGNORECASE,
 )
 
@@ -222,6 +226,13 @@ class OpenAlexNormalizer:
         )
         persons: OrderedDict[str, Person] = OrderedDict()
         for row in self._seed("persons", Person, person_ids):
+            # A row an earlier, narrower filter let through (the check below
+            # only knew about organizations, not contact addresses) is not a
+            # person now either. Re-normalization is where the current rule
+            # reaches rows already on disk.
+            if NOT_A_PERSON_NAME.search(row.name_en or ""):
+                logger.info("normalize: dropping an author row that is not a person: %s", row.name_en)
+                continue
             canonical = _canonical_person_id(row)
             row.id = canonical
             existing = persons.get(canonical)
@@ -273,8 +284,9 @@ class OpenAlexNormalizer:
             for position, authorship in enumerate(work.get("authorships") or [], start=1):
                 author = authorship.get("author") or {}
                 name = author.get("display_name") or ""
-                if ORG_AUTHOR_NAME.search(name):
-                    logger.info("normalize: %s lists an organization as an author, skipping: %s", work_id, name)
+                if NOT_A_PERSON_NAME.search(name):
+                    logger.info("normalize: %s lists a non-person in an author slot, skipping: %s",
+                                work_id, name)
                     continue
                 openalex_id = _short_id(author.get("id"))
                 person_id = openalex_id or _fallback_person_id(author)

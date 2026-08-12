@@ -73,6 +73,17 @@ class PreparedStoreTest(unittest.TestCase):
         self.assertEqual(self.db.publications.find_one({"_id": "W1"})["_version"], 1)
         self.assertEqual(self.db.revisions.count_documents({}), 0)
 
+    def test_clearing_a_field_to_none_actually_removes_it(self):
+        store = PreparedStore(self.db, "sample")
+        store.write_models("publications", [Publication(id="W1", title="Paper", journal="Old Journal")])
+        [row] = list(store.read_models("publications", Publication))
+        self.assertEqual(row.journal, "Old Journal")
+
+        row.journal = None
+        store.write_models("publications", [row])
+        [row] = list(store.read_models("publications", Publication))
+        self.assertIsNone(row.journal)
+
     def test_writing_changed_content_bumps_version_and_archives_old_snapshot(self):
         store = PreparedStore(self.db, "sample")
         store.write_models("publications", [Publication(id="W1", title="Paper")])
