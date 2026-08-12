@@ -16,10 +16,10 @@ from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
 
 
-def person(pid, name, *, itmo=True, email=None, variants=(), works=(), github=None):
+def person(pid, name, *, itmo=True, email=None, emails=(), variants=(), works=(), github=None):
     return Person(
         id=pid, openalex_id=pid, is_itmo=itmo, name_en=name, email=email, github=github,
-        name_variants=list(variants),
+        emails=list(emails), name_variants=list(variants),
         authored=[{"publication_id": work, "position": 1} for work in works],
     )
 
@@ -52,14 +52,15 @@ class NameSimilarityTest(unittest.TestCase):
         self.assertLess(name_similarity("ivan petrov", "i petrov"), 0.86)
 
     def test_login_built_from_the_surname(self):
-        self.assertTrue(login_carries_surname("ipetrov", "petrov"))
-        self.assertTrue(login_carries_surname("ivan-petrov", "petrov"))
-        self.assertFalse(login_carries_surname("xyz123", "petrov"))
+        self.assertTrue(login_carries_surname("ipetrov", {"petrov"}))
+        self.assertTrue(login_carries_surname("ivan-petrov", {"petrov"}))
+        self.assertFalse(login_carries_surname("xyz123", {"petrov"}))
 
-    def test_a_short_surname_is_never_matched_against_a_login(self):
-        # Guarded at the caller: an author whose last word is an initial
-        # gets surname=None, and this returns False for it.
-        self.assertFalse(login_carries_surname("anything", None))
+    def test_any_spelling_of_the_surname_counts(self):
+        self.assertTrue(login_carries_surname("aduhanov", {"dukhanov", "duhanov"}))
+
+    def test_an_author_without_a_usable_surname_matches_no_login(self):
+        self.assertFalse(login_carries_surname("anything", set()))
 
 
 class PickEmailTest(unittest.TestCase):
@@ -125,6 +126,18 @@ class GitHubMatchStageTest(unittest.TestCase):
         self.assertEqual(people["A1"].github, "someone")
         (row,) = self.journal()
         self.assertIn("email_exact", row["signals"])
+
+    def test_an_account_is_recognised_by_a_second_address(self):
+        # ORCID lists several addresses for a third of the people who list
+        # any; the account committed with one that is not on the card.
+        result, people = self.run_stage(
+            [person("A1", "Ivan Petrov", email="shown@itmo.ru",
+                    emails=["shown@itmo.ru", "old.address@gmail.com"])],
+            [profile("someone", emails=["old.address@gmail.com"])],
+            [],
+        )
+        self.assertEqual(result["github_matched"], 1)
+        self.assertEqual(people["A1"].github, "someone")
 
     def test_a_name_on_a_cited_repository_matches(self):
         result, people = self.run_stage(

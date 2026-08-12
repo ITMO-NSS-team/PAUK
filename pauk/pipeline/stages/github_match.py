@@ -45,6 +45,7 @@ from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.storage.atomic import AtomicWriter
 
 from .base import EnrichmentStage
+from .emails import author_surnames, pick_email
 
 logger = logging.getLogger(__name__)
 
@@ -79,15 +80,6 @@ CORROBORATING = ("itmo_profile", "itmo_email", "login_surname", "owner", "org_it
 ITMO_IN_TEXT = re.compile(r"\bitmo\b|saint[- ]petersburg|sankt", re.I)
 
 ITMO_EMAIL_DOMAIN = "@itmo.ru"
-
-# An address at the university identifies an employee better than a personal
-# one, so it wins over whatever else the account committed with.
-INSTITUTIONAL_DOMAINS = ("@itmo.ru", "@ifmo.ru")
-
-# A surname shorter than this is an initial or a particle, and matching a
-# login against it would fire on almost anything.
-MIN_SURNAME = 4
-
 
 def _norm_name(value: str | None) -> str:
     """A name reduced to lowercase latin words, for comparing spellings."""
@@ -130,26 +122,15 @@ def best_name_similarity(candidates: set[str], author: set[str]) -> tuple[float,
     return best, pair
 
 
-def pick_email(candidates: set[str]) -> str | None:
-    """The address that best identifies an employee, among those on offer.
+def login_carries_surname(login: str, surnames: set[str]) -> bool:
+    """Whether the login is built from one of the author's surnames.
 
-    A university address wins outright; otherwise the shortest one, which
-    is a stable way to pick and tends to be the plain `name@host` rather
-    than a numbered alias.
+    Every spelling counts: an author published as both "Dukhanov" and
+    "Duhanov" may have built their login from either.
     """
-    usable = sorted(email for email in candidates if "@" in email and "noreply" not in email)
-    if not usable:
-        return None
-    institutional = [email for email in usable if email.endswith(INSTITUTIONAL_DOMAINS)]
-    return institutional[0] if institutional else min(usable, key=len)
-
-
-def login_carries_surname(login: str, surname: str | None) -> bool:
-    """Whether the login is built from the author's surname."""
-    if not surname:
-        return False
     lowered = login.lower()
-    return surname in lowered or SequenceMatcher(None, lowered, surname).ratio() >= 0.85
+    return any(surname in lowered or SequenceMatcher(None, lowered, surname).ratio() >= 0.85
+               for surname in surnames)
 
 
 def score_account(account: dict, author: dict, email_hit: bool) -> tuple[float, list[str], dict]:
@@ -173,7 +154,7 @@ def score_account(account: dict, author: dict, email_hit: bool) -> tuple[float, 
         signals.append("itmo_profile")
     if any(email.endswith(ITMO_EMAIL_DOMAIN) for email in account["emails"]):
         signals.append("itmo_email")
-    if login_carries_surname(account["login"], author["surname"]):
+    if login_carries_surname(account["login"], author["surnames"]):
         signals.append("login_surname")
     if account["is_owner"]:
         signals.append("owner")
@@ -258,13 +239,17 @@ class GitHubMatchStage(EnrichmentStage):
             if not person.is_itmo:
                 continue
             names = {_norm_name(name) for name in (person.name_en, *person.name_variants)}
-            words = _norm_name(person.name_en).split()
             authors[person.id] = {
                 "names": {name for name in names if name},
-                "emails": {email for email in {_norm_email(person.email)} if email},
-                # The surname is the last word of a romanized name; a short
-                # one is an initial and matches logins by accident.
-                "surname": words[-1] if words and len(words[-1]) >= MIN_SURNAME else None,
+                # Every address the person is known by, not just the one on
+                # their card: an account is recognised by whichever it used.
+                "emails": {email for email in
+                           {_norm_email(address) for address in (person.email, *person.emails)}
+                           if email},
+                # Shared with the email collector, so both read a name the
+                # same way: the last word of a romanized name, long enough
+                # not to be an initial.
+                "surnames": author_surnames(person),
                 "github": person.github,
             }
 

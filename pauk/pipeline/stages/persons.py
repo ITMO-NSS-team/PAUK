@@ -282,8 +282,13 @@ class PersonsStage(EnrichmentStage):
                             payload = request.get_record(key)
                             self.raw.append("orcid", payload, {"orcid": key})
                             emails = (((payload.get("person") or {}).get("emails") or {}).get("email") or [])
-                            if not person.email:
-                                person.email = next((item.get("email") for item in emails if item.get("email")), None)
+                            # Every address ORCID lists is kept: a third of the
+                            # people who list any list more than one, and the
+                            # matcher recognises an account by whichever it used.
+                            stated = [item["email"].strip().lower() for item in emails if item.get("email")]
+                            person.emails = sorted(set(person.emails) | set(stated))
+                            if not person.email and stated:
+                                person.email = stated[0]
                             person.affiliations = _merge_affiliations(person.affiliations, _orcid_affiliations(payload))
                         person.processing[source] = ProcessingState(status=ProcessingStatus.COMPLETED, request_key=key,
                             attempts=self._next_attempt(state), finished_at=datetime.now(UTC))
