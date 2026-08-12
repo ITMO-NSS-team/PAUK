@@ -1,12 +1,13 @@
-﻿from datetime import datetime, timezone
+﻿from datetime import UTC, datetime
 
 from pauk.models import Affiliation, Person, Publication
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.normalize import ITMO_ROR_ID
+from pauk.redaction import redact_text
 from pauk.sources import OpenAlexClient
 from pauk.sources.crossref import CrossrefClient
-from pauk.sources.orcid import OrcidClient
 from pauk.sources.openreview import OpenReviewClient
+from pauk.sources.orcid import OrcidClient
 
 from .base import EnrichmentStage
 
@@ -56,7 +57,7 @@ def _orcid_affiliations(record: dict) -> list[Affiliation]:
             if start:
                 # An open-ended employment covers everything from its start;
                 # the year picker only needs the range to contain the work.
-                years = list(range(int(start), int(end or datetime.now(timezone.utc).year) + 1))
+                years = list(range(int(start), int(end or datetime.now(UTC).year) + 1))
             affiliations.append(Affiliation(name=name, ror=ror or None, years=years, source="orcid"))
     return affiliations
 
@@ -160,7 +161,7 @@ class PersonsStage(EnrichmentStage):
                 publication.processing[self.crossref_name] = ProcessingState(
                     status=ProcessingStatus.NOT_APPLICABLE,
                     attempts=(old_state.attempts if old_state else 0) + 1,
-                    finished_at=datetime.now(timezone.utc), result_count=0,
+                    finished_at=datetime.now(UTC), result_count=0,
                 )
                 crossref_changed += 1
                 continue
@@ -181,13 +182,13 @@ class PersonsStage(EnrichmentStage):
                 publication.processing[self.crossref_name] = ProcessingState(
                     status=ProcessingStatus.COMPLETED if matches_count else ProcessingStatus.COMPLETED_EMPTY,
                     attempts=(old_state.attempts if old_state else 0) + 1,
-                    finished_at=datetime.now(timezone.utc), result_count=matches_count,
+                    finished_at=datetime.now(UTC), result_count=matches_count,
                 )
             except Exception as exc:
                 publication.processing[self.crossref_name] = ProcessingState(
                     status=ProcessingStatus.FAILED,
                     attempts=(old_state.attempts if old_state else 0) + 1,
-                    finished_at=datetime.now(timezone.utc), error=str(exc),
+                    finished_at=datetime.now(UTC), error=redact_text(exc),
                 )
             crossref_changed += 1
 
@@ -246,13 +247,13 @@ class PersonsStage(EnrichmentStage):
                 person.processing[self.name] = ProcessingState(
                     status=ProcessingStatus.COMPLETED if result_count else ProcessingStatus.COMPLETED_EMPTY,
                     attempts=(state.attempts if state else 0) + 1,
-                    finished_at=datetime.now(timezone.utc), result_count=result_count,
+                    finished_at=datetime.now(UTC), result_count=result_count,
                 )
             except Exception as exc:
                 person.processing[self.name] = ProcessingState(
                     status=ProcessingStatus.FAILED,
                     attempts=(state.attempts if state else 0) + 1,
-                    finished_at=datetime.now(timezone.utc), error=str(exc),
+                    finished_at=datetime.now(UTC), error=redact_text(exc),
                 )
             changed += 1
         self.prepared.write_models("persons", people)
