@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, date, datetime
 from urllib.parse import urlparse
 
@@ -9,6 +10,47 @@ from pauk.sources.github import GitHubClient
 from .base import EnrichmentStage
 
 GITHUB_HOSTS = {"github.com", "www.github.com"}
+
+# Pages of commits read per repository, 100 commits each. Three is what the
+# previous pipeline used: enough for the git identities of everyone who
+# worked on a paper's code, without paying for the whole history.
+COMMIT_PAGES = 3
+
+# GitHub hides a user's address behind this domain when they ask it to; it
+# identifies the account, not the person, so it is no use for matching.
+NOREPLY_EMAIL = "users.noreply.github.com"
+
+# Accounts that commit on behalf of tooling rather than a person.
+# web-flow is what GitHub signs commits made through its web editor with,
+# so it turns up in almost every repository.
+BOT_LOGIN = re.compile(r"\[bot\]$|^dependabot|^github-actions|^renovate|^web-flow$", re.I)
+
+
+def _is_person(login: str, account_type: str | None) -> bool:
+    return bool(login) and not BOT_LOGIN.search(login) and (account_type or "User") == "User"
+
+
+def _git_identities(commits: list[dict]) -> dict[str, tuple[set[str], set[str]]]:
+    """Emails and names each account used in its commits, keyed by login.
+
+    A commit pairs the GitHub account that owns it with the git identity
+    configured on the machine that made it. Commits whose email matches no
+    account carry no login and are skipped: there is nobody to attribute
+    them to.
+    """
+    identities: dict[str, tuple[set[str], set[str]]] = {}
+    for commit in commits:
+        login = ((commit.get("author") or {}).get("login") or "")
+        if not login:
+            continue
+        author = (commit.get("commit") or {}).get("author") or {}
+        emails, names = identities.setdefault(login, (set(), set()))
+        email = (author.get("email") or "").strip().lower()
+        if email and NOREPLY_EMAIL not in email:
+            emails.add(email)
+        if author.get("name"):
+            names.add(author["name"].strip())
+    return identities
 
 
 def _canonical_repo_id(repo: Repository) -> str:
@@ -27,6 +69,62 @@ def _canonical_repo_id(repo: Repository) -> str:
 class RepositoriesStage(EnrichmentStage):
     name = "repositories"
     progress_label = "Repositories: retrieving metadata and README status from GitHub"
+
+    def _harvest_accounts(self, client: GitHubClient, repo: Repository, owner: str,
+                          name: str, owner_type: str | None,
+                          profiles: dict[str, GitHubProfile]) -> None:
+        """Collect the people behind a repository into github_profiles.
+
+        These are the candidates an author is later matched against: the
+        owner and everyone credited with a commit, each carrying the emails
+        and names their commits reveal. Organizations and bots are skipped —
+        neither is a person anyone can be matched to.
+
+        Failures here are swallowed. Contributor and commit lists are an
+        extra on top of the repository itself, and an empty or forbidden
+        list (GitHub answers 403 on repositories it has not analysed) must
+        not cost the metadata already fetched.
+        """
+        try:
+            contributors = client.contributors(owner, name)
+            identities = _git_identities(client.commits(owner, name, COMMIT_PAGES))
+        except Exception:
+            return
+
+        roles: dict[str, str] = {}
+        if repo.owner_login and _is_person(repo.owner_login, owner_type):
+            roles[repo.owner_login] = "owner"
+        for contributor in contributors:
+            login = contributor.get("login") or ""
+            if _is_person(login, contributor.get("type")):
+                roles.setdefault(login, "contributor")
+
+        repo.contributors = sorted(roles)
+        for login in sorted(roles):
+            profile_id = f"github_{login.lower()}"
+            emails, commit_names = identities.get(login, (set(), set()))
+            try:
+                payload = client.get_user(login)
+            except Exception:
+                payload = {}
+            self.raw.append("github_user", payload, {"login": login})
+            profile_email = (payload.get("email") or "").strip().lower()
+            if profile_email and NOREPLY_EMAIL not in profile_email:
+                emails = emails | {profile_email}
+            known = profiles.get(profile_id)
+            profiles[profile_id] = GitHubProfile(
+                id=profile_id,
+                login=login,
+                name=payload.get("name") or (known.name if known else None),
+                html_url=payload.get("html_url") or (known.html_url if known else None),
+                description=payload.get("bio") or (known.description if known else None),
+                location=payload.get("location") or (known.location if known else None),
+                company=payload.get("company") or (known.company if known else None),
+                type=(payload.get("type") or "").lower() or (known.type if known else None),
+                emails=sorted(set(known.emails if known else []) | emails),
+                commit_names=sorted(set(known.commit_names if known else []) | commit_names),
+                repos=sorted(set(known.repos if known else []) | {repo.url}),
+            )
 
     def _row_in_scope(self, row: RepoLink) -> bool:
         if self.selection is None:
@@ -128,6 +226,8 @@ class RepositoriesStage(EnrichmentStage):
                             name=owner_data.get("name"), html_url=owner_data.get("html_url"),
                             type=(owner_data.get("type") or "").lower() or None,
                         )
+                    self._harvest_accounts(client, repo, owner, name,
+                                           owner_data.get("type"), profiles)
                     repo.processing[self.name] = ProcessingState(
                         status=ProcessingStatus.COMPLETED,
                         attempts=(state.attempts if state else 0) + 1,
