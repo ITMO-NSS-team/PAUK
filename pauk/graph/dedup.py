@@ -31,7 +31,9 @@ from pauk.pipeline.stages.dedup import (
     _publication_rank_key,
     _union,
     plan_person_merges,
+    staff_identities,
 )
+from pauk.pipeline.stages.russian_names import RussianNamesCatalog, catalog_path
 from pauk.settings import Settings
 from pauk.storage.atomic import AtomicWriter
 from pauk.urls import normalize_repo_url
@@ -153,13 +155,18 @@ def collect_raw_orcids(raw_root: Path) -> dict[str, str | None]:
     return orcids
 
 
-def dedup_graph_persons(client, raw_orcids: dict[str, str | None]) -> tuple[int, list[dict]]:
+def dedup_graph_persons(client, raw_orcids: dict[str, str | None],
+                        catalog: RussianNamesCatalog | None = None) -> tuple[int, list[dict]]:
     """Fold duplicate Person nodes across all published groups.
 
     Args:
         client: An open Neo4jClient (or a compatible double).
         raw_orcids: Trusted ORCID per OpenAlex author id, from
             collect_raw_orcids().
+        catalog: The official staff catalog, when the deployment carries
+            it. This is where it pays off most: person records split across
+            groups reach each other here for the first time, and the
+            catalog reconciles spellings no shared coauthor corroborates.
 
     Returns:
         (removed, report): the number of folded nodes and the review
@@ -192,7 +199,8 @@ def dedup_graph_persons(client, raw_orcids: dict[str, str | None]) -> tuple[int,
         for person in people
     }
     groups, report = plan_person_merges(
-        people, trusted_orcid, fields_of=client.fetch_publication_fields())
+        people, trusted_orcid, fields_of=client.fetch_publication_fields(),
+        staff_ids=staff_identities(catalog, people))
 
     merges: list[tuple[str, str]] = []
     canonical_nodes: dict[bool, list[tuple[str, dict]]] = {True: [], False: []}
@@ -355,8 +363,12 @@ def run_graph_dedup(config: Settings) -> dict[str, int]:
     client = Neo4jClient(config.neo4j_uri, config.neo4j_user, config.neo4j_password)
     try:
         config.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog = RussianNamesCatalog.load_if_present(catalog_path(config))
+        if catalog is None:
+            logger.info("graph dedup: no staff catalog at %s — merging on names and profiles alone",
+                        catalog_path(config))
         persons_removed, person_report = dedup_graph_persons(
-            client, collect_raw_orcids(config.raw_dir))
+            client, collect_raw_orcids(config.raw_dir), catalog)
         publications_removed, publication_report = dedup_graph_publications(client)
         repositories_removed, repository_report = dedup_graph_repositories(client)
 

@@ -4,7 +4,7 @@ import time
 
 import requests
 
-from .base import HttpClient
+from .base import HttpClient, HttpRequestError
 
 
 class GitHubClient(HttpClient):
@@ -56,8 +56,8 @@ class GitHubClient(HttpClient):
         """
         try:
             self.get_json(f"{self.API_URL}/repos/{owner}/{name}/readme")
-        except requests.HTTPError as exc:
-            if exc.response is not None and exc.response.status_code == 404:
+        except HttpRequestError as exc:
+            if exc.status_code == 404:
                 return False
             raise
         return True

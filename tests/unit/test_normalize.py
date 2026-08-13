@@ -174,6 +174,27 @@ class NormalizeTest(unittest.TestCase):
             person = next(prepared.read_models("persons", Person))
             self.assertEqual({a.publication_id for a in person.authored}, {"W1", "W2"})
 
+    def test_null_or_missing_title_becomes_untitled(self):
+        # OpenAlex may serve "title": null. The pre-pauk populate_publications.py
+        # used work.get("title", "No title"), which keeps None on an explicit null
+        # (the default only fills a *missing* key) and later crashed on len(None)
+        # — the bug PR #45 patched. The pauk normalizer uses
+        # `_clean_markup(work.get("title")) or "Untitled"`, so every falsy title
+        # (null, empty string, absent) resolves to "Untitled" without a crash.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = RawStore(root / "raw", "sample")
+            raw.append("openalex_works", {"id": "https://openalex.org/W1", "title": None, "authorships": []},
+                       {"work_id": "W1"})
+            raw.append("openalex_works", {"id": "https://openalex.org/W2", "title": "", "authorships": []},
+                       {"work_id": "W2"})
+            raw.append("openalex_works", {"id": "https://openalex.org/W3", "authorships": []},
+                       {"work_id": "W3"})  # title key absent
+            prepared = PreparedStore(root / "prepared", "sample")
+            OpenAlexNormalizer(raw, prepared).run()
+            titles = {p.id: p.title for p in prepared.read_models("publications", Publication)}
+            self.assertEqual(titles, {"W1": "Untitled", "W2": "Untitled", "W3": "Untitled"})
+
     def test_publisher_markup_is_stripped_from_titles_and_abstracts(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -235,6 +256,57 @@ class NormalizeTest(unittest.TestCase):
             self.assertEqual(person.name_en, "Real Person")
             # The human keeps the position the work listed them under.
             self.assertEqual(person.authored[0].position, 2)
+
+    def test_a_contact_address_in_an_author_slot_is_not_a_person(self):
+        # A submission form's contact field reaching the author's name.
+        # Nothing downstream can do anything sane with it — the russian
+        # names stage would dutifully render it "василинетк.ира@гмаил.ком".
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = RawStore(root / "raw", "sample")
+            raw.append("openalex_works", {
+                "id": "https://openalex.org/W1", "title": "Demo paper",
+                "authorships": [
+                    {"author": {"id": "https://openalex.org/A9",
+                                "display_name": "vasilinetc.ira@gmail.com"}},
+                    {"author": {"id": "https://openalex.org/A8",
+                                "display_name": "https://github.com/somebody"}},
+                    {"author": {"id": "https://openalex.org/A1", "display_name": "Real Person"},
+                     "institutions": [{"ror": "https://ror.org/04txgxn49"}]},
+                ],
+            }, {"work_id": "W1"})
+            prepared = PreparedStore(root / "prepared", "sample")
+            result = OpenAlexNormalizer(raw, prepared).run()
+            self.assertEqual(result["persons"], 1)
+            (person,) = prepared.read_models("persons", Person)
+            self.assertEqual(person.name_en, "Real Person")
+
+    def test_renormalization_drops_a_non_person_row_admitted_earlier(self):
+        # The row an older filter let through: it knew organizations, not
+        # contact addresses. Its work is still in raw, so nothing but the
+        # current rule can retire it.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = RawStore(root / "raw", "sample")
+            raw.append("openalex_works", {
+                "id": "https://openalex.org/W1", "title": "Demo paper",
+                "authorships": [
+                    {"author": {"id": "https://openalex.org/A9",
+                                "display_name": "vasilinetc.ira@gmail.com"}},
+                    {"author": {"id": "https://openalex.org/A1", "display_name": "Real Person"}},
+                ],
+            }, {"work_id": "W1"})
+            prepared = PreparedStore(root / "prepared", "sample")
+            prepared.write_models("persons", [
+                Person(id="A9", openalex_id="A9", is_itmo=False,
+                       name_en="vasilinetc.ira@gmail.com",
+                       authored=[{"publication_id": "W1", "position": 1}]),
+                Person(id="A1", openalex_id="A1", is_itmo=False, name_en="Real Person",
+                       authored=[{"publication_id": "W1", "position": 2}]),
+            ])
+            result = OpenAlexNormalizer(raw, prepared).run()
+            self.assertEqual(result["persons"], 1)
+            self.assertEqual([p.id for p in prepared.read_models("persons", Person)], ["A1"])
 
     def test_external_authors_are_capped_but_itmo_never_is(self):
         # Consortium papers carry hundreds of authors; the ITMO participant

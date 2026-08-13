@@ -54,15 +54,22 @@ function showAuthorProfile(key) {
   const yearCounts = {};
   pubs.forEach(p => { if (p.year) yearCounts[p.year] = (yearCounts[p.year] || 0) + 1; });
 
+  const variants = n.name_variants || [];
   let html = `
     <span class="card-kind">автор</span>
     <h2 class="card-title">${esc(n.label)}</h2>
+    ${n.name_en && n.name_en !== n.label ? `<div class="card-subtitle">${esc(n.name_en)}</div>` : ""}
+    ${variants.length ? `<details class="name-variants">
+      <summary>Другие написания <span class="tag gray">${variants.length}</span></summary>
+      <ul>${variants.map(v => `<li>${esc(v)}</li>`).join("")}</ul>
+    </details>` : ""}
     <div class="profile-dept">
       <span class="dept-dot" style="background:${deptColor}"></span>
       ${esc(deptObj?.name || "Без департамента")}
     </div>
     ${n.degree ? `<div class="card-row"><b>Степень</b> ${esc(n.degree)}</div>` : ""}
     ${n.github ? `<div class="card-row"><b>GitHub</b> <a href="https://github.com/${esc(n.github)}" target="_blank">${esc(n.github)}</a></div>` : ""}
+    ${n.orcid ? `<div class="card-row"><b>ORCID</b> <a href="https://orcid.org/${esc(n.orcid)}" target="_blank">${esc(n.orcid)}</a></div>` : ""}
     <div class="stat-grid" style="margin-top:14px">
       <div class="stat"><div class="stat-num">${n.pubs_count || pubs.length}</div><div class="stat-lbl">публикаций</div></div>
       <div class="stat"><div class="stat-num">${coauthMap.size}</div><div class="stat-lbl">соавторов</div></div>
