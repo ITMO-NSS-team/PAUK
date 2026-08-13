@@ -81,6 +81,5 @@ class CollectTruncatedAuthorsTest(unittest.TestCase):
         Collector(client, self.raw).collect(PeriodSelector("2026-01-01", "2026-12-31"))
         self.assertEqual(len(self.last_payloads()["W1"]["authorships"]), 7)
 
-
 if __name__ == "__main__":
     unittest.main()

@@ -96,6 +96,7 @@ def _affiliation_for_year(affiliations: list[Affiliation], year: int | None) -> 
 
 class PersonsStage(EnrichmentStage):
     name = "persons"
+    progress_label = "Authors: enriching profiles from OpenAlex, ORCID, and OpenReview"
     crossref_name = "crossref"
 
     def _people_in_scope(self, people: list[Person]) -> list[Person]:
@@ -152,7 +153,10 @@ class PersonsStage(EnrichmentStage):
 
         crossref = CrossrefClient(self.config.request_timeout)
         crossref_changed = 0
-        for publication_id, authors in by_publication.items():
+        for publication_id, authors in self.progress(
+            by_publication.items(), total=len(by_publication),
+            label="Publications: finding author ORCIDs via Crossref", unit="publication",
+        ):
             publication = publications.get(publication_id)
             if publication is None or not self.needs_attempt(publication.processing.get(self.crossref_name)):
                 continue
@@ -200,7 +204,7 @@ class PersonsStage(EnrichmentStage):
             self.config.openreview_password,
         )
         changed = 0
-        for person in candidates:
+        for person in self.progress(candidates, total=len(candidates)):
             state = person.processing.get(self.name)
             try:
                 before = person.model_dump(exclude={"processing", "authored", "contributed_to"})
