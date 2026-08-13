@@ -13,82 +13,49 @@
 
 ## Узлы и связи
 
-Схема — это ровно то, что пишет `extract.py::NODE_REGISTRY` (метки, белый
-список свойств `prop_fields`, связи `RelSpec`) плюс уникальные ключи из
-`schema.py::CONSTRAINTS`. Ниже — фактическая схема по узлам; поля, которых нет
-в `prop_fields`, в граф не попадают, хотя в pydantic-моделях их больше (см.
-[models.md](models.md)). Диаграмма — [`diagrams/neo4j-schema.md`](../diagrams/neo4j-schema.md).
-
-### Узлы
-
-**Person** — метки `:Person:Itmo` или `:Person:External`, ключ `id` (голый
-OpenAlex author ID). Поля: `openalex_id`, `orcid`, `name_en`, `name_variants`,
-`email`, русское ФИО (`first_name_ru`/`second_name_ru`/`surname_ru`, `name_ru`),
-`degree`, ссылки на профили (`github`, `google_scholar`, `openreview`, `thesis`,
-`scopus_id`, `researcher_id`, `dblp_id`), `affiliations` (JSON-текст), `merged_ids`
-и библиометрия/био (`works_count`, `cited_by_count`, `h_index`, `country`, …).
-
-**Department** — метка `:Department`, ключ `id` (человекочитаемый uid-слаг из
-`name_en`). Поля: `name_en`, `name_ru`, `name_variants`, `kind`
-(`megafaculty|faculty|institute|center|department|lab`), `parent_id` (uid
-родителя-Department) и `organization_id` (uid Organization). Задан ровно один из
-`parent_id`/`organization_id` — это ребро `PART_OF` вверх по иерархии.
-
-**Organization** — метка `:Organization`, ключи `id` (uid) и `name_en` (оба
-уникальны). Поля: `name_en`, `name_ru`, `ror_id` (идентификатор в реестре ROR),
-`country`, `type`. Корень орг-иерархии; несколько организаций (ИТМО и
-со-аффилиации) сосуществуют в графе как разные корни.
-
-**Publication** — метка `:Publication`, ключ `id` (голый OpenAlex work ID). Поля:
-`title`, `type`, `fields`, `journal`, `doi`, `publication_date`, `year`,
-`has_code`, `code_url`, `funding` (JSON-текст), `openalex_url`, `pdf_url`,
-`abstract`, `full_text`, `versions` (JSON-текст), `merged_ids`.
-
-**Repository** — метка `:Repository`, ключи `id` (`github_owner_name`) и `url`
-(оба уникальны). Поля: `name`, `url`, `github_id`, `cited_urls`, `description`,
-`access_date`, `has_readme`, `stars_num`, `last_updated`, `license`,
-`contributors`, `merged_ids`.
-
-**GitHubProfile** — метка `:GitHubProfile`, ключи `id` и `login` (оба
-уникальны). Поля: `login`, `name`, `html_url`, `description`, `location`, `type`.
-
-**LinkCandidate** — метка `:LinkCandidate`, ключ `id` (сам URL). Поля: `url`,
-`host`. Заводится на лету для code-ссылки, которая ещё не зарезолвилась в
-`Repository` (см. `jsonl_loader.py` ниже).
-
-### Связи
+| Узел | Уникальный ключ | Метки |
+|---|---|---|
+| Person | `id` (голый OpenAlex author ID) | `Person:Itmo` или `Person:External` |
+| Department | `id` (uid-слаг из `name_en`) | `Department` |
+| Organization | `id` и `name_en` (оба уникальны) | `Organization` |
+| Publication | `id` (голый OpenAlex work ID) | `Publication` |
+| Repository | `id` и `url` (оба уникальны) | `Repository` |
+| GitHubProfile | `id` и `login` (оба уникальны) | `GitHubProfile` |
+| LinkCandidate | `id` (сам URL) | `LinkCandidate` |
 
 ```text
-(:Person:Itmo|External) -[:AUTHORED]->       (:Publication)
-(:Person:Itmo)          -[:BELONGS_TO]->     (:Department)
-(:Person:Itmo)          -[:CONTRIBUTED_TO]-> (:Repository)
+(:Person:Itmo)     -[:BELONGS_TO]->     (:Department)
+(:Person:Itmo)     -[:AUTHORED]->       (:Publication)
+(:Person:External) -[:AUTHORED]->       (:Publication)
+(:Person:Itmo)     -[:CONTRIBUTED_TO]-> (:Repository)
 
 (:Department)  -[:PART_OF]->       (:Department | :Organization)
 
 (:Publication) -[:PRODUCED_BY]->   (:Department)
 (:Publication) -[:MENTIONS_LINK]-> (:Repository | :LinkCandidate)
 
-(:Repository)  -[:DEVELOPED_BY]->  (:Department)
-(:Repository)  -[:IMPLEMENTS]->    (:Publication)
-(:Repository)  -[:OWNED_BY]->      (:GitHubProfile)
+(:Repository) -[:DEVELOPED_BY]-> (:Department)
+(:Repository) -[:IMPLEMENTS]->   (:Publication)
+(:Repository) -[:OWNED_BY]->     (:GitHubProfile)
 ```
 
-Свойства несут только три связи: `AUTHORED` — `position`/`affiliation`/
-`affiliation_source`/`is_corresponding`; `CONTRIBUTED_TO` — `role`;
-`MENTIONS_LINK` — `context` (список), `page_number` (список, `0` = абстракт —
-Neo4j не хранит `null` внутри массива-свойства, поэтому сентинел не `None`, см.
+`AUTHORED` несёт `position`/`affiliation`/`affiliation_source`/
+`is_corresponding`; `CONTRIBUTED_TO` — `role`; `MENTIONS_LINK` — `context`
+(список), `page_number` (список, `0` = абстракт — Neo4j не хранит `null`
+внутри массива-свойства, поэтому сентинел не `None`, см.
 [pipeline/code-links.md](pipeline/code-links.md)), `is_relevant`,
-`llm_confidence`, `llm_reason`. Остальные связи — без свойств.
-
-Иерархия подразделений рекурсивна: каждый Department `PART_OF` ровно одного
-родителя — либо другого Department (`parent_id`), либо корневого Organization
-(`organization_id`), — так `кафедра → факультет → мегафакультет → организация`
-собирается цепочкой рёбер одного типа любой глубины.
+`llm_confidence`, `llm_reason`.
 
 Person смёржен на базовую метку `:Person` (не на полную пару
 `Person:Itmo`/`Person:External`) — один и тот же автор может быть ИТМО в
 одной группе и внешним в другой; `:Itmo` — «липкая» метка, внешняя строка
 никогда не понижает уже проставленный `:Itmo` (`client.py::upsert_person_nodes_batch`).
+
+Иерархия подразделений рекурсивна: каждый `Department` `PART_OF` ровно одного
+родителя — другого `Department` (`parent_id`) или корневого `Organization`
+(`organization_id`), — так `кафедра → факультет → мегафакультет → организация`
+собирается цепочкой рёбер одного типа. Пополевое описание всех узлов и связей —
+в [`diagrams/neo4j-schema-desc.md`](../diagrams/neo4j-schema-desc.md).
 
 ## `extract.py` — декларативный реестр
 
