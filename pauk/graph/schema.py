@@ -1,5 +1,6 @@
 from typing import LiteralString, cast
 
+from .audit import AuditedNeo4jClient
 from .client import Neo4jClient
 
 CONSTRAINTS: list[tuple[str, str]] = [
@@ -14,7 +15,7 @@ CONSTRAINTS: list[tuple[str, str]] = [
 ]
 
 
-def create_constraints(client: Neo4jClient) -> None:
+def create_constraints(client: Neo4jClient | AuditedNeo4jClient) -> None:
     """Create all uniqueness constraints listed in CONSTRAINTS.
 
     Must be called explicitly before loading any data — it is not a side
