@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tqdm.contrib.logging import logging_redirect_tqdm
+
 from pauk.pipeline.stages import ALL_STAGES
 from pauk.pipeline.stages.base import PreparedSelection
 from pauk.settings import Settings, settings
@@ -23,7 +25,7 @@ class Enricher:
         classes = ALL_STAGES if stage_name in (None, "all") else (self.stages[stage_name],)
         result: dict[str, int] = {}
         data_dir = self.prepared.group_dir.parent.parent
-        with GroupLock(data_dir, self.prepared.group_dir.name):
+        with logging_redirect_tqdm(), GroupLock(data_dir, self.prepared.group_dir.name):
             for stage_class in classes:
                 for key, value in stage_class(self.prepared, self.raw, self.config, selection, force).run().items():
                     result[key] = result.get(key, 0) + value

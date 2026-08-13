@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from typing import TypeVar
+
+from tqdm import tqdm
 
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.settings import Settings, settings
 from pauk.storage import PreparedStore, RawStore
+
+T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -16,6 +22,7 @@ class PreparedSelection:
 
 class EnrichmentStage(ABC):
     name: str
+    progress_label: str | None = None
 
     def __init__(self, prepared: PreparedStore, raw: RawStore,
                  config: Settings | None = None,
@@ -42,6 +49,21 @@ class EnrichmentStage(ABC):
         if self.force:
             return True
         return state is None or state.status in {ProcessingStatus.NOT_STARTED, ProcessingStatus.FAILED}
+
+    def progress(self, items: Iterable[T], *, total: int,
+                 label: str | None = None, unit: str = "item") -> Iterator[T]:
+        """Iterate with a throttled progress bar when stderr is interactive."""
+        with tqdm(total=total, desc=label or self.progress_label or self.name, unit=unit,
+                  dynamic_ncols=True, disable=None) as bar:
+            for item in items:
+                yield item
+                bar.update()
+
+    def progress_bar(self, *, total: int | None, label: str | None = None,
+                     unit: str = "item") -> tqdm:
+        """Create a throttled progress bar for work that is not iterable."""
+        return tqdm(total=total, desc=label or self.progress_label or self.name, unit=unit,
+                    dynamic_ncols=True, disable=None)
 
     @abstractmethod
     def run(self) -> dict[str, int]:

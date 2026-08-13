@@ -90,7 +90,7 @@ import logging
 import re
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Iterator
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from pauk.models import Person, Publication, PublicationVersion, RepoLink, Repository, VersionAuthor
 from pauk.models.processing import ProcessingState, ProcessingStatus
@@ -610,11 +610,25 @@ def _merge_repository(base: Repository, extra: Repository) -> Repository:
 
 class DedupStage(EnrichmentStage):
     name = "dedup"
+    progress_label = "Deduplication"
 
     def run(self) -> dict[str, int]:
-        publication_merges = self._dedup_publications()
-        repository_merges = self._dedup_repositories()
-        merged_persons, candidates = self._dedup_persons()
+        steps = (
+            ("publications", self._dedup_publications),
+            ("repositories", self._dedup_repositories),
+            ("authors", self._dedup_persons),
+        )
+        with self.progress_bar(total=len(steps), unit="step") as progress:
+            for entity, step in steps:
+                progress.set_description_str(f"{self.progress_label}: {entity}")
+                result = step()
+                if entity == "publications":
+                    publication_merges = result
+                elif entity == "repositories":
+                    repository_merges = result
+                else:
+                    merged_persons, candidates = result
+                progress.update()
         return {
             "dedup_publications_merged": len(publication_merges),
             "dedup_repositories_merged": len(repository_merges),
@@ -911,7 +925,7 @@ class DedupStage(EnrichmentStage):
             if author_id:
                 raw_orcids[author_id] = (payload.get("orcid") or "").rstrip("/").rsplit("/", 1)[-1] or None
         return {
-            person.id: raw_orcids[person.id] if person.id in raw_orcids else person.orcid
+            person.id: raw_orcids.get(person.id, person.orcid)
             for person in people
         }
 
@@ -965,6 +979,6 @@ class DedupStage(EnrichmentStage):
         row.processing[self.name] = ProcessingState(
             status=ProcessingStatus.COMPLETED,
             attempts=(state.attempts if state else 0) + 1,
-            finished_at=datetime.now(timezone.utc),
+            finished_at=datetime.now(UTC),
             result_count=merged_count,
         )

@@ -43,6 +43,7 @@ def _context_names(department: Department) -> list[str]:
 
 class DepartmentsStage(EnrichmentStage):
     name = "departments"
+    progress_label = "Authors: matching affiliations with ITMO departments"
 
     def run(self) -> dict[str, int]:
         store = StaticStore(self.config.static_dir)
@@ -56,20 +57,14 @@ class DepartmentsStage(EnrichmentStage):
         people = list(self.prepared.read_models("persons", Person))
         publications = list(self.prepared.read_models("publications", Publication))
         by_pub = {p.id: p for p in publications}
+        candidates = [
+            person
+            for person in people
+            if self._person_in_scope(person) and self.needs_attempt(person.processing.get(self.name))
+        ]
         changed = 0
-        for person in people:
-            if self.selection is not None:
-                if self.selection.entity == "persons" and person.id not in self.selection.ids:
-                    continue
-                if self.selection.entity == "publications" and not any(
-                    authorship.publication_id in self.selection.ids for authorship in person.authored
-                ):
-                    continue
-                if self.selection.entity not in {"persons", "publications"}:
-                    continue
+        for person in self.progress(candidates, total=len(candidates)):
             state = person.processing.get(self.name)
-            if not self.needs_attempt(state):
-                continue
             affiliations = [a.affiliation or "" for a in person.authored]
             text = " ".join(affiliations).casefold()
             matched = [dept_id for dept_id, names in matchers if any(name in text for name in names)]
@@ -110,3 +105,12 @@ class DepartmentsStage(EnrichmentStage):
         self.prepared.write_models("organizations", organizations)
         self.prepared.write_models("publications", publications)
         return {"persons": changed, "departments": len(departments), "organizations": len(organizations)}
+
+    def _person_in_scope(self, person: Person) -> bool:
+        if self.selection is None:
+            return True
+        if self.selection.entity == "persons":
+            return person.id in self.selection.ids
+        if self.selection.entity == "publications":
+            return any(authorship.publication_id in self.selection.ids for authorship in person.authored)
+        return False

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
-from pauk.models import Publication, RepoLink
+from pauk.models import CodeLink, Publication, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.sources import OpenRouterClient
 
@@ -59,6 +59,7 @@ class LinkRelevanceStage(EnrichmentStage):
     """
 
     name = "link_relevance"
+    progress_label = "Code links: assessing whether they are authors' artifacts"
 
     def run(self) -> dict[str, int]:
         publications = {pub.id: pub for pub in self.prepared.read_models("publications", Publication)}
@@ -66,14 +67,10 @@ class LinkRelevanceStage(EnrichmentStage):
         client = OpenRouterClient(self.config.request_timeout, self.config.openrouter_api_key, self.config.llm_model)
         logger.info("link_relevance: model=%s, %d publication(s) with links to consider",
                     self.config.llm_model, len(links_by_publication))
-        changed = 0
+        candidates: list[tuple[RepoLink, Publication, list[CodeLink]]] = []
         for row in links_by_publication:
             pub = publications.get(row.publication_id)
-            if pub is None:
-                continue
-            if self.selection is not None and (
-                self.selection.entity != "publications" or pub.id not in self.selection.ids
-            ):
+            if pub is None or not self.selected("publications", pub.id):
                 continue
             state = pub.processing.get(self.name)
             if not self.needs_attempt(state):
@@ -86,8 +83,11 @@ class LinkRelevanceStage(EnrichmentStage):
                 if link.is_relevant is None
                 or (self.force and link.llm_reason != ARCHIVED_DEPOSIT_REASON)
             ]
-            if not pending:
-                continue
+            if pending:
+                candidates.append((row, pub, pending))
+        changed = 0
+        for _row, pub, pending in self.progress(candidates, total=len(candidates), unit="publication"):
+            state = pub.processing.get(self.name)
             error = None
             classified = 0
             for link in pending:
