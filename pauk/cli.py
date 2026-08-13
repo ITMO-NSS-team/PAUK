@@ -7,11 +7,11 @@ from pauk.logging import configure_logging
 from pauk.models import Person, Publication
 from pauk.pipeline.collect import Collector
 from pauk.pipeline.enrich import Enricher
-from pauk.pipeline.stages.base import PreparedSelection
-from pauk.pipeline.stages import ALL_STAGES
 from pauk.pipeline.normalize import OpenAlexNormalizer
 from pauk.pipeline.runner import PipelineRunner
 from pauk.pipeline.selectors import PeriodSelector, WorkSelector, WorksFileSelector
+from pauk.pipeline.stages import ALL_STAGES
+from pauk.pipeline.stages.base import PreparedSelection
 from pauk.settings import settings
 from pauk.sources import OpenAlexClient
 from pauk.storage import PreparedStore, RawStore
@@ -101,7 +101,10 @@ def main() -> None:
         print(PipelineRunner(settings, _group(args)).run(_selector(args)))
     elif args.command == "collect":
         group = _group(args)
-        print({"raw_works": Collector(OpenAlexClient(settings.request_timeout, settings.openalex_api_key), RawStore(settings.raw_dir, group)).collect(_selector(args))})
+        Collector(
+            OpenAlexClient(settings.request_timeout, settings.openalex_api_key),
+            RawStore(settings.raw_dir, group),
+        ).collect(_selector(args))
     elif args.command == "normalize":
         group = validate_group(args.group)
         print(OpenAlexNormalizer(RawStore(settings.raw_dir, group), PreparedStore(settings.prepared_dir, group)).run())
