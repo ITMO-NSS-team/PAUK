@@ -219,13 +219,18 @@ class RepositoriesStage(EnrichmentStage):
                     repo.access_date = date.today()
                     if repo.owner_login:
                         profile_id = f"github_{repo.owner_login.lower()}"
-                        # `or ""` and not a .get() default: the API serves
-                        # explicit nulls, which .get(key, "") passes through.
-                        profiles[profile_id] = GitHubProfile(
-                            id=profile_id, login=repo.owner_login,
-                            name=owner_data.get("name"), html_url=owner_data.get("html_url"),
-                            type=(owner_data.get("type") or "").lower() or None,
-                        )
+                        known = profiles.get(profile_id)
+                        if known is None:
+                            known = GitHubProfile(id=profile_id, login=repo.owner_login)
+                            profiles[profile_id] = known
+                        # The nested owner object carries a login, a type and
+                        # a URL, never a name or a location. Writing a fresh
+                        # profile from it would drop the emails and commit
+                        # names an earlier repository revealed about the same
+                        # person. `or ""` and not a .get() default: the API
+                        # serves explicit nulls, which .get(key, "") passes on.
+                        known.html_url = owner_data.get("html_url") or known.html_url
+                        known.type = (owner_data.get("type") or "").lower() or known.type
                     self._harvest_accounts(client, repo, owner, name,
                                            owner_data.get("type"), profiles)
                     repo.processing[self.name] = ProcessingState(

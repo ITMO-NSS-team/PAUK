@@ -503,6 +503,37 @@ class HarvestAccountsTest(unittest.TestCase):
             "Boris Ivanov", "ITMO University", "Saint Petersburg"))
         self.assertEqual(profile.emails, ["boris@itmo.ru"])
 
+    def test_an_owner_of_two_repositories_keeps_what_both_revealed(self):
+        # The owner profile is built from the repository payload, whose
+        # nested owner carries only a login and a type. Writing it over the
+        # profile instead of merging drops the emails, names and repository
+        # list the same person left on every repository walked before.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        prepared = PreparedStore(root / "prepared", "sample")
+        raw = RawStore(root / "raw", "sample")
+        prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1", links=[
+                CodeLink(url="https://github.com/alice/first"),
+                CodeLink(url="https://github.com/alice/second"),
+            ]),
+        ])
+        with patch("pauk.pipeline.stages.repositories.GitHubClient") as client:
+            client.return_value.get_repository.side_effect = lambda owner, name: {
+                "html_url": f"https://github.com/{owner}/{name}", "name": name, "id": 1,
+                "owner": {"login": "alice", "type": "User"}}
+            client.return_value.has_readme.return_value = True
+            client.return_value.contributors.return_value = []
+            client.return_value.commits.side_effect = lambda owner, name, pages: [
+                self.commit("alice", f"alice@{name}.org", "Alice Ivanova")]
+            client.return_value.get_user.return_value = {"name": "Alice Ivanova"}
+            RepositoriesStage(prepared, raw).run()
+        profile = {p.login: p for p in prepared.read_models("github_profiles", GitHubProfile)}["alice"]
+        self.assertEqual(profile.emails, ["alice@first.org", "alice@second.org"])
+        self.assertEqual(profile.repos, ["https://github.com/alice/first",
+                                         "https://github.com/alice/second"])
+
     def test_a_failing_contributor_call_keeps_the_repository(self):
         # Contributors are an extra: GitHub answers 403 on repositories it
         # has not analysed, and that must not cost the metadata already
