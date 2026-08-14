@@ -330,6 +330,17 @@ class RussianNamesStageTest(unittest.TestCase):
             )
             self.assertEqual(people["A1"].name_ru, "Орлова Ольга Юрьевна", spelling)
 
+    def test_initials_written_surname_first_still_match(self):
+        # display_name_alternatives commonly spells a citation "Ivanov, O.
+        # P."; the initials forms were only keyed name-first ("O. P.
+        # Ivanov"), so the surname-first order fell through to transliteration.
+        for spelling in ("O. P. Ivanov", "Ivanov, O. P.", "Ivanov O. P."):
+            _, people = self.run_stage(
+                [person("A1", spelling)],
+                ["Иванов Олег Петрович,Иванов,Олег,Петрович,"],
+            )
+            self.assertEqual(people["A1"].name_ru, "Иванов Олег Петрович", spelling)
+
     def test_a_cyrillic_word_between_latin_ones_is_left_alone(self):
         # Deciding the alphabet over the whole name would rewrite the
         # patronymic into a mixture and lose the record.
