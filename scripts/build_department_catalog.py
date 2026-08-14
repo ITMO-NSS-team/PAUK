@@ -29,7 +29,7 @@ import logging
 import re
 from pathlib import Path
 
-import requests
+from pauk.sources.base import HttpClient
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +60,9 @@ _DROP_RE = re.compile(
 
 
 def fetch(url: str) -> str:
-    """GET a page with the polite user agent; raise on error."""
-    resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT)
-    resp.raise_for_status()
-    return resp.text
+    """GET a page through the shared HttpClient: retries transient 5xx/timeouts and
+    redacts URLs in any error, like every other source in the project."""
+    return HttpClient(TIMEOUT, {"User-Agent": USER_AGENT}).get_text(url)
 
 
 def _clean(raw: str) -> str:
