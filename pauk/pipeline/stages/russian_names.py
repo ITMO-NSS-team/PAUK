@@ -413,8 +413,10 @@ class RussianNamesCatalog:
                 forms[f"{first} {patronymic_initial} {surname}"] = spelled
                 for first_initial in first_initials:
                     forms[f"{first_initial} {patronymic_initial} {surname}"] = False
+                    forms[f"{surname} {first_initial} {patronymic_initial}"] = False
         for first_initial in first_initials:
             forms[f"{first_initial} {surname}"] = False
+            forms[f"{surname} {first_initial}"] = False
         return forms
 
     def staff_id(self, person: Person) -> str | None:
