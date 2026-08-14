@@ -611,11 +611,25 @@ def _merge_repository(base: Repository, extra: Repository) -> Repository:
 
 class DedupStage(EnrichmentStage):
     name = "dedup"
+    progress_label = "Deduplication"
 
     def run(self) -> dict[str, int]:
-        publication_merges = self._dedup_publications()
-        repository_merges = self._dedup_repositories()
-        merged_persons, candidates = self._dedup_persons()
+        steps = (
+            ("publications", self._dedup_publications),
+            ("repositories", self._dedup_repositories),
+            ("authors", self._dedup_persons),
+        )
+        with self.progress_bar(total=len(steps), unit="step") as progress:
+            for entity, step in steps:
+                progress.set_description_str(f"{self.progress_label}: {entity}")
+                result = step()
+                if entity == "publications":
+                    publication_merges = result
+                elif entity == "repositories":
+                    repository_merges = result
+                else:
+                    merged_persons, candidates = result
+                progress.update()
         return {
             "dedup_publications_merged": len(publication_merges),
             "dedup_repositories_merged": len(repository_merges),

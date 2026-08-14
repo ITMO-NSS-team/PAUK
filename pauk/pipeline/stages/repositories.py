@@ -3,6 +3,7 @@ from urllib.parse import urlparse
 
 from pauk.models import GitHubProfile, RepoLink, Repository
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.redaction import redact_text
 from pauk.sources.github import GitHubClient
 
 from .base import EnrichmentStage
@@ -25,6 +26,7 @@ def _canonical_repo_id(repo: Repository) -> str:
 
 class RepositoriesStage(EnrichmentStage):
     name = "repositories"
+    progress_label = "Repositories: retrieving metadata and README status from GitHub"
 
     def _row_in_scope(self, row: RepoLink) -> bool:
         if self.selection is None:
@@ -32,6 +34,27 @@ class RepositoriesStage(EnrichmentStage):
         if self.selection.entity in {"repo_links", "publications"}:
             return row.publication_id in self.selection.ids
         return self.selection.entity == "repositories"
+
+    def _pending_repository_ids(
+        self, rows: list[RepoLink], repositories: dict[str, Repository],
+    ) -> set[str]:
+        pending: set[str] = set()
+        for row in rows:
+            if not self._row_in_scope(row):
+                continue
+            for link in row.links:
+                parsed = urlparse(link.url.rstrip("/"))
+                parts = parsed.path.strip("/").split("/")
+                if parsed.netloc.lower() not in GITHUB_HOSTS or len(parts) != 2:
+                    continue
+                repo_id = f"github_{parts[0].lower()}_{parts[1].lower()}"
+                if (self.selection is not None and self.selection.entity == "repositories"
+                        and repo_id not in self.selection.ids):
+                    continue
+                repo = repositories.get(repo_id)
+                if repo is None or self.needs_attempt(repo.processing.get(self.name)):
+                    pending.add(repo_id)
+        return pending
 
     def run(self) -> dict[str, int]:
         rows = list(self.prepared.read_models("repo_links", RepoLink))
@@ -42,6 +65,8 @@ class RepositoriesStage(EnrichmentStage):
         client = GitHubClient(self.config.request_timeout, self.config.github_token)
         changed = 0
         attempted_repo_ids: set[str] = set()
+        progress = self.progress_bar(
+            total=len(self._pending_repository_ids(rows, repositories)), unit="repository")
         for row in rows:
             if not self._row_in_scope(row):
                 continue
@@ -114,9 +139,11 @@ class RepositoriesStage(EnrichmentStage):
                         status=ProcessingStatus.FAILED,
                         attempts=(state.attempts if state else 0) + 1,
                         finished_at=datetime.now(UTC),
-                        error=str(exc),
+                        error=redact_text(exc),
                     )
+                progress.update()
                 changed += 1
+        progress.close()
         # Re-key fetched rows to their canonical identity: a renamed repo (the
         # API redirects the old URL) or a case-variant citation must collapse
         # into one row, otherwise two rows share one canonical URL.

@@ -13,6 +13,7 @@ import gridfs
 
 from pauk.models import CodeLink, LinkOccurrence, Publication, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.redaction import redact_text
 from pauk.sources.base import HttpClient
 
 from .base import EnrichmentStage
@@ -179,6 +180,7 @@ def _archived_repository_url(publication: Publication) -> str | None:
 
 class CodeLinksStage(EnrichmentStage):
     name = "code_links"
+    progress_label = "Publications: finding code links in abstracts and PDFs"
 
     def run(self) -> dict[str, int]:
         publications = list(self.prepared.read_models("publications", Publication))
@@ -191,15 +193,14 @@ class CodeLinksStage(EnrichmentStage):
         # One probe per run, not per publication - an unreachable crawler
         # shouldn't add a failed request to every single row.
         self.crawler_available = self._crawler_available()
+        candidates = [
+            publication for publication in publications
+            if self.selected("publications", publication.id)
+            and self.needs_attempt(publication.processing.get(self.name))
+        ]
         changed = 0
-        for pub in publications:
-            if self.selection is not None and (
-                self.selection.entity != "publications" or pub.id not in self.selection.ids
-            ):
-                continue
+        for pub in self.progress(candidates, total=len(candidates)):
             state = pub.processing.get(self.name)
-            if not self.needs_attempt(state):
-                continue
             archived = _archived_repository_url(pub)
             needs_pdf = bool(pub.pdf_url) or (self.crawler_available and bool(pub.doi))
             if needs_pdf:
@@ -286,4 +287,4 @@ class CodeLinksStage(EnrichmentStage):
             pages, page_occurrences = _extract_pdf(pdf_bytes)
             return pages, page_occurrences, None
         except Exception as exc:
-            return [], [], str(exc)
+            return [], [], redact_text(exc)

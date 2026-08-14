@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import logging
 
+from tqdm import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
+
 from pauk.pipeline.selectors import PeriodSelector, WorkSelector, WorksFileSelector
 from pauk.storage import RawStore
 
@@ -31,9 +34,30 @@ class Collector:
         """Args: client: An open OpenAlexClient (or a compatible double)."""
         self.client = client
         self.raw = raw
+        self._progress: tqdm | None = None
 
     def collect(self, selector: WorkSelector | PeriodSelector | WorksFileSelector) -> int:
-        return self._collect(selector)
+        # No GroupLock here (unlike origin/main pre-Mongo): the migration to
+        # MongoDB (#102) deleted GroupLock entirely - RawStore writes are now
+        # atomic per-document Mongo inserts, so the coarse file lock this used
+        # to need doesn't exist any more (see docs/architecture/storage.md).
+        with logging_redirect_tqdm():
+            try:
+                return self._collect(selector)
+            finally:
+                if self._progress is not None:
+                    self._progress.close()
+                    self._progress = None
+
+    def _report_saved(self) -> None:
+        if self._progress is None:
+            self._progress = tqdm(
+                desc="Collecting and saving publications from OpenAlex",
+                unit="publication",
+                dynamic_ncols=True,
+                disable=None,
+            )
+        self._progress.update()
 
     def refetch_truncated(self) -> int:
         """Re-fetch full author lists for stored works that carry truncated
@@ -80,6 +104,7 @@ class Collector:
                 return 0
             work = self.client.get_work(selector.work_id)
             self.raw.append("openalex_works", work, {"work_id": selector.work_id})
+            self._report_saved()
             return 1
         if isinstance(selector, WorksFileSelector):
             count = 0
@@ -90,6 +115,7 @@ class Collector:
                 self.raw.append("openalex_works", work, {"work_id": work_id})
                 known_ids.add(work_id.rstrip("/").split("/")[-1].upper())
                 count += 1
+                self._report_saved()
             return count
         count = 0
         for work in self.client.iter_works(ITMO_ROR_ID, selector.date_from, selector.date_to):
@@ -105,4 +131,5 @@ class Collector:
             self.raw.append("openalex_works", work, request)
             known_ids.add(work_id)
             count += 1
+            self._report_saved()
         return count

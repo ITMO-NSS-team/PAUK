@@ -41,7 +41,7 @@ import csv
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pauk.models import Person
@@ -355,7 +355,7 @@ class RussianNamesCatalog:
         return list(merged.values())
 
     @classmethod
-    def load(cls, path: Path) -> "RussianNamesCatalog":
+    def load(cls, path: Path) -> RussianNamesCatalog:
         if not path.exists():
             raise FileNotFoundError(
                 f"russian names catalog not found: {path} — the file is kept out of "
@@ -515,20 +515,21 @@ class RussianNamesCatalog:
 
 class RussianNamesStage(EnrichmentStage):
     name = "russian_names"
+    progress_label = "Authors: resolving Russian names from the staff catalog"
 
     def run(self) -> dict[str, int]:
         catalog = RussianNamesCatalog.load(catalog_path(self.config))
 
         people = list(self.prepared.read_models("persons", Person))
+        candidates = [
+            person for person in people
+            if self.selected("persons", person.id) and self.needs_attempt(person.processing.get(self.name))
+        ]
         changed = matched = transliterated = from_own_spelling = 0
         ambiguous: list[dict] = []
         examined: set[str] = set()
-        for person in people:
-            if not self.selected("persons", person.id):
-                continue
+        for person in self.progress(candidates, total=len(candidates)):
             state = person.processing.get(self.name)
-            if not self.needs_attempt(state):
-                continue
             if not person.name_en:
                 person.processing[self.name] = self._state(state, ProcessingStatus.COMPLETED_EMPTY, 0)
                 changed += 1
@@ -637,6 +638,6 @@ class RussianNamesStage(EnrichmentStage):
         return ProcessingState(
             status=status,
             attempts=(previous.attempts if previous else 0) + 1,
-            finished_at=datetime.now(timezone.utc),
+            finished_at=datetime.now(UTC),
             result_count=result_count,
         )

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tqdm.contrib.logging import logging_redirect_tqdm
+
 from pauk.pipeline.stages import ALL_STAGES
 from pauk.pipeline.stages.base import PreparedSelection
 from pauk.settings import Settings, settings
@@ -22,7 +24,10 @@ class Enricher:
             raise ValueError(f"unknown enrichment stage {stage_name!r}; choose one of: {available}, all")
         classes = ALL_STAGES if stage_name in (None, "all") else (self.stages[stage_name],)
         result: dict[str, int] = {}
-        for stage_class in classes:
-            for key, value in stage_class(self.prepared, self.raw, self.config, selection, force).run().items():
-                result[key] = result.get(key, 0) + value
+        # No GroupLock here (unlike origin/main pre-Mongo): removed in #102,
+        # see the matching note in pauk/pipeline/collect.py::collect.
+        with logging_redirect_tqdm():
+            for stage_class in classes:
+                for key, value in stage_class(self.prepared, self.raw, self.config, selection, force).run().items():
+                    result[key] = result.get(key, 0) + value
         return result

@@ -17,6 +17,7 @@ from pathlib import Path
 
 from pauk.urls import normalize_repo_url
 
+from .audit import AuditedNeo4jClient
 from .client import Neo4jClient, chunked
 from .extract import NODE_REGISTRY, extract_node, extract_relationships
 
@@ -112,7 +113,7 @@ def extract_repo_links(
     return candidate_nodes, repo_edges, candidate_edges, candidate_promotions
 
 
-def load_prepared_rows(client, rows_by_file: dict[str, list[dict]]) -> None:
+def load_prepared_rows(client: Neo4jClient | AuditedNeo4jClient, rows_by_file: dict[str, list[dict]]) -> None:
     """Load prepared entity rows into Neo4j, however they were sourced.
 
     Reads every entity's rows first, accumulating nodes and relationships in
@@ -121,7 +122,8 @@ def load_prepared_rows(client, rows_by_file: dict[str, list[dict]]) -> None:
     then all relationships — both in chunks of client.CHUNK_SIZE.
 
     Args:
-        client: An open Neo4jClient (or a compatible double) to load data into.
+        client: An open Neo4jClient, AuditedNeo4jClient, or a compatible
+            double to load data into.
         rows_by_file: Rows for each of the six prepared entities, keyed by
             the same filenames as the on-disk group layout (departments.jsonl,
             publications.jsonl, repositories.jsonl, github_profiles.jsonl,
@@ -238,7 +240,7 @@ def load_prepared_rows(client, rows_by_file: dict[str, list[dict]]) -> None:
             fold(chunk)
 
 
-def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
+def load_jsonl_dir(client: Neo4jClient | AuditedNeo4jClient, in_dir: Path) -> None:
     """Load every prepared JSONL file found in `in_dir` into Neo4j.
 
     A plain file-directory entry point, independent of the pipeline's own
@@ -248,7 +250,7 @@ def load_jsonl_dir(client: Neo4jClient, in_dir: Path) -> None:
     calls that directly instead of going through a directory.
 
     Args:
-        client: An open Neo4jClient to load data into.
+        client: An open Neo4jClient or AuditedNeo4jClient to load data into.
         in_dir: A prepared-JSONL group directory, e.g.
             data/prepared/<group>/.
     """

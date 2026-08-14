@@ -1,12 +1,13 @@
-﻿from datetime import datetime, timezone
+﻿from datetime import UTC, datetime
 
 from pauk.models import Affiliation, Person, Publication
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.normalize import ITMO_ROR_ID
+from pauk.redaction import redact_text
 from pauk.sources import OpenAlexClient
 from pauk.sources.crossref import CrossrefClient
-from pauk.sources.orcid import OrcidClient
 from pauk.sources.openreview import OpenReviewClient
+from pauk.sources.orcid import OrcidClient
 
 from .base import EnrichmentStage
 
@@ -56,7 +57,7 @@ def _orcid_affiliations(record: dict) -> list[Affiliation]:
             if start:
                 # An open-ended employment covers everything from its start;
                 # the year picker only needs the range to contain the work.
-                years = list(range(int(start), int(end or datetime.now(timezone.utc).year) + 1))
+                years = list(range(int(start), int(end or datetime.now(UTC).year) + 1))
             affiliations.append(Affiliation(name=name, ror=ror or None, years=years, source="orcid"))
     return affiliations
 
@@ -95,6 +96,7 @@ def _affiliation_for_year(affiliations: list[Affiliation], year: int | None) -> 
 
 class PersonsStage(EnrichmentStage):
     name = "persons"
+    progress_label = "Authors: enriching profiles from OpenAlex, ORCID, and OpenReview"
     crossref_name = "crossref"
 
     def _people_in_scope(self, people: list[Person]) -> list[Person]:
@@ -151,7 +153,10 @@ class PersonsStage(EnrichmentStage):
 
         crossref = CrossrefClient(self.config.request_timeout)
         crossref_changed = 0
-        for publication_id, authors in by_publication.items():
+        for publication_id, authors in self.progress(
+            by_publication.items(), total=len(by_publication),
+            label="Publications: finding author ORCIDs via Crossref", unit="publication",
+        ):
             publication = publications.get(publication_id)
             if publication is None or not self.needs_attempt(publication.processing.get(self.crossref_name)):
                 continue
@@ -160,7 +165,7 @@ class PersonsStage(EnrichmentStage):
                 publication.processing[self.crossref_name] = ProcessingState(
                     status=ProcessingStatus.NOT_APPLICABLE,
                     attempts=(old_state.attempts if old_state else 0) + 1,
-                    finished_at=datetime.now(timezone.utc), result_count=0,
+                    finished_at=datetime.now(UTC), result_count=0,
                 )
                 crossref_changed += 1
                 continue
@@ -181,13 +186,13 @@ class PersonsStage(EnrichmentStage):
                 publication.processing[self.crossref_name] = ProcessingState(
                     status=ProcessingStatus.COMPLETED if matches_count else ProcessingStatus.COMPLETED_EMPTY,
                     attempts=(old_state.attempts if old_state else 0) + 1,
-                    finished_at=datetime.now(timezone.utc), result_count=matches_count,
+                    finished_at=datetime.now(UTC), result_count=matches_count,
                 )
             except Exception as exc:
                 publication.processing[self.crossref_name] = ProcessingState(
                     status=ProcessingStatus.FAILED,
                     attempts=(old_state.attempts if old_state else 0) + 1,
-                    finished_at=datetime.now(timezone.utc), error=str(exc),
+                    finished_at=datetime.now(UTC), error=redact_text(exc),
                 )
             crossref_changed += 1
 
@@ -199,7 +204,7 @@ class PersonsStage(EnrichmentStage):
             self.config.openreview_password,
         )
         changed = 0
-        for person in candidates:
+        for person in self.progress(candidates, total=len(candidates)):
             state = person.processing.get(self.name)
             try:
                 before = person.model_dump(exclude={"processing", "authored", "contributed_to"})
@@ -246,13 +251,13 @@ class PersonsStage(EnrichmentStage):
                 person.processing[self.name] = ProcessingState(
                     status=ProcessingStatus.COMPLETED if result_count else ProcessingStatus.COMPLETED_EMPTY,
                     attempts=(state.attempts if state else 0) + 1,
-                    finished_at=datetime.now(timezone.utc), result_count=result_count,
+                    finished_at=datetime.now(UTC), result_count=result_count,
                 )
             except Exception as exc:
                 person.processing[self.name] = ProcessingState(
                     status=ProcessingStatus.FAILED,
                     attempts=(state.attempts if state else 0) + 1,
-                    finished_at=datetime.now(timezone.utc), error=str(exc),
+                    finished_at=datetime.now(UTC), error=redact_text(exc),
                 )
             changed += 1
         self.prepared.write_models("persons", people)
