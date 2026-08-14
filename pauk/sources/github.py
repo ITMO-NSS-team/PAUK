@@ -98,3 +98,21 @@ class GitHubClient(HttpClient):
 
     def get_user(self, login: str) -> dict:
         return self.get_json(f"{self.API_URL}/users/{login}")
+
+    def user_repositories(self, login: str, limit: int) -> list[dict]:
+        """Repositories the account owns, most recently pushed first.
+
+        Forks are dropped: they carry the upstream's contributors, not this
+        account's, and following them would harvest strangers. Sorting by
+        update time means a truncated list keeps the live work.
+        """
+        owned: list[dict] = []
+        for repository in self._paged(f"{self.API_URL}/users/{login}/repos",
+                                      pages=(limit // 100) + 1,
+                                      type="owner", sort="updated"):
+            if repository.get("fork"):
+                continue
+            owned.append(repository)
+            if len(owned) >= limit:
+                break
+        return owned

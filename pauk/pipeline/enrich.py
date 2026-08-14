@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from tqdm.contrib.logging import logging_redirect_tqdm
 
-from pauk.pipeline.stages import ALL_STAGES
+from pauk.pipeline.stages import ALL_STAGES, OPTIONAL_STAGES
 from pauk.pipeline.stages.base import PreparedSelection
 from pauk.settings import Settings, settings
 from pauk.storage import PreparedStore, RawStore
@@ -14,7 +14,10 @@ class Enricher:
         self.prepared = prepared
         self.raw = raw
         self.config = config or settings
-        self.stages = {stage.name: stage for stage in ALL_STAGES}
+        # Optional stages run only when named: they are expensive and
+        # depend on what an earlier run confirmed, so a full pass must
+        # not drag them along.
+        self.stages = {stage.name: stage for stage in (*ALL_STAGES, *OPTIONAL_STAGES)}
 
     def run(self, stage_name: str | None = None,
             selection: PreparedSelection | None = None,

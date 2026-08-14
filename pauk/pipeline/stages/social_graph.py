@@ -1,0 +1,173 @@
+"""Find ITMO accounts through the repositories a paper never cited.
+
+The harvest reaches only people who worked on code a paper linked to.
+Most employees who write code never had it cited: the repository sits on
+their own account, or on a lab's, with nothing pointing at it from a
+publication.
+
+This walks outward from what is already known. Every confirmed account and
+every ITMO-affiliated organization is a seed; their public repositories are
+harvested for the people behind them, and those people are matched like any
+other candidate. A person found this way becomes a seed once github_match confirms them,
+so running the two in turn walks the graph outward one ring at a time.
+
+An organization is only followed when ITMO is behind it — either it employs
+someone already matched, or it says so in its profile. The alternative is
+following every organization whose library a paper cited, which means
+walking into google and microsoft for nothing.
+
+One run is one ring: seeds are the accounts already confirmed, never the
+candidates this run turned up — those are unproven, and following 400 of
+them would cost twelve thousand repositories. Re-run after github_match to
+walk the next ring; the walk has converged when a run adds nothing.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+
+from pauk.models import GitHubProfile, Person, Repository
+from pauk.sources.github import GitHubClient
+
+from .base import EnrichmentStage
+from .repositories import COMMIT_PAGES, _git_identities, _is_person
+
+logger = logging.getLogger(__name__)
+
+# Repositories taken from one seed, newest first. A prolific account has
+# hundreds, and the ones it touched recently are the ones with people on
+# them; the rest are forks and abandoned coursework.
+MAX_REPOS_PER_SEED = 30
+
+ITMO_IN_TEXT = re.compile(r"\bitmo\b|saint[- ]petersburg|sankt", re.I)
+
+
+def is_itmo_organization(profile: GitHubProfile | None, confirmed: set[str],
+                         members: set[str]) -> bool:
+    """Whether an organization is ITMO's, and so worth walking into.
+
+    Either someone already matched works there, or the organization says
+    ITMO in its own profile. Without this every library a paper cites — and
+    google is one of them — becomes a seed worth hundreds of calls.
+    """
+    if members & confirmed:
+        return True
+    if profile is None:
+        return False
+    text = f"{profile.name or ''} {profile.description or ''} {profile.location or ''}"
+    return bool(ITMO_IN_TEXT.search(text))
+
+
+class SocialGraphStage(EnrichmentStage):
+    """Harvests repositories of accounts already tied to ITMO."""
+
+    name = "social_graph"
+
+    def _seeds(self, people: list[Person], repositories: list[Repository],
+               profiles: dict[str, GitHubProfile]) -> list[str]:
+        confirmed = {person.github for person in people if person.github}
+        members_of: dict[str, set[str]] = {}
+        for repository in repositories:
+            if repository.owner_login:
+                members_of.setdefault(repository.owner_login, set()).update(
+                    repository.contributors)
+
+        organizations = [
+            login for login, members in members_of.items()
+            if (profiles.get(f"github_{login.lower()}") or GitHubProfile(
+                id="", login=login)).type == "organization"
+            and is_itmo_organization(profiles.get(f"github_{login.lower()}"),
+                                     confirmed, members)
+        ]
+        return sorted(confirmed | set(organizations))
+
+    def _harvest(self, client: GitHubClient, owner: str, name: str, url: str,
+                 profiles: dict[str, GitHubProfile]) -> int:
+        """Accounts behind one repository, added to the candidate pool."""
+        try:
+            payload = client.get_repository(owner, name)
+            contributors = client.contributors(owner, name)
+            identities = _git_identities(client.commits(owner, name, COMMIT_PAGES))
+        except Exception:
+            return 0
+        self.raw.append("github", payload, {"repository": url})
+
+        owner_data = payload.get("owner") or {}
+        logins = set()
+        if _is_person(owner_data.get("login") or "", owner_data.get("type")):
+            logins.add(owner_data["login"])
+        for contributor in contributors:
+            login = contributor.get("login") or ""
+            if _is_person(login, contributor.get("type")):
+                logins.add(login)
+
+        added = 0
+        for login in sorted(logins):
+            profile_id = f"github_{login.lower()}"
+            emails, commit_names = identities.get(login, (set(), set()))
+            known = profiles.get(profile_id)
+            if known is None:
+                try:
+                    user = client.get_user(login)
+                except Exception:
+                    user = {}
+                self.raw.append("github_user", user, {"login": login})
+                added += 1
+            else:
+                user = {}
+            profile_email = (user.get("email") or "").strip().lower()
+            if profile_email and "noreply" not in profile_email:
+                emails = emails | {profile_email}
+            profiles[profile_id] = GitHubProfile(
+                id=profile_id,
+                login=login,
+                name=user.get("name") or (known.name if known else None),
+                html_url=user.get("html_url") or (known.html_url if known else None),
+                description=user.get("bio") or (known.description if known else None),
+                location=user.get("location") or (known.location if known else None),
+                company=user.get("company") or (known.company if known else None),
+                type=(user.get("type") or "").lower() or (known.type if known else None),
+                emails=sorted(set(known.emails if known else []) | emails),
+                commit_names=sorted(set(known.commit_names if known else []) | commit_names),
+                repos=sorted(set(known.repos if known else []) | {url}),
+            )
+        return added
+
+    def run(self) -> dict[str, int]:
+        people = list(self.prepared.read_models("persons", Person))
+        repositories = list(self.prepared.read_models("repositories", Repository))
+        profiles = {profile.id: profile
+                    for profile in self.prepared.read_models("github_profiles", GitHubProfile)}
+        client = GitHubClient(self.config.request_timeout, self.config.github_token)
+
+        # Repositories already harvested, by the URL they are keyed on.
+        visited = {repository.url for repository in repositories}
+        seeds = self._seeds(people, repositories, profiles)
+        logger.info("social_graph: %d seeds", len(seeds))
+
+        fresh: list[tuple[str, str, str]] = []
+        for seed in seeds:
+            try:
+                owned = client.user_repositories(seed, MAX_REPOS_PER_SEED)
+            except Exception:
+                continue
+            for repository in owned:
+                url = (repository.get("html_url") or "").rstrip("/")
+                if not url or url in visited:
+                    continue
+                parts = url.split("github.com/")[-1].split("/")
+                if len(parts) != 2:
+                    continue
+                visited.add(url)
+                fresh.append((parts[0], parts[1], url))
+
+        added_profiles = 0
+        for owner, name, url in fresh:
+            added_profiles += self._harvest(client, owner, name, url, profiles)
+        walked = len(fresh)
+
+        self.prepared.write_models("github_profiles", profiles.values())
+        logger.info("social_graph: %d repositories walked, %d new accounts",
+                    walked, added_profiles)
+        return {"social_repositories": walked, "social_accounts": added_profiles}
