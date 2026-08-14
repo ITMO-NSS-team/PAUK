@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import UTC, datetime
 
 from pauk.models import Affiliation, Person, Publication
@@ -37,6 +38,71 @@ def _openalex_affiliations(payload: dict) -> list[Affiliation]:
                 source="openalex",
             ))
     return affiliations
+
+
+# Where a researcher-url points, and which field of the person it fills.
+# A GitHub link here is the strongest tie there is: the author stated it
+# themselves, so no matching is involved.
+PROFILE_HOSTS = (
+    ("github.com", "github"),
+    ("scholar.google", "google_scholar"),
+    ("gitlab.com", "gitlab_username"),
+    ("linkedin.com", "linkedin"),
+)
+
+# Directories and indexes an author lists beside their own page. None of
+# them is a homepage, and none carries an address worth collecting.
+NOT_A_HOMEPAGE = (
+    "researchgate.net", "webofscience.com", "scopus.com", "publons.com",
+    "twitter.com", "x.com", "orcid.org", "ncbi.nlm.nih.gov", "semanticscholar",
+    "dblp.org", "facebook", "youtube", "t.me", "vk.com",
+)
+
+
+def _github_login(url: str) -> str | None:
+    """The account name inside a GitHub URL.
+
+    Authors paste the address bar as it stands, tab and all —
+    "github.com/coralr-1?tab=repositories" — and a link to a repository
+    rather than a profile names no account at all.
+    """
+    match = re.match(r"https?://(?:www\.)?github\.com/([A-Za-z0-9-]+)/?$",
+                     url.split("?")[0].split("#")[0].strip())
+    return match.group(1) if match else None
+
+
+def _orcid_profiles(record: dict) -> dict[str, str]:
+    """Profiles the author linked from their own ORCID record.
+
+    Only the first of each kind is taken: a second GitHub link is another
+    account of theirs, and choosing between them is guesswork the person
+    did not ask for.
+    """
+    person = record.get("person") or {}
+    found: dict[str, str] = {}
+    for entry in (person.get("researcher-urls") or {}).get("researcher-url", []) or []:
+        url = ((entry.get("url") or {}).get("value") or "").strip()
+        if not url:
+            continue
+        lowered = url.lower()
+        for host, field in PROFILE_HOSTS:
+            if host in lowered:
+                found.setdefault(field, url)
+                break
+        else:
+            if not any(host in lowered for host in NOT_A_HOMEPAGE):
+                found.setdefault("homepage", url)
+    return found
+
+
+def _orcid_other_names(record: dict, known: list[str]) -> list[str]:
+    """Every alternative spelling ORCID holds for the author."""
+    person = record.get("person") or {}
+    name = person.get("name") or {}
+    found = {(name.get("credit-name") or {}).get("value")}
+    found |= {entry.get("content")
+              for entry in (person.get("other-names") or {}).get("other-name", [])}
+    return sorted({value.strip() for value in {*known, *found} if value and value.strip()})
 
 
 def _orcid_affiliations(record: dict) -> list[Affiliation]:
@@ -289,6 +355,16 @@ class PersonsStage(EnrichmentStage):
                             person.emails = sorted(set(person.emails) | set(stated))
                             if not person.email and stated:
                                 person.email = stated[0]
+                            # Names the author publishes under besides the one
+                            # ORCID shows: a credit name they prefer, and the
+                            # spellings they registered themselves. A commit
+                            # signed "Dangana, RS" is only recognisable through
+                            # these.
+                            person.other_names = _orcid_other_names(payload, person.other_names)
+                            for field, url in _orcid_profiles(payload).items():
+                                value = _github_login(url) if field == "github" else url
+                                if value and not getattr(person, field):
+                                    setattr(person, field, value)
                             person.affiliations = _merge_affiliations(person.affiliations, _orcid_affiliations(payload))
                         person.processing[source] = ProcessingState(status=ProcessingStatus.COMPLETED, request_key=key,
                             attempts=self._next_attempt(state), finished_at=datetime.now(UTC))
