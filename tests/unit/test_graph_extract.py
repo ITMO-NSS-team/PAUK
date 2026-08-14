@@ -64,6 +64,24 @@ class ExtractNodeTest(unittest.TestCase):
         ):
             self.assertNotIn(stray, props, f"{stray} leaked into node properties")
 
+    def test_github_profile_publishes_the_employer_but_not_the_matching_data(self):
+        # company sits beside location and description as something the
+        # account states about itself. The emails and commit names behind
+        # it are evidence the matcher weighs, not facts about the account,
+        # and they are addresses of living people — they stay out of the
+        # graph.
+        labels, (node_id, props) = extract_node({
+            "id": "github_ipetrov", "login": "ipetrov", "name": "Ivan Petrov",
+            "company": "ITMO University", "location": "Saint-Petersburg",
+            "type": "user", "emails": ["ivan@itmo.ru"],
+            "commit_names": ["Ivan Petrov"], "repos": ["https://github.com/x/repo"],
+        }, NODE_REGISTRY["github_profile"])
+        self.assertEqual(labels, "GitHubProfile")
+        self.assertEqual(node_id, "github_ipetrov")
+        self.assertEqual(props.get("company"), "ITMO University")
+        for stray in ("emails", "commit_names", "repos", "id"):
+            self.assertNotIn(stray, props, f"{stray} leaked into node properties")
+
     def test_department_node_has_no_relationships(self):
         labels, (node_id, props) = extract_node(DEPARTMENT_ROW, NODE_REGISTRY["department"])
         self.assertEqual(labels, "Department")
