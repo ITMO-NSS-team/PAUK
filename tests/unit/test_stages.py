@@ -442,11 +442,9 @@ class HarvestAccountsTest(unittest.TestCase):
         github_client.return_value.contributors.return_value = list(contributors)
         github_client.return_value.commits.return_value = list(commits)
         github_client.return_value.get_user.side_effect = lambda login: (users or {}).get(login, {})
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        root = Path(tmp.name)
-        prepared = PreparedStore(root / "prepared", "sample")
-        raw = RawStore(root / "raw", "sample")
+        db = mongomock.MongoClient()["pauk_test"]
+        prepared = PreparedStore(db, "sample")
+        raw = RawStore(db, "sample")
         prepared.write_models("repo_links", [
             RepoLink(publication_id="W1", links=[CodeLink(url="https://github.com/org/repo")]),
         ])
@@ -508,11 +506,9 @@ class HarvestAccountsTest(unittest.TestCase):
         # nested owner carries only a login and a type. Writing it over the
         # profile instead of merging drops the emails, names and repository
         # list the same person left on every repository walked before.
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        root = Path(tmp.name)
-        prepared = PreparedStore(root / "prepared", "sample")
-        raw = RawStore(root / "raw", "sample")
+        db = mongomock.MongoClient()["pauk_test"]
+        prepared = PreparedStore(db, "sample")
+        raw = RawStore(db, "sample")
         prepared.write_models("repo_links", [
             RepoLink(publication_id="W1", links=[
                 CodeLink(url="https://github.com/alice/first"),

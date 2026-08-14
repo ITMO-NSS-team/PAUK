@@ -403,7 +403,9 @@ class GitHubMatchStage(EnrichmentStage):
             )
 
         self.prepared.write_models("persons", people)
-        journal_path = self.prepared.group_dir / MATCHES_FILENAME
+        # Same place dedup keeps its review journal: prepared data lives in
+        # MongoDB since #102, and a journal a human reads is a file.
+        journal_path = self.config.audit_dir / self.prepared.group / MATCHES_FILENAME
         with AtomicWriter(journal_path) as handle:
             for row in decisions:
                 handle.write(json.dumps(row, ensure_ascii=False) + "\n")

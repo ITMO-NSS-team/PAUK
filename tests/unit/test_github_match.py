@@ -3,6 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import mongomock
+
 from pauk.models import GitHubProfile, Person, Repository
 from pauk.pipeline.stages.github_match import (
     MATCHES_FILENAME,
@@ -200,16 +202,18 @@ class GitHubMatchStageTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         config = Settings(data_dir=Path(tmp.name))
-        self.prepared = PreparedStore(config.prepared_dir, "sample")
-        raw = RawStore(config.raw_dir, "sample")
+        db = mongomock.MongoClient()["pauk_test"]
+        self.prepared = PreparedStore(db, "sample")
+        raw = RawStore(db, "sample")
         self.prepared.write_models("persons", people)
         self.prepared.write_models("github_profiles", profiles)
         self.prepared.write_models("repositories", repositories)
+        self.config = config
         result = GitHubMatchStage(self.prepared, raw, config).run()
         return result, {p.id: p for p in self.prepared.read_models("persons", Person)}
 
     def journal(self):
-        path = self.prepared.group_dir / MATCHES_FILENAME
+        path = self.config.audit_dir / self.prepared.group / MATCHES_FILENAME
         return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
                 if line.strip()]
 

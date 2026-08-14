@@ -3,6 +3,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import mongomock
+
 from pauk.models import Person, Publication
 from pauk.pipeline.stages.emails import (
     EmailsStage,
@@ -110,11 +112,13 @@ class EmailsStageTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         config = Settings(data_dir=Path(tmp.name))
-        self.prepared = PreparedStore(config.prepared_dir, "sample")
-        raw = RawStore(config.raw_dir, "sample")
+        db = mongomock.MongoClient()["pauk_test"]
+        self.prepared = PreparedStore(db, "sample")
+        self.raw = RawStore(db, "sample")
+        self.config = config
         self.prepared.write_models("persons", people)
         self.prepared.write_models("publications", publications)
-        result = EmailsStage(self.prepared, raw, config).run()
+        result = EmailsStage(self.prepared, self.raw, config).run()
         return result, {p.id: p for p in self.prepared.read_models("persons", Person)}
 
     def test_an_address_in_the_paper_reaches_its_author(self):
@@ -214,8 +218,7 @@ class EmailsStageTest(unittest.TestCase):
         people = [person("A1", "Alexey Dukhanov", works=["W1"])]
         publications = [publication("W1", "dukhanov@itmo.ru")]
         self.run_stage(people, publications)
-        result = EmailsStage(self.prepared, RawStore(Path(self.prepared.group_dir), "sample"),
-                             Settings(data_dir=Path(self.prepared.group_dir))).run()
+        result = EmailsStage(self.prepared, self.raw, self.config).run()
         self.assertEqual(result["publications"], 0)
 
 

@@ -3,6 +3,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import mongomock
+
 from pauk.models import GitHubProfile, Person, Repository
 from pauk.pipeline.stages.social_graph import SocialGraphStage, is_itmo_organization
 from pauk.settings import Settings
@@ -58,8 +60,9 @@ class SocialGraphStageTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         config = Settings(data_dir=Path(tmp.name))
-        self.prepared = PreparedStore(config.prepared_dir, "sample")
-        self.raw = RawStore(config.raw_dir, "sample")
+        db = mongomock.MongoClient()["pauk_test"]
+        self.prepared = PreparedStore(db, "sample")
+        self.raw = RawStore(db, "sample")
         self.config = config
         self.prepared.write_models("persons", people)
         self.prepared.write_models("repositories", repositories)
