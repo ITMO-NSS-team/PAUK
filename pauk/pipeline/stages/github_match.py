@@ -40,7 +40,7 @@ import unicodedata
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
 
-from pauk.models import GitHubProfile, Person, Publication, Repository
+from pauk.models import Contribution, GitHubProfile, Person, Publication, Repository
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.storage.atomic import AtomicWriter
 
@@ -74,6 +74,13 @@ SIGNAL_WEIGHTS = {
 
 # Signals that stand behind a name without identifying anyone by themselves.
 CORROBORATING = ("itmo_profile", "itmo_email", "login_surname", "owner", "org_itmo")
+
+# Signals that tie an account to a person rather than to the university:
+# an address only they use, their surname in the login, their ownership of
+# the repository. A match resting on any of these, or on the bridge from a
+# paper they wrote, is one to trust; the rest are worth showing but worth
+# marking too.
+STRONG = ("email_exact", "login_surname", "owner")
 
 # ITMO in a profile, as a word: "RITMO, University of Oslo" is a Norwegian
 # centre whose name contains the same four letters.
@@ -165,6 +172,16 @@ def score_account(account: dict, author: dict, email_hit: bool) -> tuple[float, 
     return score, signals, evidence
 
 
+def confidence(signals: list[str], in_bridge: bool) -> str:
+    """How much the match rests on evidence about this person specifically.
+
+    "probable" is not a doubt about the decision — those go to review — but
+    a note for whoever looks at the graph: this one stands on a name plus
+    an ITMO-wide signal, not on anything only this person has.
+    """
+    return "high" if in_bridge or any(signal in signals for signal in STRONG) else "probable"
+
+
 def decide(signals: list[str], in_bridge: bool) -> str:
     """What to do with a pair: merge it, show it to a human, or drop it."""
     if "email_exact" in signals:
@@ -238,7 +255,10 @@ class GitHubMatchStage(EnrichmentStage):
         for person in people:
             if not person.is_itmo:
                 continue
-            names = {_norm_name(name) for name in (person.name_en, *person.name_variants)}
+            # OpenAlex spellings and the ones the author registered on
+            # ORCID: an account may be signed with any of them.
+            names = {_norm_name(name) for name in
+                     (person.name_en, *person.name_variants, *person.other_names)}
             authors[person.id] = {
                 "names": {name for name in names if name},
                 # Every address the person is known by, not just the one on
@@ -324,6 +344,7 @@ class GitHubMatchStage(EnrichmentStage):
                     len(accounts), len(authors))
 
         by_id = {person.id: person for person in people}
+        repositories_by_url = {repository.url: repository for repository in repositories}
         decisions: list[dict] = []
         # Sorted so a run does not depend on dictionary order: two runs over
         # the same data must reach the same decisions.
@@ -341,6 +362,7 @@ class GitHubMatchStage(EnrichmentStage):
                 "signals": signals,
                 "evidence": evidence,
                 "decision": decision,
+                "confidence": confidence(signals, evidence.get("in_bridge", False)),
                 "repos": sorted(accounts[login]["repos"]),
             })
 
@@ -362,6 +384,17 @@ class GitHubMatchStage(EnrichmentStage):
                 person.email = pick_email(accounts[row["login"]]["emails"])
                 if person.email:
                     filled_emails += 1
+            # The account's repositories are this person's work, and the
+            # graph draws CONTRIBUTED_TO from it. Ownership is the role when
+            # the repository is theirs.
+            for url in accounts[row["login"]]["repos"]:
+                repository = repositories_by_url.get(url)
+                if repository is None:
+                    continue
+                role = "owner" if repository.owner_login == row["login"] else "contributor"
+                contribution = Contribution(repository_id=repository.id, role=role)
+                if contribution not in person.contributed_to:
+                    person.contributed_to.append(contribution)
             person.processing[self.name] = ProcessingState(
                 status=ProcessingStatus.COMPLETED,
                 attempts=(state.attempts if state else 0) + 1,

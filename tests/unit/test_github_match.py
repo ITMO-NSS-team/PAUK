@@ -7,19 +7,22 @@ from pauk.models import GitHubProfile, Person, Repository
 from pauk.pipeline.stages.github_match import (
     MATCHES_FILENAME,
     GitHubMatchStage,
+    confidence,
     decide,
     login_carries_surname,
     name_similarity,
     pick_email,
+    score_account,
 )
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
 
 
-def person(pid, name, *, itmo=True, email=None, emails=(), variants=(), works=(), github=None):
+def person(pid, name, *, itmo=True, email=None, emails=(), variants=(), other=(),
+           works=(), github=None):
     return Person(
         id=pid, openalex_id=pid, is_itmo=itmo, name_en=name, email=email, github=github,
-        emails=list(emails), name_variants=list(variants),
+        emails=list(emails), name_variants=list(variants), other_names=list(other),
         authored=[{"publication_id": work, "position": 1} for work in works],
     )
 
@@ -98,6 +101,100 @@ class DecideTest(unittest.TestCase):
         self.assertEqual(decide(["owner", "itmo_profile", "org_itmo"], in_bridge=True), "rejected")
 
 
+class ScoreAccountTest(unittest.TestCase):
+    """Every signal the matcher can raise, raised from the fields it reads.
+
+    decide() is tested on signal lists written by hand. This covers the
+    step before it: turning a harvested account and an author into that
+    list. A signal that stopped being raised would leave decide() correct
+    and the matcher blind.
+    """
+
+    @staticmethod
+    def account(login="ipetrov", *, names=(), emails=(), itmo_text=False,
+                org_itmo=False, is_owner=False):
+        return {"login": login, "url": "", "names": set(names), "emails": set(emails),
+                "itmo_text": itmo_text, "org_itmo": org_itmo, "is_owner": is_owner,
+                "publication_ids": set(), "repos": set()}
+
+    @staticmethod
+    def author(*, names=(), emails=(), surnames=()):
+        return {"names": set(names), "emails": set(emails), "surnames": set(surnames)}
+
+    def signals(self, account, author, email_hit=False):
+        return score_account(account, author, email_hit)[1]
+
+    def test_a_shared_address_is_the_strongest_signal(self):
+        score, signals, evidence = score_account(
+            self.account(emails={"ivan@itmo.ru"}), self.author(emails={"ivan@itmo.ru"}),
+            email_hit=True)
+        self.assertIn("email_exact", signals)
+        self.assertEqual(evidence["email"], ["ivan@itmo.ru"])
+        self.assertEqual(score, 1.0)
+
+    def test_the_same_name_on_both_sides(self):
+        signals = self.signals(self.account(names={"ivan petrov"}),
+                               self.author(names={"petrov ivan"}))
+        self.assertIn("name_exact", signals)
+        self.assertNotIn("name_fuzzy", signals)
+
+    def test_a_name_that_is_close_but_not_the_same(self):
+        # One letter apart: the transliterations an author publishes under.
+        signals, evidence = score_account(
+            self.account(names={"aleksandr dukhanov"}),
+            self.author(names={"aleksander dukhanov"}), False)[1:]
+        self.assertIn("name_fuzzy", signals)
+        self.assertNotIn("name_exact", signals)
+        self.assertGreaterEqual(evidence["name_similarity"], 0.86)
+
+    def test_a_name_too_far_apart_raises_nothing(self):
+        signals = self.signals(self.account(names={"ivan petrov"}),
+                               self.author(names={"maria sidorova"}))
+        self.assertEqual(signals, [])
+
+    def test_itmo_anywhere_in_the_profile_text(self):
+        # company, location and bio are read as one string, so any of the
+        # three raises it.
+        for field in ("company", "location", "bio"):
+            with self.subTest(field=field):
+                self.assertIn("itmo_profile",
+                              self.signals(self.account(itmo_text=True), self.author()))
+
+    def test_a_university_address_on_the_account(self):
+        self.assertIn("itmo_email", self.signals(
+            self.account(emails={"someone@itmo.ru"}), self.author()))
+
+    def test_a_login_built_from_the_authors_surname(self):
+        self.assertIn("login_surname", self.signals(
+            self.account(login="apetrov"), self.author(surnames={"petrov"})))
+
+    def test_owning_the_repository(self):
+        self.assertIn("owner", self.signals(self.account(is_owner=True), self.author()))
+
+    def test_a_repository_under_an_itmo_organization(self):
+        self.assertIn("org_itmo", self.signals(self.account(org_itmo=True), self.author()))
+
+    def test_weights_add_up_and_stop_at_one(self):
+        score = score_account(
+            self.account(login="petrov", names={"ivan petrov"}, emails={"p@itmo.ru"},
+                         itmo_text=True, org_itmo=True, is_owner=True),
+            self.author(names={"ivan petrov"}, surnames={"petrov"}), True)[0]
+        self.assertEqual(score, 1.0)
+
+
+class ConfidenceTest(unittest.TestCase):
+    def test_evidence_about_this_person_makes_it_high(self):
+        self.assertEqual(confidence(["email_exact"], in_bridge=False), "high")
+        self.assertEqual(confidence(["name_exact", "owner"], in_bridge=False), "high")
+        self.assertEqual(confidence(["name_exact"], in_bridge=True), "high")
+
+    def test_a_name_plus_a_university_wide_signal_is_only_probable(self):
+        # Nothing here belongs to this person alone: the name is shared and
+        # ITMO in a profile is shared by thousands.
+        self.assertEqual(confidence(["name_exact", "itmo_profile"], in_bridge=False), "probable")
+        self.assertEqual(confidence(["name_exact", "org_itmo"], in_bridge=False), "probable")
+
+
 class GitHubMatchStageTest(unittest.TestCase):
     def run_stage(self, people, profiles, repositories):
         tmp = tempfile.TemporaryDirectory()
@@ -138,6 +235,18 @@ class GitHubMatchStageTest(unittest.TestCase):
         )
         self.assertEqual(result["github_matched"], 1)
         self.assertEqual(people["A1"].github, "someone")
+
+    def test_a_spelling_registered_on_orcid_identifies_the_account(self):
+        # OpenAlex knows the author as "R. Dangana"; the account is signed
+        # with the name they registered on ORCID themselves.
+        result, people = self.run_stage(
+            [person("A1", "R. Dangana", other=["Reuben Samson Dangana"], works=["W1"])],
+            [profile("rsd", name="Reuben Samson Dangana",
+                     repos=["https://github.com/rsd/tool"])],
+            [repository("rsd", "tool", works=["W1"])],
+        )
+        self.assertEqual(result["github_matched"], 1)
+        self.assertEqual(people["A1"].github, "rsd")
 
     def test_a_name_on_a_cited_repository_matches(self):
         result, people = self.run_stage(
@@ -209,6 +318,25 @@ class GitHubMatchStageTest(unittest.TestCase):
             [repository("ipetrov", "tool", works=["W1"])],
         )
         self.assertEqual(people["A1"].email, "published@orcid.org")
+
+    def test_a_match_records_the_repositories_as_the_persons_work(self):
+        _result, people = self.run_stage(
+            [person("A1", "Ivan Petrov", works=["W1"])],
+            [profile("ipetrov", name="Ivan Petrov",
+                     repos=["https://github.com/ipetrov/own", "https://github.com/lab/shared"])],
+            [repository("ipetrov", "own", works=["W1"]), repository("lab", "shared", works=["W1"])],
+        )
+        roles = {c.repository_id: c.role for c in people["A1"].contributed_to}
+        self.assertEqual(roles, {"github_ipetrov_own": "owner",
+                                 "github_lab_shared": "contributor"})
+
+    def test_the_journal_records_how_much_the_match_rests_on(self):
+        self.run_stage(
+            [person("A1", "Ivan Petrov", email="ivan@itmo.ru")],
+            [profile("someone", emails=["ivan@itmo.ru"])],
+            [],
+        )
+        self.assertEqual(self.journal()[0]["confidence"], "high")
 
     def test_an_existing_login_is_not_overwritten(self):
         _result, people = self.run_stage(
