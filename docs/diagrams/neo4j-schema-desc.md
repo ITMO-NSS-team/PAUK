@@ -22,19 +22,37 @@
 * **`openalex_id`** (`String`) — идентификатор в OpenAlex.
 * **`orcid`** (`String`) — идентификатор ORCID.
 * **`name_en`** (`String`) — имя на английском.
-* **`name_ru`** (`String`) — полное имя на русском.
-* **`first_name_ru`** / **`second_name_ru`** / **`surname_ru`** (`String`) — имя / отчество / фамилия (только у ИТМО-персон).
 * **`name_variants`** (`List[String]`) — варианты написания имени.
-* **`email`** (`String`) — e-mail.
+* **`email`** (`String`) — адрес e-mail.
+* **`first_name_ru`** (`String`) — имя на русском (только у ИТМО-персон).
+* **`second_name_ru`** (`String`) — отчество на русском (только у ИТМО-персон).
+* **`surname_ru`** (`String`) — фамилия на русском (только у ИТМО-персон).
 * **`degree`** (`String`) — учёная степень (только у ИТМО-персон).
-* **`github`** / **`google_scholar`** / **`openreview`** / **`thesis`** (`String`) — ссылки на профили (только у ИТМО-персон).
-* **`scopus_id`** / **`researcher_id`** / **`dblp_id`** (`String`) — внешние идентификаторы.
-* **`homepage`** / **`gitlab_username`** / **`linkedin`** / **`twitter`** / **`wikipedia`** (`String`) — прочие ссылки.
-* **`biography`** (`String`) — биография; **`country`** (`String`) — страна.
-* **`works_count`** / **`cited_by_count`** / **`h_index`** / **`i10_index`** (`Integer`) — библиометрия.
+* **`github`** (`String`) — профиль GitHub (только у ИТМО-персон).
+* **`google_scholar`** (`String`) — профиль Google Scholar (только у ИТМО-персон).
+* **`openreview`** (`String`) — профиль OpenReview (только у ИТМО-персон).
+* **`thesis`** (`String`) — диссертация / квалификационная работа (только у ИТМО-персон).
+* **`scopus_id`** (`String`) — идентификатор Scopus.
+* **`researcher_id`** (`String`) — Web of Science ResearcherID.
+* **`dblp_id`** (`String`) — идентификатор dblp.
+* **`name_ru`** (`String`) — полное имя на русском.
+* **`other_names`** (`List[String]`) — другие имена / псевдонимы.
+* **`biography`** (`String`) — биография.
+* **`country`** (`String`) — страна.
+* **`homepage`** (`String`) — личный веб-сайт.
+* **`gitlab_username`** (`String`) — имя пользователя GitLab.
+* **`linkedin`** (`String`) — профиль LinkedIn.
+* **`twitter`** (`String`) — профиль Twitter/X.
+* **`wikipedia`** (`String`) — страница в Википедии.
+* **`works_count`** (`Integer`) — количество работ.
+* **`cited_by_count`** (`Integer`) — общее количество цитирований.
+* **`h_index`** (`Integer`) — индекс Хирша.
+* **`i10_index`** (`Integer`) — i10-индекс.
 * **`counts_by_year`** (`JSON`) — статистика по годам.
-* **`affiliations`** (`JSON`) — сырые аффилиации; **`other_names`** (`List[String]`) — прочие имена.
-* **`status`** (`String`), **`created_at`** / **`enriched_at`** (`Timestamp`) — служебные.
+* **`status`** (`String`) — статус сотрудника / исследователя.
+* **`created_at`** (`Timestamp`) — время создания записи.
+* **`enriched_at`** (`Timestamp`) — время последнего обогащения данных.
+* **`affiliations`** (`JSON`) — сырые аффилиации.
 * **`merged_ids`** (`List[String]`) — id, схлопнутые в этот узел при дедупе.
 
 ---
@@ -45,14 +63,22 @@
 > Научная публикация.
 
 * **`id`** (`ID`, *Unique*) — идентификатор публикации (голый OpenAlex work ID).
-* **`title`** (`String`) — название; **`type`** (`String`) — тип работы.
-* **`fields`** (`List[String]`) — области; **`journal`** (`String`) — площадка издания.
-* **`doi`** (`String`) — DOI; **`openalex_url`** (`String`) — ссылка в OpenAlex.
-* **`publication_date`** (`Date`) / **`year`** (`Integer`) — дата / год.
-* **`has_code`** (`Boolean`) / **`code_url`** (`String`) — найдена ли ссылка на код и какая.
-* **`abstract`** (`String`) / **`full_text`** (`String`) — аннотация / полный текст (если извлечён из PDF).
-* **`pdf_url`** (`String`), **`funding`** (`JSON`), **`versions`** (`JSON`) — прочее.
-* **`merged_ids`** (`List[String]`) — схлопнутые при дедупе id.
+* **`title`** (`String`) — название публикации.
+* **`type`** (`String`) — тип работы.
+* **`fields`** (`List[String]`) — области знаний.
+* **`journal`** (`String`) — площадка издания.
+* **`doi`** (`String`) — DOI статьи.
+* **`publication_date`** (`Date`) — дата публикации.
+* **`year`** (`Integer`) — год публикации.
+* **`has_code`** (`Boolean`) — найдена ли ссылка на код.
+* **`code_url`** (`String`) — ссылка на код.
+* **`funding`** (`JSON`) — информация о финансировании.
+* **`openalex_url`** (`String`) — ссылка на публикацию в OpenAlex.
+* **`pdf_url`** (`String`) — ссылка на PDF.
+* **`abstract`** (`String`) — аннотация.
+* **`full_text`** (`String`) — полный текст (если извлечён из PDF).
+* **`versions`** (`JSON`) — версии публикации.
+* **`merged_ids`** (`List[String]`) — id, схлопнутые при дедупе.
 
 ---
 
@@ -61,7 +87,7 @@
 > **Метка узла:** `«Node : Department»`
 > Подразделение ИТМО (мегафакультет, факультет, институт, центр, кафедра, лаборатория).
 
-* **`id`** (`ID`, *Unique*) — идентификатор — человекочитаемый uid-слаг из `name_en`.
+* **`id`** (`ID`, *Unique*) — идентификатор: человекочитаемый uid-слаг из `name_en`.
 * **`name_en`** (`String`) — название на английском.
 * **`name_ru`** (`String`) — название на русском.
 * **`name_variants`** (`List[String]`) — варианты написания.
@@ -83,7 +109,8 @@
 * **`name_en`** (`String`, *Unique*) — название на английском.
 * **`name_ru`** (`String`) — название на русском.
 * **`ror_id`** (`String`) — идентификатор в реестре ROR (для ИТМО — `https://ror.org/04txgxn49`).
-* **`country`** (`String`) — страна; **`type`** (`String`) — тип (`university`, …).
+* **`country`** (`String`) — страна.
+* **`type`** (`String`) — тип организации (`university`, …).
 
 ---
 
@@ -93,12 +120,18 @@
 > Репозиторий с исходным кодом (GitHub).
 
 * **`id`** (`ID`, *Unique*) — идентификатор (`github_owner_name`).
+* **`name`** (`String`) — имя репозитория.
 * **`url`** (`String`, *Unique*) — URL репозитория.
-* **`name`** (`String`) — имя; **`github_id`** (`String`) — числовой id GitHub.
+* **`github_id`** (`String`) — числовой id GitHub.
 * **`cited_urls`** (`List[String]`) — URL-ы, которыми репозиторий цитировали до канонизации.
-* **`description`** (`String`), **`license`** (`String`), **`has_readme`** (`Boolean`), **`stars_num`** (`Integer`).
-* **`access_date`** / **`last_updated`** (`Date`) — дата проверки / последнего обновления.
-* **`contributors`** (`List[String]`) — контрибьюторы; **`merged_ids`** (`List[String]`) — схлопнутые id.
+* **`description`** (`String`) — описание.
+* **`access_date`** (`Date`) — дата проверки / получения доступа.
+* **`has_readme`** (`Boolean`) — наличие README.
+* **`stars_num`** (`Integer`) — количество звёзд.
+* **`last_updated`** (`Date`) — дата последнего обновления.
+* **`license`** (`String`) — лицензия.
+* **`contributors`** (`List[String]`) — контрибьюторы.
+* **`merged_ids`** (`List[String]`) — id, схлопнутые при дедупе.
 
 ---
 
@@ -109,8 +142,11 @@
 
 * **`id`** (`ID`, *Unique*) — идентификатор аккаунта.
 * **`login`** (`String`, *Unique*) — логин на GitHub.
-* **`name`** (`String`) — отображаемое имя; **`html_url`** (`String`) — ссылка на профиль.
-* **`description`** (`String`), **`location`** (`String`), **`type`** (`String`) — тип аккаунта.
+* **`name`** (`String`) — отображаемое имя.
+* **`html_url`** (`String`) — ссылка на профиль.
+* **`description`** (`String`) — описание профиля.
+* **`location`** (`String`) — местоположение.
+* **`type`** (`String`) — тип аккаунта (пользователь / организация).
 
 ---
 
@@ -121,11 +157,12 @@
 > становится `Repository`, как только репозиторий успешно зарезолвлен).
 
 * **`id`** (`ID`, *Unique*) — сам URL.
-* **`url`** (`String`) — URL; **`host`** (`String`) — хост ссылки.
+* **`url`** (`String`) — URL ссылки.
+* **`host`** (`String`) — хост ссылки.
 
 ## 2. Связи (Relationships / Edges)
 
-### 1. `AUTHORED`
+### 1. `AUTHORED` (Авторство)
 
 > **Связывает:** `Person` → `Publication`. Авторство публикации.
 
@@ -136,14 +173,14 @@
 
 ---
 
-### 2. `BELONGS_TO`
+### 2. `BELONGS_TO` (Принадлежность подразделению)
 
 > **Связывает:** `Person:Itmo` → `Department`. Принадлежность автора подразделению
 > (выведена сопоставлением аффилиаций с каталогом). Без свойств.
 
 ---
 
-### 3. `CONTRIBUTED_TO`
+### 3. `CONTRIBUTED_TO` (Участие в разработке)
 
 > **Связывает:** `Person:Itmo` → `Repository`. Участие в разработке репозитория.
 
@@ -151,7 +188,7 @@
 
 ---
 
-### 4. `PART_OF`
+### 4. `PART_OF` (Иерархия подразделений)
 
 > **Связывает:** `Department` → `Department` либо `Department` → `Organization`.
 > Рекурсивная орг-иерархия: подразделение входит в родителя — другое подразделение
@@ -159,37 +196,39 @@
 
 ---
 
-### 5. `PRODUCED_BY`
+### 5. `PRODUCED_BY` (Публикация подразделения)
 
 > **Связывает:** `Publication` → `Department`. Публикация произведена подразделением
 > (по департаментам её ИТМО-авторов). Без свойств.
 
 ---
 
-### 6. `MENTIONS_LINK`
+### 6. `MENTIONS_LINK` (Упоминание code-ссылки)
 
 > **Связывает:** `Publication` → `Repository` либо `Publication` → `LinkCandidate`.
-> Упоминание code-ссылки в тексте/абстракте публикации.
+> Упоминание code-ссылки в тексте / абстракте публикации.
 
 * **`context`** (`List[String]`) — фрагменты текста вокруг ссылки.
 * **`page_number`** (`List[Integer]`) — страницы (`0` = абстракт: Neo4j не хранит `null` в массиве-свойстве, поэтому сентинел не `None`).
-* **`is_relevant`** (`Boolean`), **`llm_confidence`** (`Float`), **`llm_reason`** (`String`) — вердикт LLM.
+* **`is_relevant`** (`Boolean`) — вердикт релевантности.
+* **`llm_confidence`** (`Float`) — уверенность LLM.
+* **`llm_reason`** (`String`) — обоснование LLM.
 
 ---
 
-### 7. `DEVELOPED_BY`
+### 7. `DEVELOPED_BY` (Разработка подразделением)
 
 > **Связывает:** `Repository` → `Department`. Репозиторий разрабатывается подразделением
 > (по департаментам его ИТМО-контрибьюторов). Без свойств.
 
 ---
 
-### 8. `IMPLEMENTS`
+### 8. `IMPLEMENTS` (Реализация публикации)
 
 > **Связывает:** `Repository` → `Publication`. Репозиторий реализует публикацию. Без свойств.
 
 ---
 
-### 9. `OWNED_BY`
+### 9. `OWNED_BY` (Владение)
 
 > **Связывает:** `Repository` → `GitHubProfile`. Владелец репозитория. Без свойств.
