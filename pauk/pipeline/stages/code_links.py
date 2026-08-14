@@ -9,12 +9,12 @@ from typing import cast
 from urllib.parse import urlencode, urlparse
 
 import fitz
-import gridfs
 
 from pauk.models import CodeLink, LinkOccurrence, Publication, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.redaction import redact_text
 from pauk.sources.base import HttpClient
+from pauk.storage import PdfStore
 
 from .base import EnrichmentStage
 
@@ -24,8 +24,16 @@ _WRAP = r"(?:-\n[ \t]*)?"
 _CHAR = r"(?:-(?!\n)|[\w.])"
 _SEGMENT = _CHAR + r"+(?:" + _WRAP + _CHAR + r"+)*"
 GITHUB_URL = re.compile(
-    r"(?<![\w.])(?:https?://)?(?:www\.)?github" + _WRAP + r"\.com" + _WRAP + r"/"
-    + _SEGMENT + r"/" + _SEGMENT, re.IGNORECASE)
+    r"(?<![\w.])(?:https?://)?(?:www\.)?github"
+    + _WRAP
+    + r"\.com"
+    + _WRAP
+    + r"/"
+    + _SEGMENT
+    + r"/"
+    + _SEGMENT,
+    re.IGNORECASE,
+)
 _EMBEDDED_WRAP = re.compile(r"-\n[ \t]*")
 URL_TRAILING_PUNCT = ".,;:!?)]}>\"'-"
 GITHUB_HOST = "github.com"
@@ -43,6 +51,7 @@ def _normalize_ligatures(text: str) -> str:
     can't glue unrelated text together.
     """
     return unicodedata.normalize("NFKC", text)
+
 
 DEPOSIT_TYPES = {"software", "dataset"}
 REPOSITORY_ARCHIVE = re.compile(r"^([\w.-]+)/([\w.-]+):\s")
@@ -77,7 +86,7 @@ def _clean_match(raw: str) -> str:
 
 
 def _slice_context(text: str, start: int, end: int) -> str | None:
-    window = text[max(0, start - CONTEXT_WINDOW):end + CONTEXT_WINDOW]
+    window = text[max(0, start - CONTEXT_WINDOW) : end + CONTEXT_WINDOW]
     return " ".join(window.split()) or None
 
 
@@ -93,7 +102,8 @@ def _occurrences_in_text(text: str, page_number: int | None) -> dict[str, LinkOc
         if url in found:
             continue
         found[url] = LinkOccurrence(
-            context=_slice_context(text, match.start(), match.end()), page_number=page_number)
+            context=_slice_context(text, match.start(), match.end()), page_number=page_number
+        )
     return found
 
 
@@ -114,7 +124,9 @@ def _annotation_context(page: fitz.Page, page_text: str, rect) -> str | None:
     return _slice_context(page_text, idx, idx + len(visible))
 
 
-def _pdf_page_occurrences(page: fitz.Page, text: str, page_number: int) -> dict[str, LinkOccurrence]:
+def _pdf_page_occurrences(
+    page: fitz.Page, text: str, page_number: int
+) -> dict[str, LinkOccurrence]:
     """Everything found on one page: URLs spelled out in the text, plus GitHub
     links reachable only through a clickable annotation whose visible label
     doesn't spell out the URL (e.g. a hyperlinked "here")."""
@@ -127,7 +139,8 @@ def _pdf_page_occurrences(page: fitz.Page, text: str, page_number: int) -> dict[
         if urlparse(url).netloc.lower() != GITHUB_HOST or url in found:
             continue
         found[url] = LinkOccurrence(
-            context=_annotation_context(page, text, link.get("from")), page_number=page_number)
+            context=_annotation_context(page, text, link.get("from")), page_number=page_number
+        )
     return found
 
 
@@ -144,7 +157,8 @@ def _extract_pdf(data: bytes) -> tuple[list[str], list[dict[str, LinkOccurrence]
 
 
 def _collect_occurrences(
-    abstract: str, pdf_page_occurrences: list[dict[str, LinkOccurrence]],
+    abstract: str,
+    pdf_page_occurrences: list[dict[str, LinkOccurrence]],
 ) -> dict[str, list[LinkOccurrence]]:
     """Canonical URL -> every place it was found, abstract first then PDF pages in order.
 
@@ -185,16 +199,14 @@ class CodeLinksStage(EnrichmentStage):
     def run(self) -> dict[str, int]:
         publications = list(self.prepared.read_models("publications", Publication))
         links_by_publication = {
-            row.publication_id: row
-            for row in self.prepared.read_models("repo_links", RepoLink)
+            row.publication_id: row for row in self.prepared.read_models("repo_links", RepoLink)
         }
-        group = self.prepared.group
         self.http = HttpClient(self.config.request_timeout)
-        # One probe per run, not per publication - an unreachable crawler
-        # shouldn't add a failed request to every single row.
+        self.pdf_store = PdfStore(self.prepared.db, self.config.pdf_dir)
         self.crawler_available = self._crawler_available()
         candidates = [
-            publication for publication in publications
+            publication
+            for publication in publications
             if self.selected("publications", publication.id)
             and self.needs_attempt(publication.processing.get(self.name))
         ]
@@ -204,37 +216,55 @@ class CodeLinksStage(EnrichmentStage):
             archived = _archived_repository_url(pub)
             needs_pdf = bool(pub.pdf_url) or (self.crawler_available and bool(pub.doi))
             if needs_pdf:
-                pdf_pages, pdf_page_occurrences, pdf_error = self._pdf_pages(pub, group)
+                pdf_pages, pdf_page_occurrences, pdf_error = self._pdf_pages(pub)
             else:
                 pdf_pages, pdf_page_occurrences, pdf_error = [], [], None
             if pdf_pages:
                 # A transient failure on a later retry must not erase text a
                 # previous successful run already extracted.
                 pub.full_text = "\n\n".join(pdf_pages)
-            occurrences_by_url = _collect_occurrences(_normalize_ligatures(pub.abstract or ""), pdf_page_occurrences)
+            occurrences_by_url = _collect_occurrences(
+                _normalize_ligatures(pub.abstract or ""), pdf_page_occurrences
+            )
             if archived and archived not in occurrences_by_url:
                 # The deposit's own archived repo takes priority - it's what
                 # code_url should point at, same as before this stage read PDFs.
-                occurrences_by_url = {archived: [LinkOccurrence(page_number=None)], **occurrences_by_url}
+                occurrences_by_url = {
+                    archived: [LinkOccurrence(page_number=None)],
+                    **occurrences_by_url,
+                }
             urls = list(occurrences_by_url)
             pub.has_code = bool(urls)
             pub.code_url = urls[0] if urls else None
             pub.processing[self.name] = ProcessingState(
-                status=ProcessingStatus.FAILED if pdf_error else (
-                    ProcessingStatus.COMPLETED if urls else ProcessingStatus.COMPLETED_EMPTY),
+                status=ProcessingStatus.FAILED
+                if pdf_error
+                else (ProcessingStatus.COMPLETED if urls else ProcessingStatus.COMPLETED_EMPTY),
                 attempts=(state.attempts if state else 0) + 1,
-                finished_at=datetime.now(UTC), result_count=len(urls), error=pdf_error,
+                finished_at=datetime.now(UTC),
+                result_count=len(urls),
+                error=pdf_error,
             )
-            links_by_publication[pub.id] = RepoLink(publication_id=pub.id, links=[
-                # The deposit's own archived repo is a deterministic fact, not
-                # a judgment call - everything else is left unclassified
-                # (is_relevant=None) for the link_relevance stage to decide.
-                CodeLink(url=url, host=urlparse(url).netloc, occurrences=occurrences,
-                         **({"is_relevant": True, "llm_confidence": 1.0,
-                             "llm_reason": ARCHIVED_DEPOSIT_REASON}
-                            if url == archived else {}))
-                for url, occurrences in occurrences_by_url.items()
-            ])
+            links_by_publication[pub.id] = RepoLink(
+                publication_id=pub.id,
+                links=[
+                    CodeLink(
+                        url=url,
+                        host=urlparse(url).netloc,
+                        occurrences=occurrences,
+                        **(
+                            {
+                                "is_relevant": True,
+                                "llm_confidence": 1.0,
+                                "llm_reason": ARCHIVED_DEPOSIT_REASON,
+                            }
+                            if url == archived
+                            else {}
+                        ),
+                    )
+                    for url, occurrences in occurrences_by_url.items()
+                ],
+            )
             changed += 1
         self.prepared.write_models("publications", publications)
         self.prepared.write_models("repo_links", links_by_publication.values())
@@ -248,12 +278,16 @@ class CodeLinksStage(EnrichmentStage):
             self.http.get_bytes(f"{self.config.pdf_crawler_url}/health", retries=0)
             return True
         except Exception as exc:
-            logger.warning("code_links: PDF-Crawler-Service unavailable at %s: %s",
-                            self.config.pdf_crawler_url, exc)
+            logger.warning(
+                "code_links: PDF-Crawler-Service unavailable at %s: %s",
+                self.config.pdf_crawler_url,
+                exc,
+            )
             return False
 
     def _pdf_pages(
-        self, pub: Publication, group: str,
+        self,
+        pub: Publication,
     ) -> tuple[list[str], list[dict[str, LinkOccurrence]], str | None]:
         """Download (if not already cached) and extract per-page text + link occurrences.
 
@@ -274,16 +308,12 @@ class CodeLinksStage(EnrichmentStage):
         else:
             return [], [], None
         try:
-            bucket = gridfs.GridFSBucket(self.prepared.db, bucket_name="pdfs")
-            existing = next(bucket.find({"filename": pub.id}, sort=[("uploadDate", -1)], limit=1), None)
-            if existing is not None:
-                pdf_bytes = bucket.open_download_stream(existing._id).read()
+            if self.pdf_store.exists(pub.id):
+                pdf_bytes = self.pdf_store.read(pub.id)
             else:
                 kwargs = {"timeout": CRAWLER_DOWNLOAD_TIMEOUT, "retries": 0} if via_crawler else {}
                 pdf_bytes = self.http.get_bytes(source_url, **kwargs)
-                bucket.upload_from_stream(pub.id, pdf_bytes, metadata={
-                    "group": group, "fetched_at": datetime.now(UTC).isoformat(),
-                })
+                self.pdf_store.save(pub.id, pdf_bytes)
             pages, page_occurrences = _extract_pdf(pdf_bytes)
             return pages, page_occurrences, None
         except Exception as exc:

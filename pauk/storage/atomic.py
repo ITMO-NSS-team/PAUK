@@ -31,3 +31,21 @@ class AtomicWriter:
         else:
             self._tmp.unlink(missing_ok=True)
         return False
+
+
+def atomic_write_bytes(target: Path, data: bytes) -> None:
+    """Binary counterpart to AtomicWriter, for content already fully in memory
+    (e.g. a downloaded PDF) - no streaming writer needed, just one safe swap.
+    """
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with NamedTemporaryFile(
+        mode="wb", delete=False,
+        dir=target.parent, prefix=f".{target.name}.", suffix=".tmp",
+    ) as handle:
+        tmp = Path(handle.name)
+        try:
+            handle.write(data)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
+    os.replace(tmp, target)

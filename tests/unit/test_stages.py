@@ -1,8 +1,6 @@
-import io
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
@@ -50,46 +48,12 @@ def _make_pdf_with_hyperlink(visible_text: str, uri: str, page_text: str = "") -
         doc.close()
 
 
-class FakeGridFsBucket:
-    """Minimal double for gridfs.GridFSBucket - the real one refuses to wrap
-    a mongomock.Database (isinstance check), so tests get this instead.
-    Covers only the calls code_links.py makes."""
-
-    def __init__(self):
-        self._files: list[dict] = []
-        self._next_id = 0
-
-    def find(self, filt, sort=None, limit=None):
-        matches = [f for f in self._files if f["filename"] == filt["filename"]]
-        if sort:
-            field, direction = sort[0]
-            matches.sort(key=lambda f: f[field], reverse=direction == -1)
-        if limit is not None:
-            matches = matches[:limit]
-        return iter(SimpleNamespace(_id=f["_id"]) for f in matches)
-
-    def open_download_stream(self, file_id):
-        return io.BytesIO(next(f["data"] for f in self._files if f["_id"] == file_id))
-
-    def upload_from_stream(self, filename, data, metadata=None):
-        self._next_id += 1
-        self._files.append({
-            "_id": self._next_id, "filename": filename, "data": data,
-            "metadata": metadata, "uploadDate": self._next_id,
-        })
-        return self._next_id
-
-
 class StagesTest(unittest.TestCase):
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
-        self.pdf_bucket = FakeGridFsBucket()
-        patcher = patch("pauk.pipeline.stages.code_links.gridfs.GridFSBucket", return_value=self.pdf_bucket)
-        patcher.start()
-        self.addCleanup(patcher.stop)
 
     def test_code_links_marks_empty_and_found_results(self):
         prepared = PreparedStore(self.db, "sample")
@@ -315,10 +279,10 @@ class StagesTest(unittest.TestCase):
         self.assertEqual(link.occurrences[0].page_number, 2)
         assert link.occurrences[0].context is not None
         self.assertIn("github.com/org/repo", link.occurrences[0].context)
-        [stored] = [f for f in self.pdf_bucket._files if f["filename"] == "W1"]
-        self.assertEqual(stored["data"], pdf_bytes)
+        self.assertEqual((config.pdf_dir / "W1.pdf").read_bytes(), pdf_bytes)
+        self.assertIsNotNone(self.db.pdfs.find_one({"_id": "W1"}))
 
-        # Cached in GridFS: a forced re-run must not download again.
+        # Cached on disk: a forced re-run must not download again.
         http_client.return_value.get_bytes.reset_mock()
         CodeLinksStage(prepared, raw, config=config, force=True).run()
         http_client.return_value.get_bytes.assert_not_called()
@@ -401,7 +365,8 @@ class StagesTest(unittest.TestCase):
         self.assertIn("403", state.error)
         links = [link for row in prepared.read_models("repo_links", RepoLink) for link in row.links]
         self.assertEqual([link.url for link in links], ["https://github.com/org/repo"])
-        self.assertEqual([f for f in self.pdf_bucket._files if f["filename"] == "W1"], [])
+        self.assertFalse((config.pdf_dir / "W1.pdf").exists())
+        self.assertIsNone(self.db.pdfs.find_one({"_id": "W1"}))
 
         # FAILED is retried on the next run even without --force (base.needs_attempt).
         http_client.return_value.get_bytes.side_effect = None

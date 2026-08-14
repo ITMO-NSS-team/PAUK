@@ -40,7 +40,7 @@ work попал в другую, пересекающуюся группу: су
 
 Ссылки на код извлекаются из абстракта и, если есть `pdf_url` (или он
 находится по DOI через `PAUK_PDF_CRAWLER_URL`, см. `.env.example`), из PDF
-постранично (`pauk enrich code_links`, кэш PDF — `data/pdf/<group>/`) —
+постранично (`pauk enrich code_links`, кэш PDF — `data/pdf/`) —
 и голые упоминания вида `github.com/org/repo`, и настоящие гиперссылки.
 Текст PDF сохраняется в `Publication.full_text`.
 

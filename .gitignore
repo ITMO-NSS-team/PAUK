@@ -15,7 +15,6 @@ data/cache/*
 data/pdf/*
 data/audit/*
 !data/cache/.gitkeep
-!data/pdf/.gitkeep
 !data/audit/.gitkeep
 
 *.egg-info/
