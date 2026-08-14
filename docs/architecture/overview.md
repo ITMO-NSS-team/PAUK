@@ -28,7 +28,8 @@ OpenAlex API
 MongoDB: raw                                 RawStore, append-only
   │  pauk normalize
 MongoDB: publications/persons/...            PreparedStore, 6 коллекций
-  │  pauk enrich [stage]                     pdf → persons → departments → code_links → repositories → dedup
+  │  pauk enrich [stage]                     pdf → persons → departments → code_links → link_relevance →
+  │                                          emails → repositories → dedup → github_match → russian_names
 MongoDB: publications/persons/...            те же коллекции, обогащённые
   │  pauk publish graph
 Neo4j                                        накопление между прогонами, MERGE

@@ -70,9 +70,20 @@ id), `WorksFileSelector` (файл со списком id, по одному н�
 
 `Enricher.run(stage_name, selection, force)` — прогоняет один этап или
 все (`ALL_STAGES`, порядок фиксирован в `pipeline/stages/__init__.py`:
-`pdf → persons → departments → code_links → repositories → dedup`).
+`pdf → persons → departments → code_links → link_relevance → emails →
+repositories → dedup → github_match → russian_names`).
 Блокировки на группу больше нет — атомарность на уровне документа даёт
 сама MongoDB (см. [../storage.md](../storage.md)).
+
+Порядок не произвольный: `emails` читает полный текст, скачанный
+`code_links`, и идёт до `github_match`, чтобы найденный адрес мог опознать
+аккаунт; `github_match` нужны и аккаунты, собранные `repositories`, и
+авторства, уже схлопнутые `dedup`.
+
+`OPTIONAL_STAGES` — стадии вне общего прогона, запускаются только по
+имени. Там сейчас одна, `social_graph`: она идёт вширь от уже
+подтверждённых аккаунтов, поэтому имеет смысл лишь после того, как
+`github_match` кого-то подтвердил, и стоит сотни запросов к API за прогон.
 
 `EnrichmentStage` — общий базовый класс:
 
@@ -83,8 +94,9 @@ id), `WorksFileSelector` (файл со списком id, по одному н�
 
 Каждый стейдж — отдельный файл, см. соседние заметки:
 [pdf.md](pdf.md), [persons.md](persons.md), [departments.md](departments.md),
-[code-links.md](code-links.md), [repositories.md](repositories.md),
-[dedup.md](dedup.md).
+[code-links.md](code-links.md), [emails.md](emails.md),
+[repositories.md](repositories.md), [dedup.md](dedup.md),
+[github-match.md](github-match.md), [social-graph.md](social-graph.md).
 
 ## Резюмируемость
 
