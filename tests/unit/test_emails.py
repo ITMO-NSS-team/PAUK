@@ -1,11 +1,13 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from pauk.models import Person, Publication
 from pauk.pipeline.stages.emails import (
     EmailsStage,
     author_surnames,
+    emails_in_html,
     emails_in_text,
     owner_of,
     pick_email,
@@ -14,10 +16,10 @@ from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
 
 
-def person(pid, name, *, itmo=True, email=None, variants=(), works=()):
+def person(pid, name, *, itmo=True, email=None, variants=(), works=(), homepage=None):
     return Person(
         id=pid, openalex_id=pid, is_itmo=itmo, name_en=name, email=email,
-        name_variants=list(variants),
+        homepage=homepage, name_variants=list(variants),
         authored=[{"publication_id": work, "position": 1} for work in works],
     )
 
@@ -43,6 +45,23 @@ class EmailsInTextTest(unittest.TestCase):
         # Bare "@" turns up in citations and file names; only known domain
         # endings are read as addresses.
         self.assertEqual(emails_in_text("see fig@3 and table@2.pdf"), set())
+
+
+class EmailsInHtmlTest(unittest.TestCase):
+    """A page hides an address from scrapers but still shows it to a reader."""
+
+    def test_a_mailto_link(self):
+        self.assertEqual(emails_in_html('<a href="mailto:Ivan@itmo.ru">write</a>'),
+                         {"ivan@itmo.ru"})
+
+    def test_at_and_dot_spelled_out(self):
+        self.assertEqual(emails_in_html("dukhanov [at] itmo [dot] ru"), {"dukhanov@itmo.ru"})
+
+    def test_an_html_entity_for_the_at_sign(self):
+        self.assertEqual(emails_in_html("petrov&#64;itmo.ru"), {"petrov@itmo.ru"})
+
+    def test_spaces_around_the_at_sign(self):
+        self.assertEqual(emails_in_html("sidorov @ itmo.ru"), {"sidorov@itmo.ru"})
 
 
 class OwnerOfTest(unittest.TestCase):
@@ -147,6 +166,40 @@ class EmailsStageTest(unittest.TestCase):
             [publication("W1", "dukhanov@aol.com and a.dukhanov@itmo.ru")],
         )
         self.assertEqual(people["A1"].email, "a.dukhanov@itmo.ru")
+
+    @patch("pauk.pipeline.stages.emails.HttpClient")
+    def test_the_page_an_author_listed_is_read_for_their_address(self, client):
+        # The colleague's address sorts first, so only the surname test
+        # can pick the right one.
+        client.return_value.get_bytes.return_value = (
+            b"Staff: Antonov [at] itmo [dot] ru, Dukhanov [at] itmo [dot] ru")
+        result, people = self.run_stage(
+            [person("A1", "Alexey Dukhanov", homepage="https://itmo.ru/staff/1", works=["W1"])],
+            [publication("W1", "no addresses in the text")],
+        )
+        self.assertEqual((result["pages"], result["emails_filled"]), (1, 1))
+        # The page lists the whole group; only the surname settles which
+        # address belongs to this person.
+        self.assertEqual(people["A1"].email, "dukhanov@itmo.ru")
+
+    @patch("pauk.pipeline.stages.emails.HttpClient")
+    def test_an_author_who_already_has_an_address_is_not_fetched_for(self, client):
+        _result, _people = self.run_stage(
+            [person("A1", "Alexey Dukhanov", email="known@itmo.ru",
+                    homepage="https://itmo.ru/staff/1", works=["W1"])],
+            [publication("W1", "text")],
+        )
+        self.assertFalse(client.return_value.get_bytes.called)
+
+    @patch("pauk.pipeline.stages.emails.HttpClient")
+    def test_a_page_that_cannot_be_fetched_costs_nothing(self, client):
+        client.return_value.get_bytes.side_effect = RuntimeError("timeout")
+        result, people = self.run_stage(
+            [person("A1", "Alexey Dukhanov", homepage="https://gone.example", works=["W1"])],
+            [publication("W1", "text")],
+        )
+        self.assertEqual(result["emails_filled"], 0)
+        self.assertIsNone(people["A1"].email)
 
     def test_a_paper_without_text_is_marked_and_skipped(self):
         result, _people = self.run_stage(
