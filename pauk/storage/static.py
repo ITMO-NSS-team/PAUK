@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from functools import cached_property
 from pathlib import Path
 
 from pauk.models import Department, Organization
@@ -19,7 +20,7 @@ class StaticStore:
         # The catalogue is the versioned static source. Each entry carries a
         # human-readable `uid` used directly as the graph node id and referenced
         # by `parent`, so a unit is never repeated and stays cheap to rename.
-        entries = self._catalog_entries()
+        entries = self._catalog_entries
         kind_by_uid = {(e.get("uid") or "").strip(): (e.get("kind") or "").strip() for e in entries}
         departments: list[Department] = []
         for entry in entries:
@@ -63,7 +64,7 @@ class StaticStore:
         if not (self.root / "departments_catalog.json").exists():
             return []
         organizations: list[Organization] = []
-        for entry in self._catalog_entries():
+        for entry in self._catalog_entries:
             if (entry.get("kind") or "").strip() != "organization":
                 continue
             uid = (entry.get("uid") or "").strip()
@@ -82,7 +83,10 @@ class StaticStore:
             )
         return organizations
 
+    @cached_property
     def _catalog_entries(self) -> list[dict]:
+        # Parsed once per store: departments() and organizations() both read it in
+        # the same run, and the file never changes over a store's lifetime.
         catalog = self.root / "departments_catalog.json"
         if not catalog.exists():
             path = self.root / "departments.jsonl"

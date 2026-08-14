@@ -83,6 +83,27 @@ class DepartmentsStageTest(unittest.TestCase):
             )
             self.assertEqual(persons["P1"].department_ids, ["d1"])
 
+    def test_matches_across_embedded_newline(self):
+        # PDF/OpenAlex affiliations wrap a unit name across a line break; without
+        # whitespace-collapse "School of\nPhysics" would silently miss the catalogue
+        # name "School of Physics" (the catalogue side is normalised the same way).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            person = Person(
+                id="P1",
+                is_itmo=True,
+                authored=[
+                    Authorship(publication_id="W1", affiliation="School of\nPhysics,  ITMO   University"),
+                ],
+            )
+            persons, _ = _run(
+                root,
+                [Department(id="d1", name_en="School of Physics")],
+                [person],
+                [Publication(id="W1", title="t")],
+            )
+            self.assertEqual(persons["P1"].department_ids, ["d1"])
+
     def test_matches_russian_name_for_cyrillic_affiliation(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
