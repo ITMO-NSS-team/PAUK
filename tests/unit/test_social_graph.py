@@ -132,6 +132,66 @@ class SocialGraphStageTest(unittest.TestCase):
         self.assertEqual(profiles["colleague"].repos, ["https://github.com/ipetrov/lab-tool"])
 
     @patch("pauk.pipeline.stages.social_graph.GitHubClient")
+    def test_repositories_walked_by_an_earlier_run_are_not_walked_again(self, client):
+        # A walked repository leaves its mark on the profiles it produced,
+        # not in repositories.jsonl; reading only the latter sends every
+        # later run over the same hundreds of repositories.
+        self.build([person("A1", "Ivan Petrov", github="ipetrov")], [],
+                   [GitHubProfile(id="github_colleague", login="colleague",
+                                  repos=["https://github.com/ipetrov/lab"])])
+        client.return_value.user_repositories.return_value = [
+            {"html_url": "https://github.com/ipetrov/lab"}]
+        result = SocialGraphStage(self.prepared, self.raw, self.config).run()
+        self.assertEqual(result["social_repositories"], 0)
+        self.assertFalse(client.return_value.get_repository.called)
+
+    @patch("pauk.pipeline.stages.social_graph.GitHubClient")
+    def test_the_walk_stops_when_a_ring_finds_nothing_new(self, client):
+        self.build([person("A1", "Ivan Petrov", github="ipetrov")],
+                   [repository("ipetrov", "tool")], [])
+        # The seed owns only what was already harvested.
+        client.return_value.user_repositories.return_value = [
+            {"html_url": "https://github.com/ipetrov/tool"}]
+        result = SocialGraphStage(self.prepared, self.raw, self.config).run()
+        self.assertEqual((result["social_rings"], result["social_repositories"]), (0, 0))
+
+    @patch("pauk.pipeline.stages.social_graph.GitHubMatchStage")
+    @patch("pauk.pipeline.stages.social_graph.GitHubClient")
+    def test_matching_runs_between_rings_to_produce_new_seeds(self, client, matcher):
+        # Without matching, a candidate found on one ring never becomes a
+        # seed and the walk would end after the first.
+        self.build([person("A1", "Ivan Petrov", github="ipetrov")],
+                   [repository("ipetrov", "known")], [])
+        client.return_value.user_repositories.side_effect = lambda login, limit: {
+            "ipetrov": [{"html_url": "https://github.com/ipetrov/lab"}],
+        }.get(login, [])
+        client.return_value.get_repository.return_value = {
+            "owner": {"login": "ipetrov", "type": "User"}}
+        client.return_value.contributors.return_value = [{"login": "colleague", "type": "User"}]
+        client.return_value.commits.return_value = []
+        client.return_value.get_user.return_value = {"login": "colleague"}
+        SocialGraphStage(self.prepared, self.raw, self.config).run()
+        self.assertTrue(matcher.called, "github_match must run between rings")
+
+    @patch("pauk.pipeline.stages.social_graph.GitHubClient")
+    def test_a_seed_is_never_walked_twice(self, client):
+        self.build([person("A1", "Ivan Petrov", github="ipetrov")], [], [])
+        calls = []
+
+        def repositories_of(login, limit):
+            calls.append(login)
+            # Always offers one new repository, so only the seed guard can
+            # end the walk; without it this would spin to the ring ceiling.
+            return [{"html_url": f"https://github.com/{login}/repo{len(calls)}"}]
+
+        client.return_value.user_repositories.side_effect = repositories_of
+        client.return_value.get_repository.return_value = {"owner": {}}
+        client.return_value.contributors.return_value = []
+        client.return_value.commits.return_value = []
+        SocialGraphStage(self.prepared, self.raw, self.config).run()
+        self.assertEqual(calls, ["ipetrov"])
+
+    @patch("pauk.pipeline.stages.social_graph.GitHubClient")
     def test_a_seed_whose_repositories_cannot_be_read_is_skipped(self, client):
         self.build([person("A1", "Ivan Petrov", github="ipetrov")], [], [])
         client.return_value.user_repositories.side_effect = RuntimeError("404")

@@ -16,10 +16,11 @@ someone already matched, or it says so in its profile. The alternative is
 following every organization whose library a paper cited, which means
 walking into google and microsoft for nothing.
 
-One run is one ring: seeds are the accounts already confirmed, never the
-candidates this run turned up — those are unproven, and following 400 of
-them would cost twelve thousand repositories. Re-run after github_match to
-walk the next ring; the walk has converged when a run adds nothing.
+The walk runs ring by ring until it converges. Seeds are only the accounts
+already confirmed — following the unproven ones would mean four hundred
+seeds and twelve thousand repositories. That is why github_match runs
+between rings: it turns candidates found on this ring into seeds for the
+next. A ring that walks no new repository ends the walk.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from pauk.models import GitHubProfile, Person, Repository
 from pauk.sources.github import GitHubClient
 
 from .base import EnrichmentStage
+from .github_match import GitHubMatchStage
 from .repositories import COMMIT_PAGES, _git_identities, _is_person
 
 logger = logging.getLogger(__name__)
@@ -39,6 +41,10 @@ logger = logging.getLogger(__name__)
 # hundreds, and the ones it touched recently are the ones with people on
 # them; the rest are forks and abandoned coursework.
 MAX_REPOS_PER_SEED = 30
+
+# Rings walked before giving up on convergence. On earlier data the graph
+# settled in two; the rest is headroom, not an expectation.
+MAX_RINGS = 5
 
 ITMO_IN_TEXT = re.compile(r"\bitmo\b|saint[- ]petersburg|sankt", re.I)
 
@@ -141,33 +147,62 @@ class SocialGraphStage(EnrichmentStage):
                     for profile in self.prepared.read_models("github_profiles", GitHubProfile)}
         client = GitHubClient(self.config.request_timeout, self.config.github_token)
 
-        # Repositories already harvested, by the URL they are keyed on.
+        # Repositories already harvested, from both sources that record one:
+        # the cited repositories the repositories stage fetched, and the ones
+        # this walk visited, which are named on the profiles it collected.
+        # Reading only the first would send every later run over the same
+        # hundreds of repositories again.
         visited = {repository.url for repository in repositories}
-        seeds = self._seeds(people, repositories, profiles)
-        logger.info("social_graph: %d seeds", len(seeds))
+        visited |= {url for profile in profiles.values() for url in profile.repos}
+        walked = added_profiles = rings = 0
+        walked_seeds: set[str] = set()
 
-        fresh: list[tuple[str, str, str]] = []
-        for seed in seeds:
-            try:
-                owned = client.user_repositories(seed, MAX_REPOS_PER_SEED)
-            except Exception:
-                continue
-            for repository in owned:
-                url = (repository.get("html_url") or "").rstrip("/")
-                if not url or url in visited:
-                    continue
-                parts = url.split("github.com/")[-1].split("/")
-                if len(parts) != 2:
-                    continue
-                visited.add(url)
-                fresh.append((parts[0], parts[1], url))
+        for ring in range(1, MAX_RINGS + 1):
+            seeds = [seed for seed in self._seeds(people, repositories, profiles)
+                     if seed not in walked_seeds]
+            if not seeds:
+                logger.info("social_graph: ring %d has no new seeds, converged", ring)
+                break
+            walked_seeds.update(seeds)
+            logger.info("social_graph: ring %d, %d new seeds", ring, len(seeds))
 
-        added_profiles = 0
-        for owner, name, url in fresh:
-            added_profiles += self._harvest(client, owner, name, url, profiles)
-        walked = len(fresh)
+            fresh: list[tuple[str, str, str]] = []
+            for seed in seeds:
+                try:
+                    owned = client.user_repositories(seed, MAX_REPOS_PER_SEED)
+                except Exception:
+                    continue
+                for repository in owned:
+                    url = (repository.get("html_url") or "").rstrip("/")
+                    if not url or url in visited:
+                        continue
+                    parts = url.split("github.com/")[-1].split("/")
+                    if len(parts) != 2:
+                        continue
+                    visited.add(url)
+                    fresh.append((parts[0], parts[1], url))
+
+            if not fresh:
+                logger.info("social_graph: ring %d walked nothing new, converged", ring)
+                break
+            for owner, name, url in fresh:
+                added_profiles += self._harvest(client, owner, name, url, profiles)
+            walked += len(fresh)
+            rings = ring
+            logger.info("social_graph: ring %d walked %d repositories", ring, len(fresh))
+
+            self.prepared.write_models("github_profiles", profiles.values())
+            # Matching is what turns this ring's candidates into the next
+            # ring's seeds; without it the walk would stop here.
+            GitHubMatchStage(self.prepared, self.raw, self.config, force=True).run()
+            people = list(self.prepared.read_models("persons", Person))
+            profiles = {profile.id: profile
+                        for profile in self.prepared.read_models("github_profiles", GitHubProfile)}
+        else:
+            logger.info("social_graph: stopped at the %d-ring ceiling", MAX_RINGS)
 
         self.prepared.write_models("github_profiles", profiles.values())
-        logger.info("social_graph: %d repositories walked, %d new accounts",
-                    walked, added_profiles)
-        return {"social_repositories": walked, "social_accounts": added_profiles}
+        logger.info("social_graph: %d rings, %d repositories walked, %d new accounts",
+                    rings, walked, added_profiles)
+        return {"social_rings": rings, "social_repositories": walked,
+                "social_accounts": added_profiles}
