@@ -14,8 +14,8 @@ enrichment-этапов; резюмируемость.
 
 ## `collect.py::Collector`
 
-Тянет сырые работы с OpenAlex в `data/raw/<group>/openalex_works.jsonl`.
-Три режима выборки (`pauk/pipeline/selectors.py`): `WorkSelector` (один
+Тянет сырые работы с OpenAlex в MongoDB (коллекция `raw`, источник
+`openalex_works`, см. [../storage.md](../storage.md)). Три режима выборки (`pauk/pipeline/selectors.py`): `WorkSelector` (один
 id), `WorksFileSelector` (файл со списком id, по одному на строку),
 `PeriodSelector` (диапазон дат, курсорная пагинация по ROR ИТМО —
 `ITMO_ROR_ID = "04txgxn49"`).
@@ -35,7 +35,7 @@ id), `WorksFileSelector` (файл со списком id, по одному н�
 
 ## `normalize.py::OpenAlexNormalizer`
 
-Разбирает `openalex_works.jsonl` в `Publication`/`Person`. Не тривиальный
+Разбирает `openalex_works` (raw, MongoDB) в `Publication`/`Person`. Не тривиальный
 проход — здесь же живёт:
 
 - **Очистка publisher-разметки** (`_clean_markup`) — химия/физика
@@ -60,15 +60,19 @@ id), `WorksFileSelector` (файл со списком id, по одному н�
   не забила граф.
 - **Повторная нормализация не теряет обогащение.** Уже собранные
   enrichment-данные, `_processing` и слитые дедупом id (`merged_ids`) на
-  существующей строке сохраняются при повторном прогоне на той же
-  группе — новый заход по сырым данным только дополняет, не затирает.
+  существующей строке сохраняются при повторном прогоне — новый заход по
+  сырым данным только дополняет, не затирает. Работает не только внутри
+  одной группы: сущности в MongoDB глобальные, так что тот же work id из
+  другой, пересекающейся группы видит то же самое состояние
+  (`OpenAlexNormalizer._seed`, см. [../storage.md](../storage.md)).
 
 ## `enrich.py::Enricher` + `pipeline/stages/base.py`
 
 `Enricher.run(stage_name, selection, force)` — прогоняет один этап или
 все (`ALL_STAGES`, порядок фиксирован в `pipeline/stages/__init__.py`:
-`pdf → persons → departments → code_links → repositories → dedup`) под
-`GroupLock` на всю группу.
+`pdf → persons → departments → code_links → repositories → dedup`).
+Блокировки на группу больше нет — атомарность на уровне документа даёт
+сама MongoDB (см. [../storage.md](../storage.md)).
 
 `EnrichmentStage` — общий базовый класс:
 

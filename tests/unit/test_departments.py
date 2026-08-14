@@ -3,6 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import mongomock
+
 from pauk.graph.extract import NODE_REGISTRY, extract_relationships
 from pauk.models import Department, Organization, Person, Publication
 from pauk.models.processing import ProcessingStatus
@@ -13,8 +15,8 @@ from pauk.storage import PreparedStore, RawStore
 from pauk.storage.static import StaticStore
 
 
-def _prepare(root: Path, persons, publications) -> PreparedStore:
-    prepared = PreparedStore(root / "prepared", "sample")
+def _prepare(db, persons, publications) -> PreparedStore:
+    prepared = PreparedStore(db, "sample")
     prepared.write_models("persons", persons)
     prepared.write_models("publications", publications)
     return prepared
@@ -24,8 +26,9 @@ def _run(root: Path, departments, persons, publications):
     static = root / "static"
     static.mkdir(parents=True, exist_ok=True)
     (static / "departments.jsonl").write_text("\n".join(d.model_dump_json() for d in departments), encoding="utf-8")
-    prepared = _prepare(root, persons, publications)
-    DepartmentsStage(prepared, RawStore(root / "raw", "sample"), config=Settings(data_dir=root)).run()
+    db = mongomock.MongoClient()["pauk_test"]
+    prepared = _prepare(db, persons, publications)
+    DepartmentsStage(prepared, RawStore(db, "sample"), config=Settings(data_dir=root)).run()
     return (
         {p.id: p for p in prepared.read_models("persons", Person)},
         {p.id: p for p in prepared.read_models("publications", Publication)},
@@ -36,8 +39,9 @@ def _run_catalog(root: Path, catalog: list[dict], persons, publications) -> Prep
     static = root / "static"
     static.mkdir(parents=True, exist_ok=True)
     (static / "departments_catalog.json").write_text(json.dumps(catalog, ensure_ascii=False), encoding="utf-8")
-    prepared = _prepare(root, persons, publications)
-    DepartmentsStage(prepared, RawStore(root / "raw", "sample"), config=Settings(data_dir=root)).run()
+    db = mongomock.MongoClient()["pauk_test"]
+    prepared = _prepare(db, persons, publications)
+    DepartmentsStage(prepared, RawStore(db, "sample"), config=Settings(data_dir=root)).run()
     return prepared
 
 

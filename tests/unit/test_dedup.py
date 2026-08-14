@@ -3,12 +3,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import mongomock
+
 from pauk.graph.dedup import (
     dedup_graph_persons,
     dedup_graph_publications,
     dedup_graph_repositories,
 )
-from pauk.graph.jsonl_loader import load_jsonl_dir
+from pauk.graph.jsonl_loader import load_prepared_rows
+from pauk.graph.load import ENTITY_FILES
 from pauk.models import (
     Affiliation,
     Person,
@@ -49,27 +52,38 @@ def repository(rid, name, url, *, github_id=None, cited=(), publications=(), day
     )
 
 
+def load_group(client: RecordingNeo4jClient, prepared: PreparedStore) -> None:
+    """Publish one group's prepared rows into a (fake) Neo4j client, the
+    same way `pauk publish graph` does - via Mongo, not a directory."""
+    load_prepared_rows(client, {
+        filename: list(prepared.read_rows(entity))
+        for entity, filename in ENTITY_FILES.items()
+    })
+
+
 class DedupStageTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        # The dedup audit journal still writes a real file - unrelated to
+        # the raw/prepared Mongo migration.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.config = Settings(data_dir=Path(tmp.name))
+
     def run_stage(self, people, publications=(), catalog_rows=None):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        root = Path(self.tmp.name)
-        # An explicit data_dir keeps the stage off the machine's own staff
-        # catalog: without one it would read whatever data/static holds.
-        config = Settings(data_dir=root)
         if catalog_rows is not None:
-            config.static_dir.mkdir(parents=True, exist_ok=True)
-            (config.static_dir / "russian_names.csv").write_text(
+            self.config.static_dir.mkdir(parents=True, exist_ok=True)
+            (self.config.static_dir / "russian_names.csv").write_text(
                 CATALOG_HEADER + "".join(f"{row}\n" for row in catalog_rows), encoding="utf-8")
-        self.prepared = PreparedStore(config.prepared_dir, "sample")
-        self.raw = RawStore(config.raw_dir, "sample")
+        self.prepared = PreparedStore(self.db, "sample")
+        self.raw = RawStore(self.db, "sample")
         self.prepared.write_models("persons", people)
         self.prepared.write_models("publications", publications)
-        result = DedupStage(self.prepared, self.raw, config).run()
+        result = DedupStage(self.prepared, self.raw, self.config).run()
         return result, {p.id: p for p in self.prepared.read_models("persons", Person)}
 
     def journal(self, status=None):
-        path = self.prepared.group_dir / CANDIDATES_FILENAME
+        path = self.config.audit_dir / self.prepared.group / CANDIDATES_FILENAME
         rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
         return [row for row in rows if status is None or row["status"] == status]
 
@@ -336,12 +350,12 @@ class DedupStageTest(unittest.TestCase):
         ])
         # Without raw records prepared orcids are trusted — they merge...
         self.assertEqual(result["dedup_merged"], 1)
-        # ...but with raw author records showing different ORCIDs they must not.
-        self.tmp2 = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp2.cleanup)
-        root = Path(self.tmp2.name)
-        prepared = PreparedStore(root / "prepared", "sample")
-        raw = RawStore(root / "raw", "sample")
+        # ...but with raw author records showing different ORCIDs they must
+        # not. A fresh db: same group name "sample", but isolated from the
+        # run above so this scenario starts from a clean slate.
+        db2 = mongomock.MongoClient()["pauk_test"]
+        prepared = PreparedStore(db2, "sample")
+        raw = RawStore(db2, "sample")
         prepared.write_models("persons", [
             person("A1", "Li Li", ["W1"], itmo=False, orcid="0000-0001"),
             person("A2", "Li Li", ["W2"], itmo=False, orcid="0000-0001"),
@@ -352,7 +366,7 @@ class DedupStageTest(unittest.TestCase):
         raw.append("openalex_authors",
                    {"id": "https://openalex.org/A2", "orcid": "https://orcid.org/0000-0002"},
                    {"author_id": "A2"})
-        result = DedupStage(prepared, raw).run()
+        result = DedupStage(prepared, raw, self.config).run()
         self.assertEqual(result["dedup_merged"], 0)
         self.assertEqual(len(list(prepared.read_models("persons", Person))), 2)
 
@@ -377,24 +391,27 @@ class DedupStageTest(unittest.TestCase):
             person("A1", "Maria Petrova", ["W1", "W2"], orcid="0000-0001"),
             person("A2", "Maria Sidorova", ["W3"], orcid="0000-0001"),
         ])
-        again = DedupStage(self.prepared, self.raw).run()
+        again = DedupStage(self.prepared, self.raw, self.config).run()
         self.assertEqual(again["dedup_merged"], 0)
         rows = {p.id: p for p in self.prepared.read_models("persons", Person)}
         self.assertEqual(rows["A1"].merged_ids, ["A2"])
 
 
 class PublicationDedupTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.config = Settings(data_dir=Path(tmp.name))
+
     def run_stage(self, publications, people=(), repositories=(), repo_links=()):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        root = Path(self.tmp.name)
-        self.prepared = PreparedStore(root / "prepared", "sample")
-        self.raw = RawStore(root / "raw", "sample")
+        self.prepared = PreparedStore(self.db, "sample")
+        self.raw = RawStore(self.db, "sample")
         self.prepared.write_models("publications", publications)
         self.prepared.write_models("persons", people)
         self.prepared.write_models("repositories", repositories)
         self.prepared.write_models("repo_links", repo_links)
-        result = DedupStage(self.prepared, self.raw).run()
+        result = DedupStage(self.prepared, self.raw, self.config).run()
         rows = {p.id: p for p in self.prepared.read_models("publications", Publication)}
         return result, rows
 
@@ -471,11 +488,8 @@ class PublicationDedupTest(unittest.TestCase):
     def test_a_ledger_entry_without_authors_is_completed_from_raw(self):
         # Records folded before author lists were versioned left entries with
         # the bibliography only, and no later merge revisits them.
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        root = Path(self.tmp.name)
-        prepared = PreparedStore(root / "prepared", "sample")
-        raw = RawStore(root / "raw", "sample")
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
         raw.append("openalex_works", {
             "id": "https://openalex.org/W2", "title": "One work",
             "abstract_inverted_index": {"Older": [0], "abstract": [1]},
@@ -493,7 +507,7 @@ class PublicationDedupTest(unittest.TestCase):
         ]
         prepared.write_models("publications", [survivor])
         prepared.write_models("persons", [person("A1", "Author One", ["W1"])])
-        DedupStage(prepared, raw).run()
+        DedupStage(prepared, raw, self.config).run()
         (row,) = prepared.read_models("publications", Publication)
         ledger = {v.openalex_id: v for v in row.versions}
         self.assertEqual([a.person_id for a in ledger["W1"].authors], ["A1"])
@@ -566,7 +580,7 @@ class PublicationDedupTest(unittest.TestCase):
             publication("W1", "One work", doi="10.1/x", day="2026-01-01"),
             publication("W2", "One work", doi="10.1/x", day="2026-02-01"),
         ])
-        again = DedupStage(self.prepared, self.raw).run()
+        again = DedupStage(self.prepared, self.raw, self.config).run()
         self.assertEqual(again["dedup_publications_merged"], 0)
         rows = {p.id: p for p in self.prepared.read_models("publications", Publication)}
         self.assertEqual(rows["W2"].merged_ids, ["W1"])
@@ -574,14 +588,17 @@ class PublicationDedupTest(unittest.TestCase):
 
 
 class RepositoryDedupTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.config = Settings(data_dir=Path(tmp.name))
+
     def run_stage(self, repositories):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        root = Path(self.tmp.name)
-        self.prepared = PreparedStore(root / "prepared", "sample")
-        self.raw = RawStore(root / "raw", "sample")
+        self.prepared = PreparedStore(self.db, "sample")
+        self.raw = RawStore(self.db, "sample")
         self.prepared.write_models("repositories", repositories)
-        result = DedupStage(self.prepared, self.raw).run()
+        result = DedupStage(self.prepared, self.raw, self.config).run()
         return result, {r.id: r for r in self.prepared.read_models("repositories", Repository)}
 
     def test_renamed_repository_folds_and_keeps_every_url(self):
@@ -623,50 +640,50 @@ class RepositoryDedupTest(unittest.TestCase):
 
 class LoaderPublicationMergeTest(unittest.TestCase):
     def test_previously_published_duplicate_publication_is_folded(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            prepared = PreparedStore(Path(tmp) / "prepared", "sample")
-            client = RecordingNeo4jClient()
-            # First publish: both records of the work are still separate.
-            prepared.write_models("publications", [
-                publication("W1", "One work", doi="10.1/x"),
-                publication("W2", "One work", doi="10.1/x"),
-            ])
-            prepared.write_models("persons", [person("A1", "Author One", ["W1", "W2"])])
-            load_jsonl_dir(client, prepared.group_dir)
-            assert ("A1", "W2") in client.edge_pairs("AUTHORED")
-            # Second publish after dedup: W2 folded into W1.
-            prepared.write_models("publications", [
-                Publication(id="W1", title="One work", doi="10.1/x", merged_ids=["W2"]),
-            ])
-            prepared.write_models("persons", [person("A1", "Author One", ["W1"])])
-            load_jsonl_dir(client, prepared.group_dir)
-            self.assertNotIn("W2", client.nodes["Publication"])
-            # The edge that pointed at the duplicate now points at the survivor.
-            self.assertEqual(client.edge_pairs("AUTHORED"), {("A1", "W1")})
+        db = mongomock.MongoClient()["pauk_test"]
+        prepared = PreparedStore(db, "sample")
+        client = RecordingNeo4jClient()
+        # First publish: both records of the work are still separate.
+        prepared.write_models("publications", [
+            publication("W1", "One work", doi="10.1/x"),
+            publication("W2", "One work", doi="10.1/x"),
+        ])
+        prepared.write_models("persons", [person("A1", "Author One", ["W1", "W2"])])
+        load_group(client, prepared)
+        assert ("A1", "W2") in client.edge_pairs("AUTHORED")
+        # Second publish after dedup: W2 folded into W1.
+        prepared.write_models("publications", [
+            Publication(id="W1", title="One work", doi="10.1/x", merged_ids=["W2"]),
+        ])
+        prepared.write_models("persons", [person("A1", "Author One", ["W1"])])
+        load_group(client, prepared)
+        self.assertNotIn("W2", client.nodes["Publication"])
+        # The edge that pointed at the duplicate now points at the survivor.
+        self.assertEqual(client.edge_pairs("AUTHORED"), {("A1", "W1")})
 
     def test_previously_published_duplicate_repository_is_folded(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            prepared = PreparedStore(Path(tmp) / "prepared", "sample")
-            client = RecordingNeo4jClient()
-            prepared.write_models("publications", [publication("W1", "One work")])
-            prepared.write_models("repositories", [
-                repository("github_org_old", "old", "https://github.com/org/old",
-                           github_id=7, publications=["W1"]),
-            ])
-            load_jsonl_dir(client, prepared.group_dir)
-            assert ("github_org_old", "W1") in client.edge_pairs("IMPLEMENTS")
-            prepared.write_models("repositories", [
-                repository("github_org_new", "new", "https://github.com/org/new",
-                           github_id=7, cited=["https://github.com/org/new",
-                                               "https://github.com/org/old"],
-                           publications=["W1"]),
-            ])
-            rows = list(prepared.read_models("repositories", Repository))
-            rows[0].merged_ids = ["github_org_old"]
-            prepared.write_models("repositories", rows)
-            load_jsonl_dir(client, prepared.group_dir)
-            self.assertNotIn("github_org_old", client.nodes["Repository"])
-            self.assertEqual(client.edge_pairs("IMPLEMENTS"), {("github_org_new", "W1")})
+        db = mongomock.MongoClient()["pauk_test"]
+        prepared = PreparedStore(db, "sample")
+        client = RecordingNeo4jClient()
+        prepared.write_models("publications", [publication("W1", "One work")])
+        prepared.write_models("repositories", [
+            repository("github_org_old", "old", "https://github.com/org/old",
+                       github_id=7, publications=["W1"]),
+        ])
+        load_group(client, prepared)
+        assert ("github_org_old", "W1") in client.edge_pairs("IMPLEMENTS")
+        prepared.write_models("repositories", [
+            repository("github_org_new", "new", "https://github.com/org/new",
+                       github_id=7, cited=["https://github.com/org/new",
+                                           "https://github.com/org/old"],
+                       publications=["W1"]),
+        ])
+        rows = list(prepared.read_models("repositories", Repository))
+        rows[0].merged_ids = ["github_org_old"]
+        prepared.write_models("repositories", rows)
+        load_group(client, prepared)
+        self.assertNotIn("github_org_old", client.nodes["Repository"])
+        self.assertEqual(client.edge_pairs("IMPLEMENTS"), {("github_org_new", "W1")})
 
 
 class GraphDedupTest(unittest.TestCase):
@@ -674,9 +691,7 @@ class GraphDedupTest(unittest.TestCase):
     graph-wide pass compares Person nodes from every published group."""
 
     def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.root = Path(tmp.name)
+        self.db = mongomock.MongoClient()["pauk_test"]
 
     @staticmethod
     def paper(pid, title, field="Computer Science"):
@@ -686,21 +701,21 @@ class GraphDedupTest(unittest.TestCase):
         row.fields = [field]
         return row
 
-    def load_group(self, client, group, publications, people):
-        prepared = PreparedStore(self.root / "prepared", group)
+    def load_new_group(self, client, group, publications, people):
+        prepared = PreparedStore(self.db, group)
         prepared.write_models("publications", publications)
         prepared.write_models("persons", people)
-        load_jsonl_dir(client, prepared.group_dir)
+        load_group(client, prepared)
         return prepared
 
     def test_cross_group_namesakes_fold_in_graph(self):
         # One researcher collected in two periods: the same full name, and
         # the shared research field corroborates it.
         client = RecordingNeo4jClient()
-        self.load_group(client, "q1", [self.paper("W1", "Paper one")],
-                        [person("X1", "Julia Borisova", ["W1"])])
-        self.load_group(client, "y2026", [self.paper("W2", "Paper two")],
-                        [person("Y1", "Julia Borisova", ["W2"], orcid="0009-0001")])
+        self.load_new_group(client, "q1", [self.paper("W1", "Paper one")],
+                            [person("X1", "Julia Borisova", ["W1"])])
+        self.load_new_group(client, "y2026", [self.paper("W2", "Paper two")],
+                            [person("Y1", "Julia Borisova", ["W2"], orcid="0009-0001")])
         removed, report = dedup_graph_persons(client, {})
         self.assertEqual(removed, 1)
         # The record carrying an ORCID wins the canonical spot.
@@ -716,10 +731,10 @@ class GraphDedupTest(unittest.TestCase):
     def test_staff_catalog_folds_spellings_across_groups(self):
         # Two periods, two spellings, nothing in common but the employee.
         client = RecordingNeo4jClient()
-        self.load_group(client, "q1", [publication("W1", "Paper one")],
-                        [person("X1", "Aleksei Dukhanov", ["W1"])])
-        self.load_group(client, "y2026", [publication("W2", "Paper two")],
-                        [person("Y1", "Alexey Valentinovich Dukhanov", ["W2"])])
+        self.load_new_group(client, "q1", [publication("W1", "Paper one")],
+                            [person("X1", "Aleksei Dukhanov", ["W1"])])
+        self.load_new_group(client, "y2026", [publication("W2", "Paper two")],
+                            [person("Y1", "Alexey Valentinovich Dukhanov", ["W2"])])
         catalog = RussianNamesCatalog([{
             "name_ru": "Духанов Алексей Валентинович", "surname": "Духанов",
             "name": "Алексей", "patronymic": "Валентинович", "degree": "д.т.н.",
@@ -735,19 +750,19 @@ class GraphDedupTest(unittest.TestCase):
 
     def test_without_a_catalog_the_graph_pass_is_unchanged(self):
         client = RecordingNeo4jClient()
-        self.load_group(client, "q1", [publication("W1", "Paper one")],
-                        [person("X1", "Aleksei Dukhanov", ["W1"])])
-        self.load_group(client, "y2026", [publication("W2", "Paper two")],
-                        [person("Y1", "Alexey Valentinovich Dukhanov", ["W2"])])
+        self.load_new_group(client, "q1", [publication("W1", "Paper one")],
+                            [person("X1", "Aleksei Dukhanov", ["W1"])])
+        self.load_new_group(client, "y2026", [publication("W2", "Paper two")],
+                            [person("Y1", "Alexey Valentinovich Dukhanov", ["W2"])])
         removed, _report = dedup_graph_persons(client, {})
         self.assertEqual(removed, 0)
 
     def test_raw_orcids_veto_graph_merges_too(self):
         client = RecordingNeo4jClient()
-        self.load_group(client, "q1", [publication("W1", "Paper one")],
-                        [person("X1", "Julia Borisova", ["W1"])])
-        self.load_group(client, "y2026", [publication("W2", "Paper two")],
-                        [person("Y1", "Julia Borisova", ["W2"])])
+        self.load_new_group(client, "q1", [publication("W1", "Paper one")],
+                            [person("X1", "Julia Borisova", ["W1"])])
+        self.load_new_group(client, "y2026", [publication("W2", "Paper two")],
+                            [person("Y1", "Julia Borisova", ["W2"])])
         removed, _report = dedup_graph_persons(client, {"X1": "0009-0001", "Y1": "0009-0002"})
         self.assertEqual(removed, 0)
         self.assertIn("X1", client.nodes["Person"])
@@ -755,12 +770,12 @@ class GraphDedupTest(unittest.TestCase):
 
     def test_cross_group_publication_records_fold_in_graph(self):
         client = RecordingNeo4jClient()
-        self.load_group(client, "q1",
-                        [publication("W1", "Same work", doi="10.1/x", day="2026-01-01")],
-                        [person("X1", "Author One", ["W1"])])
-        self.load_group(client, "y2026",
-                        [publication("W2", "Same work", doi="10.1/x", day="2026-05-01")],
-                        [person("X1", "Author One", ["W2"])])
+        self.load_new_group(client, "q1",
+                            [publication("W1", "Same work", doi="10.1/x", day="2026-01-01")],
+                            [person("X1", "Author One", ["W1"])])
+        self.load_new_group(client, "y2026",
+                            [publication("W2", "Same work", doi="10.1/x", day="2026-05-01")],
+                            [person("X1", "Author One", ["W2"])])
         removed, report = dedup_graph_publications(client)
         self.assertEqual(removed, 1)
         # The later record survives; edges follow it.
@@ -776,10 +791,10 @@ class GraphDedupTest(unittest.TestCase):
 
     def test_graph_article_beats_newer_preprint_before_author_count(self):
         client = RecordingNeo4jClient()
-        self.load_group(client, "q1", [
+        self.load_new_group(client, "q1", [
             publication("W1", "Same work", doi="10.1/x", type="article", day="2026-01-01"),
         ], [person("X1", "Author One", ["W1"])])
-        self.load_group(client, "y2026", [
+        self.load_new_group(client, "y2026", [
             publication("W2", "Same work", doi="10.1/x", type="preprint", day="2026-12-01"),
         ], [
             person("X1", "Author One", ["W2"]),
@@ -796,11 +811,11 @@ class GraphDedupTest(unittest.TestCase):
         client = RecordingNeo4jClient()
         w1 = publication("W1", "Same work", doi="10.1/x", day="2026-01-01")
         w1.abstract = "First-group abstract"
-        self.load_group(client, "q1", [w1], [person("X1", "Author One", ["W1"])])
-        self.load_group(client, "y2026",
-                        [publication("W2", "Same work", doi="10.1/x", day="2026-05-01")],
-                        [person("X1", "Author One", ["W2"]),
-                         person("X2", "Author Two", ["W2"])])
+        self.load_new_group(client, "q1", [w1], [person("X1", "Author One", ["W1"])])
+        self.load_new_group(client, "y2026",
+                            [publication("W2", "Same work", doi="10.1/x", day="2026-05-01")],
+                            [person("X1", "Author One", ["W2"]),
+                             person("X2", "Author Two", ["W2"])])
         dedup_graph_publications(client)
         ledger = {entry["openalex_id"]: entry
                   for entry in json.loads(client.nodes["Publication"]["W2"]["versions"])}
@@ -814,12 +829,12 @@ class GraphDedupTest(unittest.TestCase):
             ("q1", "github_org_old", "https://github.com/org/old", "2026-01-01"),
             ("y2026", "github_org_new", "https://github.com/org/new", "2026-06-01"),
         ):
-            prepared = PreparedStore(self.root / "prepared", group)
+            prepared = PreparedStore(self.db, group)
             prepared.write_models("publications", [publication(f"W_{group}", f"Work {group}")])
             prepared.write_models("repositories", [
                 repository(rid, rid.split("_")[-1], url, github_id=42,
                            publications=[f"W_{group}"], day=day)])
-            load_jsonl_dir(client, prepared.group_dir)
+            load_group(client, prepared)
         removed, report = dedup_graph_repositories(client)
         self.assertEqual(removed, 1)
         self.assertNotIn("github_org_old", client.nodes["Repository"])
@@ -833,14 +848,14 @@ class GraphDedupTest(unittest.TestCase):
 
     def test_republish_of_old_group_does_not_resurrect_folded_person(self):
         client = RecordingNeo4jClient()
-        old_group = self.load_group(client, "q1", [self.paper("W1", "Paper one")],
-                                    [person("X1", "Julia Borisova", ["W1"])])
-        self.load_group(client, "y2026", [self.paper("W2", "Paper two")],
-                        [person("Y1", "Julia Borisova", ["W2"], orcid="0009-0001")])
+        old_group = self.load_new_group(client, "q1", [self.paper("W1", "Paper one")],
+                                        [person("X1", "Julia Borisova", ["W1"])])
+        self.load_new_group(client, "y2026", [self.paper("W2", "Paper two")],
+                            [person("Y1", "Julia Borisova", ["W2"], orcid="0009-0001")])
         dedup_graph_persons(client, {})
         # The old group's prepared rows still carry X1: republishing them
         # must fold it right back instead of splitting the person again.
-        load_jsonl_dir(client, old_group.group_dir)
+        load_group(client, old_group)
         self.assertNotIn("X1", client.nodes["Person"])
         self.assertIn(("Y1", "W1"), client.edge_pairs("AUTHORED"))
 
@@ -918,29 +933,28 @@ class FoldPropertyPreservationTest(unittest.TestCase):
 
 class LoaderPersonMergeTest(unittest.TestCase):
     def test_previously_published_duplicate_node_is_folded(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            prepared = PreparedStore(root / "prepared", "sample")
-            client = RecordingNeo4jClient()
-            # First publish: the split still exists.
-            prepared.write_models("publications", [])
-            prepared.write_models("persons", [
-                person("A1", "Nikolay O. Nikitin", ["W1"]),
-                person("A2", "Nikolay Nikitin", ["W2"]),
-            ])
-            client.upsert_nodes_batch("Publication", [("W1", {}), ("W2", {})])
-            load_jsonl_dir(client, prepared.group_dir)
-            self.assertIn("A2", client.nodes["Person"])
-            # Second publish after dedup: A2 folded into A1.
-            prepared.write_models("persons", [
-                person("A1", "Nikolay O. Nikitin", ["W1", "W2"], merged=["A2"]),
-            ])
-            load_jsonl_dir(client, prepared.group_dir)
-            self.assertNotIn("A2", client.nodes["Person"])
-            self.assertEqual(
-                {pair for pair in client.edge_pairs("AUTHORED") if pair[0] in {"A1", "A2"}},
-                {("A1", "W1"), ("A1", "W2")},
-            )
+        db = mongomock.MongoClient()["pauk_test"]
+        prepared = PreparedStore(db, "sample")
+        client = RecordingNeo4jClient()
+        # First publish: the split still exists.
+        prepared.write_models("publications", [])
+        prepared.write_models("persons", [
+            person("A1", "Nikolay O. Nikitin", ["W1"]),
+            person("A2", "Nikolay Nikitin", ["W2"]),
+        ])
+        client.upsert_nodes_batch("Publication", [("W1", {}), ("W2", {})])
+        load_group(client, prepared)
+        self.assertIn("A2", client.nodes["Person"])
+        # Second publish after dedup: A2 folded into A1.
+        prepared.write_models("persons", [
+            person("A1", "Nikolay O. Nikitin", ["W1", "W2"], merged=["A2"]),
+        ])
+        load_group(client, prepared)
+        self.assertNotIn("A2", client.nodes["Person"])
+        self.assertEqual(
+            {pair for pair in client.edge_pairs("AUTHORED") if pair[0] in {"A1", "A2"}},
+            {("A1", "W1"), ("A1", "W2")},
+        )
 
 
 if __name__ == "__main__":

@@ -248,13 +248,32 @@ RUSSIAN_NAMES_CATALOG = [
     "Смирнов Иван Васильевич,Смирнов,Иван,Васильевич,д.х.н.",
 ]
 
+# Root organisation the top-level units hang off of; exercises the Organization
+# node + the Department-[:PART_OF]->Organization edge end to end (guards against
+# organizations silently never reaching the graph, see ENTITY_FILES in graph/load.py).
+ORG_UID = "itmo"
+ORG_NAME = "ITMO University"
+# uid of the one unit wired under the organisation, so the bench can assert its
+# PART_OF edge resolves.
+ORG_CHILD_UID = "institute-of-applied-computer-science"
+
 DEPARTMENTS_CATALOG = [
+    {
+        "uid": ORG_UID,
+        "name_en": ORG_NAME,
+        "name_ru": "Университет ИТМО",
+        "kind": "organization",
+        "parent": None,
+        "ror_id": "https://ror.org/04txgxn49",
+        "country": "RU",
+        "type": "education",
+    },
     {
         "uid": "institute-of-applied-computer-science",
         "name_en": "Institute of Applied Computer Science",
         "name_ru": "Институт прикладной информатики",
         "kind": "institute",
-        "parent": None,
+        "parent": ORG_UID,
         "aliases": ["IACS"],
     },
     {
@@ -290,7 +309,9 @@ DEPARTMENTS_CATALOG = [
         "aliases": ["QC Lab"],
     },
 ]
-DEPT_NAMES = [d["name_en"] for d in DEPARTMENTS_CATALOG]
+# Only the units (the organisation is a separate root, never an affiliation slot),
+# so the modulo assignment in _affiliation stays exactly as before the org was added.
+DEPT_NAMES = [d["name_en"] for d in DEPARTMENTS_CATALOG if d.get("kind") != "organization"]
 
 REPO_OWNERS = [f"BenchOrg{i}" for i in range(1, 17)]
 REPO_NAMES = ["AlphaTool", "beta-kit", "GammaLib", "delta.util", "EpsilonNet"]

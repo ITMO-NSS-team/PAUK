@@ -19,14 +19,17 @@ PAUK собирает публикации ИТМО из OpenAlex, обогащ�
 
 ## Поток данных
 
+Та же схема как подробная Mermaid-диаграмма —
+[`../diagrams/pipeline-flow.md`](../diagrams/pipeline-flow.md).
+
 ```
 OpenAlex API
   │  pauk collect
-data/raw/<group>/openalex_works.jsonl        RawStore, append-only, fsync на строку
+MongoDB: raw                                 RawStore, append-only
   │  pauk normalize
-data/prepared/<group>/*.jsonl                PreparedStore, 6 плоских файлов
+MongoDB: publications/persons/...            PreparedStore, 6 коллекций
   │  pauk enrich [stage]                     pdf → persons → departments → code_links → repositories → dedup
-data/prepared/<group>/*.jsonl                те же файлы, обогащённые
+MongoDB: publications/persons/...            те же коллекции, обогащённые
   │  pauk publish graph
 Neo4j                                        накопление между прогонами, MERGE
   │  pauk dedup graph (по требованию)
@@ -37,12 +40,13 @@ data/cache/graph_snapshot.json               снепшот на диске
 pauk/gui/web/graph-data.js, graph-search.js  статика для карты
 ```
 
-`<group>` — папка на один прогон: `<дата>__<work_id>` для одной публикации,
+`<group>` — имя одного прогона: `<дата>__<work_id>` для одной публикации,
 `<дата>__from_<start>__to_<end>` для периода, либо явное имя через `--name`
-(`pauk/storage/naming.py::group_name`). `data/prepared/<group>/` — шесть
-файлов, не единый агрегат: `publications.jsonl`, `persons.jsonl`,
-`departments.jsonl`, `repositories.jsonl`, `github_profiles.jsonl`,
-`repo_links.jsonl` (`PreparedStore.FILES`).
+(`pauk/storage/naming.py::group_name`). Раньше это была папка на диске;
+сейчас — значение поля `groups` на документах в MongoDB (сущности
+глобальные, не по группе — см. [storage.md](storage.md)), шесть
+коллекций: `publications`, `persons`, `departments`, `repositories`,
+`github_profiles`, `repo_links` (`PreparedStore.COLLECTIONS`).
 
 **Neo4j — единственное место, где данные разных прогонов накапливаются.**
 Каждый `pauk publish graph --group <group>` льёт свою группу через
@@ -56,7 +60,7 @@ pauk/gui/web/graph-data.js, graph-search.js  статика для карты
 |---|---|---|
 | `pauk/models/` | pydantic-схема prepared JSONL | [models.md](models.md) |
 | `pauk/sources/` | HTTP-клиенты внешних API | [sources.md](sources.md) |
-| `pauk/storage/` | чтение/запись JSONL, атомарность, блокировки | [storage.md](storage.md) |
+| `pauk/storage/` | raw/prepared в MongoDB | [storage.md](storage.md) |
 | `pauk/pipeline/` | collect → normalize → enrich → dedup | [pipeline/overview.md](pipeline/overview.md) |
 | `pauk/graph/` | JSONL/граф → Neo4j, дедуп на уровне графа | [neo4j-graph.md](neo4j-graph.md) |
 | `pauk/gui/` | снепшот → раскладка → статический сайт | [gui.md](gui.md) |
@@ -76,12 +80,16 @@ enrichment-этапа на этой строке: `not_started`, `completed`,
 (`pauk/pipeline/stages/base.py`) решает, трогать ли строку заново:
 `FAILED`/`NOT_STARTED` — да, всё остальное — нет, если не передан
 `--force`. Резюмируется между прогонами `pauk enrich` — `write_models()`
-сохраняет результат в конце каждого `run()`.
+сохраняет результат в конце каждого `run()`. Так как сущности в MongoDB
+глобальные, а не по группе, `processing` виден и следующей группе,
+затронувшей ту же сущность — повторная обработка не начинается с нуля
+(подробнее — [storage.md](storage.md)).
 
 ## Публикация в граф
 
-`pauk publish graph --group <group>` (или `--input <файл/папка>` для
-точечного прогона на подмножестве строк) грузит сначала все узлы, потом
+`pauk publish graph --group <group>` читает prepared-коллекции этой
+группы из MongoDB (`--input` для точечного прогона на подмножестве id —
+у `enrich`, не у `publish`, см. [cli.md](cli.md)) и грузит сначала все узлы, потом
 все связи — если связь ссылается на не загруженный узел, она не создаётся
 (в лог идёт warning с точным числом, заглушки не заводятся). Подробности
 — [neo4j-graph.md](neo4j-graph.md).

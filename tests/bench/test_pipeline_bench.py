@@ -13,10 +13,13 @@ import re
 from types import SimpleNamespace
 from unittest import mock
 
+import mongomock
 import pytest
 
-from pauk.graph.jsonl_loader import load_jsonl_dir, normalize_repo_url
+from pauk.graph.jsonl_loader import load_prepared_rows, normalize_repo_url
+from pauk.graph.load import ENTITY_FILES
 from pauk.models import GitHubProfile, Person, Publication, RepoLink, Repository
+from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.collect import Collector
 from pauk.pipeline.enrich import Enricher
 from pauk.pipeline.normalize import OpenAlexNormalizer
@@ -33,21 +36,25 @@ from tests.bench.mocks import (
 )
 from tests.bench.universe import (
     ARCHIVE_AUTHOR_AFFILIATION,
-    CONSORTIUM_FILLERS,
-    CONSORTIUM_ITMO_INDEX,
-    CONSORTIUM_ORG_NAME,
-    CONSORTIUM_WORK,
     ARCHIVE_AUTHOR_ID,
     ARCHIVE_REPO_ID,
     ARCHIVE_REPO_URL,
     ARCHIVE_WORK,
     AUTHOR_IDS,
+    CONSORTIUM_FILLERS,
+    CONSORTIUM_ITMO_INDEX,
+    CONSORTIUM_ORG_NAME,
+    CONSORTIUM_WORK,
     DEDUP_MERGES,
     MARKUP_TITLE_CLEAN,
     MARKUP_WORK,
+    ORG_CHILD_UID,
+    ORG_NAME,
+    ORG_UID,
     PHANTOM_URLS,
     PUBLICATION_MERGES,
     REPO_OWNERS,
+    RUSSIAN_NAMES_CATALOG,
     STALE_REPO_CANONICAL_ID,
     STALE_REPO_ID,
     STALE_REPO_PUBLICATION,
@@ -57,7 +64,6 @@ from tests.bench.universe import (
     UNIDENTIFIED_ORCID,
     UNIDENTIFIED_WORK,
     UNTITLED_WORK_IDS,
-    RUSSIAN_NAMES_CATALOG,
     build_universe,
     repo_github_id,
 )
@@ -82,8 +88,9 @@ def bench(tmp_path_factory) -> SimpleNamespace:
         + "".join(f"{row}\n" for row in RUSSIAN_NAMES_CATALOG), encoding="utf-8")
 
     config = Settings(data_dir=data_dir)
-    raw = RawStore(config.raw_dir, GROUP)
-    prepared = PreparedStore(config.prepared_dir, GROUP)
+    db = mongomock.MongoClient()["pauk_test"]
+    raw = RawStore(db, GROUP)
+    prepared = PreparedStore(db, GROUP)
 
     openalex = MockOpenAlexClient(universe)
     selector = PeriodSelector("2026-01-01", "2026-12-31")
@@ -107,31 +114,25 @@ def bench(tmp_path_factory) -> SimpleNamespace:
         # A repository renamed on GitHub after an earlier run: that run's row
         # kept the old id and URL, so only the numeric id can tie it to the
         # row the new name produced. Seeded here, folded by the re-run below.
-        prepared.write_models(
-            "repositories",
-            [
-                *repos_after_first.values(),
-                Repository(
-                    id=STALE_REPO_ID,
-                    name="legacy-name",
-                    url=STALE_REPO_URL,
-                    github_id=repo_github_id("BenchOrg7", "AlphaTool"),
-                    cited_urls=[STALE_REPO_URL],
-                    owner_login="BenchOrg7",
-                    publication_ids=[STALE_REPO_PUBLICATION],
-                    processing={"repositories": {"status": "completed", "attempts": 1}},
-                ),
-            ],
-        )
+        prepared.write_models("repositories", [*repos_after_first.values(), Repository(
+            id=STALE_REPO_ID, name="legacy-name", url=STALE_REPO_URL,
+            github_id=repo_github_id("BenchOrg7", "AlphaTool"),
+            cited_urls=[STALE_REPO_URL], owner_login="BenchOrg7",
+            publication_ids=[STALE_REPO_PUBLICATION],
+            _processing={"repositories": ProcessingState(status=ProcessingStatus.COMPLETED, attempts=1)},
+        )])
         Enricher(prepared, raw, config).run()  # re-run: completed rows must not change
     finally:
         for p in patches:
             p.stop()
 
+    def rows_by_file():
+        return {filename: list(prepared.read_rows(entity)) for entity, filename in ENTITY_FILES.items()}
+
     client = RecordingNeo4jClient()
-    load_jsonl_dir(client, config.prepared_dir / GROUP)
+    load_prepared_rows(client, rows_by_file())
     snapshot_first = client.snapshot()
-    load_jsonl_dir(client, config.prepared_dir / GROUP)
+    load_prepared_rows(client, rows_by_file())
     snapshot_second = client.snapshot()
 
     return SimpleNamespace(
@@ -336,8 +337,9 @@ def test_same_name_without_distinguishing_marks_merges_by_default(bench):
 
 def test_conflicting_orcids_stay_separate_and_unreported(bench):
     assert "A5000000058" in bench.persons and "A5000000059" in bench.persons
-    candidates_path = bench.config.prepared_dir / GROUP / "dedup_candidates.jsonl"
-    rows = [json.loads(line) for line in candidates_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    candidates_path = bench.config.audit_dir / GROUP / "dedup_candidates.jsonl"
+    rows = [json.loads(line) for line in candidates_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()]
     pairs = {frozenset((row["person_a"], row["person_b"])) for row in rows}
     assert frozenset(("A5000000058", "A5000000059")) not in pairs
 
@@ -547,6 +549,17 @@ def test_graph_edge_counts(bench):
     assert len(graph.edge_pairs("IMPLEMENTS")) == 84
     assert len(graph.edge_pairs("OWNED_BY")) == 80
     assert len(graph.edge_pairs("BELONGS_TO")) == 14
+
+
+def test_organization_reaches_the_graph(bench):
+    # Guards the ENTITY_FILES wiring in graph/load.py: the departments stage writes
+    # an Organization row that must be loaded as a node, otherwise the
+    # Department-[:PART_OF]->Organization edge silently never resolves and
+    # organizations vanish from Neo4j (git flags no conflict in that file).
+    org = bench.graph.nodes["Organization"].get(ORG_UID)
+    assert org is not None, "organization row never reached the graph"
+    assert org["name_en"] == ORG_NAME
+    assert (ORG_CHILD_UID, ORG_UID) in bench.graph.edge_pairs("PART_OF")
 
 
 def test_every_relationship_resolved(bench):

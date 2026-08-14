@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 
 from pauk.logging import configure_logging
-from pauk.models import Person, Publication
 from pauk.pipeline.collect import Collector
 from pauk.pipeline.enrich import Enricher
 from pauk.pipeline.normalize import OpenAlexNormalizer
@@ -14,7 +14,7 @@ from pauk.pipeline.stages import ALL_STAGES
 from pauk.pipeline.stages.base import PreparedSelection
 from pauk.settings import settings
 from pauk.sources import OpenAlexClient
-from pauk.storage import PreparedStore, RawStore
+from pauk.storage import PreparedStore, RawStore, ensure_indexes, get_mongo_client
 from pauk.storage.naming import group_name, validate_group
 
 
@@ -38,29 +38,19 @@ def _group(args) -> str:
     ))
 
 
-def _input_group_and_selection(value: str) -> tuple[str, PreparedSelection | None]:
-    path = Path(value).resolve()
-    prepared_root = settings.prepared_dir.resolve()
-    if path.is_dir():
-        if path.parent != prepared_root:
-            raise ValueError(f"prepared group directory must be directly inside {prepared_root}")
-        return validate_group(path.name), None
-    if not path.is_file():
-        raise ValueError(f"prepared input file does not exist: {path}")
-    if path.parent.parent != prepared_root:
-        raise ValueError(f"prepared entity file must be directly inside a group in {prepared_root}")
-    group = validate_group(path.parent.name)
-    entity = PreparedStore.entity_for_path(path)
-    model_map = {
-        "publications": Publication, "persons": Person, "departments": None,
-        "repositories": None, "github_profiles": None, "repo_links": None,
-    }
-    if model_map[entity] is None:
-        rows = PreparedStore(settings.prepared_dir, group).read_rows(entity)
-        ids = frozenset(str(row.get("id") or row.get("publication_id")) for row in rows)
-    else:
-        ids = frozenset(row.id for row in PreparedStore(settings.prepared_dir, group).read_models(entity, model_map[entity]))
-    return group, PreparedSelection(entity, ids)
+def _selection_from_input(path: str, entity: str) -> PreparedSelection:
+    ids = frozenset(
+        line.strip() for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()
+    )
+    return PreparedSelection(entity, ids)
+
+
+logger = logging.getLogger("pauk.cli")
+
+
+def _log_result(action: str, group: str | None, result: dict) -> None:
+    summary = ", ".join(f"{key}={value}" for key, value in result.items()) or "nothing to do"
+    logger.info("%s: %s", f"{action} {group}" if group else action, summary)
 
 
 def main() -> None:
@@ -80,14 +70,13 @@ def main() -> None:
     p.add_argument("stage", nargs="?", default="all")
     p.add_argument("--force", action="store_true",
                    help="reprocess rows whose stage already completed (e.g. after a fix)")
-    input_group = p.add_mutually_exclusive_group(required=True)
-    input_group.add_argument("--group")
-    input_group.add_argument("--input")
+    p.add_argument("--group", required=True)
+    p.add_argument("--input", help="path to a file of ids (one per line) to scope this run to")
+    p.add_argument("--entity", choices=list(PreparedStore.COLLECTIONS),
+                   help="entity the --input ids belong to (required together with --input)")
     p = sub.add_parser("publish")
     p.add_argument("target", choices=["graph"])
-    input_group = p.add_mutually_exclusive_group(required=True)
-    input_group.add_argument("--group")
-    input_group.add_argument("--input")
+    p.add_argument("--group", required=True)
     p = sub.add_parser("dedup")
     p.add_argument("target", choices=["graph"],
                    help="deduplicate persons across every published group in the graph")
@@ -97,32 +86,55 @@ def main() -> None:
     p.add_argument("--output", type=Path)
     args = parser.parse_args()
     configure_logging(args.verbose)
-    if args.command == "run":
-        print(PipelineRunner(settings, _group(args)).run(_selector(args)))
-    elif args.command == "collect":
-        group = _group(args)
-        Collector(
-            OpenAlexClient(settings.request_timeout, settings.openalex_api_key),
-            RawStore(settings.raw_dir, group),
-        ).collect(_selector(args))
-    elif args.command == "normalize":
-        group = validate_group(args.group)
-        print(OpenAlexNormalizer(RawStore(settings.raw_dir, group), PreparedStore(settings.prepared_dir, group)).run())
-    elif args.command == "enrich":
-        if args.stage != "all" and args.stage not in {stage.name for stage in ALL_STAGES}:
-            parser.error(f"unknown enrichment stage: {args.stage}")
-        group, selection = (validate_group(args.group), None) if args.group else _input_group_and_selection(args.input)
-        print(Enricher(PreparedStore(settings.prepared_dir, group), RawStore(settings.raw_dir, group), settings).run(args.stage, selection, args.force))
-    elif args.command == "publish":
-        from pauk.graph.load import load_jsonl_group
-        group, _selection = (validate_group(args.group), None) if args.group else _input_group_and_selection(args.input)
-        load_jsonl_group(settings, group)
+
+    if args.command in ("run", "collect", "normalize", "enrich", "publish"):
+        mongo = get_mongo_client(settings)
+        try:
+            db = mongo[settings.mongo_db]
+            ensure_indexes(db)
+            if args.command == "run":
+                group = _group(args)
+                _log_result("run", group, PipelineRunner(settings, group, db).run(_selector(args)))
+            elif args.command == "collect":
+                group = _group(args)
+                count = Collector(
+                    OpenAlexClient(settings.request_timeout, settings.openalex_api_key),
+                    RawStore(db, group)).collect(_selector(args))
+                _log_result("collect", group, {"raw_works": count})
+            elif args.command == "normalize":
+                group = validate_group(args.group)
+                result = OpenAlexNormalizer(RawStore(db, group), PreparedStore(db, group)).run()
+                _log_result("normalize", group, result)
+            elif args.command == "enrich":
+                if args.stage != "all" and args.stage not in {stage.name for stage in ALL_STAGES}:
+                    parser.error(f"unknown enrichment stage: {args.stage}")
+                if bool(args.input) != bool(args.entity):
+                    parser.error("--input requires --entity (and vice versa)")
+                group = validate_group(args.group)
+                selection = _selection_from_input(args.input, args.entity) if args.input else None
+                result = Enricher(PreparedStore(db, group), RawStore(db, group), settings) \
+                    .run(args.stage, selection, args.force)
+                _log_result(f"enrich {args.stage}", group, result)
+            else:
+                from pauk.graph.load import load_jsonl_group
+                group = validate_group(args.group)
+                load_jsonl_group(settings, db, group)
+                logger.info("publish graph %s: done", group)
+        finally:
+            mongo.close()
     elif args.command == "dedup":
         from pauk.graph.dedup import run_graph_dedup
-        print(run_graph_dedup(settings))
+        mongo = get_mongo_client(settings)
+        try:
+            db = mongo[settings.mongo_db]
+            ensure_indexes(db)
+            _log_result("dedup graph", None, run_graph_dedup(settings, db))
+        finally:
+            mongo.close()
     else:
         from pauk.cache import GraphSnapshotExporter
-        print(GraphSnapshotExporter(settings).export(args.output))
+        path = GraphSnapshotExporter(settings).export(args.output)
+        logger.info("cache export: %s", path)
 
 
 if __name__ == "__main__":

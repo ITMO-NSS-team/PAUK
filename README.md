@@ -1,19 +1,15 @@
 # PAUK
 
-PAUK собирает публикации, обогащает их данными внешних источников и загружает
-результат в Neo4j.
+PAUK собирает публикации, обогащает их данными внешних источников (промежуточное и загружает результат в Neo4j.
 
 ## Данные
 
 ```text
 data/static/                 # версионируемые справочники, включая departments_catalog.json
-data/raw/<group>/            # полные неизменяемые ответы API
-data/prepared/<group>/       # JSONL сущностей для Neo4j
+MongoDB: raw                 # полные неизменяемые ответы API, по группам
+MongoDB: publications/persons/departments/repositories/github_profiles/repo_links
+                              # prepared-сущности для Neo4j, глобальные — не по группе
 ```
-
-В prepared-группе создаются `publications.jsonl`, `persons.jsonl`,
-`departments.jsonl`, `repositories.jsonl`, `github_profiles.jsonl` и
-`repo_links.jsonl`.
 
 ## Запуск
 
@@ -30,20 +26,21 @@ pauk run --works-file selected_works.txt --name selected-july
 # Отдельные шаги
 pauk collect --work W2741809807
 pauk normalize --group 2026-07-31__W2741809807
-pauk enrich code_links --input data/prepared/2026-07-31__W2741809807/publications.jsonl
+pauk enrich code_links --group 2026-07-31__W2741809807 --input selected_ids.txt --entity publications
 pauk publish graph --group 2026-07-31__W2741809807
 ```
 
-Передача entity-файла в `enrich --input` ограничивает запуск строками именно
-этого файла; передача директории группы запускает этап для всей группы.
-Повторный `collect` не добавляет уже сохранённые OpenAlex works, а повторный
-`normalize` сохраняет данные enrichment и производные entity-файлы.
-Флаг `enrich --force` переобрабатывает и строки со статусом `completed`
-(например, после исправления этапа).
+`enrich --group` обязателен всегда; `--input <файл> --entity <сущность>`
+дополнительно сужает запуск до id, перечисленных в файле (по одному на
+строку). Повторный `collect` не добавляет уже сохранённые OpenAlex works, а
+повторный `normalize` сохраняет данные enrichment — в том числе если тот же
+work попал в другую, пересекающуюся группу: сущности в MongoDB глобальные,
+не по группе. Флаг `enrich --force` переобрабатывает и строки со статусом
+`completed` (например, после исправления этапа).
 
 Ссылки на код извлекаются из абстракта и, если есть `pdf_url` (или он
 находится по DOI через `PAUK_PDF_CRAWLER_URL`, см. `.env.example`), из PDF
-постранично (`pauk enrich code_links`, кэш PDF — `data/pdf/<group>/`) —
+постранично (`pauk enrich code_links`, кэш PDF — `data/pdf/`) —
 и голые упоминания вида `github.com/org/repo`, и настоящие гиперссылки.
 Текст PDF сохраняется в `Publication.full_text`.
 
@@ -53,15 +50,15 @@ pauk publish graph --group 2026-07-31__W2741809807
 этап помечается `failed` и ретраится при следующем прогоне, но результат
 по абстракту сохраняется.
 
-Каждая строка prepared JSONL содержит `_processing` со статусом этапа:
+Каждый prepared-документ содержит `_processing` со статусом этапа:
 `not_started`, `completed`, `completed_empty`, `not_applicable` или `failed`.
 Это поле не загружается в граф.
 
 ## Схема графовой БД
 
-`pauk publish graph --group <group>` загружает prepared JSONL в Neo4j через
-`MERGE`. Для всех типов узлов уникален `id`; у `GitHubProfile` также уникален
-`login`.
+`pauk publish graph --group <group>` загружает prepared-коллекции этой
+группы из MongoDB в Neo4j через `MERGE`. Для всех типов узлов уникален
+`id`; у `GitHubProfile` также уникален `login`.
 
 `id` персоны — голый OpenAlex ID автора (один человек — один узел). Метка
 `Itmo` присваивается, если хотя бы в одной работе встретилась аффилиация

@@ -10,6 +10,24 @@
 доступ по SSH-ключу, доступ по VPN лаборатории). Раздаётся
 `pauk.gui.serve` в отдельной `screen`-сессии.
 
+## MongoDB
+
+Контейнер `pauk-mongo` (образ `mongo:4.4` — сервер на старом Xeon без
+AVX, `mongo:5+` требует AVX и падает с `Illegal instruction`), поднят
+вручную (не через `scripts/deploy.sh`, тот его не трогает):
+
+```bash
+docker run -d --name pauk-mongo -p 27017:27017 \
+  -v /home/asteb/pauk-mongo-data:/data/db mongo:4.4
+```
+
+Данные — bind-mount на `/home/asteb/pauk-mongo-data` на диске сервера
+(не docker volume — реальная папка, видна снаружи контейнера, растёт
+с объёмом raw/prepared-данных). Порт `27017` пробрасывается наружу без
+аутентификации — доступ ограничен только VPN лаборатории, как у Neo4j.
+Проверить состояние: `docker ps -a | grep mongo`, точный mount:
+`docker inspect pauk-mongo --format '{{json .Mounts}}' | python3 -m json.tool`.
+
 ## `scripts/deploy.sh`
 
 Одна кнопка: проверка связи → `git pull` на сервере → перезапуск

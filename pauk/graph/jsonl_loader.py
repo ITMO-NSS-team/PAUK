@@ -21,7 +21,7 @@ from .audit import AuditedNeo4jClient
 from .client import Neo4jClient, chunked
 from .extract import NODE_REGISTRY, extract_node, extract_relationships
 
-__all__ = ["extract_repo_links", "load_jsonl_dir", "normalize_repo_url"]
+__all__ = ["extract_repo_links", "load_jsonl_dir", "load_prepared_rows", "normalize_repo_url"]
 
 logger = logging.getLogger(__name__)
 
@@ -114,18 +114,22 @@ def extract_repo_links(
     return candidate_nodes, repo_edges, candidate_edges, candidate_promotions
 
 
-def load_jsonl_dir(client: Neo4jClient | AuditedNeo4jClient, in_dir: Path) -> None:
-    """Load every prepared JSONL file found in `in_dir` into Neo4j.
+def load_prepared_rows(client: Neo4jClient | AuditedNeo4jClient, rows_by_file: dict[str, list[dict]]) -> None:
+    """Load prepared entity rows into Neo4j, however they were sourced.
 
-    Reads all files first, accumulating nodes and relationships in memory
-    (the dataset is thousands of rows, not millions, so this is simpler than
-    interleaving reads with uploads), then uploads all nodes, then all
-    relationships — both in chunks of client.CHUNK_SIZE.
+    Reads every entity's rows first, accumulating nodes and relationships in
+    memory (the dataset is thousands of rows, not millions, so this is
+    simpler than interleaving reads with uploads), then uploads all nodes,
+    then all relationships — both in chunks of client.CHUNK_SIZE.
 
     Args:
-        client: An open Neo4jClient to load data into.
-        in_dir: A prepared-JSONL group directory, e.g.
-            data/prepared/<group>/.
+        client: An open Neo4jClient, AuditedNeo4jClient, or a compatible
+            double to load data into.
+        rows_by_file: Rows for each of the six prepared entities, keyed by
+            the same filenames as the on-disk group layout (departments.jsonl,
+            publications.jsonl, repositories.jsonl, github_profiles.jsonl,
+            persons.jsonl, repo_links.jsonl) — a missing key is the same as
+            an empty list, i.e. "this group has none of this entity".
     """
     node_batches: dict[str, list[tuple[str, dict]]] = defaultdict(list)
     person_batches: dict[bool, list[tuple[str, dict]]] = {True: [], False: []}
@@ -135,13 +139,13 @@ def load_jsonl_dir(client: Neo4jClient | AuditedNeo4jClient, in_dir: Path) -> No
     node_merges: dict[str, list[tuple[str, str]]] = defaultdict(list)
 
     for filename, spec_key in FILE_SPECS.items():
-        path = in_dir / filename
-        if not path.exists():
-            logger.info("%s not found in %s, skipping", filename, in_dir)
+        rows = rows_by_file.get(filename)
+        if not rows:
+            logger.info("%s: no rows, skipping", filename)
             continue
         spec = NODE_REGISTRY[spec_key]
         skipped_failed = 0
-        for row in _read_jsonl(path):
+        for row in rows:
             if spec_key == "repository" and _stage_failed(row, "repositories"):
                 # Never enriched successfully — a name/url stub would pollute
                 # the graph; it gets loaded once a retry succeeds.
@@ -167,30 +171,28 @@ def load_jsonl_dir(client: Neo4jClient | AuditedNeo4jClient, in_dir: Path) -> No
     # They are merged on the base :Person label (see upsert_person_nodes_batch)
     # because the same author may be ITMO in one group and external in another.
     person_merges: list[tuple[str, str]] = []
-    persons_path = in_dir / "persons.jsonl"
-    if persons_path.exists():
-        for row in _read_jsonl(persons_path):
-            is_itmo = bool(row.get("is_itmo"))
-            spec = NODE_REGISTRY["itmo_person" if is_itmo else "external_person"]
-            _labels, node = extract_node(row, spec)
-            person_batches[is_itmo].append(node)
-            for merged_id in row.get("merged_ids") or []:
-                person_merges.append((merged_id, row["id"]))
-            for key, rels in extract_relationships(row, spec).items():
-                rel_batches[key].extend(rels)
+    for row in rows_by_file.get("persons.jsonl") or ():
+        is_itmo = bool(row.get("is_itmo"))
+        spec = NODE_REGISTRY["itmo_person" if is_itmo else "external_person"]
+        _labels, node = extract_node(row, spec)
+        person_batches[is_itmo].append(node)
+        for merged_id in row.get("merged_ids") or []:
+            person_merges.append((merged_id, row["id"]))
+        for key, rels in extract_relationships(row, spec).items():
+            rel_batches[key].extend(rels)
 
-    repo_links_path = in_dir / "repo_links.jsonl"
-    if repo_links_path.exists():
+    repo_links_rows = rows_by_file.get("repo_links.jsonl")
+    if repo_links_rows:
         mentions_key = ("Publication", "LinkCandidate", "MENTIONS_LINK", "id")
         mentions_repo_key = ("Publication", "Repository", "MENTIONS_LINK", "url")
-        for row in _read_jsonl(repo_links_path):
+        for row in repo_links_rows:
             candidate_nodes, repo_edges, candidate_edges, promotions = extract_repo_links(row, known_repository_urls)
             node_batches["LinkCandidate"].extend(candidate_nodes)
             rel_batches[mentions_repo_key].extend(repo_edges)
             rel_batches[mentions_key].extend(candidate_edges)
             candidate_promotions.update(promotions)
     else:
-        logger.info("repo_links.jsonl not found in %s, skipping", in_dir)
+        logger.info("repo_links.jsonl: no rows, skipping")
 
     for labels, nodes in node_batches.items():
         for chunk in chunked(nodes):
@@ -239,3 +241,27 @@ def load_jsonl_dir(client: Neo4jClient | AuditedNeo4jClient, in_dir: Path) -> No
         ]
         for chunk in chunked(alias_pairs):
             fold(chunk)
+
+
+def load_jsonl_dir(client: Neo4jClient | AuditedNeo4jClient, in_dir: Path) -> None:
+    """Load every prepared JSONL file found in `in_dir` into Neo4j.
+
+    A plain file-directory entry point, independent of the pipeline's own
+    storage backend - for a hand-assembled or externally exported set of
+    prepared JSONL files. See load_prepared_rows for the actual loading
+    logic; the pipeline's own `pauk publish` reads its rows from Mongo and
+    calls that directly instead of going through a directory.
+
+    Args:
+        client: An open Neo4jClient or AuditedNeo4jClient to load data into.
+        in_dir: A prepared-JSONL group directory, e.g.
+            data/prepared/<group>/.
+    """
+    rows_by_file: dict[str, list[dict]] = {}
+    for filename in (*FILE_SPECS, "persons.jsonl", "repo_links.jsonl"):
+        path = in_dir / filename
+        if path.exists():
+            rows_by_file[filename] = list(_read_jsonl(path))
+        else:
+            logger.info("%s not found in %s, skipping", filename, in_dir)
+    load_prepared_rows(client, rows_by_file)

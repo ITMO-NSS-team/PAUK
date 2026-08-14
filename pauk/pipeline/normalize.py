@@ -6,11 +6,16 @@ import re
 from collections import OrderedDict
 from datetime import date
 from hashlib import sha1
+from typing import TypeVar
 
 from pauk.models import Authorship, Funding, Person, Publication
-from pauk.storage import GroupLock, PreparedStore, RawStore
+from pauk.storage import PreparedStore, RawStore
 
 logger = logging.getLogger(__name__)
+
+# Constrained (not bound) so a call passing Publication resolves _seed's
+# return type to list[Publication], not list[Publication | Person].
+_PreparedModel = TypeVar("_PreparedModel", Publication, Person)
 
 ITMO_ROR_ID = "04txgxn49"
 
@@ -89,6 +94,10 @@ def _clean_markup(text: str | None) -> str | None:
     return " ".join(cleaned.split())
 
 
+def _authorship_person_id(author: dict) -> str | None:
+    return _short_id(author.get("id")) or _fallback_person_id(author)
+
+
 def _fallback_person_id(author: dict) -> str | None:
     """Local identity for an author OpenAlex has not disambiguated yet.
 
@@ -119,10 +128,11 @@ def _abstract(work: dict) -> str | None:
 
 def _fields(work: dict) -> list[str]:
     """The OpenAlex topic fields a work belongs to, deduplicated."""
-    return list(dict.fromkeys(
-        field for topic in work.get("topics") or []
-        if (field := ((topic.get("field") or {}).get("display_name")))
-    ))
+    return list(
+        dict.fromkeys(
+            field for topic in work.get("topics") or [] if (field := ((topic.get("field") or {}).get("display_name")))
+        )
+    )
 
 
 def _funding(work: dict) -> list[Funding]:
@@ -160,8 +170,19 @@ def _merge_person(base: Person, extra: Person) -> Person:
     for contribution in extra.contributed_to:
         if contribution not in base.contributed_to:
             base.contributed_to.append(contribution)
-    for field in ("orcid", "name_en", "email", "first_name_ru", "second_name_ru",
-                  "surname_ru", "degree", "github", "google_scholar", "openreview", "thesis"):
+    for field in (
+        "orcid",
+        "name_en",
+        "email",
+        "first_name_ru",
+        "second_name_ru",
+        "surname_ru",
+        "degree",
+        "github",
+        "google_scholar",
+        "openreview",
+        "thesis",
+    ):
         if getattr(base, field) is None:
             setattr(base, field, getattr(extra, field))
     for stage, state in extra.processing.items():
@@ -174,16 +195,37 @@ class OpenAlexNormalizer:
         self.raw = raw
         self.prepared = prepared
 
-    def run(self) -> dict[str, int]:
-        with GroupLock(self.prepared.group_dir.parent.parent, self.prepared.group_dir.name):
-            return self._run()
+    def _seed(self, entity: str, model: type[_PreparedModel], ids: set[str]) -> list[_PreparedModel]:
+        """This group's own rows for `entity`, plus any of `ids` it hasn't
+        touched yet, looked up across every group.
 
-    def _run(self) -> dict[str, int]:
+        The group's own rows come first (and always) so a legacy/renamed
+        row already sitting in this group's own state still gets
+        canonicalized on every re-run, even when nothing in fresh raw data
+        references it any more. The cross-group lookup is additive: a work
+        or author already enriched by a different, overlapping run is
+        found by id instead of re-created from scratch.
+        """
+        known = list(self.prepared.read_models(entity, model))
+        missing = ids - {row.id for row in known}
+        return [*known, *self.prepared.get_models(entity, missing, model)]
+
+    def run(self) -> dict[str, int]:
+        # Materialized once: both the id pre-scan below and the main loop
+        # walk this same batch, and self.raw.read() is a one-shot cursor.
+        envelopes = list(self.raw.read("openalex_works"))
+        work_ids = {work_id for e in envelopes if (work_id := _short_id(e["payload"].get("id")))}
+        person_ids = {
+            person_id
+            for e in envelopes
+            for authorship in (e["payload"].get("authorships") or [])
+            if (person_id := _authorship_person_id(authorship.get("author") or {}))
+        }
         publications: OrderedDict[str, Publication] = OrderedDict(
-            (row.id, row) for row in self.prepared.read_models("publications", Publication)
+            (row.id, row) for row in self._seed("publications", Publication, work_ids)
         )
         persons: OrderedDict[str, Person] = OrderedDict()
-        for row in self.prepared.read_models("persons", Person):
+        for row in self._seed("persons", Person, person_ids):
             # A row an earlier, narrower filter let through (the check below
             # only knew about organizations, not contact addresses) is not a
             # person now either. Re-normalization is where the current rule
@@ -198,20 +240,14 @@ class OpenAlexNormalizer:
         # Authors previously folded by the dedup stage keep routing to their
         # canonical person on re-normalization instead of resurfacing as a
         # fresh duplicate row.
-        merged_alias = {
-            merged_id: person.id
-            for person in persons.values()
-            for merged_id in person.merged_ids
-        }
+        merged_alias = {merged_id: person.id for person in persons.values() for merged_id in person.merged_ids}
         # Same for works the dedup stage folded into one publication: their
         # raw payloads are still on disk, but they are versions of a
         # publication that already exists, not publications of their own.
         publication_alias = {
-            merged_id: publication.id
-            for publication in publications.values()
-            for merged_id in publication.merged_ids
+            merged_id: publication.id for publication in publications.values() for merged_id in publication.merged_ids
         }
-        for envelope in self.raw.read("openalex_works"):
+        for envelope in envelopes:
             work = envelope["payload"]
             work_id = _short_id(work.get("id"))
             if not work_id:
@@ -219,7 +255,7 @@ class OpenAlexNormalizer:
             publication_id = publication_alias.get(work_id, work_id)
             if publication_id == work_id:
                 pub_date = work.get("publication_date")
-                source = ((work.get("primary_location") or {}).get("source") or {})
+                source = (work.get("primary_location") or {}).get("source") or {}
                 normalized_publication = Publication(
                     id=work_id,
                     title=_clean_markup(work.get("title")) or "Untitled",
@@ -265,12 +301,15 @@ class OpenAlexNormalizer:
                     external_kept += 1
                     if external_kept > EXTERNAL_AUTHORS_LIMIT:
                         continue
-                person = persons.setdefault(person_id, Person(
-                    id=person_id,
-                    openalex_id=openalex_id,
-                    is_itmo=is_itmo,
-                    name_en=author.get("display_name"),
-                ))
+                person = persons.setdefault(
+                    person_id,
+                    Person(
+                        id=person_id,
+                        openalex_id=openalex_id,
+                        is_itmo=is_itmo,
+                        name_en=author.get("display_name"),
+                    ),
+                )
                 # At least one ITMO affiliation anywhere makes the person ITMO.
                 person.is_itmo = person.is_itmo or is_itmo
                 person.orcid = person.orcid or _short_id(author.get("orcid"))
@@ -287,8 +326,11 @@ class OpenAlexNormalizer:
                 # same slot must not come back as a second record just because
                 # the persons stage filled in an affiliation the work omits.
                 existing_authorship = next(
-                    (row for row in person.authored
-                     if row.publication_id == publication_id and row.position == position),
+                    (
+                        row
+                        for row in person.authored
+                        if row.publication_id == publication_id and row.position == position
+                    ),
                     None,
                 )
                 if existing_authorship is None:
