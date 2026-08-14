@@ -1,7 +1,8 @@
 # `pauk/graph/` — коннектор и реальная схема графа
 
 **Что здесь:** схема графа Neo4j, как её строит код, и как устроен
-коннектор (JSONL → узлы/связи → загрузка → дедуп на уровне графа).
+коннектор (prepared-строки из MongoDB → узлы/связи → загрузка → дедуп на
+уровне графа).
 
 **Какие файлы задействует:** `pauk/graph/extract.py`, `jsonl_loader.py`,
 `client.py`, `audit.py`, `schema.py`, `csv_loader.py`, `dedup.py`,
@@ -177,13 +178,20 @@ diff}` на строку). Запись в MongoDB на ряду с `JSONLAuditS
 
 Отдельный документ — [pipeline/dedup.md](pipeline/dedup.md), там же и
 про дедуп внутри одной группы: правила слияния общие, различается только
-источник строк (Cypher вместо JSONL) и место записи результата.
+источник строк (Cypher вместо MongoDB) и место записи результата.
 
 ## `load.py`
 
-Точка входа `pauk publish graph` (и `uv run python -m pauk.graph.load`
-напрямую, с флагами `--format jsonl|csv`, `--dir`). Создаёт констрейнты,
-затем грузит выбранным способом, закрывает соединение в `finally`.
+Точка входа `pauk publish graph` — `load_jsonl_group(config, mongo_db,
+group)` читает prepared-коллекции группы из MongoDB
+(`PreparedStore.read_rows`) и передаёт строки в
+`jsonl_loader.load_prepared_rows` (общая функция, источник строк ей не
+важен). Отдельно — `uv run python -m pauk.graph.load` напрямую, с
+флагами `--format jsonl|csv`, `--dir`: самостоятельный инструмент для
+внешней папки JSONL/CSV, не завязан на MongoDB, использует
+`jsonl_loader.load_jsonl_dir`/`csv_loader.load_csv_dir`. Оба пути создают
+констрейнты, затем грузят выбранным способом, закрывают соединение в
+`finally`.
 
 ## `urls.py`
 

@@ -594,7 +594,7 @@ class RussianNamesStage(EnrichmentStage):
         # second pass over a finished group examines nobody and so changes
         # nothing, and a run that reaches one new person does not erase the
         # rows an earlier run wrote for the others.
-        journal_path = self.prepared.group_dir / AMBIGUOUS_FILENAME
+        journal_path = self.config.audit_dir / self.prepared.group / AMBIGUOUS_FILENAME
         if examined:
             journal = [row for row in self._journalled(journal_path)
                        if row.get("person") not in examined]

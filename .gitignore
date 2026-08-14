@@ -11,15 +11,15 @@ __pycache__/
 !data/static/**
 # Official staff records — personal data, never committed.
 data/static/russian_names.csv
-data/raw/*
-data/prepared/*
 data/cache/*
 data/pdf/*
-data/.locks/
-!data/raw/.gitkeep
-!data/prepared/.gitkeep
+data/audit/*
 !data/cache/.gitkeep
-!data/pdf/.gitkeep
+!data/audit/.gitkeep
+
+*.egg-info/
+dist/
+build/
 
 .env
 
@@ -31,3 +31,6 @@ data/.locks/
 *.swo
 
 logs/
+
+graphify-out/
+.graphifyignore

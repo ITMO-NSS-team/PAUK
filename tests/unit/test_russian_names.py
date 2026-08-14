@@ -1,8 +1,9 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
-import json
+import mongomock
 
 from pauk.models import Person
 from pauk.pipeline.stages.russian_names import (
@@ -27,29 +28,30 @@ class RussianNamesStageTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name)
-        config = Settings(data_dir=root)
-        config.static_dir.mkdir(parents=True)
-        (config.static_dir / "russian_names.csv").write_text(
+        self.config = Settings(data_dir=root)
+        self.config.static_dir.mkdir(parents=True)
+        (self.config.static_dir / "russian_names.csv").write_text(
             CATALOG_HEADER + "".join(f"{row}\n" for row in catalog_rows), encoding="utf-8")
-        self.prepared = PreparedStore(config.prepared_dir, "sample")
-        self.raw = RawStore(config.raw_dir, "sample")
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.prepared = PreparedStore(self.db, "sample")
+        self.raw = RawStore(self.db, "sample")
         self.prepared.write_models("persons", people)
-        result = RussianNamesStage(self.prepared, self.raw, config).run()
+        result = RussianNamesStage(self.prepared, self.raw, self.config).run()
         return result, {p.id: p for p in self.prepared.read_models("persons", Person)}
 
     def ambiguous(self):
-        path = self.prepared.group_dir / AMBIGUOUS_FILENAME
+        path = self.config.audit_dir / self.prepared.group / AMBIGUOUS_FILENAME
         return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
                 if line.strip()]
 
     def test_missing_catalog_stops_the_stage(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            config = Settings(data_dir=root)
-            prepared = PreparedStore(config.prepared_dir, "sample")
+            config = Settings(data_dir=Path(tmp))
+            db = mongomock.MongoClient()["pauk_test"]
+            prepared = PreparedStore(db, "sample")
             prepared.write_models("persons", [person("A1", "Nikolay Nikitin")])
             with self.assertRaises(FileNotFoundError):
-                RussianNamesStage(prepared, RawStore(config.raw_dir, "sample"), config).run()
+                RussianNamesStage(prepared, RawStore(db, "sample"), config).run()
 
     def test_catalog_match_fills_official_record(self):
         result, people = self.run_stage(
@@ -184,8 +186,7 @@ class RussianNamesStageTest(unittest.TestCase):
 
     def test_second_run_is_a_no_op(self):
         self.run_stage([person("A1", "Pavel Zhukov")], [])
-        again = RussianNamesStage(self.prepared, self.raw,
-                                  Settings(data_dir=Path(self.tmp.name))).run()
+        again = RussianNamesStage(self.prepared, self.raw, self.config).run()
         self.assertEqual(again["russian_names"], 0)
 
     def test_a_cyrillic_letter_inside_a_latin_name_still_matches(self):
@@ -230,8 +231,7 @@ class RussianNamesStageTest(unittest.TestCase):
     )
 
     def rerun_stage(self):
-        return RussianNamesStage(self.prepared, self.raw,
-                                 Settings(data_dir=Path(self.tmp.name))).run()
+        return RussianNamesStage(self.prepared, self.raw, self.config).run()
 
     def test_a_run_that_examines_nobody_keeps_the_journal(self):
         self.run_stage([person("A1", "Ivan Smirnov")], list(self.NAMESAKE_CATALOG))
@@ -254,7 +254,7 @@ class RussianNamesStageTest(unittest.TestCase):
         # A run interrupted mid-write leaves a truncated line; the journal is
         # a review artefact and must not block naming.
         self.run_stage([person("A1", "Ivan Smirnov")], list(self.NAMESAKE_CATALOG))
-        path = self.prepared.group_dir / AMBIGUOUS_FILENAME
+        path = self.config.audit_dir / self.prepared.group / AMBIGUOUS_FILENAME
         path.write_text('{"person": "A9"}\nобрезанная строка{\n', encoding="utf-8")
         people = {p.id: p for p in self.prepared.read_models("persons", Person)}
         people["A1"].processing.pop("russian_names")

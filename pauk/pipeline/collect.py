@@ -6,8 +6,7 @@ from tqdm import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 from pauk.pipeline.selectors import PeriodSelector, WorkSelector, WorksFileSelector
-from pauk.sources import OpenAlexClient
-from pauk.storage import GroupLock, RawStore
+from pauk.storage import RawStore
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +30,18 @@ def _authors_truncated(work: dict) -> bool:
 
 
 class Collector:
-    def __init__(self, client: OpenAlexClient, raw: RawStore) -> None:
+    def __init__(self, client, raw: RawStore) -> None:
+        """Args: client: An open OpenAlexClient (or a compatible double)."""
         self.client = client
         self.raw = raw
         self._progress: tqdm | None = None
 
     def collect(self, selector: WorkSelector | PeriodSelector | WorksFileSelector) -> int:
-        with logging_redirect_tqdm(), GroupLock(self.raw.group_dir.parent.parent, self.raw.group_dir.name):
+        # No GroupLock here (unlike origin/main pre-Mongo): the migration to
+        # MongoDB (#102) deleted GroupLock entirely - RawStore writes are now
+        # atomic per-document Mongo inserts, so the coarse file lock this used
+        # to need doesn't exist any more (see docs/architecture/storage.md).
+        with logging_redirect_tqdm():
             try:
                 return self._collect(selector)
             finally:
@@ -60,8 +64,7 @@ class Collector:
         ones. Runs as part of every collect; callable on its own to repair a
         group collected before truncation was handled, without re-crawling
         the whole period."""
-        with GroupLock(self.raw.group_dir.parent.parent, self.raw.group_dir.name):
-            return self._refetch_truncated(self._last_payload_by_id())
+        return self._refetch_truncated(self._last_payload_by_id())
 
     def _last_payload_by_id(self) -> dict[str, tuple[dict, dict]]:
         """The latest stored (payload, request) per work id — a repair appends

@@ -4,25 +4,44 @@ import argparse
 import logging
 from pathlib import Path
 
+from pymongo.database import Database
+
 from pauk.settings import Settings, settings
+from pauk.storage import PreparedStore
 
 from .client import Neo4jClient
 from .csv_loader import load_csv_dir
-from .jsonl_loader import load_jsonl_dir
+from .jsonl_loader import load_jsonl_dir, load_prepared_rows
 from .schema import create_constraints
 
+# PreparedStore.COLLECTIONS keys -> the filenames load_prepared_rows expects.
+ENTITY_FILES = {
+    "departments": "departments.jsonl",
+    "publications": "publications.jsonl",
+    "repositories": "repositories.jsonl",
+    "github_profiles": "github_profiles.jsonl",
+    "persons": "persons.jsonl",
+    "repo_links": "repo_links.jsonl",
+}
 
-def load_jsonl_group(config: Settings, group: str) -> None:
-    """Load one prepared-JSONL group into Neo4j. Used by `pauk publish graph`.
+
+def load_jsonl_group(config: Settings, mongo_db: Database, group: str) -> None:
+    """Load one prepared group from Mongo into Neo4j. Used by `pauk publish graph`.
 
     Args:
-        config: Application settings (Neo4j connection, data directories).
-        group: Name of the group directory under config.prepared_dir.
+        config: Application settings (Neo4j connection).
+        mongo_db: The raw/prepared MongoDB database.
+        group: The group whose prepared rows to publish.
     """
+    prepared = PreparedStore(mongo_db, group)
+    rows_by_file = {
+        filename: list(prepared.read_rows(entity))
+        for entity, filename in ENTITY_FILES.items()
+    }
     client = Neo4jClient(config.neo4j_uri, config.neo4j_user, config.neo4j_password)
     try:
         create_constraints(client)
-        load_jsonl_dir(client, config.prepared_dir / group)
+        load_prepared_rows(client, rows_by_file)
     finally:
         client.close()
 

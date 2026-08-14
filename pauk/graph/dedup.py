@@ -19,9 +19,10 @@ import json
 import logging
 from collections import defaultdict
 from datetime import date
-from pathlib import Path
 
-from pauk.models import Person
+from pymongo.database import Database
+
+from pauk.models import Authorship, Person
 from pauk.pipeline.normalize import _merge_person
 from pauk.pipeline.stages.dedup import (
     PLACEHOLDER_TITLES,
@@ -94,7 +95,9 @@ def _merged_versions_json(canonical: dict, duplicates: list[dict]) -> str:
     by_id: dict[str, dict] = {}
 
     def absorb(entry: dict) -> None:
-        existing = by_id.setdefault(entry.get("openalex_id"), entry)
+        # Always set by _node_version() - every entry, stored or freshly
+        # built, carries it.
+        existing = by_id.setdefault(entry["openalex_id"], entry)
         if existing is not entry:
             for key, value in entry.items():
                 # An empty author list counts as missing: entries written
@@ -131,27 +134,22 @@ def _keyed_pairs(rows: list[dict], key_functions) -> tuple[list[tuple[str, str]]
     return pairs, pair_rules
 
 
-def collect_raw_orcids(raw_root: Path) -> dict[str, str | None]:
+def collect_raw_orcids(mongo_db: Database) -> dict[str, str | None]:
     """Trusted ORCIDs from every group's raw openalex_authors envelopes.
 
     Same reasoning as the per-group stage: the orcid property stored on a
     node may descend from the surname-only Crossref backfill, which can
     stamp a namesake's ORCID onto the wrong person. The author's own
     OpenAlex record is authoritative; a later fetch of the same author
-    overrides an earlier one.
+    overrides an earlier one - across every group, not just one.
     """
     orcids: dict[str, str | None] = {}
-    for path in sorted(raw_root.glob("*/openalex_authors.jsonl")):
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                payload = json.loads(line).get("payload") or {}
-            except json.JSONDecodeError:
-                continue  # torn final line of an interrupted fetch
-            author_id = (payload.get("id") or "").rstrip("/").rsplit("/", 1)[-1]
-            if author_id:
-                orcids[author_id] = (payload.get("orcid") or "").rstrip("/").rsplit("/", 1)[-1] or None
+    cursor = mongo_db.raw.find({"source": "openalex_authors"}).sort("fetched_at", 1)
+    for envelope in cursor:
+        payload = envelope.get("payload") or {}
+        author_id = (payload.get("id") or "").rstrip("/").rsplit("/", 1)[-1]
+        if author_id:
+            orcids[author_id] = (payload.get("orcid") or "").rstrip("/").rsplit("/", 1)[-1] or None
     return orcids
 
 
@@ -188,15 +186,14 @@ def dedup_graph_persons(client, raw_orcids: dict[str, str | None],
             merged_ids=list(row.get("merged_ids") or []),
             department_ids=list(row.get("department_ids") or []),
             authored=[
-                {"publication_id": publication_id, "position": 0}
+                Authorship(publication_id=publication_id, position=0)
                 for publication_id in row.get("publication_ids") or []
             ],
         )
         for row in client.fetch_persons_for_dedup()
     ]
     trusted_orcid = {
-        person.id: raw_orcids[person.id] if person.id in raw_orcids else person.orcid
-        for person in people
+        person.id: raw_orcids.get(person.id, person.orcid) for person in people
     }
     groups, report = plan_person_merges(
         people, trusted_orcid, fields_of=client.fetch_publication_fields(),
@@ -206,8 +203,13 @@ def dedup_graph_persons(client, raw_orcids: dict[str, str | None],
     canonical_nodes: dict[bool, list[tuple[str, dict]]] = {True: [], False: []}
     for canonical, duplicates in groups:
         for duplicate in duplicates:
-            logger.info("graph dedup: merging %s (%s) into %s (%s)",
-                        duplicate.id, duplicate.name_en, canonical.id, canonical.name_en)
+            logger.info(
+                "graph dedup: merging %s (%s) into %s (%s)",
+                duplicate.id,
+                duplicate.name_en,
+                canonical.id,
+                canonical.name_en,
+            )
             _merge_person(canonical, duplicate)
             if duplicate.name_en:
                 canonical.name_variants = _union(canonical.name_variants, [duplicate.name_en])
@@ -238,12 +240,13 @@ def dedup_graph_publications(client) -> tuple[int, list[dict]]:
     """
     rows = client.fetch_publications_for_dedup()
     by_id = {row["id"]: row for row in rows}
-    pairs, pair_rules = _keyed_pairs(rows, (
-        (lambda row: _norm_doi(row.get("doi")), "doi"),
-        (lambda row: (
-            title if (title := _norm(row.get("title"))) not in PLACEHOLDER_TITLES else None
-        ), "title"),
-    ))
+    pairs, pair_rules = _keyed_pairs(
+        rows,
+        (
+            (lambda row: _norm_doi(row.get("doi")), "doi"),
+            (lambda row: title if (title := _norm(row.get("title"))) not in PLACEHOLDER_TITLES else None, "title"),
+        ),
+    )
 
     merges: list[tuple[str, str]] = []
     canonical_updates: list[tuple[str, dict]] = []
@@ -261,27 +264,39 @@ def dedup_graph_publications(client) -> tuple[int, list[dict]]:
         canonical, duplicates = ranked[0], ranked[1:]
         merged_ids = list(canonical.get("merged_ids") or [])
         for duplicate in duplicates:
-            logger.info("graph dedup: merging publication %s (%s) into %s (%s)",
-                        duplicate["id"], duplicate.get("title"),
-                        canonical["id"], canonical.get("title"))
+            logger.info(
+                "graph dedup: merging publication %s (%s) into %s (%s)",
+                duplicate["id"],
+                duplicate.get("title"),
+                canonical["id"],
+                canonical.get("title"),
+            )
             merged_ids = _union(merged_ids, duplicate.get("merged_ids") or [], [duplicate["id"]])
             merges.append((duplicate["id"], canonical["id"]))
-            report.append({
-                "status": "merged", "entity": "publication",
-                "record_a": duplicate["id"], "name_a": duplicate.get("title"),
-                "record_b": canonical["id"], "name_b": canonical.get("title"),
-                "merged_into": canonical["id"],
-                "rules": sorted({
-                    rule for pair, rule in pair_rules.items() if duplicate["id"] in pair
-                }),
-            })
-        canonical_updates.append((canonical["id"], {
-            "merged_ids": merged_ids,
-            # The folded records' venues, abstracts and author lists survive
-            # on the canonical node; the graph itself is still drawn from the
-            # merged, current state.
-            "versions": _merged_versions_json(canonical, duplicates),
-        }))
+            report.append(
+                {
+                    "status": "merged",
+                    "entity": "publication",
+                    "record_a": duplicate["id"],
+                    "name_a": duplicate.get("title"),
+                    "record_b": canonical["id"],
+                    "name_b": canonical.get("title"),
+                    "merged_into": canonical["id"],
+                    "rules": sorted({rule for pair, rule in pair_rules.items() if duplicate["id"] in pair}),
+                }
+            )
+        canonical_updates.append(
+            (
+                canonical["id"],
+                {
+                    "merged_ids": merged_ids,
+                    # The folded records' venues, abstracts and author lists survive
+                    # on the canonical node; the graph itself is still drawn from the
+                    # merged, current state.
+                    "versions": _merged_versions_json(canonical, duplicates),
+                },
+            )
+        )
 
     for chunk in chunked(canonical_updates):
         client.upsert_nodes_batch("Publication", chunk)
@@ -300,10 +315,13 @@ def dedup_graph_repositories(client) -> tuple[int, list[dict]]:
     """
     rows = client.fetch_repositories_for_dedup()
     by_id = {row["id"]: row for row in rows}
-    pairs, pair_rules = _keyed_pairs(rows, (
-        (lambda row: str(row["github_id"]) if row.get("github_id") else None, "github_id"),
-        (lambda row: normalize_repo_url(row["url"]) if row.get("url") else None, "url"),
-    ))
+    pairs, pair_rules = _keyed_pairs(
+        rows,
+        (
+            (lambda row: str(row["github_id"]) if row.get("github_id") else None, "github_id"),
+            (lambda row: normalize_repo_url(row["url"]) if row.get("url") else None, "url"),
+        ),
+    )
     by_cited: dict[str, list[str]] = defaultdict(list)
     for row in rows:
         for cited in row.get("cited_urls") or []:
@@ -330,22 +348,30 @@ def dedup_graph_repositories(client) -> tuple[int, list[dict]]:
         merged_ids = list(canonical.get("merged_ids") or [])
         cited_urls = list(canonical.get("cited_urls") or [])
         for duplicate in duplicates:
-            logger.info("graph dedup: merging repository %s (%s) into %s (%s)",
-                        duplicate["id"], duplicate.get("url"),
-                        canonical["id"], canonical.get("url"))
+            logger.info(
+                "graph dedup: merging repository %s (%s) into %s (%s)",
+                duplicate["id"],
+                duplicate.get("url"),
+                canonical["id"],
+                canonical.get("url"),
+            )
             merged_ids = _union(merged_ids, duplicate.get("merged_ids") or [], [duplicate["id"]])
-            cited_urls = _union(cited_urls, [duplicate.get("url")] if duplicate.get("url") else [],
-                                duplicate.get("cited_urls") or [])
+            cited_urls = _union(
+                cited_urls, [duplicate.get("url")] if duplicate.get("url") else [], duplicate.get("cited_urls") or []
+            )
             merges.append((duplicate["id"], canonical["id"]))
-            report.append({
-                "status": "merged", "entity": "repository",
-                "record_a": duplicate["id"], "name_a": duplicate.get("url"),
-                "record_b": canonical["id"], "name_b": canonical.get("url"),
-                "merged_into": canonical["id"],
-                "rules": sorted({
-                    rule for pair, rule in pair_rules.items() if duplicate["id"] in pair
-                }),
-            })
+            report.append(
+                {
+                    "status": "merged",
+                    "entity": "repository",
+                    "record_a": duplicate["id"],
+                    "name_a": duplicate.get("url"),
+                    "record_b": canonical["id"],
+                    "name_b": canonical.get("url"),
+                    "merged_into": canonical["id"],
+                    "rules": sorted({rule for pair, rule in pair_rules.items() if duplicate["id"] in pair}),
+                }
+            )
         canonical_updates.append((canonical["id"], {"merged_ids": merged_ids, "cited_urls": cited_urls}))
 
     for chunk in chunked(canonical_updates):
@@ -356,7 +382,7 @@ def dedup_graph_repositories(client) -> tuple[int, list[dict]]:
     return removed, report
 
 
-def run_graph_dedup(config: Settings) -> dict[str, int]:
+def run_graph_dedup(config: Settings, mongo_db: Database) -> dict[str, int]:
     """CLI entry point for `pauk dedup graph`: persons, publications and
     repositories deduplicated across every published group, with one
     combined review journal in the cache directory."""
@@ -368,7 +394,7 @@ def run_graph_dedup(config: Settings) -> dict[str, int]:
             logger.info("graph dedup: no staff catalog at %s — merging on names and profiles alone",
                         catalog_path(config))
         persons_removed, person_report = dedup_graph_persons(
-            client, collect_raw_orcids(config.raw_dir), catalog)
+            client, collect_raw_orcids(mongo_db), catalog)
         publications_removed, publication_report = dedup_graph_publications(client)
         repositories_removed, repository_report = dedup_graph_repositories(client)
 
@@ -382,9 +408,12 @@ def run_graph_dedup(config: Settings) -> dict[str, int]:
             for row in report:
                 fh.write(json.dumps(row, ensure_ascii=False) + "\n")
         if report:
-            logger.info("graph dedup: review journal in %s — %d merge(s) applied, %d pair(s) held",
-                        journal_path,
-                        persons_removed + publications_removed + repositories_removed, held)
+            logger.info(
+                "graph dedup: review journal in %s — %d merge(s) applied, %d pair(s) held",
+                journal_path,
+                persons_removed + publications_removed + repositories_removed,
+                held,
+            )
         return {
             "graph_persons_merged": persons_removed,
             "graph_publications_merged": publications_removed,

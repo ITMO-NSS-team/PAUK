@@ -32,4 +32,8 @@ def configure_logging(verbose: bool = False) -> None:
     logging.getLogger(HTTP_TRACE_LOGGER).setLevel(logging.DEBUG if verbose else logging.WARNING)
     for name in QUIET_THIRD_PARTY_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
+    # neo4j's own driver notifications (Cypher deprecation/perf hints) are
+    # noisier than the base "neo4j" logger quieted above - drop them further.
+    if not verbose:
+        logging.getLogger("neo4j.notifications").setLevel(logging.ERROR)
 
