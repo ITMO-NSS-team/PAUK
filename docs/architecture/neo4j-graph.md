@@ -17,7 +17,8 @@
 | Узел | Уникальный ключ | Метки |
 |---|---|---|
 | Person | `id` (голый OpenAlex author ID) | `Person:Itmo` или `Person:External` |
-| Department | `id` | `Department` |
+| Department | `id` (uid-слаг из `name_en`) | `Department` |
+| Organization | `id` и `name_en` (оба уникальны) | `Organization` |
 | Publication | `id` (голый OpenAlex work ID) | `Publication` |
 | Repository | `id` и `url` (оба уникальны) | `Repository` |
 | GitHubProfile | `id` и `login` (оба уникальны) | `GitHubProfile` |
@@ -28,6 +29,8 @@
 (:Person:Itmo)     -[:AUTHORED]->       (:Publication)
 (:Person:External) -[:AUTHORED]->       (:Publication)
 (:Person:Itmo)     -[:CONTRIBUTED_TO]-> (:Repository)
+
+(:Department)  -[:PART_OF]->       (:Department | :Organization)
 
 (:Publication) -[:PRODUCED_BY]->   (:Department)
 (:Publication) -[:MENTIONS_LINK]-> (:Repository | :LinkCandidate)
@@ -48,6 +51,12 @@ Person смёржен на базовую метку `:Person` (не на пол
 `Person:Itmo`/`Person:External`) — один и тот же автор может быть ИТМО в
 одной группе и внешним в другой; `:Itmo` — «липкая» метка, внешняя строка
 никогда не понижает уже проставленный `:Itmo` (`client.py::upsert_person_nodes_batch`).
+
+Иерархия подразделений рекурсивна: каждый `Department` `PART_OF` ровно одного
+родителя — другого `Department` (`parent_id`) или корневого `Organization`
+(`organization_id`), — так `кафедра → факультет → мегафакультет → организация`
+собирается цепочкой рёбер одного типа. Пополевое описание всех узлов и связей —
+в [`diagrams/neo4j-schema-desc.md`](../diagrams/neo4j-schema-desc.md).
 
 ## `extract.py` — декларативный реестр
 

@@ -103,7 +103,7 @@ WORK_IDS = [f"W70000000{i:02d}" for i in range(1, 125)]
 # also carries the consortium itself in an author slot — an organization,
 # not a person.
 CONSORTIUM_WORK = "W70000000124"
-CONSORTIUM_ITMO_INDEX = 22            # existing ITMO author A5000000022
+CONSORTIUM_ITMO_INDEX = 22  # existing ITMO author A5000000022
 CONSORTIUM_ORG_NAME = "Synthetic Science Consortium Collaborators"
 CONSORTIUM_FILLERS = [f"A59000001{i:02d}" for i in range(3)]
 
@@ -124,13 +124,13 @@ ARCHIVE_AUTHOR_AFFILIATION = f"External University {ARCHIVE_AUTHOR_INDEX}"
 UNIDENTIFIED_WORK = "W70000000121"
 UNIDENTIFIED_ORCID = "0000-0009-0000-0121"
 UNIDENTIFIED_BY_ORCID = f"orcid_{UNIDENTIFIED_ORCID}"
-UNIDENTIFIED_BY_NAME = "Marina Bez Ida"        # no id, no ORCID: keyed by name
-UNIDENTIFIED_NAMELESS = 1                      # neither id nor name: unkeyable
+UNIDENTIFIED_BY_NAME = "Marina Bez Ida"  # no id, no ORCID: keyed by name
+UNIDENTIFIED_NAMELESS = 1  # neither id nor name: unkeyable
 
 # W122: publisher markup OpenAlex passes through from Crossref verbatim.
 MARKUP_WORK = "W70000000122"
 MARKUP_TITLE = (
-    'Growth of CaF <sub>2</sub> /Si(111) and monolayer '
+    "Growth of CaF <sub>2</sub> /Si(111) and monolayer "
     '<mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"> <mml:msub> '
     "<mml:mi>WSe</mml:mi> <mml:mn>2</mml:mn> </mml:msub> </mml:math> in "
     "<i>vacuo</i>"
@@ -143,36 +143,57 @@ MARKUP_TITLE_CLEAN = "Growth of CaF2/Si(111) and monolayer WSe2 in vacuo"
 # in case and spacing are the same title; the "Untitled" placeholder is not.
 DUPLICATE_DOI = "https://doi.org/10.7777/synth.dup"
 PUBLICATION_TITLES = {
-    111: "Bench duplicate record", 112: "Bench duplicate record",
+    111: "Bench duplicate record",
+    112: "Bench duplicate record",
     113: "Bench preprint and version of record",
     114: "Bench preprint and version of record",
-    115: "Bench dataset deposit", 116: "Bench dataset deposit", 117: "Bench dataset deposit",
-    119: "Bench Case Variant Study", 120: "  bench case VARIANT   study ",
+    115: "Bench dataset deposit",
+    116: "Bench dataset deposit",
+    117: "Bench dataset deposit",
+    119: "Bench Case Variant Study",
+    120: "  bench case VARIANT   study ",
 }
 PUBLICATION_JOURNALS = {
-    111: "Synthetic Journal", 112: "Synthetic Journal",
-    113: "Synthetic Preprint Server", 114: "Synthetic Journal",
-    115: "Synthetic Data Archive", 116: "Synthetic Data Archive",
+    111: "Synthetic Journal",
+    112: "Synthetic Journal",
+    113: "Synthetic Preprint Server",
+    114: "Synthetic Journal",
+    115: "Synthetic Data Archive",
+    116: "Synthetic Data Archive",
     117: "Synthetic Data Archive",
 }
 PUBLICATION_DOIS = {
-    111: DUPLICATE_DOI, 112: DUPLICATE_DOI,
-    113: "https://doi.org/10.7777/preprint.113", 114: "https://doi.org/10.7777/vor.114",
-    115: "https://doi.org/10.7777/deposit.115", 116: "https://doi.org/10.7777/deposit.116",
+    111: DUPLICATE_DOI,
+    112: DUPLICATE_DOI,
+    113: "https://doi.org/10.7777/preprint.113",
+    114: "https://doi.org/10.7777/vor.114",
+    115: "https://doi.org/10.7777/deposit.115",
+    116: "https://doi.org/10.7777/deposit.116",
     117: "https://doi.org/10.7777/deposit.117",
 }
 PUBLICATION_DATES = {
-    111: "2026-03-15", 112: "2026-03-15",   # one DOI, one date: authors decide
-    113: "2026-02-15", 114: "2026-09-15",   # the version of record comes later
-    115: "2026-01-20", 116: "2026-04-20", 117: "2026-07-20",
-    119: "2026-06-05", 120: "2026-05-05",
+    111: "2026-03-15",
+    112: "2026-03-15",  # one DOI, one date: authors decide
+    113: "2026-02-15",
+    114: "2026-09-15",  # the version of record comes later
+    115: "2026-01-20",
+    116: "2026-04-20",
+    117: "2026-07-20",
+    119: "2026-06-05",
+    120: "2026-05-05",
 }
 # Same authors on both records of a work: their authorships must collapse.
 DUPLICATE_WORK_AUTHORS = {
-    111: (21, 22), 112: (),  # the re-indexed record carries no authors at all
-    113: (24, 25), 114: (24, 25),
-    115: (26, 27), 116: (26, 27), 117: (26, 27),
-    118: (30,), 119: (28, 29), 120: (28, 29),
+    111: (21, 22),
+    112: (),  # the re-indexed record carries no authors at all
+    113: (24, 25),
+    114: (24, 25),
+    115: (26, 27),
+    116: (26, 27),
+    117: (26, 27),
+    118: (30,),
+    119: (28, 29),
+    120: (28, 29),
 }
 # Merged-away work id -> the record that survives.
 PUBLICATION_MERGES = {
@@ -201,10 +222,16 @@ DEDUP_MERGES = {
 }
 # (author index, filler coauthor index) per dedup work W101..W110.
 DEDUP_WORK_AUTHORS = {
-    101: (51, 20), 102: (52, 21),
-    103: (53, 17), 104: (54, 17), 105: (55, 17), 110: (53, 24),
-    106: (56, 22), 107: (57, 22),
-    108: (58, 23), 109: (59, 23),
+    101: (51, 20),
+    102: (52, 21),
+    103: (53, 17),
+    104: (54, 17),
+    105: (55, 17),
+    110: (53, 24),
+    106: (56, 22),
+    107: (57, 22),
+    108: (58, 23),
+    109: (59, 23),
 }
 KOVALEV_ORCID = "0000-0006-0000-0051"
 FEDOROVA_ORCIDS = {58: "0000-0007-0000-0058", 59: "0000-0007-0000-0059"}
@@ -221,15 +248,70 @@ RUSSIAN_NAMES_CATALOG = [
     "Смирнов Иван Васильевич,Смирнов,Иван,Васильевич,д.х.н.",
 ]
 
+# Root organisation the top-level units hang off of; exercises the Organization
+# node + the Department-[:PART_OF]->Organization edge end to end (guards against
+# organizations silently never reaching the graph, see ENTITY_FILES in graph/load.py).
+ORG_UID = "itmo"
+ORG_NAME = "ITMO University"
+# uid of the one unit wired under the organisation, so the bench can assert its
+# PART_OF edge resolves.
+ORG_CHILD_UID = "institute-of-applied-computer-science"
+
 DEPARTMENTS_CATALOG = [
-    {"name_en": "Institute of Applied Computer Science", "name_ru": "Институт прикладной информатики",
-     "aliases": ["IACS"]},
-    {"name_en": "Faculty of Photonics", "name_ru": "Факультет фотоники", "aliases": []},
-    {"name_en": "Biotech Research Center", "name_ru": "Центр биотехнологий", "aliases": ["BioTech Center"]},
-    {"name_en": "School of Robotics", "name_ru": "Школа робототехники", "aliases": ["Robotics School"]},
-    {"name_en": "Quantum Computing Lab", "name_ru": "Лаборатория квантовых вычислений", "aliases": ["QC Lab"]},
+    {
+        "uid": ORG_UID,
+        "name_en": ORG_NAME,
+        "name_ru": "Университет ИТМО",
+        "kind": "organization",
+        "parent": None,
+        "ror_id": "https://ror.org/04txgxn49",
+        "country": "RU",
+        "type": "education",
+    },
+    {
+        "uid": "institute-of-applied-computer-science",
+        "name_en": "Institute of Applied Computer Science",
+        "name_ru": "Институт прикладной информатики",
+        "kind": "institute",
+        "parent": ORG_UID,
+        "aliases": ["IACS"],
+    },
+    {
+        "uid": "faculty-of-photonics",
+        "name_en": "Faculty of Photonics",
+        "name_ru": "Факультет фотоники",
+        "kind": "faculty",
+        "parent": None,
+        "aliases": [],
+    },
+    {
+        "uid": "biotech-research-center",
+        "name_en": "Biotech Research Center",
+        "name_ru": "Центр биотехнологий",
+        "kind": "center",
+        "parent": None,
+        "aliases": ["BioTech Center"],
+    },
+    {
+        "uid": "school-of-robotics",
+        "name_en": "School of Robotics",
+        "name_ru": "Школа робототехники",
+        "kind": "school",
+        "parent": None,
+        "aliases": ["Robotics School"],
+    },
+    {
+        "uid": "quantum-computing-lab",
+        "name_en": "Quantum Computing Lab",
+        "name_ru": "Лаборатория квантовых вычислений",
+        "kind": "lab",
+        "parent": None,
+        "aliases": ["QC Lab"],
+    },
 ]
-DEPT_NAMES = [d["name_en"] for d in DEPARTMENTS_CATALOG]
+# Only the units (the organisation is a separate root, never an affiliation slot),
+# so the modulo assignment in _affiliation stays exactly as before the org was added.
+DEPT_NAMES = [d["name_en"] for d in DEPARTMENTS_CATALOG if d.get("kind") != "organization"]
 
 REPO_OWNERS = [f"BenchOrg{i}" for i in range(1, 17)]
 REPO_NAMES = ["AlphaTool", "beta-kit", "GammaLib", "delta.util", "EpsilonNet"]
@@ -251,9 +333,14 @@ RENAMED_ALIASES = {("benchorg3", "old-alpha"): ("benchorg3", "alphatool")}
 
 # Repos already covered by the special works W001..W010 above.
 SPECIALLY_CITED = {
-    ("benchorg1", "alphatool"), ("benchorg1", "beta-kit"), ("benchorg1", "gammalib"),
-    ("benchorg1", "delta.util"), ("benchorg1", "epsilonnet"),
-    ("benchorg2", "gammalib"), ("benchorg3", "alphatool"), ("benchorg4", "alphatool"),
+    ("benchorg1", "alphatool"),
+    ("benchorg1", "beta-kit"),
+    ("benchorg1", "gammalib"),
+    ("benchorg1", "delta.util"),
+    ("benchorg1", "epsilonnet"),
+    ("benchorg2", "gammalib"),
+    ("benchorg3", "alphatool"),
+    ("benchorg4", "alphatool"),
 }
 
 SPECIAL_CITATIONS: dict[int, list[str]] = {
@@ -266,9 +353,11 @@ SPECIAL_CITATIONS: dict[int, list[str]] = {
     7: [CITE_RENAMED_NEW],
     8: [CITE_DELETED],
     9: [CITE_WWW],
-    10: ["https://github.com/BenchOrg1/delta.util",
-         "https://github.com/BenchOrg1/EpsilonNet",
-         "https://github.com/BenchOrg1/delta.util"],
+    10: [
+        "https://github.com/BenchOrg1/delta.util",
+        "https://github.com/BenchOrg1/EpsilonNet",
+        "https://github.com/BenchOrg1/delta.util",
+    ],
     11: ["https://gitlab.com/some/project"],
     19: [PHANTOM_2],
     20: [PHANTOM_3],
@@ -338,7 +427,7 @@ def _affiliation(i: int, itmo: bool) -> list[str]:
     if not itmo:
         return [f"External University {i}"]
     if i == 18:
-        return ["ITMO University, IACS, St. Petersburg, Russia"]           # alias spelling
+        return ["ITMO University, IACS, St. Petersburg, Russia"]  # alias spelling
     if i == 23:
         return ["ITMO University, BioTech Center, St. Petersburg, Russia"]  # alias spelling
     if 17 <= i <= 30:
@@ -387,8 +476,7 @@ def build_universe() -> dict:
         elif n not in (13, 118):  # both untitled: a placeholder is not a title
             work["title"] = PUBLICATION_TITLES.get(n, f"Synthetic paper {n:03d}")
         if n != 13:
-            work["publication_date"] = PUBLICATION_DATES.get(
-                n, f"2026-{(n - 1) % 12 + 1:02d}-15")
+            work["publication_date"] = PUBLICATION_DATES.get(n, f"2026-{(n - 1) % 12 + 1:02d}-15")
         if n == 113:
             work["type"] = "preprint"
         elif n == 114:
@@ -405,9 +493,10 @@ def build_universe() -> dict:
             # ITMO participant is beyond the cut.
             work["is_authors_truncated"] = True
             work["authorships"] = [
-                {"author": {"id": f"https://openalex.org/{filler}",
-                            "display_name": f"Filler Person {i}"},
-                 "raw_affiliation_strings": [f"External University {i}"]}
+                {
+                    "author": {"id": f"https://openalex.org/{filler}", "display_name": f"Filler Person {i}"},
+                    "raw_affiliation_strings": [f"External University {i}"],
+                }
                 for i, filler in enumerate(CONSORTIUM_FILLERS[:2])
             ]
         elif n == 16:
@@ -415,21 +504,31 @@ def build_universe() -> dict:
         elif n == 123:
             # A self-deposit that names the author but not where they work.
             work["authorships"] = [
-                {"author": {"id": f"https://openalex.org/{ARCHIVE_AUTHOR_ID}",
-                            "display_name": _author_name(ARCHIVE_AUTHOR_INDEX)}},
+                {
+                    "author": {
+                        "id": f"https://openalex.org/{ARCHIVE_AUTHOR_ID}",
+                        "display_name": _author_name(ARCHIVE_AUTHOR_INDEX),
+                    }
+                },
             ]
         elif n == 121:
             # Every author.id is null: one author carries an ORCID, one only a
             # name, one neither — the last cannot be keyed at all.
             work["authorships"] = [
-                {"author": {"id": None, "display_name": "Igor Bez Ida",
-                            "orcid": f"https://orcid.org/{UNIDENTIFIED_ORCID}"},
-                 "institutions": [ITMO_INSTITUTION],
-                 "raw_affiliation_strings": ["ITMO University, St. Petersburg, Russia"]},
-                {"author": {"id": None, "display_name": UNIDENTIFIED_BY_NAME},
-                 "raw_affiliation_strings": ["External University 121"]},
-                {"author": {"id": None, "display_name": None},
-                 "raw_affiliation_strings": ["External University 121"]},
+                {
+                    "author": {
+                        "id": None,
+                        "display_name": "Igor Bez Ida",
+                        "orcid": f"https://orcid.org/{UNIDENTIFIED_ORCID}",
+                    },
+                    "institutions": [ITMO_INSTITUTION],
+                    "raw_affiliation_strings": ["ITMO University, St. Petersburg, Russia"],
+                },
+                {
+                    "author": {"id": None, "display_name": UNIDENTIFIED_BY_NAME},
+                    "raw_affiliation_strings": ["External University 121"],
+                },
+                {"author": {"id": None, "display_name": None}, "raw_affiliation_strings": ["External University 121"]},
             ]
         elif n in DUPLICATE_WORK_AUTHORS:
             work["authorships"] = [_authorship(i, n) for i in DUPLICATE_WORK_AUTHORS[n]]
@@ -490,10 +589,12 @@ def build_universe() -> dict:
         }
         if i == ARCHIVE_AUTHOR_INDEX:
             # Their own record knows where they work, unlike their deposit.
-            payload["affiliations"] = [{
-                "institution": {"display_name": ARCHIVE_AUTHOR_AFFILIATION},
-                "years": [2026],
-            }]
+            payload["affiliations"] = [
+                {
+                    "institution": {"display_name": ARCHIVE_AUTHOR_AFFILIATION},
+                    "years": [2026],
+                }
+            ]
         if i == 13:
             payload["orcid"] = "https://orcid.org/0000-0001-0000-0013"
         if i in (51, 52):
@@ -508,8 +609,7 @@ def build_universe() -> dict:
         if not doi or doi.startswith("10.9999/"):
             continue
         # author.id is null on records OpenAlex has not disambiguated (W121).
-        author_ids_in_work = [(e["author"].get("id") or "").rsplit("/", 1)[-1]
-                              for e in work.get("authorships", [])]
+        author_ids_in_work = [(e["author"].get("id") or "").rsplit("/", 1)[-1] for e in work.get("authorships", [])]
         both_ivanovs = "A5000000006" in author_ids_in_work and "A5000000007" in author_ids_in_work
         items = []
         for entry in work.get("authorships", []):
@@ -549,12 +649,14 @@ def build_universe() -> dict:
     consortium_full = {
         **{k: v for k, v in consortium_full.items() if k != "is_authors_truncated"},
         "authorships": [
-            *[{"author": {"id": f"https://openalex.org/{filler}",
-                          "display_name": f"Filler Person {i}"},
-               "raw_affiliation_strings": [f"External University {i}"]}
-              for i, filler in enumerate(CONSORTIUM_FILLERS)],
-            {"author": {"id": "https://openalex.org/A5900000999",
-                        "display_name": CONSORTIUM_ORG_NAME}},
+            *[
+                {
+                    "author": {"id": f"https://openalex.org/{filler}", "display_name": f"Filler Person {i}"},
+                    "raw_affiliation_strings": [f"External University {i}"],
+                }
+                for i, filler in enumerate(CONSORTIUM_FILLERS)
+            ],
+            {"author": {"id": "https://openalex.org/A5900000999", "display_name": CONSORTIUM_ORG_NAME}},
             _authorship(CONSORTIUM_ITMO_INDEX, 124),
         ],
     }

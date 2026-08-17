@@ -16,6 +16,7 @@ from .schema import create_constraints
 
 # PreparedStore.COLLECTIONS keys -> the filenames load_prepared_rows expects.
 ENTITY_FILES = {
+    "organizations": "organizations.jsonl",
     "departments": "departments.jsonl",
     "publications": "publications.jsonl",
     "repositories": "repositories.jsonl",

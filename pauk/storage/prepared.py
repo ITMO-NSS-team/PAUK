@@ -16,6 +16,7 @@ class PreparedStore:
         "publications": "publications",
         "persons": "persons",
         "departments": "departments",
+        "organizations": "organizations",
         "repositories": "repositories",
         "github_profiles": "github_profiles",
         "repo_links": "repo_links",

@@ -1,4 +1,5 @@
 from .department import Department
+from .organization import Organization
 from .person import Affiliation, Person
 from .publication import Funding, Publication, PublicationVersion, VersionAuthor
 from .relations import Authorship, Contribution, MentionsLink
@@ -15,6 +16,7 @@ __all__ = [
     "LinkCandidate",
     "LinkOccurrence",
     "MentionsLink",
+    "Organization",
     "Person",
     "Publication",
     "PublicationVersion",
