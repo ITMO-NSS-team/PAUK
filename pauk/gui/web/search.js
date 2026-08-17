@@ -324,21 +324,14 @@ function spShowPubProfile(key) {
   document.title = `${n.label || n.key} — PAUK`;
   if (typeof _pushUrl === "function") _pushUrl({ tab: 4, kind: "pub", key });
   const authors = (pubAuthors.get(key) || []).map(k => nodeByKey.get(k)).filter(Boolean);
-  // similarity: shared ITMO authors (weight×3) + same journal (3) + keywords overlap (2/kw) + same dept (1)
+  // similarity: shared ITMO authors (weight×3) + same journal (3) + same dept (1)
   const simScores = new Map();
-  DATA.pub_edges.filter(e => e.s === key || e.t === key).forEach(e => {
-    const ok = e.s === key ? e.t : e.s;
-    simScores.set(ok, (simScores.get(ok) || 0) + (e.w || 1) * 3);
-  });
-  const nKw = Array.isArray(n.keywords) && n.keywords.length
-    ? new Set(n.keywords.map(k => k.toLowerCase())) : null;
+  (pubAdj.get(key) || []).forEach(({ o, w }) => simScores.set(o, (simScores.get(o) || 0) + w * 3));
   DATA.pubs.forEach(p => {
     if (p.key === key) return;
     let sc = 0;
     if (n.journal && p.journal === n.journal) sc += 3;
     if (n.dept && p.dept === n.dept) sc += 1;
-    if (nKw && Array.isArray(p.keywords))
-      sc += p.keywords.filter(k => nKw.has(k.toLowerCase())).length * 2;
     if (sc > 0) simScores.set(p.key, (simScores.get(p.key) || 0) + sc);
   });
   const relPubs = [...simScores.entries()]

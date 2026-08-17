@@ -25,6 +25,8 @@ ROOT = Path(__file__).parent / "web"
 API_STATS = "/api/stats"
 API_CHECK = "/api/check"
 
+_gzip_cache: dict[str, tuple[str, bytes]] = {}
+
 REQUIRED_FILES = {
     "graph-data.js": "python -m pauk.gui.generate_data",
     "graph-search.js": "python -m pauk.gui.generate_data",
@@ -91,7 +93,11 @@ class GzipHandler(SimpleHTTPRequestHandler):
             from . import generate_stats
         except ImportError as e:
             return self._send_json(
-                503, {"error": "На сервере не установлен драйвер Neo4j — примеры недоступны.", "detail": str(e)}
+                503,
+                {
+                    "error": "На сервере не установлен драйвер Neo4j — примеры недоступны.",
+                    "detail": str(e),
+                },
             )
 
         qs = parse_qs(urlparse(self.path).query)
@@ -150,23 +156,32 @@ class GzipHandler(SimpleHTTPRequestHandler):
             return
 
         accepts_gzip = "gzip" in self.headers.get("Accept-Encoding", "")
-        data = Path(path).read_bytes()
-
+        gz_bytes = None
         if accepts_gzip:
-            buf = io.BytesIO()
-            with gzip.GzipFile(fileobj=buf, mode="wb", compresslevel=6) as gz:
-                gz.write(data)
-            compressed = buf.getvalue()
+            cached = _gzip_cache.get(path)
+            if cached and cached[0] == etag:
+                gz_bytes = cached[1]
+            else:
+                buf = io.BytesIO()
+                with gzip.GzipFile(fileobj=buf, mode="wb", compresslevel=6) as gz:
+                    gz.write(Path(path).read_bytes())
+                gz_bytes = buf.getvalue()
+                _gzip_cache[path] = (etag, gz_bytes)
+
+        # gzip loses on already-compressed/tiny content; fall back to the raw file
+        if gz_bytes is not None and len(gz_bytes) < st.st_size:
+            body: bytes = gz_bytes
+            use_gzip = True
         else:
-            compressed = None
+            body = Path(path).read_bytes()
+            use_gzip = False
 
         ctype = mimetypes.guess_type(path)[0] or "application/octet-stream"
-        body = compressed if compressed and len(compressed) < len(data) else data
 
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        if body is compressed:
+        if use_gzip:
             self.send_header("Content-Encoding", "gzip")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("ETag", etag)

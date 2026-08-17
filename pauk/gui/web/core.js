@@ -71,6 +71,16 @@ DATA.all_edges.forEach(({s, t}) => {
   pubAuthors.get(t).push(s);
 });
 
+function buildAdjIndex(edges) {
+  const idx = new Map();
+  const push = (from, to, w) => { if (!idx.has(from)) idx.set(from, []); idx.get(from).push({ o: to, w }); };
+  edges.forEach(e => { const w = e.w || 1; push(e.s, e.t, w); push(e.t, e.s, w); });
+  return idx;
+}
+const coauthAdj = buildAdjIndex(DATA.coauth_edges);
+const pubAdj    = buildAdjIndex(DATA.pub_edges);
+const repoAdj   = buildAdjIndex(DATA.repo_edges);
+
 const repoPubs = new Map();
 const pubRepos = new Map();
 (DATA.repo_pub_edges || []).forEach(e => {
@@ -130,11 +140,7 @@ const nodeColor = n => deptById.get(n.dept)?.color || "#9aa2ac";
 // Co-authors of an author: Map<key, total weight>
 function coauthMapOf(key) {
   const m = new Map();
-  DATA.coauth_edges.forEach(e => {
-    if (e.s !== key && e.t !== key) return;
-    const ok = e.s === key ? e.t : e.s;
-    m.set(ok, (m.get(ok) || 0) + (e.w || 1));
-  });
+  (coauthAdj.get(key) || []).forEach(({ o, w }) => m.set(o, (m.get(o) || 0) + w));
   return m;
 }
 

@@ -7,37 +7,16 @@ function nodeNeighbors(key) {
   const n = nodeByKey.get(key);
   if (!n) return [];
   if (n.kind === "author") {
-    if (tab === 1) {
-      const coauths = [];
-      DATA.coauth_edges.forEach(e => {
-        if (e.s === key) coauths.push(e.t);
-        else if (e.t === key) coauths.push(e.s);
-      });
-      return coauths;
-    }
+    if (tab === 1) return (coauthAdj.get(key) || []).map(o => o.o);
     if (tab === 2) return authorRepos.get(key) || [];
     return authorPubs.get(key) || [];
   }
   if (n.kind === "pub") {
-    if (tab === 3) {
-      const related = [];
-      DATA.pub_edges.forEach(e => {
-        if (e.s === key) related.push(e.t);
-        else if (e.t === key) related.push(e.s);
-      });
-      return related;
-    }
+    if (tab === 3) return (pubAdj.get(key) || []).map(o => o.o);
     return pubAuthors.get(key) || [];
   }
   if (n.kind === "repo") {
-    if (tab === 2) {
-      const linked = [];
-      DATA.repo_edges.forEach(e => {
-        if (e.s === key) linked.push(e.t);
-        else if (e.t === key) linked.push(e.s);
-      });
-      return linked;
-    }
+    if (tab === 2) return (repoAdj.get(key) || []).map(o => o.o);
     return (repoPersons.get(key) || []).map(p => p.key);
   }
   return [];
