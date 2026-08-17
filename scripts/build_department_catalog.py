@@ -59,12 +59,6 @@ _DROP_RE = re.compile(
 )
 
 
-def fetch(url: str) -> str:
-    """GET a page through the shared HttpClient: retries transient 5xx/timeouts and
-    redacts URLs in any error, like every other source in the project."""
-    return HttpClient(TIMEOUT, {"User-Agent": USER_AGENT}).get_text(url)
-
-
 def _clean(raw: str) -> str:
     """Strip html tags/entities from a fragment and collapse whitespace."""
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", raw or "")).strip()
@@ -153,8 +147,9 @@ def build_catalog() -> list[dict]:
     at their megafaculty's EN name. A megafaculty with no official EN yet leaves an
     unresolved parent for its children until the EN name is filled in by hand.
     """
-    ru_units = parse_ru_tree(fetch(STRUCTURE_URL_RU))
-    en_by_id = official_en_by_id(fetch(STRUCTURE_URL_EN))
+    http = HttpClient(TIMEOUT, {"User-Agent": USER_AGENT})
+    ru_units = parse_ru_tree(http.get_text(STRUCTURE_URL_RU))
+    en_by_id = official_en_by_id(http.get_text(STRUCTURE_URL_EN))
     school_en = {u["name_ru"]: en_by_id.get(u["faculty_id"], "") for u in ru_units if u["school_ru"] == u["name_ru"]}
     logger.info("scientific units: %d | official EN from EN page: %d", len(ru_units), len(en_by_id))
 

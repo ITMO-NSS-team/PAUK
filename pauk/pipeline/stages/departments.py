@@ -66,10 +66,6 @@ class DepartmentsStage(EnrichmentStage):
         for person in self.progress(candidates, total=len(candidates)):
             state = person.processing.get(self.name)
             affiliations = [a.affiliation or "" for a in person.authored]
-            # Collapse embedded newlines / whitespace runs so a catalogue name still
-            # matches an affiliation that wraps it across lines (dedup normalises names
-            # the same way). The context pass below keeps the raw parts on purpose — it
-            # splits on "\n" as a separator.
             text = " ".join(" ".join(a.split()) for a in affiliations).casefold()
             matched = [dept_id for dept_id, names in matchers if any(name in text for name in names)]
             # ITMO-context pass: generic aliases match only in a part adjacent to an
