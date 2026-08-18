@@ -1,6 +1,6 @@
 "use strict";
 
-const MIN_HULL_NODES = 30;
+const MIN_HULL_NODES = 10;
 const BACKBONE_N     = 35;
 // Hull is drawn around a department's largest spatial island only (see
 // dominantIsland) — members scattered across unrelated clusters would
@@ -185,6 +185,7 @@ function buildNodeFeatures() {
       const color  = nodeColor(n);
       const props  = { key: n.key, kind: n.kind, color, dept: n.dept, sz: szOf(n) };
       if (n.kind === "pub") { props.sqid = ensureSquareImage(color); props.year = n.year || 0; }
+      else                  { props.cid = ensureCircleImage(color); }
       return { type: "Feature", properties: props, geometry: { type: "Point", coordinates: proj(x, y) } };
     }),
   };
@@ -202,7 +203,7 @@ function buildEdgeFeatures() {
     const min_rank = Math.min(sn.rank ?? 0, tn.rank ?? 0);
     features.push({
       type: "Feature",
-      properties: { s: e.s, t: e.t, w: e.w || 1, kind: e.kind || "", min_rank },
+      properties: { s: e.s, t: e.t, w: e.w || 1, min_rank },
       geometry: { type: "LineString", coordinates: [proj(sx, sy), proj(tx, ty)] },
     });
   }

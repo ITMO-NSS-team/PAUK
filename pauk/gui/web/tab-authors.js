@@ -1,10 +1,49 @@
 "use strict";
 
+// Flat-with-depth node icon: a faint sheen (not a bright glossy highlight —
+// that read as dated), a soft centered shadow, and a thin tonal ring for
+// crisp edges instead of a hard black outline. `pad` reserves room for the
+// shadow blur so it doesn't get clipped at the canvas edge.
+// 2x the pixel budget of the logical size below (both SIZE/PAD and the
+// pixelRatio passed to addImage are doubled together) so the raster stays
+// crisp at the largest icon-size multipliers instead of visibly pixelating —
+// the logical on-map size (CIRCLE_IMG_FULL / pixelRatio) is unchanged.
+const CIRCLE_IMG_SIZE = 56, CIRCLE_IMG_PAD = 14, CIRCLE_IMG_FULL = CIRCLE_IMG_SIZE + CIRCLE_IMG_PAD * 2;
+function circleImg(color) {
+  const cv = document.createElement("canvas"); cv.width = cv.height = CIRCLE_IMG_FULL;
+  const g = cv.getContext("2d");
+  const cx = CIRCLE_IMG_FULL / 2, cy = cx, r = CIRCLE_IMG_SIZE / 2;
+  g.shadowColor = "rgba(0,0,0,0.24)";
+  g.shadowBlur = CIRCLE_IMG_PAD * 0.85;
+  g.shadowOffsetY = CIRCLE_IMG_PAD * 0.12;
+  g.beginPath();
+  g.arc(cx, cy, r, 0, Math.PI * 2);
+  const [h, s, l] = hexToHsl(color);
+  const grad = g.createRadialGradient(cx - r * 0.3, cy - r * 0.35, r * 0.2, cx, cy, r * 1.1);
+  grad.addColorStop(0, hslToHex(h, s, Math.min(1, l + 0.1)));
+  grad.addColorStop(1, color);
+  g.fillStyle = grad;
+  g.fill();
+  g.shadowColor = "transparent";
+  g.lineWidth = 2;
+  g.strokeStyle = hslToHex(h, s, Math.max(0, l - 0.14));
+  g.stroke();
+  return g.getImageData(0, 0, CIRCLE_IMG_FULL, CIRCLE_IMG_FULL);
+}
+function ensureCircleImage(color) {
+  const id = "ci" + color.replace("#", "");
+  if (!map.hasImage(id)) map.addImage(id, circleImg(color), { pixelRatio: 4 });
+  return id;
+}
+
 function selectDept(did) {
   selected = null;
   map.getSource("sel-edges").setData(empty());
   map.getSource("sel-points").setData(empty());
   selectedDept = did;
+  const c = deptCentroid.get(did);
+  if (c && map.getZoom() < DEPT_CLICK_ZOOM)
+    map.flyTo({ center: proj(c[0], c[1]), zoom: DEPT_CLICK_ZOOM - 0.3, duration: 700 });
   const partners = (DATA.dept_edges || []).filter(e => e.s === did || e.t === did);
   map.getSource("dept-focus").setData({
     type: "FeatureCollection",
@@ -60,7 +99,7 @@ function showAuthorProfile(key) {
     <h2 class="card-title">${esc(n.label)}</h2>
     ${n.name_en && n.name_en !== n.label ? `<div class="card-subtitle">${esc(n.name_en)}</div>` : ""}
     ${variants.length ? `<details class="name-variants">
-      <summary>Другие написания <span class="tag gray">${variants.length}</span></summary>
+      <summary>Другие написания</summary>
       <ul>${variants.map(v => `<li>${esc(v)}</li>`).join("")}</ul>
     </details>` : ""}
     <div class="profile-dept">
@@ -121,7 +160,6 @@ function showAuthorProfile(key) {
       const targetTab = nd.kind === "repo" ? 2 : nd.kind === "pub" ? 3 : 1;
       if (targetTab !== tab) setTab(targetTab);
       selectNode(k);
-      map.flyTo({ center: proj(...P(k)), zoom: Math.max(map.getZoom(), 8), duration: 700 });
     };
   });
   const profileBtn = detail.querySelector(".detail-profile-btn");

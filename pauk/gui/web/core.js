@@ -14,6 +14,10 @@ const EDGE_OPACITY_COAUTH = ["interpolate", ["linear"], ["zoom"], 5.6, 0, 7.5, 0
 const EDGE_OPACITY_PUBS   = ["interpolate", ["linear"], ["zoom"], 5.6, 0, 7.5, 0.28, 12, 0.55];
 const FILL_OPACITY       = 0.35;
 const AUTHOR_LABEL_ZOOM  = 8.8;
+// Below this zoom, a click anywhere (node or empty space) resolves to the
+// department under the cursor — individual nodes are too tightly packed to
+// aim for reliably until you've zoomed in this far.
+const DEPT_CLICK_ZOOM = 6.8;
 
 const nodeByKey = new Map();
 DATA.authors.forEach(n => nodeByKey.set(n.key, n));
@@ -149,6 +153,26 @@ function szOf(n) {
   const c = n.kind === "author" ? (n.pubs_count || 0) : (n.n_authors || 0);
   return 0.6 + Math.min(1.5, 0.45 * Math.log1p(c));
 }
+
+// Node icon sizing, shared by main.js (layer icon-size expressions) and
+// overlay.js (label offset, so labels clear the icon they're attached to).
+// `unit` = screen px the visible icon spans at icon-size 1.0 — smaller than
+// the raster's logical size because circleImg/squareImg reserve padding for
+// their drop shadow (see tab-authors.js / tab-pubs.js).
+const NODE_ICON_K = {
+  author: { z3: 0.114, z9: 0.714, unit: 14 },
+  repo:   { z3: 0.214, z9: 1.0,   unit: 14 },
+  pub:    { z3: 0.18,  z9: 1.1,   unit: 7 },
+};
+function nodeScreenDiameter(n, zoom) {
+  const k = NODE_ICON_K[n.kind]; if (!k) return 10;
+  const t = Math.max(0, Math.min(1, (zoom - 3) / (9 - 3)));
+  return (k.z3 + (k.z9 - k.z3) * t) * szOf(n) * k.unit;
+}
+
+// On-screen px for the sel-points marker (selection.js) — shared with
+// overlay.js so the selected-node label offset clears the actual marker size.
+const SEL_MARKER_PX = { focus: 22, n: 14 };
 
 const shortLabel = (s, n = 80) => !s || s.length <= n ? (s || "…") : s.slice(0, n - 1) + "…";
 

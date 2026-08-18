@@ -98,7 +98,6 @@ function runSearch() {
       const targetTab = n.kind === "repo" ? 2 : n.kind === "pub" ? 3 : 1;
       if (targetTab !== tab) setTab(targetTab);
       selectNode(k);
-      map.flyTo({ center: proj(...P(k)), zoom: Math.max(map.getZoom(), 8), duration: 700 });
     };
   });
 }

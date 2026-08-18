@@ -4,18 +4,30 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>PAUK</title>
-  <link rel="icon" type="image/jpeg" href="logo.jpg" />
+  <link rel="icon" type="image/png" href="vendor/icons/pauk-frame.png" />
   <link rel="stylesheet" href="vendor/maplibre-gl.css" />
   <link rel="stylesheet" href="style.css" />
-  <script>document.documentElement.setAttribute("data-theme","dark");</script>
+  <!-- Used on first paint (preloader/tab bar) — without this the browser
+       doesn't discover it until it parses style.css and matches an element
+       to the @font-face rule, late enough to show a visible fallback swap.
+       The welcome-title serif is a system font, nothing to preload for it. -->
+  <link rel="preload" href="vendor/fonts/inter-cyrillic.woff2" as="font" type="font/woff2" crossorigin />
+  <!-- Dark theme paused for now (light-only during the design pass) — the
+       toggle is hidden in style.css (#theme-toggle), not removed. To bring
+       it back: restore this line and drop the `display:none` in style.css. -->
+  <!-- <script>document.documentElement.setAttribute("data-theme","dark");</script> -->
 </head>
 <body>
   <div id="boot-screen">
-    <img class="boot-logo" src="logo.jpg" alt="PAUK" />
+    <img class="boot-spider" src="vendor/icons/pauk-frame-8x.png" alt="" />
     <div class="boot-title">PAUK</div>
-    <div class="boot-status" id="boot-status">Загрузка карты…</div>
+    <div class="boot-progress"><div class="boot-progress-bar" id="boot-progress-bar"></div></div>
+    <div class="boot-status" id="boot-status">0%</div>
   </div>
 
+  <!-- The base/home screen (not a one-time gate) — always fully ready by the
+       time it's shown, since the preloader above is what carries loading
+       state now. No disabled/loading button state here anymore. -->
   <div id="welcome-modal" class="hidden">
     <svg id="welcome-burst" class="welcome-burst" aria-hidden="true"></svg>
     <div class="welcome-hero">
@@ -24,39 +36,54 @@
       <p class="welcome-subtitle">
         Публикации, авторы и департаменты ИТМО — и связанные с ними open-source репозитории на GitHub.
       </p>
-      <button id="welcome-close" class="welcome-cta loading" disabled>
-        <span id="welcome-cta-text">Загружаем карту…</span>
+      <button id="welcome-close" class="welcome-cta">
+        <span>Смотреть карту</span>
         <span class="welcome-cta-arrow">→</span>
       </button>
       <div class="welcome-modes">Персоналии · Публикации · Репозитории · Поиск</div>
     </div>
   </div>
 
-  <!-- Not deferred: graph-data.js (5MB+) blocks every deferred script below
+  <!-- Not deferred: graph-data.js (1MB+) blocks every deferred script below
        until it downloads, so this needs to run immediately instead. -->
   <script>
   (function () {
     var params = new URLSearchParams(location.search);
     var hasDeepLink = !!(params.get("kind") && (params.get("key") || params.get("id") !== null));
     window._pauk_hasDeepLink = hasDeepLink;
+    if (hasDeepLink) document.getElementById("welcome-modal").style.display = "none";
 
-    var targets = [];
-    if (hasDeepLink) {
-      document.getElementById("welcome-modal").style.display = "none";
-      targets.push(document.getElementById("boot-status"));
-    } else {
-      document.getElementById("boot-screen").style.display = "none";
-      document.getElementById("welcome-modal").classList.remove("hidden");
-      targets.push(document.getElementById("welcome-cta-text"));
+    var bar = document.getElementById("boot-progress-bar");
+    var status = document.getElementById("boot-status");
+    function setProgress(frac) {
+      var pct = Math.round(Math.max(0, Math.min(1, frac)) * 100);
+      if (bar) bar.style.width = pct + "%";
+      if (status) status.textContent = pct + "%";
     }
+    window._pauk_setProgress = setProgress;
 
-    var messages = ["Загружаем карту…", "Подгружаем данные…", "Строим графы…",
-                     "Собираем департаменты…", "Считаем связи…", "Почти готово…"];
-    var i = 0;
-    window._pauk_rotateTimer = setInterval(function () {
-      i = (i + 1) % messages.length;
-      targets.forEach(function (el) { if (el) el.textContent = messages[i]; });
-    }, 1300);
+    // Real download progress for the dominant payload. This is a second,
+    // parallel fetch purely to read Content-Length/bytes-so-far — the actual
+    // script execution still goes through the deferred <script> tag below,
+    // so a failure here (older browser, no fetch/stream support) can't break
+    // loading, only the progress readout.
+    if (window.fetch && window.ReadableStream) {
+      fetch("graph-data.js").then(function (res) {
+        var total = +res.headers.get("content-length") || 0;
+        if (!total || !res.body) { setProgress(0.7); return; }
+        var reader = res.body.getReader(), loaded = 0;
+        (function pump() {
+          reader.read().then(function (r) {
+            if (r.done) return;
+            loaded += r.value.length;
+            setProgress(Math.min(0.92, loaded / total));
+            pump();
+          });
+        })();
+      }).catch(function () { setProgress(0.7); });
+    } else {
+      setProgress(0.7);
+    }
 
     function buildWelcomeBurst() {
       var svg = document.getElementById("welcome-burst");
@@ -99,11 +126,6 @@
       <button data-tab="1" class="active">Персоналии</button><button data-tab="3">Публикации</button><button data-tab="2">Репозитории</button><button data-tab="4">Поиск</button><button data-tab="5">Здоровье БД</button>
     </div>
     <div class="topbar-right">
-      <button class="topbar-icon-btn" id="export-btn" title="Скачать карту как PNG">
-        <svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M8.5 2.5v8M5.5 8l3 3 3-3"/><path d="M2.5 13.5h12"/>
-        </svg>
-      </button>
       <button class="theme-toggle" id="theme-toggle" title="Светлая / тёмная тема" aria-label="Переключить тему">
         <svg class="theme-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="4"/>
@@ -126,7 +148,7 @@
       <div id="search-results"></div>
     </div>
     <div class="card" id="edge-filter-card" style="display:none;margin-top:10px">
-      <div class="card-label" id="edge-filter-label">мин. совм. публикаций</div>
+      <div class="card-label" id="edge-filter-label">Мин. совм. публикаций</div>
       <div class="edge-filter-row">
         <input type="range" id="edge-threshold" min="1" max="30" value="1" />
         <span id="edge-threshold-val">1</span>
@@ -134,9 +156,8 @@
       <div style="font-size:11px;color:var(--faint);margin-top:6px">только отображение рёбер</div>
     </div>
     <div class="card" id="year-filter-card" style="display:none;margin-top:10px">
-      <div class="card-label">публикации по год</div>
+      <div class="card-label">Публикации по год</div>
       <div class="edge-filter-row">
-        <button id="year-play-btn" class="year-play-btn" title="Проиграть по годам">▶</button>
         <input type="range" id="year-from" min="2020" max="2026" value="2026" />
         <span id="year-from-val" style="font-size:16px;font-weight:800;color:var(--text);min-width:36px;text-align:right">2026</span>
       </div>

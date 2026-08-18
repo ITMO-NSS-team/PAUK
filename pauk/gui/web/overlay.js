@@ -33,6 +33,16 @@ function wrap(text, max) {
   return lines.slice(0, 3);
 }
 
+// Long labels (publication titles especially) wrap to 2-3 lines — a fixed
+// clearance margin only accounts for one, so the bottom line kept dipping
+// back into the node. `extra` grows the offset so the block's bottom edge,
+// not its center, is what actually clears the icon.
+function _labelMetrics(text, fs) {
+  const lines = wrap(text, fs > 16 ? 16 : 22).length;
+  const lh = fs * 1.1;
+  return { lines, lh, extra: (lines - 1) * lh / 2 + fs / 2 };
+}
+
 function label(text, x, y, fs, color) {
   octx.font = `600 ${fs}px ${getComputedStyle(document.body).fontFamily}`;
   const lines = wrap(text, fs > 16 ? 16 : 22);
@@ -52,14 +62,59 @@ function drawOverlay() {
 
   if (selected) {
     const sn = nodeByKey.get(selected);
+    const zoom = map.getZoom();
+    const drawn = [];
+    const fp = P(selected), fc = map.project(proj(fp[0], fp[1]));
+    // Only the "real" weighted relationship (not a plain author→own-pub/repo
+    // listing) gets a name — matches nodeNeighbors' own adjacency-vs-listing split.
+    const relLabel =
+      sn.kind === "author" && tab === 1 ? "соавторство" :
+      sn.kind === "repo"   && tab === 2 ? "общие контрибьюторы" :
+      sn.kind === "pub"    && tab === 3 ? "общие авторы" : null;
+    octx.font = `600 12px ${getComputedStyle(document.body).fontFamily}`;
+    // The dimmed normal icon stays under the fixed-size sel-points marker
+    // (selection.js draws it at a constant px, doesn't shrink the original) —
+    // for a big node (e.g. a heavily-starred repo) the original can be
+    // larger than the marker and still poke out, so clear whichever is bigger.
     nodeNeighbors(selected).forEach(nk => {
       const nd = nodeByKey.get(nk), p = P(nk);
       if (!nd) return;
       const sc = map.project(proj(p[0], p[1]));
-      label(nd.label.length > 24 ? nd.label.slice(0, 23) + "…" : nd.label, sc.x, sc.y - 12, 12);
+      const text = nd.label.length > 24 ? nd.label.slice(0, 23) + "…" : nd.label;
+      const m = _labelMetrics(text, 12);
+      const yOff = Math.max(SEL_MARKER_PX.n, nodeScreenDiameter(nd, zoom)) / 2 + 8 + m.extra;
+      const tw = octx.measureText(text).width;
+      const boxH = m.lines * m.lh + 4;
+      const box = { x: sc.x - tw / 2, y: sc.y - yOff - boxH / 2, w: tw, h: boxH };
+      if (!drawn.some(b => !(box.x > b.x + b.w || box.x + box.w < b.x ||
+          box.y > b.y + b.h || box.y + box.h < b.y))) {
+        drawn.push(box);
+        label(text, sc.x, sc.y - yOff, 12);
+      }
+
+      // Relationship name in a gap in the middle of the edge — a masked
+      // pill (not an actual clipped line, the vector line stays whole
+      // underneath) drawn only where the edge is long enough on screen to fit it.
+      if (relLabel && Math.hypot(sc.x - fc.x, sc.y - fc.y) > 60) {
+        const mx = (fc.x + sc.x) / 2, my = (fc.y + sc.y) / 2;
+        octx.font = `600 10px ${getComputedStyle(document.body).fontFamily}`;
+        const rw = octx.measureText(relLabel).width;
+        const rbox = { x: mx - rw / 2 - 5, y: my - 8, w: rw + 10, h: 16 };
+        if (!drawn.some(b => !(rbox.x > b.x + b.w || rbox.x + rbox.w < b.x ||
+            rbox.y > b.y + b.h || rbox.y + rbox.h < b.y))) {
+          drawn.push(rbox);
+          octx.fillStyle = _labelHalo;
+          if (octx.roundRect) { octx.beginPath(); octx.roundRect(rbox.x, rbox.y, rbox.w, rbox.h, 5); octx.fill(); }
+          else octx.fillRect(rbox.x, rbox.y, rbox.w, rbox.h);
+          octx.fillStyle = _labelText;
+          octx.fillText(relLabel, mx, my);
+        }
+        octx.font = `600 12px ${getComputedStyle(document.body).fontFamily}`;
+      }
     });
-    const fp = P(selected), fc = map.project(proj(fp[0], fp[1]));
-    label(sn.label, fc.x, fc.y - 16, sn.kind === "pub" ? 14 : 13, nodeColor(sn));
+    const focusFs = sn.kind === "pub" ? 14 : 13;
+    const focusOff = Math.max(SEL_MARKER_PX.focus, nodeScreenDiameter(sn, zoom)) / 2 + 10 + _labelMetrics(sn.label, focusFs).extra;
+    label(sn.label, fc.x, fc.y - focusOff, focusFs, nodeColor(sn));
     return;
   }
 
@@ -114,17 +169,21 @@ function drawEntityLabels() {
   }
   cand.sort((a, c) => szOf(c) - szOf(a));
   octx.font = `600 12px ${getComputedStyle(document.body).fontFamily}`;
+  const zoom = map.getZoom();
   const drawn = []; let count = 0;
   for (const nd of cand) {
     if (count >= 160) break;
     const p = P(nd.key), sc = map.project(proj(p[0], p[1]));
     if (sc.x < -60 || sc.x > innerWidth + 60 || sc.y < -30 || sc.y > innerHeight + 30) continue;
     const tw = octx.measureText(nd.label).width;
-    const box = { x: sc.x - tw / 2, y: sc.y - 22, w: tw, h: 16 };
+    const m = _labelMetrics(nd.label, 12);
+    const yOff = nodeScreenDiameter(nd, zoom) / 2 + 6 + m.extra;
+    const boxH = m.lines * m.lh + 4;
+    const box = { x: sc.x - tw / 2, y: sc.y - yOff - boxH / 2, w: tw, h: boxH };
     if (drawn.some(bb => !(box.x > bb.x + bb.w || box.x + box.w < bb.x ||
         box.y > bb.y + bb.h || box.y + box.h < bb.y))) continue;
     drawn.push(box);
-    label(nd.label, sc.x, sc.y - 12, 12);
+    label(nd.label, sc.x, sc.y - yOff, 12);
     count++;
   }
 }

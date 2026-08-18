@@ -20,8 +20,13 @@ function closePanel() {
 function renderOverview() {
   const fmt = n => n.toLocaleString("ru-RU");
   const tabLabels  = ["", "Персоналии", "Репозитории", "Публикации", "Поиск"];
+  // Same three tones as the rest of the chrome (coral/blue from
+  // opensource.itmo.ru, amber our own pick) — not new colors, just reused here.
+  const tabColors  = { 1: "var(--accent-2)", 2: "#d9962e", 3: "#e8562e" };
+  const tabColor = tabColors[tab] || "inherit";
   overview.innerHTML =
-    `<div class="card-label">Обзор · ${tabLabels[tab]}</div>` +
+    `<img class="overview-web" src="vendor/icons/pauk-web-4x.png" alt="" />` +
+    `<div class="card-label">Обзор · <span style="color:${tabColor}">${tabLabels[tab]}</span></div>` +
     `<div class="stat-grid">` +
     `<div class="stat"><div class="stat-num">${fmt(DATA.authors.length)}</div><div class="stat-lbl">авторов ИТМО</div></div>` +
     `<div class="stat"><div class="stat-num">${fmt(DATA.pubs.length)}</div><div class="stat-lbl">публикаций</div></div>` +
@@ -90,7 +95,6 @@ function showEdgeCard(props) {
       const targetTab = nd.kind === "repo" ? 2 : nd.kind === "pub" ? 3 : 1;
       if (targetTab !== tab) setTab(targetTab);
       selectNode(k);
-      map.flyTo({ center: proj(...P(k)), zoom: Math.max(map.getZoom(), 8), duration: 600 });
     };
   });
 }

@@ -22,6 +22,14 @@ function nodeNeighbors(key) {
   return [];
 }
 
+// icon-size multiplier for a sel-points marker: `target` is the desired
+// on-screen px, NODE_ICON_K's `unit` is how many screen px the cached icon
+// (circleImg/squareImg) spans per icon-size 1.0 — same constants main.js uses.
+function _selIconSize(kind, role) {
+  const unit = kind === "pub" ? NODE_ICON_K.pub.unit : NODE_ICON_K.author.unit;
+  return SEL_MARKER_PX[role] / unit;
+}
+
 function selectNode(key) {
   resetDeptFocus();
   selected = key;
@@ -29,6 +37,7 @@ function selectNode(key) {
   if (!n) return;
   const neigh = nodeNeighbors(key);
   const fp = P(key);
+  map.flyTo({ center: proj(fp[0], fp[1]), zoom: Math.max(map.getZoom(), 6.5), duration: 700 });
   map.getSource("sel-edges").setData({
     type: "FeatureCollection",
     features: neigh.map(nk => {
@@ -42,15 +51,23 @@ function selectNode(key) {
     type: "FeatureCollection",
     features: pts.map(o => {
       const p = P(o.key), nd = nodeByKey.get(o.key);
+      const color = nd ? nodeColor(nd) : "#9aa2ac";
+      const isPub = nd?.kind === "pub";
       return { type: "Feature",
         geometry: { type: "Point", coordinates: proj(p[0], p[1]) },
-        properties: { role: o.role, color: nd ? nodeColor(nd) : "#9aa2ac" } };
+        properties: {
+          iid: isPub ? ensureSquareImage(color) : ensureCircleImage(color),
+          isz: _selIconSize(nd?.kind, o.role),
+        } };
     }),
   });
-  map.setPaintProperty("authors",   "circle-opacity", 0.12);
-  map.setPaintProperty("repos",     "circle-opacity", 0.12);
-  map.setPaintProperty("pubs",      "icon-opacity",   0.12);
-  map.setPaintProperty("dept-fill", "fill-opacity",   0.06);
+  map.setPaintProperty("authors", "icon-opacity", 0.12);
+  map.setPaintProperty("repos",   "icon-opacity", 0.12);
+  map.setPaintProperty("pubs",    "icon-opacity", 0.12);
+  map.setPaintProperty("dept-fill", "fill-opacity", 0.06);
+  // Only the selected node's own edges should read — the general "all
+  // relationships" layer competed with sel-edges for attention otherwise.
+  map.setPaintProperty("edges", "line-opacity", 0);
   showNodeCard(key);
   drawOverlay();
 }
@@ -72,10 +89,11 @@ function clearAll() {
     map.setPaintProperty("dept-edges", "line-opacity", DEPT_EDGE_OPACITY);
     map.setPaintProperty("dept-fill",  "fill-opacity", FILL_OPACITY);
   }
-  map.setPaintProperty("authors",   "circle-opacity", NODE_OPACITY);
-  map.setPaintProperty("repos",     "circle-opacity", tab === 2 ? 1 : NODE_OPACITY);
-  map.setPaintProperty("pubs",      "icon-opacity",   NODE_OPACITY);
-  map.setPaintProperty("sel-edges", "line-width",     1.8);
+  map.setPaintProperty("authors", "icon-opacity", NODE_OPACITY);
+  map.setPaintProperty("repos",   "icon-opacity", tab === 2 ? 1 : NODE_OPACITY);
+  map.setPaintProperty("pubs",    "icon-opacity", NODE_OPACITY);
+  map.setPaintProperty("edges", "line-opacity", tab === 2 ? 1 : tab === 3 ? EDGE_OPACITY_PUBS : EDGE_OPACITY_COAUTH);
+  map.setPaintProperty("sel-edges", "line-width", 1.5);
   closePanel();
   drawOverlay();
 }

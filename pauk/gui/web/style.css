@@ -1,5 +1,8 @@
-/* PAUK — pure grayscale chrome; the map's own department colors are the
-   only color on the page. Type: Golos Text (Paratype, native Cyrillic). */
+/* PAUK — grayscale chrome with a single dark accent, department colors
+   carry the rest. Type: Inter everywhere, except the welcome-screen title
+   (system serif — three different webfonts tried there and rejected, see
+   git history; not worth another download for one headline). Golos Text
+   below is vendored but unused, kept in case of a revert. */
 
 @font-face {
   font-family: "Golos Text";
@@ -23,6 +26,32 @@
   font-weight: 400 900;
   font-display: swap;
   src: url("vendor/fonts/golos-text-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+                 U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215;
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("vendor/fonts/inter-cyrillic.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("vendor/fonts/inter-cyrillic-ext.woff2") format("woff2");
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("vendor/fonts/inter-latin.woff2") format("woff2");
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
                  U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215;
 }
@@ -52,9 +81,17 @@
   --label-text: var(--g7);
   --stat-bg: rgba(196, 196, 196, 0.32);
   --stat-border: var(--g3);
+  /* the one deliberate exception to the grayscale rule above: links, focus
+     rings, li-count — a signal, not decoration. Near-black by request, so it
+     barely differs from --text in light mode; that's intentional here. */
+  --accent: #181e1e;
+  /* second, cooler accent for the repo tag signal — lifted from
+     opensource.itmo.ru (their #2015FF focus-outline blue), toned down a notch */
+  --accent-2: #3555e0;
   --radius: 10px;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --font: "Golos Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-serif: Georgia, "Times New Roman", serif; /* system serif — see header comment */
 }
 
 :root[data-theme="dark"] {
@@ -74,9 +111,15 @@
   --stat-bg: rgba(97, 97, 97, 0.45);
   --stat-border: var(--g4);
   --shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  /* the deep light-mode accent reads muddy on a near-black background —
+     the lighter, more saturated cut of the same coral glows instead (7:1
+     against --bg here, vs. 3.6:1 for the light-mode value on white) */
+  --accent: #ff8562;
+  --accent-2: #6d8bff;
 }
 
 * { box-sizing: border-box; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 html, body { margin: 0; height: 100%; font-family: var(--font); }
 body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-font-smoothing: antialiased; }
 
@@ -86,20 +129,19 @@ body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-font
 
 /* ---------- top bar ---------- */
 #topbar {
-  position: absolute; top: 0; left: 0; right: 0; z-index: 8; height: 60px;
+  position: absolute; top: 0; left: 0; right: 0; z-index: 8; height: 50px;
   display: flex; align-items: center; gap: 20px; padding: 0 22px;
   background: var(--topbar-bg); backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
 }
-#tab-toggle { display: inline-flex; background: var(--surface); border: 1px solid var(--border); border-radius: 11px; padding: 4px; }
+#tab-toggle { display: flex; flex: 1; align-items: center; justify-content: space-evenly; }
 #tab-toggle button {
-  background: none; color: var(--muted); border: none; padding: 8px 14px;
-  font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; border-radius: 8px;
-  transition: color .15s, background .15s;
+  background: none; color: var(--muted); border: none;
+  padding: 4px 0; font-family: var(--font); font-size: 15px; font-weight: 600; letter-spacing: 0.02em;
+  cursor: pointer; transition: color .15s, font-weight .15s;
 }
 #tab-toggle button:hover { color: var(--text); }
-#tab-toggle button.active { background: var(--bg); color: var(--text); font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.10); }
-:root[data-theme="dark"] #tab-toggle button.active { box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+#tab-toggle button.active { color: var(--text); font-weight: 700; }
 
 #loading { font-size: 12px; color: var(--muted); font-weight: 600; }
 
@@ -112,17 +154,23 @@ body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-font
 .topbar-icon-btn:hover { color: var(--text); background: var(--surface-2); }
 .topbar-icon-btn:active { transform: scale(0.9); }
 
-/* ---------- boot screen ---------- */
+/* ---------- preloader ---------- */
 #boot-screen {
   position: fixed; inset: 0; z-index: 30;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
   background: var(--bg); transition: opacity .35s ease;
 }
 #boot-screen.hidden { opacity: 0; pointer-events: none; }
-.boot-logo { width: 72px; height: 72px; border-radius: 14px; object-fit: contain; animation: bootPulse 1.7s ease-in-out infinite; }
-@keyframes bootPulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
-.boot-title { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); }
-.boot-status { font-size: 13px; color: var(--muted); }
+.boot-spider { width: 38px; height: auto; }
+.boot-title { font-family: var(--font); font-size: 24px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); }
+.boot-progress {
+  width: 180px; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden;
+}
+.boot-progress-bar {
+  height: 100%; width: 0%; background: var(--accent);
+  transition: width .18s ease-out; border-radius: inherit;
+}
+.boot-status { font-size: 12px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* ---------- welcome hero ---------- */
 #welcome-modal {
@@ -151,7 +199,8 @@ body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-font
 .welcome-badge-arrow { color: var(--faint); transition: transform .15s; }
 .welcome-badge:hover .welcome-badge-arrow { transform: translateX(2px); }
 .welcome-title {
-  font-size: clamp(32px, 5vw, 56px); font-weight: 800; letter-spacing: -0.02em;
+  font-family: var(--font-serif);
+  font-size: clamp(32px, 5vw, 56px); font-weight: 700; letter-spacing: -0.01em;
   line-height: 1.08; color: var(--text); margin: 0 0 20px;
 }
 .welcome-subtitle { font-size: 16px; line-height: 1.55; color: var(--muted); margin: 0 auto 32px; max-width: 480px; }
@@ -163,9 +212,6 @@ body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-font
 }
 .welcome-cta:hover { background: var(--muted); }
 .welcome-cta:active { transform: scale(0.97); }
-.welcome-cta.loading { opacity: 0.55; cursor: default; }
-.welcome-cta.loading:hover { background: var(--text); }
-.welcome-cta.loading .welcome-cta-arrow { display: none; }
 .welcome-cta-arrow {
   display: inline-flex; align-items: center; justify-content: center;
   width: 22px; height: 22px; border-radius: 50%; background: rgba(255,255,255,0.18); font-size: 13px;
@@ -175,7 +221,10 @@ body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-font
 /* ---------- theme toggle ---------- */
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 .theme-toggle {
-  display: flex; align-items: center; gap: 7px; cursor: pointer; user-select: none;
+  /* Dark theme paused for the design pass — JS/vars are untouched (see
+     main.js _applyTheme), just hidden. Delete this line to bring it back. */
+  display: none;
+  align-items: center; gap: 7px; cursor: pointer; user-select: none;
   background: none; border: none; padding: 5px 7px; border-radius: 7px; font: inherit;
   color: var(--text); transition: background .15s;
 }
@@ -196,25 +245,40 @@ body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-font
 :root[data-theme="dark"] .theme-thumb { left: 19px; background: var(--g7); }
 
 /* ---------- edge filter ---------- */
+/* Thumb is the actual pauk-frame.png pixel-art spider (19x17 source) — ПАУК
+   means "spider", so the one thing you actually drag on the whole page might
+   as well say so. Box keeps the source's ~19:17 aspect ratio (not forced
+   square) so "contain" doesn't have to letterbox it. */
 .edge-filter-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
-.edge-filter-row input[type=range] { flex: 1; accent-color: var(--text); cursor: pointer; -webkit-appearance: none; appearance: none; height: 6px; border-radius: 3px; background: var(--border); outline: none; }
-.edge-filter-row input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: var(--text); cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
-.edge-filter-row input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%; background: var(--text); border: none; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
-.edge-filter-row input[type=range]::-moz-range-track { background: var(--border); border-radius: 3px; height: 6px; }
-.year-play-btn {
-  flex-shrink: 0; width: 22px; height: 22px; border: none; border-radius: 6px;
-  background: var(--text); color: var(--bg); font-size: 8px; line-height: 1;
-  cursor: pointer; display: flex; align-items: center; justify-content: center;
-  transition: background .15s, transform .1s; padding: 0;
+.edge-filter-row input[type=range] {
+  flex: 1; accent-color: var(--accent); cursor: pointer; -webkit-appearance: none; appearance: none;
+  height: 8px; border-radius: 4px; background: var(--border); outline: none;
 }
-.year-play-btn:hover { background: var(--muted); }
-.year-play-btn:active { transform: scale(0.92); }
+.edge-filter-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 22px; height: 20px; background: none;
+  background-image: url("vendor/icons/pauk-frame.png"); background-size: contain; background-repeat: no-repeat; background-position: center;
+  image-rendering: pixelated; cursor: pointer;
+}
+.edge-filter-row input[type=range]::-moz-range-thumb {
+  width: 22px; height: 20px; border: none; background: none;
+  background-image: url("vendor/icons/pauk-frame.png"); background-size: contain; background-repeat: no-repeat; background-position: center;
+  image-rendering: pixelated; cursor: pointer;
+}
+.edge-filter-row input[type=range]::-moz-range-track { background: var(--border); border-radius: 4px; height: 8px; }
 #edge-threshold-val { font-size: 16px; font-weight: 800; color: var(--text); min-width: 22px; text-align: right; }
 
+/* ---------- zoom debug readout (bottom-left, above the maplibre zoom control) ---------- */
+#zoom-debug {
+  position: absolute; left: 16px; bottom: 92px; z-index: 6;
+  font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--muted); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 7px; padding: 3px 8px; pointer-events: none; font-family: var(--font);
+}
+
 /* ---------- side panels ---------- */
-#left-panel { position: absolute; top: 72px; left: 16px; z-index: 6; width: 270px; max-width: 34vw; }
+#left-panel { position: absolute; top: 62px; left: 16px; z-index: 6; width: 270px; max-width: 34vw; }
 #right-panel {
-  position: absolute; top: 72px; right: 16px; bottom: 16px; z-index: 6; width: 340px; max-width: 40vw;
+  position: absolute; top: 62px; right: 16px; bottom: 16px; z-index: 6; width: 340px; max-width: 40vw;
   display: flex; flex-direction: column; gap: 12px; overflow: hidden;
 }
 
@@ -223,7 +287,10 @@ body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-font
   box-shadow: var(--shadow); padding: 16px; pointer-events: auto;
 }
 .card.hidden { display: none; }
-.card-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--faint); margin-bottom: 10px; }
+.card-label {
+  font-family: var(--font); font-weight: 700;
+  font-size: 15px; color: var(--muted); margin-bottom: 10px;
+}
 
 /* ---------- search ---------- */
 #search {
@@ -232,7 +299,7 @@ body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-font
   transition: border-color .15s, background .15s;
 }
 #search:focus { border-color: var(--text); background: var(--bg); }
-#search::placeholder { color: var(--faint); }
+#search::placeholder { color: var(--muted); }
 .search-loading-hint { font-size: 11px; color: var(--muted); margin: 6px 2px 0; line-height: 1.4; }
 .search-loading-hint.hidden { display: none; }
 #search-results { margin-top: 8px; max-height: 52vh; overflow-y: auto; }
@@ -246,10 +313,13 @@ body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-font
 .search-empty { padding: 8px 4px; font-size: 12px; color: var(--muted); }
 
 /* ---------- overview ---------- */
-#overview { flex: none; }
+#overview { flex: none; position: relative; }
+/* inset past --radius (10px) so the square PNG's corners clear the card's
+   rounded corner instead of poking past its arc */
+.overview-web { position: absolute; top: 12px; right: 12px; width: 30px; height: 30px; pointer-events: none; }
 .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .stat { background: var(--stat-bg); border: 1px solid var(--stat-border); border-radius: 10px; padding: 11px 12px; }
-.stat-num { font-size: 24px; font-weight: 800; letter-spacing: -0.03em; color: var(--text); }
+.stat-num { font-size: 24px; font-weight: 800; letter-spacing: -0.03em; color: var(--accent); }
 .stat-lbl { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 2px; }
 
 /* ---------- node card ---------- */
@@ -269,38 +339,45 @@ body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-font
   transition: background .12s, color .12s;
 }
 #detail-close:hover { color: var(--text); background: var(--surface-2); }
-.card-kind { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 700; }
-.card-title { font-size: 17px; font-weight: 700; color: var(--text); margin: 5px 34px 12px 0; line-height: 1.3; }
-/* Romanized name under the Russian card title; -10px pulls it up to the
-   title it belongs to, since .card-title carries a 12px bottom margin. */
-.card-subtitle { margin: -10px 34px 8px 0; font-size: 13px; color: var(--muted); }
-.name-variants { margin: 0 0 10px; font-size: 12px; }
-.name-variants > summary { cursor: pointer; color: var(--muted); list-style: none; }
+.card-kind { display: block; font-family: var(--font); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
+.card-title { font-family: var(--font); font-size: 18px; font-weight: 700; color: var(--text); margin: 0 34px 14px 0; line-height: 1.3; }
+/* Romanized name under the Russian card title; -12px pulls it up to the
+   title it belongs to, since .card-title carries a 14px bottom margin. */
+.card-subtitle { margin: -12px 34px 12px 0; font-size: 13px; color: var(--muted); }
+.name-variants { margin: 0 0 14px; font-size: 12px; }
+.name-variants > summary {
+  cursor: pointer; color: var(--muted); list-style: none;
+  text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 3px;
+}
 .name-variants > summary::-webkit-details-marker { display: none; }
-.name-variants > summary::before { content: "▸ "; color: var(--faint); }
-.name-variants[open] > summary::before { content: "▾ "; }
-.name-variants > summary:hover { color: var(--text); }
+.name-variants > summary:hover { color: var(--text); text-decoration-color: var(--text); }
 .name-variants ul { margin: 6px 0 0; padding: 0 0 0 14px; list-style: none; color: var(--text); }
 .name-variants li { padding: 2px 0; }
-.card-row { margin: 7px 0; font-size: 13px; color: var(--text); }
+.card-row { margin: 9px 0; font-size: 13px; color: var(--text); }
 .card-row b { color: var(--muted); font-weight: 500; }
-.card-section { margin-top: 15px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); font-weight: 700; border-top: 1px solid var(--border); padding-top: 12px; }
+.card-section {
+  margin-top: 18px; font-family: var(--font); font-weight: 700;
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); border-top: 1px solid var(--border); padding-top: 12px;
+}
 .card-list { margin: 8px 0 0; padding: 0; list-style: none; }
 .card-list li { padding: 7px 8px; margin: 0 -8px; font-size: 13px; border-radius: 7px; cursor: pointer; transition: background .12s; display: flex; align-items: center; gap: 8px; }
 .card-list li:hover { background: var(--surface-2); }
 .li-name { flex: 1 1 auto; min-width: 0; }
 .li-count {
   flex: none; margin-left: auto; min-width: 30px; text-align: center;
-  padding: 2px 8px; border-radius: 7px; font-size: 12px; font-weight: 700;
-  background: var(--li-count-bg); color: var(--li-count-color);
+  padding: 1px 7px; border-radius: 7px; font-size: 12px; font-weight: 700;
+  background: var(--li-count-bg);
+  color: var(--accent);
+  border: 1px solid var(--accent);
 }
 .tag { display: inline-block; padding: 1px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; background: var(--surface-2); color: var(--text); }
 .tag.gray { background: var(--surface-2); color: var(--muted); }
 .tag.green { background: #e4f7ec; color: #1a9d54; } /* deliberate exception: "has code" is a data signal, not chrome */
-.tag.blue  { background: var(--surface-2); color: var(--text); }
+.tag.blue  { background: var(--accent-2); color: #fff; } /* was accidentally gray before — repo signal, matches search.js kindClass */
 :root[data-theme="dark"] .tag.green { background: #0f2d1c; color: #4ade80; }
-a { color: var(--text); text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 2px; }
-a:hover { text-decoration-color: var(--text); }
+a { color: var(--accent); text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 2px; }
+a:hover { text-decoration-color: var(--accent); }
 
 .detail-profile-btn {
   display: block; width: 100%; margin-top: 18px;
@@ -312,14 +389,14 @@ a:hover { text-decoration-color: var(--text); }
 .detail-profile-btn:hover { background: var(--text); color: var(--bg); border-color: var(--text); }
 
 /* ---------- author profile (side panel) ---------- */
-.profile-dept { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.profile-dept { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
 .dept-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
 .profile-chart { display: block; margin: 8px 0 2px; overflow: visible; }
 
 /* ---------- search page (Tab 4) ---------- */
 #search-page {
   display: none;
-  position: absolute; inset: 60px 0 0 0;
+  position: absolute; inset: 50px 0 0 0;
   z-index: 7; background: var(--bg);
   overflow-y: auto;
   overscroll-behavior: none;
@@ -381,7 +458,7 @@ a:hover { text-decoration-color: var(--text); }
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow);
 }
-.sp-profile-name { font-size: 22px; font-weight: 800; color: var(--text); margin: 8px 0 6px; line-height: 1.2; }
+.sp-profile-name { font-family: var(--font); font-size: 22px; font-weight: 800; color: var(--text); margin: 8px 0 6px; line-height: 1.2; }
 .sp-card {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); overflow: hidden;
@@ -441,7 +518,7 @@ a:hover { text-decoration-color: var(--text); }
    hue — the map's department colors stay the only color on the page. */
 #stats-page {
   display: none;
-  position: absolute; inset: 60px 0 0 0;
+  position: absolute; inset: 50px 0 0 0;
   z-index: 7; background: var(--bg);
   overflow-y: auto; overscroll-behavior: none;
 }
@@ -454,7 +531,7 @@ a:hover { text-decoration-color: var(--text); }
   display: flex; flex-wrap: wrap; gap: 14px 24px;
   align-items: flex-end; justify-content: space-between; margin-bottom: 20px;
 }
-.st-title { font-size: 22px; font-weight: 800; letter-spacing: -.02em; }
+.st-title { font-family: var(--font); font-size: 22px; font-weight: 800; letter-spacing: -.02em; }
 .st-meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .st-head-right { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .st-verdict { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
@@ -482,7 +559,7 @@ a:hover { text-decoration-color: var(--text); }
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 14px 16px;
 }
-.st-tile-n { font-size: 24px; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; }
+.st-tile-n { font-size: 24px; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; color: var(--accent); }
 .st-tile-k { font-size: 11px; color: var(--muted); margin-top: 4px; }
 
 .st-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }

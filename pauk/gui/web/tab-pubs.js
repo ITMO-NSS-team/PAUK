@@ -3,14 +3,24 @@
 function squareImg(color, size) {
   const cv = document.createElement("canvas"); cv.width = cv.height = size;
   const g = cv.getContext("2d");
-  g.fillStyle = color; g.fillRect(1, 1, size - 2, size - 2);
-  g.strokeStyle = "rgba(0,0,0,0.6)"; g.lineWidth = 1; g.strokeRect(0.5, 0.5, size - 1, size - 1);
+  const inset = size / 16; // was a fixed 1px at size=16; keep it proportional now that size doubled
+  const r = size * 0.28;
+  const [h, s, l] = hexToHsl(color);
+  const grad = g.createLinearGradient(0, inset, 0, size - inset);
+  grad.addColorStop(0, hslToHex(h, s, Math.min(1, l + 0.22)));
+  grad.addColorStop(1, color);
+  g.beginPath();
+  g.roundRect(inset, inset, size - inset * 2, size - inset * 2, r);
+  g.fillStyle = grad; g.fill();
+  g.strokeStyle = "rgba(0,0,0,0.35)"; g.lineWidth = inset; g.stroke();
   return g.getImageData(0, 0, size, size);
 }
 
+// Same 2x pixel-budget move as circleImg (tab-authors.js) — size and
+// pixelRatio doubled together, logical on-map size (32/4) unchanged.
 function ensureSquareImage(color) {
   const id = "sq" + color.replace("#", "");
-  if (!map.hasImage(id)) map.addImage(id, squareImg(color, 16), { pixelRatio: 2 });
+  if (!map.hasImage(id)) map.addImage(id, squareImg(color, 32), { pixelRatio: 4 });
   return id;
 }
 
@@ -39,7 +49,6 @@ function showPubCard(key) {
       const targetTab = nd.kind === "repo" ? 2 : nd.kind === "pub" ? 3 : 1;
       if (targetTab !== tab) setTab(targetTab);
       selectNode(k);
-      map.flyTo({ center: proj(...P(k)), zoom: Math.max(map.getZoom(), 8), duration: 600 });
     };
   });
 }

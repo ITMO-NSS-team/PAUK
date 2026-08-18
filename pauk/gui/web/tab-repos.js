@@ -31,7 +31,6 @@ function showRepoCard(key) {
     li.onclick = () => {
       const k = li.getAttribute("data-k");
       selectNode(k);
-      map.flyTo({ center: proj(...P(k)), zoom: Math.max(map.getZoom(), 6), duration: 600 });
     };
   });
 }
