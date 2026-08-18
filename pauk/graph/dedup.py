@@ -39,8 +39,10 @@ from pauk.settings import Settings
 from pauk.storage.atomic import AtomicWriter
 from pauk.urls import normalize_repo_url
 
-from .client import Neo4jClient, chunked
+from .audit import actor_context, audited_client
+from .client import chunked
 from .extract import NODE_REGISTRY, extract_node
+from .overrides import apply_overrides
 
 logger = logging.getLogger(__name__)
 
@@ -386,17 +388,20 @@ def run_graph_dedup(config: Settings, mongo_db: Database) -> dict[str, int]:
     """CLI entry point for `pauk dedup graph`: persons, publications and
     repositories deduplicated across every published group, with one
     combined review journal in the cache directory."""
-    client = Neo4jClient(config.neo4j_uri, config.neo4j_user, config.neo4j_password)
+    client = audited_client(config, mongo_db)
     try:
         config.cache_dir.mkdir(parents=True, exist_ok=True)
         catalog = RussianNamesCatalog.load_if_present(catalog_path(config))
         if catalog is None:
             logger.info("graph dedup: no staff catalog at %s — merging on names and profiles alone",
                         catalog_path(config))
-        persons_removed, person_report = dedup_graph_persons(
-            client, collect_raw_orcids(mongo_db), catalog)
-        publications_removed, publication_report = dedup_graph_publications(client)
-        repositories_removed, repository_report = dedup_graph_repositories(client)
+        # A fold deletes a node, and the review journal records the decision
+        # but not what the node held. The audit entry does.
+        with actor_context("etl-pipeline", source="dedup-graph"):
+            persons_removed, person_report = dedup_graph_persons(
+                client, collect_raw_orcids(mongo_db), catalog)
+            publications_removed, publication_report = dedup_graph_publications(client)
+            repositories_removed, repository_report = dedup_graph_repositories(client)
 
         report = [
             {"entity": "person", **row} if "entity" not in row else row
@@ -414,11 +419,17 @@ def run_graph_dedup(config: Settings, mongo_db: Database) -> dict[str, int]:
                 persons_removed + publications_removed + repositories_removed,
                 held,
             )
+        # A fold can take a hand-corrected node with it, or leave the
+        # survivor carrying the duplicate's automatic values, so manual
+        # decisions go back on top here too.
+        with actor_context("etl-pipeline", source="dedup-graph"):
+            overrides = apply_overrides(client, mongo_db)
         return {
             "graph_persons_merged": persons_removed,
             "graph_publications_merged": publications_removed,
             "graph_repositories_merged": repositories_removed,
             "graph_dedup_candidates": held,
+            **overrides,
         }
     finally:
         client.close()

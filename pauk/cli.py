@@ -4,6 +4,7 @@ import argparse
 import logging
 from pathlib import Path
 
+from pauk.admin import cli as admin_cli
 from pauk.logging import configure_logging
 from pauk.pipeline.collect import Collector
 from pauk.pipeline.enrich import Enricher
@@ -84,6 +85,7 @@ def main() -> None:
     cache_sub = p.add_subparsers(dest="cache_command", required=True)
     p = cache_sub.add_parser("export")
     p.add_argument("--output", type=Path)
+    admin_cli.add_parser(sub)
     args = parser.parse_args()
     configure_logging(args.verbose)
 
@@ -125,6 +127,19 @@ def main() -> None:
                 logger.info("publish graph %s: done", group)
         finally:
             mongo.close()
+    elif args.command == "admin":
+        # `schema` only prints the whitelists; it reaches neither database,
+        # so it stays usable without one running.
+        if args.admin_command == "schema":
+            admin_cli.run(args, settings, None)
+        else:
+            mongo = get_mongo_client(settings)
+            try:
+                db = mongo[settings.mongo_db]
+                ensure_indexes(db)
+                admin_cli.run(args, settings, db)
+            finally:
+                mongo.close()
     elif args.command == "dedup":
         from pauk.graph.dedup import run_graph_dedup
         mongo = get_mongo_client(settings)

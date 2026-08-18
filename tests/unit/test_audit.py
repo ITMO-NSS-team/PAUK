@@ -1,7 +1,15 @@
 import unittest
 from unittest.mock import patch
 
-from pauk.graph.audit import AuditedNeo4jClient, actor_context
+import mongomock
+
+from pauk.graph.audit import (
+    AuditedNeo4jClient,
+    AuditEntry,
+    MongoAuditSink,
+    MultiAuditSink,
+    actor_context,
+)
 
 
 class FakeNeo4jClient:
@@ -230,6 +238,72 @@ class ActorContextTest(unittest.TestCase):
         inner_entry, outer_entry = sink.entries
         self.assertEqual(inner_entry.actor, "user:bob")
         self.assertEqual(outer_entry.actor, "etl-pipeline")
+
+
+class MongoAuditSinkTest(unittest.TestCase):
+    """The sink the panel's change feed reads from."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.sink = MongoAuditSink(self.db)
+
+    @staticmethod
+    def entry(**overrides):
+        fields = {
+            "timestamp": "2026-08-14T10:00:00+00:00", "actor": "user:petrov",
+            "source": "admin-ui", "operation": "upsert_nodes",
+            "entity_type": "Person", "entity_id": "A1",
+            "change_kind": "updated", "diff": {"name_ru": ("Ivanov I.", "Иванов И. И.")},
+        }
+        return AuditEntry(**{**fields, **overrides})
+
+    def test_an_entry_is_stored_field_by_field(self):
+        self.sink.write([self.entry()])
+        (row,) = self.db.audit.find({}, {"_id": False})
+        self.assertEqual(row["actor"], "user:petrov")
+        self.assertEqual(row["entity_id"], "A1")
+        # BSON has no tuple: readers get [old, new], same as from JSONL.
+        self.assertEqual(row["diff"]["name_ru"], ["Ivanov I.", "Иванов И. И."])
+
+    def test_nothing_is_written_for_an_empty_batch(self):
+        self.sink.write([])
+        self.assertEqual(self.db.audit.count_documents({}), 0)
+
+    def test_a_value_mongo_cannot_store_is_kept_as_text(self):
+        # Neo4j hands back its own types (DateTime and friends). The audit
+        # path must not be the thing that fails a write.
+        class Exotic:
+            def __str__(self):
+                return "2026-08-14T10:00:00"
+
+        self.sink.write([self.entry(diff={"access_date": (None, Exotic())})])
+        (row,) = self.db.audit.find({}, {"_id": False})
+        self.assertEqual(row["diff"]["access_date"], [None, "2026-08-14T10:00:00"])
+
+    def test_the_feed_can_be_read_by_entity_and_by_actor(self):
+        self.sink.write([
+            self.entry(entity_id="A1", actor="user:petrov"),
+            self.entry(entity_id="A2", actor="user:ivanova"),
+        ])
+        self.assertEqual(self.db.audit.count_documents({"entity_type": "Person", "entity_id": "A1"}), 1)
+        self.assertEqual(self.db.audit.count_documents({"actor": "user:ivanova"}), 1)
+
+
+class MultiAuditSinkTest(unittest.TestCase):
+    def test_every_sink_receives_the_batch(self):
+        first, second = InMemorySink(), InMemorySink()
+        entry = MongoAuditSinkTest.entry()
+        MultiAuditSink(first, second).write([entry])
+        self.assertEqual((len(first.entries), len(second.entries)), (1, 1))
+
+    def test_a_failing_sink_is_not_swallowed(self):
+        # Losing an audit record quietly is worse than a loud failure.
+        class Broken:
+            def write(self, entries):
+                raise RuntimeError("mongo is down")
+
+        with self.assertRaises(RuntimeError):
+            MultiAuditSink(Broken(), InMemorySink()).write([MongoAuditSinkTest.entry()])
 
 
 if __name__ == "__main__":

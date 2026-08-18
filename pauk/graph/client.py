@@ -566,3 +566,98 @@ class Neo4jClient:
                 len(batch) - matched,
             )
         return matched
+
+    def fetch_node_properties(self, label: str, node_id: str) -> dict | None:
+        """Every property of one node, or None if there is no such node.
+
+        The dedup fetchers return the few fields they compare on; a manual
+        edit needs the whole node — to show it, and to read the
+        `updated_at` an optimistic check is made against.
+
+        Args:
+            label: Node label, interpolated into Cypher — whitelist only.
+            node_id: Value of the node's `id` property.
+        """
+        query = cast(
+            LiteralString,
+            f"MATCH (n:{label} {{id: $node_id}}) RETURN properties(n) AS props",
+        )
+        with self.driver.session() as session:
+            row = session.execute_read(lambda tx: tx.run(query, node_id=node_id).single())
+        return dict(row["props"]) if row else None
+
+    def delete_nodes_batch(self, label: str, ids: list[str], detach: bool = True) -> int:
+        """Delete nodes by id, optionally taking their relationships with them.
+
+        Nothing in the pipeline deletes a node — the loader only ever
+        MERGEs, and dedup folds duplicates rather than removing them. This
+        exists for manual removal from the admin layer, which is why it
+        reports how many nodes actually went: a caller asking to delete an
+        id that is not there must be able to tell.
+
+        Args:
+            label: Node label. Interpolated into Cypher, so callers must
+                pass a label from a closed whitelist, never user input
+                (see pauk/graph/mutations.py).
+            ids: Node ids to delete.
+            detach: True deletes the node together with its relationships.
+                False leaves a node that still has any relationship
+                untouched — Neo4j refuses to delete a connected node, and
+                that refusal is the point: it stops a careless delete from
+                silently tearing edges out of the graph.
+
+        Returns:
+            Number of nodes deleted.
+        """
+        if not ids:
+            return 0
+        clause = "DETACH DELETE n" if detach else "DELETE n"
+        guard = "" if detach else "AND NOT (n)--() "
+        query = cast(
+            LiteralString,
+            f"""
+            MATCH (n:{label}) WHERE n.id IN $ids {guard}
+            WITH collect(n) AS doomed
+            FOREACH (n IN doomed | {clause})
+            RETURN size(doomed) AS removed
+            """,
+        )
+        with self.driver.session() as session:
+            return session.execute_write(lambda tx: tx.run(query, ids=ids).single()["removed"])
+
+    def delete_relationships_batch(
+        self,
+        src_label: str,
+        tgt_label: str,
+        rel_type: str,
+        pairs: list[tuple[str, str]],
+        tgt_match_prop: str = "id",
+    ) -> int:
+        """Delete relationships of one type between the given node pairs.
+
+        Args:
+            src_label: Label of the source node.
+            tgt_label: Label of the target node.
+            rel_type: Relationship type to delete, e.g. "AUTHORED".
+            pairs: (src_id, tgt_id) pairs whose relationship goes.
+            tgt_match_prop: Property the target is looked up by — not
+                always "id" (Repository by "url", GitHubProfile by "login").
+
+        Returns:
+            Number of relationships deleted.
+        """
+        if not pairs:
+            return 0
+        batch = [{"src_id": src_id, "tgt_id": tgt_id} for src_id, tgt_id in pairs]
+        query = cast(
+            LiteralString,
+            f"""
+            UNWIND $batch AS row
+            MATCH (src:{src_label} {{id: row.src_id}})-[r:{rel_type}]->(tgt:{tgt_label} {{{tgt_match_prop}: row.tgt_id}})
+            WITH collect(r) AS doomed
+            FOREACH (r IN doomed | DELETE r)
+            RETURN size(doomed) AS removed
+            """,
+        )
+        with self.driver.session() as session:
+            return session.execute_write(lambda tx: tx.run(query, batch=batch).single()["removed"])

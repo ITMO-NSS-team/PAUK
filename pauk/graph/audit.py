@@ -53,6 +53,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, LiteralString, Protocol, cast
 
+from pymongo.database import Database
+
+from pauk.settings import Settings
+
 from .client import Neo4jClient
 
 logger = logging.getLogger(__name__)
@@ -138,6 +142,99 @@ class JSONLAuditSink:
         ]
         with self._lock, self.path.open("a", encoding="utf-8") as fh:
             fh.write("\n".join(lines) + "\n")
+
+
+def _storable(value: Any) -> Any:
+    """A value MongoDB can store, or its string form.
+
+    Property values come back from the driver as whatever type Neo4j used
+    (neo4j.time.DateTime among them), and pymongo refuses what it cannot
+    encode. The audit path must never be the thing that fails a write, so
+    anything unrecognised is kept as text — same reasoning as `default=str`
+    in the JSONL sink.
+    """
+    if isinstance(value, (str, int, float, bool, type(None))):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_storable(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _storable(item) for key, item in value.items()}
+    return str(value)
+
+
+class MongoAuditSink:
+    """Audit entries in a MongoDB collection, for the panel's change feed.
+
+    JSONL stays useful for grepping a run; a feed in the UI needs filters
+    by actor and entity plus pagination, which a flat file cannot serve.
+    Both sinks can run side by side — AuditedNeo4jClient takes one sink, so
+    pair them with `MultiAuditSink` when both are wanted.
+    """
+
+    COLLECTION = "audit"
+
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    def write(self, entries: Sequence[AuditEntry]) -> None:
+        if not entries:
+            return
+        self.db[self.COLLECTION].insert_many([
+            {
+                "timestamp": entry.timestamp,
+                "actor": entry.actor,
+                "source": entry.source,
+                "operation": entry.operation,
+                "entity_type": entry.entity_type,
+                "entity_id": entry.entity_id,
+                "change_kind": entry.change_kind,
+                # Tuples become two-element lists: BSON has no tuple type,
+                # and readers already expect [old, new] from the JSONL sink.
+                "diff": {field: [_storable(old), _storable(new)]
+                         for field, (old, new) in entry.diff.items()},
+            }
+            for entry in entries
+        ])
+
+
+class MultiAuditSink:
+    """Fans one batch of entries out to several sinks, in order.
+
+    A sink that raises stops the rest: losing an audit record silently is
+    worse than a loud failure, and the caller already treats an audit
+    error as a failed write.
+    """
+
+    def __init__(self, *sinks: AuditSink) -> None:
+        self.sinks = sinks
+
+    def write(self, entries: Sequence[AuditEntry]) -> None:
+        for sink in self.sinks:
+            sink.write(entries)
+
+
+def build_audit_sink(config: Settings, db: Database | None = None) -> AuditSink:
+    """The sink every entry point should use.
+
+    JSONL stays for grepping a run from the shell; the Mongo collection is
+    what the panel's change feed can filter and paginate. Without a
+    database only the file is written, which keeps the CLI usable when
+    Mongo is not at hand.
+    """
+    config.audit_dir.mkdir(parents=True, exist_ok=True)
+    jsonl = JSONLAuditSink(config.audit_dir / "audit.jsonl")
+    return MultiAuditSink(jsonl, MongoAuditSink(db)) if db is not None else jsonl
+
+
+def audited_client(config: Settings, db: Database | None = None) -> AuditedNeo4jClient:
+    """An open Neo4j client that records what it changes.
+
+    Callers own the returned client and must close() it, same as with a
+    plain Neo4jClient. Wrap the actual work in `actor_context` so the
+    entries say who made the change.
+    """
+    raw = Neo4jClient(config.neo4j_uri, config.neo4j_user, config.neo4j_password)
+    return AuditedNeo4jClient(raw, build_audit_sink(config, db))
 
 
 def _diff_props(before: dict | None, after: dict | None) -> tuple[dict[str, tuple[Any, Any]], str]:
@@ -329,6 +426,37 @@ class AuditedNeo4jClient:
 
     def merge_repository_nodes_batch(self, merges: list[tuple[str, str]]) -> int:
         return self._wrap_merge("Repository", "merge_repository_nodes_batch", merges)
+
+    def delete_nodes_batch(self, label: str, ids: list[str], detach: bool = True) -> int:
+        # Always diffed per node, whatever the batch size: a deletion is the
+        # one change that cannot be reconstructed from the graph afterwards,
+        # so the entry carrying the node's last known fields is the only
+        # record left of what was there.
+        if not ids:
+            return 0
+        before = self._fetch_node_props(label, ids)
+        removed = self._client.delete_nodes_batch(label, ids, detach)
+        after = self._fetch_node_props(label, ids)
+        self._emit_diffs("delete_nodes", label, before, after)
+        return removed
+
+    def delete_relationships_batch(
+        self,
+        src_label: str,
+        tgt_label: str,
+        rel_type: str,
+        pairs: list[tuple[str, str]],
+        tgt_match_prop: str = "id",
+    ) -> int:
+        if not pairs:
+            return 0
+        entity_type = f"({src_label})-[:{rel_type}]->({tgt_label})"
+        before = self._fetch_rel_props(src_label, tgt_label, rel_type, tgt_match_prop, pairs)
+        removed = self._client.delete_relationships_batch(
+            src_label, tgt_label, rel_type, pairs, tgt_match_prop)
+        after = self._fetch_rel_props(src_label, tgt_label, rel_type, tgt_match_prop, pairs)
+        self._emit_diffs("delete_relationships", entity_type, before, after)
+        return removed
 
     def promote_link_candidates_batch(self, candidates: list[tuple[str, str]]) -> None:
         if not candidates:

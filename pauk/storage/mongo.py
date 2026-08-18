@@ -21,3 +21,10 @@ def ensure_indexes(db: Database) -> None:
     db.revisions.create_index([("entity_type", 1), ("entity_id", 1), ("version", 1)])
     db.raw.create_index([("source", 1), ("group", 1), ("fetched_at", 1)])
     db.raw.create_index([("source", 1), ("fetched_at", 1)])
+    # The panel's change feed reads the audit two ways: the history of one
+    # entity, and everything one person did.
+    db.audit.create_index([("entity_type", 1), ("entity_id", 1), ("timestamp", -1)])
+    db.audit.create_index([("actor", 1), ("timestamp", -1)])
+    # Reapplied after every publish and every graph dedup, so the lookup of
+    # what is currently in force has to be cheap.
+    db.graph_overrides.create_index([("active", 1), ("label", 1), ("op", 1)])
