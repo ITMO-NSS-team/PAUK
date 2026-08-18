@@ -46,6 +46,9 @@ function finishLoading() {
   const boot = document.getElementById("boot-screen");
   setTimeout(() => {
     if (boot) { boot.classList.add("hidden"); setTimeout(() => { boot.style.display = "none"; }, 350); }
+    // The welcome screen is also the only place to switch language right
+    // now (no separate topbar toggle yet) — it has to show on every load,
+    // not just the first, or there'd be no way back into it to change langs.
     if (!window._pauk_hasDeepLink) document.getElementById("welcome-modal").classList.remove("hidden");
   }, 200);
 }
@@ -59,7 +62,6 @@ function _applyMapTheme(dark) {
   if (!map || !map.getLayer) return;
   const cs = getComputedStyle(document.documentElement);
   const mapBg = cs.getPropertyValue("--map-bg").trim() || (dark ? "#191F1D" : "#ffffff");
-  const accent = cs.getPropertyValue("--accent").trim() || "#181e1e";
   if (map.getLayer("bg"))        map.setPaintProperty("bg", "background-color", mapBg);
   if (map.getLayer("dept-line")) map.setPaintProperty("dept-line", "line-color", dark ? "#616161" : "#ffffff");
   if (map.getLayer("dept-edges"))
@@ -68,8 +70,6 @@ function _applyMapTheme(dark) {
     map.setPaintProperty("edges", "line-color", dark ? "#7F7F7F" : "#9D9D9D");
   if (map.getLayer("dept-focus-edges"))
     map.setPaintProperty("dept-focus-edges", "line-color", dark ? "#F2F2F2" : "#191F1D");
-  if (map.getLayer("sel-edges"))
-    map.setPaintProperty("sel-edges", "line-color", accent);
 }
 
 function _applyTheme(dark) {
@@ -99,9 +99,9 @@ function applyYearFilter() {
   map.getSource("edges").setData(buildEdgeFeatures());
 }
 
-function updateYearFilterUI(t) {
+function updateYearFilterUI(tabNum) {
   const card = document.getElementById("year-filter-card");
-  if (t === 3) {
+  if (tabNum === 3) {
     card.style.display = "";
     document.getElementById("year-from").value = yearMax;
     document.getElementById("year-from-val").textContent = yearMax;
@@ -111,16 +111,16 @@ function updateYearFilterUI(t) {
   }
 }
 
-function updateEdgeFilterUI(t) {
+function updateEdgeFilterUI(tabNum) {
   const card  = document.getElementById("edge-filter-card");
   const label = document.getElementById("edge-filter-label");
   const slider = document.getElementById("edge-threshold");
   const val    = document.getElementById("edge-threshold-val");
-  if (t === 1) {
-    card.style.display = ""; label.textContent = "Мин. совм. публикаций";
+  if (tabNum === 1) {
+    card.style.display = ""; label.textContent = t("filter.coauth");
     slider.max = 30; slider.value = edgeMinCoauth; val.textContent = edgeMinCoauth;
-  } else if (t === 3) {
-    card.style.display = ""; label.textContent = "Мин. общих авторов ИТМО";
+  } else if (tabNum === 3) {
+    card.style.display = ""; label.textContent = t("filter.pubAuthors");
     slider.max = 15; slider.value = edgeMinPub; val.textContent = edgeMinPub;
   } else {
     card.style.display = "none";
@@ -222,8 +222,10 @@ map.on("load", () => {
       "icon-opacity-transition": { duration: 500, delay: 0 },
     } });
 
+  // line-color is set per-selection in selectNode() (selection.js) to match
+  // the selected node's own color, not a fixed accent.
   map.addLayer({ id: "sel-edges", type: "line", source: "sel-edges",
-    paint: { "line-color": "#181e1e", "line-width": 1.5, "line-opacity": 0.85 } });
+    paint: { "line-color": "#181e1e", "line-width": 1, "line-opacity": 0.6 } });
   // Same per-kind icon as the base layers (circle for authors/repos, square
   // for pubs) — a clicked square used to turn into a generic circle here.
   map.addLayer({ id: "sel-points", type: "symbol", source: "sel-points",
@@ -259,6 +261,13 @@ map.on("load", () => {
   document.querySelectorAll("#tab-toggle button").forEach(b => {
     b.onclick = () => setTab(+b.dataset.tab);
   });
+  // graph-stats.js wasn't shipped with this build (e.g. the redacted public
+  // deploy) — window.STATS never got set, so there's nothing for the tab to
+  // show. setTab() above already redirects away from 5 if reached by URL.
+  if (!window.STATS) {
+    const healthBtn = document.querySelector('#tab-toggle button[data-tab="5"]');
+    if (healthBtn) healthBtn.style.display = "none";
+  }
 
   applyEdgeFilter();
   updateEdgeFilterUI(1);
@@ -300,7 +309,8 @@ map.on("load", () => {
   // Initial routing. For profile URLs, push the landing page into history first,
   // so the browser "back" button leads there instead of leaving the site.
   const _initParams = Object.fromEntries(new URLSearchParams(location.search));
-  const _initTab = +(_initParams.tab || 1);
+  let _initTab = +(_initParams.tab || 1);
+  if (_initTab === 5 && !window.STATS) _initTab = 1; // no graph-stats.js on this build — see setTab
   if (_initTab === 4 && window._pauk_hasDeepLink) {
     history.replaceState({ tab: 4 }, "", "?tab=4");
     _applyUrlState(_initParams);
@@ -313,6 +323,11 @@ map.on("load", () => {
 });
 
 function setTab(t) {
+  // graph-stats.js (window.STATS) is absent on builds that don't ship it —
+  // e.g. the redacted public deploy — so there's nothing for tab 5 to show;
+  // its button is hidden too (see map.on("load") below), this covers direct
+  // URL access (?tab=5) and browser back/forward the same way.
+  if (t === 5 && !window.STATS) t = 1;
   if (t === tab) return;
   tab = t;
 

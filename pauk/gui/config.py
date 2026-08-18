@@ -10,6 +10,7 @@ constants next to that function in layout.py instead of here.
 
 # --- Display fallbacks ----------------------------------------------------------
 NO_DEPT_NAME = "Без департамента"
+NO_DEPT_NAME_EN = "No department"
 NO_DEPT_COLOR = "#8a8f98"
 
 # --- Edge thresholds ------------------------------------------------------------

@@ -38,6 +38,7 @@ function selectNode(key) {
   const neigh = nodeNeighbors(key);
   const fp = P(key);
   map.flyTo({ center: proj(fp[0], fp[1]), zoom: Math.max(map.getZoom(), 6.5), duration: 700 });
+  map.setPaintProperty("sel-edges", "line-color", nodeColor(n));
   map.getSource("sel-edges").setData({
     type: "FeatureCollection",
     features: neigh.map(nk => {
@@ -93,7 +94,6 @@ function clearAll() {
   map.setPaintProperty("repos",   "icon-opacity", tab === 2 ? 1 : NODE_OPACITY);
   map.setPaintProperty("pubs",    "icon-opacity", NODE_OPACITY);
   map.setPaintProperty("edges", "line-opacity", tab === 2 ? 1 : tab === 3 ? EDGE_OPACITY_PUBS : EDGE_OPACITY_COAUTH);
-  map.setPaintProperty("sel-edges", "line-width", 1.5);
   closePanel();
   drawOverlay();
 }

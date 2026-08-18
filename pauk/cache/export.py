@@ -90,9 +90,9 @@ def load_db(driver) -> dict[str, list]:
         "       r.description AS description, r.stars_num AS stars_num, gh.login AS owner",
     )
 
-    db["departments"] = cypher(
+    db["departments"] = cypher_dict(
         driver,
-        "MATCH (d:Department) RETURN d.id AS id, coalesce(d.name_ru, d.name_en) AS name",
+        "MATCH (d:Department) RETURN d.id AS id, d.name_ru AS name_ru, d.name_en AS name_en",
     )
 
     db["authorship"] = cypher(

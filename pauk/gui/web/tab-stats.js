@@ -375,7 +375,8 @@ function renderStats() {
       <button class="st-btn" id="st-recompute">Посчитать</button>
       ${_stError ? `<div class="st-err">${esc(_stError)}</div>` : ""}
     </div></div>`;
-    host.querySelector("#st-recompute").onclick = stRecompute;
+    const btn = host.querySelector("#st-recompute");
+    if (btn) btn.onclick = stRecompute;
     return;
   }
 
@@ -418,7 +419,8 @@ function renderStats() {
     ${stChecks(s.checks)}
   </div>`;
 
-  host.querySelector("#st-recompute").onclick = stRecompute;
+  const recomputeBtn = host.querySelector("#st-recompute");
+  if (recomputeBtn) recomputeBtn.onclick = stRecompute;
   host.querySelectorAll("[data-check]").forEach(el => {
     const open = () => stOpenExamples(el.getAttribute("data-check"));
     el.onclick = open;

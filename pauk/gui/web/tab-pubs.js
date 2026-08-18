@@ -27,18 +27,18 @@ function ensureSquareImage(color) {
 function showPubCard(key) {
   const n = nodeByKey.get(key); if (!n) return;
   const au = (pubAuthors.get(key) || []).map(k => nodeByKey.get(k)).filter(Boolean);
-  let html = `<div class="card-kind">публикация${n.year ? " · " + n.year : ""}</div><div class="card-title">${esc(n.label || n.key)}</div>`;
-  if (n.journal) html += `<div class="card-row"><b>Журнал:</b> ${esc(n.journal)}</div>`;
-  const deptName = deptById.get(n.dept)?.name; if (deptName) html += `<div class="card-row"><b>Департамент:</b> ${esc(deptName)}</div>`;
-  if (n.doi) html += `<div class="card-row"><b>DOI:</b> <a href="https://doi.org/${esc(n.doi.replace(/^https?:\/\/doi\.org\//, ""))}" target="_blank">${esc(n.doi)}</a></div>`;
+  let html = `<div class="card-kind">${t("pub.kind")}${n.year ? " · " + n.year : ""}</div><div class="card-title">${esc(n.label || n.key)}</div>`;
+  if (n.journal) html += `<div class="card-row"><b>${t("pub.journal")}</b> ${esc(n.journal)}</div>`;
+  const deptName = deptById.get(n.dept)?.name; if (deptName) html += `<div class="card-row"><b>${t("pub.department")}</b> ${esc(deptName)}</div>`;
+  if (n.doi) html += `<div class="card-row"><b>${t("pub.doi")}</b> <a href="https://doi.org/${esc(n.doi.replace(/^https?:\/\/doi\.org\//, ""))}" target="_blank">${esc(n.doi)}</a></div>`;
   const urls = Array.isArray(n.code_url) ? n.code_url : [];
-  html += `<div class="card-row"><b>Код:</b> ${n.has_code && urls.length
+  html += `<div class="card-row"><b>${t("pub.code")}</b> ${n.has_code && urls.length
     ? urls.map(u => `<a href="${esc(u)}" target="_blank">${esc(u.replace("https://github.com/", ""))}</a>`).join(", ")
-    : '<span class="tag gray">нет</span>'}</div>`;
-  html += `<div class="card-section">Авторы ИТМО (${au.length})</div><ul class="card-list">`;
-  au.forEach(a => html += `<li data-k="${esc(a.key)}">${esc(a.label)}</li>`);
+    : `<span class="tag gray">${t("pub.none")}</span>`}</div>`;
+  html += `<div class="card-section">${t("pub.itmoAuthors", au.length)}</div><ul class="card-list">`;
+  au.forEach(a => html += `<li data-k="${esc(a.key)}">${esc(authorDisplayName(a))}</li>`);
   html += `</ul>`;
-  html += `<button class="detail-profile-btn">Подробнее о публикации →</button>`;
+  html += `<button class="detail-profile-btn">${t("pub.more")}</button>`;
   showDetail(html);
   const pubProfileBtn = detailBody.querySelector(".detail-profile-btn");
   if (pubProfileBtn) pubProfileBtn.onclick = () => { setTab(4); spShowPubProfile(key); };

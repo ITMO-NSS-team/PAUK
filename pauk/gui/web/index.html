@@ -22,7 +22,7 @@
     <img class="boot-spider" src="vendor/icons/pauk-frame-8x.png" alt="" />
     <div class="boot-title">PAUK</div>
     <div class="boot-progress"><div class="boot-progress-bar" id="boot-progress-bar"></div></div>
-    <div class="boot-status" id="boot-status">0%</div>
+    <div class="boot-status" id="boot-status"></div>
   </div>
 
   <!-- The base/home screen (not a one-time gate) — always fully ready by the
@@ -31,16 +31,20 @@
   <div id="welcome-modal" class="hidden">
     <svg id="welcome-burst" class="welcome-burst" aria-hidden="true"></svg>
     <div class="welcome-hero">
-      <a class="welcome-badge" href="https://github.com/ITMO-NSS-team/PAUK" target="_blank" rel="noopener noreferrer">Открытый проект ИТМО <span class="welcome-badge-arrow">›</span></a>
-      <h1 class="welcome-title">Карта соавторства<br />и открытого кода ИТМО</h1>
-      <p class="welcome-subtitle">
+      <a class="welcome-badge" href="https://github.com/ITMO-NSS-team/PAUK" target="_blank" rel="noopener noreferrer"><span data-i18n="welcome.badge">Открытый проект ИТМО</span> <span class="welcome-badge-arrow">›</span></a>
+      <h1 class="welcome-title" data-i18n-html="welcome.title">Карта соавторства<br />и открытого кода ИТМО</h1>
+      <p class="welcome-subtitle" data-i18n="welcome.subtitle">
         Публикации, авторы и департаменты ИТМО — и связанные с ними open-source репозитории на GitHub.
       </p>
+      <div class="welcome-lang" id="welcome-lang">
+        <button class="welcome-lang-btn" data-lang="ru" title="Русский" aria-label="Русский"><img src="vendor/icons/pauk-frame.png" alt="" /></button>
+        <button class="welcome-lang-btn" data-lang="en" title="English" aria-label="English"><img src="vendor/icons/pauk-frame.png" alt="" /></button>
+      </div>
       <button id="welcome-close" class="welcome-cta">
-        <span>Смотреть карту</span>
+        <span data-i18n="welcome.cta">Смотреть карту</span>
         <span class="welcome-cta-arrow">→</span>
       </button>
-      <div class="welcome-modes">Персоналии · Публикации · Репозитории · Поиск</div>
+      <div class="welcome-modes" data-i18n="welcome.modes">Персоналии · Публикации · Репозитории · Поиск</div>
     </div>
   </div>
 
@@ -53,36 +57,62 @@
     window._pauk_hasDeepLink = hasDeepLink;
     if (hasDeepLink) document.getElementById("welcome-modal").style.display = "none";
 
+    // i18n.js (deferred) hasn't run yet at this point in the parse, so read
+    // localStorage directly here rather than reaching for its LANG/setLang —
+    // those exist by the time anyone actually clicks a button, just not now.
+    var currentLang = localStorage.getItem("pauk-lang") || "ru";
+    document.querySelectorAll(".welcome-lang-btn").forEach(function (btn) {
+      if (btn.getAttribute("data-lang") === currentLang) btn.classList.add("active");
+      btn.addEventListener("click", function () { setLang(btn.getAttribute("data-lang")); });
+    });
+
     var bar = document.getElementById("boot-progress-bar");
     var status = document.getElementById("boot-status");
+    // Short status line on the preload screen — a stage name, not a raw
+    // percentage and not a stack trace. "error" is the one case that isn't
+    // just "still working": graph-data.js genuinely 404'd (not generated, or
+    // a --public server with no redacted build yet), so the deferred <script>
+    // tag loading it is doomed too — say so plainly instead of leaving the
+    // bar frozen with no explanation.
+    var STAGE_TEXT = {
+      loading:   { ru: "Загрузка данных…", en: "Loading data…" },
+      rendering: { ru: "Отрисовка карты…", en: "Rendering the map…" },
+      error: {
+        ru: "Данные не найдены. Запустите generate_data.py и перезапустите сервер.",
+        en: "Data not found. Run generate_data.py and restart the server.",
+      },
+    };
+    function setStage(key) {
+      if (status) status.textContent = (STAGE_TEXT[key] || {})[currentLang] || STAGE_TEXT[key].ru;
+    }
     function setProgress(frac) {
-      var pct = Math.round(Math.max(0, Math.min(1, frac)) * 100);
-      if (bar) bar.style.width = pct + "%";
-      if (status) status.textContent = pct + "%";
+      if (bar) bar.style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + "%";
     }
     window._pauk_setProgress = setProgress;
+    setStage("loading");
 
-    // Real download progress for the dominant payload. This is a second,
-    // parallel fetch purely to read Content-Length/bytes-so-far — the actual
-    // script execution still goes through the deferred <script> tag below,
-    // so a failure here (older browser, no fetch/stream support) can't break
-    // loading, only the progress readout.
-    if (window.fetch && window.ReadableStream) {
+    // Real download progress for the dominant payload, via a second, parallel
+    // fetch — the actual script execution still goes through the deferred
+    // <script> tag below. res.ok is reliable everywhere fetch() exists; only
+    // the byte-level progress bar needs ReadableStream, so a browser missing
+    // that support still gets a correct error/success readout, just a coarser bar.
+    if (window.fetch) {
       fetch("graph-data.js").then(function (res) {
+        if (!res.ok) { setStage("error"); return; }
+        if (!window.ReadableStream || !res.body) { setProgress(0.85); setStage("rendering"); return; }
         var total = +res.headers.get("content-length") || 0;
-        if (!total || !res.body) { setProgress(0.7); return; }
         var reader = res.body.getReader(), loaded = 0;
         (function pump() {
           reader.read().then(function (r) {
-            if (r.done) return;
+            if (r.done) { setStage("rendering"); return; }
             loaded += r.value.length;
-            setProgress(Math.min(0.92, loaded / total));
+            if (total) setProgress(Math.min(0.92, loaded / total));
             pump();
           });
         })();
-      }).catch(function () { setProgress(0.7); });
+      }).catch(function () { setProgress(0.85); setStage("rendering"); });
     } else {
-      setProgress(0.7);
+      setProgress(0.85);
     }
 
     function buildWelcomeBurst() {
@@ -123,7 +153,7 @@
 
   <header id="topbar">
     <div id="tab-toggle">
-      <button data-tab="1" class="active">Персоналии</button><button data-tab="3">Публикации</button><button data-tab="2">Репозитории</button><button data-tab="4">Поиск</button><button data-tab="5">Здоровье БД</button>
+      <button data-tab="1" class="active" data-i18n="tab.people">Персоналии</button><button data-tab="3" data-i18n="tab.pubs">Публикации</button><button data-tab="2" data-i18n="tab.repos">Репозитории</button><button data-tab="4" data-i18n="tab.search">Поиск</button><button data-tab="5" data-i18n="tab.health">Здоровье БД</button>
     </div>
     <div class="topbar-right">
       <button class="theme-toggle" id="theme-toggle" title="Светлая / тёмная тема" aria-label="Переключить тему">
@@ -142,9 +172,9 @@
   <!-- left: search + filter -->
   <aside id="left-panel">
     <div class="card">
-      <div class="card-label">Поиск</div>
-      <input id="search" type="text" placeholder="Автор, репозиторий или публикация" autocomplete="off" />
-      <div class="search-loading-hint">Индекс публикаций ещё загружается — авторы и репозитории уже доступны</div>
+      <div class="card-label" data-i18n="tab.search">Поиск</div>
+      <input id="search" type="text" placeholder="Автор, репозиторий или публикация" data-i18n-placeholder="search.placeholder" autocomplete="off" />
+      <div class="search-loading-hint" data-i18n="search.loadingHint">Индекс публикаций ещё загружается — авторы и репозитории уже доступны</div>
       <div id="search-results"></div>
     </div>
     <div class="card" id="edge-filter-card" style="display:none;margin-top:10px">
@@ -153,10 +183,10 @@
         <input type="range" id="edge-threshold" min="1" max="30" value="1" />
         <span id="edge-threshold-val">1</span>
       </div>
-      <div style="font-size:11px;color:var(--faint);margin-top:6px">только отображение рёбер</div>
+      <div style="font-size:11px;color:var(--faint);margin-top:6px" data-i18n="filter.edgesOnly">только отображение рёбер</div>
     </div>
     <div class="card" id="year-filter-card" style="display:none;margin-top:10px">
-      <div class="card-label">Публикации по год</div>
+      <div class="card-label" data-i18n="filter.pubsByYear">Публикации по год</div>
       <div class="edge-filter-row">
         <input type="range" id="year-from" min="2020" max="2026" value="2026" />
         <span id="year-from-val" style="font-size:16px;font-weight:800;color:var(--text);min-width:36px;text-align:right">2026</span>
@@ -168,7 +198,7 @@
   <aside id="right-panel">
     <div id="overview" class="card"></div>
     <div id="detail" class="card hidden">
-      <button id="detail-close" title="закрыть">×</button>
+      <button id="detail-close" title="закрыть" data-i18n-title="detail.close">×</button>
       <div id="detail-body"></div>
     </div>
   </aside>
@@ -176,8 +206,8 @@
   <!-- Tab 4: search page (full-screen, on top of the map) -->
   <div id="search-page">
     <div id="sp-search-bar">
-      <input id="sp-input" type="text" placeholder="Поиск автора, публикации или департамента…" autocomplete="off" />
-      <div class="search-loading-hint">Индекс публикаций ещё загружается — авторы и репозитории уже доступны</div>
+      <input id="sp-input" type="text" placeholder="Поиск автора, публикации или департамента…" data-i18n-placeholder="search.spPlaceholder" autocomplete="off" />
+      <div class="search-loading-hint" data-i18n="search.loadingHint">Индекс публикаций ещё загружается — авторы и репозитории уже доступны</div>
       <div id="sp-results"></div>
     </div>
     <div id="sp-main"></div>
@@ -189,6 +219,7 @@
   <script defer src="vendor/maplibre-gl.js"></script>
   <script defer src="vendor/d3.min.js"></script>
   <script defer src="graph-data.js"></script>
+  <script defer src="i18n.js"></script>
   <script defer src="core.js"></script>
   <script defer src="build.js"></script>
   <script defer src="overlay.js"></script>

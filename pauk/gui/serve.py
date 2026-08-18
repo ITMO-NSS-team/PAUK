@@ -1,10 +1,17 @@
-"""python -m pauk.gui.serve [port] - static file server with gzip compression.
+"""python -m pauk.gui.serve [port] [--public] - static file server with gzip compression.
 
-Serves web/ as-is. The one dynamic route is /api/stats: it recomputes the DB
-statistics straight from Neo4j (generate_stats.snapshot), refreshes
-web/graph-stats.js so a plain page reload shows the same numbers, and returns
-them as JSON — that is what the "Пересчитать" button on the health tab calls.
-Everything else on the page stays a static file with no backend behind it.
+Serves web/ as-is, with one exception: graph-data.js and graph-search.js carry
+the PII generate_data.py's --public flag redacts (see that module), so they
+never live in web/ - they're read from pauk/gui/data/private/ by default, or
+from pauk/gui/data/public/ when this server is started with --public, mirroring
+generate_data.py's own flag. graph-stats.js has no such split (aggregate counts
+only) and keeps coming straight from web/, written there by generate_stats.py.
+
+The one dynamic route is /api/stats: it recomputes the DB statistics straight
+from Neo4j (generate_stats.snapshot), refreshes web/graph-stats.js so a plain
+page reload shows the same numbers, and returns them as JSON - that is what
+the "Пересчитать" button on the health tab calls. Everything else on the page
+stays a static file with no backend behind it.
 """
 
 import gzip
@@ -20,22 +27,29 @@ from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger(__name__)
 
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8501
+_argv = sys.argv[1:]
+PUBLIC = "--public" in _argv
+_port_args = [a for a in _argv if a != "--public"]
+PORT = int(_port_args[0]) if _port_args else 8501
 ROOT = Path(__file__).parent / "web"
+DATA_DIR = Path(__file__).parent / "data" / ("public" if PUBLIC else "private")
 API_STATS = "/api/stats"
 API_CHECK = "/api/check"
 
 _gzip_cache: dict[str, tuple[str, bytes]] = {}
 
+# name -> (directory it's served from, command to generate it)
 REQUIRED_FILES = {
-    "graph-data.js": "python -m pauk.gui.generate_data",
-    "graph-search.js": "python -m pauk.gui.generate_data",
-    "graph-stats.js": "python -m pauk.gui.generate_stats",
+    "graph-data.js": (DATA_DIR, "python -m pauk.gui.generate_data" + (" --public" if PUBLIC else "")),
+    "graph-search.js": (DATA_DIR, "python -m pauk.gui.generate_data" + (" --public" if PUBLIC else "")),
+    "graph-stats.js": (ROOT, "python -m pauk.gui.generate_stats"),
 }
+# Requests for these filenames are rerouted from ROOT to DATA_DIR in do_GET.
+_DATA_DIR_FILES = {name for name, (d, _cmd) in REQUIRED_FILES.items() if d == DATA_DIR}
 
 
 def _warn_missing_generated_files():
-    missing = {name: cmd for name, cmd in REQUIRED_FILES.items() if not (ROOT / name).is_file()}
+    missing = {name: cmd for name, (d, cmd) in REQUIRED_FILES.items() if not (d / name).is_file()}
     if not missing:
         return
     logger.warning("Generated files not found, the page will be incomplete:")
@@ -124,12 +138,21 @@ class GzipHandler(SimpleHTTPRequestHandler):
             )
 
     def do_POST(self):
+        if PUBLIC:
+            return self.send_error(404)
         if self.path.split("?")[0] == API_STATS:
             return self._recompute_stats()
         self.send_error(404)
 
     def do_GET(self):
         route = self.path.split("?")[0]
+        # --public simulates the redacted, backend-less GitHub Pages build:
+        # the health tab and its data never ship there (see generate_stats.py
+        # not having a --public mode at all), so pretend none of it exists,
+        # regardless of whether web/graph-stats.js happens to be sitting on
+        # disk from an earlier internal run.
+        if PUBLIC and (route.lstrip("/") == "graph-stats.js" or route in (API_STATS, API_CHECK)):
+            return self.send_error(404)
         # Deliberately POST-only: recomputing queries Neo4j for several
         # seconds and rewrites web/graph-stats.js. A GET must stay safe to
         # repeat — browser prefetch, crawlers and proxies all issue them
@@ -139,7 +162,10 @@ class GzipHandler(SimpleHTTPRequestHandler):
         if route == API_CHECK:
             return self._check_examples()
 
-        path = self.translate_path(self.path)
+        if route.lstrip("/") in _DATA_DIR_FILES:
+            path = str(DATA_DIR / route.lstrip("/"))
+        else:
+            path = self.translate_path(self.path)
         if not Path(path).is_file():
             return super().do_GET()
 

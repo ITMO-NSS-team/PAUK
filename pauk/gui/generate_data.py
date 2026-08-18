@@ -44,6 +44,7 @@ from .config import (
     MIN_SEP_PUBS,
     NO_DEPT_COLOR,
     NO_DEPT_NAME,
+    NO_DEPT_NAME_EN,
     PUB_DEPT_EDGE_K,
     PUB_DEPT_EDGE_WEIGHT,
     PUB_EDGE_MIN_W,
@@ -78,10 +79,12 @@ def _is_surname_first(words: list[str]) -> bool:
     a patronymic of their own before them, never as the third of three
     spelled-out words.
     """
-    return (len(words) == 3
-            and all(len(word) > 1 and "." not in word for word in words)
-            and bool(PATRONYMIC_ENDING.search(words[-1]))
-            and not PATRONYMIC_ENDING.search(words[1]))
+    return (
+        len(words) == 3
+        and all(len(word) > 1 and "." not in word for word in words)
+        and bool(PATRONYMIC_ENDING.search(words[-1]))
+        and not PATRONYMIC_ENDING.search(words[1])
+    )
 
 
 def split_full_name(full_name) -> tuple[str, str, str]:
@@ -107,7 +110,9 @@ def split_full_name(full_name) -> tuple[str, str, str]:
     return surname.strip(), (parts[0] if parts else ""), (parts[1] if len(parts) > 1 else "")
 
 
-def author_label(surname_ru, first_name_ru, second_name_ru, name_en, name_ru=None) -> str:
+def author_label(
+    surname_ru, first_name_ru, second_name_ru, name_en, name_ru=None, public: bool = False
+) -> str:
     """One shape for every author: surname first, then initials.
 
     "Никитин Н.О." whenever a patronymic is known — from the staff
@@ -121,6 +126,8 @@ def author_label(surname_ru, first_name_ru, second_name_ru, name_en, name_ru=Non
         surname, given, patronymic = split_full_name(name_ru or name_en)
     if not surname:
         return name_ru or name_en or ""
+    if public and len(surname) > 3:
+        surname = surname[:3] + ".."
     if given and patronymic:
         return f"{surname} {given[0].upper()}.{patronymic[0].upper()}."
     if patronymic:  # only the patronymic survived — treat it as the initial
@@ -140,8 +147,13 @@ def author_variants(row) -> list[str]:
     """
     shown = {
         (row.get("name_en") or "").strip().casefold(),
-        author_label(row["surname_ru"], row["first_name_ru"],
-                     row["second_name_ru"], row["name_en"], row.get("name_ru")).casefold(),
+        author_label(
+            row["surname_ru"],
+            row["first_name_ru"],
+            row["second_name_ru"],
+            row["name_en"],
+            row.get("name_ru"),
+        ).casefold(),
     }
     candidates = [row.get("name_ru") or "", *(row.get("name_variants") or [])]
     variants = []
@@ -153,8 +165,9 @@ def author_variants(row) -> list[str]:
     return variants
 
 
-def build_graph_data(db, seed: int):
-    dept_name = dict(db["departments"])
+def build_graph_data(db, seed: int, public: bool = False):
+    dept_name = {row["id"]: (row["name_ru"] or row["name_en"] or "") for row in db["departments"]}
+    dept_name_en = {row["id"]: (row["name_en"] or "") for row in db["departments"]}
 
     # --- authorship: only publications with at least one ITMO author ----------
     pub_authors = defaultdict(list)
@@ -217,7 +230,9 @@ def build_graph_data(db, seed: int):
 
     repo_dept = {}
     for rid, _, _, _, _, _ in db["repositories"]:
-        primary = majority_dept([pub_primary[p]] for p in repo_pub_map.get(rid, []) if pub_primary.get(p))
+        primary = majority_dept(
+            [pub_primary[p]] for p in repo_pub_map.get(rid, []) if pub_primary.get(p)
+        )
         if primary is None and repo_dept_rows.get(rid):
             primary = repo_dept_rows[rid][0]
         repo_dept[rid] = primary
@@ -255,6 +270,7 @@ def build_graph_data(db, seed: int):
         {
             "id": gid[d],
             "name": dept_name[d],
+            "name_en": dept_name_en[d],
             "color": golden_color(gid[d]),
             "n": n_auth[gid[d]] + n_pub[gid[d]] + n_repo[gid[d]],
             "n_authors": n_auth[gid[d]],
@@ -267,6 +283,7 @@ def build_graph_data(db, seed: int):
         {
             "id": no_dept_gid,
             "name": NO_DEPT_NAME,
+            "name_en": NO_DEPT_NAME_EN,
             "color": NO_DEPT_COLOR,
             "n": n_auth[no_dept_gid] + n_pub[no_dept_gid] + n_repo[no_dept_gid],
             "n_authors": n_auth[no_dept_gid],
@@ -366,7 +383,9 @@ def build_graph_data(db, seed: int):
     R = nx.Graph()
     R.add_nodes_from(r[0] for r in db["repositories"])
     R.add_weighted_edges_from((a, b, w) for (a, b), w in repo_edge_w.items())
-    pos_repos = fit_coords(nx.forceatlas2_layout(R, max_iter=FA2_ITER_REPOS, weight="weight", seed=seed))
+    pos_repos = fit_coords(
+        nx.forceatlas2_layout(R, max_iter=FA2_ITER_REPOS, weight="weight", seed=seed)
+    )
 
     # --- nodes ------------------------------------------------------------------
     pubs_count = {per: len(set(author_pubs.get(per, []))) for per in static_depts}
@@ -375,27 +394,36 @@ def build_graph_data(db, seed: int):
     for row in db["persons"]:
         pid_ = row["id"]
         x, y = pos_authors[pid_]
-        authors.append(
-            {
-                "key": pid_,
-                "kind": "author",
-                "dept": g(author_dept[pid_]),
-                "label": author_label(row["surname_ru"], row["first_name_ru"], row["second_name_ru"],
-                                      row["name_en"], row.get("name_ru")),
-                # The profile card shows the romanized name the sources use
-                # plus every other spelling seen for this person.
-                "name_en": row["name_en"] or "",
-                "name_ru": row.get("name_ru") or "",
-                "name_variants": author_variants(row),
-                "degree": row["degree"] or "",
-                "github": row["github"] or "",
-                "orcid": row.get("orcid") or "",
-                "pubs_count": pubs_count[pid_],
-                "rank": rank_a[pid_],
-                "gx": x,
-                "gy": y,
-            }
-        )
+        author = {
+            "key": pid_,
+            "kind": "author",
+            "dept": g(author_dept[pid_]),
+            "label": author_label(
+                row["surname_ru"],
+                row["first_name_ru"],
+                row["second_name_ru"],
+                row["name_en"],
+                row.get("name_ru"),
+                public=public,
+            ),
+            "pubs_count": pubs_count[pid_],
+            "rank": rank_a[pid_],
+            "gx": x,
+            "gy": y,
+        }
+        if not public:
+            # Internal build only — these keys don't exist at all on a
+            # --public build, not just blanked, so the frontend's existing
+            # `n.degree ? ... : ""`-style guards hide them for free (see
+            # pauk/gui/web/tab-authors.js) and any future field added here
+            # fails closed instead of open.
+            author["name_en"] = row["name_en"] or ""
+            author["name_ru"] = row.get("name_ru") or ""
+            author["name_variants"] = author_variants(row)
+            author["degree"] = row["degree"] or ""
+            author["github"] = row["github"] or ""
+            author["orcid"] = row.get("orcid") or ""
+        authors.append(author)
 
     stars = {r[0]: (r[4] or 0) for r in db["repositories"]}
     rank_r = dense_rank(stars)
@@ -441,7 +469,9 @@ def build_graph_data(db, seed: int):
     # --- edges ------------------------------------------------------------------
     coauth_edges = [{"s": a, "t": b, "w": w} for (a, b), w in coauth.items() if w >= COAUTH_MIN_W]
 
-    pub_edges = [{"s": a, "t": b, "w": w} for (a, b), w in pub_pair_w.items() if w >= PUB_EDGE_MIN_W]
+    pub_edges = [
+        {"s": a, "t": b, "w": w} for (a, b), w in pub_pair_w.items() if w >= PUB_EDGE_MIN_W
+    ]
 
     repo_edges = [{"s": a, "t": b, "w": w} for (a, b), w in repo_edge_w.items()]
 
@@ -453,7 +483,9 @@ def build_graph_data(db, seed: int):
     dept_edges = [{"s": a, "t": b, "w": w} for (a, b), w in dept_pair_w.items()]
 
     repo_author_edges = [
-        {"s": rid, "t": per, "role": role} for rid, per, role in db["repo_persons"] if per in static_depts
+        {"s": rid, "t": per, "role": role}
+        for rid, per, role in db["repo_persons"]
+        if per in static_depts
     ]
     repo_pub_edges = [{"s": rid, "t": pid} for rid, pid in db["repo_pubs"] if pid in pub_ids]
     all_edges = [{"s": per, "t": pid} for pid, per in db["authorship"]]
@@ -521,12 +553,22 @@ def main():
     from pauk.cache.graph_snapshot import read_snapshot
     from pauk.settings import settings
 
+    data_dir = Path(__file__).resolve().parent / "data"
+
     parser = argparse.ArgumentParser(description="Static data generation for the web visualization")
+    parser.add_argument(
+        "--public",
+        action="store_true",
+        help="drop personal fields (name_en, name_ru, name_variants, degree, "
+        "github, orcid) from every author — for a build that leaves the "
+        "corporate network, e.g. the GitHub Pages deploy",
+    )
     parser.add_argument(
         "--out-dir",
         type=Path,
-        default=Path(__file__).resolve().parent / "web",
-        help="where to write graph-data.js and graph-search.js",
+        default=None,
+        help="where to write graph-data.js and graph-search.js "
+        f"(default: {data_dir / 'public'} with --public, else {data_dir / 'private'})",
     )
     parser.add_argument("--seed", type=int, default=42, help="FA2 layout seed")
     parser.add_argument(
@@ -536,6 +578,8 @@ def main():
         help="path to a graph snapshot created by 'pauk cache export'",
     )
     args = parser.parse_args()
+    if args.out_dir is None:
+        args.out_dir = data_dir / ("public" if args.public else "private")
 
     logging.basicConfig(
         level=logging.INFO,
@@ -548,7 +592,7 @@ def main():
     t0 = time.time()
     db = read_snapshot(args.cache)
 
-    graph = build_graph_data(db, seed=args.seed)
+    graph = build_graph_data(db, seed=args.seed, public=args.public)
     dump_js(graph, "window.GRAPH=", "", args.out_dir / "graph-data.js")
 
     detail = build_search_detail(db, graph)

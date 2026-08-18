@@ -95,56 +95,56 @@ function showAuthorProfile(key) {
 
   const variants = n.name_variants || [];
   let html = `
-    <span class="card-kind">автор</span>
-    <h2 class="card-title">${esc(n.label)}</h2>
-    ${n.name_en && n.name_en !== n.label ? `<div class="card-subtitle">${esc(n.name_en)}</div>` : ""}
+    <span class="card-kind">${t("author.kind")}</span>
+    <h2 class="card-title">${esc(authorDisplayName(n))}</h2>
+    ${LANG !== "en" && n.name_en && n.name_en !== n.label ? `<div class="card-subtitle">${esc(n.name_en)}</div>` : ""}
     ${variants.length ? `<details class="name-variants">
-      <summary>Другие написания</summary>
+      <summary>${t("author.otherSpellings")}</summary>
       <ul>${variants.map(v => `<li>${esc(v)}</li>`).join("")}</ul>
     </details>` : ""}
     <div class="profile-dept">
       <span class="dept-dot" style="background:${deptColor}"></span>
-      ${esc(deptObj?.name || "Без департамента")}
+      ${esc(deptDisplayName(deptObj) || t("common.noDept"))}
     </div>
-    ${n.degree ? `<div class="card-row"><b>Степень</b> ${esc(n.degree)}</div>` : ""}
+    ${n.degree ? `<div class="card-row"><b>${t("author.degree")}</b> ${esc(n.degree)}</div>` : ""}
     ${n.github ? `<div class="card-row"><b>GitHub</b> <a href="https://github.com/${esc(n.github)}" target="_blank">${esc(n.github)}</a></div>` : ""}
     ${n.orcid ? `<div class="card-row"><b>ORCID</b> <a href="https://orcid.org/${esc(n.orcid)}" target="_blank">${esc(n.orcid)}</a></div>` : ""}
     <div class="stat-grid" style="margin-top:14px">
-      <div class="stat"><div class="stat-num">${n.pubs_count || pubs.length}</div><div class="stat-lbl">публикаций</div></div>
-      <div class="stat"><div class="stat-num">${coauthMap.size}</div><div class="stat-lbl">соавторов</div></div>
-      <div class="stat"><div class="stat-num">${repos.length}</div><div class="stat-lbl">репозиториев</div></div>
-      <div class="stat"><div class="stat-num">${yearRange}</div><div class="stat-lbl">активность</div></div>
+      <div class="stat"><div class="stat-num">${n.pubs_count || pubs.length}</div><div class="stat-lbl">${t("overview.pubs")}</div></div>
+      <div class="stat"><div class="stat-num">${coauthMap.size}</div><div class="stat-lbl">${t("author.coauthors")}</div></div>
+      <div class="stat"><div class="stat-num">${repos.length}</div><div class="stat-lbl">${t("overview.repos")}</div></div>
+      <div class="stat"><div class="stat-num">${yearRange}</div><div class="stat-lbl">${t("author.activity")}</div></div>
     </div>`;
 
   if (years.length)
-    html += `<div class="card-section">Публикации по годам</div>
+    html += `<div class="card-section">${t("author.pubsByYear")}</div>
       <svg id="pub-year-chart" class="profile-chart" width="100%" height="110"></svg>`;
 
   if (topCoauths.length)
-    html += `<div class="card-section">Топ соавторы</div><ul class="card-list">` +
+    html += `<div class="card-section">${t("author.topCoauthors")}</div><ul class="card-list">` +
       topCoauths.map(({ node: c, w }) =>
-        `<li data-k="${esc(c.key)}"><div class="li-name">${esc(c.label)}</div><span class="li-count">${w}</span></li>`
+        `<li data-k="${esc(c.key)}"><div class="li-name">${esc(authorDisplayName(c))}</div><span class="li-count">${w}</span></li>`
       ).join("") + `</ul>`;
 
   if (repos.length)
-    html += `<div class="card-section">Репозитории <span class="tag gray">${repos.length}</span></div>
+    html += `<div class="card-section">${t("tab.repos")} <span class="tag gray">${repos.length}</span></div>
       <ul class="card-list">` +
       repos.map(r =>
         `<li data-k="${esc(r.key)}"><div class="li-name">${esc(r.label)}</div><span class="li-count">★${r.stars || 0}</span></li>`
       ).join("") + `</ul>`;
 
   if (pubs.length)
-    html += `<div class="card-section">Последние публикации</div>
+    html += `<div class="card-section">${t("author.recentPubs")}</div>
       <ul class="card-list">` +
       pubs.slice(0, 10).map(p =>
         `<li data-k="${esc(p.key)}">
           <div class="li-name">${esc(shortLabel(p.label || p.key))}</div>
-          ${p.has_code ? '<span class="tag green" style="font-size:9px;padding:0 5px">код</span>' : ""}
+          ${p.has_code ? `<span class="tag green" style="font-size:9px;padding:0 5px">${t("common.code")}</span>` : ""}
           <span class="li-count">${p.year || "?"}</span>
         </li>`
       ).join("") + `</ul>`;
 
-  html += `<button class="detail-profile-btn">Подробнее об авторе →</button>`;
+  html += `<button class="detail-profile-btn">${t("author.more")}</button>`;
 
   showDetail(html);
 
@@ -171,17 +171,17 @@ function showDeptCard(did) {
   const partners = (DATA.dept_edges || [])
     .filter(e => e.s === did || e.t === did)
     .sort((a, b) => b.w - a.w);
-  let html = `<div class="card-kind">департамент</div><div class="card-title">${esc(d.name)}</div>`;
-  html += `<div class="card-row"><b>Авторов:</b> ${d.n_authors || 0}</div>`;
-  html += `<div class="card-row"><b>Публикаций:</b> ${d.n_pubs || 0}</div>`;
-  if (d.n_repos) html += `<div class="card-row"><b>Репозиториев:</b> ${d.n_repos}</div>`;
-  html += `<div class="card-section">Сотрудничает с (${partners.length})</div><ul class="card-list">`;
+  let html = `<div class="card-kind">${t("dept.kind")}</div><div class="card-title">${esc(deptDisplayName(d))}</div>`;
+  html += `<div class="card-row"><b>${t("dept.authorsCount")}</b> ${d.n_authors || 0}</div>`;
+  html += `<div class="card-row"><b>${t("dept.pubsCount")}</b> ${d.n_pubs || 0}</div>`;
+  if (d.n_repos) html += `<div class="card-row"><b>${t("dept.reposCount")}</b> ${d.n_repos}</div>`;
+  html += `<div class="card-section">${t("dept.collaboratesWith", partners.length)}</div><ul class="card-list">`;
   partners.slice(0, 15).forEach(e => {
     const oid = e.s === did ? e.t : e.s, o = deptById.get(oid); if (!o) return;
-    html += `<li data-d="${oid}"><span class="li-name">${esc(o.name)}</span><span class="li-count">${e.w}</span></li>`;
+    html += `<li data-d="${oid}"><span class="li-name">${esc(deptDisplayName(o))}</span><span class="li-count">${e.w}</span></li>`;
   });
   html += `</ul>`;
-  html += `<button class="detail-profile-btn">Подробнее о департаменте →</button>`;
+  html += `<button class="detail-profile-btn">${t("dept.more")}</button>`;
   showDetail(html);
   detailBody.querySelectorAll("li[data-d]").forEach(li => {
     li.onclick = () => {

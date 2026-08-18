@@ -66,6 +66,24 @@ function muteColor(hex) {
 const deptById = new Map();
 DATA.departments.forEach(d => { d.color = muteColor(d.color); deptById.set(d.id, d); });
 
+// Russian (d.name) is the data of record — falls back to it whenever a
+// department has no name_en, or the UI isn't in English. Never use this for
+// data-level comparisons (e.g. filtering out the "no department" bucket) —
+// only for what actually gets shown to the user.
+function deptDisplayName(d) {
+  if (!d) return "";
+  return (LANG === "en" && d.name_en) ? d.name_en : d.name;
+}
+
+// Same idea for authors: n.label ("Фамилия И.О.") is the data of record,
+// falls back to it whenever the UI isn't in English or a --public build
+// dropped name_en. Never use this for data-level comparisons/keys/sorting —
+// only for what actually gets shown to the user.
+function authorDisplayName(n) {
+  if (!n) return "";
+  return (LANG === "en" && n.name_en) ? n.name_en : n.label;
+}
+
 const authorPubs = new Map();
 const pubAuthors = new Map();
 DATA.all_edges.forEach(({s, t}) => {

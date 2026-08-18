@@ -19,16 +19,16 @@ function _spRefreshCurrentView() {
 
 function _spNavBtns() {
   return `<div class="sp-nav-btns">
-    <button class="sp-nav-btn sp-nav-back" onclick="history.back()">← Назад</button>
-    <button class="sp-nav-btn" onclick="spGoHome()">На главную</button>
+    <button class="sp-nav-btn sp-nav-back" onclick="history.back()">${t("search.navBack")}</button>
+    <button class="sp-nav-btn" onclick="spGoHome()">${t("search.navHome")}</button>
   </div>`;
 }
 
 // Authors and repos right away; publications after graph-search.js loads
 const searchIndex = [
-  ...DATA.authors.map(n => ({ key: n.key, kind: "author", label: n.label,
+  ...DATA.authors.map(n => ({ key: n.key, kind: "author", label: authorDisplayName(n),
     ll: n.label.toLowerCase(),
-    sub: `${deptById.get(n.dept)?.name || "—"} · ${n.pubs_count} публ.` })),
+    sub: `${deptDisplayName(deptById.get(n.dept)) || "—"} · ${n.pubs_count} ${t("search.kindPubShort")}` })),
   ...DATA.repos.map(n => ({ key: n.key, kind: "repo", label: n.label,
     ll: (n.label + " " + (n.description || "")).toLowerCase(),
     sub: (n.url || "").replace("https://github.com/", "") })),
@@ -39,7 +39,7 @@ window._rebuildPubSearch = function() {
     .filter(n => n.label)
     .map(n => ({ key: n.key, kind: "pub", label: n.label,
       ll: (n.label + " " + (n.journal || "")).toLowerCase(),
-      sub: [n.year, deptById.get(n.dept)?.name, n.journal].filter(Boolean).join(" · ") }));
+      sub: [n.year, deptDisplayName(deptById.get(n.dept)), n.journal].filter(Boolean).join(" · ") }));
 };
 
 // Shared search used by both the sidebar (Tabs 1–3) and full-screen (Tab 4) variants
@@ -58,7 +58,7 @@ function searchHits(q, withDepts) {
     for (const d of DATA.departments) {
       if (d.name === "Без департамента") continue;
       if (tokens.every(t => d.name.toLowerCase().includes(t)))
-        hits.push({ key: d.id, kind: "dept", label: d.name, ll: d.name.toLowerCase(), sub: null });
+        hits.push({ key: d.id, kind: "dept", label: deptDisplayName(d), ll: d.name.toLowerCase(), sub: null });
     }
   }
   const ord = { author: 0, dept: 1, repo: 2, pub: 3 };
@@ -82,8 +82,8 @@ function runSearch() {
   const q = searchInput.value.trim().toLowerCase();
   if (q.length < 2) { searchResults.innerHTML = ""; return; }
   const top = searchHits(q, false);
-  if (!top.length) { searchResults.innerHTML = '<div class="search-empty">ничего не найдено</div>'; return; }
-  const kindLabel = { author: "автор", repo: "репо", pub: "публ." };
+  if (!top.length) { searchResults.innerHTML = `<div class="search-empty">${t("search.empty")}</div>`; return; }
+  const kindLabel = { author: t("author.kind"), repo: t("search.kindRepoShort"), pub: t("search.kindPubShort") };
   const kindClass = { author: "",      repo: "blue",  pub: "gray" };
   searchResults.innerHTML = "<ul>" + top.map(h =>
     `<li data-k="${esc(h.key)}">` +
@@ -118,8 +118,8 @@ function runSpSearch() {
   const q = spInput.value.trim().toLowerCase();
   if (q.length < 2) { spResults.innerHTML = ""; return; }
   const top = searchHits(q, true);
-  if (!top.length) { spResults.innerHTML = '<div class="search-empty" style="padding:10px 12px">ничего не найдено</div>'; return; }
-  const kindLabel = { author: "автор", pub: "публикация", repo: "репо", dept: "департамент" };
+  if (!top.length) { spResults.innerHTML = `<div class="search-empty" style="padding:10px 12px">${t("search.empty")}</div>`; return; }
+  const kindLabel = { author: t("author.kind"), pub: t("pub.kind"), repo: t("search.kindRepoShort"), dept: t("dept.kind") };
   spResults.innerHTML = "<ul>" + top.map(h =>
     `<li data-k="${esc(h.key)}">
       <span class="sp-res-kind">${kindLabel[h.kind] || h.kind}</span>${esc(h.label)}
@@ -159,26 +159,26 @@ function spShowLanding() {
   spMain.innerHTML = `
     <div class="sp-landing">
       <div class="stat-grid" style="max-width:500px;margin:0 auto 24px">
-        <div class="stat"><div class="stat-num">${DATA.authors.length.toLocaleString("ru-RU")}</div><div class="stat-lbl">авторов</div></div>
-        <div class="stat"><div class="stat-num">${DATA.pubs.length.toLocaleString("ru-RU")}</div><div class="stat-lbl">публикаций</div></div>
-        <div class="stat"><div class="stat-num">${DATA.repos.length}</div><div class="stat-lbl">репозиториев</div></div>
-        <div class="stat"><div class="stat-num">${DATA.departments.filter(d => d.name !== "Без департамента").length}</div><div class="stat-lbl">департаментов</div></div>
+        <div class="stat"><div class="stat-num">${DATA.authors.length.toLocaleString(LANG === "en" ? "en-US" : "ru-RU")}</div><div class="stat-lbl">${t("search.statAuthors")}</div></div>
+        <div class="stat"><div class="stat-num">${DATA.pubs.length.toLocaleString(LANG === "en" ? "en-US" : "ru-RU")}</div><div class="stat-lbl">${t("overview.pubs")}</div></div>
+        <div class="stat"><div class="stat-num">${DATA.repos.length}</div><div class="stat-lbl">${t("overview.repos")}</div></div>
+        <div class="stat"><div class="stat-num">${DATA.departments.filter(d => d.name !== "Без департамента").length}</div><div class="stat-lbl">${t("overview.depts")}</div></div>
       </div>
-      <div class="sp-landing-hint">Топ авторов по публикациям</div>
+      <div class="sp-landing-hint">${t("search.topAuthorsHint")}</div>
       <div class="sp-top-chips">
-        ${topAuthors.map(a => `<div class="sp-chip sp-chip-author" data-k="${esc(a.key)}">${esc(a.label)}</div>`).join("")}
+        ${topAuthors.map(a => `<div class="sp-chip sp-chip-author" data-k="${esc(a.key)}">${esc(authorDisplayName(a))}</div>`).join("")}
       </div>
       <div class="sp-cols" style="margin-top:24px;text-align:left">
         <div class="sp-card">
-          <div class="sp-card-title">Топ публикаций по числу авторов ИТМО</div>
+          <div class="sp-card-title">${t("search.topPubsByAuthors")}</div>
           <ul>${topPubs.map(({ node: p, count }) =>
             `<li data-pub="${esc(p.key)}"><div class="li-name">${esc(shortLabel(p.label) || p.key)}</div><span class="li-count">${count}</span></li>`
           ).join("")}</ul>
         </div>
         <div class="sp-card">
-          <div class="sp-card-title">Топ департаментов по публикациям</div>
+          <div class="sp-card-title">${t("search.topDeptsByPubs")}</div>
           <ul>${topDepts.map(d =>
-            `<li data-dept="${esc(d.id)}"><div class="li-name" style="display:flex;align-items:center;gap:7px"><span class="dept-dot" style="background:${d.color}"></span>${esc(d.name)}</div><span class="li-count">${d.n_pubs}</span></li>`
+            `<li data-dept="${esc(d.id)}"><div class="li-name" style="display:flex;align-items:center;gap:7px"><span class="dept-dot" style="background:${d.color}"></span>${esc(deptDisplayName(d))}</div><span class="li-count">${d.n_pubs}</span></li>`
           ).join("")}</ul>
         </div>
       </div>
@@ -224,7 +224,7 @@ function spShowAuthorProfile(key) {
   if (!n || n.kind !== "author") return;
   spOnLanding = false;
   _spCurrentView = { kind: "author", key };
-  document.title = `${n.label} — PAUK`;
+  document.title = `${authorDisplayName(n)} — PAUK`;
   if (typeof _pushUrl === "function") _pushUrl({ tab: 4, kind: "author", key });
   const pubs  = (authorPubs.get(key) || []).map(k => nodeByKey.get(k)).filter(Boolean)
     .sort((a, b) => (b.year || 0) - (a.year || 0));
@@ -250,47 +250,47 @@ function spShowAuthorProfile(key) {
   const sortedDepts = [...deptPubCounts.entries()].sort((a, b) => b[1] - a[1]);
   const othersCount = sortedDepts.slice(6).reduce((s, [, c]) => s + c, 0);
   const pubsByDept = sortedDepts.slice(0, 6).map(([id, count]) => {
-    if (id === "__none__") return { id: 0, name: "Без отдела", color: "#b0b8c4", count };
+    if (id === "__none__") return { id: 0, name: t("search.noDeptShort"), color: "#b0b8c4", count };
     const dobj = deptById.get(id);
-    return { id, name: dobj?.name || "Неизв.", color: dobj?.color || "#9aa2ac", count };
+    return { id, name: deptDisplayName(dobj) || t("search.unknownDept"), color: dobj?.color || "#9aa2ac", count };
   });
-  if (othersCount > 0) pubsByDept.push({ id: -1, name: "Прочие", color: "#c4cad4", count: othersCount });
+  if (othersCount > 0) pubsByDept.push({ id: -1, name: t("search.other"), color: "#c4cad4", count: othersCount });
 
   const spMain = document.getElementById("sp-main");
   spMain.innerHTML = `
     ${_spNavBtns()}
     <div class="sp-profile">
       <div class="sp-profile-header">
-        <span class="card-kind">автор</span>
-        <div class="sp-profile-name">${esc(n.label)}</div>
-        <div class="profile-dept sp-dept-link" data-dept-id="${n.dept}" style="cursor:pointer" title="Открыть профиль департамента">
+        <span class="card-kind">${t("author.kind")}</span>
+        <div class="sp-profile-name">${esc(authorDisplayName(n))}</div>
+        <div class="profile-dept sp-dept-link" data-dept-id="${n.dept}" style="cursor:pointer" title="${t("search.openDeptProfile")}">
           <span class="dept-dot" style="background:${deptColor}"></span>
-          ${esc(deptObj?.name || "Без департамента")}
-          <span style="font-size:10px;color:var(--faint);margin-left:4px">· последний по публикациям</span>
+          ${esc(deptDisplayName(deptObj) || t("common.noDept"))}
+          <span style="font-size:10px;color:var(--faint);margin-left:4px">${t("search.byLatestPub")}</span>
         </div>
-        ${n.degree ? `<div class="card-row" style="margin-top:4px"><b>Степень</b> ${esc(n.degree)}</div>` : ""}
+        ${n.degree ? `<div class="card-row" style="margin-top:4px"><b>${t("author.degree")}</b> ${esc(n.degree)}</div>` : ""}
         ${n.github ? `<div class="card-row"><b>GitHub</b> <a href="https://github.com/${esc(n.github)}" target="_blank">${esc(n.github)}</a></div>` : ""}
         <div class="stat-grid" style="margin-top:16px;grid-template-columns:repeat(4,1fr)">
-          <div class="stat"><div class="stat-num">${n.pubs_count || pubs.length}</div><div class="stat-lbl">публикаций</div></div>
-          <div class="stat"><div class="stat-num">${coauthMap.size}</div><div class="stat-lbl">соавторов</div></div>
-          <div class="stat"><div class="stat-num">${repos.length}</div><div class="stat-lbl">репозиториев</div></div>
-          <div class="stat"><div class="stat-num">${yearRange}</div><div class="stat-lbl">активность</div></div>
+          <div class="stat"><div class="stat-num">${n.pubs_count || pubs.length}</div><div class="stat-lbl">${t("overview.pubs")}</div></div>
+          <div class="stat"><div class="stat-num">${coauthMap.size}</div><div class="stat-lbl">${t("author.coauthors")}</div></div>
+          <div class="stat"><div class="stat-num">${repos.length}</div><div class="stat-lbl">${t("overview.repos")}</div></div>
+          <div class="stat"><div class="stat-num">${yearRange}</div><div class="stat-lbl">${t("author.activity")}</div></div>
         </div>
       </div>
-      ${years.length ? `<div class="sp-card"><div class="sp-card-title">Публикации по годам</div><svg id="sp-year-chart" width="100%" height="120"></svg></div>` : ""}
+      ${years.length ? `<div class="sp-card"><div class="sp-card-title">${t("author.pubsByYear")}</div><svg id="sp-year-chart" width="100%" height="120"></svg></div>` : ""}
       <div class="sp-cols">
-        ${topCoauths.length ? `<div class="sp-card"><div class="sp-card-title">Соавторы (${coauthMap.size})</div><ul>${topCoauths.map(({ node: c, w }) =>
-          `<li data-k="${esc(c.key)}"><div class="li-name">${esc(c.label)}</div><span class="li-count">${w}</span></li>`
+        ${topCoauths.length ? `<div class="sp-card"><div class="sp-card-title">${t("search.coauthorsTitle", coauthMap.size)}</div><ul>${topCoauths.map(({ node: c, w }) =>
+          `<li data-k="${esc(c.key)}"><div class="li-name">${esc(authorDisplayName(c))}</div><span class="li-count">${w}</span></li>`
         ).join("")}</ul></div>` : ""}
-        ${pubsByDept.length >= 1 ? `<div class="sp-card"><div class="sp-card-title">Связь с департаментами</div>${_drawDeptPie(pubsByDept)}<div class="sp-pie-legend">${pubsByDept.map(d => `<span class="sp-pie-legend-item"><span class="sp-pie-legend-dot" style="background:${d.color}"></span><span>${esc(d.name)}</span><span class="li-count" style="font-size:10px;padding:1px 5px">${d.count}</span></span>`).join("")}</div></div>` : ""}
+        ${pubsByDept.length >= 1 ? `<div class="sp-card"><div class="sp-card-title">${t("search.deptBreakdown")}</div>${_drawDeptPie(pubsByDept)}<div class="sp-pie-legend">${pubsByDept.map(d => `<span class="sp-pie-legend-item"><span class="sp-pie-legend-dot" style="background:${d.color}"></span><span>${esc(deptDisplayName(d))}</span><span class="li-count" style="font-size:10px;padding:1px 5px">${d.count}</span></span>`).join("")}</div></div>` : ""}
       </div>
-      ${repos.length ? `<div class="sp-card"><div class="sp-card-title">Репозитории (${repos.length})</div><ul>${repos.map(r =>
+      ${repos.length ? `<div class="sp-card"><div class="sp-card-title">${t("search.reposTitle", repos.length)}</div><ul>${repos.map(r =>
         `<li data-k="${esc(r.key)}"><div class="li-name">${esc(r.label)}</div><span class="li-count">★${r.stars || 0}</span></li>`
       ).join("")}</ul></div>` : ""}
-      ${pubs.length ? `<div class="sp-card"><div class="sp-card-title">Все публикации (${pubs.length})</div><ul>${pubs.map(p =>
+      ${pubs.length ? `<div class="sp-card"><div class="sp-card-title">${t("search.allPubsTitle", pubs.length)}</div><ul>${pubs.map(p =>
         `<li data-k="${esc(p.key)}">
-          <div class="li-name">${esc(shortLabel(p.label))}${p.dept != null ? `<div style="font-size:10px;color:var(--muted);margin-top:1px">${esc(deptById.get(p.dept)?.name || "")}</div>` : ""}</div>
-          ${p.has_code ? '<span class="tag green" style="font-size:9px;padding:0 5px">код</span>' : ""}
+          <div class="li-name">${esc(shortLabel(p.label))}${p.dept != null ? `<div style="font-size:10px;color:var(--muted);margin-top:1px">${esc(deptDisplayName(deptById.get(p.dept)) || "")}</div>` : ""}</div>
+          ${p.has_code ? `<span class="tag green" style="font-size:9px;padding:0 5px">${t("common.code")}</span>` : ""}
           <span class="li-count">${p.year || "?"}</span>
         </li>`
       ).join("")}</ul></div>` : ""}
@@ -344,22 +344,22 @@ function spShowPubProfile(key) {
     ${_spNavBtns()}
     <div class="sp-profile">
       <div class="sp-profile-header">
-        <span class="card-kind">публикация</span>
+        <span class="card-kind">${t("pub.kind")}</span>
         <div class="sp-profile-name">${esc(n.label || n.key)}</div>
-        ${deptObj ? `<div class="profile-dept sp-dept-link" data-dept-id="${n.dept}" style="cursor:pointer" title="Открыть профиль департамента"><span class="dept-dot" style="background:${deptColor}"></span>${esc(deptObj.name)}</div>` : ""}
-        ${n.journal ? `<div class="card-row" style="margin-top:6px"><b>Журнал</b> ${esc(n.journal)}</div>` : ""}
-        ${n.doi ? `<div class="card-row"><b>DOI</b> <a href="https://doi.org/${esc(n.doi.replace(/^https?:\/\/doi\.org\//, ""))}" target="_blank">${esc(n.doi)}</a></div>` : ""}
-        ${n.has_code && urls.length ? `<div class="card-row"><b>Код</b> ${urls.map(u => `<a href="${esc(u)}" target="_blank">${esc(u.replace("https://github.com/",""))}</a>`).join(", ")}</div>` : ""}
+        ${deptObj ? `<div class="profile-dept sp-dept-link" data-dept-id="${n.dept}" style="cursor:pointer" title="${t("search.openDeptProfile")}"><span class="dept-dot" style="background:${deptColor}"></span>${esc(deptDisplayName(deptObj))}</div>` : ""}
+        ${n.journal ? `<div class="card-row" style="margin-top:6px"><b>${t("pub.journal")}</b> ${esc(n.journal)}</div>` : ""}
+        ${n.doi ? `<div class="card-row"><b>${t("pub.doi")}</b> <a href="https://doi.org/${esc(n.doi.replace(/^https?:\/\/doi\.org\//, ""))}" target="_blank">${esc(n.doi)}</a></div>` : ""}
+        ${n.has_code && urls.length ? `<div class="card-row"><b>${t("pub.code")}</b> ${urls.map(u => `<a href="${esc(u)}" target="_blank">${esc(u.replace("https://github.com/",""))}</a>`).join(", ")}</div>` : ""}
         <div class="stat-grid" style="margin-top:16px">
-          <div class="stat"><div class="stat-num">${authors.length}</div><div class="stat-lbl">авторов ИТМО</div></div>
-          <div class="stat"><div class="stat-num">${n.year || "?"}</div><div class="stat-lbl">год</div></div>
+          <div class="stat"><div class="stat-num">${authors.length}</div><div class="stat-lbl">${t("overview.authors")}</div></div>
+          <div class="stat"><div class="stat-num">${n.year || "?"}</div><div class="stat-lbl">${t("search.year")}</div></div>
         </div>
       </div>
       <div class="sp-cols">
-        <div class="sp-card"><div class="sp-card-title">Авторы ИТМО (${authors.length})</div><ul>${authors.map(a =>
-          `<li data-k="${esc(a.key)}"><div class="li-name">${esc(a.label)}</div></li>`
+        <div class="sp-card"><div class="sp-card-title">${t("pub.itmoAuthors", authors.length)}</div><ul>${authors.map(a =>
+          `<li data-k="${esc(a.key)}"><div class="li-name">${esc(authorDisplayName(a))}</div></li>`
         ).join("")}</ul></div>
-        ${relPubs.length ? `<div class="sp-card"><div class="sp-card-title">Похожие публикации</div><ul>${relPubs.map(p =>
+        ${relPubs.length ? `<div class="sp-card"><div class="sp-card-title">${t("search.similarPubs")}</div><ul>${relPubs.map(p =>
           `<li data-k="${esc(p.key)}"><div class="li-name">${esc(shortLabel(p.label))}</div><span class="li-count">${p.year || "?"}</span></li>`
         ).join("")}</ul></div>` : ""}
       </div>
@@ -396,18 +396,18 @@ function spShowRepoProfile(key) {
     ${_spNavBtns()}
     <div class="sp-profile">
       <div class="sp-profile-header">
-        <span class="card-kind">репозиторий</span>
+        <span class="card-kind">${t("repo.kind")}</span>
         <div class="sp-profile-name">${esc(n.label)}</div>
-        <div class="profile-dept"><span class="dept-dot" style="background:${deptById.get(n.dept)?.color || "#9aa2ac"}"></span>${esc(deptById.get(n.dept)?.name || "Без департамента")}</div>
-        ${n.stars ? `<div class="card-row"><b>Звёзды</b> ★ ${n.stars}</div>` : ""}
+        <div class="profile-dept"><span class="dept-dot" style="background:${deptById.get(n.dept)?.color || "#9aa2ac"}"></span>${esc(deptDisplayName(deptById.get(n.dept)) || t("common.noDept"))}</div>
+        ${n.stars ? `<div class="card-row"><b>${t("repo.stars")}</b> ★ ${n.stars}</div>` : ""}
         ${n.description ? `<div class="card-row">${esc(n.description)}</div>` : ""}
         ${n.url ? `<div class="card-row"><a href="${esc(n.url)}" target="_blank">${esc(n.url.replace("https://github.com/",""))}</a></div>` : ""}
       </div>
       <div class="sp-cols">
-        ${persons.length ? `<div class="sp-card"><div class="sp-card-title">Участники ИТМО (${persons.length})</div><ul>${persons.map(p =>
-          `<li data-k="${esc(p.key)}">${esc(p.node.label)} <span class="tag gray">${esc(p.role)}</span></li>`
+        ${persons.length ? `<div class="sp-card"><div class="sp-card-title">${t("repo.itmoMembers", persons.length)}</div><ul>${persons.map(p =>
+          `<li data-k="${esc(p.key)}">${esc(authorDisplayName(p.node))} <span class="tag gray">${esc(p.role)}</span></li>`
         ).join("")}</ul></div>` : ""}
-        ${pubs.length ? `<div class="sp-card"><div class="sp-card-title">Публикации (${pubs.length})</div><ul>${pubs.slice(0,15).map(p =>
+        ${pubs.length ? `<div class="sp-card"><div class="sp-card-title">${t("edge.pubsSection", pubs.length)}</div><ul>${pubs.slice(0,15).map(p =>
           `<li data-k="${esc(p.key)}"><div class="li-name">${esc(shortLabel(p.label))}</div><span class="li-count">${p.year || "?"}</span></li>`
         ).join("")}</ul></div>` : ""}
       </div>
@@ -427,7 +427,7 @@ function spShowDeptProfile(id) {
   if (!d) return;
   spOnLanding = false;
   _spCurrentView = { kind: "dept", id: d.id };
-  document.title = `${d.name} — PAUK`;
+  document.title = `${deptDisplayName(d)} — PAUK`;
   if (typeof _pushUrl === "function") _pushUrl({ tab: 4, kind: "dept", id: d.id });
   const deptAuthors = DATA.authors.filter(a => a.dept == id)
     .sort((a, b) => b.pubs_count - a.pubs_count);
@@ -461,31 +461,31 @@ function spShowDeptProfile(id) {
     ${_spNavBtns()}
     <div class="sp-profile">
       <div class="sp-profile-header">
-        <span class="card-kind">департамент</span>
+        <span class="card-kind">${t("dept.kind")}</span>
         <div class="sp-profile-name" style="display:flex;align-items:center;gap:8px">
           <span class="dept-dot" style="background:${d.color || "#9aa2ac"};width:12px;height:12px"></span>
-          ${esc(d.name)}
+          ${esc(deptDisplayName(d))}
         </div>
         <div class="stat-grid" style="margin-top:16px;grid-template-columns:repeat(4,1fr)">
-          <div class="stat"><div class="stat-num">${deptAuthors.length}</div><div class="stat-lbl">авторов</div></div>
-          <div class="stat"><div class="stat-num">${deptPubKeys.size}</div><div class="stat-lbl">публикаций</div></div>
-          <div class="stat"><div class="stat-num">${deptRepoKeys.size}</div><div class="stat-lbl">репозиториев</div></div>
-          <div class="stat"><div class="stat-num">${yearRange}</div><div class="stat-lbl">активность</div></div>
+          <div class="stat"><div class="stat-num">${deptAuthors.length}</div><div class="stat-lbl">${t("search.statAuthors")}</div></div>
+          <div class="stat"><div class="stat-num">${deptPubKeys.size}</div><div class="stat-lbl">${t("overview.pubs")}</div></div>
+          <div class="stat"><div class="stat-num">${deptRepoKeys.size}</div><div class="stat-lbl">${t("overview.repos")}</div></div>
+          <div class="stat"><div class="stat-num">${yearRange}</div><div class="stat-lbl">${t("author.activity")}</div></div>
         </div>
       </div>
-      ${years.length ? `<div class="sp-card"><div class="sp-card-title">Публикации по годам</div><svg id="sp-dept-year-chart" width="100%" height="120"></svg></div>` : ""}
+      ${years.length ? `<div class="sp-card"><div class="sp-card-title">${t("author.pubsByYear")}</div><svg id="sp-dept-year-chart" width="100%" height="120"></svg></div>` : ""}
       <div class="sp-cols">
-        <div class="sp-card"><div class="sp-card-title">Топ авторов (${deptAuthors.length})</div><ul>${deptAuthors.slice(0,20).map(a =>
-          `<li data-k="${esc(a.key)}"><div class="li-name">${esc(a.label)}</div><span class="li-count">${a.pubs_count}</span></li>`
+        <div class="sp-card"><div class="sp-card-title">${t("search.deptAuthorsTitle", deptAuthors.length)}</div><ul>${deptAuthors.slice(0,20).map(a =>
+          `<li data-k="${esc(a.key)}"><div class="li-name">${esc(authorDisplayName(a))}</div><span class="li-count">${a.pubs_count}</span></li>`
         ).join("")}</ul></div>
-        ${partners.length ? `<div class="sp-card"><div class="sp-card-title">Связанные департаменты (${partners.length})</div><ul>${partners.map(({ dept: od, w }) =>
-          `<li data-dept="${esc(od.id)}"><div class="li-name" style="color:${od.color}">${esc(od.name)}</div><span class="li-count">${w}</span></li>`
+        ${partners.length ? `<div class="sp-card"><div class="sp-card-title">${t("search.relatedDepts", partners.length)}</div><ul>${partners.map(({ dept: od, w }) =>
+          `<li data-dept="${esc(od.id)}"><div class="li-name" style="color:${od.color}">${esc(deptDisplayName(od))}</div><span class="li-count">${w}</span></li>`
         ).join("")}</ul></div>` : ""}
       </div>
-      ${deptPubs.length ? `<div class="sp-card"><div class="sp-card-title">Все публикации (${deptPubs.length})</div><ul>${deptPubs.map(p =>
+      ${deptPubs.length ? `<div class="sp-card"><div class="sp-card-title">${t("search.allPubsTitle", deptPubs.length)}</div><ul>${deptPubs.map(p =>
         `<li data-k="${esc(p.key)}">
           <div class="li-name">${esc(shortLabel(p.label || p.key))}</div>
-          ${p.has_code ? '<span class="tag green" style="font-size:9px;padding:0 5px">код</span>' : ""}
+          ${p.has_code ? `<span class="tag green" style="font-size:9px;padding:0 5px">${t("common.code")}</span>` : ""}
           <span class="li-count">${p.year || "?"}</span>
         </li>`
       ).join("")}</ul></div>` : ""}
