@@ -2,7 +2,9 @@ import unittest
 
 import mongomock
 
+from pauk.models import Person
 from pauk.storage import RawStore
+from pauk.storage.prepared import PreparedStore
 
 
 class RawStoreTest(unittest.TestCase):
@@ -34,3 +36,12 @@ class RawStoreTest(unittest.TestCase):
     def test_read_missing_source_yields_nothing(self):
         store = RawStore(self.db, "sample")
         self.assertEqual(list(store.read("nonexistent")), [])
+
+    def test_point_upsert_does_not_remove_other_group_rows(self):
+        prepared = PreparedStore(self.db, "sample")
+        first = Person(id="A1", is_itmo=False)
+        second = Person(id="A2", is_itmo=False)
+        prepared.write_models("persons", [first, second])
+        first.name_en = "Saved immediately"
+        prepared.upsert_models("persons", [first])
+        self.assertEqual({row.id for row in prepared.read_models("persons", Person)}, {"A1", "A2"})

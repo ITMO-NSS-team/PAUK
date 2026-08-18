@@ -118,8 +118,10 @@ JSONL):
   всё остальное → пропустить без `--force`). Не пытайтесь читать в него
   дополнительный смысл про «почему» — причина сбоя идёт текстом в
   `ProcessingState.error`, не отдельным статусом.
-- **`ProcessingState`** — `status`, `attempts`, `finished_at`, `error`,
-  `result_count`.
+- **`ProcessingState`** — `status`, `request_key`, `phase`, `attempts`,
+  `finished_at`, `error`, `result_count`. `request_key` связывает результат
+  с конкретным входом внешнего API (ORCID, DOI, email); `phase` нужен
+  многошаговому OpenReview-поиску.
 
 ## `__init__.py`
 

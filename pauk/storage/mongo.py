@@ -19,3 +19,5 @@ def ensure_indexes(db: Database) -> None:
     """Create indexes the storage layer relies on. Idempotent - safe to call
     on every command startup, same spot as Neo4j's create_constraints()."""
     db.revisions.create_index([("entity_type", 1), ("entity_id", 1), ("version", 1)])
+    db.raw.create_index([("source", 1), ("group", 1), ("fetched_at", 1)])
+    db.raw.create_index([("source", 1), ("fetched_at", 1)])

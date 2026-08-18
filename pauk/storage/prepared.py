@@ -92,39 +92,7 @@ class PreparedStore:
         for row in rows:
             row_id = row[key_field]
             written_ids.append(row_id)
-            before = collection.find_one({"_id": row_id})
-            before_content = {k: v for k, v in (before or {}).items() if k not in ("_id", "groups", "_version")}
-            # A None value means "clear this field" - stored documents never
-            # carry an explicit null (cleared fields are $unset, not $set to
-            # None), so both sides must drop them to compare like with like.
-            row_content = {k: v for k, v in row.items() if v is not None}
-            content_changed = before is None or before_content != row_content
-            # A document written before _version existed has no such field -
-            # even with unchanged content, it still needs one backfilled to
-            # keep the invariant "every stored document carries _version".
-            if not content_changed and before is not None and "_version" in before:
-                collection.update_one({"_id": row_id}, {"$addToSet": {"groups": self.group}})
-                continue
-            new_version = (before or {}).get("_version", 0) + 1
-            update: dict = {
-                "$set": {**row_content, "_version": new_version},
-                "$addToSet": {"groups": self.group},
-            }
-            unset_fields = {k for k, v in row.items() if v is None}
-            if unset_fields:
-                update["$unset"] = dict.fromkeys(unset_fields, "")
-            collection.update_one({"_id": row_id}, update, upsert=True)
-            if content_changed and before is not None:
-                revisions.insert_one(
-                    {
-                        "entity_type": entity,
-                        "entity_id": row_id,
-                        "version": before.get("_version", 0),
-                        "snapshot": before,
-                        "replaced_by_group": self.group,
-                        "replaced_at": datetime.now(UTC).isoformat(),
-                    }
-                )
+            self._upsert_row(entity, row, collection, revisions)
         collection.update_many(
             {"groups": self.group, "_id": {"$nin": written_ids}},
             {"$pull": {"groups": self.group}},
@@ -139,3 +107,45 @@ class PreparedStore:
         # value in Mongo forever, since $set only ever touches keys present
         # in its payload.
         self.write_rows(entity, (row.model_dump(mode="json", by_alias=True) for row in rows))
+
+    def upsert_models(self, entity: str, rows: Iterable[BaseModel]) -> None:
+        """Persist changed rows without redefining this group's full membership.
+
+        Enrichment stages use this after an external request completes.  Unlike
+        write_models(), it never removes the group marker from untouched rows.
+        """
+        collection = self._collection(entity)
+        revisions = self.db.revisions
+        for model in rows:
+            self._upsert_row(entity, model.model_dump(mode="json", by_alias=True), collection, revisions)
+
+    def _upsert_row(self, entity: str, row: dict, collection, revisions) -> None:
+        key_field = self._key_field(entity)
+        row_id = row[key_field]
+        before = collection.find_one({"_id": row_id})
+        before_content = {k: v for k, v in (before or {}).items() if k not in ("_id", "groups", "_version")}
+        row_content = {k: v for k, v in row.items() if v is not None}
+        content_changed = before is None or before_content != row_content
+        if not content_changed and before is not None and "_version" in before:
+            collection.update_one({"_id": row_id}, {"$addToSet": {"groups": self.group}})
+            return
+        new_version = (before or {}).get("_version", 0) + 1
+        update: dict = {
+            "$set": {**row_content, "_version": new_version},
+            "$addToSet": {"groups": self.group},
+        }
+        unset_fields = {k for k, v in row.items() if v is None}
+        if unset_fields:
+            update["$unset"] = dict.fromkeys(unset_fields, "")
+        collection.update_one({"_id": row_id}, update, upsert=True)
+        if content_changed and before is not None:
+            revisions.insert_one(
+                {
+                    "entity_type": entity,
+                    "entity_id": row_id,
+                    "version": before.get("_version", 0),
+                    "snapshot": before,
+                    "replaced_by_group": self.group,
+                    "replaced_at": datetime.now(UTC).isoformat(),
+                }
+            )
