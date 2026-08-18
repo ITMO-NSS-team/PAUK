@@ -293,7 +293,7 @@ def test_openalex_author_payload_enriches(bench):
 
 
 def test_failing_author_endpoint_marks_failed(bench):
-    state = bench.persons["A5000000016"].processing["persons"]
+    state = bench.persons["A5000000016"].processing["openalex_author"]
     assert state.status == "failed" and "404" in state.error
 
 
@@ -430,8 +430,9 @@ def test_a_person_without_an_openalex_record_is_still_enriched(bench):
     # Having no author endpoint to call is not a failure, and the ORCID they
     # were keyed by is still worth following.
     person = bench.persons[UNIDENTIFIED_BY_ORCID]
-    state = person.processing["persons"]
-    assert state.status != "failed", state.error
+    assert person.processing["openalex_author"].status == "not_applicable"
+    orcid_state = person.processing["orcid"]
+    assert orcid_state.status != "failed", orcid_state.error
     assert person.email == "no.id@example.org"
 
 
