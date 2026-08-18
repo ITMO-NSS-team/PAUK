@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -37,8 +37,8 @@
         Публикации, авторы и департаменты ИТМО — и связанные с ними open-source репозитории на GitHub.
       </p>
       <div class="welcome-lang" id="welcome-lang">
-        <button class="welcome-lang-btn" data-lang="ru" title="Русский" aria-label="Русский"><img src="vendor/icons/pauk-frame.png" alt="" /></button>
-        <button class="welcome-lang-btn" data-lang="en" title="English" aria-label="English"><img src="vendor/icons/pauk-frame.png" alt="" /></button>
+        <button class="welcome-lang-btn" data-lang="ru" title="Русский" aria-label="Русский">🇷🇺</button>
+        <button class="welcome-lang-btn" data-lang="en" title="English" aria-label="English">🇬🇧</button>
       </div>
       <button id="welcome-close" class="welcome-cta">
         <span data-i18n="welcome.cta">Смотреть карту</span>
@@ -60,7 +60,7 @@
     // i18n.js (deferred) hasn't run yet at this point in the parse, so read
     // localStorage directly here rather than reaching for its LANG/setLang —
     // those exist by the time anyone actually clicks a button, just not now.
-    var currentLang = localStorage.getItem("pauk-lang") || "ru";
+    var currentLang = localStorage.getItem("pauk-lang") || "en";
     document.querySelectorAll(".welcome-lang-btn").forEach(function (btn) {
       if (btn.getAttribute("data-lang") === currentLang) btn.classList.add("active");
       btn.addEventListener("click", function () { setLang(btn.getAttribute("data-lang")); });
