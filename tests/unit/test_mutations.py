@@ -1,5 +1,6 @@
 import unittest
 
+from pauk.graph.extract import NODE_REGISTRY
 from pauk.graph.mutations import (
     NODE_FIELDS,
     RELATIONSHIPS,
@@ -124,10 +125,18 @@ class FakeGraph:
 class WhitelistTest(unittest.TestCase):
     """The closed sets that keep user input out of interpolated Cypher."""
 
-    def test_the_registry_supplies_every_label_the_loader_publishes(self):
-        self.assertEqual(sorted(NODE_FIELDS), [
-            "Department", "GitHubProfile", "LinkCandidate", "Person",
-            "Publication", "Repository"])
+    def test_every_label_the_loader_publishes_is_editable(self):
+        # Compared against the registry itself, not a list written out here:
+        # the graph grows (Organization arrived with department matching),
+        # and a hand-kept copy would either fail on every such change or,
+        # worse, quietly stop covering the new label.
+        published = {spec.labels.split(":")[0] for spec in NODE_REGISTRY.values()}
+        self.assertEqual(set(NODE_FIELDS), published)
+
+    def test_the_labels_include_the_ones_the_panel_edits_most(self):
+        # A guard against the check above passing on an empty registry.
+        self.assertLessEqual({"Person", "Publication", "Repository", "Department"},
+                             set(NODE_FIELDS))
 
     def test_a_person_field_from_either_registry_entry_is_editable(self):
         # Person is in the registry twice, ITMO and external; the two

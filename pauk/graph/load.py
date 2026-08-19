@@ -12,7 +12,8 @@ from pauk.storage import PreparedStore
 from .audit import actor_context, audited_client
 from .client import Neo4jClient
 from .csv_loader import load_csv_dir
-from .jsonl_loader import load_prepared_rows
+from .extract import NODE_REGISTRY
+from .jsonl_loader import FILE_SPECS, load_prepared_rows
 from .overrides import apply_overrides, tombstoned_ids, tombstoned_relationships
 from .schema import create_constraints
 
@@ -30,15 +31,16 @@ ENTITY_FILES = {
 }
 
 
-# Which node label the rows of each prepared entity become. persons.jsonl
-# feeds two registry entries (ITMO and external) that share one label.
+# Which node label the rows of each prepared entity become, derived from
+# the loader's own map rather than written out again: an entity added to
+# the pipeline (organizations, when department matching landed) must not
+# silently lose its tombstones because a second list was never updated.
+# persons.jsonl is the one file FILE_SPECS does not carry — it feeds two
+# registry entries, ITMO and external, that share the base label.
 FILE_LABELS = {
-    "departments.jsonl": "Department",
-    "publications.jsonl": "Publication",
-    "repositories.jsonl": "Repository",
-    "github_profiles.jsonl": "GitHubProfile",
-    "persons.jsonl": "Person",
-}
+    filename: NODE_REGISTRY[spec_key].labels.split(":")[0]
+    for filename, spec_key in FILE_SPECS.items()
+} | {"persons.jsonl": "Person"}
 
 
 def _drop_tombstoned(rows_by_file: dict[str, list[dict]], mongo_db: Database) -> dict[str, list[dict]]:

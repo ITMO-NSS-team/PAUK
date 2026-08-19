@@ -290,3 +290,12 @@ class RelationshipOverrideTest(unittest.TestCase):
         }
         load_prepared_rows(self.graph, rows, tombstoned_relationships(self.db))
         self.assertEqual([k for k in self.graph.relationships if k[1] == "MENTIONS_LINK"], [])
+
+    def test_every_entity_the_publish_loads_can_be_tombstoned(self):
+        # A new prepared entity (organizations, when department matching
+        # landed) must not lose its tombstones because a second list was
+        # never updated: deleting such a node by hand would then be undone
+        # by the very next publish.
+        from pauk.graph.load import ENTITY_FILES, FILE_LABELS
+        node_files = {name for name in ENTITY_FILES.values() if name != "repo_links.jsonl"}
+        self.assertEqual(node_files - set(FILE_LABELS), set())
