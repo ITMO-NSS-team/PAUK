@@ -18,6 +18,9 @@ data/audit/*
 !data/cache/.gitkeep
 !data/audit/.gitkeep
 
+pauk/gui/data/private/*
+!pauk/gui/data/private/.gitkeep
+
 *.egg-info/
 dist/
 build/

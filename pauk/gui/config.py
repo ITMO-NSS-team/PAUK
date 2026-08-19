@@ -10,6 +10,7 @@ constants next to that function in layout.py instead of here.
 
 # --- Display fallbacks ----------------------------------------------------------
 NO_DEPT_NAME = "Без департамента"
+NO_DEPT_NAME_EN = "No department"
 NO_DEPT_COLOR = "#8a8f98"
 
 # --- Edge thresholds ------------------------------------------------------------
@@ -25,8 +26,6 @@ FA2_ITER_REPOS = 100
 # --- Synthetic "shared department" peer edges -----------------------------------
 DEPT_EDGE_K = 3  # random same-department peers each node is tied to
 DEPT_EDGE_WEIGHT = 1.0  # comparable to real edges (joint pubs start at 1.0)
-# Weaker for pubs: at full strength the random dept graph flattens big
-# publications into a featureless disc.
 PUB_DEPT_EDGE_K = 1
 PUB_DEPT_EDGE_WEIGHT = 0.5
 

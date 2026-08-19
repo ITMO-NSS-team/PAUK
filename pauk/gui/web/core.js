@@ -1,5 +1,7 @@
 "use strict";
 
+// ---------- projection & zoom constants ----------
+
 const S    = 1000;
 const SPAN = 16;
 const proj = (x, y) => [(x / S - 0.5) * SPAN, (0.5 - y / S) * SPAN];
@@ -14,13 +16,18 @@ const EDGE_OPACITY_COAUTH = ["interpolate", ["linear"], ["zoom"], 5.6, 0, 7.5, 0
 const EDGE_OPACITY_PUBS   = ["interpolate", ["linear"], ["zoom"], 5.6, 0, 7.5, 0.28, 12, 0.55];
 const FILL_OPACITY       = 0.35;
 const AUTHOR_LABEL_ZOOM  = 8.8;
+// Below this zoom, clicks resolve to the department under the cursor —
+// nodes are too tightly packed to aim for individually.
+const DEPT_CLICK_ZOOM = 6.8;
 
 const nodeByKey = new Map();
 DATA.authors.forEach(n => nodeByKey.set(n.key, n));
 DATA.repos.forEach(n => nodeByKey.set(n.key, n));
 DATA.pubs.forEach(n => nodeByKey.set(n.key, n));
 
-// Desaturate the fully-saturated colors from generate_data.py to match the grayscale chrome
+// ---------- color ----------
+
+// Desaturates generate_data.py's fully-saturated colors to match the grayscale chrome.
 const NODE_COLOR_SAT_MUL = 0.55;
 function hexToHsl(hex) {
   const r = parseInt(hex.slice(1, 3), 16) / 255, g = parseInt(hex.slice(3, 5), 16) / 255, b = parseInt(hex.slice(5, 7), 16) / 255;
@@ -62,6 +69,22 @@ function muteColor(hex) {
 const deptById = new Map();
 DATA.departments.forEach(d => { d.color = muteColor(d.color); deptById.set(d.id, d); });
 
+// ---------- display names ----------
+// d.name / n.label are the data of record — use these two only for what's
+// shown to the user, never for comparisons, keys, or sorting.
+
+function deptDisplayName(d) {
+  if (!d) return "";
+  return (LANG === "en" && d.name_en) ? d.name_en : d.name;
+}
+
+function authorDisplayName(n) {
+  if (!n) return "";
+  return (LANG === "en" && n.name_en) ? n.name_en : n.label;
+}
+
+// ---------- adjacency indices ----------
+
 const authorPubs = new Map();
 const pubAuthors = new Map();
 DATA.all_edges.forEach(({s, t}) => {
@@ -70,6 +93,16 @@ DATA.all_edges.forEach(({s, t}) => {
   if (!pubAuthors.has(t)) pubAuthors.set(t, []);
   pubAuthors.get(t).push(s);
 });
+
+function buildAdjIndex(edges) {
+  const idx = new Map();
+  const push = (from, to, w) => { if (!idx.has(from)) idx.set(from, []); idx.get(from).push({ o: to, w }); };
+  edges.forEach(e => { const w = e.w || 1; push(e.s, e.t, w); push(e.t, e.s, w); });
+  return idx;
+}
+const coauthAdj = buildAdjIndex(DATA.coauth_edges);
+const pubAdj    = buildAdjIndex(DATA.pub_edges);
+const repoAdj   = buildAdjIndex(DATA.repo_edges);
 
 const repoPubs = new Map();
 const pubRepos = new Map();
@@ -101,6 +134,8 @@ DATA.repo_author_edges.forEach(e => {
   repoPersons.get(e.s).push({ key: e.t, role: e.role });
 });
 
+// ---------- tab accessors ----------
+
 function tabNodes() {
   switch (tab) {
     case 1: return DATA.authors;
@@ -127,14 +162,12 @@ function P(key) {
 
 const nodeColor = n => deptById.get(n.dept)?.color || "#9aa2ac";
 
+// ---------- sizing ----------
+
 // Co-authors of an author: Map<key, total weight>
 function coauthMapOf(key) {
   const m = new Map();
-  DATA.coauth_edges.forEach(e => {
-    if (e.s !== key && e.t !== key) return;
-    const ok = e.s === key ? e.t : e.s;
-    m.set(ok, (m.get(ok) || 0) + (e.w || 1));
-  });
+  (coauthAdj.get(key) || []).forEach(({ o, w }) => m.set(o, (m.get(o) || 0) + w));
   return m;
 }
 
@@ -143,6 +176,25 @@ function szOf(n) {
   const c = n.kind === "author" ? (n.pubs_count || 0) : (n.n_authors || 0);
   return 0.6 + Math.min(1.5, 0.45 * Math.log1p(c));
 }
+
+// Shared by main.js (icon-size expressions) and overlay.js (label offset).
+// `unit` = screen px per icon-size 1.0 — smaller than the raster's logical
+// size since circleImg/squareImg reserve padding for their drop shadow.
+const NODE_ICON_K = {
+  author: { z3: 0.114, z9: 0.714, unit: 14 },
+  repo:   { z3: 0.214, z9: 1.0,   unit: 14 },
+  pub:    { z3: 0.18,  z9: 1.1,   unit: 7 },
+};
+function nodeScreenDiameter(n, zoom) {
+  const k = NODE_ICON_K[n.kind]; if (!k) return 10;
+  const t = Math.max(0, Math.min(1, (zoom - 3) / (9 - 3)));
+  return (k.z3 + (k.z9 - k.z3) * t) * szOf(n) * k.unit;
+}
+
+// On-screen px for the sel-points marker (selection.js), shared with overlay.js.
+const SEL_MARKER_PX = { focus: 22, n: 14 };
+
+// ---------- misc utils ----------
 
 const shortLabel = (s, n = 80) => !s || s.length <= n ? (s || "…") : s.slice(0, n - 1) + "…";
 
@@ -153,7 +205,8 @@ function esc(s) {
 
 function empty() { return { type: "FeatureCollection", features: [] }; }
 
-// Merge publication text data loaded from graph-search.js
+// ---------- publication detail merge (from graph-search.js) ----------
+
 window._pubDetailReady = false;
 window._onDetailReady = function(detail) {
   detail.forEach(d => {

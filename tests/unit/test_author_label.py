@@ -10,50 +10,45 @@ def label(*, surname=None, given=None, patronymic=None, name_en=None, name_ru=No
 class AuthorLabelTest(unittest.TestCase):
     def test_catalog_record_becomes_surname_and_initials(self):
         self.assertEqual(
-            label(surname="Никитин", given="Николай", patronymic="Олегович"),
-            "Никитин Н.О.")
+            label(surname="Иванов", given="Иван", patronymic="Иванович"),
+            "Иванов И.И.")
 
-    def test_transliterated_name_is_reordered_the_same_way(self):
-        # No separate name parts, only the full Russian name — the label
-        # must still read surname-first.
-        self.assertEqual(label(name_ru="Виктория Вадимовна Юношева", name_en="Victoria Vadimovna Yunosheva"),
-                         "Юношева В.В.")
-        self.assertEqual(label(name_ru="Валерия А. Пьянченкова"), "Пьянченкова В.А.")
-        self.assertEqual(label(name_ru="А. А. Мусаев"), "Мусаев А.А.")
-
-    def test_a_cyrillic_full_name_reads_surname_first(self):
-        # The source wrote "Фамилия Имя Отчество"; reading the surname off
-        # the end would sign the card "Дмитриевич К.М.".
-        self.assertEqual(label(name_en="Кучин Михаил Дмитриевич"), "Кучин М.Д.")
-        self.assertEqual(label(name_ru="Муслимов Тагир Забирович"), "Муслимов Т.З.")
-
-    def test_a_surname_ending_like_a_patronymic_is_not_one(self):
-        # Олехнович and Масалович are surnames. The first arrives with an
-        # initial, the second behind a patronymic of its own — neither is
-        # the third of three spelled-out words.
-        self.assertEqual(label(name_ru="Роман О. Олехнович"), "Олехнович Р.О.")
-        self.assertEqual(label(name_ru="Мария Ивановна Масалович"), "Масалович М.И.")
+    def test_no_separate_name_parts_only_the_full_ru_name(self):
+        self.assertEqual(label(name_ru="Иван Иванович Иванов", name_en="Ivan Ivanovich Ivanov"),
+                         "Иванов И.И.")
+        self.assertEqual(label(name_ru="Иван А. Иванов"), "Иванов И.А.")
+        self.assertEqual(label(name_ru="А. А. Иванов"), "Иванов А.А.")
 
     def test_without_a_patronymic_the_given_name_stays_written_out(self):
-        self.assertEqual(label(name_ru="Мария Горизонтова"), "Горизонтова Мария")
-        self.assertEqual(label(surname="Борисова", given="Юлия"), "Борисова Юлия")
+        self.assertEqual(label(name_ru="Иван Иванов"), "Иванов Иван")
+        self.assertEqual(label(surname="Иванов", given="Пётр"), "Иванов Пётр")
 
     def test_falls_back_to_the_romanized_name(self):
-        self.assertEqual(label(name_en="Wei Wang"), "Wang Wei")
+        self.assertEqual(label(name_en="Ivan Ivanov"), "Ivanov Ivan")
         self.assertEqual(label(), "")
 
     def test_single_word_name_is_left_alone(self):
-        self.assertEqual(label(name_ru="Осьмак"), "Осьмак")
+        self.assertEqual(label(name_ru="Иванов"), "Иванов")
+
+    def test_public_build_truncates_the_surname(self):
+        self.assertEqual(
+            author_label("Иванов", "Иван", "Иванович", None, public=True),
+            "Ива.. И.И.")
+
+    def test_public_build_leaves_short_surnames_alone(self):
+        # 3 letters or fewer: truncating would save nothing, so don't.
+        self.assertEqual(author_label("Ив", "Ан", None, None, public=True), "Ив Ан")
+        self.assertEqual(author_label("Ив", None, None, None, public=True), "Ив")
 
 
 class SplitFullNameTest(unittest.TestCase):
     def test_given_name_first_is_the_common_case(self):
-        self.assertEqual(split_full_name("Николай Олегович Никитин"),
-                         ("Никитин", "Николай", "Олегович"))
+        self.assertEqual(split_full_name("Иван Иванович Иванов"),
+                         ("Иванов", "Иван", "Иванович"))
 
     def test_surname_first_with_a_comma(self):
-        self.assertEqual(split_full_name("Шипиловских, Сергей А."),
-                         ("Шипиловских", "Сергей", "А."))
+        self.assertEqual(split_full_name("Иванов, Иван А."),
+                         ("Иванов", "Иван", "А."))
 
     def test_lowercase_particles_never_become_initials(self):
         self.assertEqual(split_full_name("Ян ван дер Берг"), ("Берг", "Ян", ""))

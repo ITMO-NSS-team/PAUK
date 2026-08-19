@@ -33,6 +33,14 @@ function wrap(text, max) {
   return lines.slice(0, 3);
 }
 
+// `extra` grows the offset so a wrapped label's bottom edge (not its
+// center) clears the icon it's attached to.
+function _labelMetrics(text, fs) {
+  const lines = wrap(text, fs > 16 ? 16 : 22).length;
+  const lh = fs * 1.1;
+  return { lines, lh, extra: (lines - 1) * lh / 2 + fs / 2 };
+}
+
 function label(text, x, y, fs, color) {
   octx.font = `600 ${fs}px ${getComputedStyle(document.body).fontFamily}`;
   const lines = wrap(text, fs > 16 ? 16 : 22);
@@ -52,14 +60,33 @@ function drawOverlay() {
 
   if (selected) {
     const sn = nodeByKey.get(selected);
+    const zoom = map.getZoom();
+    const drawn = [];
+    const fp = P(selected), fc = map.project(proj(fp[0], fp[1]));
+    octx.font = `600 12px ${getComputedStyle(document.body).fontFamily}`;
+    // Clear whichever is bigger, the fixed-size sel-points marker or the
+    // dimmed original icon underneath (a heavily-starred repo can be larger).
     nodeNeighbors(selected).forEach(nk => {
       const nd = nodeByKey.get(nk), p = P(nk);
       if (!nd) return;
       const sc = map.project(proj(p[0], p[1]));
-      label(nd.label.length > 24 ? nd.label.slice(0, 23) + "…" : nd.label, sc.x, sc.y - 12, 12);
+      const ndLabel = authorDisplayName(nd);
+      const text = ndLabel.length > 24 ? ndLabel.slice(0, 23) + "…" : ndLabel;
+      const m = _labelMetrics(text, 12);
+      const yOff = Math.max(SEL_MARKER_PX.n, nodeScreenDiameter(nd, zoom)) / 2 + 8 + m.extra;
+      const tw = octx.measureText(text).width;
+      const boxH = m.lines * m.lh + 4;
+      const box = { x: sc.x - tw / 2, y: sc.y - yOff - boxH / 2, w: tw, h: boxH };
+      if (!drawn.some(b => !(box.x > b.x + b.w || box.x + box.w < b.x ||
+          box.y > b.y + b.h || box.y + box.h < b.y))) {
+        drawn.push(box);
+        label(text, sc.x, sc.y - yOff, 12);
+      }
     });
-    const fp = P(selected), fc = map.project(proj(fp[0], fp[1]));
-    label(sn.label, fc.x, fc.y - 16, sn.kind === "pub" ? 14 : 13, nodeColor(sn));
+    const focusFs = sn.kind === "pub" ? 14 : 13;
+    const snLabel = authorDisplayName(sn);
+    const focusOff = Math.max(SEL_MARKER_PX.focus, nodeScreenDiameter(sn, zoom)) / 2 + 10 + _labelMetrics(snLabel, focusFs).extra;
+    label(snLabel, fc.x, fc.y - focusOff, focusFs, nodeColor(sn));
     return;
   }
 
@@ -78,10 +105,10 @@ function drawOverlay() {
         const oid = e.s === selectedDept ? e.t : e.s;
         const pc = deptCentroid.get(oid); if (!pc) return;
         const sc = map.project(proj(pc[0], pc[1]));
-        label(deptById.get(oid)?.name || "?", sc.x, sc.y, 12);
+        label(deptDisplayName(deptById.get(oid)) || "?", sc.x, sc.y, 12);
       });
     const sc = map.project(proj(c[0], c[1]));
-    label(d.name, sc.x, sc.y, 16, d.color);
+    label(deptDisplayName(d), sc.x, sc.y, 16, d.color);
     return;
   }
 
@@ -92,13 +119,14 @@ function drawOverlay() {
     const sc = map.project(proj(c[0], c[1]));
     if (sc.x < -50 || sc.x > innerWidth + 50 || sc.y < -50 || sc.y > innerHeight + 50) continue;
     const fs = Math.max(11, Math.min(map.getZoom() * 2, 17));
+    const name = deptDisplayName(d);
     octx.font = `600 ${fs}px sans-serif`;
-    const tw = octx.measureText(d.name).width;
+    const tw = octx.measureText(name).width;
     const box = { x: sc.x - tw / 2, y: sc.y - fs, w: tw, h: fs * 2.2 };
     if (drawn.some(b => !(box.x > b.x + b.w || box.x + box.w < b.x ||
         box.y > b.y + b.h || box.y + box.h < b.y))) continue;
     drawn.push(box);
-    label(d.name, sc.x, sc.y, fs, d.color);
+    label(name, sc.x, sc.y, fs, d.color);
   }
 }
 
@@ -114,17 +142,22 @@ function drawEntityLabels() {
   }
   cand.sort((a, c) => szOf(c) - szOf(a));
   octx.font = `600 12px ${getComputedStyle(document.body).fontFamily}`;
+  const zoom = map.getZoom();
   const drawn = []; let count = 0;
   for (const nd of cand) {
     if (count >= 160) break;
     const p = P(nd.key), sc = map.project(proj(p[0], p[1]));
     if (sc.x < -60 || sc.x > innerWidth + 60 || sc.y < -30 || sc.y > innerHeight + 30) continue;
-    const tw = octx.measureText(nd.label).width;
-    const box = { x: sc.x - tw / 2, y: sc.y - 22, w: tw, h: 16 };
+    const ndLabel = authorDisplayName(nd);
+    const tw = octx.measureText(ndLabel).width;
+    const m = _labelMetrics(ndLabel, 12);
+    const yOff = nodeScreenDiameter(nd, zoom) / 2 + 6 + m.extra;
+    const boxH = m.lines * m.lh + 4;
+    const box = { x: sc.x - tw / 2, y: sc.y - yOff - boxH / 2, w: tw, h: boxH };
     if (drawn.some(bb => !(box.x > bb.x + bb.w || box.x + box.w < bb.x ||
         box.y > bb.y + bb.h || box.y + box.h < bb.y))) continue;
     drawn.push(box);
-    label(nd.label, sc.x, sc.y - 12, 12);
+    label(ndLabel, sc.x, sc.y - yOff, 12);
     count++;
   }
 }

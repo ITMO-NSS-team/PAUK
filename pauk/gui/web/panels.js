@@ -18,17 +18,20 @@ function closePanel() {
 }
 
 function renderOverview() {
-  const fmt = n => n.toLocaleString("ru-RU");
-  const tabLabels  = ["", "Персоналии", "Репозитории", "Публикации", "Поиск"];
+  const fmt = n => n.toLocaleString(LANG === "en" ? "en-US" : "ru-RU");
+  const tabKeys = { 1: "tab.people", 2: "tab.repos", 3: "tab.pubs" };
+  const tabColors  = { 1: "var(--accent-2)", 2: "#d9962e", 3: "#e8562e" };
+  const tabColor = tabColors[tab] || "inherit";
   overview.innerHTML =
-    `<div class="card-label">Обзор · ${tabLabels[tab]}</div>` +
+    `<img class="overview-web" src="vendor/icons/pauk-web-4x.png" alt="" />` +
+    `<div class="card-label">${t("overview.label")} · <span style="color:${tabColor}">${t(tabKeys[tab] || "tab.people")}</span></div>` +
     `<div class="stat-grid">` +
-    `<div class="stat"><div class="stat-num">${fmt(DATA.authors.length)}</div><div class="stat-lbl">авторов ИТМО</div></div>` +
-    `<div class="stat"><div class="stat-num">${fmt(DATA.pubs.length)}</div><div class="stat-lbl">публикаций</div></div>` +
-    `<div class="stat"><div class="stat-num">${fmt(DATA.repos.length)}</div><div class="stat-lbl">репозиториев</div></div>` +
-    `<div class="stat"><div class="stat-num">${fmt(DATA.departments.filter(d => d.name !== "Без департамента").length)}</div><div class="stat-lbl">департаментов</div></div>` +
+    `<div class="stat"><div class="stat-num">${fmt(DATA.authors.length)}</div><div class="stat-lbl">${t("overview.authors")}</div></div>` +
+    `<div class="stat"><div class="stat-num">${fmt(DATA.pubs.length)}</div><div class="stat-lbl">${t("overview.pubs")}</div></div>` +
+    `<div class="stat"><div class="stat-num">${fmt(DATA.repos.length)}</div><div class="stat-lbl">${t("overview.repos")}</div></div>` +
+    `<div class="stat"><div class="stat-num">${fmt(DATA.departments.filter(d => d.name !== "Без департамента").length)}</div><div class="stat-lbl">${t("overview.depts")}</div></div>` +
     `</div>` +
-    (tab === 2 ? `<div style="margin-top:16px;padding:11px 14px;background:var(--surface-2);border-radius:10px;font-size:14px;font-weight:700;color:var(--text);text-align:center;line-height:1.4">Вкладка в разработке</div>` : "");
+    (tab === 2 ? `<div style="margin-top:16px;padding:11px 14px;background:var(--surface-2);border-radius:10px;font-size:14px;font-weight:700;color:var(--text);text-align:center;line-height:1.4">${t("overview.inDev")}</div>` : "");
 }
 
 function showNodeCard(key) {
@@ -37,6 +40,8 @@ function showNodeCard(key) {
   if (n.kind === "pub")    { showPubCard(key);       return; }
   if (n.kind === "repo")   { showRepoCard(key);      return; }
 }
+
+// ---------- edge card ----------
 
 function showEdgeCard(props) {
   const sn = nodeByKey.get(props.s), tn = nodeByKey.get(props.t);
@@ -47,11 +52,11 @@ function showEdgeCard(props) {
   if (sn.kind === "author" && tn.kind === "author") {
     const sSet = new Set(authorPubs.get(props.s) || []);
     const shared = (authorPubs.get(props.t) || []).filter(p => sSet.has(p));
-    html += `<div class="card-kind">соавторство</div>`;
-    html += `<div class="card-title">${esc(sn.label)} — ${esc(tn.label)}</div>`;
-    html += `<div class="card-row"><b>Совместных статей:</b> ${w}</div>`;
+    html += `<div class="card-kind">${t("edge.coauthorship")}</div>`;
+    html += `<div class="card-title">${esc(authorDisplayName(sn))} — ${esc(authorDisplayName(tn))}</div>`;
+    html += `<div class="card-row"><b>${t("edge.jointPapersLabel")}</b> ${w}</div>`;
     if (shared.length) {
-      html += `<div class="card-section">Публикации (${shared.length})</div><ul class="card-list">`;
+      html += `<div class="card-section">${t("edge.pubsSection", shared.length)}</div><ul class="card-list">`;
       shared.slice(0, 30).forEach(pk => {
         const p = nodeByKey.get(pk); if (!p) return;
         html += `<li data-k="${esc(pk)}"><div class="li-name">${esc(p.label || p.key)}</div><span class="li-count">${p.year || "?"}</span></li>`;
@@ -61,26 +66,26 @@ function showEdgeCard(props) {
   } else if (sn.kind === "pub" && tn.kind === "pub") {
     const sa = new Set(pubAuthors.get(props.s) || []);
     const shared = (pubAuthors.get(props.t) || []).filter(a => sa.has(a));
-    html += `<div class="card-kind">публикации — общие авторы</div>`;
+    html += `<div class="card-kind">${t("edge.pubPubKind")}</div>`;
     html += `<div class="card-row"><b>${esc(sn.label || sn.key)}</b></div>`;
     html += `<div class="card-row"><b>${esc(tn.label || tn.key)}</b></div>`;
-    html += `<div class="card-row"><b>Общих авторов ИТМО:</b> ${w}</div>`;
+    html += `<div class="card-row"><b>${t("edge.sharedAuthorsCountLabel")}</b> ${w}</div>`;
     if (shared.length) {
-      html += `<div class="card-section">Авторы</div><ul class="card-list">`;
+      html += `<div class="card-section">${t("edge.authorsSection")}</div><ul class="card-list">`;
       shared.forEach(ak => {
-        const a = nodeByKey.get(ak); if (a) html += `<li data-k="${esc(ak)}">${esc(a.label)}</li>`;
+        const a = nodeByKey.get(ak); if (a) html += `<li data-k="${esc(ak)}">${esc(authorDisplayName(a))}</li>`;
       });
       html += `</ul>`;
     }
   } else if (sn.kind === "repo" && tn.kind === "repo") {
-    html += `<div class="card-kind">репозитории — общие контрибьюторы</div>`;
+    html += `<div class="card-kind">${t("edge.repoRepoKind")}</div>`;
     html += `<div class="card-row"><a href="${esc(sn.url)}" target="_blank">${esc(sn.label)}</a></div>`;
     html += `<div class="card-row"><a href="${esc(tn.url)}" target="_blank">${esc(tn.label)}</a></div>`;
-    html += `<div class="card-row"><b>Общих контрибьюторов ИТМО:</b> ${w}</div>`;
+    html += `<div class="card-row"><b>${t("edge.sharedContributorsCountLabel")}</b> ${w}</div>`;
   } else {
-    html += `<div class="card-kind">связь</div>`;
-    html += `<div class="card-row"><b>${esc(sn.label)}</b></div>`;
-    html += `<div class="card-row"><b>${esc(tn.label)}</b></div>`;
+    html += `<div class="card-kind">${t("edge.genericKind")}</div>`;
+    html += `<div class="card-row"><b>${esc(authorDisplayName(sn))}</b></div>`;
+    html += `<div class="card-row"><b>${esc(authorDisplayName(tn))}</b></div>`;
   }
   showDetail(html);
   detailBody.querySelectorAll("li[data-k]").forEach(li => {
@@ -90,10 +95,11 @@ function showEdgeCard(props) {
       const targetTab = nd.kind === "repo" ? 2 : nd.kind === "pub" ? 3 : 1;
       if (targetTab !== tab) setTab(targetTab);
       selectNode(k);
-      map.flyTo({ center: proj(...P(k)), zoom: Math.max(map.getZoom(), 8), duration: 600 });
     };
   });
 }
+
+// ---------- year chart ----------
 
 function _drawYearChart(svgEl, yearCounts) {
   if (!Object.keys(yearCounts).length) return;
@@ -112,10 +118,7 @@ function _drawYearChart(svgEl, yearCounts) {
   const xCenter = y => single ? pad.l + innerW / 2 : pad.l + inset + (y - yrMin) / Math.max(1, yrMax - yrMin) * (innerW - 2 * inset);
   const barW   = Math.min(32, Math.max(4, (innerW - 2 * inset) / Math.max(1, allYears.length) - 4));
   const yScale = v => H - pad.b - (v / maxVal) * (H - pad.t - pad.b);
-  // fill/stroke reference the CSS variables directly (not resolved to a hex
-  // string here) so the chart re-colors live on theme toggle instead of
-  // keeping whatever color was baked in at draw time — a chart drawn in
-  // light mode used to go dark-on-dark and vanish after switching to dark.
+  // CSS variables, not resolved hex, so the chart re-colors on theme toggle.
   const bar = "var(--text)", muted = "var(--muted)";
   let s = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">`;
   s += `<line x1="${pad.l}" y1="${pad.t}" x2="${W - pad.r}" y2="${pad.t}" stroke="${muted}" stroke-opacity="0.2" stroke-width="1"/>`;

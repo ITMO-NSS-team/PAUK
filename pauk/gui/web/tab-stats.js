@@ -252,9 +252,9 @@ function stKeysFromRows(rows) {
 
 function stClearHighlight() {
   ST_HL_LAYERS.forEach(id => { if (map.getLayer(id)) map.removeLayer(id); });
-  if (map.getLayer("authors")) map.setPaintProperty("authors", "circle-opacity", NODE_OPACITY);
+  if (map.getLayer("authors")) map.setPaintProperty("authors", "icon-opacity", NODE_OPACITY);
   if (map.getLayer("repos"))
-    map.setPaintProperty("repos", "circle-opacity", tab === 2 ? 1 : NODE_OPACITY);
+    map.setPaintProperty("repos", "icon-opacity", tab === 2 ? 1 : NODE_OPACITY);
   if (map.getLayer("pubs")) map.setPaintProperty("pubs", "icon-opacity", NODE_OPACITY);
   if (map.getLayer("edges"))
     map.setPaintProperty("edges", "line-opacity",
@@ -269,8 +269,8 @@ function stClearHighlight() {
 function stApplyHighlight(keys, title) {
   const lit = ["literal", keys];
 
-  if (map.getLayer("authors")) map.setPaintProperty("authors", "circle-opacity", ST_HL_DIM);
-  if (map.getLayer("repos"))   map.setPaintProperty("repos", "circle-opacity", ST_HL_DIM);
+  if (map.getLayer("authors")) map.setPaintProperty("authors", "icon-opacity", ST_HL_DIM);
+  if (map.getLayer("repos"))   map.setPaintProperty("repos", "icon-opacity", ST_HL_DIM);
   if (map.getLayer("pubs"))    map.setPaintProperty("pubs", "icon-opacity", ST_HL_DIM);
   if (map.getLayer("edges"))   map.setPaintProperty("edges", "line-opacity", 0.03);
   if (map.getLayer("dept-fill")) map.setPaintProperty("dept-fill", "fill-opacity", 0.04);
@@ -375,7 +375,8 @@ function renderStats() {
       <button class="st-btn" id="st-recompute">Посчитать</button>
       ${_stError ? `<div class="st-err">${esc(_stError)}</div>` : ""}
     </div></div>`;
-    host.querySelector("#st-recompute").onclick = stRecompute;
+    const btn = host.querySelector("#st-recompute");
+    if (btn) btn.onclick = stRecompute;
     return;
   }
 
@@ -418,7 +419,8 @@ function renderStats() {
     ${stChecks(s.checks)}
   </div>`;
 
-  host.querySelector("#st-recompute").onclick = stRecompute;
+  const recomputeBtn = host.querySelector("#st-recompute");
+  if (recomputeBtn) recomputeBtn.onclick = stRecompute;
   host.querySelectorAll("[data-check]").forEach(el => {
     const open = () => stOpenExamples(el.getAttribute("data-check"));
     el.onclick = open;

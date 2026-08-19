@@ -1,62 +1,104 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>PAUK</title>
-  <link rel="icon" type="image/jpeg" href="logo.jpg" />
+  <link rel="icon" type="image/png" href="vendor/icons/pauk-frame.png" />
   <link rel="stylesheet" href="vendor/maplibre-gl.css" />
   <link rel="stylesheet" href="style.css" />
-  <script>document.documentElement.setAttribute("data-theme","dark");</script>
+  <!-- Preloaded for first paint (preloader/tab bar) — style.css discovers it too late otherwise. -->
+  <link rel="preload" href="vendor/fonts/inter-cyrillic.woff2" as="font" type="font/woff2" crossorigin />
+  <!-- Dark theme paused (toggle hidden in style.css); restore this line + drop display:none to bring it back. -->
+  <!-- <script>document.documentElement.setAttribute("data-theme","dark");</script> -->
 </head>
 <body>
   <div id="boot-screen">
-    <img class="boot-logo" src="logo.jpg" alt="PAUK" />
+    <img class="boot-spider" src="vendor/icons/pauk-frame-8x.png" alt="" />
     <div class="boot-title">PAUK</div>
-    <div class="boot-status" id="boot-status">Загрузка карты…</div>
+    <div class="boot-progress"><div class="boot-progress-bar" id="boot-progress-bar"></div></div>
+    <div class="boot-status" id="boot-status"></div>
   </div>
 
   <div id="welcome-modal" class="hidden">
     <svg id="welcome-burst" class="welcome-burst" aria-hidden="true"></svg>
     <div class="welcome-hero">
-      <a class="welcome-badge" href="https://github.com/ITMO-NSS-team/PAUK" target="_blank" rel="noopener noreferrer">Открытый проект ИТМО <span class="welcome-badge-arrow">›</span></a>
-      <h1 class="welcome-title">Карта соавторства<br />и открытого кода ИТМО</h1>
-      <p class="welcome-subtitle">
+      <a class="welcome-badge" href="https://github.com/ITMO-NSS-team/PAUK" target="_blank" rel="noopener noreferrer"><span data-i18n="welcome.badge">Открытый проект ИТМО</span> <span class="welcome-badge-arrow">›</span></a>
+      <h1 class="welcome-title" data-i18n-html="welcome.title">Карта соавторства<br />и открытого кода ИТМО</h1>
+      <p class="welcome-subtitle" data-i18n="welcome.subtitle">
         Публикации, авторы и департаменты ИТМО — и связанные с ними open-source репозитории на GitHub.
       </p>
-      <button id="welcome-close" class="welcome-cta loading" disabled>
-        <span id="welcome-cta-text">Загружаем карту…</span>
+      <div class="welcome-lang" id="welcome-lang">
+        <button class="welcome-lang-btn" data-lang="ru" title="Русский" aria-label="Русский">🇷🇺</button>
+        <button class="welcome-lang-btn" data-lang="en" title="English" aria-label="English">🇬🇧</button>
+      </div>
+      <button id="welcome-close" class="welcome-cta">
+        <span data-i18n="welcome.cta">Смотреть карту</span>
         <span class="welcome-cta-arrow">→</span>
       </button>
-      <div class="welcome-modes">Персоналии · Публикации · Репозитории · Поиск</div>
+      <div class="welcome-modes" data-i18n="welcome.modes">Персоналии · Публикации · Репозитории · Поиск</div>
     </div>
   </div>
 
-  <!-- Not deferred: graph-data.js (5MB+) blocks every deferred script below
-       until it downloads, so this needs to run immediately instead. -->
+  <!-- Not deferred: the deferred scripts below block on graph-data.js's download. -->
   <script>
   (function () {
     var params = new URLSearchParams(location.search);
     var hasDeepLink = !!(params.get("kind") && (params.get("key") || params.get("id") !== null));
     window._pauk_hasDeepLink = hasDeepLink;
+    if (hasDeepLink) document.getElementById("welcome-modal").style.display = "none";
 
-    var targets = [];
-    if (hasDeepLink) {
-      document.getElementById("welcome-modal").style.display = "none";
-      targets.push(document.getElementById("boot-status"));
-    } else {
-      document.getElementById("boot-screen").style.display = "none";
-      document.getElementById("welcome-modal").classList.remove("hidden");
-      targets.push(document.getElementById("welcome-cta-text"));
+    // i18n.js hasn't run yet — read localStorage directly instead of LANG/setLang.
+    var currentLang = localStorage.getItem("pauk-lang") || "en";
+    document.querySelectorAll(".welcome-lang-btn").forEach(function (btn) {
+      if (btn.getAttribute("data-lang") === currentLang) btn.classList.add("active");
+      btn.addEventListener("click", function () { setLang(btn.getAttribute("data-lang")); });
+    });
+
+    var bar = document.getElementById("boot-progress-bar");
+    var status = document.getElementById("boot-status");
+    var STAGE_TEXT = {
+      loading:   { ru: "Загрузка данных…", en: "Loading data…" },
+      rendering: { ru: "Отрисовка карты…", en: "Rendering the map…" },
+      error: {
+        ru: "Данные не найдены. Запустите generate_data.py и перезапустите сервер.",
+        en: "Data not found. Run generate_data.py and restart the server.",
+      },
+    };
+    function setStage(key) {
+      if (status) status.textContent = (STAGE_TEXT[key] || {})[currentLang] || STAGE_TEXT[key].ru;
     }
+    function setProgress(frac) {
+      if (bar) bar.style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + "%";
+    }
+    window._pauk_setProgress = setProgress;
+    setStage("loading");
 
-    var messages = ["Загружаем карту…", "Подгружаем данные…", "Строим графы…",
-                     "Собираем департаменты…", "Считаем связи…", "Почти готово…"];
-    var i = 0;
-    window._pauk_rotateTimer = setInterval(function () {
-      i = (i + 1) % messages.length;
-      targets.forEach(function (el) { if (el) el.textContent = messages[i]; });
-    }, 1300);
+    // Backstop: if the boot screen is still up after a generous timeout, say so.
+    setTimeout(function () {
+      var boot = document.getElementById("boot-screen");
+      if (boot && !boot.classList.contains("hidden")) setStage("error");
+    }, 30000);
+
+    // res.ok works everywhere fetch() does; only the byte-level bar needs ReadableStream.
+    if (window.fetch) {
+      fetch("graph-data.js").then(function (res) {
+        if (!res.ok) { setStage("error"); return; }
+        if (!window.ReadableStream || !res.body) { setProgress(0.85); setStage("rendering"); return; }
+        var total = +res.headers.get("content-length") || 0;
+        var reader = res.body.getReader(), loaded = 0;
+        (function pump() {
+          reader.read().then(function (r) {
+            if (r.done) { setStage("rendering"); return; }
+            loaded += r.value.length;
+            if (total) setProgress(Math.min(0.92, loaded / total));
+            pump();
+          });
+        })();
+      }).catch(function () { setProgress(0.85); setStage("rendering"); });
+    } else {
+      setProgress(0.85);
+    }
 
     function buildWelcomeBurst() {
       var svg = document.getElementById("welcome-burst");
@@ -96,14 +138,9 @@
 
   <header id="topbar">
     <div id="tab-toggle">
-      <button data-tab="1" class="active">Персоналии</button><button data-tab="3">Публикации</button><button data-tab="2">Репозитории</button><button data-tab="4">Поиск</button><button data-tab="5">Здоровье БД</button>
+      <button data-tab="1" class="active" data-i18n="tab.people">Персоналии</button><button data-tab="3" data-i18n="tab.pubs">Публикации</button><button data-tab="2" data-i18n="tab.repos">Репозитории</button><button data-tab="4" data-i18n="tab.search">Поиск</button><button data-tab="5" data-i18n="tab.health">Здоровье БД</button>
     </div>
     <div class="topbar-right">
-      <button class="topbar-icon-btn" id="export-btn" title="Скачать карту как PNG">
-        <svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M8.5 2.5v8M5.5 8l3 3 3-3"/><path d="M2.5 13.5h12"/>
-        </svg>
-      </button>
       <button class="theme-toggle" id="theme-toggle" title="Светлая / тёмная тема" aria-label="Переключить тему">
         <svg class="theme-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="4"/>
@@ -120,23 +157,22 @@
   <!-- left: search + filter -->
   <aside id="left-panel">
     <div class="card">
-      <div class="card-label">Поиск</div>
-      <input id="search" type="text" placeholder="Автор, репозиторий или публикация" autocomplete="off" />
-      <div class="search-loading-hint">Индекс публикаций ещё загружается — авторы и репозитории уже доступны</div>
+      <div class="card-label" data-i18n="tab.search">Поиск</div>
+      <input id="search" type="text" placeholder="Автор, репозиторий или публикация" data-i18n-placeholder="search.placeholder" autocomplete="off" />
+      <div class="search-loading-hint" data-i18n="search.loadingHint">Индекс публикаций ещё загружается — авторы и репозитории уже доступны</div>
       <div id="search-results"></div>
     </div>
     <div class="card" id="edge-filter-card" style="display:none;margin-top:10px">
-      <div class="card-label" id="edge-filter-label">мин. совм. публикаций</div>
+      <div class="card-label" id="edge-filter-label">Мин. совм. публикаций</div>
       <div class="edge-filter-row">
         <input type="range" id="edge-threshold" min="1" max="30" value="1" />
         <span id="edge-threshold-val">1</span>
       </div>
-      <div style="font-size:11px;color:var(--faint);margin-top:6px">только отображение рёбер</div>
+      <div style="font-size:11px;color:var(--faint);margin-top:6px" data-i18n="filter.edgesOnly">только отображение рёбер</div>
     </div>
     <div class="card" id="year-filter-card" style="display:none;margin-top:10px">
-      <div class="card-label">публикации по год</div>
+      <div class="card-label" data-i18n="filter.pubsByYear">Публикации по год</div>
       <div class="edge-filter-row">
-        <button id="year-play-btn" class="year-play-btn" title="Проиграть по годам">▶</button>
         <input type="range" id="year-from" min="2020" max="2026" value="2026" />
         <span id="year-from-val" style="font-size:16px;font-weight:800;color:var(--text);min-width:36px;text-align:right">2026</span>
       </div>
@@ -147,7 +183,7 @@
   <aside id="right-panel">
     <div id="overview" class="card"></div>
     <div id="detail" class="card hidden">
-      <button id="detail-close" title="закрыть">×</button>
+      <button id="detail-close" title="закрыть" data-i18n-title="detail.close">×</button>
       <div id="detail-body"></div>
     </div>
   </aside>
@@ -155,8 +191,8 @@
   <!-- Tab 4: search page (full-screen, on top of the map) -->
   <div id="search-page">
     <div id="sp-search-bar">
-      <input id="sp-input" type="text" placeholder="Поиск автора, публикации или департамента…" autocomplete="off" />
-      <div class="search-loading-hint">Индекс публикаций ещё загружается — авторы и репозитории уже доступны</div>
+      <input id="sp-input" type="text" placeholder="Поиск автора, публикации или департамента…" data-i18n-placeholder="search.spPlaceholder" autocomplete="off" />
+      <div class="search-loading-hint" data-i18n="search.loadingHint">Индекс публикаций ещё загружается — авторы и репозитории уже доступны</div>
       <div id="sp-results"></div>
     </div>
     <div id="sp-main"></div>
@@ -168,6 +204,7 @@
   <script defer src="vendor/maplibre-gl.js"></script>
   <script defer src="vendor/d3.min.js"></script>
   <script defer src="graph-data.js"></script>
+  <script defer src="i18n.js"></script>
   <script defer src="core.js"></script>
   <script defer src="build.js"></script>
   <script defer src="overlay.js"></script>

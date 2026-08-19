@@ -1,7 +1,7 @@
-"""Statistics + cheap health checks over the Neo4j graph.
+"""Statistics + health checks over the Neo4j graph.
 
 Three entry points:
-  * CLI — writes web/graph-stats.js (window.STATS) for the static page load;
+  * CLI — writes data/private/graph-stats.js (window.STATS) for the static page load;
   * snapshot() — imported by serve.py to answer /api/stats, so the
     "Пересчитать" button on the page recomputes straight from the DB;
   * examples() — rows behind a single check, for the details popup and its
@@ -31,7 +31,7 @@ from .checks import BY_ID, CHECKS
 
 logger = logging.getLogger(__name__)
 
-OUT_DIR_DEFAULT = Path(__file__).resolve().parent / "web"
+OUT_DIR_DEFAULT = Path(__file__).resolve().parent / "data" / "private"
 
 EXAMPLES_LIMIT_DEFAULT = 300
 EXAMPLES_LIMIT_MAX = 5000
@@ -71,8 +71,16 @@ NODE_COUNTS = [
     ("Ссылки-кандидаты", "MATCH (l:LinkCandidate) RETURN count(l)"),
 ]
 
-REL_ORDER = ["AUTHORED", "PRODUCED_BY", "BELONGS_TO", "MENTIONS_LINK",
-             "DEVELOPED_BY", "IMPLEMENTS", "OWNED_BY", "CONTRIBUTED_TO"]
+REL_ORDER = [
+    "AUTHORED",
+    "PRODUCED_BY",
+    "BELONGS_TO",
+    "MENTIONS_LINK",
+    "DEVELOPED_BY",
+    "IMPLEMENTS",
+    "OWNED_BY",
+    "CONTRIBUTED_TO",
+]
 
 REL_NOTE = {
     "AUTHORED": "человек → публикация",
@@ -99,18 +107,26 @@ def status_for(n, denom, warn, fail):
 def collect(drv):
     nodes = [{"label": label, "n": scalar(drv, cy)} for label, cy in NODE_COUNTS]
 
-    on_map = scalar(drv, "MATCH (p:Publication) WHERE (p)<-[:AUTHORED]-(:Person:Itmo) "
-                         "RETURN count(p)")
+    on_map = scalar(
+        drv, "MATCH (p:Publication) WHERE (p)<-[:AUTHORED]-(:Person:Itmo) RETURN count(p)"
+    )
     for row in nodes:
         if row["label"] == "Публикации":
             row["note"] = f"на карте {on_map}"
 
-    rel_counts = {r["t"]: r["c"] for r in rows(
-        drv, "MATCH ()-[e]->() RETURN type(e) AS t, count(e) AS c")}
-    rels = [{"type": t, "n": rel_counts.get(t, 0), "note": REL_NOTE.get(t, "")}
-            for t in REL_ORDER if t in rel_counts]
-    rels += [{"type": t, "n": c, "note": REL_NOTE.get(t, "")}
-             for t, c in sorted(rel_counts.items()) if t not in REL_ORDER]
+    rel_counts = {
+        r["t"]: r["c"] for r in rows(drv, "MATCH ()-[e]->() RETURN type(e) AS t, count(e) AS c")
+    }
+    rels = [
+        {"type": t, "n": rel_counts.get(t, 0), "note": REL_NOTE.get(t, "")}
+        for t in REL_ORDER
+        if t in rel_counts
+    ]
+    rels += [
+        {"type": t, "n": c, "note": REL_NOTE.get(t, "")}
+        for t, c in sorted(rel_counts.items())
+        if t not in REL_ORDER
+    ]
 
     checks = []
     for c in CHECKS:
@@ -123,27 +139,45 @@ def collect(drv):
             denom = scalar(drv, c.of) if c.of else None
         except Exception as exc:
             logger.warning("проверка %s не выполнилась: %s", c.id, exc)
-            checks.append({
-                "id": c.id, "group": c.group, "title": c.title,
-                "n": None, "of": None, "pct": None,
-                "status": "error", "hint": f"{type(exc).__name__}: {exc}",
-                "has_examples": False,
-            })
+            checks.append(
+                {
+                    "id": c.id,
+                    "group": c.group,
+                    "title": c.title,
+                    "n": None,
+                    "of": None,
+                    "pct": None,
+                    "status": "error",
+                    "hint": f"{type(exc).__name__}: {exc}",
+                    "has_examples": False,
+                }
+            )
             continue
-        checks.append({
-            "id": c.id, "group": c.group, "title": c.title,
-            "n": n, "of": denom,
-            "pct": round(100.0 * n / denom, 1) if denom else None,
-            "status": status_for(n, denom, c.warn, c.fail),
-            "hint": c.hint,
-            "has_examples": bool(c.examples),
-        })
+        checks.append(
+            {
+                "id": c.id,
+                "group": c.group,
+                "title": c.title,
+                "n": n,
+                "of": denom,
+                "pct": round(100.0 * n / denom, 1) if denom else None,
+                "status": status_for(n, denom, c.warn, c.fail),
+                "hint": c.hint,
+                "has_examples": bool(c.examples),
+            }
+        )
 
-    years = rows(drv, """MATCH (p:Publication) WHERE p.year IS NOT NULL
-                         RETURN p.year AS year, count(*) AS n ORDER BY year""")
-    depts = rows(drv, """MATCH (d:Department)<-[:BELONGS_TO]-(p:Person:Itmo)
+    years = rows(
+        drv,
+        """MATCH (p:Publication) WHERE p.year IS NOT NULL
+                         RETURN p.year AS year, count(*) AS n ORDER BY year""",
+    )
+    depts = rows(
+        drv,
+        """MATCH (d:Department)<-[:BELONGS_TO]-(p:Person:Itmo)
                          WITH d, count(p) AS n ORDER BY n DESC LIMIT 8
-                         RETURN coalesce(d.name_ru, d.name_en) AS name, n""")
+                         RETURN coalesce(d.name_ru, d.name_en) AS name, n""",
+    )
 
     return {
         "generated_at": datetime.now(UTC).astimezone().strftime("%d.%m.%Y %H:%M"),
@@ -174,16 +208,23 @@ def collect_examples(drv, check_id, limit=EXAMPLES_LIMIT_DEFAULT):
     total = scalar(drv, c.count)
 
     return {
-        "id": c.id, "title": c.title, "group": c.group,
-        "hint": c.hint, "total": total,
-        "columns": columns, "rows": data,
-        "shown": len(data), "limit": limit,
+        "id": c.id,
+        "title": c.title,
+        "group": c.group,
+        "hint": c.hint,
+        "total": total,
+        "columns": columns,
+        "rows": data,
+        "shown": len(data),
+        "limit": limit,
         "truncated": len(data) >= limit,
     }
 
 
 def _driver():
-    return GraphDatabase.driver(settings.neo4j_uri, auth=(settings.neo4j_user, settings.neo4j_password))
+    return GraphDatabase.driver(
+        settings.neo4j_uri, auth=(settings.neo4j_user, settings.neo4j_password)
+    )
 
 
 def snapshot():
@@ -209,9 +250,10 @@ def write_js(stats, out_dir=OUT_DIR_DEFAULT):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     path = out / "graph-stats.js"
-    path.write_text("window.STATS=" + json.dumps(stats, ensure_ascii=False,
-                                                 separators=(",", ":")) + ";\n",
-                    encoding="utf-8")
+    path.write_text(
+        "window.STATS=" + json.dumps(stats, ensure_ascii=False, separators=(",", ":")) + ";\n",
+        encoding="utf-8",
+    )
     return path
 
 
@@ -222,8 +264,11 @@ def main():
     ap.add_argument("--limit", type=int, default=EXAMPLES_LIMIT_DEFAULT)
     args = ap.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
-                        datefmt="%Y-%m-%d %H:%M:%S")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 
     if args.check:
         ex = examples(args.check, args.limit)
@@ -238,11 +283,14 @@ def main():
     path = write_js(stats, args.out_dir)
 
     bad = [c for c in stats["checks"] if c["status"] != "ok"]
-    logger.info("узлов %d, связей %d, проверок %d (с замечаниями %d)",
-                stats["totals"]["nodes"], stats["totals"]["rels"],
-                len(stats["checks"]), len(bad))
-    logger.info("wrote %s (%.1f KB) за %.1f c", path, path.stat().st_size / 1024,
-                time.time() - t0)
+    logger.info(
+        "узлов %d, связей %d, проверок %d (с замечаниями %d)",
+        stats["totals"]["nodes"],
+        stats["totals"]["rels"],
+        len(stats["checks"]),
+        len(bad),
+    )
+    logger.info("wrote %s (%.1f KB) за %.1f c", path, path.stat().st_size / 1024, time.time() - t0)
 
 
 if __name__ == "__main__":

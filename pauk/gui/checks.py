@@ -37,7 +37,6 @@ class Check:
     examples: str | None = None
 
 
-# Java regex character classes, as Cypher's =~ understands them.
 CYR, LAT = r"\\p{IsCyrillic}", r"\\p{IsLatin}"
 RU_NAME_FIELDS = "[p.surname_ru, p.first_name_ru, p.second_name_ru]"
 
@@ -45,13 +44,11 @@ _ITMO_TOTAL = "MATCH (p:Person:Itmo) RETURN count(p)"
 _PUB_TOTAL = "MATCH (p:Publication) RETURN count(p)"
 _DEPT_TOTAL = "MATCH (d:Department) RETURN count(d)"
 
-# Full name as one string, for example-row columns.
-_FIO = ("trim(coalesce(p.surname_ru,'') + ' ' + coalesce(p.first_name_ru,'') "
-        "+ ' ' + coalesce(p.second_name_ru,''))")
+_FIO = (
+    "trim(coalesce(p.surname_ru,'') + ' ' + coalesce(p.first_name_ru,'') "
+    "+ ' ' + coalesce(p.second_name_ru,''))"
+)
 
-# publication_date is an ISO string today, but the loader may store it as a
-# Neo4j date. `.year` works only on the latter and raises a TypeError on the
-# former, so go through toString(), which is the ISO text either way.
 _PUB_YEAR = "toInteger(left(toString(p.publication_date), 4))"
 
 CHECKS = [
@@ -61,7 +58,9 @@ CHECKS = [
         group="Пропуски",
         title="Сотрудники без департамента",
         count="MATCH (p:Person:Itmo) WHERE NOT (p)-[:BELONGS_TO]->() RETURN count(p)",
-        of=_ITMO_TOTAL, warn=0.05, fail=0.25,
+        of=_ITMO_TOTAL,
+        warn=0.05,
+        fail=0.25,
         hint="Итоги по департаментам занижены.",
         examples=f"""MATCH (p:Person:Itmo) WHERE NOT (p)-[:BELONGS_TO]->()
             OPTIONAL MATCH (p)-[:AUTHORED]->(pub:Publication)
@@ -75,7 +74,9 @@ CHECKS = [
         group="Пропуски",
         title="Публикации без единого автора",
         count="MATCH (p:Publication) WHERE NOT (p)<-[:AUTHORED]-() RETURN count(p)",
-        of=_PUB_TOTAL, warn=0.001, fail=0.01,
+        of=_PUB_TOTAL,
+        warn=0.001,
+        fail=0.01,
         hint="Ни с кем не связаны и не видны на карте.",
         examples="""MATCH (p:Publication) WHERE NOT (p)<-[:AUTHORED]-()
             RETURN p.id AS id, p.title AS `Заголовок`, p.year AS `Год`,
@@ -86,9 +87,10 @@ CHECKS = [
         id="pub_no_itmo_author",
         group="Пропуски",
         title="Публикации без автора из ИТМО",
-        count="MATCH (p:Publication) WHERE NOT (p)<-[:AUTHORED]-(:Person:Itmo) "
-                 "RETURN count(p)",
-        of=_PUB_TOTAL, warn=0.01, fail=0.05,
+        count="MATCH (p:Publication) WHERE NOT (p)<-[:AUTHORED]-(:Person:Itmo) RETURN count(p)",
+        of=_PUB_TOTAL,
+        warn=0.01,
+        fail=0.05,
         hint="Не попадают на карту.",
         examples="""MATCH (p:Publication) WHERE NOT (p)<-[:AUTHORED]-(:Person:Itmo)
             OPTIONAL MATCH (p)<-[:AUTHORED]-(a:Person)
@@ -101,9 +103,10 @@ CHECKS = [
         id="pub_no_abstract",
         group="Пропуски",
         title="Публикации без аннотации",
-        count="MATCH (p:Publication) WHERE p.abstract IS NULL OR p.abstract = '' "
-                 "RETURN count(p)",
-        of=_PUB_TOTAL, warn=0.05, fail=0.15,
+        count="MATCH (p:Publication) WHERE p.abstract IS NULL OR p.abstract = '' RETURN count(p)",
+        of=_PUB_TOTAL,
+        warn=0.05,
+        fail=0.15,
         hint="По аннотациям ищутся ссылки на код — часть репозиториев не находится.",
         examples="""MATCH (p:Publication) WHERE p.abstract IS NULL OR p.abstract = ''
             RETURN p.id AS id, p.title AS `Заголовок`, p.year AS `Год`,
@@ -115,10 +118,12 @@ CHECKS = [
         group="Пропуски",
         title="Сотрудники без русского ФИО",
         count="MATCH (p:Person:Itmo) WHERE p.name_ru IS NULL "
-                 "OR trim(p.name_ru) = '' RETURN count(p)",
-        of=_ITMO_TOTAL, warn=0.02, fail=0.10,
+        "OR trim(p.name_ru) = '' RETURN count(p)",
+        of=_ITMO_TOTAL,
+        warn=0.02,
+        fail=0.10,
         hint="Показываются латиницей. Этап russian_names не запускался "
-             "для группы, из которой пришли эти люди.",
+        "для группы, из которой пришли эти люди.",
         examples="""MATCH (p:Person:Itmo)
             WHERE p.name_ru IS NULL OR trim(p.name_ru) = ''
             OPTIONAL MATCH (p)-[:AUTHORED]->(pub:Publication)
@@ -132,10 +137,12 @@ CHECKS = [
         group="Пропуски",
         title="Сотрудники без отчества",
         count="MATCH (p:Person:Itmo) WHERE p.second_name_ru IS NULL "
-                 "OR trim(p.second_name_ru) = '' RETURN count(p)",
-        of=_ITMO_TOTAL, warn=0.25, fail=0.60,
+        "OR trim(p.second_name_ru) = '' RETURN count(p)",
+        of=_ITMO_TOTAL,
+        warn=0.25,
+        fail=0.60,
         hint="Подписываются как «Фамилия Имя» — сокращать до «Фамилия И.О.» нечем. "
-             "Отчество приходит только из справочника сотрудников.",
+        "Отчество приходит только из справочника сотрудников.",
         examples="""MATCH (p:Person:Itmo)
             WHERE p.second_name_ru IS NULL OR trim(p.second_name_ru) = ''
             OPTIONAL MATCH (p)-[:AUTHORED]->(pub:Publication)
@@ -150,8 +157,10 @@ CHECKS = [
         group="Пропуски",
         title="Департаменты без русского названия",
         count="MATCH (d:Department) WHERE d.name_ru IS NULL OR trim(d.name_ru) = '' "
-                 "RETURN count(d)",
-        of=_DEPT_TOTAL, warn=0.05, fail=0.20,
+        "RETURN count(d)",
+        of=_DEPT_TOTAL,
+        warn=0.05,
+        fail=0.20,
         hint="Подписи получаются на смеси языков.",
         examples="""MATCH (d:Department)
             WHERE d.name_ru IS NULL OR trim(d.name_ru) = ''
@@ -166,7 +175,10 @@ CHECKS = [
         title="Публикации без контактного автора",
         count="""MATCH (p:Publication) WHERE NOT EXISTS {
                       (p)<-[a:AUTHORED]-() WHERE a.is_corresponding } RETURN count(p)""",
-        of=_PUB_TOTAL, warn=0.10, fail=0.30, hint=None,
+        of=_PUB_TOTAL,
+        warn=0.10,
+        fail=0.30,
+        hint=None,
         examples="""MATCH (p:Publication) WHERE NOT EXISTS {
               (p)<-[a:AUTHORED]-() WHERE a.is_corresponding }
             OPTIONAL MATCH (p)<-[:AUTHORED]-(a:Person)
@@ -180,8 +192,10 @@ CHECKS = [
         group="Пропуски",
         title="Авторства без указания места работы",
         count="MATCH ()-[a:AUTHORED]->() WHERE a.affiliation IS NULL "
-                 "OR a.affiliation = '' RETURN count(a)",
-        of="MATCH ()-[a:AUTHORED]->() RETURN count(a)", warn=0.01, fail=0.05,
+        "OR a.affiliation = '' RETURN count(a)",
+        of="MATCH ()-[a:AUTHORED]->() RETURN count(a)",
+        warn=0.01,
+        fail=0.05,
         hint="Такого автора нельзя отнести ни к ИТМО, ни к внешним.",
         examples="""MATCH (p:Person)-[a:AUTHORED]->(pub:Publication)
             WHERE a.affiliation IS NULL OR a.affiliation = ''
@@ -193,9 +207,10 @@ CHECKS = [
         id="dept_no_variants",
         group="Пропуски",
         title="Департаменты без вариантов написания",
-        count="MATCH (d:Department) WHERE size(coalesce(d.name_variants, [])) = 0 "
-                 "RETURN count(d)",
-        of=_DEPT_TOTAL, warn=0.10, fail=0.40,
+        count="MATCH (d:Department) WHERE size(coalesce(d.name_variants, [])) = 0 RETURN count(d)",
+        of=_DEPT_TOTAL,
+        warn=0.10,
+        fail=0.40,
         hint="По ним департамент опознаётся в тексте статьи.",
         examples="""MATCH (d:Department) WHERE size(coalesce(d.name_variants, [])) = 0
             OPTIONAL MATCH (d)<-[:BELONGS_TO]-(p:Person:Itmo)
@@ -204,7 +219,6 @@ CHECKS = [
                    people AS `Сотрудников`
             ORDER BY people DESC LIMIT $lim""",
     ),
-
     # ---------------- names ----------------
     Check(
         id="name_mixed_script",
@@ -213,7 +227,9 @@ CHECKS = [
         count=f"""MATCH (p:Person:Itmo) WHERE any(v IN {RU_NAME_FIELDS}
                        WHERE v IS NOT NULL AND v =~ '.*({CYR}{LAT}|{LAT}{CYR}).*')
                      RETURN count(p)""",
-        of=_ITMO_TOTAL, warn=1e-9, fail=0.005,
+        of=_ITMO_TOTAL,
+        warn=1e-9,
+        fail=0.005,
         hint="Сбой транслитерации: «Вершиinin», «Полевaя», «Аkhмеров».",
         examples=f"""MATCH (p:Person:Itmo) WHERE any(v IN {RU_NAME_FIELDS}
               WHERE v IS NOT NULL AND v =~ '.*({CYR}{LAT}|{LAT}{CYR}).*')
@@ -230,7 +246,9 @@ CHECKS = [
         count=f"""MATCH (p:Person:Itmo) WHERE any(v IN {RU_NAME_FIELDS}
                        WHERE v IS NOT NULL AND v =~ '.*[\\\\u0300-\\\\u036F].*')
                      RETURN count(p)""",
-        of=_ITMO_TOTAL, warn=1e-9, fail=0.005,
+        of=_ITMO_TOTAL,
+        warn=1e-9,
+        fail=0.005,
         hint="«Смоля́нская» — поиск по такому имени не найдёт человека.",
         examples=f"""MATCH (p:Person:Itmo) WHERE any(v IN {RU_NAME_FIELDS}
               WHERE v IS NOT NULL AND v =~ '.*[\\\\u0300-\\\\u036F].*')
@@ -243,7 +261,9 @@ CHECKS = [
         title="Фамилия из одной буквы",
         count="""MATCH (p:Person:Itmo) WHERE p.surname_ru IS NOT NULL
                     AND size(trim(replace(p.surname_ru, '.', ''))) = 1 RETURN count(p)""",
-        of=_ITMO_TOTAL, warn=1e-9, fail=0.005,
+        of=_ITMO_TOTAL,
+        warn=1e-9,
+        fail=0.005,
         hint="Короткие фамилии схлопнулись до инициала.",
         examples="""MATCH (p:Person:Itmo) WHERE p.surname_ru IS NOT NULL
               AND size(trim(replace(p.surname_ru, '.', ''))) = 1
@@ -259,7 +279,9 @@ CHECKS = [
                      WHERE p.surname_ru IS NOT NULL AND trim(p.surname_ru) <> ''
                        AND p.surname_ru =~ '[{LAT}\\\\s.-]+'
                      RETURN count(p)""",
-        of=_ITMO_TOTAL, warn=1e-9, fail=0.005,
+        of=_ITMO_TOTAL,
+        warn=1e-9,
+        fail=0.005,
         hint="Транслитерация не отработала.",
         examples=f"""MATCH (p:Person:Itmo)
               WHERE p.surname_ru IS NOT NULL AND trim(p.surname_ru) <> ''
@@ -275,7 +297,9 @@ CHECKS = [
                     AND trim(p.first_name_ru) <> ''
                     AND size(trim(replace(replace(p.first_name_ru,'.',''),' ',''))) <= 2
                     RETURN count(p)""",
-        of=_ITMO_TOTAL, warn=0.05, fail=0.15,
+        of=_ITMO_TOTAL,
+        warn=0.05,
+        fail=0.15,
         hint="В источнике не было полного имени.",
         examples="""MATCH (p:Person:Itmo) WHERE p.first_name_ru IS NOT NULL
               AND trim(p.first_name_ru) <> ''
@@ -284,7 +308,6 @@ CHECKS = [
                    p.first_name_ru AS `Имя`, p.name_en AS `Имя (лат.)`
             ORDER BY p.surname_ru LIMIT $lim""",
     ),
-
     # ---------------- duplicates ----------------
     Check(
         id="full_namesakes",
@@ -296,7 +319,9 @@ CHECKS = [
                  toLower(trim(coalesce(p.first_name_ru,''))) + '|' +
                  toLower(trim(coalesce(p.second_name_ru,''))) AS k, count(*) AS c
             WHERE c > 1 RETURN coalesce(sum(c - 1), 0)""",
-        of=_ITMO_TOTAL, warn=0.01, fail=0.05,
+        of=_ITMO_TOTAL,
+        warn=0.01,
+        fail=0.05,
         hint="Совпадает всё ФИО целиком — либо однофамильцы, либо один человек дважды.",
         examples=f"""MATCH (p:Person:Itmo)
             WHERE p.surname_ru IS NOT NULL AND size(trim(p.surname_ru)) > 1
@@ -320,7 +345,9 @@ CHECKS = [
             WITH toLower(trim(p.surname_ru)) + ' ' +
                  toLower(left(trim(p.first_name_ru),1)) AS k, count(*) AS c
             WHERE c > 1 RETURN coalesce(sum(c - 1), 0)""",
-        of=_ITMO_TOTAL, warn=0.05, fail=0.12,
+        of=_ITMO_TOTAL,
+        warn=0.05,
+        fail=0.12,
         hint="Именно так люди подписаны на карте — этих не различить визуально.",
         examples="""MATCH (p:Person:Itmo)
             WHERE p.surname_ru IS NOT NULL AND size(trim(p.surname_ru)) > 1
@@ -344,7 +371,9 @@ CHECKS = [
                                   ELSE x END] AS sfx
             WITH reduce(a = [], s IN sfx | CASE WHEN s IN a THEN a ELSE a + s END) AS uniq
             WHERE size(uniq) > 1 RETURN coalesce(sum(size(uniq) - 1), 0)""",
-        of="MATCH (p:Person) RETURN count(p)", warn=0.001, fail=0.01,
+        of="MATCH (p:Person) RETURN count(p)",
+        warn=0.001,
+        fail=0.01,
         hint="Один автор заведён под разными идентификаторами.",
         examples="""MATCH (p:Person) WHERE p.name_en IS NOT NULL AND trim(p.name_en) <> ''
             WITH toLower(trim(p.name_en)) AS k, collect(p.id) AS ids,
@@ -368,7 +397,9 @@ CHECKS = [
         count="""MATCH (p:Publication) WHERE p.title <> ''
             WITH toLower(trim(p.title)) AS k, count(*) AS c WHERE c > 1
             RETURN coalesce(sum(c - 1), 0)""",
-        of=_PUB_TOTAL, warn=0.005, fail=0.02,
+        of=_PUB_TOTAL,
+        warn=0.005,
+        fail=0.02,
         hint="Обычно препринт и журнальная версия одной работы.",
         examples="""MATCH (p:Publication) WHERE p.title <> ''
             WITH toLower(trim(p.title)) AS k, collect(p) AS ps
@@ -384,7 +415,10 @@ CHECKS = [
         count="""MATCH (p:Publication) WHERE p.doi <> ''
             WITH toLower(p.doi) AS k, count(*) AS c WHERE c > 1
             RETURN coalesce(sum(c - 1), 0)""",
-        of=None, warn=1, fail=10, hint=None,
+        of=None,
+        warn=1,
+        fail=10,
+        hint=None,
         examples="""MATCH (p:Publication) WHERE p.doi <> ''
             WITH toLower(p.doi) AS k, collect(p) AS ps WHERE size(ps) > 1
             RETURN k AS `DOI`, size(ps) AS `Записей`,
@@ -399,7 +433,9 @@ CHECKS = [
         count="""MATCH (i:Person:Itmo) WHERE i.id STARTS WITH 'itmo_'
             WITH i, 'ext_' + substring(i.id, 5) AS e
             MATCH (:Person:External {id: e}) RETURN count(*)""",
-        of=_ITMO_TOTAL, warn=0.01, fail=0.05,
+        of=_ITMO_TOTAL,
+        warn=0.01,
+        fail=0.05,
         hint="Соавторство теряется, если на статье он подписан не от ИТМО.",
         examples="""MATCH (i:Person:Itmo) WHERE i.id STARTS WITH 'itmo_'
             WITH i, 'ext_' + substring(i.id, 5) AS eid
@@ -419,7 +455,10 @@ CHECKS = [
         count="""MATCH (r:Repository)
             WITH toLower(rtrim(r.url, '/')) AS k, count(*) AS c WHERE c > 1
             RETURN coalesce(sum(c - 1), 0)""",
-        of=None, warn=1, fail=5, hint=None,
+        of=None,
+        warn=1,
+        fail=5,
+        hint=None,
         examples="""MATCH (r:Repository)
             WITH toLower(rtrim(r.url, '/')) AS k, collect(r) AS rs WHERE size(rs) > 1
             RETURN k AS `Ссылка`, size(rs) AS `Записей`,
@@ -433,7 +472,10 @@ CHECKS = [
         count="""MATCH (d:Department) WHERE trim(coalesce(d.name_ru, d.name_en, '')) <> ''
             WITH toLower(trim(coalesce(d.name_ru, d.name_en))) AS k, count(*) AS c
             WHERE c > 1 RETURN coalesce(sum(c - 1), 0)""",
-        of=None, warn=1, fail=5, hint=None,
+        of=None,
+        warn=1,
+        fail=5,
+        hint=None,
         examples="""MATCH (d:Department) WHERE trim(coalesce(d.name_ru, d.name_en, '')) <> ''
             WITH toLower(trim(coalesce(d.name_ru, d.name_en))) AS k, collect(d) AS ds
             WHERE size(ds) > 1
@@ -447,7 +489,9 @@ CHECKS = [
         title="Повторяющиеся авторства",
         count="""MATCH (p:Person)-[a:AUTHORED]->(pub:Publication)
             WITH p, pub, count(a) AS c WHERE c > 1 RETURN count(*)""",
-        of=None, warn=1, fail=10,
+        of=None,
+        warn=1,
+        fail=10,
         hint="Один человек указан автором одной статьи дважды.",
         examples="""MATCH (p:Person)-[a:AUTHORED]->(pub:Publication)
             WITH p, pub, count(a) AS c WHERE c > 1
@@ -455,15 +499,17 @@ CHECKS = [
                    pub.title AS `Публикация`, pub.id AS `id публикации`, c AS `Связей`
             ORDER BY c DESC LIMIT $lim""",
     ),
-
     # ---------------- contradictions ----------------
     Check(
         id="implements_no_has_code",
         group="Противоречия",
         title="Репозиторий привязан, но статья помечена как без кода",
         count="MATCH (r:Repository)-[:IMPLEMENTS]->(p:Publication) "
-                 "WHERE p.has_code = false RETURN count(DISTINCT p)",
-        of=None, warn=1, fail=20, hint=None,
+        "WHERE p.has_code = false RETURN count(DISTINCT p)",
+        of=None,
+        warn=1,
+        fail=20,
+        hint=None,
         examples="""MATCH (r:Repository)-[:IMPLEMENTS]->(p:Publication)
             WHERE p.has_code = false
             RETURN p.id AS id, p.title AS `Публикация`, p.year AS `Год`,
@@ -475,8 +521,11 @@ CHECKS = [
         group="Противоречия",
         title="Статья помечена как с кодом, но репозитория нет",
         count="MATCH (p:Publication) WHERE p.has_code = true "
-                 "AND NOT (p)<-[:IMPLEMENTS]-() RETURN count(p)",
-        of=None, warn=1, fail=20, hint=None,
+        "AND NOT (p)<-[:IMPLEMENTS]-() RETURN count(p)",
+        of=None,
+        warn=1,
+        fail=20,
+        hint=None,
         examples="""MATCH (p:Publication)
             WHERE p.has_code = true AND NOT (p)<-[:IMPLEMENTS]-()
             RETURN p.id AS id, p.title AS `Публикация`, p.year AS `Год`,
@@ -491,7 +540,9 @@ CHECKS = [
             WHERE r.url =~ '.*[^\x00-\x7F].*'
                OR NOT r.url =~ 'https?://[^/]+/[^/]+/[^/]+.*'
             RETURN count(r)""",
-        of="MATCH (r:Repository) RETURN count(r)", warn=0.005, fail=0.02,
+        of="MATCH (r:Repository) RETURN count(r)",
+        warn=0.005,
+        fail=0.02,
         hint="Мусор, вытащенный из PDF вместе с адресом.",
         examples=r"""MATCH (r:Repository)
             WHERE r.url =~ '.*[^\x00-\x7F].*'
@@ -509,7 +560,10 @@ CHECKS = [
             WHERE m.is_relevant = true AND NOT EXISTS {
               (r:Repository) WHERE toLower(rtrim(r.url,'/')) = toLower(rtrim(l.url,'/')) }
             RETURN count(*)""",
-        of=None, warn=1, fail=20, hint=None,
+        of=None,
+        warn=1,
+        fail=20,
+        hint=None,
         examples="""MATCH (p:Publication)-[m:MENTIONS_LINK]->(l:LinkCandidate)
             WHERE m.is_relevant = true AND NOT EXISTS {
               (r:Repository) WHERE toLower(rtrim(r.url,'/')) = toLower(rtrim(l.url,'/')) }
@@ -521,9 +575,11 @@ CHECKS = [
         id="link_no_verdict",
         group="Противоречия",
         title="Ссылки без решения о релевантности",
-        count="MATCH ()-[m:MENTIONS_LINK]->() WHERE m.is_relevant IS NULL "
-                 "RETURN count(m)",
-        of=None, warn=1, fail=20, hint=None,
+        count="MATCH ()-[m:MENTIONS_LINK]->() WHERE m.is_relevant IS NULL RETURN count(m)",
+        of=None,
+        warn=1,
+        fail=20,
+        hint=None,
         examples="""MATCH (p:Publication)-[m:MENTIONS_LINK]->(l:LinkCandidate)
             WHERE m.is_relevant IS NULL
             RETURN l.url AS `Ссылка`, p.id AS `id публикации`, p.title AS `Публикация`,
@@ -535,7 +591,10 @@ CHECKS = [
         group="Противоречия",
         title="Репозитории без владельца",
         count="MATCH (r:Repository) WHERE NOT (r)-[:OWNED_BY]->() RETURN count(r)",
-        of=None, warn=1, fail=10, hint=None,
+        of=None,
+        warn=1,
+        fail=10,
+        hint=None,
         examples="""MATCH (r:Repository) WHERE NOT (r)-[:OWNED_BY]->()
             RETURN r.id AS id, r.url AS `Ссылка`, r.name AS `Имя`,
                    r.stars_num AS `Звёзды` LIMIT $lim""",
@@ -545,7 +604,10 @@ CHECKS = [
         group="Противоречия",
         title="Профили GitHub без репозиториев",
         count="MATCH (g:GitHubProfile) WHERE NOT (g)<-[:OWNED_BY]-() RETURN count(g)",
-        of=None, warn=1, fail=20, hint=None,
+        of=None,
+        warn=1,
+        fail=20,
+        hint=None,
         examples="""MATCH (g:GitHubProfile) WHERE NOT (g)<-[:OWNED_BY]-()
             RETURN g.login AS `Логин`, g.name AS `Имя`, g.type AS `Тип`,
                    g.html_url AS `Ссылка` LIMIT $lim""",
@@ -555,8 +617,11 @@ CHECKS = [
         group="Противоречия",
         title="Год не совпадает с датой публикации",
         count=f"MATCH (p:Publication) WHERE p.publication_date IS NOT NULL "
-              f"AND p.year <> {_PUB_YEAR} RETURN count(p)",
-        of=None, warn=1, fail=50, hint=None,
+        f"AND p.year <> {_PUB_YEAR} RETURN count(p)",
+        of=None,
+        warn=1,
+        fail=50,
+        hint=None,
         examples=f"""MATCH (p:Publication) WHERE p.publication_date IS NOT NULL
             AND p.year <> {_PUB_YEAR}
             RETURN p.id AS id, p.title AS `Публикация`, p.year AS `Поле year`,
@@ -567,7 +632,10 @@ CHECKS = [
         group="Противоречия",
         title="Узел связан сам с собой",
         count="MATCH (n)-[e]->(n) RETURN count(e)",
-        of=None, warn=1, fail=10, hint=None,
+        of=None,
+        warn=1,
+        fail=10,
+        hint=None,
         examples="""MATCH (n)-[e]->(n)
             RETURN labels(n)[0] AS `Тип узла`, coalesce(n.id, n.login) AS id,
                    type(e) AS `Связь` LIMIT $lim""",
