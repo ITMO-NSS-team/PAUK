@@ -44,7 +44,7 @@ from .layout import (
 logger = logging.getLogger(__name__)
 
 
-# update asap
+# TODO: delete function, add new methond
 def split_full_name(full_name) -> tuple[str, str, str]:
     """Split a written-out name into (surname, given, patronymic)"""
     text = " ".join((full_name or "").split())
