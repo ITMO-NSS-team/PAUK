@@ -1,12 +1,4 @@
-"""python -m pauk.gui.serve [port] [--public] - static file server with gzip compression.
-
-graph-data.js/graph-search.js are read from pauk/gui/data/private/ (default)
-or pauk/gui/data/public/ (--public), mirroring generate_data.py's own flag.
-graph-stats.js has no such split and comes straight from web/.
-
-/api/stats recomputes DB stats from Neo4j and rewrites web/graph-stats.js;
-everything else is a static file with no backend.
-"""
+"""python -m pauk.gui.serve [port] [--public] - static file server"""
 
 import gzip
 import io
@@ -32,7 +24,6 @@ API_CHECK = "/api/check"
 
 _gzip_cache: dict[str, tuple[str, bytes]] = {}
 
-# name -> (directory it's served from, command to generate it)
 REQUIRED_FILES = {
     "graph-data.js": (
         DATA_DIR,
@@ -42,9 +33,9 @@ REQUIRED_FILES = {
         DATA_DIR,
         "python -m pauk.gui.generate_data" + (" --public" if PUBLIC else ""),
     ),
-    "graph-stats.js": (ROOT, "python -m pauk.gui.generate_stats"),
+    "graph-stats.js": (DATA_DIR, "python -m pauk.gui.generate_stats"),
 }
-# Requests for these filenames are rerouted from ROOT to DATA_DIR in do_GET.
+
 _DATA_DIR_FILES = {name for name, (d, _cmd) in REQUIRED_FILES.items() if d == DATA_DIR}
 
 
@@ -71,7 +62,7 @@ class GzipHandler(SimpleHTTPRequestHandler):
         try:
             self.wfile.write(body)
         except (BrokenPipeError, ConnectionResetError) as exc:
-            logger.debug("client dropped connection writing %s: %s", self.path, exc)
+            logger.debug("Client dropped connection writing %s: %s", self.path, exc)
 
     def _recompute_stats(self):
         """Fresh snapshot from Neo4j. Imported lazily so that a machine without
@@ -82,20 +73,19 @@ class GzipHandler(SimpleHTTPRequestHandler):
             return self._send_json(
                 503,
                 {
-                    "error": "На сервере не установлен драйвер Neo4j — "
-                    "пересчёт недоступен, показаны сохранённые числа.",
+                    "error": "The Neo4j driver is not installed on the server - recompute is not available.",
                     "detail": str(e),
                 },
             )
         try:
             stats = generate_stats.snapshot()
-            generate_stats.write_js(stats, ROOT)
+            generate_stats.write_js(stats, DATA_DIR)
         except Exception as e:
             logger.exception("stats recompute failed")
             return self._send_json(
                 503,
                 {
-                    "error": "Не удалось получить данные из Neo4j. Проверьте, что база запущена.",
+                    "error": "Failed to retrieve data from Neo4j. Please make sure the database is running.",
                     "detail": f"{type(e).__name__}: {e}",
                 },
             )
@@ -109,7 +99,7 @@ class GzipHandler(SimpleHTTPRequestHandler):
             return self._send_json(
                 503,
                 {
-                    "error": "На сервере не установлен драйвер Neo4j — примеры недоступны.",
+                    "error": "The Neo4j driver is not installed on the server - samples are not available.",
                     "detail": str(e),
                 },
             )
@@ -124,15 +114,15 @@ class GzipHandler(SimpleHTTPRequestHandler):
         try:
             return self._send_json(200, generate_stats.examples(check_id, limit))
         except KeyError:
-            return self._send_json(404, {"error": f"Неизвестная проверка: {check_id}"})
+            return self._send_json(404, {"error": f"Unknown check: {check_id}"})
         except ValueError as e:
             return self._send_json(404, {"error": str(e)})
         except Exception as e:
-            logger.exception("check examples failed")
+            logger.exception("Check examples failed")
             return self._send_json(
                 503,
                 {
-                    "error": "Не удалось получить данные из Neo4j. Проверьте, что база запущена.",
+                    "error": "Failed to retrieve data from Neo4j. Please make sure the database is running.",
                     "detail": f"{type(e).__name__}: {e}",
                 },
             )
@@ -146,13 +136,10 @@ class GzipHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         route = self.path.split("?")[0]
-        # --public simulates the backend-less GitHub Pages build: the health
-        # tab never ships there, even if web/graph-stats.js is on disk locally.
         if PUBLIC and (route.lstrip("/") == "graph-stats.js" or route in (API_STATS, API_CHECK)):
             return self.send_error(404)
-        # GET must stay safe to repeat (prefetch, crawlers) — recompute is POST-only.
         if route == API_STATS:
-            return self._send_json(405, {"error": "Пересчёт доступен только методом POST."})
+            return self._send_json(405, {"error": "Recompute is POST-only"})
         if route == API_CHECK:
             return self._check_examples()
 
@@ -163,7 +150,6 @@ class GzipHandler(SimpleHTTPRequestHandler):
         if not Path(path).is_file():
             return super().do_GET()
 
-        # ETag gives the browser something to revalidate "no-cache" against.
         st = Path(path).stat()
         etag = f'"{int(st.st_mtime)}-{st.st_size}"'
         if self.headers.get("If-None-Match") == etag:
@@ -186,7 +172,6 @@ class GzipHandler(SimpleHTTPRequestHandler):
                 gz_bytes = buf.getvalue()
                 _gzip_cache[path] = (etag, gz_bytes)
 
-        # gzip loses on already-compressed/tiny content; fall back to the raw file
         if gz_bytes is not None and len(gz_bytes) < st.st_size:
             body: bytes = gz_bytes
             use_gzip = True
@@ -207,7 +192,7 @@ class GzipHandler(SimpleHTTPRequestHandler):
         try:
             self.wfile.write(body)
         except (BrokenPipeError, ConnectionResetError) as exc:
-            logger.debug("client dropped connection writing %s: %s", path, exc)
+            logger.debug("Сlient dropped connection writing %s: %s", path, exc)
 
     def log_message(self, fmt, *args):
         pass
@@ -216,9 +201,7 @@ class GzipHandler(SimpleHTTPRequestHandler):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     _warn_missing_generated_files()
-    server = ThreadingHTTPServer(
-        ("", PORT), GzipHandler
-    )  # threaded: large downloads shouldn't block others
+    server = ThreadingHTTPServer(("", PORT), GzipHandler)
     mode = "PUBLIC (redacted)" if PUBLIC else "private (full data)"
-    print(f"http://{socket.gethostname()}:{PORT}  (gzip on, {mode}, data from {DATA_DIR})")
+    print(f"http://{socket.gethostname()}:{PORT}  ({mode}, data from {DATA_DIR})")
     server.serve_forever()
