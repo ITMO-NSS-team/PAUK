@@ -26,6 +26,7 @@ class Settings:
     mongo_uri: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
     mongo_db: str = os.getenv("MONGO_DB", "pauk")
     request_timeout: int = int(os.getenv("PAUK_REQUEST_TIMEOUT", "30"))
+    openreview_priority_fields: str = os.getenv("PAUK_OPENREVIEW_PRIORITY_FIELDS", "Computer Science")
     pdf_crawler_url: str = os.getenv("PAUK_PDF_CRAWLER_URL", "")
     # Official ITMO staff records (personal data — never committed).
     # None means <static_dir>/russian_names.csv.
@@ -54,6 +55,10 @@ class Settings:
     @property
     def audit_dir(self) -> Path:
         return self.data_dir / "audit"
+
+    @property
+    def openreview_priority_field_set(self) -> frozenset[str]:
+        return frozenset(field.strip().casefold() for field in self.openreview_priority_fields.split(",") if field.strip())
 
 
 settings = Settings()

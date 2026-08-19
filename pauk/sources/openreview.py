@@ -20,3 +20,8 @@ class OpenReviewClient(HttpClient):
     def search(self, term: str) -> dict:
         self._login()
         return self.get_json("https://api.openreview.net/profiles/search", params={"term": term})
+
+    def search_emails(self, emails: list[str]) -> dict:
+        """Look up many exact email identifiers in one OpenReview request."""
+        self._login()
+        return self.request_json("POST", "https://api.openreview.net/profiles/search", json={"emails": emails})
