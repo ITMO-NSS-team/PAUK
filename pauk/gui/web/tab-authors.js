@@ -1,13 +1,9 @@
 "use strict";
 
-// Flat-with-depth node icon: a faint sheen (not a bright glossy highlight —
-// that read as dated), a soft centered shadow, and a thin tonal ring for
-// crisp edges instead of a hard black outline. `pad` reserves room for the
-// shadow blur so it doesn't get clipped at the canvas edge.
-// 2x the pixel budget of the logical size below (both SIZE/PAD and the
-// pixelRatio passed to addImage are doubled together) so the raster stays
-// crisp at the largest icon-size multipliers instead of visibly pixelating —
-// the logical on-map size (CIRCLE_IMG_FULL / pixelRatio) is unchanged.
+// ---------- node icon ----------
+
+// PAD reserves room for the shadow blur; pixelRatio 4 below keeps the
+// raster crisp at the largest icon-size multipliers.
 const CIRCLE_IMG_SIZE = 56, CIRCLE_IMG_PAD = 14, CIRCLE_IMG_FULL = CIRCLE_IMG_SIZE + CIRCLE_IMG_PAD * 2;
 function circleImg(color) {
   const cv = document.createElement("canvas"); cv.width = cv.height = CIRCLE_IMG_FULL;
@@ -35,6 +31,8 @@ function ensureCircleImage(color) {
   if (!map.hasImage(id)) map.addImage(id, circleImg(color), { pixelRatio: 4 });
   return id;
 }
+
+// ---------- department selection ----------
 
 function selectDept(did) {
   selected = null;
@@ -68,6 +66,8 @@ function resetDeptFocus() {
   map.setPaintProperty("dept-edges", "line-opacity", DEPT_EDGE_OPACITY);
   map.setPaintProperty("dept-fill",  "fill-opacity", FILL_OPACITY);
 }
+
+// ---------- author profile ----------
 
 function showAuthorProfile(key) {
   const n = nodeByKey.get(key);
@@ -165,6 +165,8 @@ function showAuthorProfile(key) {
   const profileBtn = detail.querySelector(".detail-profile-btn");
   if (profileBtn) profileBtn.onclick = () => { setTab(4); spShowAuthorProfile(key); };
 }
+
+// ---------- department card ----------
 
 function showDeptCard(did) {
   const d = deptById.get(did); if (!d) return;

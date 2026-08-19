@@ -1,13 +1,7 @@
 "use strict";
 
-// Phase A+B of the RU/EN toggle: topbar, tab labels, welcome screen, sidebar
-// cards for tabs 1-3, and tab 4 (search.js — full-screen search + profile
-// pages). Tab 5 chrome (tab-stats.js) is phase C — not migrated yet, so
-// LANG === "en" still shows Russian there today (falls through to the
-// literal strings still hardcoded in that file).
-//
-// Values are either a plain string or a function for the strings that
-// interpolate a count/data value mid-sentence (`t("edge.jointPapers", w)`).
+// tab-stats.js (tab 5 chrome) isn't migrated — falls through to Russian.
+// Values are a plain string, or a function for count-interpolated strings.
 const LOCALES = {
   ru: {
     "tab.people": "Персоналии",
@@ -220,10 +214,8 @@ function setLang(lang) {
   location.reload();
 }
 
-// Declarative pass over static index.html markup — anything with
-// data-i18n[-placeholder|-title|-aria-label|-html] gets its text swapped on
-// load. JS-generated content (cards, search results) goes through direct
-// t() calls in the template literals that build it instead.
+// Swaps text on anything in index.html marked data-i18n[-placeholder|...].
+// JS-generated content (cards, search results) uses direct t() calls instead.
 function applyStaticI18n(root) {
   (root || document).querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
   (root || document).querySelectorAll("[data-i18n-html]").forEach(el => { el.innerHTML = t(el.dataset.i18nHtml); });

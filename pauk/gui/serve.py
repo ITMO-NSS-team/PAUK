@@ -1,17 +1,11 @@
 """python -m pauk.gui.serve [port] [--public] - static file server with gzip compression.
 
-Serves web/ as-is, with one exception: graph-data.js and graph-search.js carry
-the PII generate_data.py's --public flag redacts (see that module), so they
-never live in web/ - they're read from pauk/gui/data/private/ by default, or
-from pauk/gui/data/public/ when this server is started with --public, mirroring
-generate_data.py's own flag. graph-stats.js has no such split (aggregate counts
-only) and keeps coming straight from web/, written there by generate_stats.py.
+graph-data.js/graph-search.js are read from pauk/gui/data/private/ (default)
+or pauk/gui/data/public/ (--public), mirroring generate_data.py's own flag.
+graph-stats.js has no such split and comes straight from web/.
 
-The one dynamic route is /api/stats: it recomputes the DB statistics straight
-from Neo4j (generate_stats.snapshot), refreshes web/graph-stats.js so a plain
-page reload shows the same numbers, and returns them as JSON - that is what
-the "Пересчитать" button on the health tab calls. Everything else on the page
-stays a static file with no backend behind it.
+/api/stats recomputes DB stats from Neo4j and rewrites web/graph-stats.js;
+everything else is a static file with no backend.
 """
 
 import gzip
@@ -40,8 +34,14 @@ _gzip_cache: dict[str, tuple[str, bytes]] = {}
 
 # name -> (directory it's served from, command to generate it)
 REQUIRED_FILES = {
-    "graph-data.js": (DATA_DIR, "python -m pauk.gui.generate_data" + (" --public" if PUBLIC else "")),
-    "graph-search.js": (DATA_DIR, "python -m pauk.gui.generate_data" + (" --public" if PUBLIC else "")),
+    "graph-data.js": (
+        DATA_DIR,
+        "python -m pauk.gui.generate_data" + (" --public" if PUBLIC else ""),
+    ),
+    "graph-search.js": (
+        DATA_DIR,
+        "python -m pauk.gui.generate_data" + (" --public" if PUBLIC else ""),
+    ),
     "graph-stats.js": (ROOT, "python -m pauk.gui.generate_stats"),
 }
 # Requests for these filenames are rerouted from ROOT to DATA_DIR in do_GET.
@@ -146,17 +146,11 @@ class GzipHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         route = self.path.split("?")[0]
-        # --public simulates the redacted, backend-less GitHub Pages build:
-        # the health tab and its data never ship there (see generate_stats.py
-        # not having a --public mode at all), so pretend none of it exists,
-        # regardless of whether web/graph-stats.js happens to be sitting on
-        # disk from an earlier internal run.
+        # --public simulates the backend-less GitHub Pages build: the health
+        # tab never ships there, even if web/graph-stats.js is on disk locally.
         if PUBLIC and (route.lstrip("/") == "graph-stats.js" or route in (API_STATS, API_CHECK)):
             return self.send_error(404)
-        # Deliberately POST-only: recomputing queries Neo4j for several
-        # seconds and rewrites web/graph-stats.js. A GET must stay safe to
-        # repeat — browser prefetch, crawlers and proxies all issue them
-        # unprompted. The page's "Пересчитать" button already POSTs.
+        # GET must stay safe to repeat (prefetch, crawlers) — recompute is POST-only.
         if route == API_STATS:
             return self._send_json(405, {"error": "Пересчёт доступен только методом POST."})
         if route == API_CHECK:
@@ -169,9 +163,7 @@ class GzipHandler(SimpleHTTPRequestHandler):
         if not Path(path).is_file():
             return super().do_GET()
 
-        # "no-cache" alone tells the browser to revalidate, but with nothing to
-        # revalidate against it may just reuse its copy — which is how an edited
-        # index.html keeps serving the previous version. Give it a validator.
+        # ETag gives the browser something to revalidate "no-cache" against.
         st = Path(path).stat()
         etag = f'"{int(st.st_mtime)}-{st.st_size}"'
         if self.headers.get("If-None-Match") == etag:
@@ -224,11 +216,9 @@ class GzipHandler(SimpleHTTPRequestHandler):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     _warn_missing_generated_files()
-    # threaded: a slow/large download (graph-data.js is 5MB+) from one client
-    # must not block every other request behind it
-    server = ThreadingHTTPServer(("", PORT), GzipHandler)
-    # Binds to all interfaces ("" above) — print the machine's actual network
-    # name, not localhost, since this commonly runs on a remote lab server
-    # and whoever started it needs the address other people can reach.
-    print(f"http://{socket.gethostname()}:{PORT}  (gzip on)")
+    server = ThreadingHTTPServer(
+        ("", PORT), GzipHandler
+    )  # threaded: large downloads shouldn't block others
+    mode = "PUBLIC (redacted)" if PUBLIC else "private (full data)"
+    print(f"http://{socket.gethostname()}:{PORT}  (gzip on, {mode}, data from {DATA_DIR})")
     server.serve_forever()

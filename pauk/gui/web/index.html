@@ -7,14 +7,9 @@
   <link rel="icon" type="image/png" href="vendor/icons/pauk-frame.png" />
   <link rel="stylesheet" href="vendor/maplibre-gl.css" />
   <link rel="stylesheet" href="style.css" />
-  <!-- Used on first paint (preloader/tab bar) — without this the browser
-       doesn't discover it until it parses style.css and matches an element
-       to the @font-face rule, late enough to show a visible fallback swap.
-       The welcome-title serif is a system font, nothing to preload for it. -->
+  <!-- Preloaded for first paint (preloader/tab bar) — style.css discovers it too late otherwise. -->
   <link rel="preload" href="vendor/fonts/inter-cyrillic.woff2" as="font" type="font/woff2" crossorigin />
-  <!-- Dark theme paused for now (light-only during the design pass) — the
-       toggle is hidden in style.css (#theme-toggle), not removed. To bring
-       it back: restore this line and drop the `display:none` in style.css. -->
+  <!-- Dark theme paused (toggle hidden in style.css); restore this line + drop display:none to bring it back. -->
   <!-- <script>document.documentElement.setAttribute("data-theme","dark");</script> -->
 </head>
 <body>
@@ -25,9 +20,6 @@
     <div class="boot-status" id="boot-status"></div>
   </div>
 
-  <!-- The base/home screen (not a one-time gate) — always fully ready by the
-       time it's shown, since the preloader above is what carries loading
-       state now. No disabled/loading button state here anymore. -->
   <div id="welcome-modal" class="hidden">
     <svg id="welcome-burst" class="welcome-burst" aria-hidden="true"></svg>
     <div class="welcome-hero">
@@ -48,8 +40,7 @@
     </div>
   </div>
 
-  <!-- Not deferred: graph-data.js (1MB+) blocks every deferred script below
-       until it downloads, so this needs to run immediately instead. -->
+  <!-- Not deferred: the deferred scripts below block on graph-data.js's download. -->
   <script>
   (function () {
     var params = new URLSearchParams(location.search);
@@ -57,9 +48,7 @@
     window._pauk_hasDeepLink = hasDeepLink;
     if (hasDeepLink) document.getElementById("welcome-modal").style.display = "none";
 
-    // i18n.js (deferred) hasn't run yet at this point in the parse, so read
-    // localStorage directly here rather than reaching for its LANG/setLang —
-    // those exist by the time anyone actually clicks a button, just not now.
+    // i18n.js hasn't run yet — read localStorage directly instead of LANG/setLang.
     var currentLang = localStorage.getItem("pauk-lang") || "en";
     document.querySelectorAll(".welcome-lang-btn").forEach(function (btn) {
       if (btn.getAttribute("data-lang") === currentLang) btn.classList.add("active");
@@ -68,12 +57,6 @@
 
     var bar = document.getElementById("boot-progress-bar");
     var status = document.getElementById("boot-status");
-    // Short status line on the preload screen — a stage name, not a raw
-    // percentage and not a stack trace. "error" is the one case that isn't
-    // just "still working": graph-data.js genuinely 404'd (not generated, or
-    // a --public server with no redacted build yet), so the deferred <script>
-    // tag loading it is doomed too — say so plainly instead of leaving the
-    // bar frozen with no explanation.
     var STAGE_TEXT = {
       loading:   { ru: "Загрузка данных…", en: "Loading data…" },
       rendering: { ru: "Отрисовка карты…", en: "Rendering the map…" },
@@ -91,11 +74,13 @@
     window._pauk_setProgress = setProgress;
     setStage("loading");
 
-    // Real download progress for the dominant payload, via a second, parallel
-    // fetch — the actual script execution still goes through the deferred
-    // <script> tag below. res.ok is reliable everywhere fetch() exists; only
-    // the byte-level progress bar needs ReadableStream, so a browser missing
-    // that support still gets a correct error/success readout, just a coarser bar.
+    // Backstop: if the boot screen is still up after a generous timeout, say so.
+    setTimeout(function () {
+      var boot = document.getElementById("boot-screen");
+      if (boot && !boot.classList.contains("hidden")) setStage("error");
+    }, 30000);
+
+    // res.ok works everywhere fetch() does; only the byte-level bar needs ReadableStream.
     if (window.fetch) {
       fetch("graph-data.js").then(function (res) {
         if (!res.ok) { setStage("error"); return; }

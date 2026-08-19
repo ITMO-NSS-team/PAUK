@@ -33,10 +33,8 @@ function wrap(text, max) {
   return lines.slice(0, 3);
 }
 
-// Long labels (publication titles especially) wrap to 2-3 lines — a fixed
-// clearance margin only accounts for one, so the bottom line kept dipping
-// back into the node. `extra` grows the offset so the block's bottom edge,
-// not its center, is what actually clears the icon.
+// `extra` grows the offset so a wrapped label's bottom edge (not its
+// center) clears the icon it's attached to.
 function _labelMetrics(text, fs) {
   const lines = wrap(text, fs > 16 ? 16 : 22).length;
   const lh = fs * 1.1;
@@ -66,10 +64,8 @@ function drawOverlay() {
     const drawn = [];
     const fp = P(selected), fc = map.project(proj(fp[0], fp[1]));
     octx.font = `600 12px ${getComputedStyle(document.body).fontFamily}`;
-    // The dimmed normal icon stays under the fixed-size sel-points marker
-    // (selection.js draws it at a constant px, doesn't shrink the original) —
-    // for a big node (e.g. a heavily-starred repo) the original can be
-    // larger than the marker and still poke out, so clear whichever is bigger.
+    // Clear whichever is bigger, the fixed-size sel-points marker or the
+    // dimmed original icon underneath (a heavily-starred repo can be larger).
     nodeNeighbors(selected).forEach(nk => {
       const nd = nodeByKey.get(nk), p = P(nk);
       if (!nd) return;

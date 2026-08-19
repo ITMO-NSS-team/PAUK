@@ -1,5 +1,7 @@
 "use strict";
 
+// ---------- state & URL routing ----------
+
 var tab = 1;
 var edgeMinCoauth = 1;
 var edgeMinPub    = 1;
@@ -37,18 +39,16 @@ window.addEventListener("popstate", e => {
   _routingFromPop = false;
 });
 
-// index.html's inline script already shows the preloader and tracks
-// graph-data.js's download progress (graph-data.js blocks this file from
-// running any sooner) — this snaps the bar to 100% and reveals whatever's
-// ready: the map directly for a deep link, the home screen otherwise.
+// ---------- preload / welcome / theme ----------
+
+// Snaps the boot progress bar to 100% and reveals the map (deep link) or
+// the welcome screen — also the only place to switch language for now.
 function finishLoading() {
   if (typeof window._pauk_setProgress === "function") window._pauk_setProgress(1);
   const boot = document.getElementById("boot-screen");
   setTimeout(() => {
     if (boot) { boot.classList.add("hidden"); setTimeout(() => { boot.style.display = "none"; }, 350); }
-    // The welcome screen is also the only place to switch language right
-    // now (no separate topbar toggle yet) — it has to show on every load,
-    // not just the first, or there'd be no way back into it to change langs.
+    // Shows on every load, not just the first — it's the only language switch we have.
     if (!window._pauk_hasDeepLink) document.getElementById("welcome-modal").classList.remove("hidden");
   }, 200);
 }
@@ -57,7 +57,6 @@ function hideWelcome() {
   document.getElementById("welcome-modal").classList.add("hidden");
 }
 
-// Theme-dependent map layer colors; background comes from the --map-bg CSS variable.
 function _applyMapTheme(dark) {
   if (!map || !map.getLayer) return;
   const cs = getComputedStyle(document.documentElement);
@@ -72,15 +71,16 @@ function _applyMapTheme(dark) {
     map.setPaintProperty("dept-focus-edges", "line-color", dark ? "#F2F2F2" : "#191F1D");
 }
 
+// Dark theme is paused (toggle hidden in style.css); this function still
+// works, flip index.html's data-theme script back on to bring it back.
 function _applyTheme(dark) {
-  // Dark theme is paused (toggle hidden, see style.css #theme-toggle) but this
-  // function is untouched — flip index.html's data-theme script back on and
-  // the toggle to bring it back. No localStorage: every fresh load starts light.
   if (dark) document.documentElement.setAttribute("data-theme", "dark");
   else      document.documentElement.removeAttribute("data-theme");
   _applyMapTheme(dark);
   if (typeof refreshLabelColors === "function") { refreshLabelColors(); drawOverlay(); }
 }
+
+// ---------- filters ----------
 
 function applyEdgeFilter() {
   if (tab === 1) {
@@ -127,6 +127,8 @@ function updateEdgeFilterUI(tabNum) {
   }
 }
 
+// ---------- map setup ----------
+
 var map = new maplibregl.Map({
   container: "map",
   style: { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#ffffff" } }] },
@@ -136,15 +138,7 @@ var map = new maplibregl.Map({
 map.dragRotate.disable();
 map.touchZoomRotate.disableRotation();
 
-// Debug aid for tuning the zoom-threshold constants scattered through this
-// file (AUTHOR_LABEL_ZOOM, the icon-size stops, etc.) — not meant for end users.
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-left");
-const zoomDebug = document.createElement("div");
-zoomDebug.id = "zoom-debug";
-document.body.appendChild(zoomDebug);
-const _updateZoomDebug = () => { zoomDebug.textContent = "z " + map.getZoom().toFixed(2); };
-map.on("zoom", _updateZoomDebug);
-_updateZoomDebug();
 
 map.on("load", () => {
   const hullData = buildHullFeatures();
@@ -185,9 +179,9 @@ map.on("load", () => {
       "line-opacity": EDGE_OPACITY_COAUTH,
     } });
 
-  // Author/repo nodes render as raster "bubble" icons (see circleImg in
-  // tab-authors.js) instead of flat circle-layer dots — maplibre circle
-  // paint can't do an inner gradient or a baked shadow, only a canvas can.
+  // Nodes render as raster "bubble" icons (circleImg/squareImg in
+  // tab-authors.js/tab-pubs.js) — maplibre circle paint can't do an
+  // inner gradient or a baked shadow, only a canvas can.
   map.addLayer({ id: "authors", type: "symbol", source: "nodes",
     filter: ["==", ["get", "kind"], "author"],
     layout: {
@@ -222,12 +216,9 @@ map.on("load", () => {
       "icon-opacity-transition": { duration: 500, delay: 0 },
     } });
 
-  // line-color is set per-selection in selectNode() (selection.js) to match
-  // the selected node's own color, not a fixed accent.
+  // line-color is set per-selection in selectNode() (selection.js).
   map.addLayer({ id: "sel-edges", type: "line", source: "sel-edges",
     paint: { "line-color": "#181e1e", "line-width": 1, "line-opacity": 0.6 } });
-  // Same per-kind icon as the base layers (circle for authors/repos, square
-  // for pubs) — a clicked square used to turn into a generic circle here.
   map.addLayer({ id: "sel-points", type: "symbol", source: "sel-points",
     layout: {
       "icon-image": ["get", "iid"],
@@ -236,16 +227,14 @@ map.on("load", () => {
     } });
 
   map.on("click", e => {
-    // Zoomed out: nodes are packed too tight to aim for — any click (node or
-    // gap between nodes) goes to the department under the cursor instead.
-    if (map.getZoom() < DEPT_CLICK_ZOOM) {
+    // Zoomed out on tab 1: nodes are too tight to aim for, click resolves
+    // to the department under the cursor. Departments only render there.
+    if (tab === 1 && map.getZoom() < DEPT_CLICK_ZOOM) {
       const df = map.queryRenderedFeatures(e.point, { layers: ["dept-fill"] });
       if (df.length) { selectDept(df[0].properties.id); return; }
       clearAll();
       return;
     }
-    // Above the threshold, departments are no longer choosable by click —
-    // only below it (branch above). A miss here just clears the selection.
     const nf = map.queryRenderedFeatures(e.point, { layers: ["authors", "repos", "pubs"] });
     if (nf.length) { selectNode(nf[0].properties.key); return; }
     const ef = map.queryRenderedFeatures(e.point, { layers: ["edges"] });
@@ -261,9 +250,7 @@ map.on("load", () => {
   document.querySelectorAll("#tab-toggle button").forEach(b => {
     b.onclick = () => setTab(+b.dataset.tab);
   });
-  // graph-stats.js wasn't shipped with this build (e.g. the redacted public
-  // deploy) — window.STATS never got set, so there's nothing for the tab to
-  // show. setTab() above already redirects away from 5 if reached by URL.
+  // No graph-stats.js on this build (e.g. the public deploy) — hide the tab.
   if (!window.STATS) {
     const healthBtn = document.querySelector('#tab-toggle button[data-tab="5"]');
     if (healthBtn) healthBtn.style.display = "none";
@@ -306,11 +293,10 @@ map.on("load", () => {
 
   document.getElementById("welcome-close").addEventListener("click", hideWelcome);
 
-  // Initial routing. For profile URLs, push the landing page into history first,
-  // so the browser "back" button leads there instead of leaving the site.
+  // Push the landing page into history first for profile URLs, so "back" leads there.
   const _initParams = Object.fromEntries(new URLSearchParams(location.search));
   let _initTab = +(_initParams.tab || 1);
-  if (_initTab === 5 && !window.STATS) _initTab = 1; // no graph-stats.js on this build — see setTab
+  if (_initTab === 5 && !window.STATS) _initTab = 1;
   if (_initTab === 4 && window._pauk_hasDeepLink) {
     history.replaceState({ tab: 4 }, "", "?tab=4");
     _applyUrlState(_initParams);
@@ -322,11 +308,11 @@ map.on("load", () => {
   }
 });
 
+// ---------- tab switching ----------
+
 function setTab(t) {
-  // graph-stats.js (window.STATS) is absent on builds that don't ship it —
-  // e.g. the redacted public deploy — so there's nothing for tab 5 to show;
-  // its button is hidden too (see map.on("load") below), this covers direct
-  // URL access (?tab=5) and browser back/forward the same way.
+  // Covers direct URL access (?tab=5) and back/forward the same way the
+  // hidden tab-5 button (map.on("load") above) covers a normal click.
   if (t === 5 && !window.STATS) t = 1;
   if (t === tab) return;
   tab = t;

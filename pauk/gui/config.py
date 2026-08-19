@@ -26,8 +26,6 @@ FA2_ITER_REPOS = 100
 # --- Synthetic "shared department" peer edges -----------------------------------
 DEPT_EDGE_K = 3  # random same-department peers each node is tied to
 DEPT_EDGE_WEIGHT = 1.0  # comparable to real edges (joint pubs start at 1.0)
-# Weaker for pubs: at full strength the random dept graph flattens big
-# publications into a featureless disc.
 PUB_DEPT_EDGE_K = 1
 PUB_DEPT_EDGE_WEIGHT = 0.5
 

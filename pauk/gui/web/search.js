@@ -1,6 +1,6 @@
 "use strict";
 
-// ---- Navigation (Tab 4) ----
+// ---------- navigation (tab 4) ----------
 // Browser history is the single source of truth (pushState in spShow*, popstate in main.js).
 var spOnLanding = false;
 // What's currently shown, so _onDetailReady (core.js) can re-render it once pub data arrives
@@ -66,7 +66,7 @@ function searchHits(q, withDepts) {
   return hits.slice(0, 20);
 }
 
-// ---- Sidebar search (Tabs 1–3) ----
+// ---------- sidebar search (tabs 1-3) ----------
 
 const searchInput   = document.getElementById("search");
 const searchResults = document.getElementById("search-results");
@@ -102,7 +102,7 @@ function runSearch() {
   });
 }
 
-// ---- Full-screen search (Tab 4) ----
+// ---------- full-screen search (tab 4) ----------
 
 const spInput   = document.getElementById("sp-input");
 const spResults = document.getElementById("sp-results");

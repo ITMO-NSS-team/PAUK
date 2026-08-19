@@ -16,8 +16,6 @@ function squareImg(color, size) {
   return g.getImageData(0, 0, size, size);
 }
 
-// Same 2x pixel-budget move as circleImg (tab-authors.js) — size and
-// pixelRatio doubled together, logical on-map size (32/4) unchanged.
 function ensureSquareImage(color) {
   const id = "sq" + color.replace("#", "");
   if (!map.hasImage(id)) map.addImage(id, squareImg(color, 32), { pixelRatio: 4 });
@@ -29,7 +27,7 @@ function showPubCard(key) {
   const au = (pubAuthors.get(key) || []).map(k => nodeByKey.get(k)).filter(Boolean);
   let html = `<div class="card-kind">${t("pub.kind")}${n.year ? " · " + n.year : ""}</div><div class="card-title">${esc(n.label || n.key)}</div>`;
   if (n.journal) html += `<div class="card-row"><b>${t("pub.journal")}</b> ${esc(n.journal)}</div>`;
-  const deptName = deptById.get(n.dept)?.name; if (deptName) html += `<div class="card-row"><b>${t("pub.department")}</b> ${esc(deptName)}</div>`;
+  const deptName = deptDisplayName(deptById.get(n.dept)); if (deptName) html += `<div class="card-row"><b>${t("pub.department")}</b> ${esc(deptName)}</div>`;
   if (n.doi) html += `<div class="card-row"><b>${t("pub.doi")}</b> <a href="https://doi.org/${esc(n.doi.replace(/^https?:\/\/doi\.org\//, ""))}" target="_blank">${esc(n.doi)}</a></div>`;
   const urls = Array.isArray(n.code_url) ? n.code_url : [];
   html += `<div class="card-row"><b>${t("pub.code")}</b> ${n.has_code && urls.length

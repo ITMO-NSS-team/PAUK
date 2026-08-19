@@ -20,8 +20,6 @@ function closePanel() {
 function renderOverview() {
   const fmt = n => n.toLocaleString(LANG === "en" ? "en-US" : "ru-RU");
   const tabKeys = { 1: "tab.people", 2: "tab.repos", 3: "tab.pubs" };
-  // Same three tones as the rest of the chrome (coral/blue from
-  // opensource.itmo.ru, amber our own pick) — not new colors, just reused here.
   const tabColors  = { 1: "var(--accent-2)", 2: "#d9962e", 3: "#e8562e" };
   const tabColor = tabColors[tab] || "inherit";
   overview.innerHTML =
@@ -42,6 +40,8 @@ function showNodeCard(key) {
   if (n.kind === "pub")    { showPubCard(key);       return; }
   if (n.kind === "repo")   { showRepoCard(key);      return; }
 }
+
+// ---------- edge card ----------
 
 function showEdgeCard(props) {
   const sn = nodeByKey.get(props.s), tn = nodeByKey.get(props.t);
@@ -99,6 +99,8 @@ function showEdgeCard(props) {
   });
 }
 
+// ---------- year chart ----------
+
 function _drawYearChart(svgEl, yearCounts) {
   if (!Object.keys(yearCounts).length) return;
   const allYears = [];
@@ -116,10 +118,7 @@ function _drawYearChart(svgEl, yearCounts) {
   const xCenter = y => single ? pad.l + innerW / 2 : pad.l + inset + (y - yrMin) / Math.max(1, yrMax - yrMin) * (innerW - 2 * inset);
   const barW   = Math.min(32, Math.max(4, (innerW - 2 * inset) / Math.max(1, allYears.length) - 4));
   const yScale = v => H - pad.b - (v / maxVal) * (H - pad.t - pad.b);
-  // fill/stroke reference the CSS variables directly (not resolved to a hex
-  // string here) so the chart re-colors live on theme toggle instead of
-  // keeping whatever color was baked in at draw time — a chart drawn in
-  // light mode used to go dark-on-dark and vanish after switching to dark.
+  // CSS variables, not resolved hex, so the chart re-colors on theme toggle.
   const bar = "var(--text)", muted = "var(--muted)";
   let s = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">`;
   s += `<line x1="${pad.l}" y1="${pad.t}" x2="${W - pad.r}" y2="${pad.t}" stroke="${muted}" stroke-opacity="0.2" stroke-width="1"/>`;

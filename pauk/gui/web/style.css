@@ -1,8 +1,5 @@
-/* PAUK — grayscale chrome with a single dark accent, department colors
-   carry the rest. Type: Inter everywhere, except the welcome-screen title
-   (system serif — three different webfonts tried there and rejected, see
-   git history; not worth another download for one headline). Golos Text
-   below is vendored but unused, kept in case of a revert. */
+/* Grayscale chrome, one dark accent, department colors carry the rest.
+   Type: Inter everywhere except the welcome-screen title (system serif). */
 
 @font-face {
   font-family: "Golos Text";
@@ -81,17 +78,12 @@
   --label-text: var(--g7);
   --stat-bg: rgba(196, 196, 196, 0.32);
   --stat-border: var(--g3);
-  /* the one deliberate exception to the grayscale rule above: links, focus
-     rings, li-count — a signal, not decoration. Near-black by request, so it
-     barely differs from --text in light mode; that's intentional here. */
-  --accent: #181e1e;
-  /* second, cooler accent for the repo tag signal — lifted from
-     opensource.itmo.ru (their #2015FF focus-outline blue), toned down a notch */
-  --accent-2: #3555e0;
+  --accent: #181e1e; /* deliberate exception to the grayscale rule: links, focus rings, li-count */
+  --accent-2: #3555e0; /* cooler accent for the repo tag signal */
   --radius: 10px;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-serif: Georgia, "Times New Roman", serif; /* system serif — see header comment */
+  --font-serif: Georgia, "Times New Roman", serif;
 }
 
 :root[data-theme="dark"] {
@@ -111,10 +103,7 @@
   --stat-bg: rgba(97, 97, 97, 0.45);
   --stat-border: var(--g4);
   --shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
-  /* the deep light-mode accent reads muddy on a near-black background —
-     the lighter, more saturated cut of the same coral glows instead (7:1
-     against --bg here, vs. 3.6:1 for the light-mode value on white) */
-  --accent: #ff8562;
+  --accent: #ff8562; /* lighter cut of the light-mode accent, 7:1 contrast against --bg */
   --accent-2: #6d8bff;
 }
 
@@ -230,9 +219,7 @@ body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-font
 /* ---------- theme toggle ---------- */
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 .theme-toggle {
-  /* Dark theme paused for the design pass — JS/vars are untouched (see
-     main.js _applyTheme), just hidden. Delete this line to bring it back. */
-  display: none;
+  display: none; /* dark theme paused, JS/vars untouched — delete to bring it back */
   align-items: center; gap: 7px; cursor: pointer; user-select: none;
   background: none; border: none; padding: 5px 7px; border-radius: 7px; font: inherit;
   color: var(--text); transition: background .15s;
@@ -254,10 +241,7 @@ body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-font
 :root[data-theme="dark"] .theme-thumb { left: 19px; background: var(--g7); }
 
 /* ---------- edge filter ---------- */
-/* Thumb is the actual pauk-frame.png pixel-art spider (19x17 source) — ПАУК
-   means "spider", so the one thing you actually drag on the whole page might
-   as well say so. Box keeps the source's ~19:17 aspect ratio (not forced
-   square) so "contain" doesn't have to letterbox it. */
+/* Slider thumb is the pauk-frame.png spider; box keeps its ~19:17 aspect ratio. */
 .edge-filter-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .edge-filter-row input[type=range] {
   flex: 1; accent-color: var(--accent); cursor: pointer; -webkit-appearance: none; appearance: none;
@@ -275,14 +259,6 @@ body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-font
 }
 .edge-filter-row input[type=range]::-moz-range-track { background: var(--border); border-radius: 4px; height: 8px; }
 #edge-threshold-val { font-size: 16px; font-weight: 800; color: var(--text); min-width: 22px; text-align: right; }
-
-/* ---------- zoom debug readout (bottom-left, above the maplibre zoom control) ---------- */
-#zoom-debug {
-  position: absolute; left: 16px; bottom: 92px; z-index: 6;
-  font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
-  color: var(--muted); background: var(--surface); border: 1px solid var(--border);
-  border-radius: 7px; padding: 3px 8px; pointer-events: none; font-family: var(--font);
-}
 
 /* ---------- side panels ---------- */
 #left-panel { position: absolute; top: 62px; left: 16px; z-index: 6; width: 270px; max-width: 34vw; }
@@ -323,8 +299,6 @@ body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-font
 
 /* ---------- overview ---------- */
 #overview { flex: none; position: relative; }
-/* inset past --radius (10px) so the square PNG's corners clear the card's
-   rounded corner instead of poking past its arc */
 .overview-web { position: absolute; top: 12px; right: 12px; width: 30px; height: 30px; pointer-events: none; }
 .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .stat { background: var(--stat-bg); border: 1px solid var(--stat-border); border-radius: 10px; padding: 11px 12px; }
@@ -461,7 +435,7 @@ a:hover { text-decoration-color: var(--accent); }
 #sp-main > *:nth-child(4) { animation-delay: 120ms; }
 #sp-main > *:nth-child(5) { animation-delay: 145ms; }
 
-/* Profile — cards */
+/* ---------- profile cards ---------- */
 .sp-profile { display: grid; gap: 16px; }
 .sp-profile-header {
   background: var(--surface); border: 1px solid var(--border);
@@ -485,7 +459,7 @@ a:hover { text-decoration-color: var(--accent); }
 .sp-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 720px) { .sp-cols { grid-template-columns: 1fr; } }
 
-/* Landing */
+/* ---------- landing ---------- */
 .sp-landing { text-align: center; padding: 48px 20px 20px; }
 .sp-landing .stat { background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); }
 .sp-landing-hint { font-size: 14px; color: var(--muted); margin-top: 8px; margin-bottom: 16px; }
@@ -497,7 +471,7 @@ a:hover { text-decoration-color: var(--accent); }
 }
 .sp-chip:hover { background: var(--surface-2); border-color: var(--text); color: var(--text); }
 
-/* Navigation buttons in profiles */
+/* ---------- profile navigation buttons ---------- */
 .sp-nav-btns { display: flex; gap: 8px; margin-bottom: 20px; }
 .sp-nav-btn {
   background: var(--surface); border: 1px solid var(--border);
@@ -509,14 +483,14 @@ a:hover { text-decoration-color: var(--accent); }
 .sp-nav-back { color: var(--text); border-color: var(--text); font-weight: 600; }
 .sp-nav-back:hover { background: var(--text); color: var(--bg); }
 
-/* Active-years row in a profile */
+/* ---------- active-years row ---------- */
 .sp-year-range-card { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 12px; align-items: center; }
 .sp-year-tag {
   padding: 2px 8px; background: var(--surface-2); border-radius: 6px;
   font-size: 11px; font-weight: 600; color: var(--text); border: 1px solid var(--border);
 }
 
-/* Pie chart legend */
+/* ---------- pie chart legend ---------- */
 .sp-pie-legend { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
 .sp-pie-legend-item { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
 .sp-pie-legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }

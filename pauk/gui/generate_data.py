@@ -1,23 +1,5 @@
 """Builds web/graph-data.js and web/graph-search.js from a graph snapshot.
 
-Two steps, not one: `pauk cache export` reads Neo4j (via pauk.cache.export)
-and writes a snapshot file — the only place this module's data touches
-Neo4j. main() here just reads that snapshot and lays out/exports the JS;
-it never opens a Neo4j connection itself.
-
-Layout: one ForceAtlas2 (networkx) run per entity type, over each type's
-giant connected component, weighted by its own proximity measure (authors:
-joint pubs/repos/department; publications: shared authors/department;
-repositories: shared publications). Small components/singletons blend into
-the cloud (fa2_blended_layout); spread_min_distance keeps a minimum gap.
-The layout math itself (FA2, coordinate fitting, collision spread) lives in
-pauk.gui.layout — this module only shapes db rows into graph data.
-
-Department assignment: publication -> all its ITMO authors' departments
-(`depts`) + one majority-vote `dept` for color; author -> department of
-their most recent publication; repository -> majority vote over its
-publications' departments.
-
 Usage:
   uv run python -m pauk.cli cache export  # writes the snapshot, once
   uv run python -m pauk.gui.generate_data [--out-dir web] [--seed 42] [--cache path]
@@ -27,7 +9,6 @@ import argparse
 import json
 import logging
 import random
-import re
 import time
 from collections import Counter, defaultdict
 from itertools import combinations
@@ -63,48 +44,17 @@ from .layout import (
 logger = logging.getLogger(__name__)
 
 
-PATRONYMIC_ENDING = re.compile(r"(ович|евич|ьич|овна|евна|ична)$", re.IGNORECASE)
-
-
-def _is_surname_first(words: list[str]) -> bool:
-    """Whether a written-out name runs "Фамилия Имя Отчество".
-
-    A source that supplies the Cyrillic full name uses that order
-    ("Кучин Михаил Дмитриевич"), and it is the one case reading the
-    surname off the end gets backwards. The patronymic gives it away: in
-    given-name-first order it sits in the middle ("Виктория Вадимовна
-    Юношева"), so a name whose last word is a patronymic and whose middle
-    word is not runs the other way. Surnames that end the same way
-    ("Олехнович", "Масалович") stay safe — they come with an initial or
-    a patronymic of their own before them, never as the third of three
-    spelled-out words.
-    """
-    return (
-        len(words) == 3
-        and all(len(word) > 1 and "." not in word for word in words)
-        and bool(PATRONYMIC_ENDING.search(words[-1]))
-        and not PATRONYMIC_ENDING.search(words[1])
-    )
-
-
+# update asap
 def split_full_name(full_name) -> tuple[str, str, str]:
-    """Split a written-out name into (surname, given, patronymic).
-
-    Sources write a person as "Никитин, Николай О.", as "Кучин Михаил
-    Дмитриевич", or — far more often — given-name-first ("Виктория
-    Вадимовна Юношева"); the surname is what precedes the comma, opens a
-    surname-first name, or ends the rest. Lowercase particles ("ван дер")
-    are not initials, so they never become one.
-    """
+    """Split a written-out name into (surname, given, patronymic)"""
     text = " ".join((full_name or "").split())
     if not text:
         return "", "", ""
     if "," in text:
         surname, _, rest = text.partition(",")
         parts = rest.split()
-    elif _is_surname_first(words := text.split()):
-        surname, parts = words[0], words[1:]
     else:
+        words = text.split()
         surname, parts = words[-1], words[:-1]
     parts = [part for part in parts if part[:1].isupper()]
     return surname.strip(), (parts[0] if parts else ""), (parts[1] if len(parts) > 1 else "")
@@ -113,14 +63,7 @@ def split_full_name(full_name) -> tuple[str, str, str]:
 def author_label(
     surname_ru, first_name_ru, second_name_ru, name_en, name_ru=None, public: bool = False
 ) -> str:
-    """One shape for every author: surname first, then initials.
-
-    "Никитин Н.О." whenever a patronymic is known — from the staff
-    catalog, or from a transliterated full name that carries one. With
-    only a given name there is nothing to abbreviate against, so it stays
-    written out ("Горизонтова Мария"); the label still starts with the
-    surname, which is what keeps the lists sorted and scannable.
-    """
+    """One shape for every author: surname first, then initials"""
     surname, given, patronymic = surname_ru or "", first_name_ru or "", second_name_ru or ""
     if not surname:
         surname, given, patronymic = split_full_name(name_ru or name_en)
@@ -179,7 +122,7 @@ def build_graph_data(db, seed: int, public: bool = False):
     pubs_rows = [r for r in db["publications"] if r[0] in pub_authors]
     pub_ids = {r[0] for r in pubs_rows}
     logger.info(
-        "publications with ITMO authors: %d of %d",
+        "Publications with ITMO authors: %d of %d",
         len(pubs_rows),
         len(db["publications"]),
     )
@@ -248,8 +191,6 @@ def build_graph_data(db, seed: int, public: bool = False):
     for d in repo_dept.values():
         if d:
             usage[d] += 1
-    # Departments referenced only by publications/repositories (n=0)
-    # must still get a graph id
     for rows in (pub_dept_rows, repo_dept_rows):
         for depts in rows.values():
             for d in depts:
@@ -291,11 +232,10 @@ def build_graph_data(db, seed: int, public: bool = False):
             "n_repos": n_repo[no_dept_gid],
         }
     )
-    logger.info('departments: %d (+ "%s")', len(ordered), NO_DEPT_NAME)
+    logger.info('Departments: %d (+ "%s")', len(ordered), NO_DEPT_NAME)
 
     # --- co-authorship graph and FA2 layout -------------------------------------
     # layout weight = joint publications + joint repos + shared dept; exported
-    # coauth_edges (visible in the UI) stay pure joint-publication counts
     coauth = Counter()
     for _pid, pers in pub_authors.items():
         for a, b in combinations(sorted(set(pers)), 2):
@@ -412,11 +352,6 @@ def build_graph_data(db, seed: int, public: bool = False):
             "gy": y,
         }
         if not public:
-            # Internal build only — these keys don't exist at all on a
-            # --public build, not just blanked, so the frontend's existing
-            # `n.degree ? ... : ""`-style guards hide them for free (see
-            # pauk/gui/web/tab-authors.js) and any future field added here
-            # fails closed instead of open.
             author["name_en"] = row["name_en"] or ""
             author["name_ru"] = row.get("name_ru") or ""
             author["name_variants"] = author_variants(row)
@@ -491,7 +426,7 @@ def build_graph_data(db, seed: int, public: bool = False):
     all_edges = [{"s": per, "t": pid} for pid, per in db["authorship"]]
 
     logger.info(
-        "edges: coauth %d, pub %d, repo %d, dept %d, repo-author %d, repo-pub %d, authorship %d",
+        "Edges: coauth %d, pub %d, repo %d, dept %d, repo-author %d, repo-pub %d, authorship %d",
         len(coauth_edges),
         len(pub_edges),
         len(repo_edges),
@@ -546,7 +481,7 @@ def build_search_detail(db, graph):
 def dump_js(data, prefix: str, suffix: str, path: Path):
     payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
     path.write_text(prefix + payload + suffix, encoding="utf-8")
-    logger.info("wrote %s (%.1f MB)", path, path.stat().st_size / 1e6)
+    logger.info("Wrote %s (%.1f MB)", path, path.stat().st_size / 1e6)
 
 
 def main():
@@ -603,7 +538,7 @@ def main():
         args.out_dir / "graph-search.js",
     )
 
-    logger.info("done in %.1f s", time.time() - t0)
+    logger.info("Done in %.1f s", time.time() - t0)
 
 
 if __name__ == "__main__":

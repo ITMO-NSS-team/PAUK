@@ -22,9 +22,7 @@ function nodeNeighbors(key) {
   return [];
 }
 
-// icon-size multiplier for a sel-points marker: `target` is the desired
-// on-screen px, NODE_ICON_K's `unit` is how many screen px the cached icon
-// (circleImg/squareImg) spans per icon-size 1.0 — same constants main.js uses.
+// Icon-size multiplier that gets a sel-points marker to SEL_MARKER_PX[role] on screen.
 function _selIconSize(kind, role) {
   const unit = kind === "pub" ? NODE_ICON_K.pub.unit : NODE_ICON_K.author.unit;
   return SEL_MARKER_PX[role] / unit;
@@ -66,8 +64,6 @@ function selectNode(key) {
   map.setPaintProperty("repos",   "icon-opacity", 0.12);
   map.setPaintProperty("pubs",    "icon-opacity", 0.12);
   map.setPaintProperty("dept-fill", "fill-opacity", 0.06);
-  // Only the selected node's own edges should read — the general "all
-  // relationships" layer competed with sel-edges for attention otherwise.
   map.setPaintProperty("edges", "line-opacity", 0);
   showNodeCard(key);
   drawOverlay();
