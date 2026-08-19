@@ -120,28 +120,41 @@ def record_override(db: Database, label: str, target_id: str, op: str,
 
     now = _now()
     document_id = override_id(label, target_id)
-    existing = db[COLLECTION].find_one({"_id": document_id}) or {}
-    merged_fields = {**(existing.get("fields") or {}), **fields}
-    known_auto = existing.get("auto_value") or {}
-    fresh_auto = {name: value for name, value in (auto_value or {}).items()
-                  if name not in known_auto}
 
-    document = {
-        "_id": document_id,
-        "kind": "node",
-        "label": label,
-        "target_id": target_id,
-        "op": op,
-        "fields": merged_fields,
-        "auto_value": {**known_auto, **fresh_auto},
-        "actor": actor,
-        "note": note or existing.get("note", ""),
-        "active": True,
-        "created_at": existing.get("created_at", now),
-        "updated_at": now,
+    # Read-then-replace would lose an edit: two administrators changing
+    # different fields of the same node at the same time each write back a
+    # whole document built from the state they read, and the later write
+    # drops the earlier one. Setting the field paths instead lets the
+    # server merge them, and `created_at` is only written when the document
+    # is first inserted.
+    update: dict = {
+        "$set": {
+            "kind": "node",
+            "label": label,
+            "target_id": target_id,
+            "op": op,
+            "actor": actor,
+            "active": True,
+            "updated_at": now,
+            **{f"fields.{name}": value for name, value in fields.items()},
+        },
+        "$setOnInsert": {"created_at": now},
     }
-    db[COLLECTION].replace_one({"_id": document_id}, document, upsert=True)
-    logger.info("override recorded: %s %s (%s)", op, document_id, ", ".join(sorted(merged_fields)))
+    if note:
+        update["$set"]["note"] = note
+    else:
+        update["$setOnInsert"]["note"] = ""
+    db[COLLECTION].update_one({"_id": document_id}, update, upsert=True)
+
+    # The automatic value is recorded once per field — the first edit is the
+    # one that replaced what the pipeline produced. A conditional update per
+    # field keeps that true without reading the document first.
+    for name, value in (auto_value or {}).items():
+        db[COLLECTION].update_one(
+            {"_id": document_id, f"auto_value.{name}": {"$exists": False}},
+            {"$set": {f"auto_value.{name}": value}})
+
+    logger.info("override recorded: %s %s (%s)", op, document_id, ", ".join(sorted(fields)))
     # Read back rather than return what was sent: the driver hands
     # timestamps back without a timezone, so the two would differ in type
     # depending on whether this was the first edit or a later one.
@@ -305,17 +318,24 @@ def apply_overrides(client, db: Database) -> dict[str, int]:
                 unchanged += 1
             continue
 
-        if override["op"] == DELETE:
-            delete_node(client, label, target_id, cascade=True)
-            applied += 1
-            continue
+        # The node was there a moment ago, but another publish or another
+        # editor can remove it between the read above and the write below.
+        # Losing that race is not an error worth failing a publish over.
+        try:
+            if override["op"] == DELETE:
+                delete_node(client, label, target_id, cascade=True)
+                applied += 1
+                continue
 
-        fields = override.get("fields") or {}
-        if not _needs_write(current, fields):
-            unchanged += 1
-            continue
-        update_node(client, label, target_id, fields)
-        applied += 1
+            fields = override.get("fields") or {}
+            if not _needs_write(current, fields):
+                unchanged += 1
+                continue
+            update_node(client, label, target_id, fields)
+            applied += 1
+        except MutationError as error:
+            logger.warning("override %s skipped: %s", override["_id"], error)
+            missing += 1
 
     if applied or missing:
         logger.info("overrides: %d applied, %d already in place, %d target(s) gone",

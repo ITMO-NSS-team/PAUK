@@ -299,3 +299,65 @@ class RelationshipOverrideTest(unittest.TestCase):
         from pauk.graph.load import ENTITY_FILES, FILE_LABELS
         node_files = {name for name in ENTITY_FILES.values() if name != "repo_links.jsonl"}
         self.assertEqual(node_files - set(FILE_LABELS), set())
+
+
+class ConcurrentEditTest(unittest.TestCase):
+    """Two administrators, one node, different fields — neither edit is lost."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+
+    def test_a_second_editor_does_not_overwrite_the_first(self):
+        # Both read the document before either writes — the situation a
+        # read-then-replace loses.
+        record_override(self.db, "Person", "A1", "set", {"name_ru": "Иванов"},
+                        actor="user:petrov")
+        record_override(self.db, "Person", "A1", "set", {"email": "i@itmo.ru"},
+                        actor="user:ivanova")
+        (stored,) = active_overrides(self.db)
+        self.assertEqual(stored["fields"], {"name_ru": "Иванов", "email": "i@itmo.ru"})
+
+    def test_the_document_is_written_without_reading_it_first(self):
+        # A read before the write is exactly the window where an edit is
+        # lost; the write has to be one server-side operation.
+        calls = []
+        collection = self.db[COLLECTION]
+        original_find = collection.find_one
+
+        def watched(*args, **kwargs):
+            calls.append("find_one")
+            return original_find(*args, **kwargs)
+
+        collection.find_one = watched
+        record_override(self.db, "Person", "A1", "set", {"name_ru": "Иванов"})
+        # One read is allowed: the document is read back at the end to
+        # return what was actually stored.
+        self.assertLessEqual(calls.count("find_one"), 1)
+
+    def test_the_first_automatic_value_survives_a_later_edit(self):
+        record_override(self.db, "Person", "A1", "set", {"name_ru": "первый"},
+                        auto_value={"name_ru": "Ivanov I."})
+        record_override(self.db, "Person", "A1", "set", {"name_ru": "второй"},
+                        auto_value={"name_ru": "первый"})
+        (stored,) = active_overrides(self.db)
+        self.assertEqual(stored["auto_value"], {"name_ru": "Ivanov I."})
+
+
+class VanishingTargetTest(unittest.TestCase):
+    """apply_overrides reads a node, then writes it — the gap is real."""
+
+    def test_a_node_removed_between_the_read_and_the_write_is_skipped(self):
+        db = mongomock.MongoClient()["pauk_test"]
+        graph = FakeGraph()
+        graph.add("Person", "A1", name_en="Ivan")
+        record_override(db, "Person", "A1", "set", {"name_ru": "Иванов"})
+        original = graph.fetch_node_properties
+
+        def read_then_vanish(label, node_id):
+            found = original(label, node_id)
+            graph.nodes.pop((label, node_id), None)
+            return found
+
+        graph.fetch_node_properties = read_then_vanish
+        result = apply_overrides(graph, db)     # must not raise
+        self.assertEqual(result["overrides_missing"], 1)

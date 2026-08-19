@@ -30,10 +30,11 @@ hand either.
 
 from __future__ import annotations
 
+import json
 import logging
 
 from .client import Neo4jClient
-from .extract import NODE_REGISTRY
+from .extract import JSON_TEXT_FIELDS, NODE_REGISTRY
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,22 @@ class NotFound(MutationError):
 
 class VersionConflict(MutationError):
     """The node changed after the editor last read it."""
+
+
+def as_stored(props: dict) -> dict:
+    """Property values shaped the way the loader stores them.
+
+    Neo4j has no nested-map property type, so `funding`, `versions`,
+    `counts_by_year` and `affiliations` are kept as JSON text
+    (`extract.py::extract_node` does the same). A manual edit has to match,
+    or the driver rejects the write and the same field ends up holding two
+    different shapes depending on who wrote it.
+    """
+    stored = dict(props)
+    for key in JSON_TEXT_FIELDS:
+        if isinstance(stored.get(key), (list, dict)):
+            stored[key] = json.dumps(stored[key], ensure_ascii=False)
+    return stored
 
 
 def validate_label(label: str) -> None:
@@ -148,7 +165,7 @@ def create_node(client: Neo4jClient, label: str, node_id: str, props: dict) -> d
     validate_fields(label, props)
     if client.fetch_node_properties(label, node_id) is not None:
         raise MutationError(f"{label} {node_id} already exists — edit it instead of creating it")
-    client.upsert_nodes_batch(label, [(node_id, dict(props))])
+    client.upsert_nodes_batch(label, [(node_id, as_stored(props))])
     logger.info("created %s %s with %d field(s)", label, node_id, len(props))
     return read_node(client, label, node_id)
 
@@ -181,7 +198,7 @@ def update_node(client: Neo4jClient, label: str, node_id: str, patch: dict,
         raise VersionConflict(
             f"{label} {node_id} changed since you opened it "
             f"(now {current.get('updated_at')}, you had {expected_updated_at})")
-    client.upsert_nodes_batch(label, [(node_id, dict(patch))])
+    client.upsert_nodes_batch(label, [(node_id, as_stored(patch))])
     logger.info("updated %s %s: %s", label, node_id, ", ".join(sorted(patch)))
     return read_node(client, label, node_id)
 
@@ -273,11 +290,15 @@ def merge_nodes(client: Neo4jClient, label: str, duplicate_id: str, canonical_id
             f"{label} cannot be merged (mergeable: {', '.join(sorted(MERGEABLE))})")
     if duplicate_id == canonical_id:
         raise MutationError("a node cannot be merged into itself")
-    read_node(client, label, duplicate_id)
+    duplicate = read_node(client, label, duplicate_id)
     canonical = read_node(client, label, canonical_id)
+    # The duplicate may itself have swallowed ids earlier (A folded into B,
+    # now B into C). Those come along, or A stops resolving to anything and
+    # the loader recreates it on the next publish.
     merged_ids = list(canonical.get("merged_ids") or [])
-    if duplicate_id not in merged_ids:
-        merged_ids.append(duplicate_id)
+    for swallowed in [*(duplicate.get("merged_ids") or []), duplicate_id]:
+        if swallowed not in merged_ids and swallowed != canonical_id:
+            merged_ids.append(swallowed)
     # Written before the fold: afterwards the duplicate is gone, and a
     # failure between the two steps would leave it free to reappear on the
     # next publish.

@@ -312,3 +312,51 @@ class MergeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StoredShapeTest(unittest.TestCase):
+    """Neo4j has no nested-map property; the loader keeps four fields as JSON text."""
+
+    def setUp(self):
+        self.graph = FakeGraph()
+        self.graph.add("Person", "A1", name_en="Ivan Petrov")
+
+    def test_a_nested_field_is_stored_the_way_the_loader_stores_it(self):
+        node = update_node(self.graph, "Person", "A1",
+                           {"affiliations": [{"name": "ITMO", "years": [2026]}]})
+        self.assertIsInstance(node["affiliations"], str)
+        self.assertIn("ITMO", node["affiliations"])
+
+    def test_plain_fields_are_left_alone(self):
+        node = update_node(self.graph, "Person", "A1", {"name_ru": "Иванов И. И."})
+        self.assertEqual(node["name_ru"], "Иванов И. И.")
+
+    def test_a_list_of_plain_values_is_not_json_encoded(self):
+        # name_variants is a list too, but the loader stores it as a list:
+        # only the four nested-map fields are encoded.
+        node = update_node(self.graph, "Person", "A1", {"name_variants": ["I. Petrov"]})
+        self.assertEqual(node["name_variants"], ["I. Petrov"])
+
+    def test_creating_a_node_encodes_the_same_fields(self):
+        created = create_node(self.graph, "Publication", "W9",
+                              {"title": "paper", "funding": [{"funder": "RSF"}]})
+        self.assertIsInstance(created["funding"], str)
+
+
+class MergeChainTest(unittest.TestCase):
+    """A folded into B, then B into C — A must still resolve to C."""
+
+    def setUp(self):
+        self.graph = FakeGraph()
+
+    def test_ids_the_duplicate_had_swallowed_come_along(self):
+        self.graph.add("Person", "B", merged_ids=["A"])
+        self.graph.add("Person", "C")
+        merge_nodes(self.graph, "Person", "B", "C")
+        self.assertEqual(sorted(self.graph.nodes[("Person", "C")]["merged_ids"]), ["A", "B"])
+
+    def test_the_canonical_id_never_lands_in_its_own_list(self):
+        self.graph.add("Person", "B", merged_ids=["C"])   # stale, points at the survivor
+        self.graph.add("Person", "C")
+        merge_nodes(self.graph, "Person", "B", "C")
+        self.assertNotIn("C", self.graph.nodes[("Person", "C")]["merged_ids"])
