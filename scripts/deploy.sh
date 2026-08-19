@@ -33,6 +33,13 @@ ssh "$REMOTE" bash -l <<EOF
 cd $REMOTE_DIR && git pull origin main
 EOF
 
+read -r -p "Sync local private/ data to server? [y/N] " reply
+if [[ "$reply" =~ ^[Yy]$ ]]; then
+    echo "==> rsync private data"
+    rsync -avz --delete "$(git rev-parse --show-toplevel)/pauk/gui/data/private/" \
+        "$REMOTE:$REMOTE_DIR/pauk/gui/data/private/"
+fi
+
 echo "==> restart screen '$SCREEN_NAME'"
 ssh "$REMOTE" bash -l <<EOF
 if screen -list | grep -q '\.${SCREEN_NAME}[[:space:]]'; then
