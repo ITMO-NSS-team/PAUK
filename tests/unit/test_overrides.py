@@ -2,6 +2,7 @@ import unittest
 
 import mongomock
 
+from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import _drop_tombstoned
 from pauk.graph.mutations import MutationError, UnknownEntity
 from pauk.graph.overrides import (
@@ -9,8 +10,11 @@ from pauk.graph.overrides import (
     active_overrides,
     apply_overrides,
     deactivate_override,
+    deactivate_relationship_override,
     record_override,
+    record_relationship_override,
     tombstoned_ids,
+    tombstoned_relationships,
 )
 
 from .test_mutations import FakeGraph
@@ -186,3 +190,103 @@ class TombstoneFilterTest(unittest.TestCase):
         record_override(self.db, "Person", "A1", "delete")
         rows = {"repo_links.jsonl": [{"publication_id": "W1"}]}
         self.assertEqual(_drop_tombstoned(rows, self.db), rows)
+
+
+class RelationshipOverrideTest(unittest.TestCase):
+    """An edge removed by hand is rebuilt by MERGE from the same prepared row."""
+
+    TRIPLE = ("Person", "AUTHORED", "Publication", "A1", "W1")
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.graph = FakeGraph()
+        self.graph.add("Person", "A1", name_en="Ivan Petrov")
+        self.graph.add("Publication", "W1", title="paper")
+
+    def test_an_unlinked_edge_is_remembered(self):
+        stored = record_relationship_override(self.db, *self.TRIPLE, actor="user:petrov")
+        self.assertEqual(stored["_id"], "rel:Person:AUTHORED:Publication:A1:W1")
+        self.assertEqual(stored["kind"], "rel")
+
+    def test_the_loader_is_told_which_edges_to_skip(self):
+        record_relationship_override(self.db, *self.TRIPLE)
+        self.assertEqual(tombstoned_relationships(self.db), {self.TRIPLE})
+
+    def test_a_publish_does_not_rebuild_an_unlinked_edge(self):
+        record_relationship_override(self.db, *self.TRIPLE)
+        rows = {"persons.jsonl": [
+            {"id": "A1", "is_itmo": True, "authored": [{"publication_id": "W1", "position": 1}]}]}
+        load_prepared_rows(self.graph, rows, tombstoned_relationships(self.db))
+        self.assertNotIn(("Person", "AUTHORED", "Publication", "A1", "W1"),
+                         self.graph.relationships)
+
+    def test_without_the_override_the_edge_comes_back(self):
+        rows = {"persons.jsonl": [
+            {"id": "A1", "is_itmo": True, "authored": [{"publication_id": "W1", "position": 1}]}]}
+        load_prepared_rows(self.graph, rows, tombstoned_relationships(self.db))
+        self.assertIn(("Person", "AUTHORED", "Publication", "A1", "W1"),
+                      self.graph.relationships)
+
+    def test_only_the_named_edge_is_skipped(self):
+        record_relationship_override(self.db, *self.TRIPLE)
+        self.graph.add("Publication", "W2", title="another")
+        rows = {"persons.jsonl": [{"id": "A1", "is_itmo": True, "authored": [
+            {"publication_id": "W1", "position": 1}, {"publication_id": "W2", "position": 2}]}]}
+        load_prepared_rows(self.graph, rows, tombstoned_relationships(self.db))
+        self.assertIn(("Person", "AUTHORED", "Publication", "A1", "W2"),
+                      self.graph.relationships)
+
+    def test_restoring_lets_the_next_publish_rebuild_it(self):
+        record_relationship_override(self.db, *self.TRIPLE)
+        self.assertTrue(deactivate_relationship_override(self.db, *self.TRIPLE))
+        self.assertEqual(tombstoned_relationships(self.db), set())
+
+    def test_a_triple_the_graph_does_not_have_is_refused(self):
+        with self.assertRaises(UnknownEntity):
+            record_relationship_override(self.db, "Person", "AUTHORED", "Department", "A1", "D1")
+
+    def test_only_deletion_is_recorded_for_edges(self):
+        # An edge added by hand already survives: the loader never removes
+        # edges it does not know about.
+        with self.assertRaises(UnknownEntity):
+            record_relationship_override(self.db, *self.TRIPLE, op="set")
+
+    def test_applying_removes_an_edge_recreated_behind_our_back(self):
+        record_relationship_override(self.db, *self.TRIPLE)
+        self.graph.upsert_relationships_batch("Person", "Publication", "AUTHORED",
+                                              [("A1", "W1", {})])
+        apply_overrides(self.graph, self.db)
+        self.assertNotIn(("Person", "AUTHORED", "Publication", "A1", "W1"),
+                         self.graph.relationships)
+
+    def test_a_row_the_registry_no_longer_knows_does_not_break_a_publish(self):
+        # apply_overrides runs inside publish; a relationship type dropped
+        # in a refactor, or a hand-edited document, must not take a whole
+        # group's publish down with it.
+        self.db[COLLECTION].insert_one({
+            "_id": "rel:Person:WAS_ADVISOR:Person:A1:A2", "kind": "rel", "active": True,
+            "op": "delete", "src_label": "Person", "rel_type": "WAS_ADVISOR",
+            "tgt_label": "Person", "src_id": "A1", "target_id": "A2",
+            "actor": "x", "note": "",
+        })
+        result = apply_overrides(self.graph, self.db)
+        self.assertEqual(result["overrides_applied"], 0)
+        self.assertEqual(result["overrides_missing"], 1)
+
+    def test_an_edge_whose_target_is_matched_by_url_is_skipped_too(self):
+        # MENTIONS_LINK finds its Repository by url, not by id — the
+        # tombstone has to be keyed the same way the loader looks it up.
+        self.graph.add("Publication", "W2", title="paper with code")
+        self.graph.nodes[("Repository", "github_org_repo")] = {
+            "id": "github_org_repo", "url": "https://github.com/org/repo"}
+        record_relationship_override(self.db, "Publication", "MENTIONS_LINK", "Repository",
+                                     "W2", "https://github.com/org/repo")
+        rows = {
+            "repositories.jsonl": [{"id": "github_org_repo", "name": "repo",
+                                    "url": "https://github.com/org/repo"}],
+            "repo_links.jsonl": [{"publication_id": "W2", "links": [
+                {"url": "https://github.com/org/repo",
+                 "occurrences": [{"context": "see code"}]}]}],
+        }
+        load_prepared_rows(self.graph, rows, tombstoned_relationships(self.db))
+        self.assertEqual([k for k in self.graph.relationships if k[1] == "MENTIONS_LINK"], [])

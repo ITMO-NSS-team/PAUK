@@ -13,7 +13,7 @@ from .audit import actor_context, audited_client
 from .client import Neo4jClient
 from .csv_loader import load_csv_dir
 from .jsonl_loader import load_prepared_rows
-from .overrides import apply_overrides, tombstoned_ids
+from .overrides import apply_overrides, tombstoned_ids, tombstoned_relationships
 from .schema import create_constraints
 
 logger = logging.getLogger(__name__)
@@ -85,7 +85,7 @@ def load_jsonl_group(config: Settings, mongo_db: Database, group: str) -> None:
         # of audit rows, not one per node — but "who republished this group
         # and when" stops being invisible.
         with actor_context("etl-pipeline", source=f"publish:{group}"):
-            load_prepared_rows(client, rows_by_file)
+            load_prepared_rows(client, rows_by_file, tombstoned_relationships(mongo_db))
             # Last step, after candidate promotion and every fold: publishing
             # overwrites hand-corrected fields with whatever the source says,
             # so the manual decisions are put back on top.

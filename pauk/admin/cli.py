@@ -34,7 +34,9 @@ from pauk.graph.overrides import (
     active_overrides,
     apply_overrides,
     deactivate_override,
+    deactivate_relationship_override,
     record_override,
+    record_relationship_override,
 )
 from pauk.settings import Settings
 
@@ -116,6 +118,10 @@ def add_parser(subparsers) -> None:
         rel.add_argument("tgt_id")
         if name == "add":
             rel.add_argument("--set", dest="assignments", action="append", metavar="FIELD=VALUE")
+        else:
+            rel.add_argument("--note", default=None, help="why the link was removed")
+            rel.add_argument("--once", action="store_true",
+                             help="unlink without recording it; the next publish restores the link")
 
     merge = commands.add_parser(
         "merge", help="fold a duplicate node into the node it duplicates (irreversible)")
@@ -133,6 +139,10 @@ def add_parser(subparsers) -> None:
     undo = overrides.add_parser("undo", help="stop applying one, keeping the record of it")
     undo.add_argument("label", choices=sorted(NODE_FIELDS))
     undo.add_argument("id")
+    undo_rel = overrides.add_parser(
+        "undo-rel", help="restore a link removed by hand; the next publish rebuilds it")
+    for argument in ("src_label", "rel_type", "tgt_label", "src_id", "tgt_id"):
+        undo_rel.add_argument(argument)
 
     commands.add_parser("schema", help="list the labels, fields and relationships that can be edited")
 
@@ -176,7 +186,7 @@ def _dispatch(args, client, db, actor: str) -> None:
     if args.admin_command == "node":
         _run_node(args, client, db, actor)
     elif args.admin_command == "rel":
-        _run_relationship(args, client)
+        _run_relationship(args, client, db, actor)
     elif args.admin_command == "overrides":
         _run_overrides(args, client, db)
     else:
@@ -209,12 +219,16 @@ def _set_fields(args, client, db, actor: str) -> dict:
     """
     fields = _parse_assignments(args.assignments)
     before = read_node(client, args.label, args.id)
+    # The graph write goes first. It is the step that can be refused — by a
+    # version conflict, or by validation — and a decision recorded for an
+    # edit that never happened would be applied by the next publish, quietly
+    # making a change the person was just told was rejected.
+    node = update_node(client, args.label, args.id, fields,
+                       expected_updated_at=args.expect_updated_at)
     if db is not None and not args.once:
         record_override(db, args.label, args.id, "set", fields, actor=actor,
                         note=args.note or "",
                         auto_value={name: before.get(name) for name in fields})
-    node = update_node(client, args.label, args.id, fields,
-                       expected_updated_at=args.expect_updated_at)
     logger.info("updated %s %s%s", args.label, args.id,
                 "" if db is not None and not args.once else " (not recorded as an override)")
     return node
@@ -222,9 +236,12 @@ def _set_fields(args, client, db, actor: str) -> dict:
 
 def _delete(args, client, db, actor: str) -> None:
     """Remove a node, and tombstone it so publishing does not bring it back."""
+    # Same order as _set_fields: a node with relationships and no --cascade
+    # is refused, and a tombstone left behind would delete it on the next
+    # publish anyway.
+    removed = delete_node(client, args.label, args.id, cascade=args.cascade)
     if db is not None and not args.once:
         record_override(db, args.label, args.id, "delete", actor=actor, note=args.note or "")
-    removed = delete_node(client, args.label, args.id, cascade=args.cascade)
     logger.info("deleted %d node(s)", removed)
 
 
@@ -236,8 +253,13 @@ def _run_overrides(args, client, db) -> None:
         if not rows:
             print("no active overrides")
         for row in rows:
-            fields = ", ".join(f"{k}={v!r}" for k, v in (row.get("fields") or {}).items())
-            print(f"{row['_id']}  {row['op']}  {fields}  by {row['actor']}"
+            if row.get("kind") == "rel":
+                what = (f"unlink ({row['src_label']} {row['src_id']})-[:{row['rel_type']}]->"
+                        f"({row['tgt_label']} {row['target_id']})")
+            else:
+                fields = ", ".join(f"{k}={v!r}" for k, v in (row.get("fields") or {}).items())
+                what = f"{row['op']}  {fields}"
+            print(f"{row['_id']}  {what}  by {row['actor']}"
                   f"{'  — ' + row['note'] if row.get('note') else ''}")
     elif args.overrides_command == "undo":
         if deactivate_override(db, args.label, args.id):
@@ -245,21 +267,37 @@ def _run_overrides(args, client, db) -> None:
                   f"run `pauk admin overrides apply` or republish to restore the automatic value")
         else:
             raise SystemExit(f"no override recorded for {args.label} {args.id}")
+    elif args.overrides_command == "undo-rel":
+        if deactivate_relationship_override(db, args.src_label, args.rel_type, args.tgt_label,
+                                            args.src_id, args.tgt_id):
+            print(f"({args.src_label} {args.src_id})-[:{args.rel_type}]->"
+                  f"({args.tgt_label} {args.tgt_id}) will be rebuilt by the next publish")
+        else:
+            raise SystemExit("no override recorded for that relationship")
     else:
         result = apply_overrides(client, db)
         print(", ".join(f"{key}={value}" for key, value in result.items()))
 
 
-def _run_relationship(args, client) -> None:
+def _run_relationship(args, client, db, actor: str) -> None:
     if args.rel_command == "add":
+        # No override needed: the loader only ever creates edges, so one
+        # added by hand is never taken away by a publish.
         create_relationship(client, args.src_label, args.rel_type, args.tgt_label,
                             args.src_id, args.tgt_id, _parse_assignments(args.assignments))
         logger.info("linked (%s %s)-[:%s]->(%s %s)", args.src_label, args.src_id,
                     args.rel_type, args.tgt_label, args.tgt_id)
-    else:
-        removed = delete_relationship(client, args.src_label, args.rel_type, args.tgt_label,
-                                      args.src_id, args.tgt_id)
-        logger.info("removed %d relationship(s)", removed)
+        return
+
+    # Deletion is the direction that needs remembering: the same prepared
+    # row rebuilds the edge on the next publish.
+    removed = delete_relationship(client, args.src_label, args.rel_type, args.tgt_label,
+                                  args.src_id, args.tgt_id)
+    if db is not None and not args.once:
+        record_relationship_override(db, args.src_label, args.rel_type, args.tgt_label,
+                                     args.src_id, args.tgt_id, actor=actor, note=args.note or "")
+    logger.info("removed %d relationship(s)%s", removed,
+                "" if db is not None and not args.once else " (not recorded as an override)")
 
 
 def _run_merge(args, client) -> None:

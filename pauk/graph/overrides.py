@@ -37,10 +37,12 @@ from .mutations import (
     MutationError,
     UnknownEntity,
     delete_node,
+    delete_relationship,
     read_node,
     update_node,
     validate_fields,
     validate_label,
+    validate_relationship,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,6 +68,18 @@ def _now() -> datetime:
 def override_id(label: str, target_id: str) -> str:
     """Deterministic key, so editing the same node twice updates one document."""
     return f"node:{label}:{target_id}"
+
+
+def relationship_override_id(src_label: str, rel_type: str, tgt_label: str,
+                             src_id: str, tgt_id: str) -> str:
+    """Key for a decision about one relationship.
+
+    A relationship needs five parts to be named: a node is one id, an edge
+    is a type plus both ends. The target id is whatever the loader matches
+    the target by — `url` for a Repository, `login` for a GitHubProfile —
+    so the key matches what the publish path actually compares.
+    """
+    return f"rel:{src_label}:{rel_type}:{tgt_label}:{src_id}:{tgt_id}"
 
 
 def record_override(db: Database, label: str, target_id: str, op: str,
@@ -134,6 +148,70 @@ def record_override(db: Database, label: str, target_id: str, op: str,
     return db[COLLECTION].find_one({"_id": document_id})
 
 
+def record_relationship_override(db: Database, src_label: str, rel_type: str, tgt_label: str,
+                                 src_id: str, tgt_id: str, op: str = DELETE,
+                                 actor: str = "unknown", note: str = "") -> dict:
+    """Write down a manual decision about one relationship.
+
+    Only `delete` carries weight here. A relationship added by hand already
+    survives publishing — the loader creates edges, it never removes the
+    ones it does not know about — while a deleted one is recreated by
+    `MERGE` from the same prepared row, which is what this prevents.
+
+    Raises:
+        UnknownEntity: The triple is not a relationship the graph has.
+    """
+    if op != DELETE:
+        raise UnknownEntity(
+            f"relationship overrides support only {DELETE!r}, got {op!r}; "
+            "a relationship added by hand survives publishing on its own")
+    validate_relationship(src_label, rel_type, tgt_label)
+    now = _now()
+    document_id = relationship_override_id(src_label, rel_type, tgt_label, src_id, tgt_id)
+    existing = db[COLLECTION].find_one({"_id": document_id}) or {}
+    db[COLLECTION].replace_one({"_id": document_id}, {
+        "_id": document_id,
+        "kind": "rel",
+        "src_label": src_label,
+        "rel_type": rel_type,
+        "tgt_label": tgt_label,
+        "src_id": src_id,
+        "target_id": tgt_id,
+        "op": DELETE,
+        "actor": actor,
+        "note": note or existing.get("note", ""),
+        "active": True,
+        "created_at": existing.get("created_at", now),
+        "updated_at": now,
+    }, upsert=True)
+    logger.info("override recorded: unlink (%s %s)-[:%s]->(%s %s)",
+                src_label, src_id, rel_type, tgt_label, tgt_id)
+    return db[COLLECTION].find_one({"_id": document_id})
+
+
+def deactivate_relationship_override(db: Database, src_label: str, rel_type: str, tgt_label: str,
+                                     src_id: str, tgt_id: str) -> bool:
+    """Stop keeping a relationship unlinked; the next publish restores it."""
+    result = db[COLLECTION].update_one(
+        {"_id": relationship_override_id(src_label, rel_type, tgt_label, src_id, tgt_id)},
+        {"$set": {"active": False, "updated_at": _now()}})
+    return result.modified_count > 0
+
+
+def tombstoned_relationships(db: Database) -> set[tuple[str, str, str, str, str]]:
+    """Edges the loader must not recreate, as (src_label, rel_type, tgt_label, src_id, tgt_id).
+
+    Filtered out before the upload rather than deleted after it, for the
+    same reason node tombstones are: `MERGE` would recreate the edge and
+    the reapply would remove it again, writing a creation and a deletion
+    into the audit log on every single run.
+    """
+    return {
+        (row["src_label"], row["rel_type"], row["tgt_label"], row["src_id"], row["target_id"])
+        for row in db[COLLECTION].find({"active": True, "kind": "rel", "op": DELETE})
+    }
+
+
 def deactivate_override(db: Database, label: str, target_id: str) -> bool:
     """Stop applying an override without losing the record of it.
 
@@ -193,6 +271,26 @@ def apply_overrides(client, db: Database) -> dict[str, int]:
     """
     applied = unchanged = missing = 0
     for override in active_overrides(db):
+        if override.get("kind") == "rel":
+            # Belt and braces: the loader already skips these, but an edge
+            # created by anything else — a rerun of an older version, a hand
+            # written query — is removed here.
+            #
+            # A row naming something the registry no longer has (a
+            # relationship type dropped in a refactor, a hand-edited
+            # document) is reported and skipped: this runs inside publish,
+            # and one bad row must not take a whole group's publish down.
+            try:
+                removed = delete_relationship(
+                    client, override["src_label"], override["rel_type"], override["tgt_label"],
+                    override["src_id"], override["target_id"])
+            except MutationError as error:
+                logger.warning("override %s skipped: %s", override["_id"], error)
+                missing += 1
+                continue
+            applied += bool(removed)
+            unchanged += not removed
+            continue
         label, target_id = override["label"], override["target_id"]
         try:
             current = read_node(client, label, target_id)

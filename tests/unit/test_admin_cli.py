@@ -6,7 +6,11 @@ import mongomock
 
 from pauk.admin import cli as admin_cli
 from pauk.graph.audit import _actor_var, _source_var
-from pauk.graph.overrides import active_overrides, tombstoned_ids
+from pauk.graph.overrides import (
+    active_overrides,
+    tombstoned_ids,
+    tombstoned_relationships,
+)
 from pauk.settings import Settings
 
 from .test_mutations import FakeGraph
@@ -154,6 +158,29 @@ class RunTest(unittest.TestCase):
         admin_cli.run(parse("overrides", "apply"), self.config, db)
         self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иванов")
 
+    def test_a_refused_edit_leaves_no_decision_behind(self):
+        # Recording the decision before the write would apply it on the next
+        # publish — quietly making the change the person was just told was
+        # rejected.
+        db = mongomock.MongoClient()["pauk_test"]
+        stale = self.graph.nodes[("Person", "A1")]["updated_at"]
+        self.graph.upsert_nodes_batch("Person", [("A1", {"name_ru": "чужая правка"})])
+        with self.assertRaises(SystemExit):
+            admin_cli.run(parse("node", "set", "Person", "A1", "--set", "name_ru=моя правка",
+                                "--expect-updated-at", stale), self.config, db)
+        self.assertEqual(active_overrides(db), [])
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "чужая правка")
+
+    def test_a_refused_deletion_leaves_no_tombstone(self):
+        db = mongomock.MongoClient()["pauk_test"]
+        self.graph.add("Publication", "W1", title="paper")
+        admin_cli.run(parse("rel", "add", "Person", "AUTHORED", "Publication", "A1", "W1"),
+                      self.config, db)
+        with self.assertRaises(SystemExit):
+            admin_cli.run(parse("node", "delete", "Person", "A1"), self.config, db)
+        self.assertEqual(tombstoned_ids(db, "Person"), set())
+        self.assertIn(("Person", "A1"), self.graph.nodes)
+
     def test_schema_needs_no_database_at_all(self):
         # It only prints the whitelists; requiring Mongo would make the
         # one command you reach for while setting things up unusable.
@@ -164,3 +191,45 @@ class RunTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RelationshipOverrideCliTest(unittest.TestCase):
+    def setUp(self):
+        self.graph = FakeGraph()
+        self.graph.add("Person", "A1", name_en="Ivan Petrov")
+        self.graph.add("Publication", "W1", title="paper")
+        self.graph.close = lambda: None
+        self.config = Settings()
+        patcher = patch("pauk.admin.cli.audited_client", return_value=self.graph)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.db = mongomock.MongoClient()["pauk_test"]
+        admin_cli.run(parse("rel", "add", "Person", "AUTHORED", "Publication", "A1", "W1"),
+                      self.config, self.db)
+
+    def test_unlinking_is_remembered_so_a_publish_cannot_restore_it(self):
+        admin_cli.run(parse("rel", "delete", "Person", "AUTHORED", "Publication", "A1", "W1",
+                            "--note", "не его статья"), self.config, self.db)
+        self.assertEqual(tombstoned_relationships(self.db),
+                         {("Person", "AUTHORED", "Publication", "A1", "W1")})
+
+    def test_linking_records_nothing(self):
+        # The loader only creates edges, so a hand-made link needs no help.
+        self.assertEqual(active_overrides(self.db), [])
+
+    def test_once_unlinks_without_remembering(self):
+        admin_cli.run(parse("rel", "delete", "Person", "AUTHORED", "Publication", "A1", "W1",
+                            "--once"), self.config, self.db)
+        self.assertEqual(tombstoned_relationships(self.db), set())
+
+    def test_restoring_a_link_from_the_shell(self):
+        admin_cli.run(parse("rel", "delete", "Person", "AUTHORED", "Publication", "A1", "W1"),
+                      self.config, self.db)
+        admin_cli.run(parse("overrides", "undo-rel", "Person", "AUTHORED", "Publication",
+                            "A1", "W1"), self.config, self.db)
+        self.assertEqual(tombstoned_relationships(self.db), set())
+
+    def test_restoring_something_never_unlinked_says_so(self):
+        with self.assertRaises(SystemExit):
+            admin_cli.run(parse("overrides", "undo-rel", "Person", "AUTHORED", "Publication",
+                                "A1", "W1"), self.config, self.db)

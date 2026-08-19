@@ -99,6 +99,27 @@ class FakeGraph:
                 removed += 1
         return removed
 
+    # The rest of the loader's surface, so load_prepared_rows can run
+    # against this fake end to end.
+
+    def upsert_person_nodes_batch(self, nodes, is_itmo):
+        self.calls.append("upsert_person_nodes_batch")
+        self.upsert_nodes_batch("Person", nodes)
+
+    def merge_publication_nodes_batch(self, merges):
+        self.calls.append("merge_publication_nodes_batch")
+        return 0
+
+    def merge_repository_nodes_batch(self, merges):
+        self.calls.append("merge_repository_nodes_batch")
+        return 0
+
+    def promote_link_candidates_batch(self, candidates):
+        self.calls.append("promote_link_candidates_batch")
+
+    def fetch_merged_id_map(self, label):
+        return {}
+
 
 class WhitelistTest(unittest.TestCase):
     """The closed sets that keep user input out of interpolated Cypher."""

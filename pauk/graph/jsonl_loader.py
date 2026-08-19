@@ -103,7 +103,11 @@ def extract_repo_links(
     return candidate_nodes, repo_edges, candidate_edges, candidate_promotions
 
 
-def load_prepared_rows(client: Neo4jClient | AuditedNeo4jClient, rows_by_file: dict[str, list[dict]]) -> None:
+def load_prepared_rows(
+    client: Neo4jClient | AuditedNeo4jClient,
+    rows_by_file: dict[str, list[dict]],
+    dropped_relationships: set[tuple[str, str, str, str, str]] | None = None,
+) -> None:
     """Load prepared entity rows into Neo4j, however they were sourced.
 
     Reads every entity's rows first, accumulating nodes and relationships in
@@ -119,6 +123,10 @@ def load_prepared_rows(client: Neo4jClient | AuditedNeo4jClient, rows_by_file: d
             publications.jsonl, repositories.jsonl, github_profiles.jsonl,
             persons.jsonl, repo_links.jsonl) — a missing key is the same as
             an empty list, i.e. "this group has none of this entity".
+        dropped_relationships: Edges unlinked by hand, as
+            (src_label, rel_type, tgt_label, src_id, tgt_id). They are
+            skipped instead of being created and removed again on every run
+            (see pauk/graph/overrides.py).
     """
     node_batches: dict[str, list[tuple[str, dict]]] = defaultdict(list)
     person_batches: dict[bool, list[tuple[str, dict]]] = {True: [], False: []}
@@ -210,6 +218,13 @@ def load_prepared_rows(client: Neo4jClient | AuditedNeo4jClient, rows_by_file: d
         client.merge_repository_nodes_batch(chunk)
 
     for (src_label, tgt_label, rel_type, tgt_match_prop), rels in rel_batches.items():
+        if dropped_relationships:
+            kept = [(src_id, tgt_id, props) for src_id, tgt_id, props in rels
+                    if (src_label, rel_type, tgt_label, src_id, tgt_id) not in dropped_relationships]
+            if len(kept) != len(rels):
+                logger.info("relationships (:%s)-[:%s]->(:%s): %d skipped as unlinked by hand",
+                            src_label, rel_type, tgt_label, len(rels) - len(kept))
+            rels = kept
         for chunk in chunked(rels):
             client.upsert_relationships_batch(src_label, tgt_label, rel_type, chunk, tgt_match_prop)
         logger.info("relationships (:%s)-[:%s]->(:%s): requested %d", src_label, rel_type, tgt_label, len(rels))

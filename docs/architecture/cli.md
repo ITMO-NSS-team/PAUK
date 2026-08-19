@@ -123,10 +123,15 @@ pauk admin merge       <Label> <дубль> <канонический> [--yes]
 `publish graph`. `--once` пропускает запись решения (разовая правка,
 которую публикация затрёт), `--note` сохраняет причину.
 
+`rel delete` тоже запоминается — иначе `MERGE` пересоздаст ребро из той
+же строки при следующей публикации. `rel add` не запоминается: добавленное
+руками ребро загрузчик не трогает.
+
 ```
 pauk admin overrides list           # какие ручные решения в силе
 pauk admin overrides apply          # переприменить их к графу
 pauk admin overrides undo <Label> <id>   # перестать применять, запись сохранится
+pauk admin overrides undo-rel <Src> <REL> <Tgt> <src_id> <tgt_id>   # вернуть связь
 ```
 
 `--expect-updated-at` — защита от одновременного редактирования: передайте
