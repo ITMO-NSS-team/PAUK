@@ -1,4 +1,6 @@
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import mongomock
@@ -6,10 +8,14 @@ import mongomock
 from pauk.graph.audit import (
     AuditedNeo4jClient,
     AuditEntry,
+    JSONLAuditSink,
     MongoAuditSink,
     MultiAuditSink,
+    _storable,
     actor_context,
+    build_audit_sink,
 )
+from pauk.settings import Settings
 
 
 class FakeNeo4jClient:
@@ -304,6 +310,81 @@ class MultiAuditSinkTest(unittest.TestCase):
 
         with self.assertRaises(RuntimeError):
             MultiAuditSink(Broken(), InMemorySink()).write([MongoAuditSinkTest.entry()])
+
+
+class DeleteAuditTest(unittest.TestCase):
+    """Deletion is the one change nothing can reconstruct afterwards."""
+
+    def setUp(self):
+        self.fake = FakeNeo4jClient()
+        self.fake.delete_nodes_batch = lambda label, ids, detach=True: len(ids)
+        self.fake.delete_relationships_batch = lambda s, t, r, pairs, m="id": len(pairs)
+        self.sink = InMemorySink()
+        self.client = AuditedNeo4jClient(self.fake, self.sink)
+
+    def test_a_deleted_node_is_recorded_with_its_last_values(self):
+        with patch.object(AuditedNeo4jClient, "_fetch_node_props",
+                          side_effect=[{"A1": {"id": "A1", "name_en": "Ivan"}}, {}]), \
+             actor_context("user:petrov", source="admin-cli"):
+            removed = self.client.delete_nodes_batch("Person", ["A1"])
+        self.assertEqual(removed, 1)
+        entry = self.sink.entries[0]
+        self.assertEqual((entry.change_kind, entry.entity_id, entry.actor),
+                         ("deleted", "A1", "user:petrov"))
+        self.assertEqual(entry.diff["name_en"], ("Ivan", None))
+
+    def test_a_large_delete_is_still_diffed_row_by_row(self):
+        # Unlike upsert, deletion never collapses into a bulk summary: the
+        # entry carrying the node's fields is the only record left of it.
+        many = [f"A{i}" for i in range(60)]
+        before = {node_id: {"id": node_id, "name_en": node_id} for node_id in many}
+        with patch.object(AuditedNeo4jClient, "_fetch_node_props", side_effect=[before, {}]):
+            self.client.delete_nodes_batch("Person", many)
+        self.assertEqual(len(self.sink.entries), 60)
+
+    def test_a_deleted_relationship_is_recorded(self):
+        with patch.object(AuditedNeo4jClient, "_fetch_rel_props",
+                          side_effect=[{"A1 -> W1": {"position": 1}}, {}]):
+            removed = self.client.delete_relationships_batch(
+                "Person", "Publication", "AUTHORED", [("A1", "W1")])
+        self.assertEqual(removed, 1)
+        entry = self.sink.entries[0]
+        self.assertEqual(entry.entity_type, "(Person)-[:AUTHORED]->(Publication)")
+        self.assertEqual(entry.change_kind, "deleted")
+
+    def test_an_empty_delete_touches_neither_driver_nor_sink(self):
+        self.assertEqual(self.client.delete_nodes_batch("Person", []), 0)
+        self.assertEqual(self.client.delete_relationships_batch(
+            "Person", "Publication", "AUTHORED", []), 0)
+        self.assertEqual(self.sink.entries, [])
+
+
+class SinkAssemblyTest(unittest.TestCase):
+    """build_audit_sink is what every entry point uses to open the graph."""
+
+    def test_without_a_database_only_the_file_is_written(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sink = build_audit_sink(Settings(data_dir=Path(tmp)))
+            self.assertIsInstance(sink, JSONLAuditSink)
+            self.assertTrue(sink.path.parent.exists())
+
+    def test_with_a_database_both_sinks_receive_the_entry(self):
+        db = mongomock.MongoClient()["pauk_test"]
+        with tempfile.TemporaryDirectory() as tmp:
+            sink = build_audit_sink(Settings(data_dir=Path(tmp)), db)
+            sink.write([MongoAuditSinkTest.entry()])
+            self.assertEqual(db.audit.count_documents({}), 1)
+            written = (Path(tmp) / "audit" / "audit.jsonl")
+            self.assertTrue(written.exists() and written.read_text(encoding="utf-8").strip())
+
+
+class StorableTest(unittest.TestCase):
+    def test_nested_values_survive(self):
+        self.assertEqual(_storable(["a", 1, None]), ["a", 1, None])
+        self.assertEqual(_storable({"k": ["v"]}), {"k": ["v"]})
+
+    def test_keys_that_are_not_text_become_text(self):
+        self.assertEqual(_storable({1: "a"}), {"1": "a"})
 
 
 if __name__ == "__main__":

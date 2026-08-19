@@ -166,10 +166,15 @@ class WhitelistTest(unittest.TestCase):
         with self.assertRaises(UnknownEntity):
             validate_fields("Person", {"salary": 100})
 
-    def test_fields_the_database_owns_are_refused(self):
+    def test_fields_the_database_owns_are_refused_by_name(self):
+        # These are refused twice over — they are not in the whitelist
+        # either — but the reason has to be the accurate one: "the database
+        # sets this", not "no such field". Someone who typed `updated_at`
+        # should learn it exists and is not theirs to set.
         for field in ("id", "created_at", "updated_at"):
-            with self.subTest(field=field), self.assertRaises(UnknownEntity):
+            with self.subTest(field=field), self.assertRaises(UnknownEntity) as caught:
                 validate_fields("Person", {field: "anything"})
+            self.assertIn("set by the database", str(caught.exception))
 
     def test_a_known_relationship_returns_the_property_its_target_is_matched_by(self):
         self.assertEqual(validate_relationship("Person", "AUTHORED", "Publication"), "id")

@@ -233,3 +233,62 @@ class RelationshipOverrideCliTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             admin_cli.run(parse("overrides", "undo-rel", "Person", "AUTHORED", "Publication",
                                 "A1", "W1"), self.config, self.db)
+
+
+class PrintingCommandsTest(unittest.TestCase):
+    """Commands that mostly print — still worth a run, they touch the graph."""
+
+    def setUp(self):
+        self.graph = FakeGraph()
+        self.graph.add("Person", "A1", name_en="Ivan Petrov")
+        self.graph.close = lambda: None
+        self.config = Settings()
+        patcher = patch("pauk.admin.cli.audited_client", return_value=self.graph)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.db = mongomock.MongoClient()["pauk_test"]
+
+    def test_show_prints_the_node(self):
+        with patch("builtins.print") as printed:
+            admin_cli.run(parse("node", "show", "Person", "A1"), self.config, self.db)
+        self.assertIn("Ivan Petrov", printed.call_args[0][0])
+
+    def test_show_of_a_missing_node_stops_with_a_message(self):
+        with self.assertRaises(SystemExit) as caught:
+            admin_cli.run(parse("node", "show", "Person", "nobody"), self.config, self.db)
+        self.assertIn("does not exist", str(caught.exception))
+
+    def test_create_adds_a_node_the_pipeline_does_not_know(self):
+        admin_cli.run(parse("node", "create", "Department", "D1", "--set", "name_en=New lab"),
+                      self.config, self.db)
+        self.assertEqual(self.graph.nodes[("Department", "D1")]["name_en"], "New lab")
+
+    def test_creating_over_an_existing_node_is_refused(self):
+        with self.assertRaises(SystemExit) as caught:
+            admin_cli.run(parse("node", "create", "Person", "A1", "--set", "name_en=Someone"),
+                          self.config, self.db)
+        self.assertIn("already exists", str(caught.exception))
+
+    def test_listing_shows_both_kinds_of_decision(self):
+        self.graph.add("Publication", "W1", title="paper")
+        admin_cli.run(parse("node", "set", "Person", "A1", "--set", "name_ru=Иванов"),
+                      self.config, self.db)
+        admin_cli.run(parse("rel", "add", "Person", "AUTHORED", "Publication", "A1", "W1"),
+                      self.config, self.db)
+        admin_cli.run(parse("rel", "delete", "Person", "AUTHORED", "Publication", "A1", "W1"),
+                      self.config, self.db)
+        with patch("builtins.print") as printed:
+            admin_cli.run(parse("overrides", "list"), self.config, self.db)
+        printed_text = " ".join(str(call[0][0]) for call in printed.call_args_list)
+        self.assertIn("node:Person:A1", printed_text)
+        self.assertIn("unlink", printed_text)
+
+    def test_listing_says_so_when_there_is_nothing(self):
+        with patch("builtins.print") as printed:
+            admin_cli.run(parse("overrides", "list"), self.config, self.db)
+        self.assertIn("no active overrides", printed.call_args[0][0])
+
+    def test_overrides_without_a_database_stops_clearly(self):
+        with self.assertRaises(SystemExit) as caught:
+            admin_cli.run(parse("overrides", "list"), self.config, None)
+        self.assertIn("MongoDB", str(caught.exception))
