@@ -1,4 +1,4 @@
-"""Load a prepared-JSONL group (data/prepared/<group>/) into Neo4j.
+"""Load prepared entity rows into Neo4j.
 
 Loading is strictly nodes-first, relationships-second: if a relationship
 targets a node that hasn't been loaded, Cypher's MATCH simply won't find it
@@ -9,11 +9,8 @@ target nodes are never auto-created as stubs).
 
 from __future__ import annotations
 
-import json
 import logging
 from collections import defaultdict
-from collections.abc import Iterator
-from pathlib import Path
 
 from pauk.urls import normalize_repo_url
 
@@ -21,7 +18,7 @@ from .audit import AuditedNeo4jClient
 from .client import Neo4jClient, chunked
 from .extract import NODE_REGISTRY, extract_node, extract_relationships
 
-__all__ = ["extract_repo_links", "load_jsonl_dir", "load_prepared_rows", "normalize_repo_url"]
+__all__ = ["extract_repo_links", "load_prepared_rows", "normalize_repo_url"]
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +30,6 @@ FILE_SPECS: dict[str, str] = {
     "repositories.jsonl": "repository",
     "github_profiles.jsonl": "github_profile",
 }
-
-
-def _read_jsonl(path: Path) -> Iterator[dict]:
-    """Yield each non-empty line of a JSONL file as a decoded dict."""
-    with path.open(encoding="utf-8") as fh:
-        for line in fh:
-            if line.strip():
-                yield json.loads(line)
 
 
 def _stage_failed(row: dict, stage: str) -> bool:
@@ -241,27 +230,3 @@ def load_prepared_rows(client: Neo4jClient | AuditedNeo4jClient, rows_by_file: d
         ]
         for chunk in chunked(alias_pairs):
             fold(chunk)
-
-
-def load_jsonl_dir(client: Neo4jClient | AuditedNeo4jClient, in_dir: Path) -> None:
-    """Load every prepared JSONL file found in `in_dir` into Neo4j.
-
-    A plain file-directory entry point, independent of the pipeline's own
-    storage backend - for a hand-assembled or externally exported set of
-    prepared JSONL files. See load_prepared_rows for the actual loading
-    logic; the pipeline's own `pauk publish` reads its rows from Mongo and
-    calls that directly instead of going through a directory.
-
-    Args:
-        client: An open Neo4jClient or AuditedNeo4jClient to load data into.
-        in_dir: A prepared-JSONL group directory, e.g.
-            data/prepared/<group>/.
-    """
-    rows_by_file: dict[str, list[dict]] = {}
-    for filename in (*FILE_SPECS, "persons.jsonl", "repo_links.jsonl"):
-        path = in_dir / filename
-        if path.exists():
-            rows_by_file[filename] = list(_read_jsonl(path))
-        else:
-            logger.info("%s not found in %s, skipping", filename, in_dir)
-    load_prepared_rows(client, rows_by_file)

@@ -11,7 +11,7 @@ Usage
 
     # ETL / bulk load — cheap summary entries, no per-node diff:
     with actor_context("etl-pipeline", source="jsonl_loader"):
-        load_jsonl_dir(audited, in_dir)
+        load_prepared_rows(audited, rows_by_file)
 
     # Future front-end — single-entity mutation, full diff:
     with actor_context(f"user:{current_user.email}", source="admin-ui"):

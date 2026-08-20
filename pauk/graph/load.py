@@ -1,4 +1,4 @@
-"""CLI entry point for loading pipeline JSONL or shared CSV into Neo4j."""
+"""CLI entry point for loading a shared CSV export into Neo4j."""
 
 import argparse
 import logging
@@ -11,7 +11,7 @@ from pauk.storage import PreparedStore
 
 from .client import Neo4jClient
 from .csv_loader import load_csv_dir
-from .jsonl_loader import load_jsonl_dir, load_prepared_rows
+from .jsonl_loader import load_prepared_rows
 from .schema import create_constraints
 
 # PreparedStore.COLLECTIONS keys -> the filenames load_prepared_rows expects.
@@ -51,13 +51,8 @@ def main() -> None:
     """CLI entry point: `uv run python -m pauk.graph.load`."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
-    parser = argparse.ArgumentParser(description="Load pipeline output into Neo4j.")
-    parser.add_argument("--format", choices=["jsonl", "csv"], default="jsonl")
-    parser.add_argument(
-        "--dir",
-        default=None,
-        help="Input directory (default: prepared data for JSONL, data root for CSV)",
-    )
+    parser = argparse.ArgumentParser(description="Load a shared CSV export into Neo4j.")
+    parser.add_argument("--dir", default=None, help="Input directory (default: data root)")
     parser.add_argument("--uri", default=settings.neo4j_uri)
     parser.add_argument("--user", default=settings.neo4j_user)
     parser.add_argument("--password", default=settings.neo4j_password)
@@ -66,10 +61,7 @@ def main() -> None:
     client = Neo4jClient(args.uri, args.user, args.password)
     try:
         create_constraints(client)
-        if args.format == "jsonl":
-            load_jsonl_dir(client, Path(args.dir or settings.prepared_dir))
-        else:
-            load_csv_dir(client, Path(args.dir or settings.data_dir))
+        load_csv_dir(client, Path(args.dir or settings.data_dir))
     finally:
         client.close()
 

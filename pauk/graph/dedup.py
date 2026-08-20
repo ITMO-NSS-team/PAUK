@@ -10,7 +10,7 @@ to all nodes of each kind at once and folds duplicates directly in Neo4j.
 The merged ids end up in the canonical node's `merged_ids` property, so a
 later republish of an old group cannot resurrect a folded duplicate: the
 loader re-folds any id found in a graph-side merged_ids map at the end of
-every load (see jsonl_loader.load_jsonl_dir).
+every load (see jsonl_loader.load_prepared_rows).
 """
 
 from __future__ import annotations

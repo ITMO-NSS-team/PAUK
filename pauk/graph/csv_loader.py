@@ -89,7 +89,7 @@ def discover_files(data_dir: Path, suffix: str) -> list[Path]:
 def load_csv_dir(client: Neo4jClient, data_dir: Path) -> None:
     """Load every *_nodes.csv file, then every *_rels.csv file, from a directory.
 
-    Same nodes-before-relationships ordering as jsonl_loader.load_jsonl_dir.
+    Same nodes-before-relationships ordering as jsonl_loader.load_prepared_rows.
 
     Args:
         client: An open Neo4jClient to load data into.

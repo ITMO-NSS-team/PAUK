@@ -78,9 +78,9 @@ pauk publish graph --group <group>
 
 Грузит prepared-коллекции группы из MongoDB в Neo4j: создаёт констрейнты,
 затем все узлы, затем все связи. См. [neo4j-graph.md](neo4j-graph.md).
-Отдельный `python -m pauk.graph.load --dir <папка> --format jsonl|csv` —
-самостоятельный инструмент для загрузки внешней папки JSONL/CSV, не
-завязан на MongoDB и на пайплайн вообще.
+Отдельный `python -m pauk.graph.load --dir <папка>` — самостоятельный
+инструмент для загрузки внешнего CSV-экспорта, не завязан на MongoDB и
+на пайплайн вообще.
 
 ## `dedup graph`
 
