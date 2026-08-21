@@ -27,7 +27,7 @@ from neo4j import GraphDatabase
 
 from pauk.settings import settings
 
-from .checks import BY_ID, CHECKS
+from .checks import BY_ID, CHECKS, GROUP_EN
 
 logger = logging.getLogger(__name__)
 
@@ -61,14 +61,14 @@ def _jsonable(v):
 # --- node / relationship inventory --------------------------------------
 
 NODE_COUNTS = [
-    ("Публикации", "MATCH (p:Publication) RETURN count(p)"),
-    ("Персоны всего", "MATCH (p:Person) RETURN count(p)"),
-    ("— сотрудники ИТМО", "MATCH (p:Person:Itmo) RETURN count(p)"),
-    ("— внешние соавторы", "MATCH (p:Person:External) RETURN count(p)"),
-    ("Департаменты", "MATCH (d:Department) RETURN count(d)"),
-    ("Репозитории", "MATCH (r:Repository) RETURN count(r)"),
-    ("GitHub-профили", "MATCH (g:GitHubProfile) RETURN count(g)"),
-    ("Ссылки-кандидаты", "MATCH (l:LinkCandidate) RETURN count(l)"),
+    ("Публикации", "Publications", "MATCH (p:Publication) RETURN count(p)"),
+    ("Персоны всего", "People total", "MATCH (p:Person) RETURN count(p)"),
+    ("— сотрудники ИТМО", "— ITMO staff", "MATCH (p:Person:Itmo) RETURN count(p)"),
+    ("— внешние соавторы", "— external co-authors", "MATCH (p:Person:External) RETURN count(p)"),
+    ("Департаменты", "Departments", "MATCH (d:Department) RETURN count(d)"),
+    ("Репозитории", "Repositories", "MATCH (r:Repository) RETURN count(r)"),
+    ("GitHub-профили", "GitHub profiles", "MATCH (g:GitHubProfile) RETURN count(g)"),
+    ("Ссылки-кандидаты", "Candidate links", "MATCH (l:LinkCandidate) RETURN count(l)"),
 ]
 
 REL_ORDER = [
@@ -93,6 +93,17 @@ REL_NOTE = {
     "CONTRIBUTED_TO": "человек → репозиторий",
 }
 
+REL_NOTE_EN = {
+    "AUTHORED": "person → publication",
+    "PRODUCED_BY": "publication → department",
+    "BELONGS_TO": "person → department",
+    "MENTIONS_LINK": "publication → link",
+    "DEVELOPED_BY": "repository → department",
+    "IMPLEMENTS": "repository → publication",
+    "OWNED_BY": "repository → GitHub profile",
+    "CONTRIBUTED_TO": "person → repository",
+}
+
 
 def status_for(n, denom, warn, fail):
     """ok / warn / fail. Thresholds are shares when denom is given, else counts."""
@@ -105,7 +116,10 @@ def status_for(n, denom, warn, fail):
 
 
 def collect(drv):
-    nodes = [{"label": label, "n": scalar(drv, cy)} for label, cy in NODE_COUNTS]
+    nodes = [
+        {"label": label, "label_en": label_en, "n": scalar(drv, cy)}
+        for label, label_en, cy in NODE_COUNTS
+    ]
 
     on_map = scalar(
         drv, "MATCH (p:Publication) WHERE (p)<-[:AUTHORED]-(:Person:Itmo) RETURN count(p)"
@@ -113,17 +127,18 @@ def collect(drv):
     for row in nodes:
         if row["label"] == "Публикации":
             row["note"] = f"на карте {on_map}"
+            row["note_en"] = f"on the map: {on_map}"
 
     rel_counts = {
         r["t"]: r["c"] for r in rows(drv, "MATCH ()-[e]->() RETURN type(e) AS t, count(e) AS c")
     }
     rels = [
-        {"type": t, "n": rel_counts.get(t, 0), "note": REL_NOTE.get(t, "")}
+        {"type": t, "n": rel_counts.get(t, 0), "note": REL_NOTE.get(t, ""), "note_en": REL_NOTE_EN.get(t, "")}
         for t in REL_ORDER
         if t in rel_counts
     ]
     rels += [
-        {"type": t, "n": c, "note": REL_NOTE.get(t, "")}
+        {"type": t, "n": c, "note": REL_NOTE.get(t, ""), "note_en": REL_NOTE_EN.get(t, "")}
         for t, c in sorted(rel_counts.items())
         if t not in REL_ORDER
     ]
@@ -139,16 +154,21 @@ def collect(drv):
             denom = scalar(drv, c.of) if c.of else None
         except Exception as exc:
             logger.warning("проверка %s не выполнилась: %s", c.id, exc)
+            # Exception text is already Python/English, so hint and hint_en match.
+            error_hint = f"{type(exc).__name__}: {exc}"
             checks.append(
                 {
                     "id": c.id,
                     "group": c.group,
+                    "group_en": GROUP_EN.get(c.group, c.group),
                     "title": c.title,
+                    "title_en": c.title_en,
                     "n": None,
                     "of": None,
                     "pct": None,
                     "status": "error",
-                    "hint": f"{type(exc).__name__}: {exc}",
+                    "hint": error_hint,
+                    "hint_en": error_hint,
                     "has_examples": False,
                 }
             )
@@ -157,12 +177,15 @@ def collect(drv):
             {
                 "id": c.id,
                 "group": c.group,
+                "group_en": GROUP_EN.get(c.group, c.group),
                 "title": c.title,
+                "title_en": c.title_en,
                 "n": n,
                 "of": denom,
                 "pct": round(100.0 * n / denom, 1) if denom else None,
                 "status": status_for(n, denom, c.warn, c.fail),
                 "hint": c.hint,
+                "hint_en": c.hint_en,
                 "has_examples": bool(c.examples),
             }
         )
@@ -176,7 +199,7 @@ def collect(drv):
         drv,
         """MATCH (d:Department)<-[:BELONGS_TO]-(p:Person:Itmo)
                          WITH d, count(p) AS n ORDER BY n DESC LIMIT 8
-                         RETURN coalesce(d.name_ru, d.name_en) AS name, n""",
+                         RETURN coalesce(d.name_ru, d.name_en) AS name, d.name_en AS name_en, n""",
     )
 
     return {
@@ -210,8 +233,11 @@ def collect_examples(drv, check_id, limit=EXAMPLES_LIMIT_DEFAULT):
     return {
         "id": c.id,
         "title": c.title,
+        "title_en": c.title_en,
         "group": c.group,
+        "group_en": GROUP_EN.get(c.group, c.group),
         "hint": c.hint,
+        "hint_en": c.hint_en,
         "total": total,
         "columns": columns,
         "rows": data,

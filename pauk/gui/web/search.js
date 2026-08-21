@@ -72,11 +72,14 @@ const searchInput   = document.getElementById("search");
 const searchResults = document.getElementById("search-results");
 let searchTimer = null;
 
+function clearSearch() { searchInput.value = ""; searchResults.innerHTML = ""; }
+
 searchInput.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(runSearch, 120); });
 searchInput.addEventListener("keydown", e => {
-  if (e.key === "Escape") { searchInput.value = ""; searchResults.innerHTML = ""; searchInput.blur(); }
+  if (e.key === "Escape") { clearSearch(); searchInput.blur(); }
   else if (e.key === "Enter") { const f = searchResults.querySelector("li[data-k]"); if (f) f.click(); }
 });
+document.getElementById("search-clear").addEventListener("click", () => { clearSearch(); searchInput.focus(); });
 
 function runSearch() {
   const q = searchInput.value.trim().toLowerCase();
@@ -84,10 +87,9 @@ function runSearch() {
   const top = searchHits(q, false);
   if (!top.length) { searchResults.innerHTML = `<div class="search-empty">${t("search.empty")}</div>`; return; }
   const kindLabel = { author: t("author.kind"), repo: t("search.kindRepoShort"), pub: t("search.kindPubShort") };
-  const kindClass = { author: "",      repo: "blue",  pub: "gray" };
   searchResults.innerHTML = "<ul>" + top.map(h =>
     `<li data-k="${esc(h.key)}">` +
-    `<div class="res-title"><span class="tag ${kindClass[h.kind]}">${kindLabel[h.kind]}</span> ${esc(h.label)}</div>` +
+    `<div class="res-title"><span class="tag" style="color:${KIND_COLOR[h.kind]}">${kindLabel[h.kind]}</span> ${esc(h.label)}</div>` +
     (h.sub ? `<div class="search-sub">${esc(h.sub)}</div>` : "") +
     "</li>"
   ).join("") + "</ul>";
@@ -108,11 +110,14 @@ const spInput   = document.getElementById("sp-input");
 const spResults = document.getElementById("sp-results");
 let spTimer = null;
 
+function clearSpSearch() { spInput.value = ""; spResults.innerHTML = ""; }
+
 spInput.addEventListener("input", () => { clearTimeout(spTimer); spTimer = setTimeout(runSpSearch, 120); });
 spInput.addEventListener("keydown", e => {
-  if (e.key === "Escape") { spInput.value = ""; spResults.innerHTML = ""; spInput.blur(); }
+  if (e.key === "Escape") { clearSpSearch(); spInput.blur(); }
   else if (e.key === "Enter") { spResults.querySelector("li[data-k]")?.click(); }
 });
+document.getElementById("sp-clear").addEventListener("click", () => { clearSpSearch(); spInput.focus(); });
 
 function runSpSearch() {
   const q = spInput.value.trim().toLowerCase();
@@ -122,7 +127,7 @@ function runSpSearch() {
   const kindLabel = { author: t("author.kind"), pub: t("pub.kind"), repo: t("search.kindRepoShort"), dept: t("dept.kind") };
   spResults.innerHTML = "<ul>" + top.map(h =>
     `<li data-k="${esc(h.key)}">
-      <span class="sp-res-kind">${kindLabel[h.kind] || h.kind}</span>${esc(h.label)}
+      <span class="sp-res-kind" style="color:${KIND_COLOR[h.kind]}">${kindLabel[h.kind] || h.kind}</span>${esc(h.label)}
       ${h.sub ? `<div class="sp-res-sub">${esc(h.sub)}</div>` : ""}
     </li>`
   ).join("") + "</ul>";
@@ -145,7 +150,15 @@ function spShowLanding() {
   _spCurrentView = { kind: "landing" };
   document.title = "PAUK";
   if (typeof _replaceUrl === "function") _replaceUrl({ tab: 4 });
-  const topAuthors = [...DATA.authors].sort((a, b) => b.pubs_count - a.pubs_count).slice(0, 12);
+  // "Top authors by publications" — temporarily hidden. To bring back:
+  // 1) uncomment topAuthors below
+  // 2) re-add this markup right before the <div class="sp-cols" ...> line:
+  //      <div class="sp-landing-hint">${t("search.topAuthorsHint")}</div>
+  //      <div class="sp-top-chips">
+  //        ${topAuthors.map(a => `<div class="sp-chip sp-chip-author" data-k="${esc(a.key)}">${esc(authorDisplayName(a))}</div>`).join("")}
+  //      </div>
+  // 3) uncomment the .sp-chip-author click-wiring below
+  // const topAuthors = [...DATA.authors].sort((a, b) => b.pubs_count - a.pubs_count).slice(0, 12);
 
   const topPubs = [...pubAuthors.entries()]
     .sort((a, b) => b[1].length - a[1].length).slice(0, 10)
@@ -164,10 +177,6 @@ function spShowLanding() {
         <div class="stat"><div class="stat-num">${DATA.repos.length}</div><div class="stat-lbl">${t("overview.repos")}</div></div>
         <div class="stat"><div class="stat-num">${DATA.departments.filter(d => d.name !== "Без департамента").length}</div><div class="stat-lbl">${t("overview.depts")}</div></div>
       </div>
-      <div class="sp-landing-hint">${t("search.topAuthorsHint")}</div>
-      <div class="sp-top-chips">
-        ${topAuthors.map(a => `<div class="sp-chip sp-chip-author" data-k="${esc(a.key)}">${esc(authorDisplayName(a))}</div>`).join("")}
-      </div>
       <div class="sp-cols" style="margin-top:24px;text-align:left">
         <div class="sp-card">
           <div class="sp-card-title">${t("search.topPubsByAuthors")}</div>
@@ -178,15 +187,15 @@ function spShowLanding() {
         <div class="sp-card">
           <div class="sp-card-title">${t("search.topDeptsByPubs")}</div>
           <ul>${topDepts.map(d =>
-            `<li data-dept="${esc(d.id)}"><div class="li-name" style="display:flex;align-items:center;gap:7px"><span class="dept-dot" style="background:${d.color}"></span>${esc(deptDisplayName(d))}</div><span class="li-count">${d.n_pubs}</span></li>`
+            `<li data-dept="${esc(d.id)}"><div class="li-name" style="display:flex;align-items:center;gap:10px"><span class="dept-dot" style="background:${d.color}"></span>${esc(deptDisplayName(d))}</div><span class="li-count">${d.n_pubs}</span></li>`
           ).join("")}</ul>
         </div>
       </div>
     </div>`;
 
-  spMain.querySelectorAll(".sp-chip-author").forEach(el => {
-    el.onclick = () => spShowAuthorProfile(el.getAttribute("data-k"));
-  });
+  // spMain.querySelectorAll(".sp-chip-author").forEach(el => {
+  //   el.onclick = () => spShowAuthorProfile(el.getAttribute("data-k"));
+  // });
   spMain.querySelectorAll("li[data-pub]").forEach(li => {
     li.onclick = () => spShowPubProfile(li.getAttribute("data-pub"));
   });
@@ -336,6 +345,7 @@ function spShowPubProfile(key) {
   const relPubs = [...simScores.entries()]
     .sort((a, b) => b[1] - a[1]).slice(0, 10)
     .map(([k]) => nodeByKey.get(k)).filter(Boolean);
+  const repos = (pubRepos.get(key) || []).map(k => nodeByKey.get(k)).filter(Boolean);
   const urls = Array.isArray(n.code_url) ? n.code_url : [];
   const deptObj = deptById.get(n.dept), deptColor = deptObj?.color || "#9aa2ac";
 
@@ -349,7 +359,8 @@ function spShowPubProfile(key) {
         ${deptObj ? `<div class="profile-dept sp-dept-link" data-dept-id="${n.dept}" style="cursor:pointer" title="${t("search.openDeptProfile")}"><span class="dept-dot" style="background:${deptColor}"></span>${esc(deptDisplayName(deptObj))}</div>` : ""}
         ${n.journal ? `<div class="card-row" style="margin-top:6px"><b>${t("pub.journal")}</b> ${esc(n.journal)}</div>` : ""}
         ${n.doi ? `<div class="card-row"><b>${t("pub.doi")}</b> <a href="https://doi.org/${esc(n.doi.replace(/^https?:\/\/doi\.org\//, ""))}" target="_blank">${esc(n.doi)}</a></div>` : ""}
-        ${n.has_code && urls.length ? `<div class="card-row"><b>${t("pub.code")}</b> ${urls.map(u => `<a href="${esc(u)}" target="_blank">${esc(u.replace("https://github.com/",""))}</a>`).join(", ")}</div>` : ""}
+        ${repos.length ? `<div class="card-row"><b>${t("pub.repo")}</b> ${repos.map(r => `<a data-k="${esc(r.key)}" href="#">${esc(r.label)}</a>`).join(", ")}</div>`
+          : n.has_code && urls.length ? `<div class="card-row"><b>${t("pub.code")}</b> ${urls.map(u => `<a href="${esc(u)}" target="_blank">${esc(u.replace("https://github.com/",""))}</a>`).join(", ")}</div>` : ""}
         <div class="stat-grid" style="margin-top:16px">
           <div class="stat"><div class="stat-num">${authors.length}</div><div class="stat-lbl">${t("overview.authors")}</div></div>
           <div class="stat"><div class="stat-num">${n.year || "?"}</div><div class="stat-lbl">${t("search.year")}</div></div>
@@ -371,11 +382,13 @@ function spShowPubProfile(key) {
       if (v !== null && v !== "" && v !== "undefined") spShowDeptProfile(+v);
     };
   });
-  spMain.querySelectorAll("li[data-k]").forEach(li => {
-    li.onclick = () => {
+  spMain.querySelectorAll("li[data-k], a[data-k]").forEach(li => {
+    li.onclick = (e) => {
+      e.preventDefault();
       const k = li.getAttribute("data-k"); const nd = nodeByKey.get(k); if (!nd) return;
       if (nd.kind === "author") { spShowAuthorProfile(k); return; }
       if (nd.kind === "pub")    { spShowPubProfile(k);    return; }
+      if (nd.kind === "repo")   { spShowRepoProfile(k);   return; }
     };
   });
 }
@@ -462,7 +475,7 @@ function spShowDeptProfile(id) {
     <div class="sp-profile">
       <div class="sp-profile-header">
         <span class="card-kind">${t("dept.kind")}</span>
-        <div class="sp-profile-name" style="display:flex;align-items:center;gap:8px">
+        <div class="sp-profile-name" style="display:flex;align-items:center;gap:10px">
           <span class="dept-dot" style="background:${d.color || "#9aa2ac"};width:12px;height:12px"></span>
           ${esc(deptDisplayName(d))}
         </div>
@@ -479,7 +492,7 @@ function spShowDeptProfile(id) {
           `<li data-k="${esc(a.key)}"><div class="li-name">${esc(authorDisplayName(a))}</div><span class="li-count">${a.pubs_count}</span></li>`
         ).join("")}</ul></div>
         ${partners.length ? `<div class="sp-card"><div class="sp-card-title">${t("search.relatedDepts", partners.length)}</div><ul>${partners.map(({ dept: od, w }) =>
-          `<li data-dept="${esc(od.id)}"><div class="li-name" style="color:${od.color}">${esc(deptDisplayName(od))}</div><span class="li-count">${w}</span></li>`
+          `<li data-dept="${esc(od.id)}"><div class="li-name" style="display:flex;align-items:center;gap:10px"><span class="dept-dot" style="background:${od.color}"></span>${esc(deptDisplayName(od))}</div><span class="li-count">${w}</span></li>`
         ).join("")}</ul></div>` : ""}
       </div>
       ${deptPubs.length ? `<div class="sp-card"><div class="sp-card-title">${t("search.allPubsTitle", deptPubs.length)}</div><ul>${deptPubs.map(p =>

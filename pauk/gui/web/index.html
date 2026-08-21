@@ -158,7 +158,10 @@
   <aside id="left-panel">
     <div class="card">
       <div class="card-label" data-i18n="tab.search">Поиск</div>
-      <input id="search" type="text" placeholder="Автор, репозиторий или публикация" data-i18n-placeholder="search.placeholder" autocomplete="off" />
+      <div class="search-box">
+        <input id="search" type="text" placeholder="Автор, репозиторий или публикация" data-i18n-placeholder="search.placeholder" autocomplete="off" />
+        <button id="search-clear" class="search-clear" type="button" title="Очистить" data-i18n-title="search.clear">×</button>
+      </div>
       <div class="search-loading-hint" data-i18n="search.loadingHint">Индекс публикаций ещё загружается — авторы и репозитории уже доступны</div>
       <div id="search-results"></div>
     </div>
@@ -191,7 +194,10 @@
   <!-- Tab 4: search page (full-screen, on top of the map) -->
   <div id="search-page">
     <div id="sp-search-bar">
-      <input id="sp-input" type="text" placeholder="Поиск автора, публикации или департамента…" data-i18n-placeholder="search.spPlaceholder" autocomplete="off" />
+      <div class="search-box" id="sp-search-box">
+        <input id="sp-input" type="text" placeholder="Поиск автора, публикации или департамента…" data-i18n-placeholder="search.spPlaceholder" autocomplete="off" />
+        <button id="sp-clear" class="search-clear" type="button" title="Очистить" data-i18n-title="search.clear">×</button>
+      </div>
       <div class="search-loading-hint" data-i18n="search.loadingHint">Индекс публикаций ещё загружается — авторы и репозитории уже доступны</div>
       <div id="sp-results"></div>
     </div>

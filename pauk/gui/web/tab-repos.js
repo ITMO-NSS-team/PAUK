@@ -30,6 +30,9 @@ function showRepoCard(key) {
   detailBody.querySelectorAll("li[data-k]").forEach(li => {
     li.onclick = () => {
       const k = li.getAttribute("data-k");
+      const nd = nodeByKey.get(k); if (!nd) return;
+      const targetTab = nd.kind === "repo" ? 2 : nd.kind === "pub" ? 3 : 1;
+      if (targetTab !== tab) setTab(targetTab);
       selectNode(k);
     };
   });

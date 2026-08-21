@@ -79,8 +79,12 @@ def sparse_dept_edges(all_ids, dept_of, rng, k=DEPT_EDGE_K, weight=DEPT_EDGE_WEI
 
     taper_size: departments larger than this get proportionally weaker
     edges, so already-large depts don't flatten into a featureless disc."""
+    # all_ids is typically a set — sorted so department grouping order (and
+    # thus how much of `rng`'s shared state each department consumes) is
+    # the same on every run of the same seed, not shuffled by string-hash
+    # randomization between processes.
     by_dept = defaultdict(list)
-    for i in all_ids:
+    for i in sorted(all_ids):
         d = dept_of.get(i)
         if d:
             by_dept[d].append(i)
@@ -115,8 +119,12 @@ def fa2_blended_layout(edge_weights, all_ids, max_iter, seed):
     Small components (>=2 nodes) land together as one tight patch so
     collaborators stay adjacent; true singletons scatter individually with
     jitter on a coarse occupancy grid so they don't clump or ring."""
+    # all_ids is typically a set — sorted so node insertion order (which the
+    # seeded initial FA2 positions get assigned by, via enumerate(G)) is the
+    # same on every run of the same seed, not shuffled by string-hash
+    # randomization between processes.
     G = nx.Graph()
-    G.add_nodes_from(all_ids)
+    G.add_nodes_from(sorted(all_ids))
     G.add_weighted_edges_from((a, b, w) for (a, b), w in edge_weights.items())
     comps = list(nx.connected_components(G))
     giant = max(comps, key=len) if comps else set()
@@ -127,7 +135,13 @@ def fa2_blended_layout(edge_weights, all_ids, max_iter, seed):
 
     pos = {}
     if giant:
-        pos = fit_coords(nx.forceatlas2_layout(G.subgraph(giant), max_iter=max_iter, weight="weight", seed=seed))
+        # G.subgraph() builds its view off a set internally, so its node
+        # order is still hash-randomization-dependent even when `giant` is
+        # sorted first — copy into a fresh graph with an explicit order instead.
+        sub = nx.Graph()
+        sub.add_nodes_from(sorted(giant))
+        sub.add_weighted_edges_from((a, b, d["weight"]) for a, b, d in G.edges(data=True) if a in giant and b in giant)
+        pos = fit_coords(nx.forceatlas2_layout(sub, max_iter=max_iter, weight="weight", seed=seed))
 
     rng = random.Random(seed + 1)
     crowd = list(pos.values()) or [(500.0, 500.0)]

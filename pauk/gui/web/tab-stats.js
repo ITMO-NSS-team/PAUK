@@ -6,10 +6,10 @@
 // with the rows behind it, which can also be saved as CSV.
 
 const ST_STATUS = {
-  fail: { label: "проблема", cls: "st-fail" },
-  warn: { label: "внимание", cls: "st-warn" },
-  ok:   { label: "ок",       cls: "st-ok"   },
-  error: { label: "не выполнилась", cls: "st-err-check" },
+  fail: { label: t("st.status.fail"), cls: "st-fail" },
+  warn: { label: t("st.status.warn"), cls: "st-warn" },
+  ok:   { label: t("st.status.ok"),   cls: "st-ok"   },
+  error: { label: t("st.status.error"), cls: "st-err-check" },
 };
 const ST_ORDER = { error: 0, fail: 1, warn: 2, ok: 3 };
 
@@ -24,14 +24,21 @@ const stNum = n => (n == null ? "—" : n.toLocaleString("ru-RU").replace(/ /g, 
 // Списки приходят массивами (например, идентификаторы группы дублей).
 const stCell = v => Array.isArray(v) ? v.join(", ") : (v == null ? "" : String(v));
 
+// Check titles/hints/groups and the node/rel inventory come from Python
+// bilingually (field + field_en) — examples-table columns don't yet, they
+// stay Russian regardless of LANG.
+const loc = (ru, en) => (LANG === "en" && en) ? en : ru;
+
 function stTiles(s) {
+  // Lookup keys below match generate_stats.py's NODE_COUNTS labels exactly —
+  // they're data keys, not chrome, so they stay Russian regardless of LANG.
   const by = l => (s.nodes.find(n => n.label === l) || {}).n;
   const tiles = [
-    ["публикаций",       by("Публикации")],
-    ["сотрудников ИТМО", by("— сотрудники ИТМО")],
-    ["репозиториев",     by("Репозитории")],
-    ["департаментов",    by("Департаменты")],
-    ["связей",           s.totals.rels],
+    [t("st.tile.pubs"),      by("Публикации")],
+    [t("st.tile.itmoStaff"), by("— сотрудники ИТМО")],
+    [t("st.tile.repos"),     by("Репозитории")],
+    [t("st.tile.depts"),     by("Департаменты")],
+    [t("st.tile.links"),     s.totals.rels],
   ];
   return `<div class="st-tiles">` + tiles.map(([k, v]) =>
     `<div class="st-tile"><div class="st-tile-n">${stNum(v)}</div>
@@ -54,28 +61,29 @@ function stChecks(checks) {
   const groups = [];
   checks.forEach(c => {
     let g = groups.find(x => x.name === c.group);
-    if (!g) groups.push(g = { name: c.group, items: [] });
+    if (!g) groups.push(g = { name: c.group, name_en: c.group_en, items: [] });
     g.items.push(c);
   });
 
   return groups.map(g => {
     const items = g.items.slice().sort((a, b) =>
       ST_ORDER[a.status] - ST_ORDER[b.status] || (b.pct || 0) - (a.pct || 0) || b.n - a.n);
-    return `<div class="st-block"><div class="st-col-h">${esc(g.name)}</div>` + items.map(c => {
+    return `<div class="st-block"><div class="st-col-h">${esc(loc(g.name, g.name_en))}</div>` + items.map(c => {
       const st = ST_STATUS[c.status] || ST_STATUS.ok;
       const clickable = c.has_examples && c.n > 0;
+      const hint = loc(c.hint, c.hint_en);
       return `<div class="st-check ${st.cls}${clickable ? " st-clickable" : ""}"${
         clickable ? ` data-check="${esc(c.id)}" tabindex="0" role="button"` : ""}>
         <span class="st-dot" aria-hidden="true"></span>
         <div class="st-check-body">
           <div class="st-check-top">
-            <span class="st-check-t">${esc(c.title)}${
-              clickable ? `<span class="st-check-more">примеры</span>` : ""}</span>
+            <span class="st-check-t">${esc(loc(c.title, c.title_en))}${
+              clickable ? `<span class="st-check-more">${t("st.examples")}</span>` : ""}</span>
             <span class="st-check-v">${stNum(c.n)}${
               c.pct != null ? ` <span class="st-check-pct">${c.pct}%</span>` : ""
             }</span>
           </div>
-          ${c.hint ? `<div class="st-check-hint">${esc(c.hint)}</div>` : ""}
+          ${hint ? `<div class="st-check-hint">${esc(hint)}</div>` : ""}
         </div>
         <span class="st-check-st">${st.label}</span>
       </div>`;
@@ -97,9 +105,9 @@ function stModalEl() {
           <div class="st-modal-sub"></div>
         </div>
         <div class="st-modal-actions">
-          <button class="st-btn" data-act="map">Выделить на карте</button>
-          <button class="st-btn" data-act="csv">Скачать CSV</button>
-          <button class="st-btn st-modal-x" data-act="close" aria-label="Закрыть">×</button>
+          <button class="st-btn" data-act="map">${t("st.modal.highlight")}</button>
+          <button class="st-btn" data-act="csv">${t("st.modal.downloadCsv")}</button>
+          <button class="st-btn st-modal-x" data-act="close" aria-label="${t("st.modal.close")}">×</button>
         </div>
       </div>
       <div class="st-modal-body"></div>
@@ -129,11 +137,10 @@ async function stApiJson(response) {
     body = JSON.parse(text);
   } catch {
     throw new Error(response.ok
-      ? "Сервер ответил не JSON — похоже, перед API стоит что-то ещё."
-      : `Сервер ответил ${response.status} без JSON — вероятно, запущена ` +
-        "старая версия pauk.gui.serve, в которой ещё нет /api/. Перезапустите её.");
+      ? t("st.err.notJson")
+      : t("st.err.oldServer", response.status));
   }
-  if (!response.ok) throw new Error(body.error || `Сервер вернул ошибку ${response.status}`);
+  if (!response.ok) throw new Error(body.error || t("st.err.serverError", response.status));
   return body;
 }
 
@@ -147,9 +154,9 @@ async function stOpenExamples(id) {
   const m = stModalEl();
   m.classList.add("visible");
   document.addEventListener("keydown", stEscClose);
-  m.querySelector(".st-modal-title").textContent = "Примеры";
+  m.querySelector(".st-modal-title").textContent = t("st.modal.examplesTitle");
   m.querySelector(".st-modal-sub").textContent = "";
-  m.querySelector(".st-modal-body").innerHTML = `<div class="st-modal-msg">Загружаем…</div>`;
+  m.querySelector(".st-modal-body").innerHTML = `<div class="st-modal-msg">${t("st.modal.loading")}</div>`;
   m.querySelector('[data-act="csv"]').onclick = () => stDownloadCsv(id);
   m.querySelector('[data-act="map"]').onclick = () => stHighlightOnMap(id);
 
@@ -159,19 +166,20 @@ async function stOpenExamples(id) {
   } catch (e) {
     m.querySelector(".st-modal-body").innerHTML =
       `<div class="st-modal-msg">${esc(e.message === "Failed to fetch"
-        ? "Сервер недоступен." : e.message)}</div>`;
+        ? t("st.err.serverUnavailable") : e.message)}</div>`;
     return;
   }
 
-  m.querySelector(".st-modal-title").textContent = d.title;
+  const dHint = loc(d.hint, d.hint_en);
+  m.querySelector(".st-modal-title").textContent = loc(d.title, d.title_en);
   m.querySelector(".st-modal-sub").textContent =
-    (d.hint ? d.hint + " · " : "") +
-    (d.truncated ? `показаны первые ${stNum(d.shown)} из ${stNum(d.total)}`
-                 : `записей: ${stNum(d.total)}`);
+    (dHint ? dHint + " · " : "") +
+    (d.truncated ? t("st.modal.shownOf", stNum(d.shown), stNum(d.total))
+                 : t("st.modal.totalRows", stNum(d.total)));
 
   if (!d.rows.length) {
     m.querySelector(".st-modal-body").innerHTML =
-      `<div class="st-modal-msg">Ничего не найдено.</div>`;
+      `<div class="st-modal-msg">${t("st.modal.notFound")}</div>`;
     return;
   }
 
@@ -196,7 +204,7 @@ async function stDownloadCsv(id) {
   const m = stModalEl();
   const btn = m.querySelector('[data-act="csv"]');
   const was = btn.textContent;
-  btn.disabled = true; btn.textContent = "Готовим…";
+  btn.disabled = true; btn.textContent = t("st.csv.preparing");
   try {
     const d = await stFetchExamples(id, ST_CSV_LIMIT);
     const blob = new Blob([stToCsv(d.columns, d.rows)],
@@ -209,7 +217,7 @@ async function stDownloadCsv(id) {
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   } catch (e) {
-    alert(e.message === "Failed to fetch" ? "Сервер недоступен." : e.message);
+    alert(e.message === "Failed to fetch" ? t("st.err.serverUnavailable") : e.message);
   } finally {
     btn.disabled = false; btn.textContent = was;
   }
@@ -300,11 +308,11 @@ function stHighlightBar(n, title) {
     b = document.createElement("div");
     b.id = "st-hl-bar";
     b.innerHTML = `<span class="st-hl-dot"></span><span class="st-hl-text"></span>
-      <button class="st-btn" data-act="reset">Сбросить</button>`;
+      <button class="st-btn" data-act="reset">${t("st.hl.reset")}</button>`;
     document.body.appendChild(b);
     b.querySelector('[data-act="reset"]').onclick = stClearHighlight;
   }
-  b.querySelector(".st-hl-text").textContent = `${title} — выделено ${stNum(n)}`;
+  b.querySelector(".st-hl-text").textContent = t("st.hl.text", title, stNum(n));
   b.classList.add("visible");
 }
 
@@ -312,7 +320,7 @@ async function stHighlightOnMap(id, title) {
   const m = stModalEl();
   const btn = m.querySelector('[data-act="map"]');
   const was = btn.textContent;
-  btn.disabled = true; btn.textContent = "Ищем…";
+  btn.disabled = true; btn.textContent = t("st.map.searching");
   try {
     const d = await stFetchExamples(id, ST_CSV_LIMIT);
     const found = stKeysFromRows(d.rows);
@@ -323,9 +331,7 @@ async function stHighlightOnMap(id, title) {
       // Не утверждаем причину: строки могут быть о департаментах и ссылках,
       // которых на карте нет, а могут — об авторах, чьи идентификаторы просто
       // не совпали с ключами карты. Снаружи эти случаи неразличимы.
-      alert("Не удалось сопоставить строки этой проверки с объектами на карте: "
-          + "либо она о сущностях, которых на карте нет (департаменты, ссылки), "
-          + "либо идентификаторы в базе не совпадают с ключами карты.");
+      alert(t("st.err.noMapMatch"));
       return;
     }
 
@@ -334,7 +340,7 @@ async function stHighlightOnMap(id, title) {
     if (tab !== wantTab) setTab(wantTab);
     stApplyHighlight(found[best[0]], d.title);
   } catch (e) {
-    alert(e.message === "Failed to fetch" ? "Сервер недоступен." : e.message);
+    alert(e.message === "Failed to fetch" ? t("st.err.serverUnavailable") : e.message);
   } finally {
     btn.disabled = false; btn.textContent = was;
   }
@@ -357,7 +363,7 @@ async function stRecompute() {
     window.STATS = await stApiJson(r);
   } catch (e) {
     _stError = e.message === "Failed to fetch"
-      ? "Сервер недоступен — показаны сохранённые числа."
+      ? t("st.staleAfterError")
       : e.message;
   } finally {
     _stBusy = false;
@@ -371,8 +377,8 @@ function renderStats() {
 
   if (!s) {
     host.innerHTML = `<div class="st-wrap"><div class="st-empty">
-      Данные ещё не собраны.
-      <button class="st-btn" id="st-recompute">Посчитать</button>
+      ${t("st.notCollected")}
+      <button class="st-btn" id="st-recompute">${t("st.compute")}</button>
       ${_stError ? `<div class="st-err">${esc(_stError)}</div>` : ""}
     </div></div>`;
     const btn = host.querySelector("#st-recompute");
@@ -387,19 +393,17 @@ function renderStats() {
   host.innerHTML = `<div class="st-wrap">
     <div class="st-head">
       <div>
-        <div class="st-title">Здоровье базы</div>
-        <div class="st-meta">данные на ${esc(s.generated_at)} ·
-          ${stNum(s.totals.nodes)} узлов, ${stNum(s.totals.rels)} связей ·
-          ${n} проверок</div>
+        <div class="st-title">${t("st.title")}</div>
+        <div class="st-meta">${t("st.meta", esc(s.generated_at), stNum(s.totals.nodes), stNum(s.totals.rels), n)}</div>
       </div>
       <div class="st-head-right">
         <div class="st-verdict">
-          <span class="st-v-n">${fail}</span><span class="st-v-k">проблем</span>
-          <span class="st-v-n">${warn}</span><span class="st-v-k">замечаний</span>
-          <span class="st-v-n">${n - fail - warn}</span><span class="st-v-k">чисто</span>
+          <span class="st-v-n">${fail}</span><span class="st-v-k">${t("st.verdict.fail")}</span>
+          <span class="st-v-n">${warn}</span><span class="st-v-k">${t("st.verdict.warn")}</span>
+          <span class="st-v-n">${n - fail - warn}</span><span class="st-v-k">${t("st.verdict.ok")}</span>
         </div>
         <button class="st-btn" id="st-recompute" ${_stBusy ? "disabled" : ""}>${
-          _stBusy ? "Считаем…" : "Пересчитать"}</button>
+          _stBusy ? t("st.recomputing") : t("st.recompute")}</button>
       </div>
     </div>
     ${_stError ? `<div class="st-err">${esc(_stError)}</div>` : ""}
@@ -407,15 +411,15 @@ function renderStats() {
     ${stTiles(s)}
 
     <div class="st-cols">
-      ${stList("Узлы", s.nodes, i => i.label, i => i.note || "")}
-      ${stList("Связи", s.rels, i => i.type, i => i.note || "")}
+      ${stList(t("st.colNodes"), s.nodes, i => loc(i.label, i.label_en), i => loc(i.note, i.note_en) || "")}
+      ${stList(t("st.colRels"), s.rels, i => i.type, i => loc(i.note, i.note_en) || "")}
     </div>
     <div class="st-cols">
-      ${stList("Публикации по годам", s.years, i => String(i.year), null)}
-      ${stList("Крупнейшие департаменты", s.top_depts, i => i.name, null)}
+      ${stList(t("st.colPubsByYear"), s.years, i => String(i.year), null)}
+      ${stList(t("st.colTopDepts"), s.top_depts, i => loc(i.name, i.name_en), null)}
     </div>
 
-    <div class="st-checks-h">Проверки целостности</div>
+    <div class="st-checks-h">${t("st.checksHeading")}</div>
     ${stChecks(s.checks)}
   </div>`;
 

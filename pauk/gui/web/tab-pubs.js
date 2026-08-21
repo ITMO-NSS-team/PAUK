@@ -25,14 +25,19 @@ function ensureSquareImage(color) {
 function showPubCard(key) {
   const n = nodeByKey.get(key); if (!n) return;
   const au = (pubAuthors.get(key) || []).map(k => nodeByKey.get(k)).filter(Boolean);
+  const repos = (pubRepos.get(key) || []).map(k => nodeByKey.get(k)).filter(Boolean);
   let html = `<div class="card-kind">${t("pub.kind")}${n.year ? " · " + n.year : ""}</div><div class="card-title">${esc(n.label || n.key)}</div>`;
   if (n.journal) html += `<div class="card-row"><b>${t("pub.journal")}</b> ${esc(n.journal)}</div>`;
   const deptName = deptDisplayName(deptById.get(n.dept)); if (deptName) html += `<div class="card-row"><b>${t("pub.department")}</b> ${esc(deptName)}</div>`;
   if (n.doi) html += `<div class="card-row"><b>${t("pub.doi")}</b> <a href="https://doi.org/${esc(n.doi.replace(/^https?:\/\/doi\.org\//, ""))}" target="_blank">${esc(n.doi)}</a></div>`;
-  const urls = Array.isArray(n.code_url) ? n.code_url : [];
-  html += `<div class="card-row"><b>${t("pub.code")}</b> ${n.has_code && urls.length
-    ? urls.map(u => `<a href="${esc(u)}" target="_blank">${esc(u.replace("https://github.com/", ""))}</a>`).join(", ")
-    : `<span class="tag gray">${t("pub.none")}</span>`}</div>`;
+  if (repos.length) {
+    html += `<div class="card-row"><b>${t("pub.repo")}</b> ${repos.map(r => `<a data-k="${esc(r.key)}" href="#">${esc(r.label)}</a>`).join(", ")}</div>`;
+  } else {
+    const urls = Array.isArray(n.code_url) ? n.code_url : [];
+    html += `<div class="card-row"><b>${t("pub.code")}</b> ${n.has_code && urls.length
+      ? urls.map(u => `<a href="${esc(u)}" target="_blank">${esc(u.replace("https://github.com/", ""))}</a>`).join(", ")
+      : `<span class="tag gray">${t("pub.none")}</span>`}</div>`;
+  }
   html += `<div class="card-section">${t("pub.itmoAuthors", au.length)}</div><ul class="card-list">`;
   au.forEach(a => html += `<li data-k="${esc(a.key)}">${esc(authorDisplayName(a))}</li>`);
   html += `</ul>`;
@@ -40,8 +45,9 @@ function showPubCard(key) {
   showDetail(html);
   const pubProfileBtn = detailBody.querySelector(".detail-profile-btn");
   if (pubProfileBtn) pubProfileBtn.onclick = () => { setTab(4); spShowPubProfile(key); };
-  detailBody.querySelectorAll("li[data-k]").forEach(li => {
-    li.onclick = () => {
+  detailBody.querySelectorAll("li[data-k], a[data-k]").forEach(li => {
+    li.onclick = (e) => {
+      e.preventDefault();
       const k = li.getAttribute("data-k");
       const nd = nodeByKey.get(k); if (!nd) return;
       const targetTab = nd.kind === "repo" ? 2 : nd.kind === "pub" ? 3 : 1;

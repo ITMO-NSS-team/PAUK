@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Copy redacted data into the site
-        run: cp pauk/gui/data/public/graph-data.js pauk/gui/data/public/graph-search.js pauk/gui/web/
+        run: cp pauk/gui/data/public/*.js pauk/gui/web/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
