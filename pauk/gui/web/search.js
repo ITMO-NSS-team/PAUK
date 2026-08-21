@@ -127,7 +127,7 @@ function runSpSearch() {
   const kindLabel = { author: t("author.kind"), pub: t("pub.kind"), repo: t("search.kindRepoShort"), dept: t("dept.kind") };
   spResults.innerHTML = "<ul>" + top.map(h =>
     `<li data-k="${esc(h.key)}">
-      <span class="sp-res-kind" style="color:${KIND_COLOR[h.kind] || ""}">${kindLabel[h.kind] || h.kind}</span>${esc(h.label)}
+      <span class="sp-res-kind" style="color:${KIND_COLOR[h.kind]}">${kindLabel[h.kind] || h.kind}</span>${esc(h.label)}
       ${h.sub ? `<div class="sp-res-sub">${esc(h.sub)}</div>` : ""}
     </li>`
   ).join("") + "</ul>";
