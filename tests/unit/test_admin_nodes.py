@@ -245,19 +245,21 @@ class RelationshipScreenTest(unittest.TestCase):
         self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
 
     def test_a_relationship_outside_the_eleven_known_triples_is_refused(self):
-        # Refused by the route, before the graph is touched at all. The
-        # mutation layer would refuse it too, but only after a round trip —
-        # and asserting on the outcome alone cannot tell the two apart, so
-        # the check is that nothing reached the client.
+        # A malformed triple is a 400 — the form cannot produce one, so it
+        # means the request was hand-made. An unknown but well-formed triple
+        # is refused by the mutation layer and comes back on the page.
         csrf = self.sign_in()
-        for triple in ("Person|OWNS|Publication", "Person|AUTHORED|Malicious",
-                       "nonsense", "Person|AUTHORED"):
-            self.graph.calls.clear()
+        for triple in ("nonsense", "Person|AUTHORED"):
             response = self.client.post(
                 "/nodes/Person/A1/rel/add",
                 data={"csrf": csrf, "triple": triple, "other_id": "W1"})
             self.assertEqual(response.status_code, 400, triple)
-            self.assertEqual(self.graph.calls, [], triple)
+        for triple in ("Person|OWNS|Publication", "Person|AUTHORED|Malicious"):
+            response = self.client.post(
+                "/nodes/Person/A1/rel/add",
+                data={"csrf": csrf, "triple": triple, "other_id": "W1"})
+            self.assertEqual(response.status_code, 303, triple)
+            self.assertIn("error=", response.headers["location"], triple)
         self.assertEqual(self.graph.relationships, {})
 
     def test_an_empty_other_end_is_refused(self):
@@ -266,11 +268,12 @@ class RelationshipScreenTest(unittest.TestCase):
                                     data=self.link_data(csrf, other_id="  "))
         self.assertEqual(response.status_code, 400)
 
-    def test_linking_to_a_node_that_does_not_exist_is_refused(self):
+    def test_linking_to_a_node_that_does_not_exist_returns_with_a_reason(self):
         csrf = self.sign_in()
         response = self.client.post("/nodes/Person/A1/rel/add",
                                     data=self.link_data(csrf, other_id="W-missing"))
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("error=", response.headers["location"])
         self.assertEqual(self.graph.relationships, {})
 
     def test_unlinking_removes_the_edge_and_tombstones_it(self):
@@ -459,3 +462,68 @@ class DeleteConfirmationTest(unittest.TestCase):
         response = self.client.post("/nodes/Person/A1/delete", data={"csrf": csrf})
         self.assertEqual(response.status_code, 403)
         self.assertIn(("Person", "A1"), self.graph.nodes)
+
+
+class LinkMistakeTest(unittest.TestCase):
+    """What the panel says when the other end cannot be found."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.nodes[("Person", "A1")] = {"id": "A1"}
+        self.graph.nodes[("Publication", "W1")] = {"id": "W1"}
+        self.graph.nodes[("Repository", "R1")] = {
+            "id": "R1", "url": "https://github.com/itmo/pauk"}
+
+        app = build(Settings(), self.db)
+        from pauk.admin import deps
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+
+    def link(self, page, triple, other):
+        return self.client.post(f"/nodes/{page}/rel/add",
+                                data={"csrf": self.csrf, "triple": triple, "other_id": other})
+
+    def reason(self, response):
+        from urllib.parse import unquote
+        location = response.headers.get("location", "")
+        return unquote(location.split("error=")[1]) if "error=" in location else ""
+
+    def test_a_missing_other_end_returns_to_the_form_not_a_json_error(self):
+        # A typo is an ordinary mistake: the person needs the form back,
+        # with the reason, rather than a bare 400 page.
+        response = self.link("Person/A1", "Person|AUTHORED|Publication", "W-999")
+        self.assertEqual(response.status_code, 303)
+        self.assertTrue(response.headers["location"].startswith("/nodes/Person/A1?error="))
+        self.assertIn("W-999", self.reason(response))
+
+    def test_an_id_pasted_where_a_url_is_wanted_says_which_field_to_use(self):
+        # Two of the eleven links match on something other than an id, and
+        # this is the mistake people make.
+        response = self.link("Publication/W1", "Publication|MENTIONS_LINK|Repository", "R1")
+        reason = self.reason(response)
+        self.assertIn("url", reason)
+        self.assertIn("адрес репозитория", reason)
+
+    def test_an_id_pasted_where_a_login_is_wanted_says_so_too(self):
+        response = self.link("Repository/R1", "Repository|OWNED_BY|GitHubProfile", "12345")
+        reason = self.reason(response)
+        self.assertIn("login", reason)
+        self.assertIn("логин", reason)
+
+    def test_the_right_value_still_links(self):
+        response = self.link("Publication/W1", "Publication|MENTIONS_LINK|Repository",
+                             "https://github.com/itmo/pauk")
+        self.assertEqual(response.headers["location"], "/nodes/Publication/W1?linked=1")
+
+    def test_the_reason_is_shown_on_the_page(self):
+        body = self.client.get("/nodes/Person/A1", params={"error": "нет такого узла"}).text
+        self.assertIn("нет такого узла", body)
+
+    def test_the_form_says_what_to_type_before_the_mistake_happens(self):
+        body = self.client.get("/nodes/Repository/R1").text
+        self.assertIn("по login", body)
+        self.assertIn("для репозитория — адрес", body)

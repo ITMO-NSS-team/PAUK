@@ -15,6 +15,7 @@ whitelists in `pauk.graph.mutations`, never from the request.
 from __future__ import annotations
 
 import logging
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -220,6 +221,23 @@ def _triple(raw: str) -> tuple[str, str, str]:
     return parts[0], parts[1], parts[2]
 
 
+_FIELD_HINTS = {"url": "адрес репозитория целиком", "login": "логин аккаунта на GitHub"}
+
+
+def _hint(match_prop: str) -> str:
+    return _FIELD_HINTS.get(match_prop, f"значение поля {match_prop}")
+
+
+def _link_failed(label: str, node_id: str, message: str) -> RedirectResponse:
+    """Back to the node page with the reason, instead of a bare 400.
+
+    A failed link is an ordinary mistake — a typo, the wrong field — and
+    the person needs the form again, not a JSON error page.
+    """
+    return RedirectResponse(f"/nodes/{label}/{node_id}?error={quote(message, safe='')}",
+                            status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.post("/nodes/{label}/{node_id}/rel/add")
 async def link(request: Request, label: str, node_id: str, user: Editor,
                db: Db, graph: Graph, _: CsrfChecked):
@@ -240,10 +258,23 @@ async def link(request: Request, label: str, node_id: str, user: Editor,
     # The node whose page this is sits on whichever end its label matches;
     # the person only ever types the other one.
     src_id, tgt_id = (node_id, other) if src_label == label else (other, node_id)
+    other_label = tgt_label if src_label == label else src_label
     try:
         create_relationship(graph, src_label, rel_type, tgt_label, src_id, tgt_id)
+    except NotFound:
+        # The usual mistake is pasting an id where the link is matched by
+        # something else — a Repository by its url, a GitHubProfile by its
+        # login. Say which field this particular link needs, and hand the
+        # typed value back so it is not lost.
+        match_prop = RELATIONSHIPS[(src_label, rel_type, tgt_label)]
+        return _link_failed(
+            label, node_id,
+            f"{other_label} с {match_prop} = «{other}» в графе нет. "
+            f"Эта связь ищет вторую сторону по полю {match_prop}"
+            + (f", а не по идентификатору — впишите {_hint(match_prop)}."
+               if match_prop != "id" else ". Проверьте идентификатор."))
     except MutationError as error:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
+        return _link_failed(label, node_id, str(error))
     logger.info("%s linked (%s %s)-[:%s]->(%s %s)",
                 user.actor, src_label, src_id, rel_type, tgt_label, tgt_id)
     return RedirectResponse(f"/nodes/{label}/{node_id}?linked=1",
