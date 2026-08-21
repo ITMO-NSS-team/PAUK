@@ -18,7 +18,7 @@ class Settings:
     openreview_username: str = os.getenv("OPENREVIEW_USERNAME", "")
     openreview_password: str = os.getenv("OPENREVIEW_PASSWORD", "")
     openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
-    llm_model: str = os.getenv("PAUK_LLM_MODEL", "anthropic/claude-haiku-4.5")
+    llm_model: str = os.getenv("PAUK_LLM_MODEL", "qwen/qwen-2.5-72b-instruct")
     openrouter_proxy_url: str = os.getenv("OPENROUTER_PROXY_URL", "")
     neo4j_uri: str = os.getenv("NEO4J_URI", "bolt://localhost:7687")
     neo4j_user: str = os.getenv("NEO4J_USER", "neo4j")
