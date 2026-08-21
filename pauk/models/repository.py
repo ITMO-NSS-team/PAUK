@@ -25,8 +25,6 @@ class GitHubProfile(BaseModel):
     company: str | None = None
     emails: list[str] = Field(default_factory=list)
     commit_names: list[str] = Field(default_factory=list)
-    # Repositories this account was found through, so a match can be traced
-    # back to the publication that cited them.
     repos: list[str] = Field(default_factory=list)
 
 

@@ -32,11 +32,6 @@ class Person(BaseModel):
     name_en: str | None = None
     name_variants: list[str] = Field(default_factory=list)
     email: str | None = None
-    # Every address the person is known by, across the sources that state
-    # one: ORCID lists several for a third of the people who list any, and
-    # a paper prints the address its author published under. `email` is the
-    # one to show; this is what identifies them — an account is recognised
-    # by whichever address it commits with, not by the one chosen for a card.
     emails: list[str] = Field(default_factory=list)
     first_name_ru: str | None = None
     second_name_ru: str | None = None
