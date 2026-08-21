@@ -120,12 +120,33 @@ class PanelTest(unittest.TestCase):
         for path in ("/assets/graph-data.js", "/assets/index.html", "/assets/style.css"):
             self.assertEqual(self.client.get(path).status_code, 404, path)
 
-    def test_every_page_carries_the_same_title_shape(self):
-        # The login page has to be read before signing in: afterwards it
-        # redirects, and a redirect has no body.
-        self.assertIn("<title>Вход · PAUK</title>", self.client.get("/login").text)
+    def test_every_page_carries_the_same_title(self):
+        # One fixed title everywhere, so the tab reads the same wherever
+        # you are in the panel.
+        self.assertIn("<title>Admin PAUK</title>", self.client.get("/login").text)
         self.sign_in()
-        self.assertIn("· PAUK</title>", self.client.get("/").text)
+        # Pages that need the graph are covered in GraphUnavailableTest;
+        # here the point is only that the title never changes.
+        self.assertIn("<title>Admin PAUK</title>", self.client.get("/").text)
+
+    def test_the_logo_is_the_tab_icon_and_nothing_else(self):
+        self.sign_in()
+        body = self.client.get("/").text
+        self.assertIn('rel="icon" type="image/jpeg" href="/assets/logo.jpg"', body)
+        self.assertNotIn("<img", body)
+
+    def test_the_panel_is_light_only(self):
+        css = self.client.get("/static/panel.css").text
+        self.assertNotIn("data-theme", css)
+        self.assertNotIn("prefers-color-scheme", css)
+
+    def test_all_three_font_ranges_are_served(self):
+        # The map ships three: latin, cyrillic and cyrillic-ext. Missing one
+        # drops that range to a system fallback mid-sentence.
+        for part in ("latin", "cyrillic", "cyrillic-ext"):
+            self.assertEqual(
+                self.client.get(f"/assets/fonts/golos-text-{part}.woff2").status_code, 200, part)
+        self.assertEqual(self.client.get("/static/panel.css").text.count("@font-face"), 3)
 
     def test_the_panel_offers_no_way_to_create_an_account(self):
         # Accounts come from `pauk admin user add` only; a registration
@@ -137,3 +158,30 @@ class PanelTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GraphUnavailableTest(unittest.TestCase):
+    """What the panel does when Neo4j is not configured or not running."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="admin")
+        # No NEO4J_PASSWORD: exactly the state a fresh checkout is in.
+        self.client = TestClient(build(Settings(neo4j_password=""), self.db),
+                                 follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def test_a_missing_password_is_503_not_500(self):
+        response = self.client.get("/nodes/Person")
+        self.assertEqual(response.status_code, 503)
+
+    def test_a_browser_is_told_what_is_wrong_in_words(self):
+        response = self.client.get("/nodes/Person", headers={"accept": "text/html"})
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("База графа не отвечает", response.text)
+        self.assertIn("NEO4J_PASSWORD", response.text)
+
+    def test_the_parts_that_do_not_need_the_graph_keep_working(self):
+        # Signing in and the overview read Mongo only, so an unreachable
+        # graph must not lock people out of the panel entirely.
+        self.assertEqual(self.client.get("/").status_code, 200)

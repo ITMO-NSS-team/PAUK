@@ -10,12 +10,14 @@ while `actor_context` is held.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.templating import Jinja2Templates
+from neo4j.exceptions import AuthError, ServiceUnavailable
 from pymongo.database import Database
 
 from pauk.admin.auth import COOKIE, User, check_csrf, read_session
@@ -77,8 +79,22 @@ def graph_for(request: Request, user: Annotated[User, Depends(require_user)]) ->
 
     Opened per request rather than kept on the app: a driver shared across
     requests would report whichever actor happened to be set last.
+
+    Raises:
+        HTTPException: 503 when the graph cannot be reached — no password
+            configured, or nothing listening. Both are setup problems, not
+            programming errors, and answering them with a stack trace tells
+            the person nothing about what to fix.
     """
-    client = audited_client(request.app.state.config, request.app.state.db)
+    try:
+        client = audited_client(request.app.state.config, request.app.state.db)
+    except ValueError as error:
+        logger.warning("graph unavailable: %s", error)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(error)) from None
+    except (ServiceUnavailable, AuthError) as error:
+        logger.warning("graph unavailable: %s", error)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            f"cannot reach Neo4j at {request.app.state.config.neo4j_uri}") from None
     try:
         with actor_context(user.actor, source="admin-ui"):
             yield client
@@ -88,6 +104,8 @@ def graph_for(request: Request, user: Annotated[User, Depends(require_user)]) ->
 
 # Named aliases so routes read as `db: Db` instead of repeating the
 # Annotated form in every signature.
+logger = logging.getLogger("pauk.admin")
+
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 Db = Annotated[Database, Depends(get_db)]

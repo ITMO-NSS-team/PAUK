@@ -26,7 +26,16 @@ from fastapi.staticfiles import StaticFiles
 from pymongo.database import Database
 
 from pauk.admin import nodes
-from pauk.admin.auth import COOKIE, SESSION_HOURS, AuthError, authenticate, close_session, open_session
+from pauk.admin.auth import (
+    COOKIE,
+    SESSION_HOURS,
+    AuthError,
+    User,
+    authenticate,
+    close_session,
+    open_session,
+    read_session,
+)
 from pauk.admin.deps import CurrentUser, Db, Session, templates
 from pauk.graph.mutations import NODE_FIELDS, RELATIONSHIPS
 from pauk.settings import Settings
@@ -76,6 +85,18 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
             return RedirectResponse(f"/login?next={quote(target, safe='')}",
                                     status_code=status.HTTP_303_SEE_OTHER)
         return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
+    @app.exception_handler(status.HTTP_503_SERVICE_UNAVAILABLE)
+    async def unavailable(request: Request, exc: HTTPException):
+        """Show a person what is broken instead of a stack trace."""
+        if "text/html" not in request.headers.get("accept", ""):
+            return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+        session = read_session(request.app.state.db, request.cookies.get(COOKIE))
+        return templates.TemplateResponse(
+            request, "unavailable.html",
+            {"user": User(login=session["login"], role=session["role"]) if session else None,
+             "csrf": session["csrf"] if session else "", "detail": exc.detail},
+            status_code=exc.status_code)
 
     @app.get("/favicon.ico", include_in_schema=False)
     def favicon():

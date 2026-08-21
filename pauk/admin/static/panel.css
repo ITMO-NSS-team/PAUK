@@ -4,8 +4,11 @@
    pauk/gui/web/style.css: same names, same values, no invented steps. The
    panel and the map are one product, and a second palette would show.
 
-   Fonts and the logo are served from the map's own files rather than
-   copied here — one place to update, and nothing duplicated in the tree. */
+   Fonts are served from the map's own files rather than copied here — one
+   place to update, and nothing duplicated in the tree. Unlike the map the
+   panel is light only: it is a work tool that people keep open next to
+   other documents, and a second theme is a second set of contrasts to
+   keep correct for no gain here. */
 
 @font-face {
   font-family: "Golos Text";
@@ -14,6 +17,14 @@
   font-display: swap;
   src: url("/assets/fonts/golos-text-cyrillic.woff2") format("woff2");
   unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "Golos Text";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("/assets/fonts/golos-text-cyrillic-ext.woff2") format("woff2");
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
 }
 @font-face {
   font-family: "Golos Text";
@@ -49,18 +60,6 @@
      spends colour on departments; here it marks the one thing that has to
      stand out — a destructive action. */
   --danger: #A33A2B;
-}
-
-:root[data-theme="dark"] {
-  --bg: var(--g7);
-  --surface: var(--g6);
-  --border: var(--g5);
-  --text: var(--g1);
-  --muted: var(--g3);
-  --faint: var(--g4);
-  --topbar-bg: rgba(25, 31, 29, 0.92);
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --danger: #D8705E;
 }
 
 * { box-sizing: border-box; }

@@ -1,13 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Вход{% endblock %}
 {% block content %}
 <div class="card narrow">
-  <div style="display:flex; align-items:center; gap:11px; margin-bottom:18px">
-    <img src="/assets/logo.jpg" alt="" width="34" height="34" style="border-radius:8px">
-    <div>
-      <div style="font-weight:700; letter-spacing:.04em">PAUK</div>
-      <div class="muted">панель редактирования</div>
-    </div>
+  <div style="margin-bottom:18px">
+    <div style="font-weight:700; letter-spacing:.04em">Admin PAUK</div>
+    <div class="muted">панель редактирования графа</div>
   </div>
   {% if error %}<p class="error">Неверный логин или пароль.</p>{% endif %}
   <form method="post" action="/login">
