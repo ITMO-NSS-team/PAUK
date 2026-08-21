@@ -527,3 +527,66 @@ class LinkMistakeTest(unittest.TestCase):
         body = self.client.get("/nodes/Repository/R1").text
         self.assertIn("по login", body)
         self.assertIn("для репозитория — адрес", body)
+
+
+class LinkDirectionTest(unittest.TestCase):
+    """Which side the open node is on, and how the other one is addressed."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.nodes[("Repository", "R1")] = {
+            "id": "R1", "url": "https://github.com/itmo/pauk"}
+        self.graph.nodes[("Publication", "W1")] = {"id": "W1"}
+        self.graph.nodes[("GitHubProfile", "G1")] = {"id": "G1", "login": "octocat"}
+
+        app = build(Settings(), self.db)
+        from pauk.admin import deps
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+
+    def link(self, page, triple, other):
+        return self.client.post(f"/nodes/{page}/rel/add",
+                                data={"csrf": self.csrf, "triple": triple, "other_id": other})
+
+    def test_an_incoming_link_works_when_this_node_is_matched_by_a_url(self):
+        # The link matches its target by url, and here the target is the
+        # open repository — sending its id found nothing at all.
+        response = self.link("Repository/R1", "Publication|MENTIONS_LINK|Repository", "W1")
+        self.assertEqual(response.headers["location"], "/nodes/Repository/R1?linked=1")
+        self.assertIn(("Publication", "MENTIONS_LINK", "Repository", "W1",
+                       "https://github.com/itmo/pauk"), self.graph.relationships)
+
+    def test_an_incoming_link_works_when_this_node_is_matched_by_a_login(self):
+        response = self.link("GitHubProfile/G1", "Repository|OWNED_BY|GitHubProfile", "R1")
+        self.assertEqual(response.headers["location"], "/nodes/GitHubProfile/G1?linked=1")
+        self.assertIn(("Repository", "OWNED_BY", "GitHubProfile", "R1", "octocat"),
+                      self.graph.relationships)
+
+    def test_the_form_asks_for_an_id_when_the_other_end_is_the_source(self):
+        # match_prop describes the target. On an incoming link the target is
+        # this node, so telling the person to type a url would be wrong.
+        body = self.client.get("/nodes/Repository/R1").text
+        self.assertIn("упомянут в публикации — указать Publication по id", body)
+        self.assertIn("принадлежит аккаунту — указать GitHubProfile по login", body)
+
+    def test_a_node_missing_the_field_the_link_matches_on_says_so(self):
+        self.graph.nodes[("Repository", "R2")] = {"id": "R2"}      # без url
+        response = self.link("Repository/R2", "Publication|MENTIONS_LINK|Repository", "W1")
+        from urllib.parse import unquote
+        reason = unquote(response.headers["location"].split("error=")[1])
+        self.assertIn("не заполнено поле url", reason)
+
+    def test_links_are_shown_in_words_not_only_as_edge_types(self):
+        self.graph.relationships[("Repository", "OWNED_BY", "GitHubProfile", "R1", "octocat")] = {}
+        body = self.client.get("/nodes/Repository/R1").text
+        self.assertIn("принадлежит аккаунту", body)
+        self.assertIn("OWNED_BY", body)          # тип остаётся для сверки со схемой
+
+    def test_the_phrase_is_read_from_the_side_you_are_looking_from(self):
+        self.graph.relationships[("Repository", "OWNED_BY", "GitHubProfile", "R1", "octocat")] = {}
+        self.assertIn("принадлежит аккаунту", self.client.get("/nodes/Repository/R1").text)
+        self.assertIn("владеет репозиторием", self.client.get("/nodes/GitHubProfile/G1").text)

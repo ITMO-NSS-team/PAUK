@@ -47,21 +47,22 @@
 <div class="card">
   {% if relationships %}
   <table>
-    <tr><th>направление</th><th>тип</th><th>вторая сторона</th>{% if user.can_write %}<th></th>{% endif %}</tr>
+    <tr><th>эта запись</th><th>что связывает</th><th>с чем</th>{% if user.can_write %}<th></th>{% endif %}</tr>
     {% for rel in relationships %}
+    {% set other = rel.labels[0] %}
     <tr>
-      <td>{{ "→ исходит" if rel.outgoing else "← входит" }}</td>
-      <td>{{ rel.type }}</td>
-      <td class="val">
-        {% set other = rel.labels[0] %}
-        <a href="/nodes/{{ other }}/{{ rel.other_id }}">{{ other }} {{ rel.other_id }}</a>
-      </td>
+      {# Фраза читается от этого узла: «написал публикацию», «здесь работает».
+         Технический тип связи оставлен мелким — он нужен, когда сверяются
+         со схемой графа, а не когда решают, что с чем связать. #}
+      <td>{{ label }} <span class="muted">{{ node_id }}</span></td>
+      <td><b>{{ rel.words }}</b><br><span class="muted">{{ rel.type }}</span></td>
+      <td class="val"><a href="/nodes/{{ other }}/{{ rel.other_id }}">{{ other }} {{ rel.other_id }}</a></td>
       {% if user.can_write %}
       <td style="width:1%">
         <form method="post" action="/nodes/{{ label }}/{{ node_id }}/rel/delete">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="triple"
-                 value="{{ label if rel.outgoing else rel.labels[0] }}|{{ rel.type }}|{{ rel.labels[0] if rel.outgoing else label }}">
+                 value="{{ label if rel.outgoing else other }}|{{ rel.type }}|{{ other if rel.outgoing else label }}">
           <input type="hidden" name="other_id" value="{{ rel.other_id }}">
           <button type="submit" class="ghost">отвязать</button>
         </form>
@@ -76,8 +77,9 @@
 {% if user.can_write and (links.outgoing or links.incoming) %}
 <div class="card" style="margin-top:20px">
   <b>Связать с другим узлом</b>
-  <p class="muted">Доступны только связи, которые знает граф. Вторая сторона ищется по полю,
-     указанному в скобках, — для репозитория это адрес, а не идентификатор.</p>
+  <p class="muted">Выберите, что связывает эту запись со второй, и укажите вторую —
+     тем полем, которое названо в строке: обычно идентификатором, но репозиторий
+     ищется по адресу, а аккаунт по логину.</p>
   <form method="post" action="/nodes/{{ label }}/{{ node_id }}/rel/add" class="row" style="margin-bottom:0">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <div>
@@ -85,10 +87,10 @@
       <select id="triple" name="triple" style="padding:8px 10px; font:inherit; font-size:14px;
               border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text)">
         {% for link in links.outgoing %}
-        <option value="{{ link.key }}">→ {{ link.rel_type }} → {{ link.tgt_label }} (по {{ link.match_prop }})</option>
+        <option value="{{ link.key }}">{{ link.forward }} — указать {{ link.tgt_label }} по {{ link.match_prop }}</option>
         {% endfor %}
         {% for link in links.incoming %}
-        <option value="{{ link.key }}">← {{ link.src_label }} → {{ link.rel_type }} (по {{ link.match_prop }})</option>
+        <option value="{{ link.key }}">{{ link.backward }} — указать {{ link.src_label }} по {{ link.match_prop }}</option>
         {% endfor %}
       </select>
     </div>

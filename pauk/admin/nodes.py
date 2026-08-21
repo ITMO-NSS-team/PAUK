@@ -45,6 +45,16 @@ logger = logging.getLogger("pauk.admin")
 router = APIRouter()
 
 
+def _worded(relationships: list[dict], label: str) -> list[dict]:
+    """Add the human phrase for each edge, read from this node's side."""
+    for rel in relationships:
+        other = rel["labels"][0]
+        triple = (label, rel["type"], other) if rel["outgoing"] else (other, rel["type"], label)
+        forward, backward = LINK_WORDS.get(triple, (rel["type"], rel["type"]))
+        rel["words"] = forward if rel["outgoing"] else backward
+    return relationships
+
+
 def _known_label(label: str) -> str:
     """Reject an unknown label with 404 rather than let it reach Cypher."""
     if label not in NODE_FIELDS:
@@ -127,7 +137,7 @@ def show(request: Request, label: str, node_id: str, user: CurrentUser,
     return templates.TemplateResponse(request, "node.html", {
         "user": user, "csrf": session["csrf"], "label": label, "node_id": node_id,
         "props": props, "editable": editable, "reserved": sorted(RESERVED_FIELDS),
-        "relationships": node_relationships(graph, label, node_id),
+        "relationships": _worded(node_relationships(graph, label, node_id), label),
         "links": _links_for(label), "labels": sorted(NODE_FIELDS)})
 
 
@@ -195,13 +205,17 @@ def _links_for(label: str) -> dict[str, list[dict]]:
     """
     outgoing, incoming = [], []
     for (src_label, rel_type, tgt_label), match_prop in sorted(RELATIONSHIPS.items()):
+        forward, backward = LINK_WORDS.get((src_label, rel_type, tgt_label), (rel_type, rel_type))
         entry = {"src_label": src_label, "rel_type": rel_type, "tgt_label": tgt_label,
-                 "match_prop": match_prop,
+                 "match_prop": match_prop, "forward": forward, "backward": backward,
                  "key": f"{src_label}|{rel_type}|{tgt_label}"}
         if src_label == label:
             outgoing.append(entry)
         if tgt_label == label:
-            incoming.append(entry)
+            # Во входящей связи вводят источник, а источник загрузчик
+            # адресует идентификатором — match_prop относится к цели,
+            # которой здесь оказывается сам открытый узел.
+            incoming.append({**entry, "match_prop": "id"})
     return {"outgoing": outgoing, "incoming": incoming}
 
 
@@ -220,6 +234,24 @@ def _triple(raw: str) -> tuple[str, str, str]:
                             f"expected Label|TYPE|Label, got {raw!r}")
     return parts[0], parts[1], parts[2]
 
+
+# Как связь читается по-русски: сначала от того узла, из которого она
+# исходит, потом от того, в который входит. Типы вроде MENTIONS_LINK или
+# PRODUCED_BY человеку ничего не говорят, а решение "связать" принимают по
+# смыслу, а не по названию ребра в графе.
+LINK_WORDS = {
+    ("Department", "PART_OF", "Department"): ("входит в подразделение", "включает подразделение"),
+    ("Department", "PART_OF", "Organization"): ("входит в организацию", "включает подразделение"),
+    ("Person", "AUTHORED", "Publication"): ("написал публикацию", "написана автором"),
+    ("Person", "BELONGS_TO", "Department"): ("работает в подразделении", "здесь работает"),
+    ("Person", "CONTRIBUTED_TO", "Repository"): ("участвовал в разработке", "в разработке участвовал"),
+    ("Publication", "MENTIONS_LINK", "LinkCandidate"): ("ссылается на адрес", "упомянут в публикации"),
+    ("Publication", "MENTIONS_LINK", "Repository"): ("ссылается на репозиторий", "упомянут в публикации"),
+    ("Publication", "PRODUCED_BY", "Department"): ("сделана в подразделении", "здесь сделана публикация"),
+    ("Repository", "DEVELOPED_BY", "Department"): ("разработан в подразделении", "здесь разработан репозиторий"),
+    ("Repository", "IMPLEMENTS", "Publication"): ("реализует публикацию", "реализована в репозитории"),
+    ("Repository", "OWNED_BY", "GitHubProfile"): ("принадлежит аккаунту", "владеет репозиторием"),
+}
 
 _FIELD_HINTS = {"url": "адрес репозитория целиком", "login": "логин аккаунта на GitHub"}
 
@@ -257,22 +289,38 @@ async def link(request: Request, label: str, node_id: str, user: Editor,
 
     # The node whose page this is sits on whichever end its label matches;
     # the person only ever types the other one.
-    src_id, tgt_id = (node_id, other) if src_label == label else (other, node_id)
-    other_label = tgt_label if src_label == label else src_label
+    # Читается до создания, потому что от него зависит, какой стороной
+    # подставить открытый узел. Отсутствие тройки здесь — не 500: форма
+    # такого не пришлёт, но запрос мог прийти и мимо неё.
+    match_prop = RELATIONSHIPS.get((src_label, rel_type, tgt_label))
+    if match_prop is None:
+        return _link_failed(label, node_id,
+                            f"Граф не знает связи ({src_label})-[:{rel_type}]->({tgt_label}).")
     try:
+        if src_label == label:
+            src_id, tgt_id, other_label, wanted = node_id, other, tgt_label, match_prop
+        else:
+            # This node is the target, and the target is matched by
+            # match_prop — its id is the wrong value to send when that is
+            # something else, such as a repository's url.
+            src_id, other_label, wanted = other, src_label, "id"
+            tgt_id = node_id if match_prop == "id" else read_node(graph, label, node_id).get(match_prop)
+            if not tgt_id:
+                return _link_failed(
+                    label, node_id,
+                    f"У этого узла не заполнено поле {match_prop}, а связь ищет по нему. "
+                    f"Заполните {match_prop} и повторите.")
         create_relationship(graph, src_label, rel_type, tgt_label, src_id, tgt_id)
     except NotFound:
         # The usual mistake is pasting an id where the link is matched by
         # something else — a Repository by its url, a GitHubProfile by its
-        # login. Say which field this particular link needs, and hand the
-        # typed value back so it is not lost.
-        match_prop = RELATIONSHIPS[(src_label, rel_type, tgt_label)]
+        # login. Say which field this particular link needs.
         return _link_failed(
             label, node_id,
-            f"{other_label} с {match_prop} = «{other}» в графе нет. "
-            f"Эта связь ищет вторую сторону по полю {match_prop}"
-            + (f", а не по идентификатору — впишите {_hint(match_prop)}."
-               if match_prop != "id" else ". Проверьте идентификатор."))
+            f"{other_label} с {wanted} = «{other}» в графе нет. "
+            f"Эта связь ищет вторую сторону по полю {wanted}"
+            + (f", а не по идентификатору — впишите {_hint(wanted)}."
+               if wanted != "id" else ". Проверьте идентификатор."))
     except MutationError as error:
         return _link_failed(label, node_id, str(error))
     logger.info("%s linked (%s %s)-[:%s]->(%s %s)",
