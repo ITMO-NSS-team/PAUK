@@ -33,7 +33,7 @@ REQUIRED_FILES = {
         DATA_DIR,
         "python -m pauk.gui.generate_data" + (" --public" if PUBLIC else ""),
     ),
-    "graph-stats.js": (DATA_DIR, "python -m pauk.gui.generate_stats"),
+    "graph-stats.js": (DATA_DIR, f"python -m pauk.gui.generate_stats --out-dir {DATA_DIR}"),
 }
 
 _DATA_DIR_FILES = {name for name, (d, _cmd) in REQUIRED_FILES.items() if d == DATA_DIR}
@@ -136,7 +136,11 @@ class GzipHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         route = self.path.split("?")[0]
-        if PUBLIC and (route.lstrip("/") == "graph-stats.js" or route in (API_STATS, API_CHECK)):
+        # graph-stats.js is an aggregate-only snapshot (counts/percentages, no
+        # individual rows) - safe to serve on --public. /api/check and
+        # /api/stats hit a live Neo4j and can return raw example rows (names),
+        # so those stay blocked regardless of build.
+        if PUBLIC and route in (API_STATS, API_CHECK):
             return self.send_error(404)
         if route == API_STATS:
             return self._send_json(405, {"error": "Recompute is POST-only"})

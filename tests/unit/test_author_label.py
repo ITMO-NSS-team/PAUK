@@ -37,8 +37,13 @@ class AuthorLabelTest(unittest.TestCase):
 
     def test_public_build_leaves_short_surnames_alone(self):
         # 3 letters or fewer: truncating would save nothing, so don't.
-        self.assertEqual(author_label("Ив", "Ан", None, None, public=True), "Ив Ан")
+        self.assertEqual(author_label("Ив", "Ан", None, None, public=True), "Ив А.")
         self.assertEqual(author_label("Ив", None, None, None, public=True), "Ив")
+
+    def test_public_build_initials_a_lone_given_name_too(self):
+        # Without a patronymic, the given name is written out in full on the
+        # private build ("Горизонтова Мария") — --public must not leak that.
+        self.assertEqual(author_label("Иванов", "Иван", None, None, public=True), "Ива.. И.")
 
 
 class SplitFullNameTest(unittest.TestCase):

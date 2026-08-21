@@ -20,7 +20,7 @@ function closePanel() {
 function renderOverview() {
   const fmt = n => n.toLocaleString(LANG === "en" ? "en-US" : "ru-RU");
   const tabKeys = { 1: "tab.people", 2: "tab.repos", 3: "tab.pubs" };
-  const tabColors  = { 1: "var(--accent-2)", 2: "#d9962e", 3: "#e8562e" };
+  const tabColors  = { 1: KIND_COLOR.author, 2: KIND_COLOR.repo, 3: KIND_COLOR.pub };
   const tabColor = tabColors[tab] || "inherit";
   overview.innerHTML =
     `<img class="overview-web" src="vendor/icons/pauk-web-4x.png" alt="" />` +

@@ -76,7 +76,7 @@ def author_label(
     if patronymic:  # only the patronymic survived — treat it as the initial
         return f"{surname} {patronymic[0].upper()}."
     if given:
-        return f"{surname} {given}"
+        return f"{surname} {given[0].upper()}." if public else f"{surname} {given}"
     return surname
 
 

@@ -81,8 +81,7 @@ function clearAll() {
   selected = null; selectedDept = null;
   map.getSource("sel-edges").setData(empty());
   map.getSource("sel-points").setData(empty());
-  map.getSource("dept-focus").setData(empty());
-  if (tab === 1) {
+  if (tab === 1 || tab === 3) {
     map.setPaintProperty("dept-edges", "line-opacity", DEPT_EDGE_OPACITY);
     map.setPaintProperty("dept-fill",  "fill-opacity", FILL_OPACITY);
   }

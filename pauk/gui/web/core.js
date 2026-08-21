@@ -10,7 +10,6 @@ const FIT  = [[-7.7, -7.7], [7.7, 7.7]];
 const DATA = window.GRAPH;
 
 const DEPT_EDGE_OPACITY  = ["interpolate", ["linear"], ["zoom"], 4, 0.45, 6.8, 0.45, 7.6, 0];
-const FOCUS_EDGE_OPACITY = ["interpolate", ["linear"], ["zoom"], 4, 0.85, 6.8, 0.85, 7.6, 0];
 const NODE_OPACITY       = ["interpolate", ["linear"], ["zoom"], 4.5, 0, 6.0, 1];
 const EDGE_OPACITY_COAUTH = ["interpolate", ["linear"], ["zoom"], 5.6, 0, 7.5, 0.28, 12, 0.55];
 const EDGE_OPACITY_PUBS   = ["interpolate", ["linear"], ["zoom"], 5.6, 0, 7.5, 0.28, 12, 0.55];
@@ -68,6 +67,10 @@ function muteColor(hex) {
 
 const deptById = new Map();
 DATA.departments.forEach(d => { d.color = muteColor(d.color); deptById.set(d.id, d); });
+
+// Canonical per-kind accent color, shown on the Overview panel's tab label
+// and reused anywhere a kind badge appears (search results).
+const KIND_COLOR = { author: "var(--accent-2)", repo: "#d9962e", pub: "#e8562e" };
 
 // ---------- display names ----------
 // d.name / n.label are the data of record — use these two only for what's

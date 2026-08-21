@@ -42,19 +42,7 @@ function selectDept(did) {
   const c = deptCentroid.get(did);
   if (c && map.getZoom() < DEPT_CLICK_ZOOM)
     map.flyTo({ center: proj(c[0], c[1]), zoom: DEPT_CLICK_ZOOM - 0.3, duration: 700 });
-  const partners = (DATA.dept_edges || []).filter(e => e.s === did || e.t === did);
-  map.getSource("dept-focus").setData({
-    type: "FeatureCollection",
-    features: partners.map(e => {
-      const oid = e.s === did ? e.t : e.s;
-      const a = deptCentroid.get(did), b = deptCentroid.get(oid);
-      if (!a || !b) return null;
-      return { type: "Feature", properties: { w: e.w },
-        geometry: { type: "LineString", coordinates: [proj(a[0], a[1]), proj(b[0], b[1])] } };
-    }).filter(Boolean),
-  });
-  map.setPaintProperty("dept-edges", "line-opacity", 0);
-  map.setPaintProperty("dept-fill",  "fill-opacity", ["case", ["==", ["get", "id"], did], 0.62, 0.08]);
+  map.setPaintProperty("dept-fill", "fill-opacity", ["case", ["==", ["get", "id"], did], 0.62, 0.08]);
   showDeptCard(did);
   drawOverlay();
 }
@@ -62,9 +50,7 @@ function selectDept(did) {
 function resetDeptFocus() {
   if (selectedDept === null) return;
   selectedDept = null;
-  map.getSource("dept-focus").setData(empty());
-  map.setPaintProperty("dept-edges", "line-opacity", DEPT_EDGE_OPACITY);
-  map.setPaintProperty("dept-fill",  "fill-opacity", FILL_OPACITY);
+  map.setPaintProperty("dept-fill", "fill-opacity", FILL_OPACITY);
 }
 
 // ---------- author profile ----------
@@ -180,7 +166,7 @@ function showDeptCard(did) {
   html += `<div class="card-section">${t("dept.collaboratesWith", partners.length)}</div><ul class="card-list">`;
   partners.slice(0, 15).forEach(e => {
     const oid = e.s === did ? e.t : e.s, o = deptById.get(oid); if (!o) return;
-    html += `<li data-d="${oid}"><span class="li-name">${esc(deptDisplayName(o))}</span><span class="li-count">${e.w}</span></li>`;
+    html += `<li data-d="${oid}"><div class="li-name" style="display:flex;align-items:center;gap:10px"><span class="dept-dot" style="background:${o.color}"></span>${esc(deptDisplayName(o))}</div><span class="li-count">${e.w}</span></li>`;
   });
   html += `</ul>`;
   html += `<button class="detail-profile-btn">${t("dept.more")}</button>`;

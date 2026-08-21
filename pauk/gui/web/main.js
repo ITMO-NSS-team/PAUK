@@ -67,8 +67,6 @@ function _applyMapTheme(dark) {
     map.setPaintProperty("dept-edges", "line-color", dark ? "#7F7F7F" : "#9D9D9D");
   if (map.getLayer("edges"))
     map.setPaintProperty("edges", "line-color", dark ? "#7F7F7F" : "#9D9D9D");
-  if (map.getLayer("dept-focus-edges"))
-    map.setPaintProperty("dept-focus-edges", "line-color", dark ? "#F2F2F2" : "#191F1D");
 }
 
 // Dark theme is paused (toggle hidden in style.css); this function still
@@ -145,7 +143,6 @@ map.on("load", () => {
 
   map.addSource("hulls",      { type: "geojson", data: hullData });
   map.addSource("dept-edges", { type: "geojson", data: buildBackboneFeatures() });
-  map.addSource("dept-focus", { type: "geojson", data: empty() });
   map.addSource("edges",      { type: "geojson", data: buildEdgeFeatures() });
   map.addSource("nodes",      { type: "geojson", data: buildNodeFeatures() });
   map.addSource("sel-edges",  { type: "geojson", data: empty() });
@@ -163,14 +160,6 @@ map.on("load", () => {
       "line-width": ["interpolate", ["linear"], ["get", "w"], 2, 0.6, 50, 4, 385, 8],
       "line-opacity": DEPT_EDGE_OPACITY,
     } });
-  map.addLayer({ id: "dept-focus-edges", type: "line", source: "dept-focus",
-    layout: { "line-cap": "round" },
-    paint: {
-      "line-color": "#191F1D",
-      "line-width": ["interpolate", ["linear"], ["get", "w"], 1, 1, 50, 5, 385, 9],
-      "line-opacity": FOCUS_EDGE_OPACITY,
-    } });
-
   map.addLayer({ id: "edges", type: "line", source: "edges",
     layout: { "line-cap": "round" },
     paint: {
@@ -227,9 +216,9 @@ map.on("load", () => {
     } });
 
   map.on("click", e => {
-    // Zoomed out on tab 1: nodes are too tight to aim for, click resolves
+    // Zoomed out on tabs 1/3: nodes are too tight to aim for, click resolves
     // to the department under the cursor. Departments only render there.
-    if (tab === 1 && map.getZoom() < DEPT_CLICK_ZOOM) {
+    if ((tab === 1 || tab === 3) && map.getZoom() < DEPT_CLICK_ZOOM) {
       const df = map.queryRenderedFeatures(e.point, { layers: ["dept-fill"] });
       if (df.length) { selectDept(df[0].properties.id); return; }
       clearAll();
@@ -250,11 +239,6 @@ map.on("load", () => {
   document.querySelectorAll("#tab-toggle button").forEach(b => {
     b.onclick = () => setTab(+b.dataset.tab);
   });
-  // No graph-stats.js on this build (e.g. the public deploy) — hide the tab.
-  if (!window.STATS) {
-    const healthBtn = document.querySelector('#tab-toggle button[data-tab="5"]');
-    if (healthBtn) healthBtn.style.display = "none";
-  }
 
   applyEdgeFilter();
   updateEdgeFilterUI(1);
@@ -296,7 +280,6 @@ map.on("load", () => {
   // Push the landing page into history first for profile URLs, so "back" leads there.
   const _initParams = Object.fromEntries(new URLSearchParams(location.search));
   let _initTab = +(_initParams.tab || 1);
-  if (_initTab === 5 && !window.STATS) _initTab = 1;
   if (_initTab === 4 && window._pauk_hasDeepLink) {
     history.replaceState({ tab: 4 }, "", "?tab=4");
     _applyUrlState(_initParams);
@@ -311,9 +294,6 @@ map.on("load", () => {
 // ---------- tab switching ----------
 
 function setTab(t) {
-  // Covers direct URL access (?tab=5) and back/forward the same way the
-  // hidden tab-5 button (map.on("load") above) covers a normal click.
-  if (t === 5 && !window.STATS) t = 1;
   if (t === tab) return;
   tab = t;
 
@@ -326,8 +306,8 @@ function setTab(t) {
   document.getElementById("right-panel").style.display = isPage ? "none" : "";
 
   if (!isPage) {
-    const showDept = t === 1;
-    for (const l of ["dept-fill", "dept-line", "dept-edges", "dept-focus-edges"])
+    const showDept = t === 1 || t === 3;
+    for (const l of ["dept-fill", "dept-line", "dept-edges"])
       map.setLayoutProperty(l, "visibility", showDept ? "visible" : "none");
     map.setPaintProperty("repos", "icon-opacity", t === 2 ? 1 : NODE_OPACITY);
     map.setPaintProperty("edges", "line-opacity", t === 2 ? 1 : t === 3 ? EDGE_OPACITY_PUBS : EDGE_OPACITY_COAUTH);
