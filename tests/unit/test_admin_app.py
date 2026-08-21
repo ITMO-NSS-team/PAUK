@@ -41,10 +41,12 @@ class PanelTest(unittest.TestCase):
                 "/login", data={"login": "roman", "password": "hunter2", "next": target})
             self.assertEqual(response.headers["location"], "/", target)
 
-    def test_the_favicon_points_at_the_logo(self):
+    def test_the_favicon_is_served_as_a_file(self):
+        # Not a redirect: browsers cache a 301 hard, so a 404 caught once
+        # would outlive the fix.
         response = self.client.get("/favicon.ico")
-        self.assertEqual(response.status_code, 301)
-        self.assertEqual(response.headers["location"], "/assets/logo.jpg")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "image/jpeg")
 
     def test_an_invented_cookie_does_not_open_it(self):
         self.client.cookies.set(COOKIE, "made-up")
@@ -129,11 +131,11 @@ class PanelTest(unittest.TestCase):
         # here the point is only that the title never changes.
         self.assertIn("<title>Admin PAUK</title>", self.client.get("/").text)
 
-    def test_the_logo_is_the_tab_icon_and_nothing_else(self):
+    def test_the_logo_is_the_tab_icon_and_the_way_home(self):
         self.sign_in()
         body = self.client.get("/").text
-        self.assertIn('rel="icon" type="image/jpeg" href="/assets/logo.jpg"', body)
-        self.assertNotIn("<img", body)
+        self.assertIn('rel="icon"', body)
+        self.assertIn('<a href="/" class="logo"', body)
 
     def test_the_panel_is_light_only(self):
         css = self.client.get("/static/panel.css").text
@@ -185,3 +187,71 @@ class GraphUnavailableTest(unittest.TestCase):
         # Signing in and the overview read Mongo only, so an unreachable
         # graph must not lock people out of the panel entirely.
         self.assertEqual(self.client.get("/").status_code, 200)
+
+
+class OverviewTest(unittest.TestCase):
+    """The overview page and what the number beside a label means."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="admin")
+        self.client = TestClient(build(Settings(neo4j_password=""), self.db),
+                                 follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def test_the_overview_opens_even_with_no_graph(self):
+        # Counting needs Neo4j; the page must not depend on it.
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("не отвечает", response.text)
+
+    def test_labels_are_listed_and_link_to_their_search(self):
+        body = self.client.get("/").text
+        for label in ("Person", "Repository", "GitHubProfile"):
+            self.assertIn(f'href="/nodes/{label}"', body)
+
+    def test_both_numbers_are_labelled_so_neither_is_guessed_at(self):
+        # A bare "Person 34" read as thirty-four people; it was the field
+        # count. Both numbers are now spelled out.
+        from unittest import mock
+        counts = dict.fromkeys(
+            ("Person", "Repository", "Publication", "Department",
+             "Organization", "GitHubProfile", "LinkCandidate"), 0)
+        counts["Person"] = 3
+        with mock.patch("pauk.admin.app.audited_client"), \
+             mock.patch("pauk.admin.app.count_nodes", return_value=counts):
+            body = " ".join(self.client.get("/").text.split())
+        # The number sits in its own span, so match around the markup.
+        self.assertIn(">3</span> узла", body)
+        self.assertIn("34 поля", body)
+        self.assertIn(">0</span> узлов", body)
+
+    def test_the_numbers_agree_with_the_noun(self):
+        from pauk.admin.deps import plural
+        self.assertEqual(plural(1, "узел", "узла", "узлов"), "узел")
+        self.assertEqual(plural(2, "узел", "узла", "узлов"), "узла")
+        self.assertEqual(plural(5, "узел", "узла", "узлов"), "узлов")
+        self.assertEqual(plural(11, "узел", "узла", "узлов"), "узлов")
+        self.assertEqual(plural(21, "узел", "узла", "узлов"), "узел")
+
+    def test_the_overview_asks_the_driver_not_to_wait_or_retry(self):
+        # Retries suit a batch job: the driver backs off for tens of seconds
+        # on an unreachable host, and a page rendered for a person cannot.
+        from unittest import mock
+        with mock.patch("pauk.admin.app.audited_client") as client, \
+             mock.patch("pauk.admin.app.count_nodes", return_value={}):
+            self.client.get("/")
+        _, options = client.call_args
+        self.assertEqual(options["retry_time"], 0)
+        self.assertLessEqual(options["connection_timeout"], 5)
+
+    def test_a_graph_that_errors_does_not_take_the_overview_down(self):
+        from unittest import mock
+        with mock.patch("pauk.admin.app.audited_client",
+                        side_effect=OSError("no route to host")):
+            response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("не отвечает", response.text)
+
+    def test_the_header_shows_the_section_as_a_path(self):
+        self.assertIn("/обзор", self.client.get("/").text)

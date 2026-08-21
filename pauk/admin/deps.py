@@ -108,6 +108,22 @@ logger = logging.getLogger("pauk.admin")
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
+
+def plural(count: int, one: str, few: str, many: str) -> str:
+    """Russian noun agreement: 1 узел, 2 узла, 5 узлов.
+
+    Counts are shown beside every label on the overview, and "1 полей"
+    reads as a bug in the page rather than as a number.
+    """
+    if count % 10 == 1 and count % 100 != 11:
+        return one
+    if 2 <= count % 10 <= 4 and not 12 <= count % 100 <= 14:
+        return few
+    return many
+
+
+templates.env.filters["plural"] = plural
+
 Db = Annotated[Database, Depends(get_db)]
 Config = Annotated[Settings, Depends(get_config)]
 Session = Annotated[dict | None, Depends(get_session)]

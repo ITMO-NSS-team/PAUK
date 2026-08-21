@@ -374,3 +374,16 @@ def merge_nodes(client: Neo4jClient, label: str, duplicate_id: str, canonical_id
     removed = getattr(client, MERGEABLE[label])([(duplicate_id, canonical_id)])
     logger.info("merged %s %s into %s", label, duplicate_id, canonical_id)
     return removed
+
+
+def count_nodes(client: Neo4jClient) -> dict[str, int]:
+    """How many nodes of each editable label the graph holds.
+
+    For the panel's overview, where the number beside a label is expected
+    to mean "how many of these are there" — the count people navigate by.
+    """
+    counts = {}
+    for label in NODE_FIELDS:
+        validate_label(label)
+        counts[label] = client.count_nodes(label)
+    return counts

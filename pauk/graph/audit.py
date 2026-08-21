@@ -226,14 +226,16 @@ def build_audit_sink(config: Settings, db: Database | None = None) -> AuditSink:
     return MultiAuditSink(jsonl, MongoAuditSink(db)) if db is not None else jsonl
 
 
-def audited_client(config: Settings, db: Database | None = None) -> AuditedNeo4jClient:
+def audited_client(config: Settings, db: Database | None = None,
+                   **driver_options) -> AuditedNeo4jClient:
     """An open Neo4j client that records what it changes.
 
     Callers own the returned client and must close() it, same as with a
     plain Neo4jClient. Wrap the actual work in `actor_context` so the
     entries say who made the change.
     """
-    raw = Neo4jClient(config.neo4j_uri, config.neo4j_user, config.neo4j_password)
+    raw = Neo4jClient(config.neo4j_uri, config.neo4j_user, config.neo4j_password,
+                      **driver_options)
     return AuditedNeo4jClient(raw, build_audit_sink(config, db))
 
 

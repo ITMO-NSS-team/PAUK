@@ -4,15 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Admin PAUK</title>
-  <link rel="icon" type="image/jpeg" href="/assets/logo.jpg">
-  <link rel="apple-touch-icon" href="/assets/logo.jpg">
+  <link rel="icon" type="image/jpeg" sizes="any" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/favicon.ico">
   <link rel="stylesheet" href="/static/panel.css">
 </head>
 <body>
 {% if user %}
 <header>
-  <a href="/" class="brand">Admin PAUK</a>
-  <span class="where">{% block where %}{% endblock %}</span>
+  <a href="/" class="logo" title="Admin PAUK"><img src="/favicon.ico" alt="Admin PAUK"></a>
+  <span class="where">/{% block where %}{% endblock %}</span>
   <nav>
     <span class="muted">{{ user.login }} · {{ user.role }}</span>
     <form method="post" action="/logout">

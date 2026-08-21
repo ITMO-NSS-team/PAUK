@@ -97,13 +97,21 @@ class Neo4jClient:
     any data (see pauk/graph/schema.py).
     """
 
-    def __init__(self, uri: str, user: str, password: str):
+    def __init__(self, uri: str, user: str, password: str,
+                 connection_timeout: float | None = None,
+                 retry_time: float | None = None):
         """Open a Neo4j driver connection.
 
         Args:
             uri: Bolt connection URI, e.g. "bolt://localhost:7687".
             user: Neo4j username.
             password: Neo4j password.
+            connection_timeout: Seconds to wait for the connection. The
+                driver's own default is generous, and a page rendered for a
+                person cannot wait that long.
+            retry_time: How long a failed transaction keeps being retried.
+                Retries suit a batch job; an unreachable database should be
+                reported to a waiting person at once.
 
         Raises:
             ValueError: If password is empty. Settings.neo4j_password
@@ -113,7 +121,12 @@ class Neo4jClient:
         """
         if not password:
             raise ValueError("Neo4j password is empty - set NEO4J_PASSWORD in .env")
-        self.driver = GraphDatabase.driver(uri, auth=(user, password))
+        options = {}
+        if connection_timeout is not None:
+            options["connection_timeout"] = connection_timeout
+        if retry_time is not None:
+            options["max_transaction_retry_time"] = retry_time
+        self.driver = GraphDatabase.driver(uri, auth=(user, password), **options)
 
     def close(self):
         """Close the underlying driver connection."""
@@ -585,6 +598,17 @@ class Neo4jClient:
         with self.driver.session() as session:
             row = session.execute_read(lambda tx: tx.run(query, node_id=node_id).single())
         return dict(row["props"]) if row else None
+
+    def count_nodes(self, label: str) -> int:
+        """How many nodes carry this label.
+
+        Args:
+            label: Node label, interpolated into Cypher — whitelist only.
+        """
+        query = cast(LiteralString, f"MATCH (n:{label}) RETURN count(n) AS total")
+        with self.driver.session() as session:
+            row = session.execute_read(lambda tx: tx.run(query).single())
+        return int(row["total"]) if row else 0
 
     def search_nodes(self, label: str, fields: list[str], query: str, limit: int = 50) -> list[dict]:
         """Nodes of one label whose text matches, for the panel's search box.

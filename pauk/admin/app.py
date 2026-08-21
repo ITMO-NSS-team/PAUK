@@ -37,11 +37,38 @@ from pauk.admin.auth import (
     read_session,
 )
 from pauk.admin.deps import CurrentUser, Db, Session, templates
-from pauk.graph.mutations import NODE_FIELDS, RELATIONSHIPS
+from pauk.graph.audit import audited_client
+from pauk.graph.mutations import NODE_FIELDS, RELATIONSHIPS, count_nodes
 from pauk.settings import Settings
 from pauk.storage import get_mongo_client
 
 logger = logging.getLogger("pauk.admin")
+
+# How long the overview waits for the graph before dropping the counts.
+COUNT_TIMEOUT = 2.0
+
+
+def _node_counts(config: Settings, db) -> dict[str, int] | None:
+    """How many nodes of each label there are, or None if the graph is silent.
+
+    The count is a nicety on an overview page, so the driver is told to
+    connect quickly and not to retry: retries suit a batch job, while a
+    person waiting for a page should be told at once that the graph is not
+    answering. Without this the page blocks for as long as the database
+    stays unreachable — the driver backs off for tens of seconds.
+    """
+    try:
+        client = audited_client(config, db, connection_timeout=COUNT_TIMEOUT, retry_time=0)
+    except Exception as error:  # noqa: BLE001 — the overview works without a graph
+        logger.info("overview without counts: %s", error)
+        return None
+    try:
+        return count_nodes(client)
+    except Exception as error:  # noqa: BLE001
+        logger.info("overview without counts: %s", error)
+        return None
+    finally:
+        client.close()
 
 
 def _safe_next(target: str) -> str:
@@ -100,7 +127,7 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
 
     @app.get("/favicon.ico", include_in_schema=False)
     def favicon():
-        return RedirectResponse("/assets/logo.jpg", status_code=status.HTTP_301_MOVED_PERMANENTLY)
+        return logo()
 
     @app.get("/login", response_class=HTMLResponse)
     def login_form(request: Request, session: Session, next: str = "/"):
@@ -144,9 +171,11 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request, user: CurrentUser, session: Session):
-        labels = [(label, len(fields)) for label, fields in sorted(NODE_FIELDS.items())]
+        counts = _node_counts(config, app.state.db)
+        labels = [(label, len(NODE_FIELDS[label]), (counts or {}).get(label))
+                  for label in sorted(NODE_FIELDS)]
         return templates.TemplateResponse(request, "index.html", {
-            "user": user, "csrf": session["csrf"],
+            "user": user, "csrf": session["csrf"], "counted": counts is not None,
             "labels": labels, "relationships": len(RELATIONSHIPS)})
 
     app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
