@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}{{ label }} {{ node_id }}{% endblock %}
+{% block where %}узел{% endblock %}
+{% block content %}
+<h1>{{ label }} <span class="muted">{{ node_id }}</span></h1>
+<p class="muted"><a href="/nodes/{{ label }}">← к поиску</a></p>
+
+{% if request.query_params.get("saved") %}<p class="note">Сохранено. Правка записана и переживёт публикацию.</p>{% endif %}
+{% if request.query_params.get("unchanged") %}<p class="note">Ничего не изменилось — записывать было нечего.</p>{% endif %}
+{% if request.query_params.get("linked") %}<p class="note">Связь создана. Она переживёт публикацию сама — загрузчик не удаляет связи, которых не знает.</p>{% endif %}
+{% if request.query_params.get("unlinked") %}<p class="note">Связь удалена и помечена — публикация её не восстановит.</p>{% endif %}
+
+<form method="post" action="/nodes/{{ label }}/{{ node_id }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="card">
+    <table>
+      <tr><th>поле</th><th>значение</th></tr>
+      {% for name in editable %}
+      <tr>
+        <td>{{ name }}</td>
+        <td><input type="text" name="{{ name }}" value="{{ props.get(name) if props.get(name) is not none else "" }}"
+                   {% if not user.can_write %}disabled{% endif %}></td>
+      </tr>
+      {% endfor %}
+      {% for name in reserved %}
+      <tr class="ro"><td>{{ name }}</td><td class="val">{{ props.get(name, "") }} <span class="muted">— не редактируется</span></td></tr>
+      {% endfor %}
+    </table>
+    {% if user.can_write %}
+    <div class="row" style="margin:20px 0 0">
+      <div class="grow">
+        <label for="note">Почему правим (попадёт в журнал)</label>
+        <input type="text" id="note" name="note">
+      </div>
+      <button type="submit">Сохранить</button>
+    </div>
+    {% else %}
+      <p class="muted" style="margin-top:16px">Учётная запись только для чтения.</p>
+    {% endif %}
+  </div>
+</form>
+
+<h1 style="margin-top:32px">Связи <span class="muted">{{ relationships|length }}</span></h1>
+<div class="card">
+  {% if relationships %}
+  <table>
+    <tr><th>направление</th><th>тип</th><th>вторая сторона</th>{% if user.can_write %}<th></th>{% endif %}</tr>
+    {% for rel in relationships %}
+    <tr>
+      <td>{{ "→ исходит" if rel.outgoing else "← входит" }}</td>
+      <td>{{ rel.type }}</td>
+      <td class="val">
+        {% set other = rel.labels[0] %}
+        <a href="/nodes/{{ other }}/{{ rel.other_id }}">{{ other }} {{ rel.other_id }}</a>
+      </td>
+      {% if user.can_write %}
+      <td style="width:1%">
+        <form method="post" action="/nodes/{{ label }}/{{ node_id }}/rel/delete">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="triple"
+                 value="{{ label if rel.outgoing else rel.labels[0] }}|{{ rel.type }}|{{ rel.labels[0] if rel.outgoing else label }}">
+          <input type="hidden" name="other_id" value="{{ rel.other_id }}">
+          <button type="submit" class="ghost">отвязать</button>
+        </form>
+      </td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">Связей нет.</p>{% endif %}
+</div>
+
+{% if user.can_write and (links.outgoing or links.incoming) %}
+<div class="card" style="margin-top:20px">
+  <b>Связать с другим узлом</b>
+  <p class="muted">Доступны только связи, которые знает граф. Вторая сторона ищется по полю,
+     указанному в скобках, — для репозитория это адрес, а не идентификатор.</p>
+  <form method="post" action="/nodes/{{ label }}/{{ node_id }}/rel/add" class="row" style="margin-bottom:0">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div>
+      <label for="triple">Связь</label>
+      <select id="triple" name="triple" style="padding:8px 10px; font:inherit; font-size:14px;
+              border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text)">
+        {% for link in links.outgoing %}
+        <option value="{{ link.key }}">→ {{ link.rel_type }} → {{ link.tgt_label }} (по {{ link.match_prop }})</option>
+        {% endfor %}
+        {% for link in links.incoming %}
+        <option value="{{ link.key }}">← {{ link.src_label }} → {{ link.rel_type }} (по {{ link.match_prop }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="grow">
+      <label for="other_id">Вторая сторона</label>
+      <input type="text" id="other_id" name="other_id" required>
+    </div>
+    <button type="submit">Связать</button>
+  </form>
+</div>
+{% endif %}
+
+{% if user.can_write %}
+<div class="card danger" style="margin-top:32px">
+  <b>Удалить узел</b>
+  <p class="muted">Узел будет помечен как удалённый, иначе следующая публикация создаст его заново.
+     {% if relationships %}У узла есть связи — без галочки удаление будет отклонено.{% endif %}</p>
+  <form method="post" action="/nodes/{{ label }}/{{ node_id }}/delete">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if relationships %}
+    <label style="display:flex; gap:8px; align-items:center; margin-bottom:12px">
+      <input type="checkbox" name="cascade" value="1"> удалить вместе со связями
+    </label>
+    {% endif %}
+    <button type="submit" class="warn">Удалить</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

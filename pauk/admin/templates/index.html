@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Обзор{% endblock %}
+{% block where %}обзор{% endblock %}
+{% block content %}
+<h1>Граф</h1>
+<div class="card">
+  <p class="muted">Правке доступны {{ labels|length }} меток и {{ relationships }} типов связей.
+     Выберите, что искать.</p>
+  <div class="tabs" style="margin:16px 0 0">
+    {% for label, count in labels %}<a href="/nodes/{{ label }}">{{ label }} <span class="muted">{{ count }}</span></a>{% endfor %}
+  </div>
+</div>
+{% endblock %}

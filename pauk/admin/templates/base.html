@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %} · PAUK</title>
+  <link rel="icon" type="image/jpeg" href="/assets/logo.jpg">
+  <link rel="stylesheet" href="/static/panel.css">
+</head>
+<body>
+{% if user %}
+<header>
+  <a href="/"><img src="/assets/logo.jpg" alt="PAUK"></a>
+  <span class="brand">PAUK</span>
+  <span class="where">{% block where %}панель{% endblock %}</span>
+  <nav>
+    <button type="button" class="ghost" id="theme">тема</button>
+    <span class="muted">{{ user.login }} · {{ user.role }}</span>
+    <form method="post" action="/logout">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button type="submit" class="ghost">выйти</button>
+    </form>
+  </nav>
+</header>
+{% endif %}
+<main>{% block content %}{% endblock %}</main>
+<script>
+  // Same behaviour as the map: dark by default, toggled per load, not stored.
+  document.getElementById("theme")?.addEventListener("click", () => {
+    const root = document.documentElement;
+    root.getAttribute("data-theme") === "dark"
+      ? root.removeAttribute("data-theme")
+      : root.setAttribute("data-theme", "dark");
+  });
+</script>
+</body>
+</html>

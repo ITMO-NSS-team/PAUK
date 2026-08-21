@@ -1,0 +1,176 @@
+/* PAUK admin — the map's design system, applied to forms.
+
+   The palette is the map's seven-gray scale, taken verbatim from
+   pauk/gui/web/style.css: same names, same values, no invented steps. The
+   panel and the map are one product, and a second palette would show.
+
+   Fonts and the logo are served from the map's own files rather than
+   copied here — one place to update, and nothing duplicated in the tree. */
+
+@font-face {
+  font-family: "Golos Text";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("/assets/fonts/golos-text-cyrillic.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "Golos Text";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("/assets/fonts/golos-text-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+                 U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215;
+}
+
+:root {
+  --g1: #F2F2F2;
+  --g2: #C4C4C4;
+  --g3: #9D9D9D;
+  --g4: #7F7F7F;
+  --g5: #616161;
+  --g6: #303332;
+  --g7: #191F1D;
+
+  --bg: #ffffff;
+  --surface: var(--g1);
+  --border: var(--g2);
+  --text: var(--g7);
+  --muted: var(--g5);
+  --faint: var(--g3);
+  --topbar-bg: rgba(255, 255, 255, 0.88);
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --font: "Golos Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  /* The only colour the panel adds. The map keeps its chrome grayscale and
+     spends colour on departments; here it marks the one thing that has to
+     stand out — a destructive action. */
+  --danger: #A33A2B;
+}
+
+:root[data-theme="dark"] {
+  --bg: var(--g7);
+  --surface: var(--g6);
+  --border: var(--g5);
+  --text: var(--g1);
+  --muted: var(--g3);
+  --faint: var(--g4);
+  --topbar-bg: rgba(25, 31, 29, 0.92);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --danger: #D8705E;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 22px;
+  background: var(--topbar-bg);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+header img { width: 30px; height: 30px; border-radius: 7px; }
+header .brand { font-weight: 700; letter-spacing: .04em; }
+header .where { color: var(--muted); font-size: 13px; }
+header nav { display: flex; align-items: center; gap: 12px; margin-left: auto; font-size: 13px; }
+header nav form { margin: 0; }
+
+main { max-width: 1000px; margin: 0 auto; padding: 28px 22px 72px; }
+h1 { font-size: 21px; font-weight: 700; margin: 0 0 18px; letter-spacing: -.01em; }
+h1 .id { color: var(--muted); font-weight: 400; font-size: 15px; }
+a { color: var(--text); text-underline-offset: 2px; }
+a:hover { color: var(--muted); }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+}
+.narrow { max-width: 340px; margin: 8vh auto 0; }
+
+label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+input[type=text], input[type=password] {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+input:focus-visible, button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--g4);
+  outline-offset: 2px;
+}
+input:disabled { color: var(--faint); }
+
+button {
+  padding: 8px 15px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--text);
+  border: 1px solid var(--text);
+  border-radius: 8px;
+  cursor: pointer;
+}
+button:hover { background: var(--g5); border-color: var(--g5); }
+button.ghost { background: transparent; color: var(--text); border-color: var(--border); }
+button.warn { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+td.val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; word-break: break-word; }
+tr.ro td { color: var(--muted); }
+
+.tabs { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 20px; }
+.tabs a {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  background: var(--bg);
+  text-decoration: none;
+  font-size: 13px;
+}
+.tabs a.on { background: var(--text); border-color: var(--text); color: var(--bg); }
+
+.row { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 20px; }
+.row .grow { flex: 1; }
+
+.note {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--g4);
+  border-radius: 8px;
+  padding: 9px 13px;
+  font-size: 14px;
+  margin-bottom: 18px;
+}
+.note.bad { border-left-color: var(--danger); color: var(--danger); }
+.danger { border-color: var(--danger); }
+.muted { color: var(--muted); font-size: 13px; }
+.error { color: var(--danger); font-size: 14px; margin-bottom: 14px; }

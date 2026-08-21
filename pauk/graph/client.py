@@ -586,6 +586,55 @@ class Neo4jClient:
             row = session.execute_read(lambda tx: tx.run(query, node_id=node_id).single())
         return dict(row["props"]) if row else None
 
+    def search_nodes(self, label: str, fields: list[str], query: str, limit: int = 50) -> list[dict]:
+        """Nodes of one label whose text matches, for the panel's search box.
+
+        Case-insensitive substring match across the fields the caller
+        names. An exact id always wins and comes first: the panel is
+        reached by a link carrying an id at least as often as by typing a
+        name, and that lookup must not be buried under fuzzy matches.
+
+        Args:
+            label: Node label, interpolated into Cypher — whitelist only.
+            fields: Property names to search, also interpolated —
+                whitelist only.
+            query: What the user typed.
+            limit: How many rows to bring back.
+
+        Returns:
+            One dict per node: its `id` plus the searched fields.
+        """
+        conditions = " OR ".join(f"toLower(toString(n.{name})) CONTAINS $needle" for name in fields)
+        returned = ", ".join(f"n.{name} AS {name}" for name in fields)
+        text = (
+            f"MATCH (n:{label}) WHERE n.id = $exact OR {conditions} "
+            f"RETURN n.id AS id, {returned}, (n.id = $exact) AS exact "
+            f"ORDER BY exact DESC, id LIMIT $limit"
+        )
+        with self.driver.session() as session:
+            rows = session.execute_read(
+                lambda tx: list(tx.run(cast(LiteralString, text), needle=query.lower(),
+                                       exact=query, limit=limit)))
+        return [dict(row) for row in rows]
+
+    def fetch_node_relationships(self, label: str, node_id: str) -> list[dict]:
+        """Every edge touching one node, in both directions.
+
+        Direction is reported rather than normalised: the panel has to say
+        whether this person authored a publication or a publication was
+        produced by this department, and those read differently.
+        """
+        text = (
+            f"MATCH (n:{label} {{id: $node_id}})-[r]-(other) "
+            "RETURN type(r) AS type, labels(other) AS labels, other.id AS other_id, "
+            "startNode(r).id = n.id AS outgoing "
+            "ORDER BY type, other_id"
+        )
+        with self.driver.session() as session:
+            rows = session.execute_read(
+                lambda tx: list(tx.run(cast(LiteralString, text), node_id=node_id)))
+        return [dict(row) for row in rows]
+
     def delete_nodes_batch(self, label: str, ids: list[str], detach: bool = True) -> int:
         """Delete nodes by id, optionally taking their relationships with them.
 

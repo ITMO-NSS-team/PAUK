@@ -74,6 +74,43 @@ def _build_relationships() -> dict[tuple[str, str, str], str]:
 NODE_FIELDS = _build_node_fields()
 RELATIONSHIPS = _build_relationships()
 
+# What the panel's search box looks at, per label. Kept explicit rather
+# than derived: these names are interpolated into Cypher like the labels
+# are, and searching every field of a Person would mean scanning its
+# biography and its funding blobs on every keystroke.
+SEARCH_FIELDS: dict[str, tuple[str, ...]] = {
+    "Person": ("name_en", "name_ru", "orcid"),
+    "Publication": ("title", "doi"),
+    "Repository": ("url", "name"),
+    "GitHubProfile": ("login", "name"),
+    "Department": ("name_en", "name_ru"),
+    "Organization": ("name_en", "name_ru", "ror_id"),
+    "LinkCandidate": ("url", "host"),
+}
+
+SEARCH_LIMIT = 100
+
+
+def _check_search_fields() -> None:
+    """Fail at import if a searched field is not a real field of its label.
+
+    A rename in `extract.py` would otherwise leave the search box quietly
+    matching nothing — Cypher returns null for a property that does not
+    exist rather than raising.
+    """
+    for label, fields in SEARCH_FIELDS.items():
+        if label not in NODE_FIELDS:
+            raise RuntimeError(f"SEARCH_FIELDS names an unknown label: {label}")
+        unknown = [name for name in fields if name not in NODE_FIELDS[label] and name != "id"]
+        if unknown:
+            raise RuntimeError(f"SEARCH_FIELDS[{label}] names fields that do not exist: {unknown}")
+    missing = set(NODE_FIELDS) - set(SEARCH_FIELDS)
+    if missing:
+        raise RuntimeError(f"labels with no search fields: {sorted(missing)}")
+
+
+_check_search_fields()
+
 
 class MutationError(Exception):
     """A manual edit that must not reach the database."""
@@ -149,6 +186,37 @@ def read_node(client: Neo4jClient, label: str, node_id: str) -> dict:
     if props is None:
         raise NotFound(f"{label} {node_id} does not exist")
     return props
+
+
+def search_nodes(client: Neo4jClient, label: str, query: str, limit: int = 50) -> list[dict]:
+    """Find nodes of one label by id or by a piece of their name.
+
+    Reading, not writing — but it goes through this layer for the same
+    reason the writes do: the label and the searched field names are
+    interpolated into Cypher, so both have to come from a whitelist. The
+    fields are `SEARCH_FIELDS`, not whatever the caller asks for.
+
+    Args:
+        client: Graph client.
+        label: Node label, checked against the whitelist.
+        query: Text typed into the search box.
+        limit: Rows to return, capped so a wide query cannot pull the
+            whole graph into a page.
+
+    Raises:
+        UnknownEntity: Unknown label.
+    """
+    validate_label(label)
+    query = (query or "").strip()
+    if not query:
+        return []
+    return client.search_nodes(label, list(SEARCH_FIELDS[label]), query, min(limit, SEARCH_LIMIT))
+
+
+def node_relationships(client: Neo4jClient, label: str, node_id: str) -> list[dict]:
+    """Edges touching one node, as the panel shows them on a node's page."""
+    validate_label(label)
+    return client.fetch_node_relationships(label, node_id)
 
 
 def create_node(client: Neo4jClient, label: str, node_id: str, props: dict) -> dict:

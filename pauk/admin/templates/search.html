@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}{{ label }}{% endblock %}
+{% block where %}поиск{% endblock %}
+{% block content %}
+<h1>Поиск: {{ label }}</h1>
+<div class="tabs">
+  {% for name in labels %}<a href="/nodes/{{ name }}" {% if name == label %}class="on"{% endif %}>{{ name }}</a>{% endfor %}
+</div>
+{% if request.query_params.get("deleted") %}
+  <p class="note">Узел {{ request.query_params.get("deleted") }} удалён и помечен как удалённый — публикация его не вернёт.</p>
+{% endif %}
+<form method="get" class="row">
+  <div class="grow">
+    <label for="q">Идентификатор или часть текста ({{ fields|join(", ") }})</label>
+    <input type="text" id="q" name="q" value="{{ query }}" autofocus>
+  </div>
+  <button type="submit">Искать</button>
+</form>
+{% if query and not rows %}
+  <p class="muted">Ничего не нашлось.</p>
+{% elif rows %}
+  <div class="card">
+    <table>
+      <tr><th>id</th>{% for f in fields %}<th>{{ f }}</th>{% endfor %}</tr>
+      {% for row in rows %}
+      <tr>
+        <td class="val"><a href="/nodes/{{ label }}/{{ row.id }}">{{ row.id }}</a></td>
+        {% for f in fields %}<td>{{ row[f] if row[f] is not none else "" }}</td>{% endfor %}
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+{% endif %}
+{% endblock %}
