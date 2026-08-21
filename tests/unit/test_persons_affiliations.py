@@ -134,5 +134,91 @@ class AffiliationBackfillTest(unittest.TestCase):
         self.assertIsNone(authorship.affiliation_source)
 
 
+class OrcidIdentityTest(AffiliationBackfillTest):
+    """What ORCID states about who the author is, beyond where they worked."""
+
+    @staticmethod
+    def orcid_person(*, credit=None, others=(), emails=()):
+        name = {"given-names": {"value": "Reuben"}, "family-name": {"value": "Dangana"}}
+        if credit:
+            name["credit-name"] = {"value": credit}
+        return {"person": {
+            "name": name,
+            "other-names": {"other-name": [{"content": value} for value in others]},
+            "emails": {"email": [{"email": value} for value in emails]},
+        }}
+
+    def run_orcid(self, payload, person=None):
+        person = person or Person(id="A1", openalex_id="A1", is_itmo=True, orcid="0000-1")
+        return self.run_stage(person, [], openalex_author(orcid="0000-1"), payload)
+
+    def test_every_spelling_the_author_registered_is_kept(self):
+        result = self.run_orcid(self.orcid_person(
+            credit="R. S. Dangana", others=["Dangana, RS", "Dangana R."]))
+        self.assertEqual(result.other_names, ["Dangana R.", "Dangana, RS", "R. S. Dangana"])
+
+    def test_an_author_who_registered_none_gets_none(self):
+        self.assertEqual(self.run_orcid(self.orcid_person()).other_names, [])
+
+    def test_every_address_is_kept_not_only_the_first(self):
+        # A third of the people who list any address list several, and the
+        # matcher recognises an account by whichever one it committed with.
+        result = self.run_orcid(self.orcid_person(emails=["Work@itmo.ru", "old@gmail.com"]))
+        self.assertEqual(result.emails, ["old@gmail.com", "work@itmo.ru"])
+        self.assertEqual(result.email, "work@itmo.ru")
+
+    def test_an_address_the_person_already_had_is_not_replaced(self):
+        person = Person(id="A1", openalex_id="A1", is_itmo=True, orcid="0000-1",
+                        email="known@itmo.ru")
+        result = self.run_orcid(self.orcid_person(emails=["other@gmail.com"]), person)
+        self.assertEqual(result.email, "known@itmo.ru")
+        self.assertIn("other@gmail.com", result.emails)
+
+    @staticmethod
+    def orcid_urls(*urls):
+        return {"person": {"researcher-urls": {"researcher-url": [
+            {"url": {"value": url}} for url in urls]}}}
+
+    def test_a_github_link_the_author_stated_needs_no_matching(self):
+        result = self.run_orcid(self.orcid_urls("https://github.com/adeptvin1/"))
+        # The login, not the URL: that is what the matcher and the graph
+        # compare accounts on.
+        self.assertEqual(result.github, "adeptvin1")
+
+    def test_a_link_pasted_from_the_address_bar_still_names_the_account(self):
+        # Authors paste what the browser showed them, tab and all.
+        result = self.run_orcid(self.orcid_urls("https://github.com/coralr-1?tab=repositories"))
+        self.assertEqual(result.github, "coralr-1")
+
+    def test_a_link_to_a_repository_names_no_account(self):
+        result = self.run_orcid(self.orcid_urls("https://github.com/some-org/some-repo"))
+        self.assertIsNone(result.github)
+
+    def test_scholar_and_linkedin_are_taken_from_the_same_list(self):
+        result = self.run_orcid(self.orcid_urls(
+            "https://scholar.google.com/citations?user=X",
+            "https://www.linkedin.com/in/someone"))
+        self.assertEqual(result.google_scholar, "https://scholar.google.com/citations?user=X")
+        self.assertEqual(result.linkedin, "https://www.linkedin.com/in/someone")
+
+    def test_a_personal_page_becomes_the_homepage(self):
+        result = self.run_orcid(self.orcid_urls("https://physics.itmo.ru/ru/staff/123"))
+        self.assertEqual(result.homepage, "https://physics.itmo.ru/ru/staff/123")
+
+    def test_a_directory_is_not_a_homepage(self):
+        # ResearchGate and Scopus are indexes of everyone, not this person's
+        # page, and carry no address worth collecting.
+        result = self.run_orcid(self.orcid_urls(
+            "https://www.researchgate.net/profile/Someone",
+            "https://www.scopus.com/authid/detail.uri?authorId=7"))
+        self.assertIsNone(result.homepage)
+
+    def test_an_account_found_earlier_is_not_overwritten(self):
+        person = Person(id="A1", openalex_id="A1", is_itmo=True, orcid="0000-1",
+                        github="matched-by-hand")
+        result = self.run_orcid(self.orcid_urls("https://github.com/other"), person)
+        self.assertEqual(result.github, "matched-by-hand")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -32,6 +32,7 @@ class Person(BaseModel):
     name_en: str | None = None
     name_variants: list[str] = Field(default_factory=list)
     email: str | None = None
+    emails: list[str] = Field(default_factory=list)
     first_name_ru: str | None = None
     second_name_ru: str | None = None
     surname_ru: str | None = None

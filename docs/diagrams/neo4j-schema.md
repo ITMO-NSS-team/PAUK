@@ -18,10 +18,13 @@ classDiagram
         +google_scholar
         +openreview
         +thesis
+        +other_names
+        +homepage
+        +linkedin
         +affiliations : JSON
         +merged_ids
-        ~ 20 экспериментальных полей — не заполняются,
-        ~ см. models.md
+        ~ остальные экспериментальные поля
+        ~ не заполняются, см. models.md
     }
 
     class Organization {
@@ -86,6 +89,7 @@ classDiagram
         +html_url
         +description
         +location
+        +company
         +type
     }
 
@@ -109,7 +113,8 @@ classDiagram
 ```
 
 `AUTHORED` несёт `position`/`affiliation`/`affiliation_source`/
-`is_corresponding`; `CONTRIBUTED_TO` — `role`; `MENTIONS_LINK` — `context`
+`is_corresponding`; `CONTRIBUTED_TO` — `role` (`owner` или `contributor`),
+её строит стадия `github_match`; `MENTIONS_LINK` — `context`
 (список), `page_number` (список, `0` = абстракт), `is_relevant`,
 `llm_confidence`, `llm_reason`. Подробности и уникальные ключи — в
 [`../architecture/neo4j-graph.md`](../architecture/neo4j-graph.md).
@@ -118,3 +123,8 @@ classDiagram
 либо другого `Department` (`parent_id`), либо корневой `Organization`
 (`organization_id`); задано ровно одно из двух. Несколько организаций (ИТМО и
 со-аффилиации) сосуществуют в одном графе как разные корни.
+
+Почты и имена из коммитов, которые собирает матчер (`GitHubProfile.emails`,
+`commit_names`, `repos`, `Person.emails`), в граф не публикуются: это
+доказательства, на которых он строит решение, а не факты об аккаунте —
+и это адреса живых людей. Они остаются в prepared JSONL.

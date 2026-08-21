@@ -6,6 +6,15 @@ from .processing import ProcessingState
 
 
 class GitHubProfile(BaseModel):
+    """A GitHub account, and what it reveals about the person behind it.
+
+    The fields below the profile's own are what an author can be matched
+    against: an email identifies a person outright, a name is evidence, and
+    company or location corroborate. Emails and commit names come from the
+    git identity recorded in commits — the profile page itself usually
+    hides the address.
+    """
+
     id: str
     login: str
     name: str | None = None
@@ -13,6 +22,10 @@ class GitHubProfile(BaseModel):
     description: str | None = None
     location: str | None = None
     type: str | None = None
+    company: str | None = None
+    emails: list[str] = Field(default_factory=list)
+    commit_names: list[str] = Field(default_factory=list)
+    repos: list[str] = Field(default_factory=list)
 
 
 class LinkCandidate(BaseModel):

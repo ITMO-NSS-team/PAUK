@@ -10,7 +10,7 @@ from pauk.pipeline.enrich import Enricher
 from pauk.pipeline.normalize import OpenAlexNormalizer
 from pauk.pipeline.runner import PipelineRunner
 from pauk.pipeline.selectors import PeriodSelector, WorkSelector, WorksFileSelector
-from pauk.pipeline.stages import ALL_STAGES
+from pauk.pipeline.stages import ALL_STAGES, OPTIONAL_STAGES
 from pauk.pipeline.stages.base import PreparedSelection
 from pauk.settings import settings
 from pauk.sources import OpenAlexClient
@@ -106,7 +106,10 @@ def main() -> None:
                 result = OpenAlexNormalizer(RawStore(db, group), PreparedStore(db, group)).run()
                 _log_result("normalize", group, result)
             elif args.command == "enrich":
-                if args.stage != "all" and args.stage not in {stage.name for stage in ALL_STAGES}:
+                # social_graph is not in ALL_STAGES — it runs by name only,
+                # so the check has to know the optional ones too.
+                known = {stage.name for stage in (*ALL_STAGES, *OPTIONAL_STAGES)}
+                if args.stage != "all" and args.stage not in known:
                     parser.error(f"unknown enrichment stage: {args.stage}")
                 if bool(args.input) != bool(args.entity):
                     parser.error("--input requires --entity (and vice versa)")

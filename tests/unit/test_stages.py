@@ -7,7 +7,7 @@ from urllib.parse import parse_qs, urlparse
 import fitz
 import mongomock
 
-from pauk.models import CodeLink, Publication, RepoLink
+from pauk.models import CodeLink, GitHubProfile, Publication, RepoLink, Repository
 from pauk.models.processing import ProcessingStatus
 from pauk.pipeline.stages.base import PreparedSelection
 from pauk.pipeline.stages.code_links import (
@@ -426,6 +426,124 @@ class StagesTest(unittest.TestCase):
         rows = {row.id: row for row in prepared.read_models("publications", Publication)}
         self.assertEqual(rows["W1"].processing["code_links"].status, ProcessingStatus.COMPLETED_EMPTY)
         self.assertIsNone(rows["W1"].full_text)
+
+
+class HarvestAccountsTest(unittest.TestCase):
+    """The people a repository is collected from, for the matcher to score."""
+
+    OWNER_PAYLOAD = {
+        "html_url": "https://github.com/org/repo", "name": "repo", "id": 1,
+        "owner": {"login": "alice", "type": "User"},
+    }
+
+    def run_stage(self, github_client, *, contributors=(), commits=(), users=None):
+        github_client.return_value.get_repository.return_value = self.OWNER_PAYLOAD
+        github_client.return_value.has_readme.return_value = True
+        github_client.return_value.contributors.return_value = list(contributors)
+        github_client.return_value.commits.return_value = list(commits)
+        github_client.return_value.get_user.side_effect = lambda login: (users or {}).get(login, {})
+        db = mongomock.MongoClient()["pauk_test"]
+        prepared = PreparedStore(db, "sample")
+        raw = RawStore(db, "sample")
+        prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1", links=[CodeLink(url="https://github.com/org/repo")]),
+        ])
+        RepositoriesStage(prepared, raw).run()
+        repos = list(prepared.read_models("repositories", Repository))
+        profiles = {p.login: p for p in prepared.read_models("github_profiles", GitHubProfile)}
+        return repos[0], profiles
+
+    @staticmethod
+    def commit(login, email, name):
+        return {"author": {"login": login}, "commit": {"author": {"email": email, "name": name}}}
+
+    def test_owner_and_contributors_become_candidates(self, ):
+        repo, profiles = self.run_stage_wrapper(
+            contributors=[{"login": "bob", "type": "User"}],
+        )
+        self.assertEqual(repo.contributors, ["alice", "bob"])
+        self.assertEqual(sorted(profiles), ["alice", "bob"])
+        self.assertEqual(profiles["bob"].repos, ["https://github.com/org/repo"])
+
+    def test_commit_identities_land_on_the_account(self):
+        repo, profiles = self.run_stage_wrapper(
+            contributors=[{"login": "bob", "type": "User"}],
+            commits=[self.commit("bob", "Bob@Example.com", "Bob Ivanov"),
+                     self.commit("bob", "bob@itmo.ru", "Bob Ivanov")],
+        )
+        self.assertEqual(profiles["bob"].emails, ["bob@example.com", "bob@itmo.ru"])
+        self.assertEqual(profiles["bob"].commit_names, ["Bob Ivanov"])
+
+    def test_a_noreply_address_identifies_nobody(self):
+        _, profiles = self.run_stage_wrapper(
+            contributors=[{"login": "bob", "type": "User"}],
+            commits=[self.commit("bob", "1234+bob@users.noreply.github.com", "Bob")],
+        )
+        self.assertEqual(profiles["bob"].emails, [])
+
+    def test_bots_and_organizations_are_not_people(self):
+        repo, profiles = self.run_stage_wrapper(
+            contributors=[{"login": "dependabot[bot]", "type": "Bot"},
+                          {"login": "some-org", "type": "Organization"},
+                          {"login": "bob", "type": "User"}],
+        )
+        self.assertEqual(repo.contributors, ["alice", "bob"])
+
+    def test_profile_fields_are_kept_for_the_matcher(self):
+        _, profiles = self.run_stage_wrapper(
+            contributors=[{"login": "bob", "type": "User"}],
+            users={"bob": {"name": "Boris Ivanov", "company": "ITMO University",
+                           "location": "Saint Petersburg", "bio": "researcher",
+                           "email": "boris@itmo.ru"}},
+        )
+        profile = profiles["bob"]
+        self.assertEqual((profile.name, profile.company, profile.location), (
+            "Boris Ivanov", "ITMO University", "Saint Petersburg"))
+        self.assertEqual(profile.emails, ["boris@itmo.ru"])
+
+    def test_an_owner_of_two_repositories_keeps_what_both_revealed(self):
+        # The owner profile is built from the repository payload, whose
+        # nested owner carries only a login and a type. Writing it over the
+        # profile instead of merging drops the emails, names and repository
+        # list the same person left on every repository walked before.
+        db = mongomock.MongoClient()["pauk_test"]
+        prepared = PreparedStore(db, "sample")
+        raw = RawStore(db, "sample")
+        prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1", links=[
+                CodeLink(url="https://github.com/alice/first"),
+                CodeLink(url="https://github.com/alice/second"),
+            ]),
+        ])
+        with patch("pauk.pipeline.stages.repositories.GitHubClient") as client:
+            client.return_value.get_repository.side_effect = lambda owner, name: {
+                "html_url": f"https://github.com/{owner}/{name}", "name": name, "id": 1,
+                "owner": {"login": "alice", "type": "User"}}
+            client.return_value.has_readme.return_value = True
+            client.return_value.contributors.return_value = []
+            client.return_value.commits.side_effect = lambda owner, name, pages: [
+                self.commit("alice", f"alice@{name}.org", "Alice Ivanova")]
+            client.return_value.get_user.return_value = {"name": "Alice Ivanova"}
+            RepositoriesStage(prepared, raw).run()
+        profile = {p.login: p for p in prepared.read_models("github_profiles", GitHubProfile)}["alice"]
+        self.assertEqual(profile.emails, ["alice@first.org", "alice@second.org"])
+        self.assertEqual(profile.repos, ["https://github.com/alice/first",
+                                         "https://github.com/alice/second"])
+
+    def test_a_failing_contributor_call_keeps_the_repository(self):
+        # Contributors are an extra: GitHub answers 403 on repositories it
+        # has not analysed, and that must not cost the metadata already
+        # fetched — the row stays completed, only without candidates.
+        with patch("pauk.pipeline.stages.repositories.GitHubClient") as client:
+            client.return_value.contributors.side_effect = RuntimeError("403")
+            repo, _profiles = self.run_stage(client)
+        self.assertEqual(repo.github_id, 1)
+        self.assertEqual(repo.contributors, [])
+        self.assertEqual(repo.processing["repositories"].status, ProcessingStatus.COMPLETED)
+
+    def run_stage_wrapper(self, **kwargs):
+        with patch("pauk.pipeline.stages.repositories.GitHubClient") as client:
+            return self.run_stage(client, **kwargs)
 
 
 class CollectOccurrencesTest(unittest.TestCase):

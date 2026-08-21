@@ -267,7 +267,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
     ),
     "github_profile": NodeSpec(
         labels="GitHubProfile",
-        prop_fields=("login", "name", "html_url", "description", "location", "type"),
+        prop_fields=("login", "name", "html_url", "description", "location", "company", "type"),
     ),
     "link_candidate": NodeSpec(
         labels="LinkCandidate",
