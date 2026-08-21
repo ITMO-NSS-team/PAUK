@@ -190,8 +190,13 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
     def favicon():
         """The map's own tab icon, served as a file.
 
-        A redirect gets cached hard by browsers, so a 404 caught once would
-        outlive the fix.
+        The same image the <link> tag points at, and that matters: a browser
+        asks for /favicon.ico on its own for the site root, and answering
+        with a different picture there than on every other page is exactly
+        how the icon ends up showing on /nodes/... but not on /.
+
+        Served as a file rather than a redirect — a 301 gets cached hard
+        enough to outlive the fix.
         """
         path = web / "vendor" / "icons" / "pauk-frame.png"
         if not path.is_file():

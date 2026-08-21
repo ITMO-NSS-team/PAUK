@@ -4,8 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Admin PAUK</title>
-  <link rel="icon" type="image/png" href="/assets/icons/pauk-frame.png">
-  <link rel="apple-touch-icon" href="/assets/icons/pauk-web-4x.png">
+  {# Ровно то же объявление, что у карты в pauk/gui/web/index.html: один
+     тег, без sizes и без query. Safari разборчив — с sizes="any" (подсказка
+     для масштабируемых форматов) он PNG отбрасывает, и вкладка остаётся
+     пустой, хотя /favicon.ico при этом открывается вручную. #}
+  <link rel="icon" type="image/png" href="/assets/icons/pauk-frame.png" />
   <link rel="stylesheet" href="/static/panel.css">
 </head>
 <body>

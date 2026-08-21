@@ -139,6 +139,23 @@ class PanelTest(unittest.TestCase):
         self.assertIn('rel="icon"', body)
         self.assertIn('<a href="/" class="logo"', body)
 
+    def test_the_root_and_the_tag_show_the_same_icon(self):
+        # A browser asks for /favicon.ico by itself on the site root, and
+        # uses the <link> tag elsewhere. Two different pictures meant the
+        # spider appeared on /nodes/... and nowhere on /.
+        served = self.client.get("/favicon.ico").content
+        linked = self.client.get("/assets/icons/pauk-frame.png").content
+        self.assertEqual(served, linked)
+
+    def test_the_icon_is_the_spider_and_not_the_web(self):
+        # pauk-web.png is, despite the name, a cobweb; the spider is
+        # pauk-frame.png. Putting the wrong one in the tab is easy and
+        # invisible from the code alone.
+        self.sign_in()
+        body = self.client.get("/").text
+        self.assertIn("pauk-frame", body)
+        self.assertNotIn("pauk-web", body)
+
     def test_the_panel_is_light_only(self):
         css = self.client.get("/static/panel.css").text
         self.assertNotIn("data-theme", css)
