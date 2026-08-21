@@ -195,12 +195,10 @@ diff}` на строку). Запись в MongoDB на ряду с `JSONLAuditS
 group)` читает prepared-коллекции группы из MongoDB
 (`PreparedStore.read_rows`) и передаёт строки в
 `jsonl_loader.load_prepared_rows` (общая функция, источник строк ей не
-важен). Отдельно — `uv run python -m pauk.graph.load` напрямую, с
-флагами `--format jsonl|csv`, `--dir`: самостоятельный инструмент для
-внешней папки JSONL/CSV, не завязан на MongoDB, использует
-`jsonl_loader.load_jsonl_dir`/`csv_loader.load_csv_dir`. Оба пути создают
-констрейнты, затем грузят выбранным способом, закрывают соединение в
-`finally`.
+важен). Отдельно — `uv run python -m pauk.graph.load --dir <папка>`
+напрямую: самостоятельный инструмент для внешнего CSV-экспорта, не
+завязан на MongoDB, использует `csv_loader.load_csv_dir`. Оба пути
+создают констрейнты, затем грузят, закрывают соединение в `finally`.
 
 ## `urls.py`
 

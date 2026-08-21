@@ -4,25 +4,31 @@ just the two integration shapes: bulk ETL and a single front-end edit.
 
 from pathlib import Path
 
+from pymongo.database import Database
+
 from pauk.graph.audit import AuditedNeo4jClient, JSONLAuditSink, actor_context
 from pauk.graph.client import Neo4jClient
-from pauk.graph.jsonl_loader import load_jsonl_dir
+from pauk.graph.jsonl_loader import load_prepared_rows
+from pauk.graph.load import ENTITY_FILES
 from pauk.graph.schema import create_constraints
 from pauk.settings import Settings
+from pauk.storage import PreparedStore
 
 
 # ---------------------------------------------------------------------
 # 1. ETL load (this replaces load_jsonl_group in load.py). Batches are large here, so most calls will hit the
 #    bulk-summary path rather than a per-node diff (see diff_threshold) — that's intentional.
 # ---------------------------------------------------------------------
-def load_jsonl_group_audited(config: Settings, group: str) -> None:
+def load_jsonl_group_audited(config: Settings, mongo_db: Database, group: str) -> None:
+    prepared = PreparedStore(mongo_db, group)
+    rows_by_file = {filename: list(prepared.read_rows(entity)) for entity, filename in ENTITY_FILES.items()}
     raw_client = Neo4jClient(config.neo4j_uri, config.neo4j_user, config.neo4j_password)
     sink = JSONLAuditSink(config.cache_dir / "audit.jsonl")
     client = AuditedNeo4jClient(raw_client, sink)
     try:
         create_constraints(client)  # passes through untouched, DDL isn't audited
-        with actor_context("etl-pipeline", source=f"jsonl_loader:{group}"):
-            load_jsonl_dir(client, config.prepared_dir / group)
+        with actor_context("etl-pipeline", source=f"prepared_rows:{group}"):
+            load_prepared_rows(client, rows_by_file)
     finally:
         raw_client.close()  # close() also passes through __getattr__; either
         # raw_client.close() or client.close() works, they're the same object
