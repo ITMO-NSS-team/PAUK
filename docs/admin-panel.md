@@ -91,6 +91,17 @@ docker run -d --name pauk-neo4j-test -p 7688:7687 \
   -e NEO4J_AUTH=neo4j/testpass -v pauk-neo4j-test:/data neo4j:5
 ```
 
+Порт намеренно 7688, а не 7687 — чтобы не спорить с рабочей базой, если
+она тоже поднята. В `.env` тогда:
+
+```
+NEO4J_URI=bolt://localhost:7688
+NEO4J_PASSWORD=testpass
+```
+
+Граф там будет пустой: панель ничего не наполняет, она только правит.
+Чтобы появились узлы, нужен `pauk publish graph --group <группа>`.
+
 С MongoDB так осторожничать не нужно: панель заводит там свои коллекции
 (`admin_users`, `admin_sessions`, `graph_overrides`, `audit`) и ничего
 чужого не трогает.

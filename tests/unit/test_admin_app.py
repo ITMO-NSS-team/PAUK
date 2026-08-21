@@ -46,7 +46,7 @@ class PanelTest(unittest.TestCase):
         # would outlive the fix.
         response = self.client.get("/favicon.ico")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.headers["content-type"], "image/jpeg")
+        self.assertEqual(response.headers["content-type"], "image/png")
 
     def test_an_invented_cookie_does_not_open_it(self):
         self.client.cookies.set(COOKIE, "made-up")
@@ -112,9 +112,11 @@ class PanelTest(unittest.TestCase):
         # Logo and fonts are served from pauk/gui/web rather than copied,
         # so the panel and the map cannot drift apart visually.
         self.assertEqual(self.client.get("/static/panel.css").status_code, 200)
-        self.assertEqual(self.client.get("/assets/logo.jpg").status_code, 200)
         self.assertEqual(
             self.client.get("/assets/fonts/golos-text-cyrillic.woff2").status_code, 200)
+        # The icons the map itself uses, from vendor/icons where it keeps them.
+        for icon in ("pauk-frame.png", "pauk-frame-8x.png", "pauk-web-4x.png"):
+            self.assertEqual(self.client.get(f"/assets/icons/{icon}").status_code, 200, icon)
 
     def test_the_admin_port_serves_nothing_else_from_the_map(self):
         # Only the two asset paths are mounted. Mounting the whole web

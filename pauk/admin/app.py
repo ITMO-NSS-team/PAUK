@@ -125,10 +125,6 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
              "csrf": session["csrf"] if session else "", "detail": exc.detail},
             status_code=exc.status_code)
 
-    @app.get("/favicon.ico", include_in_schema=False)
-    def favicon():
-        return logo()
-
     @app.get("/login", response_class=HTMLResponse)
     def login_form(request: Request, session: Session, next: str = "/"):
         if session is not None:
@@ -185,15 +181,22 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
     # product. Only these two paths are exposed — mounting the whole web
     # directory would serve the map's data dump from the admin port too.
     web = Path(__file__).resolve().parents[1] / "gui" / "web"
-    if (web / "vendor" / "fonts").is_dir():
-        app.mount("/assets/fonts", StaticFiles(directory=str(web / "vendor" / "fonts")), name="fonts")
+    for name in ("fonts", "icons"):
+        source = web / "vendor" / name
+        if source.is_dir():
+            app.mount(f"/assets/{name}", StaticFiles(directory=str(source)), name=name)
 
-    @app.get("/assets/logo.jpg", include_in_schema=False)
-    def logo():
-        path = web / "logo.jpg"
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon():
+        """The map's own tab icon, served as a file.
+
+        A redirect gets cached hard by browsers, so a 404 caught once would
+        outlive the fix.
+        """
+        path = web / "vendor" / "icons" / "pauk-frame.png"
         if not path.is_file():
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "logo is missing")
-        return FileResponse(path, media_type="image/jpeg",
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "the icon is missing")
+        return FileResponse(path, media_type="image/png",
                             headers={"Cache-Control": "public, max-age=86400"})
 
     app.include_router(nodes.router)
