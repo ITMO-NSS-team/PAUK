@@ -24,6 +24,11 @@ const stNum = n => (n == null ? "—" : n.toLocaleString("ru-RU").replace(/ /g, 
 // Списки приходят массивами (например, идентификаторы группы дублей).
 const stCell = v => Array.isArray(v) ? v.join(", ") : (v == null ? "" : String(v));
 
+// Check titles/hints/groups and the node/rel inventory come from Python
+// bilingually (field + field_en) — examples-table columns don't yet, they
+// stay Russian regardless of LANG.
+const loc = (ru, en) => (LANG === "en" && en) ? en : ru;
+
 function stTiles(s) {
   // Lookup keys below match generate_stats.py's NODE_COUNTS labels exactly —
   // they're data keys, not chrome, so they stay Russian regardless of LANG.
@@ -56,28 +61,29 @@ function stChecks(checks) {
   const groups = [];
   checks.forEach(c => {
     let g = groups.find(x => x.name === c.group);
-    if (!g) groups.push(g = { name: c.group, items: [] });
+    if (!g) groups.push(g = { name: c.group, name_en: c.group_en, items: [] });
     g.items.push(c);
   });
 
   return groups.map(g => {
     const items = g.items.slice().sort((a, b) =>
       ST_ORDER[a.status] - ST_ORDER[b.status] || (b.pct || 0) - (a.pct || 0) || b.n - a.n);
-    return `<div class="st-block"><div class="st-col-h">${esc(g.name)}</div>` + items.map(c => {
+    return `<div class="st-block"><div class="st-col-h">${esc(loc(g.name, g.name_en))}</div>` + items.map(c => {
       const st = ST_STATUS[c.status] || ST_STATUS.ok;
       const clickable = c.has_examples && c.n > 0;
+      const hint = loc(c.hint, c.hint_en);
       return `<div class="st-check ${st.cls}${clickable ? " st-clickable" : ""}"${
         clickable ? ` data-check="${esc(c.id)}" tabindex="0" role="button"` : ""}>
         <span class="st-dot" aria-hidden="true"></span>
         <div class="st-check-body">
           <div class="st-check-top">
-            <span class="st-check-t">${esc(c.title)}${
+            <span class="st-check-t">${esc(loc(c.title, c.title_en))}${
               clickable ? `<span class="st-check-more">${t("st.examples")}</span>` : ""}</span>
             <span class="st-check-v">${stNum(c.n)}${
               c.pct != null ? ` <span class="st-check-pct">${c.pct}%</span>` : ""
             }</span>
           </div>
-          ${c.hint ? `<div class="st-check-hint">${esc(c.hint)}</div>` : ""}
+          ${hint ? `<div class="st-check-hint">${esc(hint)}</div>` : ""}
         </div>
         <span class="st-check-st">${st.label}</span>
       </div>`;
@@ -164,9 +170,10 @@ async function stOpenExamples(id) {
     return;
   }
 
-  m.querySelector(".st-modal-title").textContent = d.title;
+  const dHint = loc(d.hint, d.hint_en);
+  m.querySelector(".st-modal-title").textContent = loc(d.title, d.title_en);
   m.querySelector(".st-modal-sub").textContent =
-    (d.hint ? d.hint + " · " : "") +
+    (dHint ? dHint + " · " : "") +
     (d.truncated ? t("st.modal.shownOf", stNum(d.shown), stNum(d.total))
                  : t("st.modal.totalRows", stNum(d.total)));
 
@@ -404,12 +411,12 @@ function renderStats() {
     ${stTiles(s)}
 
     <div class="st-cols">
-      ${stList(t("st.colNodes"), s.nodes, i => i.label, i => i.note || "")}
-      ${stList(t("st.colRels"), s.rels, i => i.type, i => i.note || "")}
+      ${stList(t("st.colNodes"), s.nodes, i => loc(i.label, i.label_en), i => loc(i.note, i.note_en) || "")}
+      ${stList(t("st.colRels"), s.rels, i => i.type, i => loc(i.note, i.note_en) || "")}
     </div>
     <div class="st-cols">
       ${stList(t("st.colPubsByYear"), s.years, i => String(i.year), null)}
-      ${stList(t("st.colTopDepts"), s.top_depts, i => i.name, null)}
+      ${stList(t("st.colTopDepts"), s.top_depts, i => loc(i.name, i.name_en), null)}
     </div>
 
     <div class="st-checks-h">${t("st.checksHeading")}</div>
