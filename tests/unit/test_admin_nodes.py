@@ -387,3 +387,52 @@ class CreateNodeTest(unittest.TestCase):
     def test_an_editor_is_offered_the_button(self):
         self.sign_in()
         self.assertIn("/nodes/Person/new", self.client.get("/nodes/Person").text)
+
+
+class DeleteConfirmationTest(unittest.TestCase):
+    """Deleting is irreversible, so the page asks before submitting."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        create_user(self.db, "guest", "hunter2", role="viewer")
+        self.graph = FakePanelGraph()
+        self.graph.nodes[("Person", "A1")] = {"id": "A1", "name_en": "Ivan Petrov"}
+        self.graph.nodes[("Publication", "W1")] = {"id": "W1", "title": "A paper"}
+
+        app = build(Settings(), self.db)
+        from pauk.admin import deps
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+
+    def sign_in(self, login="roman"):
+        self.client.post("/login", data={"login": login, "password": "hunter2"})
+        return self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+
+    def test_the_page_asks_before_deleting(self):
+        self.sign_in()
+        body = self.client.get("/nodes/Person/A1").text
+        self.assertIn("confirm(", body)
+        self.assertIn("Удалить Person A1?", body)
+        self.assertIn("необратимо", body)
+
+    def test_the_warning_counts_the_links_that_go_with_it(self):
+        self.graph.relationships[("Person", "AUTHORED", "Publication", "A1", "W1")] = {}
+        self.sign_in()
+        body = self.client.get("/nodes/Person/A1").text
+        self.assertIn("1 связь", body)
+
+    def test_a_viewer_is_shown_no_delete_form_at_all(self):
+        self.sign_in(login="guest")
+        body = self.client.get("/nodes/Person/A1").text
+        self.assertNotIn("delete-form", body)
+        self.assertNotIn("confirm(", body)
+
+    def test_the_confirmation_is_not_the_only_thing_standing_in_the_way(self):
+        # A prompt lives in the browser and can be skipped by posting
+        # directly, so the server checks still have to hold on their own.
+        self.sign_in(login="guest")
+        csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        response = self.client.post("/nodes/Person/A1/delete", data={"csrf": csrf})
+        self.assertEqual(response.status_code, 403)
+        self.assertIn(("Person", "A1"), self.graph.nodes)
