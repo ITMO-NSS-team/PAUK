@@ -81,6 +81,7 @@ class OpenRouterClient(HttpClient):
         try:
             payload = response.json()
         except ValueError:
+            logger.warning("OpenRouter: %s returned a non-JSON response body", self.model)
             payload = {
                 "_http_status": response.status_code,
                 "_content_type": response.headers.get("Content-Type"),
