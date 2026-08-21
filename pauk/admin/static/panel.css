@@ -195,3 +195,5 @@ tr.ro td { color: var(--muted); }
 .tile b { font-size: 15px; }
 .tile .counts { font-size: 13px; color: var(--muted); }
 .tile .n { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+
+.req { color: var(--danger); font-weight: 600; }

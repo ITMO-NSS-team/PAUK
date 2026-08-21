@@ -4,6 +4,7 @@
 <h1>{{ label }} <span class="muted">{{ node_id }}</span></h1>
 <p class="muted"><a href="/nodes/{{ label }}">← к поиску</a></p>
 
+{% if request.query_params.get("created") %}<p class="note">Узел создан.</p>{% endif %}
 {% if request.query_params.get("saved") %}<p class="note">Сохранено. Правка записана и переживёт публикацию.</p>{% endif %}
 {% if request.query_params.get("unchanged") %}<p class="note">Ничего не изменилось — записывать было нечего.</p>{% endif %}
 {% if request.query_params.get("linked") %}<p class="note">Связь создана. Она переживёт публикацию сама — загрузчик не удаляет связи, которых не знает.</p>{% endif %}

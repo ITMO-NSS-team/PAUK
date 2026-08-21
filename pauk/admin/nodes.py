@@ -27,6 +27,7 @@ from pauk.graph.mutations import (
     SEARCH_FIELDS,
     MutationError,
     NotFound,
+    create_node,
     create_relationship,
     delete_node,
     delete_relationship,
@@ -68,6 +69,45 @@ def search(request: Request, label: str, user: CurrentUser, session: Session,
     return templates.TemplateResponse(request, "search.html", {
         "user": user, "csrf": session["csrf"], "label": label, "query": q,
         "rows": rows, "fields": SEARCH_FIELDS[label], "labels": sorted(NODE_FIELDS)})
+
+
+@router.get("/nodes/{label}/new", response_class=HTMLResponse)
+def create_form(request: Request, label: str, user: Editor, session: Session):
+    """The form for a node the pipeline does not know about.
+
+    Declared before the node page: otherwise `/nodes/Person/new` matches
+    that route and goes looking for a node whose id is "new".
+    """
+    _known_label(label)
+    return templates.TemplateResponse(request, "create.html", {
+        "user": user, "csrf": session["csrf"], "label": label,
+        "editable": sorted(NODE_FIELDS[label]), "labels": sorted(NODE_FIELDS)})
+
+
+@router.post("/nodes/{label}/new")
+async def create(request: Request, label: str, user: Editor,
+                 db: Db, graph: Graph, _: CsrfChecked):
+    """Add a node by hand.
+
+    No override is recorded: the loader only touches ids it has rows for,
+    so an id invented here is never overwritten and needs nothing to
+    reapply. Compare a *changed* field on a node the pipeline does know,
+    which publishing would undo without one.
+    """
+    _known_label(label)
+    form = await request.form()
+    node_id = str(form.get("id", "")).strip()
+    if not node_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "the node needs an id")
+    fields = {name: value for name in NODE_FIELDS[label]
+              if (value := _parse_value(str(form.get(name, "")))) is not None}
+    try:
+        create_node(graph, label, node_id, fields)
+    except MutationError as error:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
+    logger.info("%s created %s %s", user.actor, label, node_id)
+    return RedirectResponse(f"/nodes/{label}/{node_id}?created=1",
+                            status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/nodes/{label}/{node_id}", response_class=HTMLResponse)

@@ -295,3 +295,95 @@ class RelationshipScreenTest(unittest.TestCase):
                          data={"csrf": csrf, "triple": "Person|AUTHORED|Publication",
                                "other_id": "A1"})
         self.assertIn(("Person", "AUTHORED", "Publication", "A1", "W1"), self.graph.relationships)
+
+
+class CreateNodeTest(unittest.TestCase):
+    """Adding a node the pipeline does not know about."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        create_user(self.db, "guest", "hunter2", role="viewer")
+        self.graph = FakePanelGraph()
+        self.graph.nodes[("Person", "A1")] = {"id": "A1", "name_en": "Ivan Petrov"}
+
+        app = build(Settings(), self.db)
+        from pauk.admin import deps
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+
+    def sign_in(self, login="roman"):
+        self.client.post("/login", data={"login": login, "password": "hunter2"})
+        return self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+
+    def test_the_form_is_not_mistaken_for_a_node_called_new(self):
+        # /nodes/Person/new must reach the form, not a lookup for a node
+        # whose id happens to be "new".
+        self.sign_in()
+        response = self.client.get("/nodes/Person/new")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Новый Person", response.text)
+
+    def test_a_node_is_created_and_the_page_opens_on_it(self):
+        csrf = self.sign_in()
+        response = self.client.post("/nodes/Person/new",
+                                    data={"csrf": csrf, "id": "A9", "name_en": "New Person"})
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/nodes/Person/A9?created=1")
+        self.assertEqual(self.graph.nodes[("Person", "A9")]["name_en"], "New Person")
+
+    def test_a_hand_made_node_needs_no_override_to_survive_publishing(self):
+        # The loader only touches ids it has rows for, so an invented id is
+        # never overwritten and there is nothing to reapply.
+        csrf = self.sign_in()
+        self.client.post("/nodes/Person/new", data={"csrf": csrf, "id": "A9"})
+        self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
+
+    def test_a_node_without_an_id_is_refused(self):
+        csrf = self.sign_in()
+        response = self.client.post("/nodes/Person/new", data={"csrf": csrf, "id": "  "})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(len(self.graph.nodes), 1)
+
+    def test_an_id_that_is_taken_is_refused_rather_than_overwriting(self):
+        csrf = self.sign_in()
+        response = self.client.post("/nodes/Person/new",
+                                    data={"csrf": csrf, "id": "A1", "name_en": "Impostor"})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_en"], "Ivan Petrov")
+
+    def test_empty_boxes_are_left_out_rather_than_stored_as_nothing(self):
+        csrf = self.sign_in()
+        self.client.post("/nodes/Person/new",
+                         data={"csrf": csrf, "id": "A9", "name_en": "New", "orcid": ""})
+        self.assertNotIn("orcid", self.graph.nodes[("Person", "A9")])
+
+    def test_a_field_outside_the_whitelist_is_dropped(self):
+        csrf = self.sign_in()
+        self.client.post("/nodes/Person/new",
+                         data={"csrf": csrf, "id": "A9", "name_en": "New", "is_admin": "yes"})
+        self.assertNotIn("is_admin", self.graph.nodes[("Person", "A9")])
+
+    def test_an_unknown_label_never_reaches_the_graph(self):
+        csrf = self.sign_in()
+        self.graph.calls.clear()
+        response = self.client.post("/nodes/Malicious/new", data={"csrf": csrf, "id": "X"})
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(self.graph.calls, [])
+
+    def test_creating_without_the_csrf_token_is_refused(self):
+        self.sign_in()
+        response = self.client.post("/nodes/Person/new", data={"id": "A9"})
+        self.assertEqual(response.status_code, 403)
+        self.assertNotIn(("Person", "A9"), self.graph.nodes)
+
+    def test_a_viewer_sees_no_way_in_and_is_refused_at_the_door(self):
+        csrf = self.sign_in(login="guest")
+        self.assertNotIn("/nodes/Person/new", self.client.get("/nodes/Person").text)
+        self.assertEqual(self.client.get("/nodes/Person/new").status_code, 403)
+        self.assertEqual(
+            self.client.post("/nodes/Person/new", data={"csrf": csrf, "id": "A9"}).status_code, 403)
+
+    def test_an_editor_is_offered_the_button(self):
+        self.sign_in()
+        self.assertIn("/nodes/Person/new", self.client.get("/nodes/Person").text)

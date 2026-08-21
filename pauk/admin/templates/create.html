@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block where %}новый {{ label }}{% endblock %}
+{% block content %}
+<h1>Новый {{ label }}</h1>
+<p class="muted"><a href="/nodes/{{ label }}">← к поиску</a></p>
+
+<form method="post" action="/nodes/{{ label }}/new">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="card">
+    <div style="margin-bottom:18px">
+      <label for="id">Идентификатор <span class="req">обязателен</span></label>
+      <input type="text" id="id" name="id" required autofocus>
+      <p class="muted" style="margin:6px 0 0">
+        По нему узел находят и связывают. Изменить его потом нельзя.
+      </p>
+    </div>
+    <table>
+      <tr><th>поле</th><th>значение</th></tr>
+      {% for name in editable %}
+      <tr>
+        <td>{{ name }}</td>
+        <td><input type="text" name="{{ name }}"></td>
+      </tr>
+      {% endfor %}
+    </table>
+    <div style="margin-top:20px">
+      <button type="submit">Создать</button>
+      <a href="/nodes/{{ label }}" class="muted" style="margin-left:12px">отмена</a>
+    </div>
+  </div>
+</form>
+
+<p class="muted" style="margin-top:18px">
+  Такой узел переживёт публикацию сам: загрузчик трогает только те
+  идентификаторы, для которых у него есть строки, и придуманный здесь не
+  перезапишет.
+</p>
+{% endblock %}

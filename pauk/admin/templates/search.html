@@ -8,6 +8,10 @@
 {% if request.query_params.get("deleted") %}
   <p class="note">Узел {{ request.query_params.get("deleted") }} удалён и помечен как удалённый — публикация его не вернёт.</p>
 {% endif %}
+{% if user.can_write %}
+<p style="margin:-8px 0 18px"><a href="/nodes/{{ label }}/new">
+  <button type="button">Создать {{ label }}</button></a></p>
+{% endif %}
 <form method="get" class="row">
   <div class="grow">
     <label for="q">Идентификатор или часть текста ({{ fields|join(", ") }})</label>
@@ -16,7 +20,8 @@
   <button type="submit">Искать</button>
 </form>
 {% if query and not rows %}
-  <p class="muted">Ничего не нашлось.</p>
+  <p class="muted">Ничего не нашлось.{% if user.can_write %}
+    <a href="/nodes/{{ label }}/new">Создать такой узел?</a>{% endif %}</p>
 {% elif rows %}
   <div class="card">
     <table>
