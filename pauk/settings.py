@@ -27,6 +27,10 @@ class Settings:
     mongo_db: str = os.getenv("MONGO_DB", "pauk")
     request_timeout: int = int(os.getenv("PAUK_REQUEST_TIMEOUT", "30"))
     openreview_priority_fields: str = os.getenv("PAUK_OPENREVIEW_PRIORITY_FIELDS", "Computer Science")
+    # The admin panel's session cookie. Off by default so the panel works
+    # over plain HTTP inside the VPN; turn it on wherever it is served
+    # over TLS, and the browser stops sending the cookie unencrypted.
+    admin_secure_cookie: bool = os.getenv("PAUK_ADMIN_SECURE_COOKIE", "").lower() in ("1", "true", "yes")
     pdf_crawler_url: str = os.getenv("PAUK_PDF_CRAWLER_URL", "")
     # Official ITMO staff records (personal data — never committed).
     # None means <static_dir>/russian_names.csv.

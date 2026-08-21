@@ -17,6 +17,7 @@ import logging
 
 from pymongo.database import Database
 
+from pauk.admin.auth import ROLES, AuthError, create_user, list_users, set_active
 from pauk.graph.audit import actor_context, audited_client
 from pauk.graph.mutations import (
     NODE_FIELDS,
@@ -146,6 +147,17 @@ def add_parser(subparsers) -> None:
 
     commands.add_parser("schema", help="list the labels, fields and relationships that can be edited")
 
+    user = commands.add_parser("user", help="panel accounts").add_subparsers(
+        dest="user_command", required=True)
+    user_add = user.add_parser("add", help="create an account")
+    user_add.add_argument("login")
+    user_add.add_argument("--role", choices=ROLES, default="editor")
+    user.add_parser("list", help="show the accounts")
+    for name, help_text in (("disable", "block an account and end its sessions"),
+                            ("enable", "let a blocked account back in")):
+        toggle = user.add_parser(name, help=help_text)
+        toggle.add_argument("login")
+
 
 def _print_schema() -> None:
     print("Labels and editable fields:")
@@ -171,6 +183,12 @@ def run(args, config: Settings, db: Database | None) -> None:
         _print_schema()
         return
 
+    # Accounts live in Mongo alone: no graph connection, and nothing to
+    # audit into the change feed of the graph.
+    if args.admin_command == "user":
+        _run_user(args, db)
+        return
+
     actor = args.actor or f"user:{getpass.getuser()}"
     client = audited_client(config, db)
     try:
@@ -180,6 +198,37 @@ def run(args, config: Settings, db: Database | None) -> None:
         raise SystemExit(str(error)) from None
     finally:
         client.close()
+
+
+def _run_user(args, db: Database) -> None:
+    """Manage the accounts that can log into the panel.
+
+    The password is read from a prompt, never from an argument: anything
+    passed on the command line lands in the shell history and in `ps`.
+    """
+    if args.user_command == "add":
+        password = getpass.getpass(f"password for {args.login}: ")
+        if password != getpass.getpass("repeat: "):
+            raise SystemExit("passwords do not match")
+        try:
+            created = create_user(db, args.login, password, role=args.role)
+        except AuthError as error:
+            raise SystemExit(str(error)) from None
+        # Print the stored login, not the typed one: logins are lowercased
+        # on the way in.
+        print(f"created {created['_id']} ({args.role})")
+    elif args.user_command == "list":
+        rows = list_users(db)
+        if not rows:
+            print("no accounts yet; add one with `pauk admin user add <login>`")
+        for row in rows:
+            state = "active" if row.get("active") else "blocked"
+            print(f"  {row['_id']:<20} {row.get('role', '?'):<8} {state}")
+    else:
+        wanted = args.user_command == "enable"
+        if not set_active(db, args.login, wanted):
+            raise SystemExit(f"no such user: {args.login}")
+        print(f"{args.login} is now {'active' if wanted else 'blocked'}")
 
 
 def _dispatch(args, client, db, actor: str) -> None:
