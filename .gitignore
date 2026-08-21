@@ -38,3 +38,4 @@ logs/
 
 graphify-out/
 .graphifyignore
+.coverage

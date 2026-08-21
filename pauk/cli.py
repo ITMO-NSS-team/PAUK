@@ -4,6 +4,8 @@ import argparse
 import logging
 from pathlib import Path
 
+from pymongo.errors import ServerSelectionTimeoutError
+
 from pauk.admin import cli as admin_cli
 from pauk.logging import configure_logging
 from pauk.pipeline.collect import Collector
@@ -136,7 +138,19 @@ def main() -> None:
             mongo = get_mongo_client(settings)
             try:
                 db = mongo[settings.mongo_db]
-                ensure_indexes(db)
+                # A database that is simply not running is the most common
+                # way these commands fail, and pymongo reports it as a
+                # thirty-second timeout ending in a page of driver frames.
+                # Say what happened instead, before anything prompts for a
+                # password that has nowhere to go.
+                try:
+                    ensure_indexes(db)
+                except ServerSelectionTimeoutError:
+                    raise SystemExit(
+                        f"cannot reach MongoDB at {settings.mongo_uri}.\n"
+                        "Start it, for example:\n"
+                        "  docker run -d --name pauk-mongo -p 27017:27017 "
+                        "-v pauk-mongo-data:/data/db mongo:7") from None
                 admin_cli.run(args, settings, db)
             finally:
                 mongo.close()
