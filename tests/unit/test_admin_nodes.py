@@ -29,6 +29,11 @@ class FakePanelGraph(FakeGraph):
         found.sort(key=lambda row: (not row["exact"], row["id"]))
         return found[:limit]
 
+    def list_nodes(self, label, fields, limit=50):
+        rows = [{"id": node_id, **{name: props.get(name) for name in fields}}
+                for (node_label, node_id), props in self.nodes.items() if node_label == label]
+        return sorted(rows, key=lambda row: row["id"])[:limit]
+
     def fetch_node_relationships(self, label, node_id):
         found = []
         for src_label, rel_type, tgt_label, src_id, tgt_id in self.relationships:
@@ -81,9 +86,27 @@ class NodeScreenTest(unittest.TestCase):
         by_id = self.client.get("/nodes/Person", params={"q": "A1"}).text
         self.assertIn("A1", by_id)
 
-    def test_an_empty_query_searches_nothing(self):
+    def test_an_empty_query_lists_what_is_there(self):
+        # An empty box means "show me what exists" rather than "find
+        # nothing": on an empty graph the difference is between a blank
+        # page and seeing that it is in fact empty.
         self.sign_in()
-        self.assertNotIn("A1", self.client.get("/nodes/Person").text)
+        body = self.client.get("/nodes/Person").text
+        self.assertIn("A1", body)
+        self.assertIn("A2", body)
+        self.assertIn("Показаны 2", body)
+
+    def test_the_listing_says_when_it_is_only_the_first_page(self):
+        from pauk.graph.mutations import SEARCH_LIMIT
+        for n in range(SEARCH_LIMIT + 10):
+            self.graph.nodes[("Repository", f"R{n:03}")] = {"id": f"R{n:03}", "url": f"u{n}"}
+        self.sign_in()
+        body = self.client.get("/nodes/Repository").text
+        self.assertIn(f"первые {SEARCH_LIMIT}", body)
+
+    def test_an_empty_label_says_so_rather_than_showing_a_blank_page(self):
+        self.sign_in()
+        self.assertIn("пока нет", self.client.get("/nodes/Repository").text)
 
     def test_a_node_page_shows_its_fields(self):
         self.sign_in()

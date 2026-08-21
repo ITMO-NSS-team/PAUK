@@ -610,6 +610,24 @@ class Neo4jClient:
             row = session.execute_read(lambda tx: tx.run(query).single())
         return int(row["total"]) if row else 0
 
+    def list_nodes(self, label: str, fields: list[str], limit: int = 50) -> list[dict]:
+        """The first nodes of a label, in id order.
+
+        What the panel shows before anything is typed: on a small graph it
+        is the whole list, on a large one the beginning of it.
+
+        Args:
+            label: Node label, interpolated into Cypher — whitelist only.
+            fields: Property names to return, also interpolated.
+            limit: How many rows to bring back.
+        """
+        returned = ", ".join(f"n.{name} AS {name}" for name in fields)
+        text = f"MATCH (n:{label}) RETURN n.id AS id, {returned} ORDER BY id LIMIT $limit"
+        with self.driver.session() as session:
+            rows = session.execute_read(
+                lambda tx: list(tx.run(cast(LiteralString, text), limit=limit)))
+        return [dict(row) for row in rows]
+
     def search_nodes(self, label: str, fields: list[str], query: str, limit: int = 50) -> list[dict]:
         """Nodes of one label whose text matches, for the panel's search box.
 

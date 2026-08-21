@@ -25,6 +25,7 @@ from pauk.graph.mutations import (
     RELATIONSHIPS,
     RESERVED_FIELDS,
     SEARCH_FIELDS,
+    SEARCH_LIMIT,
     MutationError,
     NotFound,
     create_node,
@@ -65,10 +66,13 @@ def _parse_value(raw: str):
 def search(request: Request, label: str, user: CurrentUser, session: Session,
            graph: Graph, q: str = ""):
     _known_label(label)
-    rows = search_nodes(graph, label, q) if q.strip() else []
+    # Явно тем же числом, что уходит в шаблон: иначе подпись «это первые N»
+    # сравнивает длину списка не с тем лимитом и никогда не показывается.
+    rows = search_nodes(graph, label, q, SEARCH_LIMIT)
     return templates.TemplateResponse(request, "search.html", {
         "user": user, "csrf": session["csrf"], "label": label, "query": q,
-        "rows": rows, "fields": SEARCH_FIELDS[label], "labels": sorted(NODE_FIELDS)})
+        "rows": rows, "limit": SEARCH_LIMIT, "fields": SEARCH_FIELDS[label],
+        "labels": sorted(NODE_FIELDS)})
 
 
 @router.get("/nodes/{label}/new", response_class=HTMLResponse)

@@ -208,9 +208,14 @@ def search_nodes(client: Neo4jClient, label: str, query: str, limit: int = 50) -
     """
     validate_label(label)
     query = (query or "").strip()
+    fields = list(SEARCH_FIELDS[label])
+    capped = min(limit, SEARCH_LIMIT)
+    # An empty box means "show me what is there" rather than "find
+    # nothing" — on an empty graph the difference is between a blank page
+    # and seeing that it is in fact empty.
     if not query:
-        return []
-    return client.search_nodes(label, list(SEARCH_FIELDS[label]), query, min(limit, SEARCH_LIMIT))
+        return client.list_nodes(label, fields, capped)
+    return client.search_nodes(label, fields, query, capped)
 
 
 def node_relationships(client: Neo4jClient, label: str, node_id: str) -> list[dict]:
