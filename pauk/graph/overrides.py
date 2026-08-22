@@ -84,7 +84,8 @@ def relationship_override_id(src_label: str, rel_type: str, tgt_label: str,
 
 def record_override(db: Database, label: str, target_id: str, op: str,
                     fields: dict | None = None, actor: str = "unknown",
-                    note: str = "", auto_value: dict | None = None) -> dict:
+                    note: str = "", auto_value: dict | None = None,
+                    snapshot: dict | None = None) -> dict:
     """Write down a manual decision about one node.
 
     Fields are merged into whatever the document already holds rather than
@@ -105,6 +106,11 @@ def record_override(db: Database, label: str, target_id: str, op: str,
             would overwrite the original automatic value with the previous
             manual one, and the conflict report would compare an edit with
             an edit.
+        snapshot: For a deletion, every field the node carried. The
+            decision then holds what is needed to put the record back, and
+            restoring stops depending on the audit feed — which records
+            history, not state, and summarises a bulk operation without
+            listing fields at all.
 
     Returns:
         The stored document.
@@ -140,6 +146,8 @@ def record_override(db: Database, label: str, target_id: str, op: str,
         },
         "$setOnInsert": {"created_at": now},
     }
+    if snapshot:
+        update["$set"]["snapshot"] = snapshot
     if note:
         update["$set"]["note"] = note
     else:
@@ -331,6 +339,13 @@ def apply_overrides(client, db: Database) -> dict[str, int]:
             if not _needs_write(current, fields):
                 unchanged += 1
                 continue
+            # What is in the graph right now is what the pipeline last
+            # wrote — the value this override is about to cover up. Kept on
+            # the decision so a disagreement can be seen without digging
+            # through the feed for it.
+            db[COLLECTION].update_one(
+                {"_id": override["_id"]},
+                {"$set": {f"source_value.{name}": current.get(name) for name in fields}})
             update_node(client, label, target_id, fields)
             applied += 1
         except MutationError as error:
