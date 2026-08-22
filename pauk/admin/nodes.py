@@ -20,7 +20,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from pauk.admin import feed
+from pauk.admin import decisions, feed
 from pauk.admin.deps import CsrfChecked, CurrentUser, Db, Editor, Graph, Session, templates
 from pauk.graph.mutations import (
     NODE_FIELDS,
@@ -147,7 +147,7 @@ async def restore(request: Request, label: str, node_id: str, user: Editor,
     otherwise the next publish would delete the node a second time.
     """
     _known_label(label)
-    fields = feed.deleted_state(db, label, node_id)
+    fields = decisions.deleted_fields(db, label, node_id)
     if not fields:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "в журнале нет состояния этой записи на момент удаления")
@@ -179,7 +179,7 @@ def show(request: Request, label: str, node_id: str, user: CurrentUser,
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from None
         return templates.TemplateResponse(request, "gone.html", {
             "user": user, "csrf": session["csrf"], "label": label, "node_id": node_id,
-            "history": gone, "restorable": feed.deleted_state(db, label, node_id),
+            "history": gone, "restorable": decisions.deleted_fields(db, label, node_id),
             "labels": sorted(NODE_FIELDS)},
             status_code=status.HTTP_404_NOT_FOUND)
     editable = sorted(NODE_FIELDS[label])
@@ -245,9 +245,15 @@ async def remove(request: Request, label: str, node_id: str, user: Editor,
         # Same order as the edit: a node with relationships and no cascade
         # is refused, and a tombstone left behind would delete it on every
         # later run.
+        # Snapshot first: after the delete the node is gone, and the
+        # decision has to carry what it removed so the record can be put
+        # back without asking the feed.
+        snapshot = read_node(graph, label, node_id)
         delete_node(graph, label, node_id, cascade=cascade)
         record_override(db, label, node_id, "delete", actor=user.actor,
-                        note=str(form.get("note", "")).strip())
+                        note=str(form.get("note", "")).strip(),
+                        snapshot={name: value for name, value in snapshot.items()
+                                  if name in NODE_FIELDS[label] and value is not None})
         apply_overrides(graph, db)
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
