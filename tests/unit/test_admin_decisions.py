@@ -203,3 +203,71 @@ class DecisionsPageTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UndoRestoresTest(unittest.TestCase):
+    """Undoing a deletion has to put the record back, not only lift the ban."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.nodes[("Person", "A1")] = {"id": "A1"}
+        self.graph.nodes[("Publication", "W1")] = {"id": "W1"}
+
+        record_override(self.db, "Department", "D1", "delete", actor="user:roman")
+        self.db[feed.COLLECTION].insert_one({
+            "timestamp": "2026-08-22T10:00:00", "actor": "user:roman", "source": "admin-ui",
+            "entity_type": "Department", "entity_id": "D1", "change_kind": "deleted",
+            "diff": {"id": ["D1", None], "name_ru": ["Кафедра", None]}})
+        record_relationship_override(self.db, "Person", "AUTHORED", "Publication",
+                                     "A1", "W1", actor="user:roman")
+
+        app = build(Settings(), self.db)
+        from pauk.admin import deps
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+
+    def test_undoing_a_deleted_node_brings_it_back_with_its_fields(self):
+        # Lifting the ban alone left the graph unchanged: the record would
+        # reappear only at the next publish, and the button looked broken.
+        response = self.client.post("/overrides/undo", data={
+            "csrf": self.csrf, "kind": "node", "op": "delete",
+            "label": "Department", "target_id": "D1"})
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(self.graph.nodes[("Department", "D1")]["name_ru"], "Кафедра")
+
+    def test_undoing_an_unlinked_relationship_links_it_again(self):
+        response = self.client.post("/overrides/undo", data={
+            "csrf": self.csrf, "kind": "rel", "op": "delete", "src_label": "Person",
+            "rel_type": "AUTHORED", "tgt_label": "Publication",
+            "src_id": "A1", "target_id": "W1"})
+        self.assertEqual(response.status_code, 303)
+        self.assertIn(("Person", "AUTHORED", "Publication", "A1", "W1"),
+                      self.graph.relationships)
+
+    def test_the_page_says_what_came_back(self):
+        response = self.client.post("/overrides/undo", data={
+            "csrf": self.csrf, "kind": "node", "op": "delete",
+            "label": "Department", "target_id": "D1"})
+        self.assertIn("undone=node", response.headers["location"])
+
+    def test_undoing_a_field_edit_restores_nothing_by_hand(self):
+        # There the point is the opposite: let the pipeline's value show
+        # through again, which reapplying the rest already does.
+        record_override(self.db, "Person", "A1", "set", {"name_ru": "Пётр"},
+                        actor="user:roman", auto_value={"name_ru": "Иван"})
+        response = self.client.post("/overrides/undo", data={
+            "csrf": self.csrf, "kind": "node", "op": "set",
+            "label": "Person", "target_id": "A1"})
+        self.assertIn("undone=1", response.headers["location"])
+
+    def test_a_deletion_the_feed_cannot_describe_says_so_instead(self):
+        record_override(self.db, "Person", "A9", "delete", actor="user:roman")
+        response = self.client.post("/overrides/undo", data={
+            "csrf": self.csrf, "kind": "node", "op": "delete",
+            "label": "Person", "target_id": "A9"})
+        self.assertIn("undone=1", response.headers["location"])
+        self.assertNotIn(("Person", "A9"), self.graph.nodes)

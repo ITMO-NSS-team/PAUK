@@ -6,8 +6,15 @@
   каждого дедупа — иначе пайплайн вернул бы свои значения.
 </p>
 
-{% if request.query_params.get("undone") %}
-<p class="note">Решение отменено. Поле вернулось к тому, что записал пайплайн.</p>
+{% set undone = request.query_params.get("undone") %}
+{% if undone == "node" %}
+<p class="note">Решение отменено, запись восстановлена из журнала.</p>
+{% elif undone == "link" %}
+<p class="note">Решение отменено, связь восстановлена.</p>
+{% elif undone %}
+<p class="note">Решение отменено. Поле вернулось к тому, что записал пайплайн.
+   {% if undone == "1" %}Если это было удаление, а записи не видно — журнал не помнит её полей;
+   она вернётся при следующей публикации, если пайплайн её знает.{% endif %}</p>
 {% endif %}
 
 <div class="tabs">
@@ -66,6 +73,7 @@
           <form method="post" action="/overrides/undo">
             <input type="hidden" name="csrf" value="{{ csrf }}">
             <input type="hidden" name="kind" value="{{ row.kind }}">
+            <input type="hidden" name="op" value="{{ row.op }}">
             <input type="hidden" name="tab" value="{{ tab }}">
             {% if row.kind == "rel" %}
             <input type="hidden" name="src_label" value="{{ row.src_label }}">
