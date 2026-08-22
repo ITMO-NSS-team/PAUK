@@ -271,3 +271,132 @@ class UndoRestoresTest(unittest.TestCase):
             "label": "Person", "target_id": "A9"})
         self.assertIn("undone=1", response.headers["location"])
         self.assertNotIn(("Person", "A9"), self.graph.nodes)
+
+
+class SnapshotTest(unittest.TestCase):
+    """A decision carries what it removed, so restoring needs no feed."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add("Department", "D1", name_ru="Кафедра", kind="chair")
+
+        app = build(Settings(), self.db)
+        from pauk.admin import deps
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+
+    def delete_it(self):
+        return self.client.post("/nodes/Department/D1/delete", data={"csrf": self.csrf})
+
+    def test_deleting_stores_the_fields_on_the_decision(self):
+        self.delete_it()
+        (row,) = active_overrides(self.db)
+        self.assertEqual(row["snapshot"]["name_ru"], "Кафедра")
+        self.assertEqual(row["snapshot"]["kind"], "chair")
+
+    def test_restoring_works_with_an_empty_feed(self):
+        # The feed records history, not state, and summarises a bulk
+        # operation without listing fields — restoring must not depend on
+        # finding a per-field entry there.
+        self.delete_it()
+        self.db[feed.COLLECTION].delete_many({})
+        self.assertEqual(decisions.deleted_fields(self.db, "Department", "D1")["name_ru"],
+                         "Кафедра")
+
+    def test_the_feed_still_answers_for_records_deleted_before_snapshots(self):
+        source_wrote(self.db, "Person", "A9", "name_ru", "Иван", None)
+        self.db[feed.COLLECTION].update_one(
+            {"entity_id": "A9"}, {"$set": {"change_kind": "deleted"}})
+        self.assertEqual(decisions.deleted_fields(self.db, "Person", "A9"),
+                         {"name_ru": "Иван"})
+
+    def test_reserved_fields_are_not_kept_in_the_snapshot(self):
+        # updated_at belongs to the graph, not to the record's content.
+        self.delete_it()
+        (row,) = active_overrides(self.db)
+        self.assertNotIn("updated_at", row["snapshot"])
+
+
+class SourceValueTest(unittest.TestCase):
+    """Reapplying records the value it covers up — the source's own word."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.graph = FakePanelGraph()
+        self.graph.add("Person", "A1", name_ru="Иван")
+        record_override(self.db, "Person", "A1", "set", {"name_ru": "Пётр"},
+                        actor="user:roman", auto_value={"name_ru": "Иван"})
+
+    def test_applying_stores_what_the_pipeline_had(self):
+        from pauk.graph.overrides import apply_overrides
+        self.graph.nodes[("Person", "A1")]["name_ru"] = "И. П. Петров"   # так сказал источник
+        apply_overrides(self.graph, self.db)
+        (row,) = active_overrides(self.db)
+        self.assertEqual(row["source_value"]["name_ru"], "И. П. Петров")
+
+    def test_the_conflict_is_seen_without_reading_the_feed(self):
+        from pauk.graph.overrides import apply_overrides
+        self.graph.nodes[("Person", "A1")]["name_ru"] = "И. П. Петров"
+        apply_overrides(self.graph, self.db)
+        self.db[feed.COLLECTION].delete_many({})
+        (conflict,) = decisions.conflicts(self.db)
+        self.assertEqual(conflict["was"], "Иван")
+        self.assertEqual(conflict["now"], "И. П. Петров")
+
+    def test_a_source_that_agrees_is_not_a_conflict(self):
+        from pauk.graph.overrides import apply_overrides
+        self.graph.nodes[("Person", "A1")]["name_ru"] = "Иван"    # то же, что и было
+        apply_overrides(self.graph, self.db)
+        self.assertEqual(decisions.conflicts(self.db), [])
+
+
+class PagingTest(unittest.TestCase):
+    """The list of decisions grows with every edit nobody withdraws."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        for n in range(decisions.PAGE + 20):
+            record_override(self.db, "Person", f"A{n:03}", "delete", actor="user:roman")
+        self.client = TestClient(build(Settings(neo4j_password=""), self.db),
+                                 follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def test_a_page_is_bounded(self):
+        self.assertEqual(len(decisions.in_force(self.db)), decisions.PAGE)
+
+    def test_pages_neither_repeat_nor_skip(self):
+        first = [row["target_id"] for row in decisions.in_force(self.db)]
+        second = [row["target_id"] for row in decisions.in_force(self.db, skip=decisions.PAGE)]
+        self.assertEqual(len(first) + len(second), decisions.count_in_force(self.db))
+        self.assertFalse(set(first) & set(second))
+
+    def test_the_page_offers_a_way_onward(self):
+        body = self.client.get("/overrides").text
+        self.assertIn("page=2", body)
+        self.assertIn("страница 1 из 2", " ".join(body.split()))
+
+    def test_the_second_page_shows_the_rest(self):
+        body = self.client.get("/overrides", params={"page": 2}).text
+        self.assertIn("страница 2 из 2", " ".join(body.split()))
+        self.assertIn("← новее", body)
+
+    def test_a_page_out_of_range_does_not_break(self):
+        self.assertEqual(self.client.get("/overrides", params={"page": 99}).status_code, 200)
+        self.assertEqual(self.client.get("/overrides", params={"page": 0}).status_code, 200)
+
+    def test_conflicts_are_paged_too(self):
+        # They are computed rather than stored, so paging happens after the
+        # comparisons — but the page still has to be bounded.
+        for n in range(decisions.PAGE + 5):
+            record_override(self.db, "Person", f"B{n:03}", "set", {"name_ru": "Пётр"},
+                            actor="user:roman", auto_value={"name_ru": "Иван"})
+            self.db["graph_overrides"].update_one(
+                {"_id": f"node:Person:B{n:03}"},
+                {"$set": {"source_value": {"name_ru": "И. П. Петров"}}})
+        self.assertEqual(len(decisions.conflicts(self.db)), decisions.PAGE)
+        self.assertEqual(decisions.count_conflicts(self.db), decisions.PAGE + 5)
