@@ -30,6 +30,7 @@ from pauk.graph.mutations import (
     SEARCH_LIMIT,
     MutationError,
     NotFound,
+    VersionConflict,
     create_node,
     create_relationship,
     delete_node,
@@ -211,9 +212,21 @@ async def edit(request: Request, label: str, node_id: str, user: Editor,
         if not changed:
             return RedirectResponse(f"/nodes/{label}/{node_id}?unchanged=1",
                                     status_code=status.HTTP_303_SEE_OTHER)
-        update_node(graph, label, node_id, changed)
+        # The form carries the updated_at it was rendered with. Without it
+        # two people editing one record in parallel simply overwrite each
+        # other: the second save wins and the first disappears without a
+        # word to anyone.
+        update_node(graph, label, node_id, changed,
+                    expected_updated_at=str(form.get("seen_at") or "") or None)
         record_override(db, label, node_id, "set", changed, actor=user.actor, note=note,
                         auto_value={name: before.get(name) for name in changed})
+    except VersionConflict:
+        # Not an error to shout about: someone got there first. Hand the
+        # page back with what is there now, so the edit can be redone on
+        # top of it rather than silently lost.
+        logger.info("%s hit a version conflict on %s %s", user.actor, label, node_id)
+        return RedirectResponse(f"/nodes/{label}/{node_id}?stale=1",
+                                status_code=status.HTTP_303_SEE_OTHER)
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     logger.info("%s edited %s %s: %s", user.actor, label, node_id, ", ".join(sorted(changed)))

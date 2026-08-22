@@ -593,3 +593,70 @@ class LinkDirectionTest(unittest.TestCase):
         self.graph.relationships[("Repository", "OWNED_BY", "GitHubProfile", "R1", "octocat")] = {}
         self.assertIn("принадлежит аккаунту", self.client.get("/nodes/Repository/R1").text)
         self.assertIn("владеет репозиторием", self.client.get("/nodes/GitHubProfile/G1").text)
+
+
+class ConcurrentEditTest(unittest.TestCase):
+    """Two people editing one record must not overwrite each other."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        for who in ("roman", "petrov"):
+            create_user(self.db, who, "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add("Person", "A1", name_ru="Иван")
+
+        app = build(Settings(), self.db)
+        from pauk.admin import deps
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.app = app
+
+    def open_form(self, login):
+        """Sign in and read the page, as a person would before editing."""
+        import re
+        client = TestClient(self.app, follow_redirects=False)
+        client.post("/login", data={"login": login, "password": "hunter2"})
+        page = client.get("/nodes/Person/A1").text
+        return client, {
+            "csrf": re.search(r'name="csrf" value="([^"]+)"', page).group(1),
+            "seen_at": re.search(r'name="seen_at" value="([^"]*)"', page).group(1)}
+
+    def test_the_second_save_is_refused_rather_than_silently_winning(self):
+        # Both open the same record; the first saves, then the second.
+        # Without this the second write simply replaced the first and
+        # nobody was told.
+        first, form_first = self.open_form("roman")
+        second, form_second = self.open_form("petrov")
+
+        first.post("/nodes/Person/A1", data={**form_first, "name_ru": "Пётр"})
+        response = second.post("/nodes/Person/A1", data={**form_second, "name_ru": "Иоанн"})
+
+        self.assertIn("stale=1", response.headers["location"])
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Пётр")
+
+    def test_the_refusal_is_explained_on_the_page(self):
+        client, _ = self.open_form("roman")
+        body = client.get("/nodes/Person/A1", params={"stale": "1"}).text
+        self.assertIn("изменил кто-то ещё", body)
+
+    def test_reopening_the_page_lets_the_edit_go_through(self):
+        first, form_first = self.open_form("roman")
+        second, form_second = self.open_form("petrov")
+        first.post("/nodes/Person/A1", data={**form_first, "name_ru": "Пётр"})
+        second.post("/nodes/Person/A1", data={**form_second, "name_ru": "Иоанн"})
+
+        # Reading the page again picks up the new updated_at. The client
+        # has to be the one that read it: the csrf token belongs to that
+        # session, not to the earlier one.
+        again, fresh = self.open_form("petrov")
+        response = again.post("/nodes/Person/A1", data={**fresh, "name_ru": "Иоанн"})
+        self.assertIn("saved=1", response.headers["location"])
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иоанн")
+
+    def test_the_form_carries_the_moment_it_was_rendered(self):
+        _, form = self.open_form("roman")
+        self.assertEqual(form["seen_at"], str(self.graph.nodes[("Person", "A1")]["updated_at"]))
+
+    def test_an_edit_still_works_when_nobody_else_touched_the_record(self):
+        client, form = self.open_form("roman")
+        response = client.post("/nodes/Person/A1", data={**form, "name_ru": "Пётр"})
+        self.assertIn("saved=1", response.headers["location"])
