@@ -20,6 +20,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from pauk.admin import feed
 from pauk.admin.deps import CsrfChecked, CurrentUser, Db, Editor, Graph, Session, templates
 from pauk.graph.mutations import (
     NODE_FIELDS,
@@ -38,7 +39,12 @@ from pauk.graph.mutations import (
     search_nodes,
     update_node,
 )
-from pauk.graph.overrides import apply_overrides, record_override, record_relationship_override
+from pauk.graph.overrides import (
+    apply_overrides,
+    deactivate_override,
+    record_override,
+    record_relationship_override,
+)
 
 logger = logging.getLogger("pauk.admin")
 
@@ -120,24 +126,67 @@ async def create(request: Request, label: str, user: Editor,
         create_node(graph, label, node_id, fields)
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
+    # A tombstone from an earlier deletion would remove this node again on
+    # the next publish. Creating the id by hand says plainly that it is
+    # wanted, so the decision to delete it is withdrawn.
+    if deactivate_override(db, label, node_id):
+        logger.info("%s revoked the tombstone on %s %s", user.actor, label, node_id)
     logger.info("%s created %s %s", user.actor, label, node_id)
     return RedirectResponse(f"/nodes/{label}/{node_id}?created=1",
                             status_code=status.HTTP_303_SEE_OTHER)
 
 
+@router.post("/nodes/{label}/{node_id}/restore")
+async def restore(request: Request, label: str, node_id: str, user: Editor,
+                  db: Db, graph: Graph, _: CsrfChecked):
+    """Put a deleted node back as it was, from what the feed remembers.
+
+    A deletion records every field the node carried, so this is a real
+    restore rather than an empty shell. The tombstone goes with it —
+    otherwise the next publish would delete the node a second time.
+    """
+    _known_label(label)
+    fields = feed.deleted_state(db, label, node_id)
+    if not fields:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "в журнале нет состояния этой записи на момент удаления")
+    try:
+        create_node(graph, label, node_id,
+                    {name: value for name, value in fields.items()
+                     if name in NODE_FIELDS[label]})
+    except MutationError as error:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
+    deactivate_override(db, label, node_id)
+    logger.info("%s restored %s %s", user.actor, label, node_id)
+    return RedirectResponse(f"/nodes/{label}/{node_id}?restored=1",
+                            status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.get("/nodes/{label}/{node_id}", response_class=HTMLResponse)
 def show(request: Request, label: str, node_id: str, user: CurrentUser,
-         session: Session, graph: Graph):
+         session: Session, graph: Graph, db: Db):
     _known_label(label)
     try:
         props = read_node(graph, label, node_id)
     except NotFound as error:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from None
+        # Links in the feed outlive the nodes they point at: an entry about
+        # a deletion still names the id. Answer with what is known about it
+        # instead of a bare 404 — the question is "what happened to it",
+        # and the feed has the answer.
+        gone = feed.history(db, label, node_id, limit=20)
+        if not gone:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from None
+        return templates.TemplateResponse(request, "gone.html", {
+            "user": user, "csrf": session["csrf"], "label": label, "node_id": node_id,
+            "history": gone, "restorable": feed.deleted_state(db, label, node_id),
+            "labels": sorted(NODE_FIELDS)},
+            status_code=status.HTTP_404_NOT_FOUND)
     editable = sorted(NODE_FIELDS[label])
     return templates.TemplateResponse(request, "node.html", {
         "user": user, "csrf": session["csrf"], "label": label, "node_id": node_id,
         "props": props, "editable": editable, "reserved": sorted(RESERVED_FIELDS),
         "relationships": _worded(node_relationships(graph, label, node_id), label),
+        "history": feed.history(db, label, node_id, limit=10),
         "links": _links_for(label), "labels": sorted(NODE_FIELDS)})
 
 

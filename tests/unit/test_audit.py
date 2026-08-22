@@ -389,3 +389,31 @@ class StorableTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class FixedActorTest(unittest.TestCase):
+    """An actor pinned to the client, for callers that span contexts."""
+
+    def pinned(self, **who):
+        fake, sink = FakeNeo4jClient(), InMemorySink()
+        return AuditedNeo4jClient(fake, sink, **who), sink
+
+    def test_a_pinned_actor_wins_over_the_context(self):
+        # The panel opens its client in a dependency and edits in the
+        # route — different contexts, so a contextvar set in the first is
+        # not visible in the second, and every entry read "unknown".
+        client, sink = self.pinned(actor="user:roman", source="admin-ui")
+        with patch.object(AuditedNeo4jClient, "_fetch_node_props",
+                          side_effect=[{"p1": {}}, {"p1": {"email": "new@x.com"}}]), \
+             actor_context("someone-else", source="cli"):
+            client.upsert_nodes_batch("Person", [("p1", {"email": "new@x.com"})])
+        self.assertEqual([entry.actor for entry in sink.entries], ["user:roman"])
+        self.assertEqual([entry.source for entry in sink.entries], ["admin-ui"])
+
+    def test_without_a_pinned_actor_the_context_still_decides(self):
+        # The CLI relies on this: it wraps its work in actor_context.
+        client, sink = self.pinned()
+        with patch.object(AuditedNeo4jClient, "_fetch_node_props",
+                          side_effect=[{"p1": {}}, {"p1": {"email": "new@x.com"}}]), \
+             actor_context("pipeline", source="publish"):
+            client.upsert_nodes_batch("Person", [("p1", {"email": "new@x.com"})])
+        self.assertEqual([entry.actor for entry in sink.entries], ["pipeline"])

@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Журнал правок</h1>
+<p class="muted" style="margin:-8px 0 18px">
+  Записи всех изменений графа, сделанных через панель и пайплайном.
+</p>
+
+<form method="get" class="filters" id="filters">
+  <div class="pick">
+    <label for="actor">Кто</label>
+    <select id="actor" name="actor">
+      <option value="">все</option>
+      {% for name in actors %}
+      <option value="{{ name }}" {% if name == filters.actor %}selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="pick">
+    <label for="entity_type">Что</label>
+    <select id="entity_type" name="entity_type">
+      <option value="">всё</option>
+      {% for name in entity_types %}
+      <option value="{{ name }}" {% if name == filters.entity_type %}selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="pick">
+    <label for="kind">Как</label>
+    <select id="kind" name="kind">
+      <option value="">любое</option>
+      {% for code, word in kinds.items() %}
+      <option value="{{ code }}" {% if code == filters.kind %}selected{% endif %}>{{ word }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="id">
+    <label for="entity_id">Идентификатор записи</label>
+    <input type="text" id="entity_id" name="entity_id" value="{{ filters.entity_id }}">
+  </div>
+  <button type="submit">Показать</button>
+  <script>
+    // Выбор из списка применяется сразу: кнопка нужна только для поля
+    // ввода и для случая, когда скрипты выключены.
+    document.querySelectorAll("#filters select").forEach((box) =>
+      box.addEventListener("change", () => box.form.submit()));
+  </script>
+  {% if filters.actor or filters.entity_type or filters.entity_id or filters.kind %}
+  <a href="/audit" class="muted" style="align-self:center">сбросить</a>
+  {% endif %}
+</form>
+
+{% if not rows %}
+  <p class="muted">Записей нет. Журнал наполняется правками — и через панель, и через пайплайн.</p>
+{% else %}
+<p class="muted" style="margin:-8px 0 12px">Всего: {{ total }}. Страница {{ page }} из {{ pages }}.</p>
+<div class="card">
+  <table>
+    <tr><th>когда</th><th>кто</th><th>что</th><th>как</th><th>изменения</th></tr>
+    {% for row in rows %}
+    <tr>
+      <td class="val" style="white-space:nowrap">{{ row.timestamp[:19]|replace("T", " ") }}</td>
+      <td>{{ row.actor }}<br><span class="muted">{{ row.source }}</span></td>
+      <td class="val">
+        {% if row.entity_type in labels %}
+        <a href="/nodes/{{ row.entity_type }}/{{ row.entity_id }}">{{ row.entity_type }} {{ row.entity_id }}</a>
+        {% else %}{{ row.entity_type }} {{ row.entity_id }}{% endif %}
+      </td>
+      <td>{{ row.kind_ru }}</td>
+      <td>
+        {% if row.changes %}
+        {% for field, pair in row.changes %}
+        <div><b>{{ field }}</b>:
+          <span class="muted">{{ pair[0] if pair[0] is not none else "—" }}</span>
+          → {{ pair[1] if pair[1] is not none else "—" }}</div>
+        {% endfor %}
+        {% else %}<span class="muted">без разбора по полям</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if pages > 1 %}
+<p style="margin-top:14px">
+  {% set qs = "&actor=" ~ filters.actor ~ "&entity_type=" ~ filters.entity_type ~ "&entity_id=" ~ filters.entity_id ~ "&kind=" ~ filters.kind %}
+  {% if page > 1 %}<a href="/audit?page={{ page - 1 }}{{ qs }}">← новее</a>{% endif %}
+  {% if page < pages %}<a href="/audit?page={{ page + 1 }}{{ qs }}" style="margin-left:14px">старее →</a>{% endif %}
+</p>
+{% endif %}
+{% endif %}
+{% endblock %}

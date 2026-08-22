@@ -29,6 +29,9 @@ class FakePanelGraph(FakeGraph):
         found.sort(key=lambda row: (not row["exact"], row["id"]))
         return found[:limit]
 
+    def close(self):
+        """The panel closes its client per request; the real one has this."""
+
     def list_nodes(self, label, fields, limit=50):
         rows = [{"id": node_id, **{name: props.get(name) for name in fields}}
                 for (node_label, node_id), props in self.nodes.items() if node_label == label]

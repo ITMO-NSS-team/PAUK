@@ -89,6 +89,19 @@ class actor_context:
         _source_var.reset(self._source_token)
 
 
+def set_actor(actor: str, source: str | None = None) -> None:
+    """Name the actor for everything this context audits from now on.
+
+    The block form (`actor_context`) restores the previous actor on exit,
+    which needs the entry and the exit to happen in one context. A
+    generator dependency in FastAPI is entered and resumed in different
+    ones, and resetting a token across that boundary raises. Callers in
+    that position set the actor and let the next one overwrite it.
+    """
+    _actor_var.set(actor)
+    _source_var.set(source or actor)
+
+
 @dataclass(frozen=True)
 class AuditEntry:
     """One audited change, ready to hand to an AuditSink."""
@@ -227,16 +240,24 @@ def build_audit_sink(config: Settings, db: Database | None = None) -> AuditSink:
 
 
 def audited_client(config: Settings, db: Database | None = None,
+                   actor: str | None = None, source: str | None = None,
                    **driver_options) -> AuditedNeo4jClient:
     """An open Neo4j client that records what it changes.
 
     Callers own the returned client and must close() it, same as with a
-    plain Neo4jClient. Wrap the actual work in `actor_context` so the
-    entries say who made the change.
+    plain Neo4jClient.
+
+    Args:
+        actor: Name to record for every change this client makes. Leave it
+            out inside a CLI command and wrap the work in `actor_context`
+            instead; pass it where the work spans contexts, such as a web
+            request, because a contextvar set in a dependency is not
+            visible in the route.
+        source: Where the changes come from, e.g. "admin-ui".
     """
     raw = Neo4jClient(config.neo4j_uri, config.neo4j_user, config.neo4j_password,
                       **driver_options)
-    return AuditedNeo4jClient(raw, build_audit_sink(config, db))
+    return AuditedNeo4jClient(raw, build_audit_sink(config, db), actor=actor, source=source)
 
 
 def _diff_props(before: dict | None, after: dict | None) -> tuple[dict[str, tuple[Any, Any]], str]:
@@ -260,17 +281,33 @@ class AuditedNeo4jClient:
     snapshot -> underlying call -> snapshot -> diff -> sink.
     """
 
-    def __init__(self, client: Neo4jClient, sink: AuditSink, diff_threshold: int = 50):
+    def __init__(self, client: Neo4jClient, sink: AuditSink, diff_threshold: int = 50,
+                 actor: str | None = None, source: str | None = None):
         """
         Args:
             client: The real Neo4jClient to wrap.
             sink: Where audit entries go.
             diff_threshold: Batches with this many rows or more get one coarse summary entry instead of a per-row
                 diff. Keeps large ETL loads cheap while front-end single-row edits still get full field-level diffs.
+            actor: Who to record as the author, fixed for this client's
+                lifetime. Callers that cannot rely on `actor_context` pass
+                it here — a web request enters its dependency in one
+                context and runs the route in another, and a contextvar
+                does not cross that boundary: entries came out as
+                "unknown" even though a person was signed in.
+            source: Where the change came from, alongside `actor`.
         """
         self._client = client
         self._sink = sink
         self._diff_threshold = diff_threshold
+        self._actor = actor
+        self._source = source
+
+    def _who(self) -> tuple[str, str]:
+        """The actor to record: the fixed one if set, else the context's."""
+        if self._actor is not None:
+            return self._actor, self._source or self._actor
+        return _actor_var.get(), _source_var.get()
 
     def __getattr__(self, name: str):
         return getattr(self._client, name)
@@ -286,8 +323,8 @@ class AuditedNeo4jClient:
             [
                 AuditEntry(
                     timestamp=self._now(),
-                    actor=_actor_var.get(),
-                    source=_source_var.get(),
+                    actor=self._who()[0],
+                    source=self._who()[1],
                     operation=operation,
                     entity_type=entity_type,
                     entity_id=f"<bulk: {row_count} rows>",
@@ -305,7 +342,7 @@ class AuditedNeo4jClient:
         after_by_id: dict[str, dict],
     ) -> None:
         now = self._now()
-        actor, source = _actor_var.get(), _source_var.get()
+        actor, source = self._who()
         entries = []
         for entity_id in before_by_id.keys() | after_by_id.keys():
             diff, kind = _diff_props(before_by_id.get(entity_id), after_by_id.get(entity_id))

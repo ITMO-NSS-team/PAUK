@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Ручные решения</h1>
+<p class="muted" style="margin:-8px 0 18px">
+  Правки, сделанные руками, применяются заново после каждой публикации и
+  каждого дедупа — иначе пайплайн вернул бы свои значения.
+</p>
+
+{% if request.query_params.get("undone") %}
+<p class="note">Решение отменено. Поле вернулось к тому, что записал пайплайн.</p>
+{% endif %}
+
+<div class="tabs">
+  <a href="/overrides" {% if tab != "conflicts" %}class="on"{% endif %}>Действующие {{ total }}</a>
+  <a href="/overrides?tab=conflicts" {% if tab == "conflicts" %}class="on"{% endif %}>
+    Расхождения{% if disputed %} {{ disputed }}{% endif %}</a>
+</div>
+
+{% if tab == "conflicts" %}
+  {% if not conflicts %}
+  <p class="muted">Расхождений нет: источник не спорит ни с одной ручной правкой.</p>
+  {% else %}
+  <p class="muted" style="margin:-8px 0 12px">
+    Здесь поля, где источник после правки начал говорить иначе, чем говорил до неё.
+    Правка держится поверх — решать, чьё значение верно, приходится человеку.
+  </p>
+  <div class="card">
+    <table>
+      <tr><th>запись</th><th>поле</th><th>у нас</th><th>было в источнике</th><th>стало</th><th>кто и когда</th></tr>
+      {% for row in conflicts %}
+      <tr>
+        <td class="val"><a href="/nodes/{{ row.label }}/{{ row.target_id }}">{{ row.title }}</a></td>
+        <td><b>{{ row.field }}</b></td>
+        <td class="val">{{ row.ours if row.ours is not none else "—" }}</td>
+        <td class="val muted">{{ row.was if row.was is not none else "—" }}</td>
+        <td class="val">{{ row.now if row.now is not none else "—" }}</td>
+        <td class="muted">{{ row.actor }}<br>{{ row.when[:19]|replace("T", " ") }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
+{% else %}
+  {% if not rows %}
+  <p class="muted">Ручных правок нет — граф целиком такой, каким его собрал пайплайн.</p>
+  {% else %}
+  <div class="card">
+    <table>
+      <tr><th>запись</th><th>что решили</th><th>кто и почему</th>{% if user.can_write %}<th></th>{% endif %}</tr>
+      {% for row in rows %}
+      <tr>
+        <td class="val">
+          {% if row.kind == "rel" %}{{ row.title }}
+          {% else %}<a href="/nodes/{{ row.label }}/{{ row.target_id }}">{{ row.title }}</a>{% endif %}
+        </td>
+        <td>
+          {{ row.what }}
+          {% for name, was, now in row.pairs %}
+          <div class="muted"><b>{{ name }}</b>:
+            {{ was if was is not none else "—" }} → {{ now if now is not none else "—" }}</div>
+          {% endfor %}
+        </td>
+        <td>{{ row.actor }}{% if row.note %}<br><span class="muted">{{ row.note }}</span>{% endif %}</td>
+        {% if user.can_write %}
+        <td style="width:1%">
+          <form method="post" action="/overrides/undo">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="kind" value="{{ row.kind }}">
+            <input type="hidden" name="tab" value="{{ tab }}">
+            {% if row.kind == "rel" %}
+            <input type="hidden" name="src_label" value="{{ row.src_label }}">
+            <input type="hidden" name="rel_type" value="{{ row.rel_type }}">
+            <input type="hidden" name="tgt_label" value="{{ row.tgt_label }}">
+            <input type="hidden" name="src_id" value="{{ row.src_id }}">
+            {% else %}
+            <input type="hidden" name="label" value="{{ row.label }}">
+            {% endif %}
+            <input type="hidden" name="target_id" value="{{ row.target_id }}">
+            <button type="submit" class="ghost">отменить</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

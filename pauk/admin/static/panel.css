@@ -87,10 +87,23 @@ header {
   border-bottom: 1px solid var(--border);
 }
 header .logo { display: flex; line-height: 0; }
-header .logo img { width: 30px; height: 30px; border-radius: 7px; }
-header .where { color: var(--muted); font-size: 13px; margin-left: -4px; }
-header nav { display: flex; align-items: center; gap: 12px; margin-left: auto; font-size: 13px; }
-header nav form { margin: 0; }
+header .logo img { width: 40px; height: 40px; border-radius: 9px; }
+header .section {
+  margin-left: 10px;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  background: var(--bg);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+}
+header .section:hover { border-color: var(--g4); }
+header .section.on { background: var(--text); border-color: var(--text); color: var(--bg); }
+header .who { display: flex; align-items: center; gap: 12px; margin-left: auto; font-size: 13px; }
+header .who form { margin: 0; }
+
 
 main { max-width: 1000px; margin: 0 auto; padding: 28px 22px 72px; }
 h1 { font-size: 21px; font-weight: 700; margin: 0 0 18px; letter-spacing: -.01em; }
@@ -197,3 +210,19 @@ tr.ro td { color: var(--muted); }
 .tile .n { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 
 .req { color: var(--danger); font-weight: 600; }
+
+select {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+/* Фильтры журнала: раньше выпадающие списки жались к своему тексту и
+   выглядели мельче соседнего поля ввода. */
+.filters { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 18px; }
+.filters .pick { flex: 1 1 150px; min-width: 130px; }
+.filters .id { flex: 2 1 260px; }

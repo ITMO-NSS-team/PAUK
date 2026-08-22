@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from pymongo.database import Database
 
-from pauk.admin import nodes
+from pauk.admin import audit_routes, decision_routes, nodes
 from pauk.admin.auth import (
     COOKIE,
     SESSION_HOURS,
@@ -176,6 +176,15 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
 
     app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
+    # Версия стиля — время его последней правки. Браузер держит CSS в кеше
+    # цепко, и правка вёрстки могла не доехать до открытой вкладки: шапка
+    # и фильтры оставались в прежней раскладке, хотя файл уже другой.
+    def stylesheet() -> str:
+        css = Path(__file__).parent / "static" / "panel.css"
+        return f"/static/panel.css?v={int(css.stat().st_mtime) if css.is_file() else 0}"
+
+    templates.env.globals["stylesheet"] = stylesheet
+
     # The logo and the fonts come from the map's own files instead of being
     # copied here: one place to update, and the panel looks like the same
     # product. Only these two paths are exposed — mounting the whole web
@@ -205,4 +214,6 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
                             headers={"Cache-Control": "public, max-age=86400"})
 
     app.include_router(nodes.router)
+    app.include_router(audit_routes.router)
+    app.include_router(decision_routes.router)
     return app

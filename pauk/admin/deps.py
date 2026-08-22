@@ -21,7 +21,7 @@ from neo4j.exceptions import AuthError, ServiceUnavailable
 from pymongo.database import Database
 
 from pauk.admin.auth import COOKIE, User, check_csrf, read_session
-from pauk.graph.audit import actor_context, audited_client
+from pauk.graph.audit import audited_client
 from pauk.settings import Settings
 
 
@@ -87,7 +87,12 @@ def graph_for(request: Request, user: Annotated[User, Depends(require_user)]) ->
             the person nothing about what to fix.
     """
     try:
-        client = audited_client(request.app.state.config, request.app.state.db)
+        # The name goes to the client itself, not to a contextvar: this
+        # dependency runs in one context and the route in another, so a
+        # variable set here is invisible there — every panel edit was
+        # landing in the feed as "unknown".
+        client = audited_client(request.app.state.config, request.app.state.db,
+                                actor=user.actor, source="admin-ui")
     except ValueError as error:
         logger.warning("graph unavailable: %s", error)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(error)) from None
@@ -96,8 +101,7 @@ def graph_for(request: Request, user: Annotated[User, Depends(require_user)]) ->
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
                             f"cannot reach Neo4j at {request.app.state.config.neo4j_uri}") from None
     try:
-        with actor_context(user.actor, source="admin-ui"):
-            yield client
+        yield client
     finally:
         client.close()
 

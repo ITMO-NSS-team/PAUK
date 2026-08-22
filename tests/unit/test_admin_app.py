@@ -96,12 +96,6 @@ class PanelTest(unittest.TestCase):
         set_active(self.db, "roman", False)
         self.assertEqual(self.client.get("/").status_code, 401)
 
-    def test_the_panel_lists_the_labels_that_can_be_edited(self):
-        self.sign_in()
-        body = self.client.get("/").text
-        self.assertIn("Person", body)
-        self.assertIn("Repository", body)
-
     def test_a_viewer_gets_in_and_is_shown_as_read_only(self):
         self.sign_in(login="guest")
         body = self.client.get("/").text
@@ -272,5 +266,103 @@ class OverviewTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("не отвечает", response.text)
 
-    def test_the_header_shows_the_section_as_a_path(self):
-        self.assertIn("/обзор", self.client.get("/").text)
+    def test_the_logo_is_the_only_way_home(self):
+        # A "Граф" item beside it repeated the same action and read as
+        # filler; the logo carries it alone.
+        header = self.client.get("/").text.split("<header>")[1].split("</header>")[0]
+        self.assertIn('href="/" class="logo"', header)
+        self.assertNotIn("Граф", header)
+
+    def test_the_feed_is_a_section_of_its_own_in_the_header(self):
+        header = self.client.get("/").text.split("<header>")[1].split("</header>")[0]
+        self.assertIn('class="section', header)
+        self.assertIn("Журнал правок", header)
+
+
+class ActorContextTest(unittest.TestCase):
+    """Naming the actor must survive FastAPI's thread pool."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        from .test_admin_nodes import FakePanelGraph
+        self.graph = FakePanelGraph()
+        self.graph.nodes[("Person", "A1")] = {"id": "A1", "name_ru": "Иван"}
+        self.client = TestClient(build(Settings(), self.db), follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def test_a_request_through_the_graph_leaves_no_error_behind(self):
+        # A generator dependency is entered and resumed in different
+        # contexts, so resetting a contextvar token across that boundary
+        # raises "created in a different Context" — after the response has
+        # already been sent, which is why it only ever showed in the log.
+        from unittest import mock
+        with mock.patch("pauk.admin.deps.audited_client", return_value=self.graph):
+            response = self.client.get("/nodes/Person/A1")
+        self.assertEqual(response.status_code, 200)
+
+    def test_the_edit_is_recorded_under_the_signed_in_user(self):
+        from unittest import mock
+        token = self.client.cookies[COOKIE]
+        csrf = self.db[SESSIONS].find_one({"_id": token})["csrf"]
+        with mock.patch("pauk.admin.deps.audited_client", return_value=self.graph):
+            self.client.post("/nodes/Person/A1", data={"csrf": csrf, "name_ru": "Пётр"})
+        (override,) = list(self.db["graph_overrides"].find())
+        self.assertEqual(override["actor"], "user:roman")
+
+    def test_the_client_is_told_who_is_editing(self):
+        # The name has to reach the client itself. A contextvar set in the
+        # dependency is invisible in the route — it runs in another
+        # context — and every entry came out as "unknown".
+        from unittest import mock
+        with mock.patch("pauk.admin.deps.audited_client",
+                        return_value=self.graph) as opened:
+            self.client.get("/nodes/Person/A1")
+        _, options = opened.call_args
+        self.assertEqual(options["actor"], "user:roman")
+        self.assertEqual(options["source"], "admin-ui")
+
+    def test_setting_the_actor_twice_does_not_raise(self):
+        # What the block form could not do here: leave one scope and enter
+        # another from a different context.
+        from pauk.graph.audit import set_actor
+        set_actor("user:one", source="admin-ui")
+        set_actor("user:two", source="admin-ui")
+        from pauk.graph import audit
+        self.assertEqual(audit._actor_var.get(), "user:two")
+
+
+class StylesheetVersionTest(unittest.TestCase):
+    """The stylesheet address changes when the file does."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="admin")
+        self.client = TestClient(build(Settings(neo4j_password=""), self.db))
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def test_the_link_carries_a_version(self):
+        # Browsers hold CSS in cache firmly enough that a layout fix could
+        # miss an open tab entirely — the header and the filters stayed in
+        # their old arrangement while the file already differed.
+        body = self.client.get("/").text
+        self.assertRegex(body, r'href="/static/panel\.css\?v=\d+"')
+
+    def test_the_versioned_address_is_served(self):
+        import re
+        body = self.client.get("/").text
+        href = re.search(r'href="(/static/panel\.css\?v=\d+)"', body).group(1)
+        self.assertEqual(self.client.get(href).status_code, 200)
+
+    def test_the_version_follows_the_file(self):
+        import pathlib
+        import re
+
+        from pauk.admin.app import build as build_app
+        css = pathlib.Path("pauk/admin/static/panel.css")
+        before = re.search(r'\?v=(\d+)', self.client.get("/").text).group(1)
+        css.touch()
+        client = TestClient(build_app(Settings(neo4j_password=""), self.db))
+        client.post("/login", data={"login": "roman", "password": "hunter2"})
+        after = re.search(r'\?v=(\d+)', client.get("/").text).group(1)
+        self.assertNotEqual(before, after)
