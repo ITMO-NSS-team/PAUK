@@ -104,7 +104,7 @@ def author_surnames(person: Person) -> set[str]:
     in one paper and "Duhanov" in another is one person with two.
     """
     surnames = set()
-    for name in (person.name_en, *person.name_variants, *person.other_names):
+    for name in (person.name_raw, *person.name_variants, *person.other_names):
         words = [_letters(word) for word in (name or "").split()]
         words = [word for word in words if word]
         if len(words) >= 2 and len(words[-1]) >= MIN_SURNAME:

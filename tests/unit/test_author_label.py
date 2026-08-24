@@ -3,8 +3,8 @@ import unittest
 from pauk.gui.generate_data import author_label, split_full_name
 
 
-def label(*, surname=None, given=None, patronymic=None, name_en=None, name_ru=None):
-    return author_label(surname, given, patronymic, name_en, name_ru)
+def label(*, surname=None, given=None, patronymic=None, name_raw=None, name_ru=None):
+    return author_label(surname, given, patronymic, name_raw, name_ru)
 
 
 class AuthorLabelTest(unittest.TestCase):
@@ -14,7 +14,7 @@ class AuthorLabelTest(unittest.TestCase):
             "Иванов И.И.")
 
     def test_no_separate_name_parts_only_the_full_ru_name(self):
-        self.assertEqual(label(name_ru="Иван Иванович Иванов", name_en="Ivan Ivanovich Ivanov"),
+        self.assertEqual(label(name_ru="Иван Иванович Иванов", name_raw="Ivan Ivanovich Ivanov"),
                          "Иванов И.И.")
         self.assertEqual(label(name_ru="Иван А. Иванов"), "Иванов И.А.")
         self.assertEqual(label(name_ru="А. А. Иванов"), "Иванов А.А.")
@@ -24,7 +24,7 @@ class AuthorLabelTest(unittest.TestCase):
         self.assertEqual(label(surname="Иванов", given="Пётр"), "Иванов Пётр")
 
     def test_falls_back_to_the_romanized_name(self):
-        self.assertEqual(label(name_en="Ivan Ivanov"), "Ivanov Ivan")
+        self.assertEqual(label(name_raw="Ivan Ivanov"), "Ivanov Ivan")
         self.assertEqual(label(), "")
 
     def test_single_word_name_is_left_alone(self):

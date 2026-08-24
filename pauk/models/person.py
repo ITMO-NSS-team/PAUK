@@ -29,13 +29,16 @@ class Person(BaseModel):
     openalex_id: str | None = None
     orcid: str | None = None
     is_itmo: bool
-    name_en: str | None = None
+    name_raw: str | None = None
     name_variants: list[str] = Field(default_factory=list)
     email: str | None = None
     emails: list[str] = Field(default_factory=list)
     first_name_ru: str | None = None
     second_name_ru: str | None = None
     surname_ru: str | None = None
+    first_name_en: str | None = None
+    second_name_en: str | None = None
+    surname_en: str | None = None
     degree: str | None = None
     github: str | None = None
     google_scholar: str | None = None

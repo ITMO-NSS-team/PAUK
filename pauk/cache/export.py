@@ -70,7 +70,7 @@ def load_db(driver) -> dict[str, list]:
         "RETURN p.id AS id, p.first_name_ru AS first_name_ru, "
         "       p.second_name_ru AS second_name_ru, p.surname_ru AS surname_ru, "
         "       p.name_ru AS name_ru, p.name_variants AS name_variants, "
-        "       p.name_en AS name_en, p.degree AS degree, p.github AS github, "
+        "       p.name_raw AS name_raw, p.degree AS degree, p.github AS github, "
         "       p.orcid AS orcid",
     )
 

@@ -71,7 +71,7 @@ work попал в другую, пересекающуюся группу: су
 |---|---|---|
 | Подразделение | `Department` | `id`, `name_en`, `name_ru`, `name_variants` |
 | Сотрудник ИТМО | `Person:Itmo` | `id`, `openalex_id`, `orcid`, ФИО, контакты, профили |
-| Внешний автор | `Person:External` | `id`, `openalex_id`, `orcid`, `name_en`, `name_variants`, `email` |
+| Внешний автор | `Person:External` | `id`, `openalex_id`, `orcid`, `name_raw`, `name_variants`, `email` |
 | Публикация | `Publication` | `id`, `title`, `doi`, дата, журнал, код, funding, OpenAlex/PDF URL, abstract |
 | Репозиторий | `Repository` | `id`, `name`, `url`, описание, звёзды, лицензия, даты |
 | GitHub-профиль | `GitHubProfile` | `id`, `login`, `name`, URL, описание, location, type |

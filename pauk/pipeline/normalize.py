@@ -172,7 +172,7 @@ def _merge_person(base: Person, extra: Person) -> Person:
             base.contributed_to.append(contribution)
     for field in (
         "orcid",
-        "name_en",
+        "name_raw",
         "email",
         "first_name_ru",
         "second_name_ru",
@@ -230,8 +230,8 @@ class OpenAlexNormalizer:
             # only knew about organizations, not contact addresses) is not a
             # person now either. Re-normalization is where the current rule
             # reaches rows already on disk.
-            if NOT_A_PERSON_NAME.search(row.name_en or ""):
-                logger.info("normalize: dropping an author row that is not a person: %s", row.name_en)
+            if NOT_A_PERSON_NAME.search(row.name_raw or ""):
+                logger.info("normalize: dropping an author row that is not a person: %s", row.name_raw)
                 continue
             canonical = _canonical_person_id(row)
             row.id = canonical
@@ -307,7 +307,7 @@ class OpenAlexNormalizer:
                         id=person_id,
                         openalex_id=openalex_id,
                         is_itmo=is_itmo,
-                        name_en=author.get("display_name"),
+                        name_raw=author.get("display_name"),
                     ),
                 )
                 # At least one ITMO affiliation anywhere makes the person ITMO.

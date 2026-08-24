@@ -187,8 +187,8 @@ def _initials_conflict(first: Person, second: Person) -> bool:
     "В" meets a Latin "V", and an initial never contradicts the name it
     abbreviates: "Andrei Ivanov" agrees with "A. V. Ivanov".
     """
-    first_tokens = _fold(first.name_en or "").split()
-    second_tokens = _fold(second.name_en or "").split()
+    first_tokens = _fold(first.name_raw or "").split()
+    second_tokens = _fold(second.name_raw or "").split()
     if len(first_tokens) < 2 or len(second_tokens) < 2 or first_tokens[-1] != second_tokens[-1]:
         return False
     # Names of unequal length are compared over the parts they both have:
@@ -231,7 +231,7 @@ def _paired_persons(people: list[Person], in_scope: set[str] | None,
         staff_id = (staff_ids or {}).get(person.id)
         if staff_id:
             by_staff.setdefault(staff_id, []).append(person)
-        for name in (person.name_en, *person.name_variants):
+        for name in (person.name_raw, *person.name_variants):
             for token in _norm_name(name).replace(",", " ").split():
                 if len(token) > 2:
                     by_token.setdefault(token, []).append(person)
@@ -376,7 +376,7 @@ def plan_person_merges(
             continue
 
         same_staff = bool(first_staff and first_staff == second_staff)
-        first_name, second_name = _norm_name(first.name_en), _norm_name(second.name_en)
+        first_name, second_name = _norm_name(first.name_raw), _norm_name(second.name_raw)
         if not first_name or not second_name:
             continue
         variant_evidence = (
@@ -393,7 +393,7 @@ def plan_person_merges(
         shared_fields = research_fields(first) & research_fields(second)
         # A name on its own is never enough — see the merge policy above.
         corroboration = bool(shared or shared_departments or shared_fields)
-        initials_only = _is_initials_name(first.name_en or "")
+        initials_only = _is_initials_name(first.name_raw or "")
 
         if same_staff and both_itmo:
             plan_pair(first, second, "staff_catalog")
@@ -415,8 +415,8 @@ def plan_person_merges(
                 reasons.append("no shared coauthors")
             report.append({
                 "status": "held",
-                "person_a": first.id, "name_a": first.name_en,
-                "person_b": second.id, "name_b": second.name_en,
+                "person_a": first.id, "name_a": first.name_raw,
+                "person_b": second.id, "name_b": second.name_raw,
                 "shared_coauthors": len(shared),
                 "shared_departments": len(shared_departments),
                 "shared_fields": sorted(shared_fields),
@@ -438,7 +438,7 @@ def plan_person_merges(
             report.append({
                 "status": "held",
                 "persons": sorted(members),
-                "names": [by_id[member].name_en for member in sorted(members)],
+                "names": [by_id[member].name_raw for member in sorted(members)],
                 "held_because": [f"group spans {len(values)} distinct {field} values"],
             })
             continue
@@ -451,8 +451,8 @@ def plan_person_merges(
         for duplicate in duplicates:
             report.append({
                 "status": "merged",
-                "person_a": duplicate.id, "name_a": duplicate.name_en,
-                "person_b": canonical.id, "name_b": canonical.name_en,
+                "person_a": duplicate.id, "name_a": duplicate.name_raw,
+                "person_b": canonical.id, "name_b": canonical.name_raw,
                 "merged_into": canonical.id,
                 "rules": sorted({
                     rule for pair, rule in pair_rules.items() if duplicate.id in pair
@@ -682,7 +682,7 @@ class DedupStage(EnrichmentStage):
                     person = known_persons.get(person_id) if person_id else None
                     if person is None:
                         continue
-                    authors.append(VersionAuthor(person_id=person.id, name=person.name_en,
+                    authors.append(VersionAuthor(person_id=person.id, name=person.name_raw,
                                                  position=position))
                 if version.abstract is None:
                     version.abstract = _abstract(work)
@@ -716,7 +716,7 @@ class DedupStage(EnrichmentStage):
             for authorship in person.authored:
                 author_counts[authorship.publication_id] += 1
                 version_authors.setdefault(authorship.publication_id, []).append(
-                    VersionAuthor(person_id=person.id, name=person.name_en,
+                    VersionAuthor(person_id=person.id, name=person.name_raw,
                                   position=authorship.position))
         for authors in version_authors.values():
             authors.sort(key=lambda author: (author.position is None,
@@ -874,10 +874,10 @@ class DedupStage(EnrichmentStage):
         for canonical, duplicates in groups:
             for duplicate in duplicates:
                 logger.info("dedup: merging %s (%s) into %s (%s)",
-                            duplicate.id, duplicate.name_en, canonical.id, canonical.name_en)
+                            duplicate.id, duplicate.name_raw, canonical.id, canonical.name_raw)
                 _merge_person(canonical, duplicate)
-                if duplicate.name_en:
-                    canonical.name_variants = _union(canonical.name_variants, [duplicate.name_en])
+                if duplicate.name_raw:
+                    canonical.name_variants = _union(canonical.name_variants, [duplicate.name_raw])
                 canonical.merged_ids = _union(canonical.merged_ids, [duplicate.id])
                 removed.add(duplicate.id)
             self._record_state(canonical, len(duplicates))

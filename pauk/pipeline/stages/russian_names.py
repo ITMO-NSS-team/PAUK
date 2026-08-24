@@ -1,27 +1,34 @@
-"""Russian full names for authors.
+"""Russian and English name parts for authors.
 
 The GUI shows ITMO people to a Russian-speaking audience, but OpenAlex
-serves romanized names ("Nikolay O. Nikitin"). This stage restores the
-Cyrillic form in two steps:
+serves a single romanized display name ("Nikolay O. Nikitin", sometimes
+Cyrillic, sometimes mixed) — name_raw. This stage splits it, and every
+known spelling variant, into surname/first name/second name (patronymic),
+in both Russian and English:
 
-1. Catalog match. A CSV of official ITMO staff records (columns:
-   name_ru, surname, name, patronymic, degree) is matched against the
-   person's display name and variants. Matching happens in a shared
-   folded-transliteration space that survives romanization differences
-   (Alexey/Aleksei, Yulia/Julia/Iuliia) and initials ("N. O. Nikitin").
-   A match fills the official full name, its parts and the academic
-   degree. Keys that fit more than one catalog row are dropped entirely —
-   a namesake must never inherit someone else's official record — and the
-   people they blocked are written to russian_names_ambiguous.jsonl with
-   their candidate records, since that is the one gap a human can close.
+1. Catalog match, for identity and the academic degree only. A CSV of
+   official ITMO staff records (columns: name_ru, surname, name,
+   patronymic, degree) is matched against the person's display name and
+   variants in a shared folded-transliteration space that survives
+   romanization differences (Alexey/Aleksei, Yulia/Julia/Iuliia) and
+   initials ("N. O. Nikitin"). A match fills the academic degree.
+   Keys that fit more than one catalog row are dropped entirely — a
+   namesake must never inherit someone else's official record.
 
-2. Transliteration fallback. Names the catalog does not know are
-   reverse-transliterated ("Pavel Ivanov" -> "Павел Иванов") with a
-   digraph-aware table built for English-romanized Russian names; the
-   generic transliteration libraries were tried first and mangle exactly
-   these ("Nikolay" -> "Николаы", "Julia" -> "Жулиа"). Only name_ru is
-   set on this path — guessing name parts from word order is not
-   reliable enough to store.
+2. LLM name split. Every person needing a fresh attempt is sent to an LLM
+   (self.config.llm_model) with their name_raw, name_variants, and every
+   catalog row sharing a folded surname token — a broader net than the
+   strict catalog match above, so the model can disambiguate namesakes the
+   way a human reviewer would (rule 1 of NAME_SPLIT_PROMPT: prefer a
+   plausible candidate, verbatim). The reply is validated by two
+   deterministic guards before it is trusted: _guard_invented_second_name
+   drops a patronymic invented from a bare initial (models in this class
+   do this readily despite the prompt's explicit ban — the same risk this
+   module refused to take when the logic was hand-written), and
+   _guard_broken_transliteration drops or fixes a *_ru field that isn't
+   actually in Cyrillic. A failed LLM call falls back to reverse
+   transliteration ("Pavel Ivanov" -> "Павел Иванов", to_cyrillic) for
+   name_ru only, and is retried on the next pipeline run.
 
 A catalog match is also an identity statement, not just a name: one row
 is one employee, so two person records that resolve to the same row are
@@ -38,7 +45,6 @@ via PAUK_RUSSIAN_NAMES_FILE.
 from __future__ import annotations
 
 import csv
-import json
 import logging
 import re
 from datetime import UTC, datetime
@@ -46,14 +52,14 @@ from pathlib import Path
 
 from pauk.models import Person
 from pauk.models.processing import ProcessingState, ProcessingStatus
-from pauk.storage.atomic import AtomicWriter
+from pauk.sources import OpenRouterClient
+from pauk.storage import LlmLogStore
 
 from .base import EnrichmentStage
 
 logger = logging.getLogger(__name__)
 
 CATALOG_FILENAME = "russian_names.csv"
-AMBIGUOUS_FILENAME = "russian_names_ambiguous.jsonl"
 
 
 def catalog_path(config) -> Path:
@@ -256,44 +262,6 @@ def to_cyrillic(name: str) -> str:
     )
 
 
-# --- full names OpenAlex already carries in Cyrillic ----------------------------
-
-# A patronymic suffix is not enough on its own: Бабич, Томкович and Ходасевич
-# are surnames that end the same way. Position settles it — see _cyrillic_parts.
-_PATRONYMIC = re.compile(
-    r"^[А-ЯЁ][а-яё]+(?:ович|овна|евич|евна|ьевич|ьевна|иевич|иевна|инична|ична)$")
-_CYRILLIC_WORD = re.compile(r"^[А-ЯЁ][а-яё]+$")
-
-
-def _cyrillic_parts(name: str) -> tuple[str, str, str] | None:
-    """(surname, given name, patronymic) when a name spells all three out.
-
-    OpenAlex serves some authors under their Russian name, in either order
-    ("Илья Алексеевич Суров", "Куликов Кирилл Сергеевич", and the same with
-    a comma after the surname). Three full words are required: "М. В.
-    Томкович" is initials and a surname that merely looks like a patronymic,
-    and reading it as one would invent an patronymic for the person.
-    """
-    words = [word for word in name.replace(",", " ").split() if word]
-    if len(words) != 3 or not all(_CYRILLIC_WORD.match(word) for word in words):
-        return None
-    first, second, third = words
-    if _PATRONYMIC.match(second) and not _PATRONYMIC.match(third):
-        return third, first, second
-    if _PATRONYMIC.match(third) and not _PATRONYMIC.match(second):
-        return first, second, third
-    return None
-
-
-def cyrillic_full_name(person: Person) -> tuple[str, str, str] | None:
-    """The first spelling of this person that carries a full Russian name."""
-    for name in (person.name_en, *person.name_variants):
-        parts = _cyrillic_parts(name) if name else None
-        if parts is not None:
-            return parts
-    return None
-
-
 # --- staff catalog --------------------------------------------------------------
 
 
@@ -317,11 +285,9 @@ class RussianNamesCatalog:
                 if spells_the_name_out:
                     spelled_out.add(key)
         # Two rows behind one key = namesakes: matching would hand one
-        # person the other's official record. The key is unusable, but the
-        # records behind it are what a human needs to resolve the case, so
-        # they stay reachable for the review journal.
+        # person the other's official record, so the key is unusable for
+        # match()/staff_id() below - kept out of by_key entirely.
         self.by_key = {key: rows[0] for key, rows in keyed.items() if len(rows) == 1}
-        self.ambiguous_by_key = {key: rows for key, rows in keyed.items() if len(rows) > 1}
         # Identity is claimed only from the forms that spell the given name
         # out. "A. Duhanov" is good enough to write a name onto a card, but
         # it stands for every Duhanov whose given name starts with an A —
@@ -427,12 +393,12 @@ class RussianNamesCatalog:
         what dedup folds person records on — and only when no other spelling
         of the same person argues against the record.
         """
-        for name in (person.name_en, *person.name_variants):
+        for name in (person.name_raw, *person.name_variants):
             if not name:
                 continue
             row = self.identity_by_key.get(_fold(name))
             if row is not None:
-                return None if self._contradicts(person.name_en, row) else _record_id(row)
+                return None if self._contradicts(person.name_raw, row) else _record_id(row)
         return None
 
     @staticmethod
@@ -471,175 +437,289 @@ class RussianNamesCatalog:
         Алексей Андреевич" under "A. D. Dmitriev" states something about a
         real person that the one piece of evidence available denies.
         """
-        for name in (person.name_en, *person.name_variants):
+        for name in (person.name_raw, *person.name_variants):
             if not name:
                 continue
             row = self.by_key.get(_fold(name))
             if row is not None:
-                return None if self._contradicts(person.name_en, row) else row
+                return None if self._contradicts(person.name_raw, row) else row
         return None
 
-    def namesakes(self, person: Person) -> tuple[str, list[dict]] | None:
-        """The catalog records this person's name could equally well be.
 
-        Returned only when nothing matched: a name that fits several
-        official records is the one case a human can actually resolve —
-        the records differ by patronymic, and someone who knows the
-        faculty can say which one it is.
-        """
-        names = [name for name in (person.name_en, *person.name_variants) if name]
-        for name in names:
-            rows = self.ambiguous_by_key.get(_fold(name))
-            if rows and self._could_be_any_of(names, rows):
-                return name, rows
-        return None
 
-    @staticmethod
-    def _could_be_any_of(names: list[str], rows: list[dict]) -> bool:
-        """Whether a written-out given name agrees with any candidate.
+# --- LLM name split ---------------------------------------------------------------
 
-        Keys built from a first initial ("A. Polyakov") collide with every
-        namesake in the catalog, so "Andrey Polyakov" trips over records
-        for Anton and Alexander. The decision weighs every spelling the
-        person is known by, not just the one that collided — an initials
-        variant says nothing when the name is spelled out elsewhere and
-        matches none of the records: that person is simply absent from the
-        catalog, not a case anyone can resolve.
-        """
-        surnames = {_fold(row.get("surname") or "") for row in rows}
-        given_names = {_fold(row.get("name") or "") for row in rows}
-        spelled_out = {
-            token for name in names for token in _fold(name).split()
-            if len(token) > 1 and token not in surnames
-        }
-        return not spelled_out or bool(spelled_out & given_names)
+NAME_SPLIT_PROMPT = """You are extracting an author's name for an ITMO research publication,
+split into surname / first name / second name (patronymic), separately in Russian and
+in English.
+
+Raw name as given by the data source (OpenAlex) - may be Latin script, Cyrillic, or mixed:
+  {name_raw}
+
+Other known spellings of the same person (sometimes one of these spells the name out more fully):
+  {variants}
+
+Candidate records from the official ITMO staff directory sharing the same surname
+(a candidate may be a namesake - not necessarily the same person):
+{candidates}
+
+Task: extract the person's surname, first name and second name (patronymic), separately in
+Russian and in English.
+
+STRICT rules - follow exactly, do not deviate:
+1. Check the candidate list FIRST, before anything else. If a candidate is plausibly this
+   same person (surname matches and nothing about the first name/second name contradicts
+   it), set matched_candidate to its index and copy its surname/name/patronymic verbatim
+   into the *_ru fields - the directory is ground truth. Do not retype, correct, or
+   rephrase them.
+2. If several candidates could plausibly be this person and you cannot tell which, set
+   matched_candidate to null. Never guess between namesakes.
+3. Extraction only, never invention of MISSING information:
+   - If a name part is spelled out in full somewhere in the input, extract it in full.
+   - If a name part appears ONLY as a bare initial (e.g. "I." in "I. Ivanov"), extract
+     exactly that: a single letter, WITHOUT a period. Do not expand an initial into a full
+     name you are not certain of - not even a "standard" or "common" expansion, and not from
+     anything you may know about a real person of that name. A bare initial with no matching
+     candidate stays a bare initial.
+   - If a name part does not appear anywhere in the input and no matched candidate resolves
+     it, leave it null. Do not guess a plausible-sounding value.
+4. surname_ru and first_name_ru (and second_name_ru when a patronymic is known) must ALWAYS
+   be filled, in Cyrillic, for every person - Russian, foreign, anyone. This is a practical
+   Russian transcription of whatever name you extracted in rule 3, not a judgement about the
+   person's nationality: "Salvy Russo" still gets a surname_ru/first_name_ru (a natural
+   Russian transcription, e.g. "Руссо"/"Сальви"). Use the conventional Russian transcription
+   a Russian text would actually use, not a mechanical letter-by-letter mapping.
+5. second_name_ru/second_name_en (the patronymic) does not exist for everyone. Leave both
+   null rather than inventing one - this is the one pair of fields allowed to legitimately
+   stay empty, and rule 3's ban on invention applies to it most of all.
+6. English spelling should be the natural/common form a person would actually use, not a
+   mechanical letter-by-letter conversion - unless a matched candidate gives you the Russian
+   form to transliterate, in which case transliterate that.
+
+Reply with STRICT valid JSON only, no markdown, no text outside the JSON:
+{{"matched_candidate": null,
+  "surname_ru": null, "first_name_ru": null, "second_name_ru": null,
+  "surname_en": null, "first_name_en": null, "second_name_en": null,
+  "reason": "one short sentence"}}
+"""
+
+
+def _name_split_candidates(catalog: RussianNamesCatalog, person: Person) -> list[dict]:
+    """Every catalog row sharing a folded surname with any known spelling of
+    this person - a broad net (not the strict exact-key match
+    RussianNamesCatalog.match() uses for identity/degree below), on purpose:
+    the LLM does the namesake disambiguation strict match deliberately
+    declines."""
+    surnames = {
+        _fold(token)
+        for name in (person.name_raw, *person.name_variants)
+        if name
+        for token in name.replace(",", " ").split()
+    }
+    seen: set[tuple] = set()
+    candidates: list[dict] = []
+    for row in catalog.rows:
+        if _fold(row.get("surname") or "") not in surnames:
+            continue
+        key = (row.get("surname"), row.get("name"), row.get("patronymic"))
+        if key not in seen:
+            seen.add(key)
+            candidates.append(row)
+    return candidates
+
+
+def _build_name_split_prompt(person: Person, candidates: list[dict]) -> str:
+    candidates_text = "\n".join(
+        f"{i}. surname={c.get('surname')!r} name={c.get('name')!r} "
+        f"patronymic={c.get('patronymic') or ''!r} name_ru={c.get('name_ru') or ''!r}"
+        for i, c in enumerate(candidates)
+    ) or "(no candidates with this surname in the directory)"
+    # Cyrillic/Latin homoglyphs ("А" vs "A") otherwise reach the model mixed
+    # within one name - the same _unmix_alphabets pass matching uses above,
+    # so the model isn't asked to read "I. А. Zelinskaya" with a stray
+    # Cyrillic letter sitting inside a Latin name.
+    variants = ", ".join(_unmix_alphabets(v) for v in person.name_variants) or "(none)"
+    return NAME_SPLIT_PROMPT.format(
+        name_raw=_unmix_alphabets(person.name_raw or ""),
+        variants=variants,
+        candidates=candidates_text,
+    )
+
+
+def _is_bare_initial(value: object) -> bool:
+    """A name part that came back as exactly one letter - the model read an
+    initial and correctly refused to expand it into a guess, per rule 3."""
+    return isinstance(value, str) and len(value.strip()) == 1 and value.strip().isalpha()
+
+
+def _plausibly_in_source(value: str, haystack: str) -> bool:
+    """Whether a folded value is traceable to the source text.
+
+    Full-string containment misses transliteration edges _fold does not
+    resolve: Cyrillic "ь" folds to nothing while the natural English
+    spelling of the same ending adds an "i" ("Анатольевна" folds to
+    "anatolevna", "Anatolievna" folds to "anatolievna"). A shared stem of
+    the first few folded characters is enough to tell a real
+    transliteration from an invented one without chasing every such edge.
+    """
+    stem = _fold(value)
+    return stem[:5] in haystack if len(stem) >= 3 else stem in haystack
+
+
+def _guard_invented_second_name(person: Person, parsed: dict) -> dict:
+    """Null a second_name (patronymic) the model invented from a bare
+    initial, in place, for both languages.
+
+    Models in this class (tested against qwen/qwen3.7-flash) break rule 3 on
+    this roughly 1 in 10 times despite the explicit ban - e.g. turning
+    "Valentine G. Nenajdenko" into second_name_en "Gennadievich" with the
+    model's own reasoning admitting "not explicitly spelled out". A directory
+    match (matched_candidate) is trusted per rule 1; anything else has to be
+    traceable to the input - the same standard this module already applied
+    when the logic was hand-written (see the module docstring: "guessing
+    name parts from word order is not reliable enough to store").
+    """
+    if parsed.get("matched_candidate") is not None:
+        return parsed
+    haystack = _fold(f"{person.name_raw or ''} {' '.join(person.name_variants)}")
+    for field in ("second_name_ru", "second_name_en"):
+        value = parsed.get(field)
+        if not value or _is_bare_initial(value) or _plausibly_in_source(value, haystack):
+            continue
+        parsed[field] = None
+        parsed["reason"] = (
+            f"{parsed.get('reason') or ''} [dropped invented {field}={value!r}: "
+            "not in source text, no directory match]"
+        ).strip()
+    return parsed
+
+
+_LATIN_LETTER = re.compile(r"[A-Za-z]")
+
+
+def _guard_broken_transliteration(parsed: dict) -> dict:
+    """Fix or null a *_ru field that isn't actually in Cyrillic, in place.
+
+    Two different failures show up as "a Latin letter in a *_ru field":
+    - A bare initial ("I", "A") is exactly what rule 3 allows a *_ru field
+      to hold when only an initial is known - it is converted with
+      to_cyrillic (the same table this module already uses), not discarded.
+    - An unusual Latin character (a diacritic, e.g. Polish "ł") defeats the
+      model mid-word instead of failing outright ("Małgorzata" comes back
+      as "Маłgorzata" - the first two letters converted, the rest left
+      as-is). Rule 4 requires these fields in full Cyrillic for every
+      person - a field that isn't is worse than an empty one.
+    """
+    for field in ("surname_ru", "first_name_ru", "second_name_ru"):
+        value = parsed.get(field)
+        if not value or not _LATIN_LETTER.search(value):
+            continue
+        if _is_bare_initial(value):
+            parsed[field] = to_cyrillic(value)
+            continue
+        parsed[field] = None
+        parsed["reason"] = (
+            f"{parsed.get('reason') or ''} [dropped broken {field}={value!r}: not fully Cyrillic]"
+        ).strip()
+    return parsed
 
 
 class RussianNamesStage(EnrichmentStage):
     name = "russian_names"
-    progress_label = "Authors: resolving Russian names from the staff catalog"
+    progress_label = "Authors: splitting names into RU/EN parts (LLM)"
 
     def run(self) -> dict[str, int]:
         catalog = RussianNamesCatalog.load(catalog_path(self.config))
-
         people = list(self.prepared.read_models("persons", Person))
         candidates = [
             person for person in people
             if self.selected("persons", person.id) and self.needs_attempt(person.processing.get(self.name))
         ]
-        changed = matched = transliterated = from_own_spelling = 0
-        ambiguous: list[dict] = []
-        examined: set[str] = set()
+        if not candidates:
+            return {"russian_names": 0, "names_matched_candidate": 0,
+                    "names_dropped_invented": 0, "names_failed": 0}
+
+        client = OpenRouterClient(
+            self.config.request_timeout, self.config.openrouter_api_key,
+            self.config.llm_model, self.config.openrouter_proxy_url,
+        )
+        llm_log = LlmLogStore(self.prepared.db, "llm_logs_russian_names")
+        changed = matched = dropped = failed = 0
         for person in self.progress(candidates, total=len(candidates)):
             state = person.processing.get(self.name)
-            if not person.name_en:
+            if not person.name_raw:
                 person.processing[self.name] = self._state(state, ProcessingStatus.COMPLETED_EMPTY, 0)
                 changed += 1
-                examined.add(person.id)
                 continue
+
+            # A free, deterministic lookup for the one field the LLM never
+            # produces: an exact/initials catalog match names one employee
+            # unambiguously, unlike the broader candidate net below, which
+            # deliberately includes namesakes for the LLM to weigh.
             row = catalog.match(person)
             if row is not None:
-                person.name_ru = (row.get("name_ru") or "").strip() or person.name_ru
-                person.first_name_ru = (row.get("name") or "").strip() or None
-                person.second_name_ru = (row.get("patronymic") or "").strip() or None
-                person.surname_ru = (row.get("surname") or "").strip() or None
                 person.degree = person.degree or (row.get("degree") or "").strip() or None
+
+            person_candidates = _name_split_candidates(catalog, person)
+            prompt = _build_name_split_prompt(person, person_candidates)
+            parsed = client.chat_json(prompt)
+            llm_log.record(
+                group=self.prepared.group, model=self.config.llm_model, prompt=prompt,
+                raw_response=client.last_response, parsed=parsed, usage=client.last_usage,
+                error=None if parsed is not None else "no response",
+                context={"person_id": person.id},
+            )
+            if parsed is None:
+                # Reverse transliteration for name_ru only, same as before
+                # this stage called an LLM at all - guessing the parts from
+                # word order is not reliable enough to store, so they stay
+                # whatever an earlier successful run left them. Retried on
+                # the next pipeline run (status FAILED).
+                person.name_ru = person.name_ru or to_cyrillic(person.name_raw)
+                person.processing[self.name] = self._state(
+                    state, ProcessingStatus.FAILED, 0, error="llm request failed")
+                failed += 1
+                changed += 1
+                continue
+
+            before_second_names = (parsed.get("second_name_ru"), parsed.get("second_name_en"))
+            parsed = _guard_invented_second_name(person, parsed)
+            parsed = _guard_broken_transliteration(parsed)
+            if (parsed.get("second_name_ru"), parsed.get("second_name_en")) != before_second_names:
+                dropped += 1
+
+            person.surname_ru = parsed.get("surname_ru") or None
+            person.first_name_ru = parsed.get("first_name_ru") or None
+            person.second_name_ru = parsed.get("second_name_ru") or None
+            person.surname_en = parsed.get("surname_en") or None
+            person.first_name_en = parsed.get("first_name_en") or None
+            person.second_name_en = parsed.get("second_name_en") or None
+            person.name_ru = " ".join(
+                part for part in (person.surname_ru, person.first_name_ru, person.second_name_ru) if part
+            ) or person.name_ru
+            if parsed.get("matched_candidate") is not None:
                 matched += 1
-            elif (parts := cyrillic_full_name(person)) is not None:
-                # The catalog does not know this person, but one of their
-                # own spellings does: a name written out in Cyrillic states
-                # the patronymic the transliteration path can never guess.
-                surname, first_name, patronymic = parts
-                person.surname_ru = surname
-                person.first_name_ru = first_name
-                person.second_name_ru = patronymic
-                person.name_ru = f"{surname} {first_name} {patronymic}"
-                from_own_spelling += 1
-            else:
-                person.name_ru = to_cyrillic(person.name_en)
-                if person.surname_ru:
-                    # Only a catalog match sets the parts, so finding them
-                    # here means an earlier run reached a record this one
-                    # refuses. They are that decision's output and go with
-                    # it: author_label reads them ahead of name_ru and
-                    # would keep signing the card from a withdrawn record.
-                    # A merge that brought a matching spelling in gets them
-                    # back through that spelling on this very pass.
-                    person.first_name_ru = None
-                    person.second_name_ru = None
-                    person.surname_ru = None
-                    person.degree = None
-                transliterated += 1
-                collision = catalog.namesakes(person)
-                if collision is not None:
-                    matched_name, rows = collision
-                    ambiguous.append({
-                        "person": person.id,
-                        "name_en": person.name_en,
-                        "matched_name": matched_name,
-                        "name_ru": person.name_ru,
-                        "candidates": [
-                            {"name_ru": (row.get("name_ru") or "").strip(),
-                             "degree": (row.get("degree") or "").strip() or None}
-                            for row in rows
-                        ],
-                        "held_because": "the catalog holds several records under this name",
-                    })
+
             person.processing[self.name] = self._state(state, ProcessingStatus.COMPLETED, 1)
             changed += 1
-            examined.add(person.id)
+
         if changed:
             self.prepared.write_models("persons", people)
-
-        # The journal accumulates across runs: each run replaces the rows of
-        # the people it examined and leaves every other row where it is. A
-        # second pass over a finished group examines nobody and so changes
-        # nothing, and a run that reaches one new person does not erase the
-        # rows an earlier run wrote for the others.
-        journal_path = self.config.audit_dir / self.prepared.group / AMBIGUOUS_FILENAME
-        if examined:
-            journal = [row for row in self._journalled(journal_path)
-                       if row.get("person") not in examined]
-            journal.extend(ambiguous)
-            with AtomicWriter(journal_path) as fh:
-                for row in journal:
-                    fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-        logger.info("russian_names: %d from the catalog, %d from the author's own spelling, "
-                    "%d transliterated", matched, from_own_spelling, transliterated)
-        if ambiguous:
-            logger.info("russian_names: %d name(s) fit several catalog records — see %s",
-                        len(ambiguous), journal_path)
-        return {"russian_names": changed, "names_from_catalog": matched,
-                "names_from_own_spelling": from_own_spelling,
-                "names_transliterated": transliterated,
-                "names_ambiguous": len(ambiguous)}
-
-    @staticmethod
-    def _journalled(path: Path) -> list[dict]:
-        """Rows a previous run left in the ambiguity journal.
-
-        A line that does not parse is dropped with a warning rather than
-        raised: the journal is a review artefact, and a run interrupted
-        mid-write must not leave the stage unable to run at all.
-        """
-        if not path.exists():
-            return []
-        rows = []
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                rows.append(json.loads(line))
-            except json.JSONDecodeError:
-                logger.warning("russian_names: unreadable line in %s, dropped", path.name)
-        return rows
+        logger.info(
+            "russian_names: %d processed, %d matched a directory candidate, "
+            "%d invented second_name dropped, %d failed",
+            changed, matched, dropped, failed,
+        )
+        return {"russian_names": changed, "names_matched_candidate": matched,
+                "names_dropped_invented": dropped, "names_failed": failed}
 
     @staticmethod
     def _state(previous: ProcessingState | None, status: ProcessingStatus,
-               result_count: int) -> ProcessingState:
+               result_count: int, error: str | None = None) -> ProcessingState:
         return ProcessingState(
             status=status,
             attempts=(previous.attempts if previous else 0) + 1,
             finished_at=datetime.now(UTC),
             result_count=result_count,
+            error=error,
         )

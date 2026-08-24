@@ -176,7 +176,7 @@ def dedup_graph_persons(client, raw_orcids: dict[str, str | None],
             id=row["id"],
             openalex_id=row.get("openalex_id") or row["id"],
             is_itmo=bool(row.get("is_itmo")),
-            name_en=row.get("name_en"),
+            name_raw=row.get("name_raw"),
             name_variants=list(row.get("name_variants") or []),
             orcid=row.get("orcid"),
             email=row.get("email"),
@@ -206,13 +206,13 @@ def dedup_graph_persons(client, raw_orcids: dict[str, str | None],
             logger.info(
                 "graph dedup: merging %s (%s) into %s (%s)",
                 duplicate.id,
-                duplicate.name_en,
+                duplicate.name_raw,
                 canonical.id,
-                canonical.name_en,
+                canonical.name_raw,
             )
             _merge_person(canonical, duplicate)
-            if duplicate.name_en:
-                canonical.name_variants = _union(canonical.name_variants, [duplicate.name_en])
+            if duplicate.name_raw:
+                canonical.name_variants = _union(canonical.name_variants, [duplicate.name_raw])
             canonical.merged_ids = _union(canonical.merged_ids, [duplicate.id])
             merges.append((duplicate.id, canonical.id))
         # The canonical node inherits what its duplicates knew (variants,

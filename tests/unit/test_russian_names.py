@@ -1,17 +1,12 @@
-import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import mongomock
 
 from pauk.models import Person
-from pauk.pipeline.stages.russian_names import (
-    AMBIGUOUS_FILENAME,
-    RussianNamesCatalog,
-    RussianNamesStage,
-    to_cyrillic,
-)
+from pauk.pipeline.stages.russian_names import RussianNamesCatalog, RussianNamesStage, to_cyrillic
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
 
@@ -19,12 +14,34 @@ CATALOG_HEADER = "name_ru,surname,name,patronymic,degree\n"
 
 
 def person(pid, name, *, variants=(), degree=None):
-    return Person(id=pid, openalex_id=pid, is_itmo=True, name_en=name,
+    return Person(id=pid, openalex_id=pid, is_itmo=True, name_raw=name,
                   name_variants=list(variants), degree=degree)
 
 
+class _FakeOpenRouterClient:
+    """Stands in for pauk.sources.OpenRouterClient in tests: returns queued
+    replies in call order instead of hitting the network. A queued value of
+    None simulates a failed call, matching what chat_json() returns then."""
+
+    _queue: list = []
+
+    def __init__(self, *args, **kwargs) -> None:
+        del args, kwargs
+        self.last_response = None
+        self.last_usage = None
+        self._replies = list(self._queue)
+
+    def chat_json(self, prompt):
+        self.last_prompt = prompt
+        return self._replies.pop(0) if self._replies else None
+
+    @classmethod
+    def queued(cls, replies):
+        return type("_QueuedClient", (cls,), {"_queue": replies})
+
+
 class RussianNamesStageTest(unittest.TestCase):
-    def run_stage(self, people, catalog_rows):
+    def run_stage(self, people, catalog_rows, replies):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name)
@@ -36,13 +53,10 @@ class RussianNamesStageTest(unittest.TestCase):
         self.prepared = PreparedStore(self.db, "sample")
         self.raw = RawStore(self.db, "sample")
         self.prepared.write_models("persons", people)
-        result = RussianNamesStage(self.prepared, self.raw, self.config).run()
+        with patch("pauk.pipeline.stages.russian_names.OpenRouterClient",
+                   _FakeOpenRouterClient.queued(replies)):
+            result = RussianNamesStage(self.prepared, self.raw, self.config).run()
         return result, {p.id: p for p in self.prepared.read_models("persons", Person)}
-
-    def ambiguous(self):
-        path = self.config.audit_dir / self.prepared.group / AMBIGUOUS_FILENAME
-        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
-                if line.strip()]
 
     def test_missing_catalog_stops_the_stage(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -53,302 +67,158 @@ class RussianNamesStageTest(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 RussianNamesStage(prepared, RawStore(db, "sample"), config).run()
 
-    def test_catalog_match_fills_official_record(self):
+    def test_empty_name_raw_is_completed_empty_without_an_llm_call(self):
+        result, people = self.run_stage([person("A1", "")], [], replies=[])
+        self.assertEqual(result["russian_names"], 1)
+        self.assertEqual(people["A1"].processing["russian_names"].status, "completed_empty")
+
+    def test_llm_reply_fills_all_six_parts_and_composes_name_ru(self):
         result, people = self.run_stage(
-            [person("A1", "Nikolay O. Nikitin", degree=None)],
+            [person("A1", "Nikolay O. Nikitin")],
             ["Никитин Николай Олегович,Никитин,Николай,Олегович,к.т.н."],
+            replies=[{
+                "matched_candidate": 0,
+                "surname_ru": "Никитин", "first_name_ru": "Николай", "second_name_ru": "Олегович",
+                "surname_en": "Nikitin", "first_name_en": "Nikolay", "second_name_en": "Olegovich",
+                "reason": "exact catalog match",
+            }],
         )
-        self.assertEqual(result["names_from_catalog"], 1)
+        self.assertEqual(result["russian_names"], 1)
+        self.assertEqual(result["names_matched_candidate"], 1)
         row = people["A1"]
+        self.assertEqual((row.surname_ru, row.first_name_ru, row.second_name_ru),
+                         ("Никитин", "Николай", "Олегович"))
+        self.assertEqual((row.surname_en, row.first_name_en, row.second_name_en),
+                         ("Nikitin", "Nikolay", "Olegovich"))
         self.assertEqual(row.name_ru, "Никитин Николай Олегович")
-        self.assertEqual((row.first_name_ru, row.second_name_ru, row.surname_ru),
-                         ("Николай", "Олегович", "Никитин"))
+        # degree comes from the free deterministic catalog lookup, not the LLM.
         self.assertEqual(row.degree, "к.т.н.")
         self.assertEqual(row.processing["russian_names"].status, "completed")
-
-    def test_romanization_variants_still_match(self):
-        for spelling in ("Aleksei Dukhanov", "Alexey Dukhanov", "Aleksey V. Dukhanov"):
-            _, people = self.run_stage(
-                [person("A1", spelling)],
-                ["Духанов Алексей Валентинович,Духанов,Алексей,Валентинович,к.т.н."],
-            )
-            self.assertEqual(people["A1"].surname_ru, "Духанов", spelling)
-
-    def test_match_via_name_variant(self):
-        _, people = self.run_stage(
-            [person("A1", "J. Borisova", variants=["Julia Borisova"])],
-            ["Борисова Юлия Андреевна,Борисова,Юлия,Андреевна,"],
-        )
-        self.assertEqual(people["A1"].name_ru, "Борисова Юлия Андреевна")
-
-    def test_namesake_catalog_rows_never_match(self):
-        # Two official records behind one name: matching would hand this
-        # person someone else's record, so the key is dropped entirely.
-        result, people = self.run_stage(
-            [person("A1", "Ivan Smirnov")],
-            [
-                "Смирнов Иван Петрович,Смирнов,Иван,Петрович,к.т.н.",
-                "Смирнов Иван Васильевич,Смирнов,Иван,Васильевич,д.х.н.",
-            ],
-        )
-        self.assertEqual(result["names_from_catalog"], 0)
-        self.assertEqual(people["A1"].name_ru, "Иван Смирнов")  # transliterated
-
-    def test_namesakes_are_journalled_with_their_candidates(self):
-        result, _ = self.run_stage(
-            [person("A1", "Ivan Smirnov"), person("A2", "Pavel Zhukov")],
-            [
-                "Смирнов Иван Петрович,Смирнов,Иван,Петрович,к.т.н.",
-                "Смирнов Иван Васильевич,Смирнов,Иван,Васильевич,д.х.н.",
-            ],
-        )
-        self.assertEqual(result["names_ambiguous"], 1)
-        (row,) = self.ambiguous()
-        self.assertEqual((row["person"], row["name_en"]), ("A1", "Ivan Smirnov"))
-        self.assertEqual([c["name_ru"] for c in row["candidates"]],
-                         ["Смирнов Иван Петрович", "Смирнов Иван Васильевич"])
-        self.assertEqual([c["degree"] for c in row["candidates"]], ["к.т.н.", "д.х.н."])
-
-    def test_initial_only_collision_with_a_different_given_name_is_not_reported(self):
-        # "A. Polyakov" keys collide with every namesake, but a person
-        # written out as Andrey matches none of them — they are simply
-        # absent from the catalog, not an ambiguity anyone can resolve.
-        result, _ = self.run_stage(
-            [person("A1", "Andrey Polyakov")],
-            [
-                "Поляков Антон Александрович,Поляков,Антон,Александрович,",
-                "Поляков Александр Сергеевич,Поляков,Александр,Сергеевич,",
-            ],
-        )
-        self.assertEqual(result["names_ambiguous"], 0)
-        self.assertEqual(self.ambiguous(), [])
-
-    def test_initials_only_person_is_still_reported(self):
-        result, _ = self.run_stage(
-            [person("A1", "A. Polyakov")],
-            [
-                "Поляков Антон Александрович,Поляков,Антон,Александрович,",
-                "Поляков Александр Сергеевич,Поляков,Александр,Сергеевич,",
-            ],
-        )
-        self.assertEqual(result["names_ambiguous"], 1)
-
-    def test_an_initials_variant_does_not_resurrect_a_ruled_out_person(self):
-        # The collision happens on the "A. Polyakov" variant, but the
-        # person is written out as Andrey elsewhere — still not a case
-        # anyone can resolve.
-        result, _ = self.run_stage(
-            [person("A1", "Andrey Polyakov", variants=["A. Polyakov"])],
-            [
-                "Поляков Антон Александрович,Поляков,Антон,Александрович,",
-                "Поляков Александр Сергеевич,Поляков,Александр,Сергеевич,",
-            ],
-        )
-        self.assertEqual(result["names_ambiguous"], 0)
-
-    def test_journal_is_rewritten_each_run(self):
-        # A name that stopped being ambiguous must not linger in the file.
-        self.run_stage(
-            [person("A1", "Ivan Smirnov")],
-            ["Смирнов Иван Петрович,Смирнов,Иван,Петрович,к.т.н."],
-        )
-        self.assertEqual(self.ambiguous(), [])
-
-    def test_transliteration_fallback(self):
-        result, people = self.run_stage([person("A1", "Pavel V. Zhukov")], [])
-        self.assertEqual(result["names_transliterated"], 1)
-        self.assertEqual(people["A1"].name_ru, "Павел В. Жуков")
-        self.assertIsNone(people["A1"].surname_ru)  # parts are never guessed
-
-    def test_a_withdrawn_record_takes_its_parts_with_it(self):
-        # The rule tightened between runs: this spelling no longer names
-        # anyone, and the official parts must not outlive the match that
-        # wrote them — the card is signed from them, not from name_ru.
-        catalog = ["Дмитриев Алексей Андреевич,Дмитриев,Алексей,Андреевич,к.т.н."]
-        _, people = self.run_stage([person("A1", "Alexey A. Dmitriev")], catalog)
-        self.assertEqual(people["A1"].surname_ru, "Дмитриев")
-
-        named = people["A1"]
-        named.name_en = "A. D. Dmitriev"
-        named.processing = {}
-        _, people = self.run_stage([named], catalog)
-        row = people["A1"]
-        self.assertEqual(row.name_ru, "А. Д. Дмитриев")
-        self.assertEqual((row.first_name_ru, row.second_name_ru, row.surname_ru, row.degree),
-                         (None, None, None, None))
 
     def test_existing_degree_is_not_overwritten(self):
         _, people = self.run_stage(
             [person("A1", "Nikolay O. Nikitin", degree="PhD")],
             ["Никитин Николай Олегович,Никитин,Николай,Олегович,к.т.н."],
+            replies=[{"matched_candidate": 0, "surname_ru": "Никитин", "first_name_ru": "Николай",
+                      "second_name_ru": "Олегович", "surname_en": "Nikitin", "first_name_en": "Nikolay",
+                      "second_name_en": "Olegovich", "reason": ""}],
         )
         self.assertEqual(people["A1"].degree, "PhD")
 
-    def test_second_run_is_a_no_op(self):
-        self.run_stage([person("A1", "Pavel Zhukov")], [])
-        again = RussianNamesStage(self.prepared, self.raw, self.config).run()
-        self.assertEqual(again["russian_names"], 0)
+    def test_a_failed_llm_call_falls_back_to_transliteration_for_name_ru_only(self):
+        result, people = self.run_stage([person("A1", "Pavel V. Zhukov")], [], replies=[None])
+        self.assertEqual(result["names_failed"], 1)
+        row = people["A1"]
+        self.assertEqual(row.name_ru, to_cyrillic("Pavel V. Zhukov"))
+        self.assertIsNone(row.surname_ru)  # parts are never guessed on failure
+        self.assertEqual(row.processing["russian_names"].status, "failed")
 
-    def test_a_cyrillic_letter_inside_a_latin_name_still_matches(self):
-        # The В, С and Х here are Cyrillic; they fold to v, s and h where
-        # their Latin lookalikes fold to b, c and ks.
-        for spelling in ("V.A. Вogatyrev", "Vladimir А. Вogatyrev", "V. А. Bogatyrev"):
-            _, people = self.run_stage(
-                [person("A1", spelling)],
-                ["Богатырев Владимир Анатольевич,Богатырев,Владимир,Анатольевич,д.т.н."],
-            )
-            self.assertEqual(people["A1"].surname_ru, "Богатырев", spelling)
+    def test_a_failed_llm_call_does_not_erase_a_name_ru_an_earlier_run_wrote(self):
+        first = person("A1", "Pavel V. Zhukov")
+        first.name_ru = "Павел Жуков"
+        _, people = self.run_stage([first], [], replies=[None])
+        self.assertEqual(people["A1"].name_ru, "Павел Жуков")
 
-    def test_a_name_written_surname_first_with_a_comma_matches(self):
-        # OpenAlex serves "Ivanov, Ilya" beside "Ilya Ivanov"; a comma left
-        # in the folded key keeps the two spellings apart.
-        for spelling in ("Ivanov, Ilya", "Иванов, Илья Петрович"):
-            _, people = self.run_stage(
-                [person("A1", spelling)],
-                ["Иванов Илья Петрович,Иванов,Илья,Петрович,"],
-            )
-            self.assertEqual(people["A1"].name_ru, "Иванов Илья Петрович", spelling)
-
-    def test_one_employee_listed_twice_is_still_one_record(self):
-        # Two rows for one person read as namesakes: their shared key is
-        # dropped and the employee stops matching at all.
+    def test_an_invented_patronymic_with_no_candidate_is_dropped(self):
+        # The model states a patronymic despite there being no directory
+        # match and nothing in the input spelling it out - exactly the
+        # qwen3.7-flash failure this guard exists for.
         result, people = self.run_stage(
-            [person("A1", "Ivan Petrov")],
-            ["Петров Иван Сергеевич,Петров,Иван,Сергеевич,",
-             "Петров Иван Сергеевич,Петров,Иван,Сергеевич,к.т.н."],
+            [person("A1", "Valentine G. Nenajdenko")], [],
+            replies=[{
+                "matched_candidate": None,
+                "surname_ru": "Ненайденко", "first_name_ru": "Валентин", "second_name_ru": "Геннадьевич",
+                "surname_en": "Nenajdenko", "first_name_en": "Valentine", "second_name_en": "Gennadievich",
+                "reason": "standard expansion of G.",
+            }],
         )
-        self.assertEqual(result["names_from_catalog"], 1)
-        self.assertEqual(people["A1"].name_ru, "Петров Иван Сергеевич")
-        # The degree stated by one of the rows survives the merge.
-        self.assertEqual(people["A1"].degree, "к.т.н.")
-        self.assertEqual(self.ambiguous(), [])
+        self.assertEqual(result["names_dropped_invented"], 1)
+        row = people["A1"]
+        self.assertIsNone(row.second_name_ru)
+        self.assertIsNone(row.second_name_en)
+        self.assertEqual(row.surname_ru, "Ненайденко")  # the rest of the reply is kept
 
-    NAMESAKE_CATALOG = (
-        "Смирнов Иван Петрович,Смирнов,Иван,Петрович,",
-        "Смирнов Иван Сергеевич,Смирнов,Иван,Сергеевич,",
-        "Петров Иван Петрович,Петров,Иван,Петрович,",
-        "Петров Иван Сергеевич,Петров,Иван,Сергеевич,",
-    )
-
-    def rerun_stage(self):
-        return RussianNamesStage(self.prepared, self.raw, self.config).run()
-
-    def test_a_run_that_examines_nobody_keeps_the_journal(self):
-        self.run_stage([person("A1", "Ivan Smirnov")], list(self.NAMESAKE_CATALOG))
-        self.assertEqual(len(self.ambiguous()), 1)
-        self.assertEqual(self.rerun_stage()["russian_names"], 0)
-        self.assertEqual([row["person"] for row in self.ambiguous()], ["A1"])
-
-    def test_a_person_reached_by_a_later_run_joins_the_journal(self):
-        # The incremental case: A1 was journalled by an earlier run and this
-        # one only reaches A2. A1 was not examined now, so their row stands.
-        self.run_stage([person("A1", "Ivan Smirnov")], list(self.NAMESAKE_CATALOG))
-        self.prepared.write_models("persons", [
-            *self.prepared.read_models("persons", Person),
-            person("A2", "Ivan Petrov"),
-        ])
-        self.rerun_stage()
-        self.assertEqual(sorted(row["person"] for row in self.ambiguous()), ["A1", "A2"])
-
-    def test_an_unreadable_journal_line_does_not_stop_the_stage(self):
-        # A run interrupted mid-write leaves a truncated line; the journal is
-        # a review artefact and must not block naming.
-        self.run_stage([person("A1", "Ivan Smirnov")], list(self.NAMESAKE_CATALOG))
-        path = self.config.audit_dir / self.prepared.group / AMBIGUOUS_FILENAME
-        path.write_text('{"person": "A9"}\nобрезанная строка{\n', encoding="utf-8")
-        people = {p.id: p for p in self.prepared.read_models("persons", Person)}
-        people["A1"].processing.pop("russian_names")
-        self.prepared.write_models("persons", list(people.values()))
-        self.assertEqual(self.rerun_stage()["russian_names"], 1)
-        self.assertEqual(sorted(row["person"] for row in self.ambiguous()), ["A1", "A9"])
-
-    def test_rerunning_one_person_rewrites_only_their_row(self):
-        # A run that re-examines A1 replaces A1's row and leaves A2's alone.
-        self.run_stage([person("A1", "Ivan Smirnov"), person("A2", "Ivan Petrov")],
-                       list(self.NAMESAKE_CATALOG))
-        self.assertEqual(sorted(row["person"] for row in self.ambiguous()), ["A1", "A2"])
-        people = {p.id: p for p in self.prepared.read_models("persons", Person)}
-        people["A1"].processing.pop("russian_names")
-        self.prepared.write_models("persons", list(people.values()))
-        self.assertEqual(self.rerun_stage()["russian_names"], 1)
-        self.assertEqual(sorted(row["person"] for row in self.ambiguous()), ["A1", "A2"])
-
-    def test_a_cyrillic_full_name_fills_the_parts_without_the_catalog(self):
-        for spelling in ("Илья Алексеевич Суров", "Суров Илья Алексеевич",
-                         "Суров, Илья Алексеевич"):
-            result, people = self.run_stage([person("A1", spelling)], [])
-            self.assertEqual(result["names_from_own_spelling"], 1, spelling)
-            row = people["A1"]
-            self.assertEqual((row.surname_ru, row.first_name_ru, row.second_name_ru),
-                             ("Суров", "Илья", "Алексеевич"), spelling)
-            self.assertEqual(row.name_ru, "Суров Илья Алексеевич", spelling)
-
-    def test_a_full_name_is_read_from_a_variant_too(self):
-        _, people = self.run_stage(
-            [person("A1", "A. V. Malyshev", variants=["Алексей Владимирович Малышев"])], [])
-        self.assertEqual(people["A1"].second_name_ru, "Владимирович")
-
-    def test_a_surname_ending_like_a_patronymic_invents_nothing(self):
-        # Томкович is a surname; reading "М. В. Томкович" as a full name
-        # would hand the person a patronymic nobody stated.
-        for spelling in ("М. В. Томкович", "Е.И. Олехнович", "Ольга Бабич"):
-            result, people = self.run_stage([person("A1", spelling)], [])
-            self.assertEqual(result["names_from_own_spelling"], 0, spelling)
-            self.assertIsNone(people["A1"].second_name_ru, spelling)
-
-    def test_the_catalog_wins_over_the_authors_own_spelling(self):
-        _, people = self.run_stage(
-            [person("A1", "Суров Илья Алексеевич")],
-            ["Суров Илья Алексеевич,Суров,Илья,Алексеевич,к.ф.-м.н."],
+    def test_a_patronymic_spelled_out_in_a_variant_is_kept(self):
+        result, people = self.run_stage(
+            [person("A1", "I. Ivanova", variants=["Irina Anatolievna Ivanova"])], [],
+            replies=[{
+                "matched_candidate": None,
+                "surname_ru": "Иванова", "first_name_ru": "Ирина", "second_name_ru": "Анатольевна",
+                "surname_en": "Ivanova", "first_name_en": "Irina", "second_name_en": "Anatolievna",
+                "reason": "spelled out in a known variant",
+            }],
         )
-        self.assertEqual(people["A1"].degree, "к.ф.-м.н.")
+        self.assertEqual(result["names_dropped_invented"], 0)
+        self.assertEqual(people["A1"].second_name_en, "Anatolievna")
 
-    def test_english_spellings_of_a_given_name_match(self):
-        for spelling, catalog_row in (
-            ("Alexander Ivanov", "Иванов Александр Петрович,Иванов,Александр,Петрович,"),
-            ("Victoria Ivanova", "Иванова Виктория Петровна,Иванова,Виктория,Петровна,"),
-            ("Peter Ivanov", "Иванов Пётр Петрович,Иванов,Пётр,Петрович,"),
-        ):
-            _, people = self.run_stage([person("A1", spelling)], [catalog_row])
-            self.assertEqual(people["A1"].name_ru, catalog_row.split(",")[0], spelling)
-
-    def test_ch_is_not_read_as_a_latin_c(self):
-        # The rule that turns "c" into к must leave the ч and щ digraphs alone.
-        _, people = self.run_stage(
-            [person("A1", "Ivan Chernyshov")],
-            ["Чернышов Иван Петрович,Чернышов,Иван,Петрович,"],
+    def test_a_patronymic_backed_by_a_matched_candidate_is_trusted(self):
+        result, people = self.run_stage(
+            [person("A1", "M.V. Dorogov")],
+            ["Дорогов Максим Владимирович,Дорогов,Максим,Владимирович,"],
+            replies=[{
+                "matched_candidate": 0,
+                "surname_ru": "Дорогов", "first_name_ru": "Максим", "second_name_ru": "Владимирович",
+                "surname_en": "Dorogov", "first_name_en": "Maxim", "second_name_en": "Vladimirovich",
+                "reason": "initials match the directory record",
+            }],
         )
-        self.assertEqual(people["A1"].surname_ru, "Чернышов")
+        self.assertEqual(result["names_dropped_invented"], 0)
+        self.assertEqual(people["A1"].second_name_en, "Vladimirovich")
 
-    def test_an_initial_that_folds_to_two_characters_still_matches(self):
-        # "Ю" folds to "iu", so a record keyed by the first character of the
-        # folded patronymic alone is unreachable from a "Yu." citation.
-        for spelling in ("Olga Yu. Orlova", "O.Yu. Orlova", "O. Y. Orlova"):
-            _, people = self.run_stage(
-                [person("A1", spelling)],
-                ["Орлова Ольга Юрьевна,Орлова,Ольга,Юрьевна,"],
-            )
-            self.assertEqual(people["A1"].name_ru, "Орлова Ольга Юрьевна", spelling)
-
-    def test_initials_written_surname_first_still_match(self):
-        # display_name_alternatives commonly spells a citation "Ivanov, O.
-        # P."; the initials forms were only keyed name-first ("O. P.
-        # Ivanov"), so the surname-first order fell through to transliteration.
-        for spelling in ("O. P. Ivanov", "Ivanov, O. P.", "Ivanov O. P."):
-            _, people = self.run_stage(
-                [person("A1", spelling)],
-                ["Иванов Олег Петрович,Иванов,Олег,Петрович,"],
-            )
-            self.assertEqual(people["A1"].name_ru, "Иванов Олег Петрович", spelling)
-
-    def test_a_cyrillic_word_between_latin_ones_is_left_alone(self):
-        # Deciding the alphabet over the whole name would rewrite the
-        # patronymic into a mixture and lose the record.
+    def test_a_bare_initial_second_name_survives_the_guard(self):
         _, people = self.run_stage(
-            [person("A1", "Maria Алексеевна Yaroslavova")],
-            ["Ярославова Мария Алексеевна,Ярославова,Мария,Алексеевна,"],
+            [person("A1", "A. I. Marchenko")], [],
+            replies=[{
+                "matched_candidate": None,
+                "surname_ru": "Марченко", "first_name_ru": "А", "second_name_ru": "И",
+                "surname_en": "Marchenko", "first_name_en": "A", "second_name_en": "I",
+                "reason": "only initials given",
+            }],
         )
-        self.assertEqual(people["A1"].name_ru, "Ярославова Мария Алексеевна")
+        self.assertEqual(people["A1"].second_name_ru, "И")
+        self.assertEqual(people["A1"].second_name_en, "I")
+
+    def test_a_broken_partial_transliteration_is_dropped(self):
+        # An unusual Latin character (Polish "ł") defeats the model mid-word
+        # instead of failing outright.
+        _, people = self.run_stage(
+            [person("A1", "Małgorzata Konopka")], [],
+            replies=[{
+                "matched_candidate": None,
+                "surname_ru": "Конопка", "first_name_ru": "Маłgorzata", "second_name_ru": None,
+                "surname_en": "Konopka", "first_name_en": "Małgorzata", "second_name_en": None,
+                "reason": "transcribed to Russian conventionally",
+            }],
+        )
+        row = people["A1"]
+        self.assertIsNone(row.first_name_ru)
+        self.assertEqual(row.surname_ru, "Конопка")  # fully Cyrillic, untouched
+        self.assertEqual(row.first_name_en, "Małgorzata")  # English field is not guarded
+
+    def test_a_bare_latin_initial_in_a_ru_field_is_transliterated_not_dropped(self):
+        _, people = self.run_stage(
+            [person("A1", "I. А. Zelinskaya")], [],
+            replies=[{
+                "matched_candidate": None,
+                "surname_ru": "Зелинская", "first_name_ru": "I", "second_name_ru": "A",
+                "surname_en": "Zelinskaya", "first_name_en": "I", "second_name_en": "A",
+                "reason": "only initials given",
+            }],
+        )
+        self.assertEqual(people["A1"].first_name_ru, "И")
+        self.assertEqual(people["A1"].second_name_ru, "А")
+
+    def test_second_run_is_a_no_op(self):
+        self.run_stage(
+            [person("A1", "Pavel Zhukov")], [],
+            replies=[{"matched_candidate": None, "surname_ru": "Жуков", "first_name_ru": "Павел",
+                      "second_name_ru": None, "surname_en": "Zhukov", "first_name_en": "Pavel",
+                      "second_name_en": None, "reason": ""}],
+        )
+        with patch("pauk.pipeline.stages.russian_names.OpenRouterClient",
+                   _FakeOpenRouterClient.queued([])):
+            again = RussianNamesStage(self.prepared, self.raw, self.config).run()
+        self.assertEqual(again["russian_names"], 0)
 
 
 class ToCyrillicTest(unittest.TestCase):
@@ -448,7 +318,7 @@ class StaffIdentityTest(unittest.TestCase):
     @staticmethod
     def catalog(*rows):
         return RussianNamesCatalog([
-            dict(zip(("name_ru", "surname", "name", "patronymic", "degree"), row))
+            dict(zip(("name_ru", "surname", "name", "patronymic", "degree"), row, strict=True))
             for row in rows
         ])
 

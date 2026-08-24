@@ -80,7 +80,7 @@ CHECKS = [
         examples=f"""MATCH (p:Person:Itmo) WHERE NOT (p)-[:BELONGS_TO]->()
             OPTIONAL MATCH (p)-[:AUTHORED]->(pub:Publication)
             WITH p, count(pub) AS pubs, max(pub.year) AS last_year
-            RETURN p.id AS id, p.name_en AS `Имя (лат.)`, {_FIO} AS `ФИО`,
+            RETURN p.id AS id, p.name_raw AS `Имя (лат.)`, {_FIO} AS `ФИО`,
                    pubs AS `Публикаций`, last_year AS `Последняя публикация`
             ORDER BY pubs DESC LIMIT $lim""",
     ),
@@ -152,7 +152,7 @@ CHECKS = [
             WHERE p.name_ru IS NULL OR trim(p.name_ru) = ''
             OPTIONAL MATCH (p)-[:AUTHORED]->(pub:Publication)
             WITH p, count(pub) AS pubs
-            RETURN p.id AS id, p.name_en AS `Имя (лат.)`,
+            RETURN p.id AS id, p.name_raw AS `Имя (лат.)`,
                    coalesce(p.surname_ru,'—') AS `Фамилия (рус.)`, pubs AS `Публикаций`
             ORDER BY pubs DESC LIMIT $lim""",
     ),
@@ -174,7 +174,7 @@ CHECKS = [
             WHERE p.second_name_ru IS NULL OR trim(p.second_name_ru) = ''
             OPTIONAL MATCH (p)-[:AUTHORED]->(pub:Publication)
             WITH p, count(pub) AS pubs
-            RETURN p.id AS id, p.name_en AS `Имя (лат.)`,
+            RETURN p.id AS id, p.name_raw AS `Имя (лат.)`,
                    coalesce(p.name_ru, '—') AS `ФИО (рус.)`,
                    coalesce(p.surname_ru,'—') AS `Фамилия`, pubs AS `Публикаций`
             ORDER BY pubs DESC LIMIT $lim""",
@@ -231,7 +231,7 @@ CHECKS = [
         hint_en="Such an author can't be classified as ITMO or external.",
         examples="""MATCH (p:Person)-[a:AUTHORED]->(pub:Publication)
             WHERE a.affiliation IS NULL OR a.affiliation = ''
-            RETURN p.id AS id, p.name_en AS `Автор`, pub.id AS `id публикации`,
+            RETURN p.id AS id, p.name_raw AS `Автор`, pub.id AS `id публикации`,
                    pub.title AS `Публикация`, pub.year AS `Год`
             ORDER BY pub.year DESC LIMIT $lim""",
     ),
@@ -269,11 +269,11 @@ CHECKS = [
         hint_en='Transliteration glitch: "Вершиinin", "Полевaя", "Аkhмеров".',
         examples=f"""MATCH (p:Person:Itmo) WHERE any(v IN {RU_NAME_FIELDS}
               WHERE v IS NOT NULL AND v =~ '.*({CYR}{LAT}|{LAT}{CYR}).*')
-            RETURN p.id AS id, {_FIO} AS `ФИО (рус.)`, p.name_en AS `Имя (лат.)`,
+            RETURN p.id AS id, {_FIO} AS `ФИО (рус.)`, p.name_raw AS `Имя (лат.)`,
                    coalesce(p.surname_ru,'') AS `Фамилия`,
                    coalesce(p.first_name_ru,'') AS `Имя`,
                    coalesce(p.second_name_ru,'') AS `Отчество`
-            ORDER BY p.name_en LIMIT $lim""",
+            ORDER BY p.name_raw LIMIT $lim""",
     ),
     Check(
         id="name_accent",
@@ -290,8 +290,8 @@ CHECKS = [
         hint_en='"Смоля́нская" — searching for this name won\'t find the person.',
         examples=f"""MATCH (p:Person:Itmo) WHERE any(v IN {RU_NAME_FIELDS}
               WHERE v IS NOT NULL AND v =~ '.*[\\\\u0300-\\\\u036F].*')
-            RETURN p.id AS id, {_FIO} AS `ФИО (рус.)`, p.name_en AS `Имя (лат.)`
-            ORDER BY p.name_en LIMIT $lim""",
+            RETURN p.id AS id, {_FIO} AS `ФИО (рус.)`, p.name_raw AS `Имя (лат.)`
+            ORDER BY p.name_raw LIMIT $lim""",
     ),
     Check(
         id="surname_one_letter",
@@ -308,8 +308,8 @@ CHECKS = [
         examples="""MATCH (p:Person:Itmo) WHERE p.surname_ru IS NOT NULL
               AND size(trim(replace(p.surname_ru, '.', ''))) = 1
             RETURN p.id AS id, p.surname_ru AS `Фамилия (рус.)`,
-                   p.name_en AS `Имя (лат.)`
-            ORDER BY p.name_en LIMIT $lim""",
+                   p.name_raw AS `Имя (лат.)`
+            ORDER BY p.name_raw LIMIT $lim""",
     ),
     Check(
         id="name_latin_only",
@@ -328,8 +328,8 @@ CHECKS = [
         examples=f"""MATCH (p:Person:Itmo)
               WHERE p.surname_ru IS NOT NULL AND trim(p.surname_ru) <> ''
                 AND p.surname_ru =~ '[{LAT}\\\\s.-]+'
-            RETURN p.id AS id, {_FIO} AS `ФИО (рус.)`, p.name_en AS `Имя (лат.)`
-            ORDER BY p.name_en LIMIT $lim""",
+            RETURN p.id AS id, {_FIO} AS `ФИО (рус.)`, p.name_raw AS `Имя (лат.)`
+            ORDER BY p.name_raw LIMIT $lim""",
     ),
     Check(
         id="first_name_initials",
@@ -349,7 +349,7 @@ CHECKS = [
               AND trim(p.first_name_ru) <> ''
               AND size(trim(replace(replace(p.first_name_ru,'.',''),' ',''))) <= 2
             RETURN p.id AS id, coalesce(p.surname_ru,'') AS `Фамилия`,
-                   p.first_name_ru AS `Имя`, p.name_en AS `Имя (лат.)`
+                   p.first_name_ru AS `Имя`, p.name_raw AS `Имя (лат.)`
             ORDER BY p.surname_ru LIMIT $lim""",
     ),
     # ---------------- duplicates ----------------
@@ -379,7 +379,7 @@ CHECKS = [
             WHERE size(ps) > 1
             RETURN fio AS `ФИО`, size(ps) AS `Записей`,
                    [x IN ps | x.id] AS `Идентификаторы`,
-                   [x IN ps | x.name_en] AS `Имена (лат.)`
+                   [x IN ps | x.name_raw] AS `Имена (лат.)`
             ORDER BY size(ps) DESC, fio LIMIT $lim""",
     ),
     Check(
@@ -406,17 +406,17 @@ CHECKS = [
                  collect(p) AS ps
             WHERE size(ps) > 1
             RETURN sig AS `Подпись на карте`, size(ps) AS `Человек`,
-                   [x IN ps | x.name_en] AS `Имена (лат.)`,
+                   [x IN ps | x.name_raw] AS `Имена (лат.)`,
                    [x IN ps | x.id] AS `Идентификаторы`
             ORDER BY size(ps) DESC, sig LIMIT $lim""",
     ),
     Check(
-        id="same_name_en_diff_id",
+        id="same_name_raw_diff_id",
         group="Дубликаты",
         title="Одинаковое имя латиницей у разных людей",
         title_en="Same Latin-script name for different people",
-        count="""MATCH (p:Person) WHERE p.name_en IS NOT NULL AND trim(p.name_en) <> ''
-            WITH toLower(trim(p.name_en)) AS k, collect(p.id) AS ids WHERE size(ids) > 1
+        count="""MATCH (p:Person) WHERE p.name_raw IS NOT NULL AND trim(p.name_raw) <> ''
+            WITH toLower(trim(p.name_raw)) AS k, collect(p.id) AS ids WHERE size(ids) > 1
             WITH [x IN ids | CASE WHEN x STARTS WITH 'itmo_' THEN substring(x,5)
                                   WHEN x STARTS WITH 'ext_'  THEN substring(x,4)
                                   ELSE x END] AS sfx
@@ -427,9 +427,9 @@ CHECKS = [
         fail=0.01,
         hint="Один автор заведён под разными идентификаторами.",
         hint_en="One author entered under different identifiers.",
-        examples="""MATCH (p:Person) WHERE p.name_en IS NOT NULL AND trim(p.name_en) <> ''
-            WITH toLower(trim(p.name_en)) AS k, collect(p.id) AS ids,
-                 collect(p.name_en)[0] AS nm
+        examples="""MATCH (p:Person) WHERE p.name_raw IS NOT NULL AND trim(p.name_raw) <> ''
+            WITH toLower(trim(p.name_raw)) AS k, collect(p.id) AS ids,
+                 collect(p.name_raw)[0] AS nm
             WHERE size(ids) > 1
             WITH k, ids, nm,
                  [x IN ids | CASE WHEN x STARTS WITH 'itmo_' THEN substring(x,5)
@@ -500,7 +500,7 @@ CHECKS = [
             OPTIONAL MATCH (i)-[:AUTHORED]->(pi:Publication)
             WITH i, e, count(pi) AS itmo_pubs
             OPTIONAL MATCH (e)-[:AUTHORED]->(pe:Publication)
-            RETURN i.name_en AS `Имя`, i.id AS `id (ИТМО)`, e.id AS `id (внешний)`,
+            RETURN i.name_raw AS `Имя`, i.id AS `id (ИТМО)`, e.id AS `id (внешний)`,
                    itmo_pubs AS `Публикаций от ИТМО`,
                    count(pe) AS `Публикаций вне ИТМО`
             ORDER BY count(pe) DESC LIMIT $lim""",
@@ -556,7 +556,7 @@ CHECKS = [
         hint_en="One person listed as an author of one paper twice.",
         examples="""MATCH (p:Person)-[a:AUTHORED]->(pub:Publication)
             WITH p, pub, count(a) AS c WHERE c > 1
-            RETURN p.name_en AS `Автор`, p.id AS `id автора`,
+            RETURN p.name_raw AS `Автор`, p.id AS `id автора`,
                    pub.title AS `Публикация`, pub.id AS `id публикации`, c AS `Связей`
             ORDER BY c DESC LIMIT $lim""",
     ),

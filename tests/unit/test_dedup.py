@@ -32,7 +32,7 @@ CATALOG_HEADER = "name_ru,surname,name,patronymic,degree\n"
 def person(pid, name, works, *, itmo=True, orcid=None, variants=(), merged=(),
            email=None, github=None, departments=()):
     return Person(
-        id=pid, openalex_id=pid, is_itmo=itmo, name_en=name, orcid=orcid,
+        id=pid, openalex_id=pid, is_itmo=itmo, name_raw=name, orcid=orcid,
         name_variants=list(variants), merged_ids=list(merged),
         email=email, github=github, department_ids=list(departments),
         authored=[{"publication_id": w, "position": 1} for w in works],

@@ -206,7 +206,7 @@ class RecordingNeo4jClient:
             rows.append({
                 "id": person_id,
                 **{field: props.get(field) for field in (
-                    "openalex_id", "name_en", "name_variants", "orcid", "email",
+                    "openalex_id", "name_raw", "name_variants", "orcid", "email",
                     "github", "openreview", "google_scholar", "merged_ids")},
                 "is_itmo": self.person_labels.get(person_id) == "Itmo",
                 "publication_ids": sorted({
@@ -234,7 +234,7 @@ class RecordingNeo4jClient:
         for publication_id, props in self.nodes.get("Publication", {}).items():
             authors = [
                 {"person_id": src_id,
-                 "name": self.nodes.get("Person", {}).get(src_id, {}).get("name_en"),
+                 "name": self.nodes.get("Person", {}).get(src_id, {}).get("name_raw"),
                  "position": edge_props.get("position")}
                 for (_src, rel_type, tgt_primary, src_id, tgt_id), edge_props in self.edges.items()
                 if rel_type == "AUTHORED" and tgt_primary == "Publication" and tgt_id == publication_id

@@ -12,7 +12,7 @@ from pauk.storage import PreparedStore, RawStore
 
 
 def person(pid, name, *, github=None, itmo=True):
-    return Person(id=pid, openalex_id=pid, is_itmo=itmo, name_en=name, github=github)
+    return Person(id=pid, openalex_id=pid, is_itmo=itmo, name_raw=name, github=github)
 
 
 def profile(login, *, account_type="user", name=None, bio=None, location=None):

@@ -4,7 +4,7 @@ from pauk.graph.extract import NODE_REGISTRY, extract_node, extract_relationship
 
 PERSON_ROW = {
     "id": "p1",
-    "name_en": "Ivan Petrov",
+    "name_raw": "Ivan Petrov",
     "email": "ivan@itmo.ru",
     "department_ids": ["d1", "d2"],
     "authored": [
@@ -50,7 +50,7 @@ class ExtractNodeTest(unittest.TestCase):
         labels, (node_id, props) = extract_node(PERSON_ROW, NODE_REGISTRY["itmo_person"])
         self.assertEqual(labels, "Person:Itmo")
         self.assertEqual(node_id, "p1")
-        self.assertEqual(props.get("name_en"), "Ivan Petrov")
+        self.assertEqual(props.get("name_raw"), "Ivan Petrov")
         self.assertEqual(props.get("email"), "ivan@itmo.ru")
         self.assertEqual(props.get("orcid"), "0000-0000")
         for stray in (

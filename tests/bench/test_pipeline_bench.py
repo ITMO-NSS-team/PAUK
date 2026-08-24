@@ -286,7 +286,7 @@ def test_crossref_orcid_matching(bench):
 
 
 def test_openalex_author_payload_enriches(bench):
-    assert bench.persons["A5000000010"].name_en == "Recovered Name10"
+    assert bench.persons["A5000000010"].name_raw == "Recovered Name10"
     assert bench.persons["A5000000013"].orcid == "0000-0001-0000-0013"
     variants = bench.persons["A5000000011"].name_variants
     assert "Хосе Альварес-Мюллер" in variants and "A. Surname11" in variants
@@ -421,7 +421,7 @@ def test_authors_without_an_openalex_id_still_reach_the_graph(bench):
     by_orcid = bench.persons[UNIDENTIFIED_BY_ORCID]
     assert by_orcid.orcid == UNIDENTIFIED_ORCID
     assert by_orcid.openalex_id is None and by_orcid.is_itmo
-    by_name = next(p for p in authors if p.name_en == UNIDENTIFIED_BY_NAME)
+    by_name = next(p for p in authors if p.name_raw == UNIDENTIFIED_BY_NAME)
     assert by_name.id.startswith("name_") and by_name.openalex_id is None
     assert {(p.id, UNIDENTIFIED_WORK) for p in authors} <= bench.graph.edge_pairs("AUTHORED")
 
@@ -450,7 +450,7 @@ def test_consortium_paper_finds_the_itmo_participant_beyond_the_cut(bench):
 
 
 def test_an_organization_in_an_author_slot_never_becomes_a_person(bench):
-    assert all(p.name_en != CONSORTIUM_ORG_NAME for p in bench.persons.values())
+    assert all(p.name_raw != CONSORTIUM_ORG_NAME for p in bench.persons.values())
     assert "A5900000999" not in bench.persons
 
 

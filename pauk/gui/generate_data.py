@@ -61,14 +61,14 @@ def split_full_name(full_name) -> tuple[str, str, str]:
 
 
 def author_label(
-    surname_ru, first_name_ru, second_name_ru, name_en, name_ru=None, public: bool = False
+    surname_ru, first_name_ru, second_name_ru, name_raw, name_ru=None, public: bool = False
 ) -> str:
     """One shape for every author: surname first, then initials"""
     surname, given, patronymic = surname_ru or "", first_name_ru or "", second_name_ru or ""
     if not surname:
-        surname, given, patronymic = split_full_name(name_ru or name_en)
+        surname, given, patronymic = split_full_name(name_ru or name_raw)
     if not surname:
-        return name_ru or name_en or ""
+        return name_ru or name_raw or ""
     if public and len(surname) > 3:
         surname = surname[:3] + ".."
     if given and patronymic:
@@ -89,12 +89,12 @@ def author_variants(row) -> list[str]:
     into the collapsed list.
     """
     shown = {
-        (row.get("name_en") or "").strip().casefold(),
+        (row.get("name_raw") or "").strip().casefold(),
         author_label(
             row["surname_ru"],
             row["first_name_ru"],
             row["second_name_ru"],
-            row["name_en"],
+            row["name_raw"],
             row.get("name_ru"),
         ).casefold(),
     }
@@ -342,7 +342,7 @@ def build_graph_data(db, seed: int, public: bool = False):
                 row["surname_ru"],
                 row["first_name_ru"],
                 row["second_name_ru"],
-                row["name_en"],
+                row["name_raw"],
                 row.get("name_ru"),
                 public=public,
             ),
@@ -352,7 +352,7 @@ def build_graph_data(db, seed: int, public: bool = False):
             "gy": y,
         }
         if not public:
-            author["name_en"] = row["name_en"] or ""
+            author["name_raw"] = row["name_raw"] or ""
             author["name_ru"] = row.get("name_ru") or ""
             author["name_variants"] = author_variants(row)
             author["degree"] = row["degree"] or ""
@@ -494,7 +494,7 @@ def main():
     parser.add_argument(
         "--public",
         action="store_true",
-        help="drop personal fields (name_en, name_ru, name_variants, degree, "
+        help="drop personal fields (name_raw, name_ru, name_variants, degree, "
         "github, orcid) from every author — for a build that leaves the "
         "corporate network, e.g. the GitHub Pages deploy",
     )

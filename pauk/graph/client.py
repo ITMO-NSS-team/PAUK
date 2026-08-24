@@ -388,7 +388,7 @@ class Neo4jClient:
             MATCH (p:Person)
             OPTIONAL MATCH (p)-[:AUTHORED]->(w:Publication)
             OPTIONAL MATCH (p)-[:BELONGS_TO]->(d:Department)
-            RETURN p.id AS id, p.openalex_id AS openalex_id, p.name_en AS name_en,
+            RETURN p.id AS id, p.openalex_id AS openalex_id, p.name_raw AS name_raw,
                    p.name_variants AS name_variants, p.orcid AS orcid, p.email AS email,
                    p.github AS github, p.openreview AS openreview,
                    p.google_scholar AS google_scholar, p.merged_ids AS merged_ids,
@@ -418,7 +418,7 @@ class Neo4jClient:
                    p.versions AS versions,
                    p.merged_ids AS merged_ids, count(a) AS author_count,
                    collect(CASE WHEN a IS NULL THEN NULL ELSE
-                       {person_id: a.id, name: a.name_en, position: authored.position}
+                       {person_id: a.id, name: a.name_raw, position: authored.position}
                    END) AS authors
         """
         with self.driver.session() as session:
