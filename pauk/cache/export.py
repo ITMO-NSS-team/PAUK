@@ -69,8 +69,10 @@ def load_db(driver) -> dict[str, list]:
         "MATCH (p:Person:Itmo) "
         "RETURN p.id AS id, p.first_name_ru AS first_name_ru, "
         "       p.second_name_ru AS second_name_ru, p.surname_ru AS surname_ru, "
+        "       p.first_name_en AS first_name_en, p.second_name_en AS second_name_en, "
+        "       p.surname_en AS surname_en, "
         "       p.name_ru AS name_ru, p.name_variants AS name_variants, "
-        "       p.name_raw AS name_raw, p.degree AS degree, p.github AS github, "
+        "       p.degree AS degree, p.github AS github, "
         "       p.orcid AS orcid",
     )
 

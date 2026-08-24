@@ -31,8 +31,6 @@ class Person(BaseModel):
     is_itmo: bool
     name_raw: str | None = None
     name_variants: list[str] = Field(default_factory=list)
-    email: str | None = None
-    emails: list[str] = Field(default_factory=list)
     first_name_ru: str | None = None
     second_name_ru: str | None = None
     surname_ru: str | None = None
@@ -40,6 +38,8 @@ class Person(BaseModel):
     second_name_en: str | None = None
     surname_en: str | None = None
     degree: str | None = None
+    email: str | None = None
+    emails: list[str] = Field(default_factory=list)
     github: str | None = None
     google_scholar: str | None = None
     openreview: str | None = None
@@ -51,7 +51,7 @@ class Person(BaseModel):
     contributed_to: list[Contribution] = Field(default_factory=list)
     processing: dict[str, ProcessingState] = Field(default_factory=dict, alias="_processing")
 
-    # stub
+    # TODO: check this stubs
     scopus_id: str | None = None
     researcher_id: str | None = None
     dblp_id: str | None = None

@@ -44,60 +44,64 @@ from .layout import (
 logger = logging.getLogger(__name__)
 
 
-# TODO: delete function, add new methond
-def split_full_name(full_name) -> tuple[str, str, str]:
-    """Split a written-out name into (surname, given, patronymic)"""
-    text = " ".join((full_name or "").split())
-    if not text:
-        return "", "", ""
-    if "," in text:
-        surname, _, rest = text.partition(",")
-        parts = rest.split()
-    else:
-        words = text.split()
-        surname, parts = words[-1], words[:-1]
-    parts = [part for part in parts if part[:1].isupper()]
-    return surname.strip(), (parts[0] if parts else ""), (parts[1] if len(parts) > 1 else "")
+def _initial(value: str) -> str:
+    """First letter, capitalized, with a trailing period."""
+    return f"{value[0].upper()}."
 
 
-def author_label(
-    surname_ru, first_name_ru, second_name_ru, name_raw, name_ru=None, public: bool = False
-) -> str:
-    """One shape for every author: surname first, then initials"""
-    surname, given, patronymic = surname_ru or "", first_name_ru or "", second_name_ru or ""
+def _fmt_part(value: str, *, force_initial: bool) -> str:
+    """A given-name-or-patronymic part, formatted for a label.
+
+    Forced down to an initial for public display or whenever the part sits
+    beside another part (surname_ru/first_name_ru/second_name_ru all
+    filled). Left as the author actually has it otherwise — except a part
+    that already IS a bare initial (one letter, with or without a trailing
+    period LLM/catalog data occasionally carries) always gets its period:
+    that's not truncation, it's just correct punctuation for what the data
+    already says.
+    """
+    stripped = value.rstrip(".")
+    if force_initial or len(stripped) == 1:
+        return _initial(stripped)
+    return value
+
+
+def author_label(surname: str | None, first: str | None, second: str | None,
+                 *, public: bool = False) -> str:
+    """One shape for every author: surname first, then initials.
+
+    Takes one language's three name parts at a time - build one label per
+    language from surname_ru/first_name_ru/second_name_ru and
+    surname_en/first_name_en/second_name_en separately. No fallback to a
+    combined raw string here: guessing surname/given/patronymic out of
+    word order is exactly the failure mode russian_names.py's LLM step
+    replaced, and doing it again here for display would reintroduce it.
+    An empty surname returns "" - the caller decides the fallback (e.g. the
+    other language's label, or the free-text name_ru).
+    """
+    surname, first, second = surname or "", first or "", second or ""
     if not surname:
-        surname, given, patronymic = split_full_name(name_ru or name_raw)
-    if not surname:
-        return name_ru or name_raw or ""
+        return ""
     if public and len(surname) > 3:
         surname = surname[:3] + ".."
-    if given and patronymic:
-        return f"{surname} {given[0].upper()}.{patronymic[0].upper()}."
-    if patronymic:  # only the patronymic survived — treat it as the initial
-        return f"{surname} {patronymic[0].upper()}."
-    if given:
-        return f"{surname} {given[0].upper()}." if public else f"{surname} {given}"
+    if first and second:
+        return f"{surname} {_fmt_part(first, force_initial=True)}{_fmt_part(second, force_initial=True)}"
+    if second:  # only the patronymic survived — treat it as the initial
+        return f"{surname} {_fmt_part(second, force_initial=True)}"
+    if first:
+        return f"{surname} {_fmt_part(first, force_initial=public)}"
     return surname
 
 
-def author_variants(row) -> list[str]:
+def author_variants(row, label_ru: str, label_en: str) -> list[str]:
     """Other spellings of this person's name, without the ones on show.
 
-    The card already displays the label, the romanized name and the full
-    Russian name; everything else OpenAlex knows about this author (and
-    the full Russian name when the label is only surname + initials) goes
-    into the collapsed list.
+    The card already displays the RU and EN labels and the full Russian
+    name; everything else OpenAlex knows about this author (and the full
+    Russian name when the label is only surname + initials) goes into the
+    collapsed list.
     """
-    shown = {
-        (row.get("name_raw") or "").strip().casefold(),
-        author_label(
-            row["surname_ru"],
-            row["first_name_ru"],
-            row["second_name_ru"],
-            row["name_raw"],
-            row.get("name_ru"),
-        ).casefold(),
-    }
+    shown = {label_ru.casefold(), label_en.casefold()}
     candidates = [row.get("name_ru") or "", *(row.get("name_variants") or [])]
     variants = []
     for value in candidates:
@@ -334,27 +338,26 @@ def build_graph_data(db, seed: int, public: bool = False):
     for row in db["persons"]:
         pid_ = row["id"]
         x, y = pos_authors[pid_]
+        label_ru = author_label(
+            row["surname_ru"], row["first_name_ru"], row["second_name_ru"], public=public,
+        ) or row.get("name_ru") or ""
+        label_en = author_label(
+            row["surname_en"], row["first_name_en"], row["second_name_en"], public=public,
+        ) or label_ru
         author = {
             "key": pid_,
             "kind": "author",
             "dept": g(author_dept[pid_]),
-            "label": author_label(
-                row["surname_ru"],
-                row["first_name_ru"],
-                row["second_name_ru"],
-                row["name_raw"],
-                row.get("name_ru"),
-                public=public,
-            ),
+            "label": label_ru,
+            "label_en": label_en,
             "pubs_count": pubs_count[pid_],
             "rank": rank_a[pid_],
             "gx": x,
             "gy": y,
         }
         if not public:
-            author["name_raw"] = row["name_raw"] or ""
             author["name_ru"] = row.get("name_ru") or ""
-            author["name_variants"] = author_variants(row)
+            author["name_variants"] = author_variants(row, label_ru, label_en)
             author["degree"] = row["degree"] or ""
             author["github"] = row["github"] or ""
             author["orcid"] = row.get("orcid") or ""
@@ -494,7 +497,7 @@ def main():
     parser.add_argument(
         "--public",
         action="store_true",
-        help="drop personal fields (name_raw, name_ru, name_variants, degree, "
+        help="drop personal fields (name_ru, name_variants, degree, "
         "github, orcid) from every author — for a build that leaves the "
         "corporate network, e.g. the GitHub Pages deploy",
     )

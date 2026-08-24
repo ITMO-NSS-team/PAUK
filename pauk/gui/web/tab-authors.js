@@ -83,7 +83,7 @@ function showAuthorProfile(key) {
   let html = `
     <span class="card-kind">${t("author.kind")}</span>
     <h2 class="card-title">${esc(authorDisplayName(n))}</h2>
-    ${LANG !== "en" && n.name_raw && n.name_raw !== n.label ? `<div class="card-subtitle">${esc(n.name_raw)}</div>` : ""}
+    ${LANG !== "en" && n.label_en && n.label_en !== n.label ? `<div class="card-subtitle">${esc(n.label_en)}</div>` : ""}
     ${variants.length ? `<details class="name-variants">
       <summary>${t("author.otherSpellings")}</summary>
       <ul>${variants.map(v => `<li>${esc(v)}</li>`).join("")}</ul>
