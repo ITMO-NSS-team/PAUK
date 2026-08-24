@@ -91,15 +91,15 @@ class MockOrcidClient:
 class MockOpenRouterClient:
     """Fakes russian_names.py's LLM name-split call for the bench run.
 
-    Model output *quality* was already validated against the real API (see
-    scripts/compare_name_models.py) - this mock isn't re-testing that, it's
-    testing that the pipeline wires the LLM step in and consumes its reply
-    correctly, without a real network call. It answers the way the real
-    prompt asks a model to: copy a catalog candidate verbatim when the
-    folded surname matches (reusing RussianNamesCatalog.match(), the same
-    trusted logic the deterministic degree lookup in russian_names.py
-    itself uses), otherwise a plain transliteration (reusing to_cyrillic) -
-    "reasonable" here means the same thing it means there.
+    Model output *quality* was already validated separately against the real
+    API - this mock isn't re-testing that, it's testing that the pipeline
+    wires the LLM step in and consumes its reply correctly, without a real
+    network call. It answers the way the real prompt asks a model to: copy a
+    catalog candidate verbatim when the folded surname matches (reusing
+    RussianNamesCatalog.match(), the same trusted logic the deterministic
+    degree lookup in russian_names.py itself uses), otherwise a plain
+    transliteration (reusing to_cyrillic) - "reasonable" here means the same
+    thing it means there.
     """
 
     _RAW_NAME_RE = re.compile(r"mixed:\n {2}(.+)")

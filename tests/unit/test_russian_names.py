@@ -132,7 +132,7 @@ class RussianNamesStageTest(unittest.TestCase):
                 "reason": "standard expansion of G.",
             }],
         )
-        self.assertEqual(result["names_dropped_invented"], 1)
+        self.assertEqual(result["names_second_name_corrected"], 1)
         row = people["A1"]
         self.assertIsNone(row.second_name_ru)
         self.assertIsNone(row.second_name_en)
@@ -148,7 +148,7 @@ class RussianNamesStageTest(unittest.TestCase):
                 "reason": "spelled out in a known variant",
             }],
         )
-        self.assertEqual(result["names_dropped_invented"], 0)
+        self.assertEqual(result["names_second_name_corrected"], 0)
         self.assertEqual(people["A1"].second_name_en, "Anatolievna")
 
     def test_a_patronymic_backed_by_a_matched_candidate_is_trusted(self):
@@ -162,7 +162,7 @@ class RussianNamesStageTest(unittest.TestCase):
                 "reason": "initials match the directory record",
             }],
         )
-        self.assertEqual(result["names_dropped_invented"], 0)
+        self.assertEqual(result["names_second_name_corrected"], 0)
         self.assertEqual(people["A1"].second_name_en, "Vladimirovich")
 
     def test_a_bare_initial_second_name_survives_the_guard(self):
@@ -177,6 +177,53 @@ class RussianNamesStageTest(unittest.TestCase):
         )
         self.assertEqual(people["A1"].second_name_ru, "И")
         self.assertEqual(people["A1"].second_name_en, "I")
+
+    def test_a_second_given_name_is_folded_back_out_of_the_patronymic_slot(self):
+        # Spanish naming has no patronymic - "Luis" is a second given name,
+        # not one. Found for real: qwen put "Kumar" (Ripon Kumar Adhikary)
+        # and "Opoku" (Bright Opoku Ahinkorah) here across live test runs.
+        _, people = self.run_stage(
+            [person("A1", "Pedro Luis Gonzalez")], [],
+            replies=[{
+                "matched_candidate": None,
+                "surname_ru": "Гонзалез", "first_name_ru": "Педро", "second_name_ru": "Луис",
+                "surname_en": "Gonzalez", "first_name_en": "Pedro", "second_name_en": "Luis",
+                "reason": "extracted three name-position words",
+            }],
+        )
+        row = people["A1"]
+        self.assertEqual((row.first_name_ru, row.second_name_ru), ("Педро Луис", None))
+        self.assertEqual((row.first_name_en, row.second_name_en), ("Pedro Luis", None))
+
+    def test_a_second_name_that_carries_a_period_is_still_recognised_as_an_initial(self):
+        # The prompt asks for a bare letter, no period - real replies don't
+        # always comply (found across live runs: "N.", "E.", "I."). Without
+        # tolerating the period, this guard would misfire on a legitimate
+        # patronymic initial.
+        _, people = self.run_stage(
+            [person("A1", "Mikhailov N.N.")], [],
+            replies=[{
+                "matched_candidate": None,
+                "surname_ru": "Михайлов", "first_name_ru": "Н.", "second_name_ru": "Н.",
+                "surname_en": "Mikhailov", "first_name_en": "N.", "second_name_en": "N.",
+                "reason": "only initials given",
+            }],
+        )
+        self.assertEqual(people["A1"].second_name_ru, "Н.")
+        self.assertEqual(people["A1"].second_name_en, "N.")
+
+    def test_a_real_patronymic_survives_the_shape_guard(self):
+        _, people = self.run_stage(
+            [person("A1", "Ivan Petrovich Sidorov")], [],
+            replies=[{
+                "matched_candidate": None,
+                "surname_ru": "Сидоров", "first_name_ru": "Иван", "second_name_ru": "Петрович",
+                "surname_en": "Sidorov", "first_name_en": "Ivan", "second_name_en": "Petrovich",
+                "reason": "spelled out in full",
+            }],
+        )
+        self.assertEqual(people["A1"].second_name_ru, "Петрович")
+        self.assertEqual(people["A1"].second_name_en, "Petrovich")
 
     def test_a_broken_partial_transliteration_is_dropped(self):
         # An unusual Latin character (Polish "ł") defeats the model mid-word

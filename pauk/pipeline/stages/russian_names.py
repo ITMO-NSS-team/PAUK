@@ -20,15 +20,19 @@ in both Russian and English:
    catalog row sharing a folded surname token — a broader net than the
    strict catalog match above, so the model can disambiguate namesakes the
    way a human reviewer would (rule 1 of NAME_SPLIT_PROMPT: prefer a
-   plausible candidate, verbatim). The reply is validated by two
+   plausible candidate, verbatim). The reply is validated by three
    deterministic guards before it is trusted: _guard_invented_second_name
    drops a patronymic invented from a bare initial (models in this class
    do this readily despite the prompt's explicit ban — the same risk this
-   module refused to take when the logic was hand-written), and
-   _guard_broken_transliteration drops or fixes a *_ru field that isn't
-   actually in Cyrillic. A failed LLM call falls back to reverse
-   transliteration ("Pavel Ivanov" -> "Павел Иванов", to_cyrillic) for
-   name_ru only, and is retried on the next pipeline run.
+   module refused to take when the logic was hand-written);
+   _guard_misclassified_second_name folds a second_name back into
+   first_name when it doesn't morphologically look like a patronymic and
+   nothing confirms it (naming traditions with more than one given name and
+   no patronymic at all — Spanish "Pedro Luis González" — otherwise get a
+   given name mislabeled as one); and _guard_broken_transliteration drops
+   or fixes a *_ru field that isn't actually in Cyrillic. A failed LLM call
+   falls back to reverse transliteration ("Pavel Ivanov" -> "Павел Иванов",
+   to_cyrillic) for name_ru only, and is retried on the next pipeline run.
 
 A catalog match is also an identity statement, not just a name: one row
 is one employee, so two person records that resolve to the same row are
@@ -70,33 +74,73 @@ def catalog_path(config) -> Path:
 # --- folded transliteration space for matching --------------------------------
 
 _CYR_TO_LAT = {
-    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
-    "ж": "zh", "з": "z", "и": "i", "й": "i", "к": "k", "л": "l", "м": "m",
-    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
-    "ф": "f", "х": "h", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "sch",
-    "ъ": "", "ы": "i", "ь": "", "э": "e", "ю": "iu", "я": "ia",
+    "а": "a",
+    "б": "b",
+    "в": "v",
+    "г": "g",
+    "д": "d",
+    "е": "e",
+    "ё": "e",
+    "ж": "zh",
+    "з": "z",
+    "и": "i",
+    "й": "i",
+    "к": "k",
+    "л": "l",
+    "м": "m",
+    "н": "n",
+    "о": "o",
+    "п": "p",
+    "р": "r",
+    "с": "s",
+    "т": "t",
+    "у": "u",
+    "ф": "f",
+    "х": "h",
+    "ц": "ts",
+    "ч": "ch",
+    "ш": "sh",
+    "щ": "sch",
+    "ъ": "",
+    "ы": "i",
+    "ь": "",
+    "э": "e",
+    "ю": "iu",
+    "я": "ia",
 }
-
-# Romanization variants collapse onto one key: Alexey/Aleksei, Yuri/Yury,
-# Mikhail/Mihail, Iuliia/Yulia/Julia all fold to the same string.
 _FOLD_RULES = (
-    ("shch", "sch"), ("kh", "h"), ("x", "ks"),
-    ("yo", "e"), ("yu", "iu"), ("ya", "ia"),
-    ("j", "i"), ("y", "i"),
-    # An author cited under the English form of their name carries a letter
-    # the Russian one does not: Alexander is Александр, Valentine is
-    # Валентин, Peter is Пётр.
-    ("nder", "ndr"), ("ine", "in"), ("eter", "etr"),
+    ("shch", "sch"),
+    ("kh", "h"),
+    ("x", "ks"),
+    ("yo", "e"),
+    ("yu", "iu"),
+    ("ya", "ia"),
+    ("j", "i"),
+    ("y", "i"),
+    ("nder", "ndr"),
+    ("ine", "in"),
+    ("eter", "etr"),
 )
 
-# Cyrillic letters that look exactly like a Latin one. OpenAlex names arrive
-# with a few of them mixed into an otherwise Latin spelling and the other way
-# round, and the two alphabets do not fold alike — Cyrillic "В" gives "v"
-# where Latin "B" gives "b" — so "V.A. Вogatyrev" never reaches its record.
 _HOMOGLYPHS = {
-    "А": "A", "В": "B", "С": "C", "Е": "E", "Н": "H", "К": "K", "М": "M",
-    "О": "O", "Р": "P", "Т": "T", "Х": "X",
-    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y",
+    "А": "A",
+    "В": "B",
+    "С": "C",
+    "Е": "E",
+    "Н": "H",
+    "К": "K",
+    "М": "M",
+    "О": "O",
+    "Р": "P",
+    "Т": "T",
+    "Х": "X",
+    "а": "a",
+    "е": "e",
+    "о": "o",
+    "р": "p",
+    "с": "c",
+    "х": "x",
+    "у": "y",
 }
 _HOMOGLYPHS_TO_CYRILLIC = {latin: cyrillic for cyrillic, latin in _HOMOGLYPHS.items()}
 
@@ -111,8 +155,11 @@ def _alphabet_vote(text: str) -> int:
     Homoglyphs cast no vote: they are the characters in question, and in
     "А. А. Маrmalyuk" they outnumber the letters that settle the spelling.
     """
-    latin = sum(1 for char in text if char.isalpha() and not _is_cyrillic(char)
-                and char not in _HOMOGLYPHS_TO_CYRILLIC)
+    latin = sum(
+        1
+        for char in text
+        if char.isalpha() and not _is_cyrillic(char) and char not in _HOMOGLYPHS_TO_CYRILLIC
+    )
     cyrillic = sum(1 for char in text if _is_cyrillic(char) and char not in _HOMOGLYPHS)
     return (latin > cyrillic) - (cyrillic > latin)
 
@@ -138,7 +185,9 @@ def _fold(value: str) -> str:
     # Punctuation separates name parts rather than belonging to them: OpenAlex
     # serves "Ivanov, Ilya" beside "Ilya Ivanov", and a comma left in the
     # folded key keeps the two apart.
-    folded = " ".join(_unmix_alphabets(value).replace(".", " ").replace(",", " ").split()).casefold()
+    folded = " ".join(
+        _unmix_alphabets(value).replace(".", " ").replace(",", " ").split()
+    ).casefold()
     folded = "".join(_CYR_TO_LAT.get(ch, ch) for ch in folded)
     for src, dst in _FOLD_RULES:
         folded = folded.replace(src, dst)
@@ -151,8 +200,10 @@ def _fold(value: str) -> str:
 # --- reverse transliteration (romanized Russian -> Cyrillic) -------------------
 
 _REVERSE_RULES: tuple[tuple[str, str], ...] = (
-    ("shch", "щ"), ("sch", "щ"),
-    ("yo", "ё"), ("jo", "ё"),
+    ("shch", "щ"),
+    ("sch", "щ"),
+    ("yo", "ё"),
+    ("jo", "ё"),
     # A y/i closing a diphthong before a consonant is й (Zaytsev, Voytenko,
     # Seyfullin). Before a vowel it is not (Nikolayev stays Николаев), and
     # plain "ai" only closes one before "ts" — otherwise Mikhail would turn
@@ -160,22 +211,37 @@ _REVERSE_RULES: tuple[tuple[str, str], ...] = (
     (r"ay(?=[bcdfghjklmnpqrstvwxz])", "ай"),
     (r"ey(?=[bcdfghjklmnpqrstvwxz])", "ей"),
     (r"oy(?=[bcdfghjklmnpqrstvwxz])", "ой"),
-    (r"ai(?=ts)", "ай"), (r"ei(?=ts)", "ей"),
-    ("zh", "ж"), ("kh", "х"), ("ts", "ц"), ("ch", "ч"), ("sh", "ш"),
+    (r"ai(?=ts)", "ай"),
+    (r"ei(?=ts)", "ей"),
+    ("zh", "ж"),
+    ("kh", "х"),
+    ("ts", "ц"),
+    ("ch", "ч"),
+    ("sh", "ш"),
     # ya spells ья only after the consonants where a soft sign dominates
     # (Ulyanov, Lukyanov, Kasyanov, Tretyakov, Dyakonov). After the others
     # it is plain я — Kudryavtsev, Ryabov, Myasnikov — and yu after any
     # consonant is plain ю (Kolyubin, Klyuev).
     (r"(?<=[dklnstz])ya", "ья"),
-    ("yu", "ю"), ("ju", "ю"), ("ya", "я"), ("ja", "я"),
+    ("yu", "ю"),
+    ("ju", "ю"),
+    ("ya", "я"),
+    ("ja", "я"),
     (r"^iu", "ю"),
-    (r"iy$", "ий"), (r"ij$", "ий"), (r"yy$", "ый"), (r"yj$", "ый"),
+    (r"iy$", "ий"),
+    (r"ij$", "ий"),
+    (r"yy$", "ый"),
+    (r"yj$", "ый"),
     # A closing "yi" is the ый ending (Rudyi, Bezrodnyi); inside a word the
     # same pair is a soft sign (Ilyina).
-    (r"yi$", "ый"), (r"(?<=[bcdfghklmnpqrstvwxz])yi", "ьи"),
-    (r"iia$", "ия"), (r"ii$", "ий"),
-    (r"aia$", "ая"), (r"ia$", "ия"),
-    (r"ei$", "ей"), (r"ai$", "ай"),
+    (r"yi$", "ый"),
+    (r"(?<=[bcdfghklmnpqrstvwxz])yi", "ьи"),
+    (r"iia$", "ия"),
+    (r"ii$", "ий"),
+    (r"aia$", "ая"),
+    (r"ia$", "ия"),
+    (r"ei$", "ей"),
+    (r"ai$", "ай"),
     (r"(?<=[bcdfghklmnpqrstvwxz])y$", "ий"),
     # Two-char lookbehind keeps two-letter names ("Li") out of this rule.
     (r"(?<=\w[bcdfghklmnpqrstvwxz])i$", "ий"),
@@ -185,7 +251,8 @@ _REVERSE_RULES: tuple[tuple[str, str], ...] = (
     (r"(?<=[bcdfghklmnpqrstvwxz])y(?=e)", "ь"),
     (r"(?<=[aeiou])y(?=[aeiou])", ""),
     # Leading "ye" is е (Yevgeny, Yelena); leading ya/yu are already gone.
-    (r"^ye", "е"), (r"y$", "й"),
+    (r"^ye", "е"),
+    (r"y$", "й"),
     ("x", "кс"),
 )
 
@@ -220,10 +287,33 @@ _GIVEN_NAMES = {
 }
 
 _SINGLE = {
-    "a": "а", "b": "б", "c": "к", "d": "д", "e": "е", "f": "ф", "g": "г",
-    "h": "х", "i": "и", "j": "й", "k": "к", "l": "л", "m": "м", "n": "н",
-    "o": "о", "p": "п", "q": "к", "r": "р", "s": "с", "t": "т", "u": "у",
-    "v": "в", "w": "в", "y": "ы", "z": "з", "'": "ь", "’": "ь",
+    "a": "а",
+    "b": "б",
+    "c": "к",
+    "d": "д",
+    "e": "е",
+    "f": "ф",
+    "g": "г",
+    "h": "х",
+    "i": "и",
+    "j": "й",
+    "k": "к",
+    "l": "л",
+    "m": "м",
+    "n": "н",
+    "o": "о",
+    "p": "п",
+    "q": "к",
+    "r": "р",
+    "s": "с",
+    "t": "т",
+    "u": "у",
+    "v": "в",
+    "w": "в",
+    "y": "ы",
+    "z": "з",
+    "'": "ь",
+    "’": "ь",
 }
 
 
@@ -257,8 +347,7 @@ def _part_to_cyrillic(part: str) -> str:
 def to_cyrillic(name: str) -> str:
     """Reverse-transliterate a romanized Russian name, word by word."""
     return " ".join(
-        "-".join(_part_to_cyrillic(part) for part in word.split("-"))
-        for word in name.split()
+        "-".join(_part_to_cyrillic(part) for part in word.split("-")) for word in name.split()
     )
 
 
@@ -267,8 +356,7 @@ def to_cyrillic(name: str) -> str:
 
 def _record_id(row: dict) -> str:
     """Stable identity of one catalog record, in the folded name space."""
-    return "|".join(_fold(row.get(field) or "")
-                    for field in ("surname", "name", "patronymic"))
+    return "|".join(_fold(row.get(field) or "") for field in ("surname", "name", "patronymic"))
 
 
 class RussianNamesCatalog:
@@ -293,9 +381,7 @@ class RussianNamesCatalog:
         # it stands for every Duhanov whose given name starts with an A —
         # including the ones this catalog does not list at all — so folding
         # two person records on it would be the namesake bug all over again.
-        self.identity_by_key = {
-            key: row for key, row in self.by_key.items() if key in spelled_out
-        }
+        self.identity_by_key = {key: row for key, row in self.by_key.items() if key in spelled_out}
 
     @staticmethod
     def _fold_repeated(rows: list[dict]) -> list[dict]:
@@ -309,8 +395,11 @@ class RussianNamesCatalog:
         """
         merged: dict[tuple[str, str, str], dict] = {}
         for row in rows:
-            key = (_fold(row.get("surname") or ""), _fold(row.get("name") or ""),
-                   _fold(row.get("patronymic") or ""))
+            key = (
+                _fold(row.get("surname") or ""),
+                _fold(row.get("name") or ""),
+                _fold(row.get("patronymic") or ""),
+            )
             kept = merged.get(key)
             if kept is None:
                 merged[key] = dict(row)
@@ -326,7 +415,8 @@ class RussianNamesCatalog:
             raise FileNotFoundError(
                 f"russian names catalog not found: {path} — the file is kept out of "
                 "the repository (personal data); place it there or point "
-                "PAUK_RUSSIAN_NAMES_FILE at it")
+                "PAUK_RUSSIAN_NAMES_FILE at it"
+            )
         with path.open(encoding="utf-8-sig", newline="") as fh:
             rows = [row for row in csv.DictReader(fh) if (row.get("surname") or "").strip()]
         return cls(rows)
@@ -446,7 +536,6 @@ class RussianNamesCatalog:
         return None
 
 
-
 # --- LLM name split ---------------------------------------------------------------
 
 NAME_SPLIT_PROMPT = """You are extracting an author's name for an ITMO research publication,
@@ -489,10 +578,19 @@ STRICT rules - follow exactly, do not deviate:
    person's nationality: "Salvy Russo" still gets a surname_ru/first_name_ru (a natural
    Russian transcription, e.g. "Руссо"/"Сальви"). Use the conventional Russian transcription
    a Russian text would actually use, not a mechanical letter-by-letter mapping.
-5. second_name_ru/second_name_en (the patronymic) does not exist for everyone. Leave both
-   null rather than inventing one - this is the one pair of fields allowed to legitimately
-   stay empty, and rule 3's ban on invention applies to it most of all.
-6. English spelling should be the natural/common form a person would actually use, not a
+5. second_name (the patronymic) means specifically that: a name derived from the father's
+   given name, the way Russian and some other Slavic/Orthodox naming traditions use it. It is
+   NOT a generic "whatever word sits in the middle" slot. Many naming traditions have no
+   patronymic at all but do have more than one given name - Spanish "Pedro Luis González"
+   (two given names, one surname, no patronymic), Portuguese, many Western double given names.
+   When a name has multiple given-name-position words and none of them is recognizably a
+   patronymic, put all of them in first_name/first_name_ru as one space-separated string and
+   leave second_name_ru/second_name_en null - do not force a plausible-looking word into the
+   patronymic slot just because of its position.
+6. second_name_ru/second_name_en does not exist for everyone even among names that do use
+   patronymics. Leave both null rather than inventing one - this is the one pair of fields
+   allowed to legitimately stay empty, and rule 3's ban on invention applies to it most of all.
+7. English spelling should be the natural/common form a person would actually use, not a
    mechanical letter-by-letter conversion - unless a matched candidate gives you the Russian
    form to transliterate, in which case transliterate that.
 
@@ -529,11 +627,14 @@ def _name_split_candidates(catalog: RussianNamesCatalog, person: Person) -> list
 
 
 def _build_name_split_prompt(person: Person, candidates: list[dict]) -> str:
-    candidates_text = "\n".join(
-        f"{i}. surname={c.get('surname')!r} name={c.get('name')!r} "
-        f"patronymic={c.get('patronymic') or ''!r} name_ru={c.get('name_ru') or ''!r}"
-        for i, c in enumerate(candidates)
-    ) or "(no candidates with this surname in the directory)"
+    candidates_text = (
+        "\n".join(
+            f"{i}. surname={c.get('surname')!r} name={c.get('name')!r} "
+            f"patronymic={c.get('patronymic') or ''!r} name_ru={c.get('name_ru') or ''!r}"
+            for i, c in enumerate(candidates)
+        )
+        or "(no candidates with this surname in the directory)"
+    )
     # Cyrillic/Latin homoglyphs ("А" vs "A") otherwise reach the model mixed
     # within one name - the same _unmix_alphabets pass matching uses above,
     # so the model isn't asked to read "I. А. Zelinskaya" with a stray
@@ -547,9 +648,17 @@ def _build_name_split_prompt(person: Person, candidates: list[dict]) -> str:
 
 
 def _is_bare_initial(value: object) -> bool:
-    """A name part that came back as exactly one letter - the model read an
-    initial and correctly refused to expand it into a guess, per rule 3."""
-    return isinstance(value, str) and len(value.strip()) == 1 and value.strip().isalpha()
+    """A name part that reduces to a single letter, with or without the
+    trailing period rule 3 asks the model to omit - real replies carry one
+    often enough (found across live test runs: "N.", "E.", "I.") that
+    treating only the period-less form as an initial misses most of them.
+    Either way it's a letter the model read and correctly refused to expand
+    into a guess, per rule 3.
+    """
+    if not isinstance(value, str):
+        return False
+    stripped = value.strip().rstrip(".")
+    return len(stripped) == 1 and stripped.isalpha()
 
 
 def _plausibly_in_source(value: str, haystack: str) -> bool:
@@ -624,6 +733,51 @@ def _guard_broken_transliteration(parsed: dict) -> dict:
     return parsed
 
 
+# A patronymic suffix is not enough on its own to prove a word IS a
+# patronymic (Бабич, Томкович and Ходасевич are surnames ending the same
+# way), but it's enough to catch a word the model already put in the
+# patronymic slot that doesn't even carry the shape - that's very likely a
+# second given name forced into the wrong slot (Spanish "Pedro Luis
+# González", Portuguese, Western double given names), the exact mistake
+# rule 5 exists to head off.
+_PATRONYMIC_LIKE_RU = re.compile(
+    r"(ович|евич|ьевич|иевич|овна|евна|ьевна|иевна|инична|ична)$", re.IGNORECASE
+)
+_PATRONYMIC_LIKE_EN = re.compile(
+    r"(ovich|evich|yevich|iyevich|ovna|evna|yevna|iyevna|inichna)$", re.IGNORECASE
+)
+
+
+def _guard_misclassified_second_name(parsed: dict) -> dict:
+    """Fold a second_name back into first_name, in place, when it doesn't
+    morphologically look like a patronymic and no candidate confirms it.
+
+    _guard_invented_second_name only catches a value with no basis in the
+    source text at all - it will not catch this, because the word IS
+    genuinely part of the source, just extracted into the wrong field. A
+    directory match is trusted per rule 1 (it can hand back an unusual but
+    real patronymic). Otherwise, a non-initial value with no
+    patronymic-shaped ending is folded back into first_name rather than
+    left mislabeled - no data lost, just moved to where it belongs.
+    """
+    if parsed.get("matched_candidate") is not None:
+        return parsed
+    for second_field, first_field, pattern in (
+        ("second_name_ru", "first_name_ru", _PATRONYMIC_LIKE_RU),
+        ("second_name_en", "first_name_en", _PATRONYMIC_LIKE_EN),
+    ):
+        value = parsed.get(second_field)
+        if not value or _is_bare_initial(value) or pattern.search(value):
+            continue
+        parsed[first_field] = f"{parsed.get(first_field) or ''} {value}".strip()
+        parsed[second_field] = None
+        parsed["reason"] = (
+            f"{parsed.get('reason') or ''} [{second_field}={value!r} doesn't look like a "
+            f"patronymic, folded into {first_field}]"
+        ).strip()
+    return parsed
+
+
 class RussianNamesStage(EnrichmentStage):
     name = "russian_names"
     progress_label = "Authors: splitting names into RU/EN parts (LLM)"
@@ -632,23 +786,33 @@ class RussianNamesStage(EnrichmentStage):
         catalog = RussianNamesCatalog.load(catalog_path(self.config))
         people = list(self.prepared.read_models("persons", Person))
         candidates = [
-            person for person in people
-            if self.selected("persons", person.id) and self.needs_attempt(person.processing.get(self.name))
+            person
+            for person in people
+            if self.selected("persons", person.id)
+            and self.needs_attempt(person.processing.get(self.name))
         ]
         if not candidates:
-            return {"russian_names": 0, "names_matched_candidate": 0,
-                    "names_dropped_invented": 0, "names_failed": 0}
+            return {
+                "russian_names": 0,
+                "names_matched_candidate": 0,
+                "names_second_name_corrected": 0,
+                "names_failed": 0,
+            }
 
         client = OpenRouterClient(
-            self.config.request_timeout, self.config.openrouter_api_key,
-            self.config.llm_model, self.config.openrouter_proxy_url,
+            self.config.request_timeout,
+            self.config.openrouter_api_key,
+            self.config.llm_model,
+            self.config.openrouter_proxy_url,
         )
         llm_log = LlmLogStore(self.prepared.db, "llm_logs_russian_names")
         changed = matched = dropped = failed = 0
         for person in self.progress(candidates, total=len(candidates)):
             state = person.processing.get(self.name)
             if not person.name_raw:
-                person.processing[self.name] = self._state(state, ProcessingStatus.COMPLETED_EMPTY, 0)
+                person.processing[self.name] = self._state(
+                    state, ProcessingStatus.COMPLETED_EMPTY, 0
+                )
                 changed += 1
                 continue
 
@@ -664,8 +828,12 @@ class RussianNamesStage(EnrichmentStage):
             prompt = _build_name_split_prompt(person, person_candidates)
             parsed = client.chat_json(prompt)
             llm_log.record(
-                group=self.prepared.group, model=self.config.llm_model, prompt=prompt,
-                raw_response=client.last_response, parsed=parsed, usage=client.last_usage,
+                group=self.prepared.group,
+                model=self.config.llm_model,
+                prompt=prompt,
+                raw_response=client.last_response,
+                parsed=parsed,
+                usage=client.last_usage,
                 error=None if parsed is not None else "no response",
                 context={"person_id": person.id},
             )
@@ -677,13 +845,15 @@ class RussianNamesStage(EnrichmentStage):
                 # the next pipeline run (status FAILED).
                 person.name_ru = person.name_ru or to_cyrillic(person.name_raw)
                 person.processing[self.name] = self._state(
-                    state, ProcessingStatus.FAILED, 0, error="llm request failed")
+                    state, ProcessingStatus.FAILED, 0, error="llm request failed"
+                )
                 failed += 1
                 changed += 1
                 continue
 
             before_second_names = (parsed.get("second_name_ru"), parsed.get("second_name_en"))
             parsed = _guard_invented_second_name(person, parsed)
+            parsed = _guard_misclassified_second_name(parsed)
             parsed = _guard_broken_transliteration(parsed)
             if (parsed.get("second_name_ru"), parsed.get("second_name_en")) != before_second_names:
                 dropped += 1
@@ -694,9 +864,14 @@ class RussianNamesStage(EnrichmentStage):
             person.surname_en = parsed.get("surname_en") or None
             person.first_name_en = parsed.get("first_name_en") or None
             person.second_name_en = parsed.get("second_name_en") or None
-            person.name_ru = " ".join(
-                part for part in (person.surname_ru, person.first_name_ru, person.second_name_ru) if part
-            ) or person.name_ru
+            person.name_ru = (
+                " ".join(
+                    part
+                    for part in (person.surname_ru, person.first_name_ru, person.second_name_ru)
+                    if part
+                )
+                or person.name_ru
+            )
             if parsed.get("matched_candidate") is not None:
                 matched += 1
 
@@ -707,15 +882,26 @@ class RussianNamesStage(EnrichmentStage):
             self.prepared.write_models("persons", people)
         logger.info(
             "russian_names: %d processed, %d matched a directory candidate, "
-            "%d invented second_name dropped, %d failed",
-            changed, matched, dropped, failed,
+            "%d second_name corrected (invented or misclassified), %d failed",
+            changed,
+            matched,
+            dropped,
+            failed,
         )
-        return {"russian_names": changed, "names_matched_candidate": matched,
-                "names_dropped_invented": dropped, "names_failed": failed}
+        return {
+            "russian_names": changed,
+            "names_matched_candidate": matched,
+            "names_second_name_corrected": dropped,
+            "names_failed": failed,
+        }
 
     @staticmethod
-    def _state(previous: ProcessingState | None, status: ProcessingStatus,
-               result_count: int, error: str | None = None) -> ProcessingState:
+    def _state(
+        previous: ProcessingState | None,
+        status: ProcessingStatus,
+        result_count: int,
+        error: str | None = None,
+    ) -> ProcessingState:
         return ProcessingState(
             status=status,
             attempts=(previous.attempts if previous else 0) + 1,
