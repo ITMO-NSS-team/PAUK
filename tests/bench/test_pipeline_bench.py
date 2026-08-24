@@ -500,12 +500,14 @@ def test_russian_name_from_staff_catalog(bench):
 
 def test_russian_name_transliteration_fallback(bench):
     pavel = bench.persons["A5000000007"]  # "Pavel Ivanov" is not in the catalog
-    assert pavel.name_ru == "Павел Иванов"
-    # No directory match, so this is the LLM's own transcription rather
-    # than a copied official record - still filled per rule 4 ("must ALWAYS
-    # be filled in Cyrillic, for every person"), unlike the second_name
+    # No directory match, so this is the LLM's own transcription rather than
+    # a copied official record - still filled per rule 4 ("must ALWAYS be
+    # filled in Cyrillic, for every person"), unlike the second_name
     # (patronymic) fields, which the model is never allowed to invent.
     assert (pavel.first_name_ru, pavel.surname_ru) == ("Павел", "Иванов")
+    # name_ru is always composed surname-first (see RussianNamesStage.run()),
+    # regardless of the word order the source name happened to use.
+    assert pavel.name_ru == "Иванов Павел"
     assert pavel.second_name_ru is None
 
 
