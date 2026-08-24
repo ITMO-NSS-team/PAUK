@@ -30,6 +30,7 @@ from tests.bench.mocks import (
     MockCrossrefClient,
     MockGitHubClient,
     MockOpenAlexClient,
+    MockOpenRouterClient,
     MockOrcidClient,
     RecordingNeo4jClient,
     UnexpectedNetworkClient,
@@ -105,6 +106,8 @@ def bench(tmp_path_factory) -> SimpleNamespace:
         mock.patch("pauk.pipeline.stages.persons.CrossrefClient", lambda *a, **k: MockCrossrefClient(universe)),
         mock.patch("pauk.pipeline.stages.persons.OrcidClient", lambda *a, **k: MockOrcidClient(universe)),
         mock.patch("pauk.pipeline.stages.persons.OpenReviewClient", lambda *a, **k: UnexpectedNetworkClient()),
+        mock.patch("pauk.pipeline.stages.russian_names.OpenRouterClient",
+                   lambda *a, **k: MockOpenRouterClient(RUSSIAN_NAMES_CATALOG)),
     )
     for p in patches:
         p.start()
@@ -498,7 +501,12 @@ def test_russian_name_from_staff_catalog(bench):
 def test_russian_name_transliteration_fallback(bench):
     pavel = bench.persons["A5000000007"]  # "Pavel Ivanov" is not in the catalog
     assert pavel.name_ru == "Павел Иванов"
-    assert pavel.surname_ru is None  # parts are never guessed from word order
+    # No directory match, so this is the LLM's own transcription rather
+    # than a copied official record - still filled per rule 4 ("must ALWAYS
+    # be filled in Cyrillic, for every person"), unlike the second_name
+    # (patronymic) fields, which the model is never allowed to invent.
+    assert (pavel.first_name_ru, pavel.surname_ru) == ("Павел", "Иванов")
+    assert pavel.second_name_ru is None
 
 
 # --- departments -----------------------------------------------------------------------

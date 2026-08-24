@@ -3,11 +3,14 @@ in-memory Neo4j stand-in that records what the loader would upsert."""
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 
 import requests
 
 from pauk.graph.client import _merge_duplicate_properties
+from pauk.models import Person
+from pauk.pipeline.stages.russian_names import RussianNamesCatalog, to_cyrillic
 
 
 def _http_404(url: str) -> requests.HTTPError:
@@ -83,6 +86,62 @@ class MockOrcidClient:
         if orcid not in self.records:
             raise _http_404(f"https://pub.orcid.org/v3.0/{orcid}/record")
         return self.records[orcid]
+
+
+class MockOpenRouterClient:
+    """Fakes russian_names.py's LLM name-split call for the bench run.
+
+    Model output *quality* was already validated against the real API (see
+    scripts/compare_name_models.py) - this mock isn't re-testing that, it's
+    testing that the pipeline wires the LLM step in and consumes its reply
+    correctly, without a real network call. It answers the way the real
+    prompt asks a model to: copy a catalog candidate verbatim when the
+    folded surname matches (reusing RussianNamesCatalog.match(), the same
+    trusted logic the deterministic degree lookup in russian_names.py
+    itself uses), otherwise a plain transliteration (reusing to_cyrillic) -
+    "reasonable" here means the same thing it means there.
+    """
+
+    _RAW_NAME_RE = re.compile(r"mixed:\n {2}(.+)")
+
+    def __init__(self, catalog_rows: list[str]) -> None:
+        """catalog_rows: the same "name_ru,surname,name,patronymic,degree"
+        strings the bench fixture writes to russian_names.csv (see
+        tests.bench.universe.RUSSIAN_NAMES_CATALOG) - not part of the
+        `universe` dict itself, which build_universe() doesn't touch."""
+        self.last_response = None
+        self.last_usage = None
+        self._catalog = RussianNamesCatalog([
+            dict(zip(("name_ru", "surname", "name", "patronymic", "degree"), row.split(","), strict=True))
+            for row in catalog_rows
+        ])
+
+    def chat_json(self, prompt: str) -> dict | None:
+        match = self._RAW_NAME_RE.search(prompt)
+        name_raw = match.group(1).strip() if match else ""
+        row = self._catalog.match(Person(id="_mock", is_itmo=True, name_raw=name_raw))
+        if row is not None:
+            surname_ru = (row.get("surname") or "").strip() or None
+            first_ru = (row.get("name") or "").strip() or None
+            second_ru = (row.get("patronymic") or "").strip() or None
+            return {
+                "matched_candidate": 0,
+                "surname_ru": surname_ru, "first_name_ru": first_ru, "second_name_ru": second_ru,
+                "surname_en": surname_ru, "first_name_en": first_ru, "second_name_en": second_ru,
+                "reason": "mock: exact catalog match",
+            }
+        words_ru = to_cyrillic(name_raw).split()
+        words_en = name_raw.split()
+        return {
+            "matched_candidate": None,
+            "surname_ru": words_ru[-1] if words_ru else None,
+            "first_name_ru": words_ru[0] if len(words_ru) > 1 else None,
+            "second_name_ru": None,
+            "surname_en": words_en[-1] if words_en else None,
+            "first_name_en": words_en[0] if len(words_en) > 1 else None,
+            "second_name_en": None,
+            "reason": "mock: no catalog match, transliterated",
+        }
 
 
 class UnexpectedNetworkClient:
