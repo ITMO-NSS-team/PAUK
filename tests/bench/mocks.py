@@ -10,7 +10,7 @@ import requests
 
 from pauk.graph.client import _merge_duplicate_properties
 from pauk.models import Person
-from pauk.pipeline.stages.russian_names import RussianNamesCatalog, to_cyrillic
+from pauk.pipeline.stages.author_names import RussianNamesCatalog, to_cyrillic
 
 
 def _http_404(url: str) -> requests.HTTPError:
@@ -89,7 +89,7 @@ class MockOrcidClient:
 
 
 class MockOpenRouterClient:
-    """Fakes russian_names.py's LLM name-split call for the bench run.
+    """Fakes author_names.py's LLM name-split call for the bench run.
 
     Model output *quality* was already validated separately against the real
     API - this mock isn't re-testing that, it's testing that the pipeline
@@ -97,7 +97,7 @@ class MockOpenRouterClient:
     network call. It answers the way the real prompt asks a model to: copy a
     catalog candidate verbatim when the folded surname matches (reusing
     RussianNamesCatalog.match(), the same trusted logic the deterministic
-    degree lookup in russian_names.py itself uses), otherwise a plain
+    degree lookup in author_names.py itself uses), otherwise a plain
     transliteration (reusing to_cyrillic) - "reasonable" here means the same
     thing it means there.
     """

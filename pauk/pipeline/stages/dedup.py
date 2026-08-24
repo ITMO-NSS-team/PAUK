@@ -104,8 +104,8 @@ from pauk.pipeline.normalize import (
 from pauk.storage.atomic import AtomicWriter
 from pauk.urls import normalize_repo_url
 
+from .author_names import RussianNamesCatalog, _fold, _unmix_alphabets, catalog_path
 from .base import EnrichmentStage
-from .russian_names import RussianNamesCatalog, _fold, _unmix_alphabets, catalog_path
 
 logger = logging.getLogger(__name__)
 

@@ -74,7 +74,7 @@ def author_label(surname: str | None, first: str | None, second: str | None,
     language from surname_ru/first_name_ru/second_name_ru and
     surname_en/first_name_en/second_name_en separately. No fallback to a
     combined raw string here: guessing surname/given/patronymic out of
-    word order is exactly the failure mode russian_names.py's LLM step
+    word order is exactly the failure mode author_names.py's LLM step
     replaced, and doing it again here for display would reintroduce it.
     An empty surname returns "" - the caller decides the fallback (e.g. the
     other language's label, or the free-text name_ru).

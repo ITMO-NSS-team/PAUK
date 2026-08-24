@@ -106,7 +106,7 @@ def bench(tmp_path_factory) -> SimpleNamespace:
         mock.patch("pauk.pipeline.stages.persons.CrossrefClient", lambda *a, **k: MockCrossrefClient(universe)),
         mock.patch("pauk.pipeline.stages.persons.OrcidClient", lambda *a, **k: MockOrcidClient(universe)),
         mock.patch("pauk.pipeline.stages.persons.OpenReviewClient", lambda *a, **k: UnexpectedNetworkClient()),
-        mock.patch("pauk.pipeline.stages.russian_names.OpenRouterClient",
+        mock.patch("pauk.pipeline.stages.author_names.OpenRouterClient",
                    lambda *a, **k: MockOpenRouterClient(RUSSIAN_NAMES_CATALOG)),
     )
     for p in patches:

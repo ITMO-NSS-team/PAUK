@@ -24,6 +24,7 @@ from pymongo.database import Database
 
 from pauk.models import Authorship, Person
 from pauk.pipeline.normalize import _merge_person
+from pauk.pipeline.stages.author_names import RussianNamesCatalog, catalog_path
 from pauk.pipeline.stages.dedup import (
     PLACEHOLDER_TITLES,
     _grouped,
@@ -34,7 +35,6 @@ from pauk.pipeline.stages.dedup import (
     plan_person_merges,
     staff_identities,
 )
-from pauk.pipeline.stages.russian_names import RussianNamesCatalog, catalog_path
 from pauk.settings import Settings
 from pauk.storage.atomic import AtomicWriter
 from pauk.urls import normalize_repo_url

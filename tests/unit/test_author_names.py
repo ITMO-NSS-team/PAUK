@@ -6,7 +6,7 @@ from unittest.mock import patch
 import mongomock
 
 from pauk.models import Person
-from pauk.pipeline.stages.russian_names import RussianNamesCatalog, RussianNamesStage, to_cyrillic
+from pauk.pipeline.stages.author_names import AuthorNamesStage, RussianNamesCatalog, to_cyrillic
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
 
@@ -40,7 +40,7 @@ class _FakeOpenRouterClient:
         return type("_QueuedClient", (cls,), {"_queue": replies})
 
 
-class RussianNamesStageTest(unittest.TestCase):
+class AuthorNamesStageTest(unittest.TestCase):
     def run_stage(self, people, catalog_rows, replies):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -53,9 +53,9 @@ class RussianNamesStageTest(unittest.TestCase):
         self.prepared = PreparedStore(self.db, "sample")
         self.raw = RawStore(self.db, "sample")
         self.prepared.write_models("persons", people)
-        with patch("pauk.pipeline.stages.russian_names.OpenRouterClient",
+        with patch("pauk.pipeline.stages.author_names.OpenRouterClient",
                    _FakeOpenRouterClient.queued(replies)):
-            result = RussianNamesStage(self.prepared, self.raw, self.config).run()
+            result = AuthorNamesStage(self.prepared, self.raw, self.config).run()
         return result, {p.id: p for p in self.prepared.read_models("persons", Person)}
 
     def test_missing_catalog_stops_the_stage(self):
@@ -65,12 +65,12 @@ class RussianNamesStageTest(unittest.TestCase):
             prepared = PreparedStore(db, "sample")
             prepared.write_models("persons", [person("A1", "Nikolay Nikitin")])
             with self.assertRaises(FileNotFoundError):
-                RussianNamesStage(prepared, RawStore(db, "sample"), config).run()
+                AuthorNamesStage(prepared, RawStore(db, "sample"), config).run()
 
     def test_empty_name_raw_is_completed_empty_without_an_llm_call(self):
         result, people = self.run_stage([person("A1", "")], [], replies=[])
-        self.assertEqual(result["russian_names"], 1)
-        self.assertEqual(people["A1"].processing["russian_names"].status, "completed_empty")
+        self.assertEqual(result["author_names"], 1)
+        self.assertEqual(people["A1"].processing["author_names"].status, "completed_empty")
 
     def test_llm_reply_fills_all_six_parts_and_composes_name_ru(self):
         result, people = self.run_stage(
@@ -83,7 +83,7 @@ class RussianNamesStageTest(unittest.TestCase):
                 "reason": "exact catalog match",
             }],
         )
-        self.assertEqual(result["russian_names"], 1)
+        self.assertEqual(result["author_names"], 1)
         self.assertEqual(result["names_matched_candidate"], 1)
         row = people["A1"]
         self.assertEqual((row.surname_ru, row.first_name_ru, row.second_name_ru),
@@ -93,7 +93,7 @@ class RussianNamesStageTest(unittest.TestCase):
         self.assertEqual(row.name_ru, "Никитин Николай Олегович")
         # degree comes from the free deterministic catalog lookup, not the LLM.
         self.assertEqual(row.degree, "к.т.н.")
-        self.assertEqual(row.processing["russian_names"].status, "completed")
+        self.assertEqual(row.processing["author_names"].status, "completed")
 
     def test_existing_degree_is_not_overwritten(self):
         _, people = self.run_stage(
@@ -111,7 +111,7 @@ class RussianNamesStageTest(unittest.TestCase):
         row = people["A1"]
         self.assertEqual(row.name_ru, to_cyrillic("Pavel V. Zhukov"))
         self.assertIsNone(row.surname_ru)  # parts are never guessed on failure
-        self.assertEqual(row.processing["russian_names"].status, "failed")
+        self.assertEqual(row.processing["author_names"].status, "failed")
 
     def test_a_failed_llm_call_does_not_erase_a_name_ru_an_earlier_run_wrote(self):
         first = person("A1", "Pavel V. Zhukov")
@@ -262,10 +262,10 @@ class RussianNamesStageTest(unittest.TestCase):
                       "second_name_ru": None, "surname_en": "Zhukov", "first_name_en": "Pavel",
                       "second_name_en": None, "reason": ""}],
         )
-        with patch("pauk.pipeline.stages.russian_names.OpenRouterClient",
+        with patch("pauk.pipeline.stages.author_names.OpenRouterClient",
                    _FakeOpenRouterClient.queued([])):
-            again = RussianNamesStage(self.prepared, self.raw, self.config).run()
-        self.assertEqual(again["russian_names"], 0)
+            again = AuthorNamesStage(self.prepared, self.raw, self.config).run()
+        self.assertEqual(again["author_names"], 0)
 
 
 class ToCyrillicTest(unittest.TestCase):

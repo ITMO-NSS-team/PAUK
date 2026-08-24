@@ -778,8 +778,8 @@ def _guard_misclassified_second_name(parsed: dict) -> dict:
     return parsed
 
 
-class RussianNamesStage(EnrichmentStage):
-    name = "russian_names"
+class AuthorNamesStage(EnrichmentStage):
+    name = "author_names"
     progress_label = "Authors: splitting names into RU/EN parts (LLM)"
 
     def run(self) -> dict[str, int]:
@@ -793,7 +793,7 @@ class RussianNamesStage(EnrichmentStage):
         ]
         if not candidates:
             return {
-                "russian_names": 0,
+                "author_names": 0,
                 "names_matched_candidate": 0,
                 "names_second_name_corrected": 0,
                 "names_failed": 0,
@@ -805,7 +805,7 @@ class RussianNamesStage(EnrichmentStage):
             self.config.llm_model,
             self.config.openrouter_proxy_url,
         )
-        llm_log = LlmLogStore(self.prepared.db, "llm_logs_russian_names")
+        llm_log = LlmLogStore(self.prepared.db, "llm_logs_author_names")
         changed = matched = dropped = failed = 0
         for person in self.progress(candidates, total=len(candidates)):
             state = person.processing.get(self.name)
@@ -881,7 +881,7 @@ class RussianNamesStage(EnrichmentStage):
         if changed:
             self.prepared.write_models("persons", people)
         logger.info(
-            "russian_names: %d processed, %d matched a directory candidate, "
+            "author_names: %d processed, %d matched a directory candidate, "
             "%d second_name corrected (invented or misclassified), %d failed",
             changed,
             matched,
@@ -889,7 +889,7 @@ class RussianNamesStage(EnrichmentStage):
             failed,
         )
         return {
-            "russian_names": changed,
+            "author_names": changed,
             "names_matched_candidate": matched,
             "names_second_name_corrected": dropped,
             "names_failed": failed,

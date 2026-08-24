@@ -144,9 +144,9 @@ CHECKS = [
         of=_ITMO_TOTAL,
         warn=0.02,
         fail=0.10,
-        hint="Показываются латиницей. Этап russian_names не запускался "
+        hint="Показываются латиницей. Этап author_names не запускался "
         "для группы, из которой пришли эти люди.",
-        hint_en="Shown in Latin script. The russian_names stage hasn't run "
+        hint_en="Shown in Latin script. The author_names stage hasn't run "
         "for the batch these people came from.",
         examples="""MATCH (p:Person:Itmo)
             WHERE p.name_ru IS NULL OR trim(p.name_ru) = ''

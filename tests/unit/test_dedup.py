@@ -20,8 +20,8 @@ from pauk.models import (
     RepoLink,
     Repository,
 )
+from pauk.pipeline.stages.author_names import RussianNamesCatalog
 from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage
-from pauk.pipeline.stages.russian_names import RussianNamesCatalog
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
 from tests.bench.mocks import RecordingNeo4jClient
