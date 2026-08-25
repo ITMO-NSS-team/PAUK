@@ -546,6 +546,60 @@ class HarvestAccountsTest(unittest.TestCase):
             return self.run_stage(client, **kwargs)
 
 
+class OrganizationOwnerProfileTest(unittest.TestCase):
+    """An organization owner gets a real profile, not just the owner stub."""
+
+    URL = "https://github.com/some-lab/tool"
+
+    def run_stage(self, github_client, owner_type, *, user_payload=None, repos=1):
+        github_client.return_value.get_repository.side_effect = [
+            {"html_url": f"https://github.com/some-lab/tool{i or ''}",
+             "name": f"tool{i or ''}", "id": i + 1,
+             "owner": {"login": "some-lab", "type": owner_type}}
+            for i in range(repos)
+        ]
+        github_client.return_value.has_readme.return_value = True
+        github_client.return_value.contributors.return_value = []
+        github_client.return_value.commits.return_value = []
+        github_client.return_value.get_user.return_value = user_payload or {}
+        db = mongomock.MongoClient()["pauk_test"]
+        prepared = PreparedStore(db, "sample")
+        prepared.write_models("repo_links", [
+            RepoLink(publication_id=f"W{i}", links=[
+                CodeLink(url=f"https://github.com/some-lab/tool{i or ''}")])
+            for i in range(repos)
+        ])
+        RepositoriesStage(prepared, RawStore(db, "sample")).run()
+        return github_client.return_value, {
+            p.login: p for p in prepared.read_models("github_profiles", GitHubProfile)}
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_an_organization_profile_is_filled_in(self, github_client):
+        # The nested owner object carries no name or location, and
+        # _harvest_accounts skips organizations, so without this the fields
+        # social_graph reads would never be populated.
+        _, profiles = self.run_stage(github_client, "Organization", user_payload={
+            "name": "Some Lab", "description": "a lab at ITMO University",
+            "location": "Saint Petersburg", "type": "Organization"})
+        self.assertEqual(profiles["some-lab"].name, "Some Lab")
+        self.assertEqual(profiles["some-lab"].description, "a lab at ITMO University")
+        self.assertEqual(profiles["some-lab"].location, "Saint Petersburg")
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_the_organization_is_fetched_once_however_many_repositories(self, github_client):
+        client, _ = self.run_stage(github_client, "Organization", repos=3,
+                                   user_payload={"name": "Some Lab"})
+        self.assertEqual(client.get_user.call_count, 1)
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_a_personal_owner_is_left_to_the_harvest(self, github_client):
+        # A user owning the repository is a contributor candidate, and
+        # _harvest_accounts fetches them with everyone else.
+        client, _ = self.run_stage(github_client, "User")
+        self.assertEqual(
+            [call.args for call in client.get_user.call_args_list], [("some-lab",)])
+
+
 class ImplementsFromRelevanceTest(unittest.TestCase):
     """publication_ids, and so the IMPLEMENTS edge, follows link_relevance."""
 
