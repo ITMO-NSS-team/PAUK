@@ -38,3 +38,7 @@ logs/
 
 graphify-out/
 .graphifyignore
+
+# Database dumps and pre-write snapshots — large, never committed.
+data/backups/
+data/reports/*.json

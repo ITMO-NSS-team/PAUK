@@ -30,6 +30,7 @@ from tests.bench.mocks import (
     MockCrossrefClient,
     MockGitHubClient,
     MockOpenAlexClient,
+    MockOpenRouterClient,
     MockOrcidClient,
     RecordingNeo4jClient,
     UnexpectedNetworkClient,
@@ -105,6 +106,8 @@ def bench(tmp_path_factory) -> SimpleNamespace:
         mock.patch("pauk.pipeline.stages.persons.CrossrefClient", lambda *a, **k: MockCrossrefClient(universe)),
         mock.patch("pauk.pipeline.stages.persons.OrcidClient", lambda *a, **k: MockOrcidClient(universe)),
         mock.patch("pauk.pipeline.stages.persons.OpenReviewClient", lambda *a, **k: UnexpectedNetworkClient()),
+        mock.patch("pauk.pipeline.stages.link_relevance.OpenRouterClient",
+                   lambda *a, **k: MockOpenRouterClient()),
     )
     for p in patches:
         p.start()
