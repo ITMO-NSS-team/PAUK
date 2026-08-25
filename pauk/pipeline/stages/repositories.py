@@ -163,6 +163,7 @@ class RepositoriesStage(EnrichmentStage):
         client = GitHubClient(self.config.request_timeout, self.config.github_token)
         changed = 0
         attempted_repo_ids: set[str] = set()
+        fetched_orgs: set[str] = set()
         progress = self.progress_bar(
             total=len(self._pending_repository_ids(rows, repositories)), unit="repository")
         for row in rows:
@@ -234,6 +235,24 @@ class RepositoriesStage(EnrichmentStage):
                         # serves explicit nulls, which .get(key, "") passes on.
                         known.html_url = owner_data.get("html_url") or known.html_url
                         known.type = (owner_data.get("type") or "").lower() or known.type
+                        # An organization is nobody's candidate, so
+                        # _harvest_accounts skips it and the stub above is all
+                        # its profile ever gets — leaving social_graph nothing
+                        # to recognise an ITMO lab by. One call per
+                        # organization per run fills the fields it reads.
+                        if known.type == "organization" and profile_id not in fetched_orgs:
+                            fetched_orgs.add(profile_id)
+                            try:
+                                org = client.get_user(repo.owner_login)
+                            except Exception:
+                                org = {}
+                            self.raw.append("github_user", org, {"login": repo.owner_login})
+                            # Organizations carry `description`; users carry `bio`.
+                            known.name = org.get("name") or known.name
+                            known.description = (org.get("description") or org.get("bio")
+                                                 or known.description)
+                            known.location = org.get("location") or known.location
+                            known.company = org.get("company") or known.company
                     self._harvest_accounts(client, repo, owner, name,
                                            owner_data.get("type"), profiles)
                     repo.processing[self.name] = ProcessingState(

@@ -1,0 +1,14 @@
+{
+  "comment": "GitHub organizations that belong to ITMO, for social_graph seeding. Only needed for organizations whose own GitHub profile does not say so — the ones that do are recognised without this list. Logins are matched case-insensitively.",
+  "organizations": [
+    {"login": "ITMO-NSS-team", "note": "Natural Systems Simulation Lab"},
+    {"login": "aimclub", "note": "AIM.club, ITMO University"},
+    {"login": "ailabitmo", "note": "ISST Laboratory @ ITMO University"},
+    {"login": "be2rlab", "note": "ITMO Biomechatronics and Energy Efficiency Robotics Lab"},
+    {"login": "LicAiBeerLab", "note": "BE2RLAB Co-Design Team - profile names be2rlab, which is ITMO's"},
+    {"login": "AlgoMathITMO", "note": "ITMO in the login"},
+    {"login": "itmo-infocom", "note": "ITMO in the login"},
+    {"login": "ITMO-PTDC-Team", "note": "ITMO in the login"},
+    {"login": "ITMO-NCCR", "note": "ITMO in the login"}
+  ]
+}
