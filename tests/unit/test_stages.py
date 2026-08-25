@@ -546,6 +546,66 @@ class HarvestAccountsTest(unittest.TestCase):
             return self.run_stage(client, **kwargs)
 
 
+class ImplementsFromRelevanceTest(unittest.TestCase):
+    """publication_ids, and so the IMPLEMENTS edge, follows link_relevance."""
+
+    # The owner here must match the URL's: the stage re-keys each row to
+    # github_{owner}_{name} taken from the fetched payload.
+    PAYLOAD = {"html_url": "https://github.com/org/repo", "name": "repo", "id": 1,
+               "owner": {"login": "org", "type": "Organization"}}
+    REPO_ID = "github_org_repo"
+    URL = "https://github.com/org/repo"
+
+    def run_stage(self, github_client, rows):
+        github_client.return_value.get_repository.return_value = self.PAYLOAD
+        github_client.return_value.has_readme.return_value = True
+        github_client.return_value.contributors.return_value = []
+        github_client.return_value.commits.return_value = []
+        db = mongomock.MongoClient()["pauk_test"]
+        prepared = PreparedStore(db, "sample")
+        prepared.write_models("repo_links", rows)
+        RepositoriesStage(prepared, RawStore(db, "sample")).run()
+        return {repo.id: repo for repo in prepared.read_models("repositories", Repository)}
+
+    def link(self, publication, is_relevant):
+        return RepoLink(publication_id=publication,
+                        links=[CodeLink(url=self.URL, is_relevant=is_relevant)])
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_a_tool_the_paper_merely_cites_is_not_implemented(self, github_client):
+        repos = self.run_stage(github_client, [self.link("W1", False)])
+        self.assertEqual(repos[self.REPO_ID].publication_ids, [])
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_the_citation_survives_even_when_the_claim_does_not(self, github_client):
+        repos = self.run_stage(github_client, [self.link("W1", False)])
+        self.assertEqual(repos[self.REPO_ID].cited_urls, [self.URL])
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_the_authors_own_code_is_implemented(self, github_client):
+        repos = self.run_stage(github_client, [self.link("W1", True)])
+        self.assertEqual(repos[self.REPO_ID].publication_ids, ["W1"])
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_an_unjudged_link_is_implemented(self, github_client):
+        repos = self.run_stage(github_client, [self.link("W1", None)])
+        self.assertEqual(repos[self.REPO_ID].publication_ids, ["W1"])
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_only_the_paper_whose_code_it_is_makes_a_claim(self, github_client):
+        repos = self.run_stage(github_client, [self.link("W1", False), self.link("W2", True)])
+        self.assertEqual(repos[self.REPO_ID].publication_ids, ["W2"])
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_one_relevant_link_is_enough_within_a_publication(self, github_client):
+        rows = [RepoLink(publication_id="W1", links=[
+            CodeLink(url=self.URL, is_relevant=False),
+            CodeLink(url=self.URL, is_relevant=True),
+        ])]
+        repos = self.run_stage(github_client, rows)
+        self.assertEqual(repos[self.REPO_ID].publication_ids, ["W1"])
+
+
 class CollectOccurrencesTest(unittest.TestCase):
     def test_dedupes_within_one_text_keeps_first_context(self):
         text = "first https://github.com/org/repo then https://github.com/org/repo again"

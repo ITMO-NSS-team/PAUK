@@ -343,3 +343,27 @@ class RecordingNeo4jClient:
             {label: dict(items) for label, items in self.nodes.items()},
             set(self.edges),
         )
+
+
+class MockLinkRelevanceClient:
+    """A fixed link-relevance verdict, so the bench never calls a real model.
+
+    Every link is judged the authors' own. The bench measures structure — how
+    many edges of each kind the pipeline builds — and a live model would make
+    those counts depend on its mood: run against a real endpoint, this
+    universe's synthetic URLs are judged someone else's tool 81 times out of
+    86, and the IMPLEMENTS count moves with the model. Whether the judgment
+    itself is right is settled in tests/unit/test_stages.py.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        self.last_error = None
+        self.last_response = None
+        self.last_usage = None
+        self.calls: list[str] = []
+
+    def chat_json(self, prompt: str) -> dict:
+        self.calls.append(prompt)
+        self.last_response = '{"is_authors_artifact": true}'
+        return {"is_authors_artifact": True, "confidence": 1.0,
+                "reason": "bench: fixed verdict"}

@@ -182,9 +182,11 @@ class RepositoriesStage(EnrichmentStage):
                     and repo_id not in self.selection.ids
                 ):
                     continue
+                # None is "not judged yet", not "no", and still implements.
+                implements = link.is_relevant is not False
                 repo = repositories.get(repo_id)
                 if repo is not None:
-                    if row.publication_id not in repo.publication_ids:
+                    if implements and row.publication_id not in repo.publication_ids:
                         repo.publication_ids.append(row.publication_id)
                     if url not in repo.cited_urls:
                         repo.cited_urls.append(url)
@@ -193,7 +195,8 @@ class RepositoriesStage(EnrichmentStage):
                         continue
                 else:
                     repo = Repository(id=repo_id, url=url, name=name,
-                                      publication_ids=[row.publication_id], cited_urls=[url])
+                                      publication_ids=[row.publication_id] if implements else [],
+                                      cited_urls=[url])
                     repositories[repo_id] = repo
                     state = None
                 # One repository can be mentioned by many publications. Its
