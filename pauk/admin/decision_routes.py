@@ -7,9 +7,16 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from pauk.admin import decisions
 from pauk.admin.deps import CsrfChecked, CurrentUser, Db, Editor, Graph, Session, templates
-from pauk.graph.mutations import NODE_FIELDS, MutationError, create_node, create_relationship
+from pauk.graph.mutations import (
+    NODE_FIELDS,
+    MutationError,
+    create_node,
+    create_relationship,
+    update_node,
+)
 from pauk.graph.overrides import (
     DELETE,
+    SET,
     apply_overrides,
     deactivate_override,
     deactivate_relationship_override,
@@ -71,7 +78,18 @@ async def undo(request: Request, user: Editor, db: Db, graph: Graph, _: CsrfChec
     # here, from what the deletion recorded.
     restored = ""
     try:
-        if op == DELETE and kind == "rel":
+        if op == SET and kind == "node":
+            # Withdrawing an edit has to put the field back, not merely
+            # stop reapplying it. apply_overrides applies what is in force;
+            # a withdrawn decision is not an instruction to restore
+            # anything, so the hand-written value would sit in the graph
+            # until a publish happened to touch that field — and if the
+            # record drops out of the pipeline's scope, forever.
+            back = decisions.source_of_truth(db, label, node_id)
+            if back:
+                update_node(graph, label, node_id, back)
+                restored = "field"
+        elif op == DELETE and kind == "rel":
             create_relationship(graph, *triple, src_id, tgt_id)
             restored = "link"
         elif op == DELETE:

@@ -254,15 +254,14 @@ class UndoRestoresTest(unittest.TestCase):
             "label": "Department", "target_id": "D1"})
         self.assertIn("undone=node", response.headers["location"])
 
-    def test_undoing_a_field_edit_restores_nothing_by_hand(self):
-        # There the point is the opposite: let the pipeline's value show
-        # through again, which reapplying the rest already does.
+    def test_undoing_a_field_edit_puts_the_source_value_back(self):
         record_override(self.db, "Person", "A1", "set", {"name_ru": "Пётр"},
                         actor="user:roman", auto_value={"name_ru": "Иван"})
         response = self.client.post("/overrides/undo", data={
             "csrf": self.csrf, "kind": "node", "op": "set",
             "label": "Person", "target_id": "A1"})
-        self.assertIn("undone=1", response.headers["location"])
+        self.assertIn("undone=field", response.headers["location"])
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иван")
 
     def test_a_deletion_the_feed_cannot_describe_says_so_instead(self):
         record_override(self.db, "Person", "A9", "delete", actor="user:roman")
@@ -400,3 +399,53 @@ class PagingTest(unittest.TestCase):
                 {"$set": {"source_value": {"name_ru": "И. П. Петров"}}})
         self.assertEqual(len(decisions.conflicts(self.db)), decisions.PAGE)
         self.assertEqual(decisions.count_conflicts(self.db), decisions.PAGE + 5)
+
+
+class UndoRestoresFieldTest(unittest.TestCase):
+    """Withdrawing an edit has to put the field back, not just stop applying it."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add("Person", "A1", name_ru="Пётр Иванов")
+        record_override(self.db, "Person", "A1", "set", {"name_ru": "Пётр Иванов"},
+                        actor="user:roman", auto_value={"name_ru": "Иван Петров"})
+
+        app = build(Settings(), self.db)
+        from pauk.admin import deps
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+
+    def undo(self):
+        return self.client.post("/overrides/undo", data={
+            "csrf": self.csrf, "kind": "node", "op": "set",
+            "label": "Person", "target_id": "A1"})
+
+    def test_the_field_goes_back_at_once(self):
+        # Waiting for a publish is not enough: apply_overrides applies what
+        # is in force, and a withdrawn decision instructs nothing. The hand
+        # value would sit in the graph until a run happened to touch that
+        # field — and for a record the pipeline no longer covers, forever.
+        self.undo()
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иван Петров")
+
+    def test_the_page_says_the_field_came_back(self):
+        self.assertIn("undone=field", self.undo().headers["location"])
+
+    def test_the_latest_word_of_the_source_wins_over_the_first(self):
+        # source_value is written when a publish is covered up, so it is
+        # fresher than auto_value from the original edit.
+        self.db["graph_overrides"].update_one(
+            {"_id": "node:Person:A1"}, {"$set": {"source_value": {"name_ru": "И. П. Петров"}}})
+        self.undo()
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "И. П. Петров")
+
+    def test_a_decision_without_a_recorded_source_leaves_the_field_alone(self):
+        self.db["graph_overrides"].update_one(
+            {"_id": "node:Person:A1"}, {"$unset": {"auto_value": "", "source_value": ""}})
+        response = self.undo()
+        self.assertIn("undone=1", response.headers["location"])
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Пётр Иванов")

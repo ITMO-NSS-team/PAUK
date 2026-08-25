@@ -143,3 +143,27 @@ def deleted_fields(db: Database, label: str, node_id: str) -> dict:
     if row and row.get("snapshot"):
         return dict(row["snapshot"])
     return feed.deleted_state(db, label, node_id)
+
+
+def source_of_truth(db: Database, label: str, node_id: str) -> dict:
+    """What the pipeline says a hand-edited record's fields should hold.
+
+    Used when an edit is withdrawn: the field has to go back to the
+    source's value there and then, rather than wait for a publish to
+    overwrite it — a record the pipeline no longer covers would keep the
+    hand-written value indefinitely.
+
+    Prefers `source_value`, written by `apply_overrides` at the moment it
+    covered the value up, and falls back to `auto_value`, recorded when
+    the edit was first made.
+    """
+    row = db[COLLECTION].find_one({"_id": f"node:{label}:{node_id}"})
+    if row is None:
+        return {}
+    stated, before = row.get("source_value") or {}, row.get("auto_value") or {}
+    # Only fields the source has actually spoken about. A field with
+    # neither record is left as it is: writing None there would erase a
+    # value on the strength of not knowing anything about it.
+    return {name: stated.get(name, before.get(name))
+            for name in (row.get("fields") or {})
+            if name in stated or name in before}
