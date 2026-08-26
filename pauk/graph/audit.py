@@ -220,9 +220,9 @@ class AuditedNeo4jClient:
             return {}
         label_list = labels if isinstance(labels, list) else [labels]
         # Match a node carrying ANY of the given labels, not all of them: upsert_nodes_batch can add a label
-        # a node doesn't have yet (e.g. "Person" -> "Person:Itmo"), and the "before" snapshot must still find
-        # the node by whichever label(s) it already carries — otherwise a real update on a node that's about
-        # to gain a label looks like "created" and the old field values are lost from the audit log.
+        # a node doesn't have yet, and the "before" snapshot must still find the node by whichever label(s)
+        # it already carries — otherwise a real update on a node that's about to gain a label looks like
+        # "created" and the old field values are lost from the audit log.
         label_match = " OR ".join(f"n:{label}" for label in label_list)
         query = cast(
             LiteralString,
@@ -267,16 +267,16 @@ class AuditedNeo4jClient:
         after = self._fetch_node_props(label_list, ids)
         self._emit_diffs("upsert_nodes", label_str, before, after)
 
-    def upsert_person_nodes_batch(self, nodes: list[tuple[str, dict]], is_itmo: bool):
+    def upsert_person_nodes_batch(self, nodes: list[tuple[str, dict]]):
         if not nodes:
             return
         if len(nodes) >= self._diff_threshold:
-            self._client.upsert_person_nodes_batch(nodes, is_itmo)
+            self._client.upsert_person_nodes_batch(nodes)
             self._emit_bulk_summary("upsert_person_nodes", "Person", len(nodes))
             return
         ids = [node_id for node_id, _ in nodes]
         before = self._fetch_node_props("Person", ids)
-        self._client.upsert_person_nodes_batch(nodes, is_itmo)
+        self._client.upsert_person_nodes_batch(nodes)
         after = self._fetch_node_props("Person", ids)
         self._emit_diffs("upsert_person_nodes", "Person", before, after)
 

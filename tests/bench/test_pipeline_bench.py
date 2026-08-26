@@ -534,8 +534,8 @@ def test_graph_node_counts(bench):
     assert len(graph.nodes["Repository"]) == 80
     assert len(graph.nodes["GitHubProfile"]) == 16
     assert len(graph.nodes["LinkCandidate"]) == 3
-    labels = list(graph.person_labels.values())
-    assert labels.count("Itmo") == 36 and labels.count("External") == 24
+    itmo_count = sum(1 for props in graph.nodes["Person"].values() if props.get("is_itmo"))
+    assert itmo_count == 36 and len(graph.nodes["Person"]) - itmo_count == 24
     for merged_id in DEDUP_MERGES:
         assert merged_id not in graph.nodes["Person"]
 

@@ -868,7 +868,7 @@ class FoldPropertyPreservationTest(unittest.TestCase):
         # A2 -AUTHORED{position}-> W1: the surviving edge needs both.
         client = RecordingNeo4jClient()
         client.upsert_nodes_batch("Publication", [("W1", {})])
-        client.upsert_person_nodes_batch([("A1", {}), ("A2", {})], is_itmo=True)
+        client.upsert_person_nodes_batch([("A1", {"is_itmo": True}), ("A2", {"is_itmo": True})])
         client.upsert_relationships_batch("Person", "Publication", "AUTHORED",
                                           [("A1", "W1", {"affiliation": "ITMO"})])
         client.upsert_relationships_batch("Person", "Publication", "AUTHORED",
@@ -881,7 +881,7 @@ class FoldPropertyPreservationTest(unittest.TestCase):
     def test_canonical_edge_values_win_over_the_duplicates(self):
         client = RecordingNeo4jClient()
         client.upsert_nodes_batch("Publication", [("W1", {})])
-        client.upsert_person_nodes_batch([("A1", {}), ("A2", {})], is_itmo=True)
+        client.upsert_person_nodes_batch([("A1", {"is_itmo": True}), ("A2", {"is_itmo": True})])
         client.upsert_relationships_batch("Person", "Publication", "AUTHORED",
                                           [("A1", "W1", {"position": 5, "affiliation": "Old"})])
         client.upsert_relationships_batch("Person", "Publication", "AUTHORED",

@@ -18,8 +18,8 @@ class FakeNeo4jClient:
     def upsert_nodes_batch(self, labels, nodes):
         self.calls.append(("upsert_nodes_batch", (labels, nodes)))
 
-    def upsert_person_nodes_batch(self, nodes, is_itmo):
-        self.calls.append(("upsert_person_nodes_batch", (nodes, is_itmo)))
+    def upsert_person_nodes_batch(self, nodes):
+        self.calls.append(("upsert_person_nodes_batch", (nodes,)))
 
     def upsert_relationships_batch(self, src_label, tgt_label, rel_type, relationships, tgt_match_prop="id"):
         self.calls.append(("upsert_relationships_batch", (src_label, tgt_label, rel_type, relationships)))

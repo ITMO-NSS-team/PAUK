@@ -200,7 +200,7 @@ def dedup_graph_persons(client, raw_orcids: dict[str, str | None],
         staff_ids=staff_identities(catalog, people))
 
     merges: list[tuple[str, str]] = []
-    canonical_nodes: dict[bool, list[tuple[str, dict]]] = {True: [], False: []}
+    canonical_nodes: list[tuple[str, dict]] = []
     for canonical, duplicates in groups:
         for duplicate in duplicates:
             logger.info(
@@ -219,11 +219,10 @@ def dedup_graph_persons(client, raw_orcids: dict[str, str | None],
         # filled scalars, merged_ids) before their nodes disappear.
         spec = NODE_REGISTRY["itmo_person" if canonical.is_itmo else "external_person"]
         _labels, node = extract_node(canonical.model_dump(by_alias=True, exclude_none=True), spec)
-        canonical_nodes[canonical.is_itmo].append(node)
+        canonical_nodes.append(node)
 
-    for is_itmo, nodes in canonical_nodes.items():
-        for chunk in chunked(nodes):
-            client.upsert_person_nodes_batch(chunk, is_itmo)
+    for chunk in chunked(canonical_nodes):
+        client.upsert_person_nodes_batch(chunk)
     removed = 0
     for chunk in chunked(merges):
         removed += client.merge_person_nodes_batch(chunk)

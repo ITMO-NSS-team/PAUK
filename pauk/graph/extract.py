@@ -60,24 +60,18 @@ class NodeSpec:
     """Describes how to turn one prepared-JSONL row into a Neo4j node.
 
     Attributes:
-        labels: Cypher label(s) for the node, e.g. "Person:Itmo".
+        labels: Cypher label(s) for the node, e.g. "Person".
         id_field: Key on the row holding the node's id.
         prop_fields: Whitelist of keys copied as plain node properties.
             Any other key on the row (e.g. `_processing`) is ignored.
         relationships: Relationships embedded in the row, extracted
             separately from prop_fields.
-        rel_src_label: Label(s) used to MATCH this node as a relationship
-            source. Defaults to `labels`; persons override it with the base
-            "Person" because a person's extra label (Itmo/External) can be
-            upgraded by a later group while their relationships must still
-            resolve.
     """
 
     labels: str
     id_field: str = "id"
     prop_fields: tuple[str, ...] = ()
     relationships: tuple[RelSpec, ...] = field(default_factory=tuple)
-    rel_src_label: str | None = None
 
 
 NODE_REGISTRY: dict[str, NodeSpec] = {
@@ -97,9 +91,9 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
         prop_fields=("name_en", "name_ru", "ror_id", "country", "type"),
     ),
     "itmo_person": NodeSpec(
-        labels="Person:Itmo",
-        rel_src_label="Person",
+        labels="Person",
         prop_fields=(
+            "is_itmo",
             "openalex_id",
             "orcid",
             "name_raw",
@@ -160,9 +154,9 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
         ),
     ),
     "external_person": NodeSpec(
-        labels="Person:External",
-        rel_src_label="Person",
+        labels="Person",
         prop_fields=(
+            "is_itmo",
             "openalex_id",
             "orcid",
             "name_raw",
@@ -329,7 +323,7 @@ def extract_relationships(row: dict, spec: NodeSpec) -> dict[tuple[str, str, str
         LinkCandidate) — those can't share one batch.
     """
     src_id = row[spec.id_field]
-    src_label = spec.rel_src_label or spec.labels
+    src_label = spec.labels
     out: dict[tuple[str, str, str, str], list[tuple[str, str, dict]]] = {}
 
     for rel in spec.relationships:

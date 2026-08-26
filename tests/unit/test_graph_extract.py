@@ -6,6 +6,7 @@ from pauk.models.person import Person
 
 PERSON_ROW = {
     "id": "p1",
+    "is_itmo": True,
     "name_raw": "Ivan Petrov",
     "email": "ivan@itmo.ru",
     "department_ids": ["d1", "d2"],
@@ -50,11 +51,12 @@ PUBLICATION_ROW = {
 class ExtractNodeTest(unittest.TestCase):
     def test_person_node_drops_stray_fields(self):
         labels, (node_id, props) = extract_node(PERSON_ROW, NODE_REGISTRY["itmo_person"])
-        self.assertEqual(labels, "Person:Itmo")
+        self.assertEqual(labels, "Person")
         self.assertEqual(node_id, "p1")
         self.assertEqual(props.get("name_raw"), "Ivan Petrov")
         self.assertEqual(props.get("email"), "ivan@itmo.ru")
         self.assertEqual(props.get("orcid"), "0000-0000")
+        self.assertIs(props.get("is_itmo"), True)
         for stray in (
             "affiliation",
             "email_candidates",
@@ -96,9 +98,6 @@ class ExtractRelationshipsTest(unittest.TestCase):
     def test_person_relationships(self):
         rels = extract_relationships(PERSON_ROW, NODE_REGISTRY["itmo_person"])
 
-        # Person relationships match their source by the base :Person label:
-        # the Itmo/External label can be upgraded by a later group, while
-        # relationships published from any group must still resolve.
         belongs = rels[("Person", "Department", "BELONGS_TO", "id")]
         self.assertEqual(sorted(belongs), [("p1", "d1", {}), ("p1", "d2", {})])
 
@@ -147,7 +146,6 @@ class GraphFieldCoverageTest(unittest.TestCase):
 
     PERSON_EXCLUDED = {
         "id": "used as the node id, not a prop",
-        "is_itmo": "determines the Person:Itmo/Person:External label, not a prop",
         "department_ids": "published as a BELONGS_TO relationship",
         "authored": "published as an AUTHORED relationship",
         "contributed_to": "published as a CONTRIBUTED_TO relationship",

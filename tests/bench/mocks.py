@@ -157,15 +157,14 @@ class UnexpectedNetworkClient:
 class RecordingNeo4jClient:
     """In-memory double of Neo4jClient with just enough MERGE semantics.
 
-    Nodes are stored per primary label; persons follow the sticky-:Itmo rule
-    of upsert_person_nodes_batch. Relationships resolve their endpoints the
-    way the Cypher MATCH would; anything unresolvable is recorded in
-    `unresolved` so tests can assert it never happens.
+    Nodes are stored per primary label; persons follow the sticky is_itmo
+    property rule of upsert_person_nodes_batch. Relationships resolve their
+    endpoints the way the Cypher MATCH would; anything unresolvable is
+    recorded in `unresolved` so tests can assert it never happens.
     """
 
     def __init__(self) -> None:
         self.nodes: dict[str, dict[str, dict]] = defaultdict(dict)
-        self.person_labels: dict[str, str] = {}
         self.edges: dict[tuple[str, str, str, str, str], dict] = {}
         self.unresolved: list[tuple[str, str, str, str, str]] = []
 
@@ -177,14 +176,12 @@ class RecordingNeo4jClient:
             clean = {k: v for k, v in props.items() if k not in ("id", "created_at", "updated_at")}
             self.nodes[primary].setdefault(node_id, {}).update(clean)
 
-    def upsert_person_nodes_batch(self, nodes, is_itmo: bool) -> None:
+    def upsert_person_nodes_batch(self, nodes) -> None:
         for node_id, props in nodes:
             clean = {k: v for k, v in props.items() if k not in ("id", "created_at", "updated_at")}
+            existing = self.nodes["Person"].get(node_id, {})
+            clean["is_itmo"] = bool(existing.get("is_itmo")) or bool(clean.get("is_itmo"))
             self.nodes["Person"].setdefault(node_id, {}).update(clean)
-            if is_itmo:
-                self.person_labels[node_id] = "Itmo"
-            else:
-                self.person_labels.setdefault(node_id, "External")
 
     def upsert_relationships_batch(self, src_label, tgt_label, rel_type, relationships,
                                    tgt_match_prop: str = "id") -> int:
@@ -253,8 +250,6 @@ class RecordingNeo4jClient:
             dup_props = self.nodes[label].pop(dup_id)
             canonical_props = self.nodes[label][canonical_id]
             canonical_props.update(_merge_duplicate_properties(label, canonical_props, dup_props))
-            if label == "Person":
-                self.person_labels.pop(dup_id, None)
             removed += 1
         return removed
 
@@ -267,7 +262,7 @@ class RecordingNeo4jClient:
                 **{field: props.get(field) for field in (
                     "openalex_id", "name_raw", "name_variants", "orcid", "email",
                     "github", "openreview", "google_scholar", "merged_ids")},
-                "is_itmo": self.person_labels.get(person_id) == "Itmo",
+                "is_itmo": bool(props.get("is_itmo")),
                 "publication_ids": sorted({
                     tgt_id for (src_primary, rel_type, _tgt, src_id, tgt_id) in self.edges
                     if src_primary == "Person" and rel_type == "AUTHORED" and src_id == person_id
@@ -346,6 +341,5 @@ class RecordingNeo4jClient:
     def snapshot(self):
         return (
             {label: dict(items) for label, items in self.nodes.items()},
-            dict(self.person_labels),
             set(self.edges),
         )

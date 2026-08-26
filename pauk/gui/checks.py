@@ -53,6 +53,12 @@ GROUP_EN = {
 CYR, LAT = r"\\p{IsCyrillic}", r"\\p{IsLatin}"
 RU_NAME_FIELDS = "[p.surname_ru, p.first_name_ru, p.second_name_ru]"
 
+# TODO(is_itmo-property): Person no longer gets an :Itmo/:External label -
+# is_itmo is now a plain node property (see pauk/graph/extract.py). Every
+# `:Person:Itmo`/`:Person:External` match in this file (below, and in every
+# Check's count/examples Cypher that uses it) will silently return nothing
+# once the graph is migrated - rewrite to `(p:Person {is_itmo: true/false})`
+# before trusting this dashboard's numbers again.
 _ITMO_TOTAL = "MATCH (p:Person:Itmo) RETURN count(p)"
 _PUB_TOTAL = "MATCH (p:Publication) RETURN count(p)"
 _DEPT_TOTAL = "MATCH (d:Department) RETURN count(d)"

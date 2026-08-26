@@ -60,13 +60,20 @@ def cypher_dict(driver, query, **params) -> list[dict]:
 def load_db(driver) -> dict[str, list]:
     """Read everything into the same flat structures build_graph_data() expects.
     Author departments and repo owners aren't plain columns in the graph model —
-    they're relationships: (:Person:Itmo)-[:BELONGS_TO]->(:Department),
+    they're relationships: (:Person {is_itmo: true})-[:BELONGS_TO]->(:Department),
     (:Repository)-[:OWNED_BY]->(:GitHubProfile)."""
     db: dict[str, list] = {}
 
-    # TODO: add external persons. Person:External nodes carry the same RU/EN
-    # name-part fields as Person:Itmo (see graph/extract.py's external_person
-    # prop_fields) - they just aren't pulled into the snapshot/site yet.
+    # TODO(is_itmo-property): Person no longer gets an :Itmo/:External label -
+    # is_itmo is now a plain node property (see pauk/graph/extract.py). Every
+    # `:Person:Itmo`/`:Person:External` match below will silently return
+    # nothing once the graph is migrated - rewrite to
+    # `(p:Person {is_itmo: true/false})` before relying on these numbers.
+    #
+    # TODO: add external persons. Person nodes with is_itmo=false carry the
+    # same RU/EN name-part fields as ITMO ones (see graph/extract.py's
+    # external_person prop_fields) - they just aren't pulled into the
+    # snapshot/site yet.
     db["persons"] = cypher_dict(
         driver,
         "MATCH (p:Person:Itmo) "
