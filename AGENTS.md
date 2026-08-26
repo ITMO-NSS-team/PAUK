@@ -28,6 +28,14 @@ start from scratch. If a decision contradicts what's written there - either
 you're wrong or the docs are stale; either way, sort that out before
 changing code.
 
+The same applies before running anything on the lab server, and before
+reasoning about which rows a stage can see: `deploy.md` names the host, the
+account and the shell the server needs, `storage.md` explains that every
+`PreparedStore` read is filtered by group - so a stage is blind to rows some
+other group wrote. Both are routinely guessed at from the environment and
+both are routinely guessed wrong, at the cost of a wasted run or a confident
+wrong conclusion. Read them.
+
 ## Repository rules
 
 - **Tests use `unittest.TestCase`, not pytest style** (fixtures,
