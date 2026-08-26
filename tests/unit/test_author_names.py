@@ -185,6 +185,25 @@ class AuthorNamesStageTest(unittest.TestCase):
         self.assertIsNone(row.second_name_en)
         self.assertEqual(row.surname_ru, "Ненайденко")  # the rest of the reply is kept
 
+    def test_an_invented_patronymic_sharing_a_short_prefix_is_still_dropped(self):
+        # "Fedorenko" shares its first 5 folded characters with the real
+        # surname "Fedorov" already in the source - a fixed-length prefix
+        # check would have waved this through as "plausible". The
+        # similarity ratio against the whole word must not.
+        result, people = self.run_stage(
+            [person("A1", "Ivan Fedorov")], [],
+            replies=[{
+                "matched_candidate": None,
+                "surname_ru": "Федоров", "first_name_ru": "Иван", "second_name_ru": "Федоренко",
+                "surname_en": "Fedorov", "first_name_en": "Ivan", "second_name_en": "Fedorenko",
+                "reason": "invented, coincidentally shares a prefix with the surname",
+            }],
+        )
+        self.assertEqual(result["names_second_name_corrected"], 1)
+        row = people["A1"]
+        self.assertIsNone(row.second_name_ru)
+        self.assertIsNone(row.second_name_en)
+
     def test_a_patronymic_spelled_out_in_a_variant_is_kept(self):
         result, people = self.run_stage(
             [person("A1", "I. Ivanova", variants=["Irina Anatolievna Ivanova"])], [],
@@ -210,6 +229,28 @@ class AuthorNamesStageTest(unittest.TestCase):
             }],
         )
         self.assertEqual(result["names_second_name_corrected"], 0)
+        self.assertEqual(people["A1"].second_name_en, "Vladimirovich")
+
+    def test_a_candidate_backed_patronymic_survives_even_without_matched_candidate_set(self):
+        # The model is supposed to set matched_candidate whenever it copies
+        # a directory row (rule 1), but it doesn't always do both at once -
+        # the same rule-breaking _guard_invented_second_name's docstring
+        # already documents for rule 3. A patronymic that matches a
+        # candidate row must not be treated as invented just because
+        # matched_candidate came back null and name_variants never spelled
+        # it out.
+        result, people = self.run_stage(
+            [person("A1", "M.V. Dorogov")],
+            ["Дорогов Максим Владимирович,Дорогов,Максим,Владимирович,"],
+            replies=[{
+                "matched_candidate": None,
+                "surname_ru": "Дорогов", "first_name_ru": "Максим", "second_name_ru": "Владимирович",
+                "surname_en": "Dorogov", "first_name_en": "Maxim", "second_name_en": "Vladimirovich",
+                "reason": "matches the directory record",
+            }],
+        )
+        self.assertEqual(result["names_second_name_corrected"], 0)
+        self.assertEqual(people["A1"].second_name_ru, "Владимирович")
         self.assertEqual(people["A1"].second_name_en, "Vladimirovich")
 
     def test_a_bare_initial_second_name_survives_the_guard(self):

@@ -57,6 +57,7 @@ via PAUK_RUSSIAN_NAMES_FILE.
 from __future__ import annotations
 
 import csv
+import difflib
 import logging
 import re
 from datetime import UTC, datetime
@@ -580,6 +581,12 @@ STRICT rules - follow exactly, do not deviate:
      candidate stays a bare initial.
    - If a name part does not appear anywhere in the input and no matched candidate resolves
      it, leave it null. Do not guess a plausible-sounding value.
+   - Concrete failure to avoid: given "Valentine G. Nenajdenko" with no matching candidate,
+     the correct second_name_en is "G" (the bare initial, kept as-is) - NOT "Gennadievich" or
+     any other expansion, even though that happens to be a common Russian patronymic starting
+     with G. Knowing that "G." commonly stands for some real patronymic is not the same as
+     this specific input telling you which one - if you find yourself supplying a value the
+     input itself does not spell out, stop and use null (or the bare initial) instead.
 4. surname_ru and first_name_ru (and second_name_ru when a patronymic is known) must ALWAYS
    be filled, in Cyrillic, for every person - Russian, foreign, anyone. This is a practical
    Russian transcription of whatever name you extracted in rule 3, not a judgement about the
@@ -597,7 +604,11 @@ STRICT rules - follow exactly, do not deviate:
    patronymic slot just because of its position.
 6. second_name_ru/second_name_en does not exist for everyone even among names that do use
    patronymics. Leave both null rather than inventing one - this is the one pair of fields
-   allowed to legitimately stay empty, and rule 3's ban on invention applies to it most of all.
+   allowed to legitimately stay empty, and rule 3's ban on invention applies to it most of
+   all. Before writing a non-null second_name, check yourself: is this exact value spelled
+   out somewhere in the raw name or the known variants, or copied verbatim from a matched
+   candidate? If the honest answer is no, it must be null - "it's a plausible patronymic" is
+   not a yes.
 7. English spelling should be the natural/common form a person would actually use, not a
    mechanical letter-by-letter conversion - unless a matched candidate gives you the Russian
    form to transliterate, in which case transliterate that.
@@ -669,21 +680,42 @@ def _is_bare_initial(value: object) -> bool:
     return len(stripped) == 1 and stripped.isalpha()
 
 
-def _plausibly_in_source(value: str, haystack: str) -> bool:
-    """Whether a folded value is traceable to the source text.
+_TRACEABLE_RATIO = 0.90
+
+
+def _plausibly_in_source(value: str, haystack_tokens: list[str]) -> bool:
+    """Whether a folded value is close enough to some word in the source to
+    be an honest transliteration of it, not an invention.
 
     Full-string containment misses transliteration edges _fold does not
-    resolve: Cyrillic "ь" folds to nothing while the natural English
+    fully resolve: Cyrillic "ь" folds to nothing while the natural English
     spelling of the same ending adds an "i" ("Анатольевна" folds to
-    "anatolevna", "Anatolievna" folds to "anatolievna"). A shared stem of
-    the first few folded characters is enough to tell a real
-    transliteration from an invented one without chasing every such edge.
+    "anatolevna", "Anatolievna" folds to "anatolievna") - a one-character
+    drift, not a different word. A per-word similarity ratio tolerates that
+    drift while still requiring the value to resemble one specific word in
+    the source almost throughout, so a short coincidental substring match
+    (e.g. an invented "Fedorenko" sharing just the "Fedor" prefix with a
+    surname "Fedorov" already in the source) can no longer stand in for a
+    genuinely invented value the way a fixed-length prefix check could.
+
+    0.90 is picked from measured ratios, not a round guess: real
+    transliteration-drift pairs (Анатольевна/Anatolievna, Юрьевич/Yurievich,
+    Витальевич/Vitalievich, ...) score 0.94-1.0, while even the closest
+    invented near-miss found (Fedorenko against the real surname Fedorov)
+    only reaches 0.75. 0.90 sits close to the real-pairs floor - favouring
+    catching an invented value (this guard's whole purpose) over the rarer
+    cost of nulling a genuine patronymic that happens to drift unusually far.
     """
     stem = _fold(value)
-    return stem[:5] in haystack if len(stem) >= 3 else stem in haystack
+    if not stem:
+        return False
+    return any(
+        difflib.SequenceMatcher(None, stem, token).ratio() >= _TRACEABLE_RATIO
+        for token in haystack_tokens
+    )
 
 
-def _guard_invented_second_name(person: Person, parsed: dict) -> dict:
+def _guard_invented_second_name(person: Person, parsed: dict, candidates: list[dict]) -> dict:
     """Null a second_name (patronymic) the model invented from a bare
     initial, in place, for both languages.
 
@@ -695,13 +727,26 @@ def _guard_invented_second_name(person: Person, parsed: dict) -> dict:
     traceable to the input - the same standard this module already applied
     when the logic was hand-written (see the module docstring: "guessing
     name parts from word order is not reliable enough to store").
+
+    "The input" includes the directory candidates shown to the model, not
+    just name_raw/name_variants: the same 1-in-10 rule-breaking can leave
+    matched_candidate null while still copying a real patronymic off one of
+    the candidate rows (rule 1 asks for both, the model doesn't always
+    deliver both). Without this, a value genuinely grounded in the catalog
+    would get nulled right alongside a truly invented one.
     """
     if parsed.get("matched_candidate") is not None:
         return parsed
-    haystack = _fold(f"{person.name_raw or ''} {' '.join(person.name_variants)}")
+    haystack_tokens = [
+        _fold(token)
+        for name in (person.name_raw, *person.name_variants,
+                     *(row.get(key) for row in candidates for key in ("surname", "name", "patronymic")))
+        if name
+        for token in name.replace(",", " ").split()
+    ]
     for field in ("second_name_ru", "second_name_en"):
         value = parsed.get(field)
-        if not value or _is_bare_initial(value) or _plausibly_in_source(value, haystack):
+        if not value or _is_bare_initial(value) or _plausibly_in_source(value, haystack_tokens):
             continue
         parsed[field] = None
         parsed["reason"] = (
@@ -865,7 +910,7 @@ class AuthorNamesStage(EnrichmentStage):
                 continue
 
             before_second_names = (parsed.get("second_name_ru"), parsed.get("second_name_en"))
-            parsed = _guard_invented_second_name(person, parsed)
+            parsed = _guard_invented_second_name(person, parsed, person_candidates)
             parsed = _guard_misclassified_second_name(parsed)
             parsed = _guard_broken_transliteration(parsed)
             if (parsed.get("second_name_ru"), parsed.get("second_name_en")) != before_second_names:
