@@ -16,7 +16,8 @@ One Python package, `pauk/`. Full architecture starts at
 ## Where to look
 
 - **`docs/architecture/`** - how the system works today, one file per
-  subpackage/stage. Start with `overview.md`.
+  subpackage/stage. Start with `overview.md`; `scripts.md` indexes everything
+  in `scripts/` and says which of them write to a database.
 - **`docs/diagrams/`** - schemas as markdown+Mermaid, not images. Don't
   create PNG/SVG for new diagrams - models can't read them, and text
   Mermaid renders natively on GitHub and reads like plain text.
