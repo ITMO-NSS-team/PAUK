@@ -37,15 +37,36 @@ class FakePanelGraph(FakeGraph):
                 for (node_label, node_id), props in self.nodes.items() if node_label == label]
         return sorted(rows, key=lambda row: row["id"])[:limit]
 
+    def _by_match(self, label, match_value):
+        """The node an edge points at, found the way the loader finds it.
+
+        Edges are stored keyed by whatever addresses the target — a url for
+        a Repository, a login for a GitHubProfile — while the real client
+        reports the other end's id. The fake used to return the match value
+        as `other_id`, which is exactly the difference the panel got wrong,
+        so it could never fail here.
+        """
+        for (node_label, node_id), props in self.nodes.items():
+            if node_label != label:
+                continue
+            if node_id == match_value or match_value in props.values():
+                return node_id, props
+        return match_value, {}
+
     def fetch_node_relationships(self, label, node_id):
         found = []
         for src_label, rel_type, tgt_label, src_id, tgt_id in self.relationships:
             if src_label == label and src_id == node_id:
-                found.append({"type": rel_type, "labels": [tgt_label],
-                              "other_id": tgt_id, "outgoing": True})
-            elif tgt_label == label and tgt_id == node_id:
-                found.append({"type": rel_type, "labels": [src_label],
-                              "other_id": src_id, "outgoing": False})
+                other_id, props = self._by_match(tgt_label, tgt_id)
+                found.append({"type": rel_type, "labels": [tgt_label], "other_id": other_id,
+                              "other_props": props, "outgoing": True})
+            elif tgt_label == label or tgt_id == node_id:
+                mine = self.nodes.get((label, node_id), {})
+                if tgt_label != label or tgt_id not in {node_id, *mine.values()}:
+                    continue
+                other_props = self.nodes.get((src_label, src_id), {})
+                found.append({"type": rel_type, "labels": [src_label], "other_id": src_id,
+                              "other_props": other_props, "outgoing": False})
         return sorted(found, key=lambda row: (row["type"], row["other_id"]))
 
 
@@ -660,3 +681,89 @@ class ConcurrentEditTest(unittest.TestCase):
         client, form = self.open_form("roman")
         response = client.post("/nodes/Person/A1", data={**form, "name_ru": "Пётр"})
         self.assertIn("saved=1", response.headers["location"])
+
+
+class UnlinkByMatchFieldTest(unittest.TestCase):
+    """Removing an edge addressed by something other than an id.
+
+    Two of the eleven relationships are matched that way — a Repository by
+    url, a GitHubProfile by login. Sending the other end's id finds no edge
+    at all, and the panel answered "there is no such link" for a link that
+    plainly existed.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add("Repository", "R1", url="https://github.com/itmo/pauk", name="pauk")
+        self.graph.add("Publication", "W1", title="A paper")
+        self.graph.add("GitHubProfile", "G1", login="octocat")
+        self.graph.relationships[
+            ("Publication", "MENTIONS_LINK", "Repository", "W1",
+             "https://github.com/itmo/pauk")] = {}
+        self.graph.relationships[
+            ("Repository", "OWNED_BY", "GitHubProfile", "R1", "octocat")] = {}
+
+        app = build(Settings(), self.db)
+        from pauk.admin import deps
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+
+    def form_value(self, page, triple):
+        """What the page would submit to unlink one particular edge.
+
+        Picked by triple rather than by position: a record can have several
+        links, and the first form on the page is not necessarily the one
+        under test.
+        """
+        import re
+        body = self.client.get(page).text
+        for block in body.split("/rel/delete")[1:]:
+            if f'name="triple"\n                 value="{triple}"' in block or \
+               f'value="{triple}"' in block:
+                return re.search(r'name="other_id" value="([^"]*)"', block).group(1)
+        raise AssertionError(f"на странице нет формы отвязки для {triple}")
+
+    def test_the_page_offers_the_value_the_edge_is_matched_by(self):
+        # From the publication's side the repository is addressed by url.
+        self.assertEqual(
+            self.form_value("/nodes/Publication/W1", "Publication|MENTIONS_LINK|Repository"),
+            "https://github.com/itmo/pauk")
+
+    def test_a_repository_link_is_removed_from_the_publication_side(self):
+        response = self.client.post("/nodes/Publication/W1/rel/delete", data={
+            "csrf": self.csrf, "triple": "Publication|MENTIONS_LINK|Repository",
+            "other_id": "https://github.com/itmo/pauk"})
+        self.assertEqual(response.status_code, 303)
+        self.assertNotIn(("Publication", "MENTIONS_LINK", "Repository", "W1",
+                          "https://github.com/itmo/pauk"), self.graph.relationships)
+
+    def test_a_profile_link_is_removed_from_the_repository_side(self):
+        self.assertEqual(
+            self.form_value("/nodes/Repository/R1", "Repository|OWNED_BY|GitHubProfile"),
+            "octocat")
+        response = self.client.post("/nodes/Repository/R1/rel/delete", data={
+            "csrf": self.csrf, "triple": "Repository|OWNED_BY|GitHubProfile",
+            "other_id": "octocat"})
+        self.assertEqual(response.status_code, 303)
+        self.assertNotIn(("Repository", "OWNED_BY", "GitHubProfile", "R1", "octocat"),
+                         self.graph.relationships)
+
+    def test_the_tombstone_stores_the_value_the_loader_compares(self):
+        # Second-order fault: even a successful delete would be undone by
+        # the next publish if the tombstone held an id, because the loader
+        # compares it against the prepared row's url.
+        self.client.post("/nodes/Publication/W1/rel/delete", data={
+            "csrf": self.csrf, "triple": "Publication|MENTIONS_LINK|Repository",
+            "other_id": "https://github.com/itmo/pauk"})
+        (override,) = active_overrides(self.db)
+        self.assertEqual(override["target_id"], "https://github.com/itmo/pauk")
+
+    def test_an_id_matched_link_still_works(self):
+        self.graph.relationships[("Person", "AUTHORED", "Publication", "A1", "W1")] = {}
+        self.graph.add("Person", "A1")
+        self.assertEqual(
+            self.form_value("/nodes/Person/A1", "Person|AUTHORED|Publication"), "W1")

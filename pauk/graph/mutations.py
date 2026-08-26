@@ -219,9 +219,23 @@ def search_nodes(client: Neo4jClient, label: str, query: str, limit: int = 50) -
 
 
 def node_relationships(client: Neo4jClient, label: str, node_id: str) -> list[dict]:
-    """Edges touching one node, as the panel shows them on a node's page."""
+    """Edges touching one node, as the panel shows them on a node's page.
+
+    Each row carries `match_value`: what addresses the other end for *this*
+    relationship. Usually its id, but a Repository is matched by `url` and
+    a GitHubProfile by `login`, and an edge cannot be removed without the
+    right one — the id simply finds nothing.
+    """
     validate_label(label)
-    return client.fetch_node_relationships(label, node_id)
+    rows = client.fetch_node_relationships(label, node_id)
+    for row in rows:
+        other = row["labels"][0]
+        triple = (label, row["type"], other) if row["outgoing"] else (other, row["type"], label)
+        match_prop = RELATIONSHIPS.get(triple, "id")
+        props = row.get("other_props") or {}
+        row["match_prop"] = match_prop
+        row["match_value"] = row["other_id"] if match_prop == "id" else props.get(match_prop)
+    return rows
 
 
 def create_node(client: Neo4jClient, label: str, node_id: str, props: dict) -> dict:

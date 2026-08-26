@@ -665,10 +665,15 @@ class Neo4jClient:
         Direction is reported rather than normalised: the panel has to say
         whether this person authored a publication or a publication was
         produced by this department, and those read differently.
+
+        The other end's properties come along because an id does not always
+        address it: two of the eleven relationships are matched by `url` or
+        `login`, and removing such an edge needs that value, not the id.
         """
         text = (
             f"MATCH (n:{label} {{id: $node_id}})-[r]-(other) "
             "RETURN type(r) AS type, labels(other) AS labels, other.id AS other_id, "
+            "properties(other) AS other_props, "
             "startNode(r).id = n.id AS outgoing "
             "ORDER BY type, other_id"
         )

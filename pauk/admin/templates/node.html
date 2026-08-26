@@ -70,7 +70,8 @@
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="triple"
                  value="{{ label if rel.outgoing else other }}|{{ rel.type }}|{{ other if rel.outgoing else label }}">
-          <input type="hidden" name="other_id" value="{{ rel.other_id }}">
+          {# Не идентификатор: репозиторий адресуется адресом, аккаунт логином. #}
+          <input type="hidden" name="other_id" value="{{ rel.match_value }}">
           <button type="submit" class="ghost">отвязать</button>
         </form>
       </td>
