@@ -391,6 +391,14 @@ class RussianNamesCatalog:
         # including the ones this catalog does not list at all — so folding
         # two person records on it would be the namesake bug all over again.
         self.identity_by_key = {key: row for key, row in self.by_key.items() if key in spelled_out}
+        # Unlike by_key, namesakes are the point here - _name_split_candidates
+        # wants every row sharing a surname (the LLM does the disambiguation
+        # by_key deliberately declines), so nothing is dropped for having
+        # more than one row.
+        by_surname: dict[str, list[dict]] = {}
+        for row in rows:
+            by_surname.setdefault(_fold(row.get("surname") or ""), []).append(row)
+        self.by_surname = by_surname
 
     @staticmethod
     def _fold_repeated(rows: list[dict]) -> list[dict]:
@@ -626,7 +634,12 @@ def _name_split_candidates(catalog: RussianNamesCatalog, person: Person) -> list
     this person - a broad net (not the strict exact-key match
     RussianNamesCatalog.match() uses for identity/degree below), on purpose:
     the LLM does the namesake disambiguation strict match deliberately
-    declines."""
+    declines.
+
+    Looked up through catalog.by_surname (built once when the catalog
+    loads) instead of scanning every row per person - the catalog can run
+    to thousands of rows, checked for every person in the group.
+    """
     surnames = {
         _fold(token)
         for name in (person.name_raw, *person.name_variants)
@@ -635,13 +648,15 @@ def _name_split_candidates(catalog: RussianNamesCatalog, person: Person) -> list
     }
     seen: set[tuple] = set()
     candidates: list[dict] = []
-    for row in catalog.rows:
-        if _fold(row.get("surname") or "") not in surnames:
-            continue
-        key = (row.get("surname"), row.get("name"), row.get("patronymic"))
-        if key not in seen:
-            seen.add(key)
-            candidates.append(row)
+    # Sorted so the candidate list - and the indices matched_candidate
+    # refers to - stay the same across runs regardless of set iteration
+    # order, when a person has more than one folded surname token.
+    for surname in sorted(surnames):
+        for row in catalog.by_surname.get(surname, ()):
+            key = (row.get("surname"), row.get("name"), row.get("patronymic"))
+            if key not in seen:
+                seen.add(key)
+                candidates.append(row)
     return candidates
 
 
