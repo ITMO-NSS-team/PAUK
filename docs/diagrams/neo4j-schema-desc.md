@@ -25,7 +25,10 @@
   external-строкой того же человека.
 * **`openalex_id`** (`String`) — идентификатор в OpenAlex.
 * **`orcid`** (`String`) — идентификатор ORCID.
-* **`name_en`** (`String`) — имя на английском.
+* **`name_en`** (`String`) — полное имя на английском (собрано из частей ниже).
+* **`first_name_en`** (`String`) — имя на английском.
+* **`second_name_en`** (`String`) — отчество на английском (если известно).
+* **`surname_en`** (`String`) — фамилия на английском.
 * **`name_variants`** (`List[String]`) — варианты написания имени.
 * **`email`** (`String`) — адрес e-mail.
 * **`first_name_ru`** (`String`) — имя на русском (только у ИТМО-персон).

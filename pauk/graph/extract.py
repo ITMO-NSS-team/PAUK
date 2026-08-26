@@ -98,8 +98,8 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "orcid",
             "name_raw",
             "name_variants",
-            "email",
-            "emails",
+            "email",  # one address for the card
+            "emails",  # every known address - github_match identity, not a duplicate
             "first_name_ru",
             "second_name_ru",
             "surname_ru",
@@ -161,8 +161,8 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "orcid",
             "name_raw",
             "name_variants",
-            "email",
-            "emails",
+            "email",  # one address for the card
+            "emails",  # every known address - github_match identity, not a duplicate
             "first_name_ru",
             "second_name_ru",
             "surname_ru",

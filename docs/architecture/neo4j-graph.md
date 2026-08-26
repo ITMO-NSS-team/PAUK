@@ -16,7 +16,7 @@
 
 | Узел | Уникальный ключ | Метки |
 |---|---|---|
-| Person | `id` (голый OpenAlex author ID) | `Person` (`is_itmo: bool` — свойство, не метка) |
+| Person | `id` (голый OpenAlex author ID) | `Person` |
 | Department | `id` (uid-слаг из `name_en`) | `Department` |
 | Organization | `id` и `name_en` (оба уникальны) | `Organization` |
 | Publication | `id` (голый OpenAlex work ID) | `Publication` |
