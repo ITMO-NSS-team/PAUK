@@ -339,13 +339,12 @@ def apply_overrides(client, db: Database) -> dict[str, int]:
             if not _needs_write(current, fields):
                 unchanged += 1
                 continue
-            # What is in the graph right now is what the pipeline last
-            # wrote — the value this override is about to cover up. Kept on
-            # the decision so a disagreement can be seen without digging
-            # through the feed for it.
-            db[COLLECTION].update_one(
-                {"_id": override["_id"]},
-                {"$set": {f"source_value.{name}": current.get(name) for name in fields}})
+            covered = {name: current.get(name) for name, value in fields.items()
+                       if current.get(name) != value}
+            if covered:
+                db[COLLECTION].update_one(
+                    {"_id": override["_id"]},
+                    {"$set": {f"source_value.{name}": value for name, value in covered.items()}})
             update_node(client, label, target_id, fields)
             applied += 1
         except MutationError as error:

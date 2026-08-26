@@ -1,4 +1,5 @@
 import unittest
+from datetime import UTC, datetime
 
 import mongomock
 from fastapi.testclient import TestClient
@@ -16,10 +17,21 @@ from pauk.settings import Settings
 from .test_admin_nodes import FakePanelGraph
 
 
-def source_wrote(db, label, node_id, field, before, after, when="2026-08-25T10:00:00",
+def source_wrote(db, label, node_id, field, before, after, after_hours=1,
                  actor="pipeline", source="publish"):
+    """Record a write by the pipeline, placed relative to the decision.
+
+    The time is computed from the decision's own `created_at` rather than
+    written as a date: conflicts only count writes that came *after* the
+    edit, so a fixed timestamp silently changes meaning as the calendar
+    moves — these tests passed on one day and failed on the next.
+    """
+    from datetime import timedelta
+    row = db["graph_overrides"].find_one({"target_id": node_id})
+    base = row["created_at"] if row else datetime.now(UTC)
     db[feed.COLLECTION].insert_one({
-        "timestamp": when, "actor": actor, "source": source, "entity_type": label,
+        "timestamp": (base + timedelta(hours=after_hours)).isoformat(),
+        "actor": actor, "source": source, "entity_type": label,
         "entity_id": node_id, "change_kind": "updated", "diff": {field: [before, after]}})
 
 
@@ -88,14 +100,13 @@ class ConflictTest(unittest.TestCase):
         # row would be dropped for repeating itself and the test would pass
         # whether or not the time filter works at all.
         source_wrote(self.db, "Person", "A1", "name_ru", "Ivan", "Ivan Petrov",
-                     when="2020-01-01T00:00:00")
+                     after_hours=-24)
         self.assertEqual(decisions.conflicts(self.db), [])
 
     def test_the_latest_word_of_the_source_is_the_one_that_counts(self):
-        source_wrote(self.db, "Person", "A1", "name_ru", "Иван", "И. Петров",
-                     when="2026-08-25T10:00:00")
+        source_wrote(self.db, "Person", "A1", "name_ru", "Иван", "И. Петров", after_hours=1)
         source_wrote(self.db, "Person", "A1", "name_ru", "И. Петров", "И. П. Петров",
-                     when="2026-08-26T10:00:00")
+                     after_hours=2)
         (row,) = decisions.conflicts(self.db)
         self.assertEqual(row["now"], "И. П. Петров")
 
@@ -449,3 +460,44 @@ class UndoRestoresFieldTest(unittest.TestCase):
         response = self.undo()
         self.assertIn("undone=1", response.headers["location"])
         self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Пётр Иванов")
+
+
+class PartiallyRewrittenTest(unittest.TestCase):
+    """One decision, one field the pipeline fills and one it does not.
+
+    "Fixed the name and added an ORCID that OpenAlex never had" — ordinary
+    enough. Publishing rewrites the first field and leaves the second
+    alone, and the graph then holds the source's value for one and this
+    override's own value for the other.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.graph = FakePanelGraph()
+        self.graph.add("Person", "A1", name_en="SRC-A", name_ru="SRC-B")
+        self.graph.nodes[("Person", "A1")].update({"name_en": "MAN-A", "name_ru": "MAN-B"})
+        record_override(self.db, "Person", "A1", "set",
+                        {"name_en": "MAN-A", "name_ru": "MAN-B"}, actor="user:roman",
+                        auto_value={"name_en": "SRC-A", "name_ru": "SRC-B"})
+        # публикация переписала только одно поле
+        self.graph.nodes[("Person", "A1")]["name_en"] = "SRC-A2"
+        from pauk.graph.overrides import apply_overrides
+        apply_overrides(self.graph, self.db)
+        self.row = self.db["graph_overrides"].find_one({"_id": "node:Person:A1"})
+
+    def test_only_what_the_source_rewrote_is_recorded_as_its_word(self):
+        # The untouched field still holds this override's own value, and
+        # storing that as the source's word would be a lie about who said
+        # it.
+        self.assertEqual(self.row["source_value"], {"name_en": "SRC-A2"})
+
+    def test_no_phantom_conflict_on_the_untouched_field(self):
+        self.assertEqual([row["field"] for row in decisions.conflicts(self.db)], ["name_en"])
+
+    def test_undoing_restores_the_pre_edit_value_of_the_untouched_field(self):
+        # The failure this guards against is quiet: source_value wins over
+        # auto_value, so a field wrongly recorded there would be "restored"
+        # to the very value the undo was meant to remove.
+        back = decisions.source_of_truth(self.db, "Person", "A1")
+        self.assertEqual(back["name_ru"], "SRC-B")
+        self.assertEqual(back["name_en"], "SRC-A2")
