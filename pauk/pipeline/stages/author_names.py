@@ -4,7 +4,11 @@ The GUI shows ITMO people to a Russian-speaking audience, but OpenAlex
 serves a single romanized display name ("Nikolay O. Nikitin", sometimes
 Cyrillic, sometimes mixed) — name_raw. This stage splits it, and every
 known spelling variant, into surname/first name/second name (patronymic),
-in both Russian and English:
+in both Russian and English. It also composes name_ru and name_en - one
+flat "surname first name second name" string per language, matching
+gui/generate_data.py's author_label() shape - so a graph consumer that
+just wants a display string (Cypher diagnostics in gui/checks.py, for
+instance) doesn't have to reassemble it from the parts itself:
 
 1. Catalog match, for identity and the academic degree only. A CSV of
    official ITMO staff records (columns: name_ru, surname, name,
@@ -33,6 +37,10 @@ in both Russian and English:
    or fixes a *_ru field that isn't actually in Cyrillic. A failed LLM call
    falls back to reverse transliteration ("Pavel Ivanov" -> "Павел Иванов",
    to_cyrillic) for name_ru only, and is retried on the next pipeline run.
+   Runs for external persons too, not just ITMO staff: a foreign co-author's
+   name gets the same Russian/English split, and the graph carries it
+   (external_person prop_fields, see graph/extract.py) even though the ITMO
+   staff catalog itself never has anything to match them against.
 
 A catalog match is also an identity statement, not just a name: one row
 is one employee, so two person records that resolve to the same row are
@@ -838,12 +846,15 @@ class AuthorNamesStage(EnrichmentStage):
                 context={"person_id": person.id},
             )
             if parsed is None:
-                # Reverse transliteration for name_ru only, same as before
-                # this stage called an LLM at all - guessing the parts from
-                # word order is not reliable enough to store, so they stay
-                # whatever an earlier successful run left them. Retried on
-                # the next pipeline run (status FAILED).
+                # Reverse transliteration for name_ru, same as before this
+                # stage called an LLM at all - guessing the parts from word
+                # order is not reliable enough to store, so they stay
+                # whatever an earlier successful run left them. name_en has
+                # no transliteration to do: name_raw already comes from
+                # OpenAlex romanized, so it is already a reasonable English
+                # display name. Retried on the next pipeline run (FAILED).
                 person.name_ru = person.name_ru or to_cyrillic(person.name_raw)
+                person.name_en = person.name_en or person.name_raw
                 person.processing[self.name] = self._state(
                     state, ProcessingStatus.FAILED, 0, error="llm request failed"
                 )
@@ -871,6 +882,15 @@ class AuthorNamesStage(EnrichmentStage):
                     if part
                 )
                 or person.name_ru
+            )
+            person.name_en = (
+                " ".join(
+                    part
+                    for part in (person.surname_en, person.first_name_en, person.second_name_en)
+                    if part
+                )
+                or person.name_en
+                or person.name_raw
             )
             if parsed.get("matched_candidate") is not None:
                 matched += 1

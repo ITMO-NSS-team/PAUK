@@ -13,8 +13,8 @@ from pauk.storage import PreparedStore, RawStore
 CATALOG_HEADER = "name_ru,surname,name,patronymic,degree\n"
 
 
-def person(pid, name, *, variants=(), degree=None):
-    return Person(id=pid, openalex_id=pid, is_itmo=True, name_raw=name,
+def person(pid, name, *, variants=(), degree=None, itmo=True):
+    return Person(id=pid, openalex_id=pid, is_itmo=itmo, name_raw=name,
                   name_variants=list(variants), degree=degree)
 
 
@@ -72,7 +72,26 @@ class AuthorNamesStageTest(unittest.TestCase):
         self.assertEqual(result["author_names"], 1)
         self.assertEqual(people["A1"].processing["author_names"].status, "completed_empty")
 
-    def test_llm_reply_fills_all_six_parts_and_composes_name_ru(self):
+    def test_an_external_person_gets_the_same_llm_split_as_an_itmo_one(self):
+        # The graph carries split fields for external persons too
+        # (external_person prop_fields, graph/extract.py) - the stage must
+        # not skip them just because the ITMO staff catalog never matches
+        # a foreign co-author.
+        result, people = self.run_stage(
+            [person("A1", "Frank Niessen", itmo=False)], [],
+            replies=[{
+                "matched_candidate": None,
+                "surname_ru": "Ниссен", "first_name_ru": "Франк",
+                "surname_en": "Niessen", "first_name_en": "Frank",
+                "reason": "",
+            }],
+        )
+        self.assertEqual(result["author_names"], 1)
+        row = people["A1"]
+        self.assertEqual((row.surname_ru, row.first_name_ru), ("Ниссен", "Франк"))
+        self.assertEqual(row.processing["author_names"].status, "completed")
+
+    def test_llm_reply_fills_all_six_parts_and_composes_name_ru_and_name_en(self):
         result, people = self.run_stage(
             [person("A1", "Nikolay O. Nikitin")],
             ["Никитин Николай Олегович,Никитин,Николай,Олегович,к.т.н."],
@@ -91,6 +110,7 @@ class AuthorNamesStageTest(unittest.TestCase):
         self.assertEqual((row.surname_en, row.first_name_en, row.second_name_en),
                          ("Nikitin", "Nikolay", "Olegovich"))
         self.assertEqual(row.name_ru, "Никитин Николай Олегович")
+        self.assertEqual(row.name_en, "Nikitin Nikolay Olegovich")
         # degree comes from the free deterministic catalog lookup, not the LLM.
         self.assertEqual(row.degree, "к.т.н.")
         self.assertEqual(row.processing["author_names"].status, "completed")
@@ -105,19 +125,22 @@ class AuthorNamesStageTest(unittest.TestCase):
         )
         self.assertEqual(people["A1"].degree, "PhD")
 
-    def test_a_failed_llm_call_falls_back_to_transliteration_for_name_ru_only(self):
+    def test_a_failed_llm_call_falls_back_to_transliteration_for_name_ru_and_name_raw_for_name_en(self):
         result, people = self.run_stage([person("A1", "Pavel V. Zhukov")], [], replies=[None])
         self.assertEqual(result["names_failed"], 1)
         row = people["A1"]
         self.assertEqual(row.name_ru, to_cyrillic("Pavel V. Zhukov"))
+        self.assertEqual(row.name_en, "Pavel V. Zhukov")  # name_raw is already Latin
         self.assertIsNone(row.surname_ru)  # parts are never guessed on failure
         self.assertEqual(row.processing["author_names"].status, "failed")
 
     def test_a_failed_llm_call_does_not_erase_a_name_ru_an_earlier_run_wrote(self):
         first = person("A1", "Pavel V. Zhukov")
         first.name_ru = "Павел Жуков"
+        first.name_en = "Pavel Zhukov"
         _, people = self.run_stage([first], [], replies=[None])
         self.assertEqual(people["A1"].name_ru, "Павел Жуков")
+        self.assertEqual(people["A1"].name_en, "Pavel Zhukov")
 
     def test_an_invented_patronymic_with_no_candidate_is_dropped(self):
         # The model states a patronymic despite there being no directory

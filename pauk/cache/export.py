@@ -64,6 +64,9 @@ def load_db(driver) -> dict[str, list]:
     (:Repository)-[:OWNED_BY]->(:GitHubProfile)."""
     db: dict[str, list] = {}
 
+    # TODO: add external persons. Person:External nodes carry the same RU/EN
+    # name-part fields as Person:Itmo (see graph/extract.py's external_person
+    # prop_fields) - they just aren't pulled into the snapshot/site yet.
     db["persons"] = cypher_dict(
         driver,
         "MATCH (p:Person:Itmo) "

@@ -1,6 +1,8 @@
 import unittest
 
 from pauk.graph.extract import NODE_REGISTRY, extract_node, extract_relationships
+from pauk.models.department import Department
+from pauk.models.person import Person
 
 PERSON_ROW = {
     "id": "p1",
@@ -131,6 +133,57 @@ class ExtractRelationshipsTest(unittest.TestCase):
         self.assertEqual(to_candidate, [("pub1", "https://example.com/maybe-repo", {})])
 
         self.assertEqual(len(to_repo) + len(to_candidate), len(PUBLICATION_ROW["mentions_links"]))
+
+
+class GraphFieldCoverageTest(unittest.TestCase):
+    """Every model field either reaches Neo4j or is excluded on purpose.
+
+    Nothing forces a new Person/Department field into prop_fields - it is
+    easy to add a field the pipeline computes and never notice the graph
+    (and everything downstream of it: cache/export.py, the GUI) never sees
+    it. This test is the safety net: a field must be in prop_fields
+    somewhere, or listed below with a reason it deliberately isn't.
+    """
+
+    PERSON_EXCLUDED = {
+        "id": "used as the node id, not a prop",
+        "is_itmo": "determines the Person:Itmo/Person:External label, not a prop",
+        "department_ids": "published as a BELONGS_TO relationship",
+        "authored": "published as an AUTHORED relationship",
+        "contributed_to": "published as a CONTRIBUTED_TO relationship",
+        "processing": "per-stage pipeline bookkeeping, never meant for the graph",
+    }
+    DEPARTMENT_EXCLUDED = {
+        "id": "used as the node id, not a prop",
+        "parent_id": "published as a PART_OF relationship",
+        "organization_id": "published as a PART_OF relationship",
+    }
+
+    def test_every_person_field_reaches_the_graph_or_is_excluded_with_a_reason(self):
+        covered = set(NODE_REGISTRY["itmo_person"].prop_fields) | set(
+            NODE_REGISTRY["external_person"].prop_fields
+        )
+        for field in Person.model_fields:
+            if field in self.PERSON_EXCLUDED:
+                continue
+            self.assertIn(
+                field, covered,
+                f"Person.{field} reaches no graph node's prop_fields and has no exclusion "
+                "reason - add it to itmo_person/external_person prop_fields or to "
+                "PERSON_EXCLUDED above",
+            )
+
+    def test_every_department_field_reaches_the_graph_or_is_excluded_with_a_reason(self):
+        covered = set(NODE_REGISTRY["department"].prop_fields)
+        for field in Department.model_fields:
+            if field in self.DEPARTMENT_EXCLUDED:
+                continue
+            self.assertIn(
+                field, covered,
+                f"Department.{field} reaches no graph node's prop_fields and has no "
+                "exclusion reason - add it to department prop_fields or to "
+                "DEPARTMENT_EXCLUDED above",
+            )
 
 
 if __name__ == "__main__":

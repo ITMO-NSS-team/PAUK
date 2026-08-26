@@ -56,6 +56,7 @@ class Person(BaseModel):
     researcher_id: str | None = None
     dblp_id: str | None = None
     name_ru: str | None = None
+    name_en: str | None = None
     other_names: list[str] = Field(default_factory=list)
     biography: str | None = None
     country: str | None = None
