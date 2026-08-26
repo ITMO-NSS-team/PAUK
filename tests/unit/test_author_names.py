@@ -33,7 +33,10 @@ class _FakeOpenRouterClient:
 
     def chat_json(self, prompt):
         self.last_prompt = prompt
-        return self._replies.pop(0) if self._replies else None
+        reply = self._replies.pop(0) if self._replies else None
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
 
     @classmethod
     def queued(cls, replies):
@@ -66,6 +69,27 @@ class AuthorNamesStageTest(unittest.TestCase):
             prepared.write_models("persons", [person("A1", "Nikolay Nikitin")])
             with self.assertRaises(FileNotFoundError):
                 AuthorNamesStage(prepared, RawStore(db, "sample"), config).run()
+
+    def test_a_crash_partway_through_does_not_lose_already_processed_people(self):
+        # Each person is upserted right after it's processed
+        # (PreparedStore.upsert_models), not batched into one write_models()
+        # call after the whole loop - so an unexpected error on person #2
+        # (a malformed LLM reply, or anything else the loop doesn't guard
+        # against) must not roll back the LLM work already spent and saved
+        # for person #1.
+        with self.assertRaises(RuntimeError):
+            self.run_stage(
+                [person("A1", "Nikolay Nikitin"), person("A2", "Ivan Petrov")], [],
+                replies=[
+                    {"matched_candidate": None, "surname_ru": "Никитин", "first_name_ru": "Николай",
+                     "surname_en": "Nikitin", "first_name_en": "Nikolay", "reason": ""},
+                    RuntimeError("unexpected shape"),
+                ],
+            )
+        saved = {p.id: p for p in self.prepared.read_models("persons", Person)}
+        self.assertEqual(saved["A1"].processing["author_names"].status, "completed")
+        self.assertEqual(saved["A1"].surname_ru, "Никитин")
+        self.assertNotIn("author_names", saved["A2"].processing)
 
     def test_empty_name_raw_is_completed_empty_without_an_llm_call(self):
         result, people = self.run_stage([person("A1", "")], [], replies=[])

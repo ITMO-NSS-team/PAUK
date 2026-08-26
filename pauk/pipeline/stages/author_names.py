@@ -821,6 +821,7 @@ class AuthorNamesStage(EnrichmentStage):
                 person.processing[self.name] = self._state(
                     state, ProcessingStatus.COMPLETED_EMPTY, 0
                 )
+                self.prepared.upsert_models("persons", [person])
                 changed += 1
                 continue
 
@@ -858,6 +859,7 @@ class AuthorNamesStage(EnrichmentStage):
                 person.processing[self.name] = self._state(
                     state, ProcessingStatus.FAILED, 0, error="llm request failed"
                 )
+                self.prepared.upsert_models("persons", [person])
                 failed += 1
                 changed += 1
                 continue
@@ -896,10 +898,9 @@ class AuthorNamesStage(EnrichmentStage):
                 matched += 1
 
             person.processing[self.name] = self._state(state, ProcessingStatus.COMPLETED, 1)
+            self.prepared.upsert_models("persons", [person])
             changed += 1
 
-        if changed:
-            self.prepared.write_models("persons", people)
         logger.info(
             "author_names: %d processed, %d matched a directory candidate, "
             "%d second_name corrected (invented or misclassified), %d failed",
