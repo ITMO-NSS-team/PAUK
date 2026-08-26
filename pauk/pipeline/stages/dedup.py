@@ -44,13 +44,10 @@ Persons
     the review journal with the reason, and a person who really was split
     stays split until someone confirms it.
 
-    TODO: the corroboration signals are still coarse. A shared field
-    ("Computer Science") is weak on its own, a shared department is only as
-    good as the affiliation strings behind it, and neither says anything
-    about two namesakes in the same lab. Worth exploring: publication-year
-    ranges that cannot belong to one career, coauthor-graph distance rather
-    than a plain intersection, and per-rule precision measured against the
-    decisions reviewers make in the journal.
+    The corroboration signals are still coarse: a shared field ("Computer
+    Science") is weak on its own, a shared department is only as good as
+    the affiliation strings behind it, and neither says anything about two
+    namesakes in the same lab. Sharpening these - see #153.
 
     Every heuristic decision is journalled to dedup_candidates.jsonl in the
     group directory: applied merges carry status "merged" with the rule(s)

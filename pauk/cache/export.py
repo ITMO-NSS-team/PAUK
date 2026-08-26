@@ -64,16 +64,7 @@ def load_db(driver) -> dict[str, list]:
     (:Repository)-[:OWNED_BY]->(:GitHubProfile)."""
     db: dict[str, list] = {}
 
-    # TODO(is_itmo-property): Person no longer gets an :Itmo/:External label -
-    # is_itmo is now a plain node property (see pauk/graph/extract.py). Every
-    # `:Person:Itmo`/`:Person:External` match below will silently return
-    # nothing once the graph is migrated - rewrite to
-    # `(p:Person {is_itmo: true/false})` before relying on these numbers.
-    #
-    # TODO: add external persons. Person nodes with is_itmo=false carry the
-    # same RU/EN name-part fields as ITMO ones (see graph/extract.py's
-    # external_person prop_fields) - they just aren't pulled into the
-    # snapshot/site yet.
+    # is_itmo:Itmo/External label migration - #150. Missing external persons - #151.
     db["persons"] = cypher_dict(
         driver,
         "MATCH (p:Person:Itmo) "

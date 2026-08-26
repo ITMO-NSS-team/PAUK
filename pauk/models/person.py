@@ -51,7 +51,7 @@ class Person(BaseModel):
     contributed_to: list[Contribution] = Field(default_factory=list)
     processing: dict[str, ProcessingState] = Field(default_factory=dict, alias="_processing")
 
-    # TODO: check this stubs
+    # Stub fields, source not wired up yet - #152.
     scopus_id: str | None = None
     researcher_id: str | None = None
     dblp_id: str | None = None

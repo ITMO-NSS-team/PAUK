@@ -332,11 +332,7 @@ def build_graph_data(db, seed: int, public: bool = False):
     )
 
     # --- nodes ------------------------------------------------------------------
-    # TODO: add external persons. db["persons"] (cache/export.py) is ITMO-only
-    # on purpose today - author_dept/pos_authors/pubs_count below all assume
-    # that set. Widening it to Person:External needs those to handle a person
-    # with no department and no co-authorship layout position, not just a
-    # wider Cypher MATCH.
+    # Missing external persons - #151.
     pubs_count = {per: len(set(author_pubs.get(per, []))) for per in static_depts}
     rank_a = dense_rank(pubs_count)
     authors = []

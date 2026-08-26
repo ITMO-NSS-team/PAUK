@@ -60,12 +60,7 @@ def _jsonable(v):
 
 # --- node / relationship inventory --------------------------------------
 
-# TODO(is_itmo-property): Person no longer gets an :Itmo/:External label -
-# is_itmo is now a plain node property (see pauk/graph/extract.py). Every
-# `:Person:Itmo`/`:Person:External` match in this file (NODE_COUNTS below,
-# the on-map count, and the department breakdown) will silently return
-# nothing once the graph is migrated - rewrite to
-# `(p:Person {is_itmo: true/false})` before trusting these stats again.
+# is_itmo:Itmo/External label migration - #150.
 NODE_COUNTS = [
     ("Публикации", "Publications", "MATCH (p:Publication) RETURN count(p)"),
     ("Персоны всего", "People total", "MATCH (p:Person) RETURN count(p)"),
