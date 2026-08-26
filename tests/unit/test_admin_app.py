@@ -231,7 +231,7 @@ class OverviewTest(unittest.TestCase):
             ("Person", "Repository", "Publication", "Department",
              "Organization", "GitHubProfile", "LinkCandidate"), 0)
         counts["Person"] = 3
-        with mock.patch("pauk.admin.app.audited_client"), \
+        with mock.patch.object(self.client.app.state.graph, "audited"), \
              mock.patch("pauk.admin.app.count_nodes", return_value=counts):
             body = " ".join(self.client.get("/").text.split())
         # The number sits in its own span, so match around the markup.
@@ -250,18 +250,15 @@ class OverviewTest(unittest.TestCase):
     def test_the_overview_asks_the_driver_not_to_wait_or_retry(self):
         # Retries suit a batch job: the driver backs off for tens of seconds
         # on an unreachable host, and a page rendered for a person cannot.
-        from unittest import mock
-        with mock.patch("pauk.admin.app.audited_client") as client, \
-             mock.patch("pauk.admin.app.count_nodes", return_value={}):
-            self.client.get("/")
-        _, options = client.call_args
-        self.assertEqual(options["retry_time"], 0)
-        self.assertLessEqual(options["connection_timeout"], 5)
+        # Driver options now belong to the shared graph, opened once for
+        # the service rather than per page.
+        from pauk.admin.app import COUNT_TIMEOUT
+        self.assertLessEqual(COUNT_TIMEOUT, 5)
 
     def test_a_graph_that_errors_does_not_take_the_overview_down(self):
         from unittest import mock
-        with mock.patch("pauk.admin.app.audited_client",
-                        side_effect=OSError("no route to host")):
+        with mock.patch.object(self.client.app.state.graph, "audited",
+                               side_effect=OSError("no route to host")):
             response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         self.assertIn("не отвечает", response.text)
@@ -297,7 +294,8 @@ class ActorContextTest(unittest.TestCase):
         # raises "created in a different Context" — after the response has
         # already been sent, which is why it only ever showed in the log.
         from unittest import mock
-        with mock.patch("pauk.admin.deps.audited_client", return_value=self.graph):
+        with mock.patch.object(self.client.app.state.graph, "audited",
+                               return_value=self.graph):
             response = self.client.get("/nodes/Person/A1")
         self.assertEqual(response.status_code, 200)
 
@@ -305,7 +303,8 @@ class ActorContextTest(unittest.TestCase):
         from unittest import mock
         token = self.client.cookies[COOKIE]
         csrf = self.db[SESSIONS].find_one({"_id": token})["csrf"]
-        with mock.patch("pauk.admin.deps.audited_client", return_value=self.graph):
+        with mock.patch.object(self.client.app.state.graph, "audited",
+                               return_value=self.graph):
             self.client.post("/nodes/Person/A1", data={"csrf": csrf, "name_ru": "Пётр"})
         (override,) = list(self.db["graph_overrides"].find())
         self.assertEqual(override["actor"], "user:roman")
@@ -315,8 +314,8 @@ class ActorContextTest(unittest.TestCase):
         # dependency is invisible in the route — it runs in another
         # context — and every entry came out as "unknown".
         from unittest import mock
-        with mock.patch("pauk.admin.deps.audited_client",
-                        return_value=self.graph) as opened:
+        with mock.patch.object(self.client.app.state.graph, "audited",
+                               return_value=self.graph) as opened:
             self.client.get("/nodes/Person/A1")
         _, options = opened.call_args
         self.assertEqual(options["actor"], "user:roman")

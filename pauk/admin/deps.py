@@ -21,7 +21,6 @@ from neo4j.exceptions import AuthError, ServiceUnavailable
 from pymongo.database import Database
 
 from pauk.admin.auth import COOKIE, User, check_csrf, read_session
-from pauk.graph.audit import audited_client
 from pauk.settings import Settings
 
 
@@ -77,8 +76,12 @@ async def require_csrf(request: Request,
 def graph_for(request: Request, user: Annotated[User, Depends(require_user)]) -> Iterator:
     """An audited graph client with the caller's name attached.
 
-    Opened per request rather than kept on the app: a driver shared across
-    requests would report whichever actor happened to be set last.
+    The driver is shared by the whole application and the audited wrapper
+    is per request. That became possible once the actor moved onto the
+    wrapper: while it was read from a contextvar, a shared driver would
+    have reported whoever was set last, so each request opened and tore
+    down its own connection pool — twice on the overview, which counts
+    nodes through a second client of its own.
 
     Raises:
         HTTPException: 503 when the graph cannot be reached — no password
@@ -87,12 +90,7 @@ def graph_for(request: Request, user: Annotated[User, Depends(require_user)]) ->
             the person nothing about what to fix.
     """
     try:
-        # The name goes to the client itself, not to a contextvar: this
-        # dependency runs in one context and the route in another, so a
-        # variable set here is invisible there — every panel edit was
-        # landing in the feed as "unknown".
-        client = audited_client(request.app.state.config, request.app.state.db,
-                                actor=user.actor, source="admin-ui")
+        client = request.app.state.graph.audited(actor=user.actor, source="admin-ui")
     except ValueError as error:
         logger.warning("graph unavailable: %s", error)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(error)) from None

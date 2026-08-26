@@ -37,7 +37,7 @@ from pauk.admin.auth import (
     read_session,
 )
 from pauk.admin.deps import CurrentUser, Db, Session, templates
-from pauk.graph.audit import audited_client
+from pauk.graph.audit import SharedGraph
 from pauk.graph.mutations import NODE_FIELDS, RELATIONSHIPS, count_nodes
 from pauk.settings import Settings
 from pauk.storage import get_mongo_client
@@ -48,7 +48,30 @@ logger = logging.getLogger("pauk.admin")
 COUNT_TIMEOUT = 2.0
 
 
-def _node_counts(config: Settings, db) -> dict[str, int] | None:
+class _LazyGraph:
+    """The shared driver, opened on first use and kept afterwards.
+
+    Not opened at startup: an unreachable graph must not stop the panel
+    from starting, and a service that cannot sign anyone in is worse than
+    one whose node screens say the database is quiet.
+    """
+
+    def __init__(self, config: Settings, db) -> None:
+        self._config, self._db, self._shared = config, db, None
+
+    def audited(self, **who):
+        if self._shared is None:
+            self._shared = SharedGraph(self._config, self._db,
+                                       connection_timeout=COUNT_TIMEOUT, retry_time=0)
+        return self._shared.audited(**who)
+
+    def close(self) -> None:
+        if self._shared is not None:
+            self._shared.close()
+            self._shared = None
+
+
+def _node_counts(config: Settings, db, graph=None) -> dict[str, int] | None:
     """How many nodes of each label there are, or None if the graph is silent.
 
     The count is a nicety on an overview page, so the driver is told to
@@ -58,17 +81,12 @@ def _node_counts(config: Settings, db) -> dict[str, int] | None:
     stays unreachable — the driver backs off for tens of seconds.
     """
     try:
-        client = audited_client(config, db, connection_timeout=COUNT_TIMEOUT, retry_time=0)
+        # Тот же общий драйвер, что и у остальных страниц: обзор открывал
+        # себе второй, и заход на главную стоил двух пулов соединений.
+        return count_nodes(graph.audited(actor="panel", source="admin-ui"))
     except Exception as error:  # noqa: BLE001 — the overview works without a graph
         logger.info("overview without counts: %s", error)
         return None
-    try:
-        return count_nodes(client)
-    except Exception as error:  # noqa: BLE001
-        logger.info("overview without counts: %s", error)
-        return None
-    finally:
-        client.close()
 
 
 def _safe_next(target: str) -> str:
@@ -95,6 +113,9 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
     app = FastAPI(title="PAUK admin", docs_url=None, redoc_url=None)
     app.state.config = config
     app.state.db = db if db is not None else get_mongo_client(config)[config.mongo_db]
+    # Один драйвер на сервис. Открывается лениво: панель должна стартовать
+    # и без графа — вход и учётные записи живут в Mongo.
+    app.state.graph = _LazyGraph(config, app.state.db)
 
     @app.exception_handler(status.HTTP_401_UNAUTHORIZED)
     async def unauthorized(request: Request, exc: HTTPException):
@@ -167,7 +188,7 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request, user: CurrentUser, session: Session):
-        counts = _node_counts(config, app.state.db)
+        counts = _node_counts(config, app.state.db, app.state.graph)
         labels = [(label, len(NODE_FIELDS[label]), (counts or {}).get(label))
                   for label in sorted(NODE_FIELDS)]
         return templates.TemplateResponse(request, "index.html", {

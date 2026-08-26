@@ -130,7 +130,7 @@ async def create(request: Request, label: str, user: Editor,
     # A tombstone from an earlier deletion would remove this node again on
     # the next publish. Creating the id by hand says plainly that it is
     # wanted, so the decision to delete it is withdrawn.
-    if deactivate_override(db, label, node_id):
+    if deactivate_override(db, label, node_id, only_op="delete"):
         logger.info("%s revoked the tombstone on %s %s", user.actor, label, node_id)
     logger.info("%s created %s %s", user.actor, label, node_id)
     return RedirectResponse(f"/nodes/{label}/{node_id}?created=1",
@@ -157,7 +157,7 @@ async def restore(request: Request, label: str, node_id: str, user: Editor,
                      if name in NODE_FIELDS[label]})
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
-    deactivate_override(db, label, node_id)
+    deactivate_override(db, label, node_id, only_op="delete")
     logger.info("%s restored %s %s", user.actor, label, node_id)
     return RedirectResponse(f"/nodes/{label}/{node_id}?restored=1",
                             status_code=status.HTTP_303_SEE_OTHER)

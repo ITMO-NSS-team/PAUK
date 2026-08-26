@@ -505,3 +505,37 @@ class AuditedNeo4jClient:
         self._client.promote_link_candidates_batch(candidates)
         after = self._fetch_node_props("LinkCandidate", ids)  # candidates that were promoted vanish -> "deleted"
         self._emit_diffs("promote_link_candidates", "LinkCandidate", before, after)
+
+
+class SharedGraph:
+    """One driver for the whole service, one audited wrapper per caller.
+
+    A driver owns a connection pool and is meant to outlive a single
+    request; opening one per page means building and tearing down that
+    pool every time. The wrapper around it is cheap and carries the actor,
+    so each caller gets its own without touching the connection.
+
+    Callers close nothing: `close()` belongs to whoever owns the service.
+    """
+
+    def __init__(self, config: Settings, db: Database | None = None, **driver_options):
+        self._raw = Neo4jClient(config.neo4j_uri, config.neo4j_user, config.neo4j_password,
+                                **driver_options)
+        self._sink = build_audit_sink(config, db)
+
+    def audited(self, actor: str | None = None, source: str | None = None) -> AuditedNeo4jClient:
+        return _NonClosing(self._raw, self._sink, actor=actor, source=source)
+
+    def close(self) -> None:
+        self._raw.close()
+
+
+class _NonClosing(AuditedNeo4jClient):
+    """A wrapper whose close() leaves the shared driver alone.
+
+    Routes close their client when the request ends, which must not take
+    the connection pool with it.
+    """
+
+    def close(self) -> None:
+        return None

@@ -27,6 +27,18 @@ PAGE = 50
 PANEL = "admin-ui"
 
 
+def _moment(value) -> str:
+    """A time as text, in the same shape the feed uses.
+
+    The feed stores isoformat strings; `updated_at` is a datetime, and its
+    str() puts a space where isoformat puts "T". Sorting the two together
+    as text orders them wrongly, so everything is brought to isoformat.
+    """
+    if value is None:
+        return ""
+    return value.isoformat() if hasattr(value, "isoformat") else str(value).replace(" ", "T", 1)
+
+
 def _title(row: dict) -> str:
     """The decision as one line, for a list."""
     if row.get("kind") == "rel":
@@ -86,23 +98,24 @@ def conflicts(db: Database, limit: int = PAGE, skip: int = 0) -> list[dict]:
             if name in stated:
                 # Recorded by apply_overrides at the moment it covered the
                 # value up — the source's own word, without inference.
-                value, actor, when = stated[name], "pipeline", str(row.get("updated_at", ""))
+                value, actor, when = stated[name], "pipeline", _moment(row.get("updated_at"))
             else:
                 latest = _last_source_write(db, row["label"], row["target_id"], name, since)
                 if latest is None:
                     continue
                 value, actor, when = latest
             if value == auto.get(name):
-                continue        # источник повторяет то же, что и был — не конфликт
+                continue
             found.append({
                 "label": row["label"], "target_id": row["target_id"], "title": _title(row),
                 "field": name, "ours": ours, "was": auto.get(name), "now": value,
                 "actor": actor, "when": when, "note": row.get("note", ""),
             })
-    # Paged after the fact, not in the query: a conflict is not a stored
-    # row but a comparison between a decision and the feed, so there is
-    # nothing to skip over until the comparisons are done. Bounded by the
-    # number of hand edits, which is small by nature.
+
+    # Sorted on one representation: `updated_at` is a datetime whose str()
+    # separates date and time with a space, while feed timestamps use "T".
+    # A space sorts before "T", so mixing them sent every decision-sourced
+    # row to the bottom regardless of when it happened.
     found.sort(key=lambda row: row["when"], reverse=True)
     return found[skip:skip + limit]
 

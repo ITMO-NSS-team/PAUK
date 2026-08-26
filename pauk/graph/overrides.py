@@ -233,15 +233,29 @@ def tombstoned_relationships(db: Database) -> set[tuple[str, str, str, str, str]
     }
 
 
-def deactivate_override(db: Database, label: str, target_id: str) -> bool:
+def deactivate_override(db: Database, label: str, target_id: str,
+                        only_op: str | None = None) -> bool:
     """Stop applying an override without losing the record of it.
 
     Undoing an edit is switching this off and reapplying, not deleting the
     document: the panel still has to show that the edit existed and who
     made it.
+
+    Args:
+        db: Mongo database.
+        label: Node label.
+        target_id: Which node.
+        only_op: Switch it off only if the decision is this operation.
+            Creating a node by hand withdraws the tombstone that would
+            delete it again — but the same document also carries a field
+            edit when there is one, and that edit is nobody's business
+            here. Left unset, any decision about the node is switched off.
     """
+    query: dict = {"_id": override_id(label, target_id)}
+    if only_op is not None:
+        query["op"] = only_op
     result = db[COLLECTION].update_one(
-        {"_id": override_id(label, target_id)}, {"$set": {"active": False, "updated_at": _now()}})
+        query, {"$set": {"active": False, "updated_at": _now()}})
     return result.modified_count > 0
 
 
