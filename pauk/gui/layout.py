@@ -7,6 +7,7 @@ import colorsys
 import math
 import random
 from collections import Counter, defaultdict
+from itertools import combinations
 
 import networkx as nx
 import numpy as np
@@ -69,6 +70,47 @@ def spread_min_distance(pos, d_min, seed, iters=800):
         np.subtract.at(P, pairs[:, 1], push)
         np.clip(P, 30.0, 970.0, out=P)
     return {k: (round(float(x), 1), round(float(y), 1)) for k, (x, y) in zip(keys, P, strict=True)}
+
+
+def co_membership_weights(groups, weight, cap=None):
+    """Project "these nodes share a thing" onto weighted node-node edges.
+
+    Each group of `k` members is a clique of k*(k-1)/2 pairs, so a raw count
+    lets one large group outweigh every small one put together. Newman's
+    share — `weight / (k - 1)` per pair — keeps a member's total pull on its
+    group constant regardless of the group's size, which is what makes two
+    repositories sharing a single publication rank above two of the fifty
+    a lab account happens to hold.
+
+    `cap` drops groups larger than it outright: past some size the shared
+    thing stops being evidence (a bot credited on two hundred repositories)
+    and only smears the layout.
+    """
+    pair_w = defaultdict(float)
+    for members in groups:
+        members = sorted(set(members))
+        if len(members) < 2 or (cap is not None and len(members) > cap):
+            continue
+        share = weight / (len(members) - 1)
+        for a, b in combinations(members, 2):
+            pair_w[(a, b)] += share
+    return pair_w
+
+
+def top_k_edges(pair_w, k):
+    """Keep each node's k strongest edges; the result is their union, so a node
+    can still end up with more than k. Without this the densest groups render
+    as solid ink and hide every edge that carries actual information."""
+    strongest = defaultdict(list)
+    for (a, b), w in pair_w.items():
+        strongest[a].append((w, b))
+        strongest[b].append((w, a))
+    kept = {}
+    for node, lst in strongest.items():
+        lst.sort(key=lambda t: (-t[0], t[1]))
+        for w, other in lst[:k]:
+            kept[(node, other) if node < other else (other, node)] = w
+    return kept
 
 
 def sparse_dept_edges(all_ids, dept_of, rng, k=DEPT_EDGE_K, weight=DEPT_EDGE_WEIGHT, taper_size=None):

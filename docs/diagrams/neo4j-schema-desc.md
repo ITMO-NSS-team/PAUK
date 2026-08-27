@@ -135,8 +135,13 @@
 * **`access_date`** (`Date`) — дата проверки / получения доступа.
 * **`has_readme`** (`Boolean`) — наличие README.
 * **`stars_num`** (`Integer`) — количество звёзд.
-* **`last_updated`** (`Date`) — дата последнего обновления.
-* **`license`** (`String`) — лицензия.
+* **`last_updated`** (`Date`) — дата последнего коммита (`pushed_at`, не `updated_at`).
+* **`license`** (`String`) — лицензия (SPDX-идентификатор).
+* **`topics`** (`List[String]`) — темы, проставленные владельцем на GitHub.
+* **`language`** (`String`) — основной язык по оценке GitHub.
+* **`forks_num`** (`Integer`) — количество форков.
+* **`archived`** (`Boolean`) — репозиторий помечен архивным.
+* **`is_fork`** (`Boolean`) — сам репозиторий является форком.
 * **`contributors`** (`List[String]`) — контрибьюторы.
 * **`merged_ids`** (`List[String]`) — id, схлопнутые при дедупе.
 

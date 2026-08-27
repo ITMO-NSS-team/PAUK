@@ -14,8 +14,6 @@ from collections import Counter, defaultdict
 from itertools import combinations
 from pathlib import Path
 
-import networkx as nx
-
 from .config import (
     COAUTH_MIN_W,
     FA2_ITER_AUTHORS,
@@ -23,6 +21,7 @@ from .config import (
     FA2_ITER_REPOS,
     MIN_SEP_AUTHORS,
     MIN_SEP_PUBS,
+    MIN_SEP_REPOS,
     NO_DEPT_COLOR,
     NO_DEPT_NAME,
     NO_DEPT_NAME_EN,
@@ -30,15 +29,24 @@ from .config import (
     PUB_DEPT_EDGE_WEIGHT,
     PUB_EDGE_MIN_W,
     PUB_LAYOUT_TOP_K,
+    REPO_DEPT_EDGE_K,
+    REPO_DEPT_EDGE_WEIGHT,
+    REPO_EDGE_TOP_K,
+    REPO_GROUP_CAP,
+    REPO_W_COAUTHOR,
+    REPO_W_OWNER,
+    REPO_W_PERSON,
+    REPO_W_PUB,
 )
 from .layout import (
+    co_membership_weights,
     dense_rank,
     fa2_blended_layout,
-    fit_coords,
     golden_color,
     majority_dept,
     sparse_dept_edges,
     spread_min_distance,
+    top_k_edges,
 )
 
 logger = logging.getLogger(__name__)
@@ -176,7 +184,8 @@ def build_graph_data(db, seed: int, public: bool = False):
             repo_dept_rows[rid].append(did)
 
     repo_dept = {}
-    for rid, _, _, _, _, _ in db["repositories"]:
+    for row in db["repositories"]:
+        rid = row["id"]
         primary = majority_dept(
             [pub_primary[p]] for p in repo_pub_map.get(rid, []) if pub_primary.get(p)
         )
@@ -209,7 +218,7 @@ def build_graph_data(db, seed: int, public: bool = False):
 
     n_auth = Counter(g(d) for d in author_dept.values())
     n_pub = Counter(g(pub_primary[p]) for p in pub_ids)
-    n_repo = Counter(g(repo_dept[r[0]]) for r in db["repositories"])
+    n_repo = Counter(g(repo_dept[row["id"]]) for row in db["repositories"])
 
     departments = [
         {
@@ -314,21 +323,67 @@ def build_graph_data(db, seed: int, public: bool = False):
         time.time() - t0,
     )
 
-    # --- repository edges (shared publications, incl. pubs outside the graph) ---
+    # --- repository edges: four signals, not just a shared publication ----------
+    # One rule (both repos implement the same publication) leaves ~90% of the
+    # repositories with no edge at all, and FA2 has nothing to lay out. Each
+    # signal below is a group of repositories that belong together for a
+    # different reason; co_membership_weights turns each into weighted pairs.
+    repo_ids = {row["id"] for row in db["repositories"]}
     repo_all_pubs = defaultdict(set)
     for rid, pid in db["repo_pubs"]:
-        repo_all_pubs[rid].add(pid)
-    repo_edge_w = Counter()
-    for a, b in combinations(sorted(repo_all_pubs), 2):
-        shared = len(repo_all_pubs[a] & repo_all_pubs[b])
-        if shared:
-            repo_edge_w[(a, b)] = shared
+        if rid in repo_ids:
+            repo_all_pubs[rid].add(pid)
 
-    R = nx.Graph()
-    R.add_nodes_from(r[0] for r in db["repositories"])
-    R.add_weighted_edges_from((a, b, w) for (a, b), w in repo_edge_w.items())
-    pos_repos = fit_coords(
-        nx.forceatlas2_layout(R, max_iter=FA2_ITER_REPOS, weight="weight", seed=seed)
+    def _groups(member_of):
+        """repo -> keys  =>  key -> repos"""
+        by_key = defaultdict(set)
+        for rid, keys in member_of.items():
+            for key in keys:
+                by_key[key].add(rid)
+        return by_key.values()
+
+    repo_owner = {row["id"]: row["owner"] for row in db["repositories"] if row["owner"]}
+    repo_coauthors = {
+        rid: {per for pid in pids for per in pub_authors.get(pid, ())}
+        for rid, pids in repo_all_pubs.items()
+    }
+    signals = {
+        "pub": (_groups(repo_all_pubs), REPO_W_PUB),
+        "person": (_groups({rid: pers for rid, pers in repo_contributors.items() if rid in repo_ids}), REPO_W_PERSON),
+        "coauthor": (_groups(repo_coauthors), REPO_W_COAUTHOR),
+        "owner": (_groups({rid: [owner] for rid, owner in repo_owner.items()}), REPO_W_OWNER),
+    }
+
+    repo_edge_w = defaultdict(float)
+    repo_edge_kinds = defaultdict(list)
+    for kind, (groups, weight) in signals.items():
+        for pair, w in co_membership_weights(groups, weight, cap=REPO_GROUP_CAP).items():
+            repo_edge_w[pair] += w
+            repo_edge_kinds[pair].append(kind)
+    repo_edge_w = top_k_edges(repo_edge_w, REPO_EDGE_TOP_K)
+
+    # Same blended treatment as authors and publications: plain FA2 over a graph
+    # this sparse drifts its disconnected components apart without bound, and
+    # fit_coords then crushes the real content into a dot (see gui.md).
+    repo_layout_w = dict(repo_edge_w)
+    for pair, w in sparse_dept_edges(
+        repo_ids, repo_dept, rng, k=REPO_DEPT_EDGE_K, weight=REPO_DEPT_EDGE_WEIGHT
+    ).items():
+        repo_layout_w[pair] = repo_layout_w.get(pair, 0.0) + w
+
+    t0 = time.time()
+    pos_repos, (n_giant_r, e_giant_r, n_small_r, n_single_r) = fa2_blended_layout(
+        repo_layout_w, repo_ids, FA2_ITER_REPOS, seed
+    )
+    pos_repos = spread_min_distance(pos_repos, MIN_SEP_REPOS, seed)
+    logger.info(
+        "FA2 over repositories: giant %d nodes / %d edges, blended: %d small comps + %d singles, min-sep %.1f, %.1f s",
+        n_giant_r,
+        e_giant_r,
+        n_small_r,
+        n_single_r,
+        MIN_SEP_REPOS,
+        time.time() - t0,
     )
 
     # --- nodes ------------------------------------------------------------------
@@ -364,21 +419,28 @@ def build_graph_data(db, seed: int, public: bool = False):
             author["orcid"] = row.get("orcid") or ""
         authors.append(author)
 
-    stars = {r[0]: (r[4] or 0) for r in db["repositories"]}
+    stars = {row["id"]: (row["stars_num"] or 0) for row in db["repositories"]}
     rank_r = dense_rank(stars)
     repos = []
-    for rid, name, url, descr, stars_num, owner in db["repositories"]:
+    for row in db["repositories"]:
+        rid = row["id"]
         x, y = pos_repos[rid]
         repos.append(
             {
                 "key": rid,
                 "kind": "repo",
                 "dept": g(repo_dept[rid]),
-                "label": name or "",
-                "description": descr or "",
-                "stars": stars_num or 0,
-                "owner": owner or "",
-                "url": url or "",
+                "label": row["name"] or "",
+                "description": row["description"] or "",
+                "stars": row["stars_num"] or 0,
+                "owner": row["owner"] or "",
+                "owner_type": row.get("owner_type") or "",
+                "url": row["url"] or "",
+                "language": row.get("language") or "",
+                "topics": row.get("topics") or [],
+                "license": row.get("license") or "",
+                "last_updated": row.get("last_updated") or "",
+                "archived": bool(row.get("archived")),
                 "rank": rank_r[rid],
                 "gx": x,
                 "gy": y,
@@ -412,7 +474,10 @@ def build_graph_data(db, seed: int, public: bool = False):
         {"s": a, "t": b, "w": w} for (a, b), w in pub_pair_w.items() if w >= PUB_EDGE_MIN_W
     ]
 
-    repo_edges = [{"s": a, "t": b, "w": w} for (a, b), w in repo_edge_w.items()]
+    repo_edges = [
+        {"s": a, "t": b, "w": round(w, 2), "via": repo_edge_kinds[(a, b)]}
+        for (a, b), w in repo_edge_w.items()
+    ]
 
     dept_pair_w = Counter()
     for pid in pub_ids:

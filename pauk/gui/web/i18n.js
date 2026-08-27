@@ -21,6 +21,7 @@ const LOCALES = {
 
     "filter.coauth": "Мин. совм. публикаций",
     "filter.pubAuthors": "Мин. общих авторов ИТМО",
+    "filter.repoStrength": "Мин. сила связи",
     "filter.edgesOnly": "только отображение рёбер",
     "filter.pubsByYear": "Публикации по год",
 
@@ -57,6 +58,18 @@ const LOCALES = {
     "repo.stars": "Звёзды:",
     "repo.itmoMembers": (n) => `Участники ИТМО (${n})`,
     "repo.pubsSection": "Публикации",
+    "repo.owner": "Владелец:",
+    "repo.language": "Язык:",
+    "repo.license": "Лицензия:",
+    "repo.lastUpdated": "Последний коммит:",
+    "repo.topics": "Темы",
+    "repo.archived": "архив",
+    "repo.org": "организация",
+    "edge.repoVia": "Связаны через:",
+    "edge.via.pub": "общую публикацию",
+    "edge.via.person": "общего участника ИТМО",
+    "edge.via.coauthor": "соавтора статей",
+    "edge.via.owner": "общего владельца",
 
     "pub.kind": "публикация",
     "pub.journal": "Журнал:",
@@ -75,7 +88,7 @@ const LOCALES = {
     "edge.sharedAuthorsCountLabel": "Общих авторов ИТМО:",
     "edge.authorsSection": "Авторы",
     "edge.repoRepoKind": "репозитории — общие контрибьюторы",
-    "edge.sharedContributorsCountLabel": "Общих контрибьюторов ИТМО:",
+    "edge.strengthLabel": "Сила связи:",
     "edge.genericKind": "связь",
 
     "search.empty": "ничего не найдено",
@@ -164,6 +177,7 @@ const LOCALES = {
 
     "filter.coauth": "Min. shared publications",
     "filter.pubAuthors": "Min. shared ITMO authors",
+    "filter.repoStrength": "Min. link strength",
     "filter.edgesOnly": "affects only which links are shown",
     "filter.pubsByYear": "Publications by year",
 
@@ -200,6 +214,18 @@ const LOCALES = {
     "repo.stars": "Stars:",
     "repo.itmoMembers": (n) => `ITMO members (${n})`,
     "repo.pubsSection": "Publications",
+    "repo.owner": "Owner:",
+    "repo.language": "Language:",
+    "repo.license": "License:",
+    "repo.lastUpdated": "Last commit:",
+    "repo.topics": "Topics",
+    "repo.archived": "archived",
+    "repo.org": "organization",
+    "edge.repoVia": "Linked by:",
+    "edge.via.pub": "a shared publication",
+    "edge.via.person": "a shared ITMO member",
+    "edge.via.coauthor": "a co-author of their papers",
+    "edge.via.owner": "the same owner",
 
     "pub.kind": "publication",
     "pub.journal": "Journal:",
@@ -218,7 +244,7 @@ const LOCALES = {
     "edge.sharedAuthorsCountLabel": "Shared ITMO authors:",
     "edge.authorsSection": "Authors",
     "edge.repoRepoKind": "repositories — shared contributors",
-    "edge.sharedContributorsCountLabel": "Shared ITMO contributors:",
+    "edge.strengthLabel": "Link strength:",
     "edge.genericKind": "link",
 
     "search.empty": "no results",

@@ -26,6 +26,17 @@ NOREPLY_EMAIL = "users.noreply.github.com"
 BOT_LOGIN = re.compile(r"\[bot\]$|^dependabot|^github-actions|^renovate|^web-flow$", re.I)
 
 
+def _payload_date(value: str | None) -> date | None:
+    """GitHub timestamps are ISO-8601 with a `Z`, which date.fromisoformat
+    rejects before Python 3.11 and which carries a time we don't keep."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+    except ValueError:
+        return None
+
+
 def _is_person(login: str, account_type: str | None) -> bool:
     return bool(login) and not BOT_LOGIN.search(login) and (account_type or "User") == "User"
 
@@ -213,6 +224,16 @@ class RepositoriesStage(EnrichmentStage):
                     repo.github_id = payload.get("id")
                     repo.description = payload.get("description")
                     repo.stars_num = payload.get("stargazers_count")
+                    repo.topics = payload.get("topics") or []
+                    repo.language = payload.get("language")
+                    repo.forks_num = payload.get("forks_count")
+                    repo.archived = payload.get("archived")
+                    repo.is_fork = payload.get("fork")
+                    # `pushed_at` is the last commit; `updated_at` also moves on
+                    # a star or a description edit, which says nothing about
+                    # whether the code is still alive.
+                    repo.last_updated = _payload_date(payload.get("pushed_at"))
+                    repo.license = (payload.get("license") or {}).get("spdx_id")
                     repo.has_readme = client.has_readme(owner, name)
                     owner_data = payload.get("owner") or {}
                     repo.owner_login = owner_data.get("login")

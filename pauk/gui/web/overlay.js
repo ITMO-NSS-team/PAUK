@@ -90,7 +90,7 @@ function drawOverlay() {
     return;
   }
 
-  if (selectedDept === null && map.getZoom() >= AUTHOR_LABEL_ZOOM) {
+  if (selectedDept === null && map.getZoom() >= labelZoom()) {
     drawEntityLabels(); return;
   }
 
@@ -112,7 +112,7 @@ function drawOverlay() {
     return;
   }
 
-  if (tab === 4 || tab === 2) return;
+  if (tab === 4) return;
   const drawn = [];
   for (const d of DATA.departments) {
     const c = deptCentroid.get(d.id); if (!c) continue;

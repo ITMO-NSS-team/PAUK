@@ -40,7 +40,10 @@
 ## `graph_snapshot.py`
 
 `write_snapshot`/`read_snapshot` — конверт вокруг `load_db()`'s словаря:
-`schema_version`, `generated_at`, `graph`. `read_snapshot` кидает
+`schema_version`, `generated_at`, `graph`. Версия 2: строки
+`repositories` и `persons` — словари (`cypher_dict`), не позиционные
+кортежи, потому что обе растут колонками, а распаковка кортежа по позиции
+живёт в нескольких местах `generate_data.py`. `read_snapshot` кидает
 `ValueError`, если версия схемы не совпадает — снепшот от старой версии
 кода не будет молча скормлен в несовместимый `generate_data.py`.
 

@@ -4,11 +4,25 @@ function showRepoCard(key) {
   const n = nodeByKey.get(key); if (!n) return;
   const persons = (repoPersons.get(key) || [])
     .map(p => ({ ...p, node: nodeByKey.get(p.key) })).filter(p => p.node);
-  let html = `<div class="card-kind">${t("repo.kind")}</div><div class="card-title">${esc(n.label)}</div>`;
+  let html = `<div class="card-kind">${t("repo.kind")}</div><div class="card-title">${esc(n.label)}`;
+  if (n.archived) html += ` <span class="tag gray">${t("repo.archived")}</span>`;
+  html += `</div>`;
   html += `<div class="card-row"><b>${t("repo.department")}</b> ${esc(deptDisplayName(deptById.get(n.dept)) || t("common.noDept"))}</div>`;
-  if (n.stars)       html += `<div class="card-row"><b>${t("repo.stars")}</b> ★ ${n.stars}</div>`;
-  if (n.description) html += `<div class="card-row">${esc(n.description)}</div>`;
-  if (n.url)         html += `<div class="card-row"><a href="${esc(n.url)}" target="_blank">${esc(n.url.replace("https://github.com/", ""))}</a></div>`;
+  if (n.owner) {
+    const orgTag = n.owner_type === "organization" ? ` <span class="tag gray">${t("repo.org")}</span>` : "";
+    html += `<div class="card-row"><b>${t("repo.owner")}</b> ${esc(n.owner)}${orgTag}</div>`;
+  }
+  if (n.stars)        html += `<div class="card-row"><b>${t("repo.stars")}</b> ★ ${n.stars}</div>`;
+  if (n.language)     html += `<div class="card-row"><b>${t("repo.language")}</b> ${esc(n.language)}</div>`;
+  if (n.license)      html += `<div class="card-row"><b>${t("repo.license")}</b> ${esc(n.license)}</div>`;
+  if (n.last_updated) html += `<div class="card-row"><b>${t("repo.lastUpdated")}</b> ${esc(n.last_updated)}</div>`;
+  if (n.description)  html += `<div class="card-row">${esc(n.description)}</div>`;
+  if ((n.topics || []).length) {
+    html += `<div class="card-section">${t("repo.topics")}</div><div class="card-row">`;
+    html += n.topics.map(x => `<span class="tag gray">${esc(x)}</span>`).join(" ");
+    html += `</div>`;
+  }
+  if (n.url)          html += `<div class="card-row"><a href="${esc(n.url)}" target="_blank">${esc(n.url.replace("https://github.com/", ""))}</a></div>`;
   if (persons.length) {
     html += `<div class="card-section">${t("repo.itmoMembers", persons.length)}</div><ul class="card-list">`;
     persons.forEach(p => html += `<li data-k="${esc(p.key)}">${esc(authorDisplayName(p.node))} <span class="tag gray">${esc(p.role)}</span></li>`);

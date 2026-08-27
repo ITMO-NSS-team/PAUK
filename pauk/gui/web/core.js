@@ -15,6 +15,10 @@ const EDGE_OPACITY_COAUTH = ["interpolate", ["linear"], ["zoom"], 5.6, 0, 7.5, 0
 const EDGE_OPACITY_PUBS   = ["interpolate", ["linear"], ["zoom"], 5.6, 0, 7.5, 0.28, 12, 0.55];
 const FILL_OPACITY       = 0.35;
 const AUTHOR_LABEL_ZOOM  = 8.8;
+// Repositories are twenty times fewer than authors and spread over the same
+// map, so their labels stop colliding long before the authors' do.
+const REPO_LABEL_ZOOM    = 6.2;
+const labelZoom = () => (tab === 2 ? REPO_LABEL_ZOOM : AUTHOR_LABEL_ZOOM);
 // Below this zoom, clicks resolve to the department under the cursor —
 // nodes are too tightly packed to aim for individually.
 const DEPT_CLICK_ZOOM = 6.8;
@@ -108,6 +112,15 @@ function buildAdjIndex(edges) {
 const coauthAdj = buildAdjIndex(DATA.coauth_edges);
 const pubAdj    = buildAdjIndex(DATA.pub_edges);
 const repoAdj   = buildAdjIndex(DATA.repo_edges);
+
+// Which signals put a repository pair together — keyed both ways so the edge
+// card can look up a pair without knowing which end maplibre reported first.
+const repoEdgeVia = new Map();
+(DATA.repo_edges || []).forEach(e => {
+  if (!e.via) return;
+  repoEdgeVia.set(e.s + "\u0000" + e.t, e.via);
+  repoEdgeVia.set(e.t + "\u0000" + e.s, e.via);
+});
 
 const repoPubs = new Map();
 const pubRepos = new Map();
