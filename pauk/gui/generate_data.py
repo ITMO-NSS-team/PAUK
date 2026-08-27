@@ -22,6 +22,8 @@ from .config import (
     MIN_SEP_AUTHORS,
     MIN_SEP_PUBS,
     MIN_SEP_REPOS,
+    NO_CLUSTER_NAME,
+    NO_CLUSTER_NAME_EN,
     NO_DEPT_COLOR,
     NO_DEPT_NAME,
     NO_DEPT_NAME_EN,
@@ -29,6 +31,7 @@ from .config import (
     PUB_DEPT_EDGE_WEIGHT,
     PUB_EDGE_MIN_W,
     PUB_LAYOUT_TOP_K,
+    REPO_CLUSTER_MIN,
     REPO_DEPT_EDGE_K,
     REPO_DEPT_EDGE_WEIGHT,
     REPO_EDGE_TOP_K,
@@ -120,6 +123,39 @@ def author_variants(row, label_ru: str, label_en: str) -> list[str]:
     return variants
 
 
+def repo_cluster_keys(repo_ids, dept_of, org_of, field_of, min_size=REPO_CLUSTER_MIN):
+    """Group each repository, strongest claim first: department, else the
+    organization that owns it, else the field of the papers it implements.
+
+    An inferred group of one is not a group — it spends a unique hue on a
+    single dot — so a tier is offered only when it has `min_size` members, and
+    a repository the tier turns down falls through to the next one.
+
+    Departments are exempt from the threshold: a department exists outside
+    this map, and dropping it would break the colour it shares with the other
+    two tabs. `org_of` is expected to already exclude personal accounts, which
+    never form a group at all — an account says who pushed the code, not what
+    it belongs to.
+    """
+    org_size = Counter(org for org in org_of.values() if org)
+    keys = {}
+    for rid in repo_ids:
+        if dept_of.get(rid):
+            keys[rid] = ("dept", dept_of[rid])
+        elif org_size.get(org_of.get(rid), 0) >= min_size:
+            keys[rid] = ("org", org_of[rid])
+        elif field_of.get(rid):
+            keys[rid] = ("field", field_of[rid])
+        else:
+            keys[rid] = None
+
+    field_size = Counter(k for k in keys.values() if k and k[0] == "field")
+    return {
+        rid: (None if key and key[0] == "field" and field_size[key] < min_size else key)
+        for rid, key in keys.items()
+    }
+
+
 def build_graph_data(db, seed: int, public: bool = False):
     dept_name = {row["id"]: (row["name_ru"] or row["name_en"] or "") for row in db["departments"]}
     dept_name_en = {row["id"]: (row["name_en"] or "") for row in db["departments"]}
@@ -131,8 +167,8 @@ def build_graph_data(db, seed: int, public: bool = False):
         pub_authors[pid].append(per)
         author_pubs[per].append(pid)
 
-    pubs_rows = [r for r in db["publications"] if r[0] in pub_authors]
-    pub_ids = {r[0] for r in pubs_rows}
+    pubs_rows = [r for r in db["publications"] if r["id"] in pub_authors]
+    pub_ids = {r["id"] for r in pubs_rows}
     logger.info(
         "Publications with ITMO authors: %d of %d",
         len(pubs_rows),
@@ -159,7 +195,7 @@ def build_graph_data(db, seed: int, public: bool = False):
         pub_primary[pid] = primary
 
     # --- author department: from their most recent publication ------------------
-    pub_date = {r[0]: (r[4] or "") for r in pubs_rows}
+    pub_date = {r["id"]: (r["publication_date"] or "") for r in pubs_rows}
     author_dept = {}
     for per in static_depts:
         dept = None
@@ -183,6 +219,11 @@ def build_graph_data(db, seed: int, public: bool = False):
         if did in dept_name and did not in repo_dept_rows[rid]:
             repo_dept_rows[rid].append(did)
 
+    # ITMO people credited on a repository — also the "person" edge signal below
+    repo_contributors = defaultdict(set)
+    for rid, per, _role in db["repo_persons"]:
+        repo_contributors[rid].add(per)
+
     repo_dept = {}
     for row in db["repositories"]:
         rid = row["id"]
@@ -191,6 +232,13 @@ def build_graph_data(db, seed: int, public: bool = False):
         )
         if primary is None and repo_dept_rows.get(rid):
             primary = repo_dept_rows[rid][0]
+        if primary is None:
+            # Last resort: the people who actually wrote it. Weaker than the
+            # publication it implements — someone can contribute far outside
+            # their own department — so it only speaks when nothing else does.
+            primary = majority_dept(
+                static_depts.get(per, []) for per in repo_contributors.get(rid, ())
+            )
         repo_dept[rid] = primary
 
     # --- graph department table: sort by size, reindex --------------------------
@@ -247,6 +295,96 @@ def build_graph_data(db, seed: int, public: bool = False):
     )
     logger.info('Departments: %d (+ "%s")', len(ordered), NO_DEPT_NAME)
 
+    # --- repository clusters: department, else GitHub org, else OpenAlex field ---
+    # A department is known for well under half the repositories, so colouring
+    # this tab by department alone leaves most of the map grey. The owning
+    # organization covers more of it than the department does, and the field
+    # of the papers a repository implements catches part of the rest. Three
+    # tiers, strongest claim first; a repository takes the first that answers.
+    pub_fields = {row["id"]: (row.get("fields") or []) for row in pubs_rows}
+    owner_type = {row["id"]: (row.get("owner_type") or "") for row in db["repositories"]}
+    repo_owner_login = {row["id"]: (row["owner"] or "") for row in db["repositories"]}
+
+    # An inferred group of one is not a group — it spends a unique hue on a
+    # single dot — so each tier is offered only when it has enough members,
+    # and a repository the tier turns down falls through to the next one.
+    # Departments are exempt: a department exists outside this map, and
+    # dropping it would break the colour it shares with the other two tabs.
+    # A personal account never forms a group at all — it says who pushed the
+    # code, not what it belongs to, and there are 173 of them.
+    org_of = {
+        row["id"]: repo_owner_login[row["id"]].lower()
+        for row in db["repositories"]
+        if owner_type.get(row["id"]) == "organization" and repo_owner_login.get(row["id"])
+    }
+
+    def field_of(rid):
+        top = Counter(
+            f for pid in repo_pub_map.get(rid, []) for f in pub_fields.get(pid, [])
+        ).most_common(1)
+        return top[0][0] if top else None
+
+    repo_ids_all = [row["id"] for row in db["repositories"]]
+    repo_cluster_key = repo_cluster_keys(
+        repo_ids_all,
+        repo_dept,
+        org_of,
+        {rid: field_of(rid) for rid in repo_ids_all},
+    )
+
+    cluster_sizes = Counter(k for k in repo_cluster_key.values() if k)
+    # Sorted by size, then by key, so the ids are stable between runs.
+    ordered_clusters = sorted(cluster_sizes, key=lambda k: (-cluster_sizes[k], k))
+    cluster_id = {k: i for i, k in enumerate(ordered_clusters)}
+    no_cluster_id = len(ordered_clusters)
+
+    def cluster_label(key):
+        kind, value = key
+        if kind == "dept":
+            return dept_name[value], dept_name_en[value] or dept_name[value]
+        return value, value  # an org login and an OpenAlex field are already English
+
+    repo_clusters = []
+    for key in ordered_clusters:
+        kind, value = key
+        name, name_en = cluster_label(key)
+        repo_clusters.append(
+            {
+                "id": cluster_id[key],
+                "kind": kind,
+                # A department keeps the colour it has on the other two tabs;
+                # the rest continue the same golden-ratio walk past its end,
+                # so their hues do not collide with any department's.
+                "color": (
+                    golden_color(gid[value]) if kind == "dept"
+                    else golden_color(len(ordered) + cluster_id[key])
+                ),
+                "name": name,
+                "name_en": name_en,
+                "n": cluster_sizes[key],
+                **({"dept": gid[value]} if kind == "dept" else {}),
+            }
+        )
+    repo_clusters.append(
+        {
+            "id": no_cluster_id,
+            "kind": "none",
+            "color": NO_DEPT_COLOR,
+            "name": NO_CLUSTER_NAME,
+            "name_en": NO_CLUSTER_NAME_EN,
+            "n": sum(1 for k in repo_cluster_key.values() if not k),
+        }
+    )
+    by_kind = Counter(k[0] for k in repo_cluster_key.values() if k)
+    logger.info(
+        "Repository clusters: %d (dept %d, org %d, field %d repositories; %d unclustered)",
+        len(ordered_clusters),
+        by_kind["dept"],
+        by_kind["org"],
+        by_kind["field"],
+        sum(1 for k in repo_cluster_key.values() if not k),
+    )
+
     # --- co-authorship graph and FA2 layout -------------------------------------
     # layout weight = joint publications + joint repos + shared dept; exported
     coauth = Counter()
@@ -256,9 +394,6 @@ def build_graph_data(db, seed: int, public: bool = False):
 
     rng = random.Random(seed)
     author_layout_w = Counter(coauth)
-    repo_contributors = defaultdict(set)
-    for rid, per, _role in db["repo_persons"]:
-        repo_contributors[rid].add(per)
     for pers in repo_contributors.values():
         for a, b in combinations(sorted(pers), 2):
             author_layout_w[(a, b)] += 1
@@ -430,6 +565,7 @@ def build_graph_data(db, seed: int, public: bool = False):
                 "key": rid,
                 "kind": "repo",
                 "dept": g(repo_dept[rid]),
+                "cluster": cluster_id.get(repo_cluster_key[rid], no_cluster_id),
                 "label": row["name"] or "",
                 "description": row["description"] or "",
                 "stars": row["stars_num"] or 0,
@@ -450,7 +586,8 @@ def build_graph_data(db, seed: int, public: bool = False):
     n_authors_of = {pid: len(set(pub_authors[pid])) for pid in pub_ids}
     rank_p = dense_rank(n_authors_of)
     pubs = []
-    for pid, _, _, _, _, year, _, _ in pubs_rows:
+    for row in pubs_rows:
+        pid, year = row["id"], row["year"]
         x, y = pos_pubs[pid]
         depts_all = sorted({g(d) for d in pub_dept_rows.get(pid, [])} | {g(pub_primary[pid])})
         pubs.append(
@@ -507,6 +644,7 @@ def build_graph_data(db, seed: int, public: bool = False):
 
     return {
         "departments": departments,
+        "repo_clusters": repo_clusters,
         "dept_edges": dept_edges,
         "authors": authors,
         "coauth_edges": coauth_edges,
@@ -524,23 +662,25 @@ def build_search_detail(db, graph):
     """Publication details for graph-search.js (loaded after the map)."""
     pub_ids = {p["key"] for p in graph["pubs"]}
     detail = []
-    for pid, title, journal, doi, _, _, has_code, code_url in db["publications"]:
+    for row in db["publications"]:
+        pid = row["id"]
         if pid not in pub_ids:
             continue
+        code_url = row["code_url"]
         try:
             urls = json.loads(code_url) if code_url else []
         except json.JSONDecodeError:
             urls = []
-        title = title or ""
+        title = row["title"] or ""
         if len(title) > 200:
             title = title[:199] + "…"
         detail.append(
             {
                 "key": pid,
                 "label": title,
-                "journal": journal or "",
-                "doi": doi or "",
-                "has_code": bool(has_code),
+                "journal": row["journal"] or "",
+                "doi": row["doi"] or "",
+                "has_code": bool(row["has_code"]),
                 "code_url": urls if isinstance(urls, list) else [urls],
             }
         )

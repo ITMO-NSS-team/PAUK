@@ -51,3 +51,31 @@ function showRepoCard(key) {
     };
   });
 }
+function showClusterCard(id) {
+  const c = repoClusterById.get(id); if (!c) return;
+  const members = DATA.repos.filter(r => r.cluster === id)
+    .sort((a, b) => (b.stars || 0) - (a.stars || 0));
+  let html = `<div class="card-kind">${t("cluster.kind." + c.kind)}</div>`;
+  html += `<div class="card-title">${esc(groupDisplayName(c))}</div>`;
+  html += `<div class="card-row"><b>${t("cluster.reposCount")}</b> ${members.length}</div>`;
+  html += `<div class="card-row" style="color:var(--muted);font-size:13px">${t("cluster.why." + c.kind)}</div>`;
+  if (members.length) {
+    html += `<div class="card-section">${t("cluster.reposSection")}</div><ul class="card-list">`;
+    html += members.slice(0, 20).map(r =>
+      `<li data-k="${esc(r.key)}">
+        <div class="li-name">${esc(r.label || r.key)}</div>
+        ${r.language ? `<span class="tag gray" style="font-size:9px;padding:0 5px">${esc(r.language)}</span>` : ""}
+        <span class="li-count">${r.stars ? "\u2605 " + r.stars : ""}</span>
+      </li>`).join("") + `</ul>`;
+  }
+  // A department cluster is the same department the other two tabs show, so
+  // its full profile is worth an exit; an organization or a field has none.
+  if (c.kind === "dept" && c.dept != null)
+    html += `<button class="detail-profile-btn">${t("dept.more")}</button>`;
+  showDetail(html);
+  detailBody.querySelectorAll("li[data-k]").forEach(li => {
+    li.onclick = () => selectNode(li.getAttribute("data-k"));
+  });
+  const btn = detailBody.querySelector(".detail-profile-btn");
+  if (btn) btn.onclick = () => { setTab(4); spShowDeptProfile(c.dept); };
+}

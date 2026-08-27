@@ -1,5 +1,6 @@
 import unittest
 
+from pauk.gui.generate_data import repo_cluster_keys
 from pauk.gui.layout import co_membership_weights, top_k_edges
 from pauk.pipeline.stages.repositories import _payload_date
 
@@ -71,6 +72,59 @@ class PayloadDateTest(unittest.TestCase):
         self.assertIsNone(_payload_date(None))
         self.assertIsNone(_payload_date(""))
         self.assertIsNone(_payload_date("last tuesday"))
+
+
+class RepoClusterKeysTest(unittest.TestCase):
+    """Department, else owning organization, else the field of its papers."""
+
+    def keys(self, repo_ids, *, dept=None, org=None, field=None, min_size=2):
+        return repo_cluster_keys(repo_ids, dept or {}, org or {}, field or {}, min_size)
+
+    def test_a_department_wins_over_everything_else(self):
+        got = self.keys(["r"], dept={"r": "d1"}, org={"r": "acme"}, field={"r": "CS"})
+        self.assertEqual(got, {"r": ("dept", "d1")})
+
+    def test_a_department_of_one_still_counts(self):
+        # Exempt from the threshold: it exists outside this map, and keeps the
+        # colour it has on the authors' and publications' tabs.
+        self.assertEqual(self.keys(["r"], dept={"r": "d1"}), {"r": ("dept", "d1")})
+
+    def test_an_organization_needs_more_than_one_repository(self):
+        one = self.keys(["a"], org={"a": "acme"}, field={"a": "CS"})
+        self.assertEqual(one, {"a": None})  # "CS" is a field of one as well
+
+        two = self.keys(["a", "b"], org={"a": "acme", "b": "acme"})
+        self.assertEqual(two, {"a": ("org", "acme"), "b": ("org", "acme")})
+
+    def test_a_repository_an_organization_turns_down_falls_through_to_its_field(self):
+        got = self.keys(
+            ["a", "b", "c"],
+            org={"a": "solo"},
+            field={"a": "CS", "b": "CS", "c": "CS"},
+        )
+        self.assertEqual(got["a"], ("field", "CS"))
+
+    def test_an_organizations_size_counts_every_repository_it_owns(self):
+        # `b` has a department, but it still makes acme an organization of two,
+        # which is what lets `a` cluster by it.
+        got = self.keys(
+            ["a", "b"],
+            dept={"b": "d1"},
+            org={"a": "acme", "b": "acme"},
+        )
+        self.assertEqual(got, {"a": ("org", "acme"), "b": ("dept", "d1")})
+
+    def test_a_field_of_one_is_dropped_rather_than_kept(self):
+        got = self.keys(["a", "b", "c"], field={"a": "CS", "b": "CS", "c": "Medicine"})
+        self.assertEqual(got["a"], ("field", "CS"))
+        self.assertIsNone(got["c"])
+
+    def test_a_repository_with_nothing_to_go_on(self):
+        self.assertEqual(self.keys(["r"]), {"r": None})
+
+    def test_every_repository_gets_an_entry(self):
+        got = self.keys(["a", "b"], dept={"a": "d1"})
+        self.assertEqual(sorted(got), ["a", "b"])
 
 
 if __name__ == "__main__":

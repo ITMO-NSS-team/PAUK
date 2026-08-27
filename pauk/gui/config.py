@@ -12,6 +12,17 @@ constants next to that function in layout.py instead of here.
 NO_DEPT_NAME = "Без департамента"
 NO_DEPT_NAME_EN = "No department"
 NO_DEPT_COLOR = "#8a8f98"
+# The repositories tab groups by department, then by owning GitHub
+# organization, then by the field of the papers implemented — so a node with
+# no group has run out of all three, not just the first.
+NO_CLUSTER_NAME = "Без группы"
+NO_CLUSTER_NAME_EN = "No group"
+# Smallest inferred group that is worth being a group of its own. A department
+# of one repository is still a department — it exists outside this map and
+# keeps the colour it has on the other tabs. An organization or a field of one
+# is neither: it would only add a unique hue to a single dot, and 85 of the 96
+# organizations on the current data own exactly one repository.
+REPO_CLUSTER_MIN = 2
 
 # --- Edge thresholds ------------------------------------------------------------
 COAUTH_MIN_W = 2  # min joint publications for an author-author edge
