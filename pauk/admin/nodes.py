@@ -14,6 +14,7 @@ whitelists in `pauk.graph.mutations`, never from the request.
 
 from __future__ import annotations
 
+import json
 import logging
 from urllib.parse import quote
 
@@ -62,6 +63,22 @@ def _worded(relationships: list[dict], label: str) -> list[dict]:
     return relationships
 
 
+def _parse_new_value(raw: str):
+    """A value for a node that does not exist yet.
+
+    Nothing in the graph to take a type from, so JSON decides: 42 is a
+    number, true is a boolean, ["a"] is a list, and anything JSON refuses
+    is plain text. Same rule as `pauk admin node create --set`.
+    """
+    text = raw.strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except ValueError:
+        return text
+
+
 def _known_label(label: str) -> str:
     """Reject an unknown label with 404 rather than let it reach Cypher."""
     if label not in NODE_FIELDS:
@@ -69,15 +86,48 @@ def _known_label(label: str) -> str:
     return label
 
 
-def _parse_value(raw: str):
+def _parse_value(raw: str, current: object = None):
     """Turn a form field into what should be stored.
 
-    An empty box means "clear this field", which is None rather than the
-    empty string — the pipeline writes None for what it did not find, and
-    a hand-cleared field should look the same to everything downstream.
+    A browser submits every box on the form, including the ones nobody
+    touched, and all of them arrive as text. Without a type to guide it,
+    `stars_num` came back as "42" — different from 42, so it counted as an
+    edit and was written to the graph as a string. The same held for
+    booleans, years, counts and lists.
+
+    The type comes from what the field already holds, which is what the
+    pipeline put there. A field that is empty in the graph has nothing to
+    go by and stays text; numbers and lists are not invented out of a
+    string that merely looks like one.
+
+    An empty box means "clear this field": None rather than "", because
+    the pipeline writes None for what it did not find and a hand-cleared
+    field should look the same to everything downstream.
     """
     text = raw.strip()
-    return text or None
+    if not text:
+        return None
+    if isinstance(current, bool):
+        # Checked before int: in Python a bool *is* an int, and testing the
+        # other way round would turn True into 1.
+        return text.lower() in ("true", "1", "да", "yes", "on")
+    if isinstance(current, int):
+        try:
+            return int(text)
+        except ValueError:
+            return text
+    if isinstance(current, float):
+        try:
+            return float(text)
+        except ValueError:
+            return text
+    if isinstance(current, (list, dict)):
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            return text
+        return parsed if isinstance(parsed, type(current)) else text
+    return text
 
 
 @router.get("/nodes/{label}", response_class=HTMLResponse)
@@ -121,8 +171,10 @@ async def create(request: Request, label: str, user: Editor,
     node_id = str(form.get("id", "")).strip()
     if not node_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "the node needs an id")
+    # A new node has nothing to compare against, so values arrive as text
+    # unless they parse as JSON — the same rule the CLI uses for --set.
     fields = {name: value for name in NODE_FIELDS[label]
-              if (value := _parse_value(str(form.get(name, "")))) is not None}
+              if (value := _parse_new_value(str(form.get(name, "")))) is not None}
     try:
         create_node(graph, label, node_id, fields)
     except MutationError as error:
@@ -197,14 +249,16 @@ async def edit(request: Request, label: str, node_id: str, user: Editor,
     """Change fields, and remember the decision so a publish cannot undo it."""
     _known_label(label)
     form = await request.form()
-    fields = {name: _parse_value(str(form[name]))
+    # Parsed against what the node holds now, so an untouched box keeps
+    # its type instead of coming back as text.
+    before = read_node(graph, label, node_id)
+    fields = {name: _parse_value(str(form[name]), before.get(name))
               for name in NODE_FIELDS[label] if name in form}
     note = str(form.get("note", "")).strip()
     if not fields:
         return RedirectResponse(f"/nodes/{label}/{node_id}", status_code=status.HTTP_303_SEE_OTHER)
 
     try:
-        before = read_node(graph, label, node_id)
         # Only what actually differs is written: submitting a form
         # unchanged must not stamp an override on every field of the node,
         # nor fill the audit feed with edits nobody made.

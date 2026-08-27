@@ -766,3 +766,81 @@ class UnlinkByMatchFieldTest(unittest.TestCase):
         self.graph.add("Person", "A1")
         self.assertEqual(
             self.form_value("/nodes/Person/A1", "Person|AUTHORED|Publication"), "W1")
+
+
+class FieldTypeTest(unittest.TestCase):
+    """A form submits text for every box, including the untouched ones."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add("Repository", "R1", name="PAUK", stars_num=42,
+                       has_readme=True, cited_urls=["https://a.test"])
+
+        app = build(Settings(), self.db)
+        from pauk.admin import deps
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def submit(self, **over):
+        """Send the form the way a browser does — every box, as text."""
+        import re
+        page = self.client.get("/nodes/Repository/R1").text
+        data = {"csrf": re.search(r'name="csrf" value="([^"]+)"', page).group(1),
+                "seen_at": re.search(r'name="seen_at" value="([^"]*)"', page).group(1),
+                "name": "PAUK", "stars_num": "42", "has_readme": "True",
+                "cited_urls": '["https://a.test"]'}
+        data.update(over)
+        return self.client.post("/nodes/Repository/R1", data=data)
+
+    def test_untouched_fields_keep_their_types(self):
+        # "42" is not 42, so an untouched count counted as an edit and was
+        # written back as a string.
+        self.submit(name="PAUK 2")
+        node = self.graph.nodes[("Repository", "R1")]
+        self.assertIsInstance(node["stars_num"], int)
+        self.assertIsInstance(node["has_readme"], bool)
+        self.assertIsInstance(node["cited_urls"], list)
+
+    def test_only_the_edited_field_is_recorded(self):
+        self.submit(name="PAUK 2")
+        (override,) = list(self.db["graph_overrides"].find())
+        self.assertEqual(list(override["fields"]), ["name"])
+
+    def test_a_number_edited_by_hand_stays_a_number(self):
+        self.submit(stars_num="43")
+        self.assertEqual(self.graph.nodes[("Repository", "R1")]["stars_num"], 43)
+
+    def test_a_boolean_reads_the_words_a_person_would_type(self):
+        self.submit(has_readme="false")
+        self.assertIs(self.graph.nodes[("Repository", "R1")]["has_readme"], False)
+
+    def test_a_list_is_given_as_json(self):
+        self.submit(cited_urls='["https://a.test", "https://b.test"]')
+        self.assertEqual(self.graph.nodes[("Repository", "R1")]["cited_urls"],
+                         ["https://a.test", "https://b.test"])
+
+    def test_text_that_only_looks_like_a_number_is_left_alone(self):
+        # The type comes from the field, not from the shape of the input:
+        # a name of "2024" is a name.
+        self.submit(name="2024")
+        self.assertEqual(self.graph.nodes[("Repository", "R1")]["name"], "2024")
+
+    def test_clearing_a_box_stores_nothing(self):
+        self.submit(stars_num="")
+        self.assertIsNone(self.graph.nodes[("Repository", "R1")]["stars_num"])
+
+    def test_a_new_node_reads_values_as_json(self):
+        # Nothing to take a type from, so the rule is the CLI's: 42 is a
+        # number, true is a boolean, everything else is text.
+        import re
+        page = self.client.get("/nodes/Repository/new").text
+        csrf = re.search(r'name="csrf" value="([^"]+)"', page).group(1)
+        self.client.post("/nodes/Repository/new", data={
+            "csrf": csrf, "id": "R9", "name": "new", "stars_num": "7", "has_readme": "true"})
+        node = self.graph.nodes[("Repository", "R9")]
+        self.assertEqual(node["stars_num"], 7)
+        self.assertIs(node["has_readme"], True)
+        self.assertEqual(node["name"], "new")
