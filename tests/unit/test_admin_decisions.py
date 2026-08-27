@@ -13,8 +13,7 @@ from pauk.graph.overrides import (
     record_relationship_override,
 )
 from pauk.settings import Settings
-
-from .test_admin_nodes import FakePanelGraph
+from tests.unit.test_admin_nodes import FakePanelGraph
 
 
 def source_wrote(db, label, node_id, field, before, after, after_hours=1,

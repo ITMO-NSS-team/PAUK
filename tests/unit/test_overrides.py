@@ -16,8 +16,7 @@ from pauk.graph.overrides import (
     tombstoned_ids,
     tombstoned_relationships,
 )
-
-from .test_mutations import FakeGraph
+from tests.unit.test_mutations import FakeGraph
 
 
 class RecordTest(unittest.TestCase):

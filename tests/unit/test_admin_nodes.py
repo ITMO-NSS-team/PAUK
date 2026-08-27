@@ -7,8 +7,7 @@ from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user
 from pauk.graph.overrides import COLLECTION, active_overrides
 from pauk.settings import Settings
-
-from .test_mutations import FakeGraph
+from tests.unit.test_mutations import FakeGraph
 
 
 class FakePanelGraph(FakeGraph):

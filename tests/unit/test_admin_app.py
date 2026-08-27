@@ -282,7 +282,7 @@ class ActorContextTest(unittest.TestCase):
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
         create_user(self.db, "roman", "hunter2", role="editor")
-        from .test_admin_nodes import FakePanelGraph
+        from tests.unit.test_admin_nodes import FakePanelGraph
         self.graph = FakePanelGraph()
         self.graph.nodes[("Person", "A1")] = {"id": "A1", "name_ru": "Иван"}
         self.client = TestClient(build(Settings(), self.db), follow_redirects=False)

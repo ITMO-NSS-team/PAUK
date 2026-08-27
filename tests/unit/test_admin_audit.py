@@ -7,8 +7,7 @@ from pauk.admin import feed
 from pauk.admin.app import build
 from pauk.admin.auth import create_user
 from pauk.settings import Settings
-
-from .test_admin_nodes import FakePanelGraph
+from tests.unit.test_admin_nodes import FakePanelGraph
 
 
 def entry(**over):

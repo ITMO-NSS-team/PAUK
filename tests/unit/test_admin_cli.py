@@ -12,8 +12,7 @@ from pauk.graph.overrides import (
     tombstoned_relationships,
 )
 from pauk.settings import Settings
-
-from .test_mutations import FakeGraph
+from tests.unit.test_mutations import FakeGraph
 
 
 def parse(*argv):
