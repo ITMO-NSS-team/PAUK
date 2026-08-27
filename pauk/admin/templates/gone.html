@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>{{ label }} <span class="muted">{{ node_id }}</span></h1>
-<p class="note">Этой записи в графе нет. Ниже — что с ней происходило.</p>
+<p class="note">Этой записи в графе нет.
+  {% if history %}Ниже — что с ней происходило.{% endif %}</p>
 <p class="muted"><a href="/nodes/{{ label }}">← к поиску {{ label }}</a></p>
 
+{% if history %}
 <div class="card">
   <table>
     <tr><th>когда</th><th>кто</th><th>как</th><th>изменения</th></tr>
@@ -24,10 +26,13 @@
     {% endfor %}
   </table>
 </div>
+{% else %}
+<p class="muted">Журнал о ней ничего не помнит — осталось только само решение об удалении.</p>
+{% endif %}
 
 {% if user.can_write %}
   {# Одна кнопка и ничего вокруг: что вернётся и что будет с пометкой,
-     уже видно из таблицы истории выше. #}
+     видно из истории выше, когда журнал о записи что-то помнит. #}
   {% if restorable %}
   <form method="post" action="/nodes/{{ label }}/restore/{{ node_id | urlencode }}" style="margin-top:24px">
     <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -35,7 +40,7 @@
   </form>
   {% else %}
   <p class="muted" style="margin-top:24px">
-    Журнал не помнит её полей — только
+    Чем её вернуть, не сохранилось — только
     <a href="/nodes/{{ label }}/new">создать заново</a>.
   </p>
   {% endif %}

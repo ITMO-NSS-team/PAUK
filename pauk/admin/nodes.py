@@ -243,11 +243,16 @@ def show(request: Request, label: str, node_id: str, user: CurrentUser,
         # instead of a bare 404 — the question is "what happened to it",
         # and the feed has the answer.
         gone = feed.history(db, label, node_id, limit=20)
-        if not gone:
+        # The feed is history; what the record can be restored from is the
+        # snapshot on the decision. Either one is reason enough to show the
+        # page: gating on the feed alone hid the restore button behind a
+        # 404 whenever the snapshot was there and the feed was not.
+        restorable = decisions.deleted_fields(db, label, node_id)
+        if not gone and not restorable:
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from None
         return templates.TemplateResponse(request, "gone.html", {
             "user": user, "csrf": session["csrf"], "label": label, "node_id": node_id,
-            "history": gone, "restorable": decisions.deleted_fields(db, label, node_id),
+            "history": gone, "restorable": restorable,
             "labels": sorted(NODE_FIELDS)},
             status_code=status.HTTP_404_NOT_FOUND)
     editable = sorted(NODE_FIELDS[label])

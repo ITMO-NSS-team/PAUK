@@ -1,11 +1,12 @@
+import re
 import unittest
 
 import mongomock
 from fastapi.testclient import TestClient
 
-from pauk.admin import feed
+from pauk.admin import deps, feed
 from pauk.admin.app import build
-from pauk.admin.auth import create_user
+from pauk.admin.auth import COOKIE, SESSIONS, create_user
 from pauk.settings import Settings
 from tests.unit.test_admin_nodes import FakePanelGraph
 
@@ -276,3 +277,47 @@ class RestoreTest(unittest.TestCase):
     def test_a_viewer_is_shown_no_button(self):
         self.sign_in(login="guest")
         self.assertNotIn("/restore", self.client.get("/nodes/LinkCandidate/L1").text)
+
+
+class RestoreWithoutTheFeedTest(unittest.TestCase):
+    """The feed is history; the snapshot to restore from is the decision.
+
+    The deleted-record page used to appear only when the feed held an
+    entry for the id, so wiping the audit collection put a 404 in front of
+    a record whose snapshot was sitting in graph_overrides, untouched.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add("Person", "A1", name_ru="Иван Петров")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        self.client.post("/nodes/Person/delete/A1", data={"csrf": self.csrf})
+        self.db[feed.COLLECTION].delete_many({})
+
+    def test_the_page_still_offers_the_button(self):
+        page = self.client.get("/nodes/Person/A1")
+        self.assertIn("Восстановить", page.text)
+
+    def test_the_record_comes_back_whole(self):
+        # Through the page, not straight at the route: the route always
+        # worked, it was the button that could not be reached.
+        page = self.client.get("/nodes/Person/A1").text
+        action = re.search(r'action="([^"]*restore[^"]*)"', page).group(1)
+        self.client.post(action, data={"csrf": self.csrf})
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иван Петров")
+
+    def test_an_empty_feed_is_not_shown_as_an_empty_table(self):
+        page = self.client.get("/nodes/Person/A1")
+        self.assertIn("Этой записи в графе нет", page.text)
+        self.assertNotIn("<th>когда</th>", page.text)
+
+    def test_a_node_nobody_ever_had_is_still_a_404(self):
+        response = self.client.get("/nodes/Person/never-existed")
+        self.assertEqual(response.status_code, 404)
+        self.assertNotIn("Восстановить", response.text)
