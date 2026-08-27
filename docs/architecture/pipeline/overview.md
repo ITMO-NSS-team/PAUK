@@ -71,14 +71,19 @@ id), `WorksFileSelector` (файл со списком id, по одному н�
 `Enricher.run(stage_name, selection, force)` — прогоняет один этап или
 все (`ALL_STAGES`, порядок фиксирован в `pipeline/stages/__init__.py`:
 `pdf → persons → departments → code_links → link_relevance → emails →
-repositories → dedup → github_match → author_names`).
+repositories → repo_people → dedup → github_match → author_names`).
 Блокировки на группу больше нет — атомарность на уровне документа даёт
 сама MongoDB (см. [../storage.md](../storage.md)).
 
 Порядок не произвольный: `emails` читает полный текст, скачанный
 `code_links`, и идёт до `github_match`, чтобы найденный адрес мог опознать
-аккаунт; `github_match` нужны и аккаунты, собранные `repositories`, и
+аккаунт; `github_match` нужны и аккаунты, собранные `repo_people`, и
 авторства, уже схлопнутые `dedup`.
+
+`repositories` и `repo_people` — две половины одной работы, разведённые
+намеренно: первая берёт метаданные репозитория, вторая — людей за ним.
+У каждой свой `processing`-статус, поэтому устареть и быть перезапущенной
+они могут порознь (см. [repo-people.md](repo-people.md)).
 
 `OPTIONAL_STAGES` — стадии вне общего прогона, запускаются только по
 имени. Там сейчас одна, `social_graph`: она идёт вширь от уже
@@ -91,11 +96,16 @@ repositories → dedup → github_match → author_names`).
   `NOT_STARTED`/`FAILED`; всё остальное пропускается без `--force`.
 - `selected(entity, id)` — фильтр по `PreparedSelection`, когда прогон
   ограничен `--input`.
+- `in_scope(entity, id)` — то же, но селекция по **другой** сущности не
+  фильтрует: стейдж, доходящий до своих строк через несколько сущностей,
+  сам решает, что значит для каждой из них прогон, ограниченный
+  публикациями.
 
 Каждый стейдж — отдельный файл, см. соседние заметки:
 [pdf.md](pdf.md), [persons.md](persons.md), [departments.md](departments.md),
 [code-links.md](code-links.md), [emails.md](emails.md),
-[repositories.md](repositories.md), [dedup.md](dedup.md),
+[repositories.md](repositories.md), [repo-people.md](repo-people.md),
+[dedup.md](dedup.md),
 [github-match.md](github-match.md), [social-graph.md](social-graph.md).
 
 ## Резюмируемость
