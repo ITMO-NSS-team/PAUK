@@ -1,8 +1,11 @@
+import re
 import unittest
+from urllib.parse import quote
 
 import mongomock
 from fastapi.testclient import TestClient
 
+from pauk.admin import deps
 from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user
 from pauk.graph.overrides import COLLECTION, active_overrides
@@ -211,7 +214,7 @@ class NodeScreenTest(unittest.TestCase):
 
     def test_deleting_removes_the_node_and_leaves_a_tombstone(self):
         csrf = self.sign_in()
-        response = self.client.post("/nodes/Person/A2/delete", data={"csrf": csrf})
+        response = self.client.post("/nodes/Person/delete/A2", data={"csrf": csrf})
         self.assertEqual(response.status_code, 303)
         self.assertNotIn(("Person", "A2"), self.graph.nodes)
         (override,) = active_overrides(self.db)
@@ -222,7 +225,7 @@ class NodeScreenTest(unittest.TestCase):
         # recorded anyway would delete it on the next publish.
         csrf = self.sign_in()
         self.graph.relationships[("Person", "AUTHORED", "Publication", "A1", "W1")] = {}
-        response = self.client.post("/nodes/Person/A1/delete", data={"csrf": csrf})
+        response = self.client.post("/nodes/Person/delete/A1", data={"csrf": csrf})
         self.assertEqual(response.status_code, 400)
         self.assertIn(("Person", "A1"), self.graph.nodes)
         self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
@@ -256,7 +259,7 @@ class RelationshipScreenTest(unittest.TestCase):
 
     def test_a_link_is_created_between_two_nodes(self):
         csrf = self.sign_in()
-        response = self.client.post("/nodes/Person/A1/rel/add", data=self.link_data(csrf))
+        response = self.client.post("/nodes/Person/rel/add/A1", data=self.link_data(csrf))
         self.assertEqual(response.status_code, 303)
         self.assertIn(("Person", "AUTHORED", "Publication", "A1", "W1"), self.graph.relationships)
 
@@ -264,7 +267,7 @@ class RelationshipScreenTest(unittest.TestCase):
         # The loader never removes edges it does not know about, so there
         # is nothing for a decision to reapply.
         csrf = self.sign_in()
-        self.client.post("/nodes/Person/A1/rel/add", data=self.link_data(csrf))
+        self.client.post("/nodes/Person/rel/add/A1", data=self.link_data(csrf))
         self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
 
     def test_a_relationship_outside_the_eleven_known_triples_is_refused(self):
@@ -274,12 +277,12 @@ class RelationshipScreenTest(unittest.TestCase):
         csrf = self.sign_in()
         for triple in ("nonsense", "Person|AUTHORED"):
             response = self.client.post(
-                "/nodes/Person/A1/rel/add",
+                "/nodes/Person/rel/add/A1",
                 data={"csrf": csrf, "triple": triple, "other_id": "W1"})
             self.assertEqual(response.status_code, 400, triple)
         for triple in ("Person|OWNS|Publication", "Person|AUTHORED|Malicious"):
             response = self.client.post(
-                "/nodes/Person/A1/rel/add",
+                "/nodes/Person/rel/add/A1",
                 data={"csrf": csrf, "triple": triple, "other_id": "W1"})
             self.assertEqual(response.status_code, 303, triple)
             self.assertIn("error=", response.headers["location"], triple)
@@ -287,13 +290,13 @@ class RelationshipScreenTest(unittest.TestCase):
 
     def test_an_empty_other_end_is_refused(self):
         csrf = self.sign_in()
-        response = self.client.post("/nodes/Person/A1/rel/add",
+        response = self.client.post("/nodes/Person/rel/add/A1",
                                     data=self.link_data(csrf, other_id="  "))
         self.assertEqual(response.status_code, 400)
 
     def test_linking_to_a_node_that_does_not_exist_returns_with_a_reason(self):
         csrf = self.sign_in()
-        response = self.client.post("/nodes/Person/A1/rel/add",
+        response = self.client.post("/nodes/Person/rel/add/A1",
                                     data=self.link_data(csrf, other_id="W-missing"))
         self.assertEqual(response.status_code, 303)
         self.assertIn("error=", response.headers["location"])
@@ -301,8 +304,8 @@ class RelationshipScreenTest(unittest.TestCase):
 
     def test_unlinking_removes_the_edge_and_tombstones_it(self):
         csrf = self.sign_in()
-        self.client.post("/nodes/Person/A1/rel/add", data=self.link_data(csrf))
-        response = self.client.post("/nodes/Person/A1/rel/delete", data=self.link_data(csrf))
+        self.client.post("/nodes/Person/rel/add/A1", data=self.link_data(csrf))
+        response = self.client.post("/nodes/Person/rel/delete/A1", data=self.link_data(csrf))
         self.assertEqual(response.status_code, 303)
         self.assertNotIn(("Person", "AUTHORED", "Publication", "A1", "W1"), self.graph.relationships)
         # Here the decision does matter: MERGE would rebuild this edge.
@@ -313,7 +316,7 @@ class RelationshipScreenTest(unittest.TestCase):
 
     def test_unlinking_something_that_is_not_linked_is_404_and_records_nothing(self):
         csrf = self.sign_in()
-        response = self.client.post("/nodes/Person/A1/rel/delete", data=self.link_data(csrf))
+        response = self.client.post("/nodes/Person/rel/delete/A1", data=self.link_data(csrf))
         self.assertEqual(response.status_code, 404)
         self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
 
@@ -325,13 +328,13 @@ class RelationshipScreenTest(unittest.TestCase):
 
     def test_a_viewer_can_neither_link_nor_unlink(self):
         csrf = self.sign_in(login="guest")
-        for path in ("/nodes/Person/A1/rel/add", "/nodes/Person/A1/rel/delete"):
+        for path in ("/nodes/Person/rel/add/A1", "/nodes/Person/rel/delete/A1"):
             self.assertEqual(self.client.post(path, data=self.link_data(csrf)).status_code, 403)
         self.assertEqual(self.graph.relationships, {})
 
     def test_linking_without_the_csrf_token_is_refused(self):
         self.sign_in()
-        response = self.client.post("/nodes/Person/A1/rel/add",
+        response = self.client.post("/nodes/Person/rel/add/A1",
                                     data={"triple": "Person|AUTHORED|Publication", "other_id": "W1"})
         self.assertEqual(response.status_code, 403)
         self.assertEqual(self.graph.relationships, {})
@@ -340,7 +343,7 @@ class RelationshipScreenTest(unittest.TestCase):
         # Opened from the publication's side, the person is the one typed
         # in and the publication is still the target.
         csrf = self.sign_in()
-        self.client.post("/nodes/Publication/W1/rel/add",
+        self.client.post("/nodes/Publication/rel/add/W1",
                          data={"csrf": csrf, "triple": "Person|AUTHORED|Publication",
                                "other_id": "A1"})
         self.assertIn(("Person", "AUTHORED", "Publication", "A1", "W1"), self.graph.relationships)
@@ -482,7 +485,7 @@ class DeleteConfirmationTest(unittest.TestCase):
         # directly, so the server checks still have to hold on their own.
         self.sign_in(login="guest")
         csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
-        response = self.client.post("/nodes/Person/A1/delete", data={"csrf": csrf})
+        response = self.client.post("/nodes/Person/delete/A1", data={"csrf": csrf})
         self.assertEqual(response.status_code, 403)
         self.assertIn(("Person", "A1"), self.graph.nodes)
 
@@ -507,7 +510,8 @@ class LinkMistakeTest(unittest.TestCase):
         self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
 
     def link(self, page, triple, other):
-        return self.client.post(f"/nodes/{page}/rel/add",
+        label, node_id = page.split("/", 1)
+        return self.client.post(f"/nodes/{label}/rel/add/{node_id}",
                                 data={"csrf": self.csrf, "triple": triple, "other_id": other})
 
     def reason(self, response):
@@ -572,7 +576,8 @@ class LinkDirectionTest(unittest.TestCase):
         self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
 
     def link(self, page, triple, other):
-        return self.client.post(f"/nodes/{page}/rel/add",
+        label, node_id = page.split("/", 1)
+        return self.client.post(f"/nodes/{label}/rel/add/{node_id}",
                                 data={"csrf": self.csrf, "triple": triple, "other_id": other})
 
     def test_an_incoming_link_works_when_this_node_is_matched_by_a_url(self):
@@ -733,7 +738,7 @@ class UnlinkByMatchFieldTest(unittest.TestCase):
             "https://github.com/itmo/pauk")
 
     def test_a_repository_link_is_removed_from_the_publication_side(self):
-        response = self.client.post("/nodes/Publication/W1/rel/delete", data={
+        response = self.client.post("/nodes/Publication/rel/delete/W1", data={
             "csrf": self.csrf, "triple": "Publication|MENTIONS_LINK|Repository",
             "other_id": "https://github.com/itmo/pauk"})
         self.assertEqual(response.status_code, 303)
@@ -744,7 +749,7 @@ class UnlinkByMatchFieldTest(unittest.TestCase):
         self.assertEqual(
             self.form_value("/nodes/Repository/R1", "Repository|OWNED_BY|GitHubProfile"),
             "octocat")
-        response = self.client.post("/nodes/Repository/R1/rel/delete", data={
+        response = self.client.post("/nodes/Repository/rel/delete/R1", data={
             "csrf": self.csrf, "triple": "Repository|OWNED_BY|GitHubProfile",
             "other_id": "octocat"})
         self.assertEqual(response.status_code, 303)
@@ -755,7 +760,7 @@ class UnlinkByMatchFieldTest(unittest.TestCase):
         # Second-order fault: even a successful delete would be undone by
         # the next publish if the tombstone held an id, because the loader
         # compares it against the prepared row's url.
-        self.client.post("/nodes/Publication/W1/rel/delete", data={
+        self.client.post("/nodes/Publication/rel/delete/W1", data={
             "csrf": self.csrf, "triple": "Publication|MENTIONS_LINK|Repository",
             "other_id": "https://github.com/itmo/pauk"})
         (override,) = active_overrides(self.db)
@@ -844,3 +849,99 @@ class FieldTypeTest(unittest.TestCase):
         self.assertEqual(node["stars_num"], 7)
         self.assertIs(node["has_readme"], True)
         self.assertEqual(node["name"], "new")
+
+
+class UrlAsIdTest(unittest.TestCase):
+    """A LinkCandidate is identified by the address it was found at.
+
+    That id carries slashes, and can carry "?" and "#" too, so every
+    screen has to survive a node whose id is a URL: the routes match it
+    with `{node_id:path}`, and the pages percent-encode it on the way out.
+    """
+
+    URL = "https://github.com/org/repo?ref=main#readme"
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add("LinkCandidate", self.URL, url=self.URL, host="github.com")
+        self.graph.add("Publication", "W1", title="Статья")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        self.path = quote(self.URL, safe="/")
+
+    def test_the_search_links_to_a_page_that_opens(self):
+        page = self.client.get("/nodes/LinkCandidate", params={"q": "github"}).text
+        found = [href for href in re.findall(r'href="(/nodes/LinkCandidate/[^"]*)"', page)
+                 if not href.endswith("/new")]
+        self.assertTrue(found, "поиск не дал ссылки на узел")
+        self.assertEqual(self.client.get(found[0]).status_code, 200)
+
+    def test_the_id_is_encoded_in_the_link(self):
+        # Unencoded, the browser reads "?ref=main" as a query and drops
+        # the rest of the id before the request is even sent.
+        page = self.client.get("/nodes/LinkCandidate", params={"q": "github"}).text
+        self.assertIn("%3Fref%3Dmain%23readme", page)
+
+    def test_the_page_opens(self):
+        response = self.client.get(f"/nodes/LinkCandidate/{self.path}")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("github.com", response.text)
+
+    def test_editing_saves(self):
+        seen = self.graph.nodes[("LinkCandidate", self.URL)]["updated_at"]
+        response = self.client.post(f"/nodes/LinkCandidate/{self.path}", data={
+            "csrf": self.csrf, "host": "gitlab.com", "url": self.URL, "seen_at": seen})
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(self.graph.nodes[("LinkCandidate", self.URL)]["host"], "gitlab.com")
+
+    def test_the_redirect_after_an_edit_opens(self):
+        seen = self.graph.nodes[("LinkCandidate", self.URL)]["updated_at"]
+        response = self.client.post(f"/nodes/LinkCandidate/{self.path}", data={
+            "csrf": self.csrf, "host": "gitlab.com", "url": self.URL, "seen_at": seen})
+        self.assertEqual(self.client.get(response.headers["location"]).status_code, 200)
+
+    def test_deleting_works(self):
+        response = self.client.post(f"/nodes/LinkCandidate/delete/{self.path}",
+                                    data={"csrf": self.csrf})
+        self.assertEqual(response.status_code, 303)
+        self.assertNotIn(("LinkCandidate", self.URL), self.graph.nodes)
+
+    def test_restoring_works(self):
+        self.client.post(f"/nodes/LinkCandidate/delete/{self.path}", data={"csrf": self.csrf})
+        response = self.client.post(f"/nodes/LinkCandidate/restore/{self.path}",
+                                    data={"csrf": self.csrf})
+        self.assertEqual(response.status_code, 303)
+        self.assertIn(("LinkCandidate", self.URL), self.graph.nodes)
+
+    def test_linking_and_unlinking_work(self):
+        triple = "Publication|MENTIONS_LINK|LinkCandidate"
+        self.client.post("/nodes/Publication/rel/add/W1", data={
+            "csrf": self.csrf, "triple": triple, "other_id": self.URL})
+        self.assertEqual(len(self.graph.relationships), 1)
+        self.client.post("/nodes/Publication/rel/delete/W1", data={
+            "csrf": self.csrf, "triple": triple, "other_id": self.URL})
+        self.assertEqual(len(self.graph.relationships), 0)
+
+    def test_an_action_is_not_read_as_part_of_the_id(self):
+        # The path converter is greedy: with the action at the end,
+        # "/rel/delete" went to the node-delete route, which read it as a
+        # node called "W1/rel" and answered that no such node exists.
+        triple = "Publication|MENTIONS_LINK|LinkCandidate"
+        self.client.post("/nodes/Publication/rel/add/W1", data={
+            "csrf": self.csrf, "triple": triple, "other_id": self.URL})
+        response = self.client.post("/nodes/Publication/rel/delete/W1", data={
+            "csrf": self.csrf, "triple": triple, "other_id": self.URL})
+        self.assertEqual(response.status_code, 303)
+        self.assertIn(("Publication", "W1"), self.graph.nodes)
+        self.assertIsNone(self.db[COLLECTION].find_one({"_id": "node:Publication:W1/rel"}))
+
+    def test_an_address_ending_in_delete_is_still_a_node(self):
+        ending = "https://example.org/api/delete"
+        self.graph.add("LinkCandidate", ending, url=ending, host="example.org")
+        response = self.client.get(f"/nodes/LinkCandidate/{quote(ending, safe='/')}")
+        self.assertEqual(response.status_code, 200)

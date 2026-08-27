@@ -35,7 +35,7 @@
       <tr><th>id</th>{% for f in fields %}<th>{{ f }}</th>{% endfor %}</tr>
       {% for row in rows %}
       <tr>
-        <td class="val"><a href="/nodes/{{ label }}/{{ row.id }}">{{ row.id }}</a></td>
+        <td class="val"><a href="/nodes/{{ label }}/{{ row.id | urlencode }}">{{ row.id }}</a></td>
         {% for f in fields %}<td>{{ row[f] if row[f] is not none else "" }}</td>{% endfor %}
       </tr>
       {% endfor %}

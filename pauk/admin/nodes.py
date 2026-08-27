@@ -79,6 +79,19 @@ def _parse_new_value(raw: str):
         return text
 
 
+def _node_url(label: str, node_id: str, query: str = "") -> str:
+    """The panel's address for one node.
+
+    A LinkCandidate is identified by the address it was found at, so its
+    id can hold "?" and "#" of its own. Left as they are, the browser
+    reads them as the start of a query or a fragment and throws away the
+    rest of the id. Slashes are left alone: the routes match the id with
+    `{node_id:path}`, which takes them as part of it.
+    """
+    address = f"/nodes/{label}/{quote(node_id, safe='/')}"
+    return f"{address}?{query}" if query else address
+
+
 def _known_label(label: str) -> str:
     """Reject an unknown label with 404 rather than let it reach Cypher."""
     if label not in NODE_FIELDS:
@@ -148,7 +161,10 @@ def create_form(request: Request, label: str, user: Editor, session: Session):
     """The form for a node the pipeline does not know about.
 
     Declared before the node page: otherwise `/nodes/Person/new` matches
-    that route and goes looking for a node whose id is "new".
+    that route and goes looking for a node whose id is "new". The node
+    routes take `{node_id:path}` because a LinkCandidate's id is a URL —
+    slashes and all — and a plain segment would cut it into pieces and
+    answer 404.
     """
     _known_label(label)
     return templates.TemplateResponse(request, "create.html", {
@@ -185,11 +201,11 @@ async def create(request: Request, label: str, user: Editor,
     if deactivate_override(db, label, node_id, only_op="delete"):
         logger.info("%s revoked the tombstone on %s %s", user.actor, label, node_id)
     logger.info("%s created %s %s", user.actor, label, node_id)
-    return RedirectResponse(f"/nodes/{label}/{node_id}?created=1",
+    return RedirectResponse(_node_url(label, node_id, "created=1"),
                             status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.post("/nodes/{label}/{node_id}/restore")
+@router.post("/nodes/{label}/restore/{node_id:path}")
 async def restore(request: Request, label: str, node_id: str, user: Editor,
                   db: Db, graph: Graph, _: CsrfChecked):
     """Put a deleted node back as it was, from what the feed remembers.
@@ -211,11 +227,11 @@ async def restore(request: Request, label: str, node_id: str, user: Editor,
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     deactivate_override(db, label, node_id, only_op="delete")
     logger.info("%s restored %s %s", user.actor, label, node_id)
-    return RedirectResponse(f"/nodes/{label}/{node_id}?restored=1",
+    return RedirectResponse(_node_url(label, node_id, "restored=1"),
                             status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.get("/nodes/{label}/{node_id}", response_class=HTMLResponse)
+@router.get("/nodes/{label}/{node_id:path}", response_class=HTMLResponse)
 def show(request: Request, label: str, node_id: str, user: CurrentUser,
          session: Session, graph: Graph, db: Db):
     _known_label(label)
@@ -243,52 +259,7 @@ def show(request: Request, label: str, node_id: str, user: CurrentUser,
         "links": _links_for(label), "labels": sorted(NODE_FIELDS)})
 
 
-@router.post("/nodes/{label}/{node_id}")
-async def edit(request: Request, label: str, node_id: str, user: Editor,
-               db: Db, graph: Graph, _: CsrfChecked):
-    """Change fields, and remember the decision so a publish cannot undo it."""
-    _known_label(label)
-    form = await request.form()
-    # Parsed against what the node holds now, so an untouched box keeps
-    # its type instead of coming back as text.
-    before = read_node(graph, label, node_id)
-    fields = {name: _parse_value(str(form[name]), before.get(name))
-              for name in NODE_FIELDS[label] if name in form}
-    note = str(form.get("note", "")).strip()
-    if not fields:
-        return RedirectResponse(f"/nodes/{label}/{node_id}", status_code=status.HTTP_303_SEE_OTHER)
-
-    try:
-        # Only what actually differs is written: submitting a form
-        # unchanged must not stamp an override on every field of the node,
-        # nor fill the audit feed with edits nobody made.
-        changed = {name: value for name, value in fields.items() if before.get(name) != value}
-        if not changed:
-            return RedirectResponse(f"/nodes/{label}/{node_id}?unchanged=1",
-                                    status_code=status.HTTP_303_SEE_OTHER)
-        # The form carries the updated_at it was rendered with. Without it
-        # two people editing one record in parallel simply overwrite each
-        # other: the second save wins and the first disappears without a
-        # word to anyone.
-        update_node(graph, label, node_id, changed,
-                    expected_updated_at=str(form.get("seen_at") or "") or None)
-        record_override(db, label, node_id, "set", changed, actor=user.actor, note=note,
-                        auto_value={name: before.get(name) for name in changed})
-    except VersionConflict:
-        # Not an error to shout about: someone got there first. Hand the
-        # page back with what is there now, so the edit can be redone on
-        # top of it rather than silently lost.
-        logger.info("%s hit a version conflict on %s %s", user.actor, label, node_id)
-        return RedirectResponse(f"/nodes/{label}/{node_id}?stale=1",
-                                status_code=status.HTTP_303_SEE_OTHER)
-    except MutationError as error:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
-    logger.info("%s edited %s %s: %s", user.actor, label, node_id, ", ".join(sorted(changed)))
-    return RedirectResponse(f"/nodes/{label}/{node_id}?saved=1",
-                            status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.post("/nodes/{label}/{node_id}/delete")
+@router.post("/nodes/{label}/delete/{node_id:path}")
 async def remove(request: Request, label: str, node_id: str, user: Editor,
                  db: Db, graph: Graph, _: CsrfChecked):
     """Remove a node and tombstone it, so publishing does not bring it back."""
@@ -312,7 +283,7 @@ async def remove(request: Request, label: str, node_id: str, user: Editor,
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     logger.info("%s deleted %s %s", user.actor, label, node_id)
-    return RedirectResponse(f"/nodes/{label}?deleted={node_id}",
+    return RedirectResponse(f"/nodes/{label}?deleted={quote(node_id, safe='')}",
                             status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -388,11 +359,11 @@ def _link_failed(label: str, node_id: str, message: str) -> RedirectResponse:
     A failed link is an ordinary mistake — a typo, the wrong field — and
     the person needs the form again, not a JSON error page.
     """
-    return RedirectResponse(f"/nodes/{label}/{node_id}?error={quote(message, safe='')}",
+    return RedirectResponse(_node_url(label, node_id, f"error={quote(message, safe='')}"),
                             status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.post("/nodes/{label}/{node_id}/rel/add")
+@router.post("/nodes/{label}/rel/add/{node_id:path}")
 async def link(request: Request, label: str, node_id: str, user: Editor,
                db: Db, graph: Graph, _: CsrfChecked):
     """Connect this node to another one.
@@ -447,11 +418,11 @@ async def link(request: Request, label: str, node_id: str, user: Editor,
         return _link_failed(label, node_id, str(error))
     logger.info("%s linked (%s %s)-[:%s]->(%s %s)",
                 user.actor, src_label, src_id, rel_type, tgt_label, tgt_id)
-    return RedirectResponse(f"/nodes/{label}/{node_id}?linked=1",
+    return RedirectResponse(_node_url(label, node_id, "linked=1"),
                             status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.post("/nodes/{label}/{node_id}/rel/delete")
+@router.post("/nodes/{label}/rel/delete/{node_id:path}")
 async def unlink(request: Request, label: str, node_id: str, user: Editor,
                  db: Db, graph: Graph, _: CsrfChecked):
     """Disconnect two nodes and remember it, so a publish cannot relink them.
@@ -475,5 +446,58 @@ async def unlink(request: Request, label: str, node_id: str, user: Editor,
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     logger.info("%s unlinked (%s %s)-[:%s]->(%s %s)",
                 user.actor, src_label, src_id, rel_type, tgt_label, tgt_id)
-    return RedirectResponse(f"/nodes/{label}/{node_id}?unlinked=1",
+    return RedirectResponse(_node_url(label, node_id, "unlinked=1"),
+                            status_code=status.HTTP_303_SEE_OTHER)
+
+
+# Declared last on purpose, and the reason the action routes above name
+# the action before the id: the path converter is greedy, so an id at the
+# end of the pattern swallows anything that follows it. With the action
+# last, "/nodes/L/<id>/rel/delete" reads as a delete of a node called
+# "<id>/rel", and a LinkCandidate whose address happens to end in
+# "/delete" is not far-fetched. An id that *starts* with "delete/" or
+# "rel/" is: every LinkCandidate id begins with a scheme, and no other
+# label's id holds a slash at all.
+@router.post("/nodes/{label}/{node_id:path}")
+async def edit(request: Request, label: str, node_id: str, user: Editor,
+               db: Db, graph: Graph, _: CsrfChecked):
+    """Change fields, and remember the decision so a publish cannot undo it."""
+    _known_label(label)
+    form = await request.form()
+    # Parsed against what the node holds now, so an untouched box keeps
+    # its type instead of coming back as text.
+    before = read_node(graph, label, node_id)
+    fields = {name: _parse_value(str(form[name]), before.get(name))
+              for name in NODE_FIELDS[label] if name in form}
+    note = str(form.get("note", "")).strip()
+    if not fields:
+        return RedirectResponse(_node_url(label, node_id), status_code=status.HTTP_303_SEE_OTHER)
+
+    try:
+        # Only what actually differs is written: submitting a form
+        # unchanged must not stamp an override on every field of the node,
+        # nor fill the audit feed with edits nobody made.
+        changed = {name: value for name, value in fields.items() if before.get(name) != value}
+        if not changed:
+            return RedirectResponse(_node_url(label, node_id, "unchanged=1"),
+                                    status_code=status.HTTP_303_SEE_OTHER)
+        # The form carries the updated_at it was rendered with. Without it
+        # two people editing one record in parallel simply overwrite each
+        # other: the second save wins and the first disappears without a
+        # word to anyone.
+        update_node(graph, label, node_id, changed,
+                    expected_updated_at=str(form.get("seen_at") or "") or None)
+        record_override(db, label, node_id, "set", changed, actor=user.actor, note=note,
+                        auto_value={name: before.get(name) for name in changed})
+    except VersionConflict:
+        # Not an error to shout about: someone got there first. Hand the
+        # page back with what is there now, so the edit can be redone on
+        # top of it rather than silently lost.
+        logger.info("%s hit a version conflict on %s %s", user.actor, label, node_id)
+        return RedirectResponse(_node_url(label, node_id, "stale=1"),
+                                status_code=status.HTTP_303_SEE_OTHER)
+    except MutationError as error:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
+    logger.info("%s edited %s %s: %s", user.actor, label, node_id, ", ".join(sorted(changed)))
+    return RedirectResponse(_node_url(label, node_id, "saved=1"),
                             status_code=status.HTTP_303_SEE_OTHER)

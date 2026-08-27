@@ -17,7 +17,7 @@
 {% if request.query_params.get("linked") %}<p class="note">Связь создана.</p>{% endif %}
 {% if request.query_params.get("unlinked") %}<p class="note">Связь удалена и помечена — публикация её не восстановит.</p>{% endif %}
 
-<form method="post" action="/nodes/{{ label }}/{{ node_id }}">
+<form method="post" action="/nodes/{{ label }}/{{ node_id | urlencode }}">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   {# Момент, на котором открыли форму. Если запись успели изменить, правка
      будет отклонена, а не затрёт чужую. #}
@@ -63,10 +63,10 @@
          со схемой графа, а не когда решают, что с чем связать. #}
       <td>{{ label }} <span class="muted">{{ node_id }}</span></td>
       <td><b>{{ rel.words }}</b><br><span class="muted">{{ rel.type }}</span></td>
-      <td class="val"><a href="/nodes/{{ other }}/{{ rel.other_id }}">{{ other }} {{ rel.other_id }}</a></td>
+      <td class="val"><a href="/nodes/{{ other }}/{{ rel.other_id | urlencode }}">{{ other }} {{ rel.other_id }}</a></td>
       {% if user.can_write %}
       <td style="width:1%">
-        <form method="post" action="/nodes/{{ label }}/{{ node_id }}/rel/delete">
+        <form method="post" action="/nodes/{{ label }}/rel/delete/{{ node_id | urlencode }}">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="triple"
                  value="{{ label if rel.outgoing else other }}|{{ rel.type }}|{{ other if rel.outgoing else label }}">
@@ -112,7 +112,7 @@
 {% if user.can_write and (links.outgoing or links.incoming) %}
 <div class="card" style="margin-top:20px">
   <b>Связать с другим узлом</b>
-  <form method="post" action="/nodes/{{ label }}/{{ node_id }}/rel/add" class="row" style="margin-bottom:0">
+  <form method="post" action="/nodes/{{ label }}/rel/add/{{ node_id | urlencode }}" class="row" style="margin-bottom:0">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <div>
       <label for="triple">Связь</label>
@@ -141,7 +141,7 @@
   <b>Удалить узел</b>
   <p class="muted">Узел будет помечен как удалённый, иначе следующая публикация создаст его заново.
      {% if relationships %}У узла есть связи — без галочки удаление будет отклонено.{% endif %}</p>
-  <form method="post" action="/nodes/{{ label }}/{{ node_id }}/delete" id="delete-form">
+  <form method="post" action="/nodes/{{ label }}/delete/{{ node_id | urlencode }}" id="delete-form">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     {% if relationships %}
     <label style="display:flex; gap:8px; align-items:center; margin-bottom:12px">

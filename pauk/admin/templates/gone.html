@@ -29,7 +29,7 @@
   {# Одна кнопка и ничего вокруг: что вернётся и что будет с пометкой,
      уже видно из таблицы истории выше. #}
   {% if restorable %}
-  <form method="post" action="/nodes/{{ label }}/{{ node_id }}/restore" style="margin-top:24px">
+  <form method="post" action="/nodes/{{ label }}/restore/{{ node_id | urlencode }}" style="margin-top:24px">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <button type="submit">Восстановить</button>
   </form>

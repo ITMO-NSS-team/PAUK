@@ -34,7 +34,7 @@
       <tr><th>запись</th><th>поле</th><th>у нас</th><th>было в источнике</th><th>стало</th><th>кто и когда</th></tr>
       {% for row in conflicts %}
       <tr>
-        <td class="val"><a href="/nodes/{{ row.label }}/{{ row.target_id }}">{{ row.title }}</a></td>
+        <td class="val"><a href="/nodes/{{ row.label }}/{{ row.target_id | urlencode }}">{{ row.title }}</a></td>
         <td><b>{{ row.field }}</b></td>
         <td class="val">{{ row.ours if row.ours is not none else "—" }}</td>
         <td class="val muted">{{ row.was if row.was is not none else "—" }}</td>
@@ -56,7 +56,7 @@
       <tr>
         <td class="val">
           {% if row.kind == "rel" %}{{ row.title }}
-          {% else %}<a href="/nodes/{{ row.label }}/{{ row.target_id }}">{{ row.title }}</a>{% endif %}
+          {% else %}<a href="/nodes/{{ row.label }}/{{ row.target_id | urlencode }}">{{ row.title }}</a>{% endif %}
         </td>
         <td>
           {{ row.what }}

@@ -62,7 +62,7 @@
       <td>{{ row.actor }}<br><span class="muted">{{ row.source }}</span></td>
       <td class="val">
         {% if row.entity_type in labels %}
-        <a href="/nodes/{{ row.entity_type }}/{{ row.entity_id }}">{{ row.entity_type }} {{ row.entity_id }}</a>
+        <a href="/nodes/{{ row.entity_type }}/{{ row.entity_id | urlencode }}">{{ row.entity_type }} {{ row.entity_id }}</a>
         {% else %}{{ row.entity_type }} {{ row.entity_id }}{% endif %}
       </td>
       <td>{{ row.kind_ru }}</td>

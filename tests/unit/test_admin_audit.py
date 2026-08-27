@@ -186,7 +186,7 @@ class DeletedNodeTest(unittest.TestCase):
         # One button, nothing around it: what comes back and what happens
         # to the tombstone is already visible in the history above.
         body = self.client.get("/nodes/Publication/W9").text
-        self.assertIn("/nodes/Publication/W9/restore", body)
+        self.assertIn("/nodes/Publication/restore/W9", body)
         self.assertIn("Восстановить", body)
         self.assertNotIn("overrides undo", body)
 
@@ -221,7 +221,7 @@ class RestoreTest(unittest.TestCase):
 
     def test_the_node_comes_back_with_the_fields_it_had(self):
         csrf = self.sign_in()
-        response = self.client.post("/nodes/LinkCandidate/L1/restore", data={"csrf": csrf})
+        response = self.client.post("/nodes/LinkCandidate/restore/L1", data={"csrf": csrf})
         self.assertEqual(response.status_code, 303)
         node = self.graph.nodes[("LinkCandidate", "L1")]
         self.assertEqual(node["url"], "https://x.test")
@@ -232,7 +232,7 @@ class RestoreTest(unittest.TestCase):
         # time, and the restore would look like it silently failed.
         from pauk.graph.overrides import active_overrides
         csrf = self.sign_in()
-        self.client.post("/nodes/LinkCandidate/L1/restore", data={"csrf": csrf})
+        self.client.post("/nodes/LinkCandidate/restore/L1", data={"csrf": csrf})
         self.assertEqual(active_overrides(self.db), [])
 
     def test_creating_the_same_id_by_hand_also_withdraws_it(self):
@@ -246,7 +246,7 @@ class RestoreTest(unittest.TestCase):
 
     def test_a_node_the_feed_cannot_describe_is_not_restorable(self):
         csrf = self.sign_in()
-        response = self.client.post("/nodes/Person/never-seen/restore", data={"csrf": csrf})
+        response = self.client.post("/nodes/Person/restore/never-seen", data={"csrf": csrf})
         self.assertEqual(response.status_code, 400)
 
     def test_an_entity_whose_last_event_was_not_a_deletion_is_left_alone(self):
@@ -258,19 +258,19 @@ class RestoreTest(unittest.TestCase):
 
     def test_a_viewer_cannot_restore(self):
         csrf = self.sign_in(login="guest")
-        response = self.client.post("/nodes/LinkCandidate/L1/restore", data={"csrf": csrf})
+        response = self.client.post("/nodes/LinkCandidate/restore/L1", data={"csrf": csrf})
         self.assertEqual(response.status_code, 403)
         self.assertNotIn(("LinkCandidate", "L1"), self.graph.nodes)
 
     def test_restoring_without_the_csrf_token_is_refused(self):
         self.sign_in()
-        response = self.client.post("/nodes/LinkCandidate/L1/restore")
+        response = self.client.post("/nodes/LinkCandidate/restore/L1")
         self.assertEqual(response.status_code, 403)
 
     def test_the_page_offers_the_restore(self):
         self.sign_in()
         body = self.client.get("/nodes/LinkCandidate/L1").text
-        self.assertIn("/nodes/LinkCandidate/L1/restore", body)
+        self.assertIn("/nodes/LinkCandidate/restore/L1", body)
         self.assertIn("Восстановить", body)
 
     def test_a_viewer_is_shown_no_button(self):

@@ -299,7 +299,7 @@ class SnapshotTest(unittest.TestCase):
         self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
 
     def delete_it(self):
-        return self.client.post("/nodes/Department/D1/delete", data={"csrf": self.csrf})
+        return self.client.post("/nodes/Department/delete/D1", data={"csrf": self.csrf})
 
     def test_deleting_stores_the_fields_on_the_decision(self):
         self.delete_it()
