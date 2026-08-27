@@ -39,6 +39,18 @@ class EnrichmentStage(ABC):
             self.selection.entity == entity and identifier in self.selection.ids
         )
 
+    def in_scope(self, entity: str, identifier: str) -> bool:
+        """False only when the run is scoped to a list of *this* entity's ids
+        that does not name this one.
+
+        Unlike `selected`, a selection aimed at another entity does not filter
+        here — a stage that reaches its rows through several entities decides
+        for itself what a publication-scoped run means for each of them.
+        """
+        return (self.selection is None
+                or self.selection.entity != entity
+                or identifier in self.selection.ids)
+
     def needs_attempt(self, state: ProcessingState | None) -> bool:
         """True if the stage should (re)process a row in this state.
 
