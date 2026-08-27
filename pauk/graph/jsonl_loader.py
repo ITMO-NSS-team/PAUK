@@ -39,7 +39,9 @@ def _stage_failed(row: dict, stage: str) -> bool:
 
 
 def extract_repo_links(
-    pub_links_row: dict, known_repository_urls: dict[str, str]
+    pub_links_row: dict,
+    known_repository_urls: dict[str, str],
+    dropped_candidates: frozenset[str] | set[str] = frozenset(),
 ) -> tuple[
     list[tuple[str, dict]],
     list[tuple[str, str, dict]],
@@ -63,6 +65,11 @@ def extract_repo_links(
         known_repository_urls: Mapping of normalized Repository URL to the
             URL as stored on the Repository node, built while loading
             repositories.jsonl in this run.
+        dropped_candidates: Candidate urls deleted by hand. A LinkCandidate
+            has no prepared row of its own — it is made up here from a
+            link — so the tombstone filter the loader runs over the files
+            never sees it, and without this every publish would recreate
+            the node for apply_overrides to delete again.
 
     Returns:
         A (link_candidate_nodes, repository_edges, candidate_edges,
@@ -96,7 +103,7 @@ def extract_repo_links(
         if stored_url is not None:
             repo_edges.append((publication_id, stored_url, props))
             candidate_promotions.append((url, stored_url))
-        else:
+        elif url not in dropped_candidates:
             candidate_nodes.append((url, {"url": url, "host": link.get("host")}))
             candidate_edges.append((publication_id, url, props))
 
@@ -107,6 +114,7 @@ def load_prepared_rows(
     client: Neo4jClient | AuditedNeo4jClient,
     rows_by_file: dict[str, list[dict]],
     dropped_relationships: set[tuple[str, str, str, str, str]] | None = None,
+    dropped_candidates: set[str] | None = None,
 ) -> None:
     """Load prepared entity rows into Neo4j, however they were sourced.
 
@@ -127,6 +135,9 @@ def load_prepared_rows(
             (src_label, rel_type, tgt_label, src_id, tgt_id). They are
             skipped instead of being created and removed again on every run
             (see pauk/graph/overrides.py).
+        dropped_candidates: LinkCandidate ids deleted by hand. Passed on to
+            extract_repo_links, which is where a candidate is invented in
+            the first place.
     """
     node_batches: dict[str, list[tuple[str, dict]]] = defaultdict(list)
     person_batches: dict[bool, list[tuple[str, dict]]] = {True: [], False: []}
@@ -183,7 +194,8 @@ def load_prepared_rows(
         mentions_key = ("Publication", "LinkCandidate", "MENTIONS_LINK", "id")
         mentions_repo_key = ("Publication", "Repository", "MENTIONS_LINK", "url")
         for row in repo_links_rows:
-            candidate_nodes, repo_edges, candidate_edges, promotions = extract_repo_links(row, known_repository_urls)
+            candidate_nodes, repo_edges, candidate_edges, promotions = extract_repo_links(
+                row, known_repository_urls, dropped_candidates or frozenset())
             node_batches["LinkCandidate"].extend(candidate_nodes)
             rel_batches[mentions_repo_key].extend(repo_edges)
             rel_batches[mentions_key].extend(candidate_edges)

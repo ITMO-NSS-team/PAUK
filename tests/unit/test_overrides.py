@@ -191,6 +191,70 @@ class TombstoneFilterTest(unittest.TestCase):
         self.assertEqual(_drop_tombstoned(rows, self.db), rows)
 
 
+class CandidateTombstoneTest(unittest.TestCase):
+    """A LinkCandidate is invented by the loader, not read from a file.
+
+    _drop_tombstoned filters prepared rows by id, and repo_links.jsonl rows
+    are keyed by publication. So the candidate slipped past it: every
+    publish recreated the node and apply_overrides deleted it again, one
+    false creation and one false deletion per run.
+    """
+
+    URL = "https://github.com/org/repo"
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.graph = FakeGraph()
+        self.graph.add("Publication", "W1", title="paper")
+        self.rows = {"repo_links.jsonl": [{"publication_id": "W1", "links": [
+            {"url": self.URL, "host": "github.com"}]}]}
+
+    def publish(self):
+        load_prepared_rows(self.graph, self.rows, tombstoned_relationships(self.db),
+                           tombstoned_ids(self.db, "LinkCandidate"))
+
+    def test_a_deleted_candidate_is_not_recreated(self):
+        record_override(self.db, "LinkCandidate", self.URL, "delete")
+        self.publish()
+        self.assertNotIn(("LinkCandidate", self.URL), self.graph.nodes)
+
+    def test_its_edge_is_not_rebuilt_either(self):
+        record_override(self.db, "LinkCandidate", self.URL, "delete")
+        self.publish()
+        self.assertNotIn(("Publication", "MENTIONS_LINK", "LinkCandidate", "W1", self.URL),
+                         self.graph.relationships)
+
+    def test_without_the_tombstone_the_candidate_is_created(self):
+        self.publish()
+        self.assertIn(("LinkCandidate", self.URL), self.graph.nodes)
+
+    def test_only_the_deleted_candidate_is_skipped(self):
+        record_override(self.db, "LinkCandidate", self.URL, "delete")
+        other = "https://gitlab.com/other/x"
+        self.rows["repo_links.jsonl"][0]["links"].append({"url": other, "host": "gitlab.com"})
+        self.publish()
+        self.assertIn(("LinkCandidate", other), self.graph.nodes)
+
+    def test_a_publish_leaves_the_graph_alone(self):
+        # The point of the fix: nothing to undo afterwards, so the feed
+        # gets no creation and no deletion nobody asked for.
+        record_override(self.db, "LinkCandidate", self.URL, "delete")
+        self.publish()
+        before = dict(self.graph.nodes)
+        apply_overrides(self.graph, self.db)
+        self.assertEqual(self.graph.nodes, before)
+
+    def test_a_tombstone_on_a_candidate_does_not_block_its_repository(self):
+        # The url is now a known Repository, so the edge goes there
+        # instead. That node has its own id and its own tombstone.
+        record_override(self.db, "LinkCandidate", self.URL, "delete")
+        self.graph.add("Repository", "R1", url=self.URL)
+        self.rows["repositories.jsonl"] = [{"id": "R1", "url": self.URL}]
+        self.publish()
+        self.assertIn(("Publication", "MENTIONS_LINK", "Repository", "W1", self.URL),
+                      self.graph.relationships)
+
+
 class RelationshipOverrideTest(unittest.TestCase):
     """An edge removed by hand is rebuilt by MERGE from the same prepared row."""
 

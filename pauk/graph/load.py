@@ -87,7 +87,11 @@ def load_jsonl_group(config: Settings, mongo_db: Database, group: str) -> None:
         # of audit rows, not one per node — but "who republished this group
         # and when" stops being invisible.
         with actor_context("etl-pipeline", source=f"publish:{group}"):
-            load_prepared_rows(client, rows_by_file, tombstoned_relationships(mongo_db))
+            # LinkCandidate is the one label with no prepared file of its
+            # own — it is made up from repo_links rows — so _drop_tombstoned
+            # cannot filter it and the loader is told separately.
+            load_prepared_rows(client, rows_by_file, tombstoned_relationships(mongo_db),
+                               tombstoned_ids(mongo_db, "LinkCandidate"))
             # Last step, after candidate promotion and every fold: publishing
             # overwrites hand-corrected fields with whatever the source says,
             # so the manual decisions are put back on top.
