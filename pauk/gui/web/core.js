@@ -72,6 +72,27 @@ function muteColor(hex) {
 const deptById = new Map();
 DATA.departments.forEach(d => { d.color = muteColor(d.color); deptById.set(d.id, d); });
 
+// ---------- groups: what a territory stands for on the current tab ----------
+// On the authors' and publications' maps that is always a department. On the
+// repositories' map a department is known for well under half of them, so the
+// owning GitHub organization stands in, and the field of the papers a
+// repository implements catches part of the rest. Everything downstream —
+// colour, hulls, labels, the card — goes through these three.
+
+const repoClusterById = new Map();
+(DATA.repo_clusters || []).forEach(c => {
+  c.color = muteColor(c.color);
+  repoClusterById.set(c.id, c);
+});
+
+const groupIdOf = n => (tab === 2 && n.cluster != null ? n.cluster : n.dept);
+const groupById = id => (tab === 2 ? repoClusterById.get(id) : deptById.get(id));
+const groupTable = () => (tab === 2 ? (DATA.repo_clusters || []) : DATA.departments);
+function groupDisplayName(g) {
+  if (!g) return "";
+  return (LANG === "en" && g.name_en) ? g.name_en : g.name;
+}
+
 // Canonical per-kind accent color, shown on the Overview panel's tab label
 // and reused anywhere a kind badge appears (search results). Department has
 // no tab of its own, so it gets full-strength text instead of a hue — plain
@@ -178,7 +199,7 @@ function P(key) {
   return [n.gx ?? 500, n.gy ?? 500];
 }
 
-const nodeColor = n => deptById.get(n.dept)?.color || "#9aa2ac";
+const nodeColor = n => groupById(groupIdOf(n))?.color || "#9aa2ac";
 
 // ---------- sizing ----------
 

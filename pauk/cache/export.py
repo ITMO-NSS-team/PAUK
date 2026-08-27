@@ -77,12 +77,15 @@ def load_db(driver) -> dict[str, list]:
         "       p.orcid AS orcid",
     )
 
-    db["publications"] = cypher(
+    # cypher_dict for the same reason as repositories: the row grows, and
+    # positional unpacking of it is spread across generate_data.py.
+    db["publications"] = cypher_dict(
         driver,
         "MATCH (pub:Publication) "
         "RETURN pub.id AS id, pub.title AS title, pub.journal AS journal, "
         "       pub.doi AS doi, toString(pub.publication_date) AS publication_date, "
-        "       pub.year AS year, pub.has_code AS has_code, pub.code_url AS code_url",
+        "       pub.year AS year, pub.has_code AS has_code, pub.code_url AS code_url, "
+        "       pub.fields AS fields",
     )
 
     # cypher_dict, not cypher: this row grew six columns in one change, and

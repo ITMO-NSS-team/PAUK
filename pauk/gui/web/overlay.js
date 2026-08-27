@@ -95,9 +95,11 @@ function drawOverlay() {
   }
 
   if (selectedDept !== null) {
-    const d = deptById.get(selectedDept), c = deptCentroid.get(selectedDept);
+    const d = groupById(selectedDept), c = deptCentroid.get(selectedDept);
     if (!d || !c) return;
-    (DATA.dept_edges || [])
+    // dept_edges are keyed by department id; the repositories tab selects a
+    // cluster, whose ids are a different space entirely.
+    (tab === 2 ? [] : (DATA.dept_edges || []))
       .filter(e => (e.s === selectedDept || e.t === selectedDept) &&
         deptCentroid.has(e.s === selectedDept ? e.t : e.s))
       .sort((a, b) => b.w - a.w).slice(0, 8)
@@ -105,21 +107,21 @@ function drawOverlay() {
         const oid = e.s === selectedDept ? e.t : e.s;
         const pc = deptCentroid.get(oid); if (!pc) return;
         const sc = map.project(proj(pc[0], pc[1]));
-        label(deptDisplayName(deptById.get(oid)) || "?", sc.x, sc.y, 12);
+        label(groupDisplayName(groupById(oid)) || "?", sc.x, sc.y, 12);
       });
     const sc = map.project(proj(c[0], c[1]));
-    label(deptDisplayName(d), sc.x, sc.y, 16, d.color);
+    label(groupDisplayName(d), sc.x, sc.y, 16, d.color);
     return;
   }
 
   if (tab === 4) return;
   const drawn = [];
-  for (const d of DATA.departments) {
+  for (const d of groupTable()) {
     const c = deptCentroid.get(d.id); if (!c) continue;
     const sc = map.project(proj(c[0], c[1]));
     if (sc.x < -50 || sc.x > innerWidth + 50 || sc.y < -50 || sc.y > innerHeight + 50) continue;
     const fs = Math.max(11, Math.min(map.getZoom() * 2, 17));
-    const name = deptDisplayName(d);
+    const name = groupDisplayName(d);
     octx.font = `600 ${fs}px sans-serif`;
     const tw = octx.measureText(name).width;
     const box = { x: sc.x - tw / 2, y: sc.y - fs, w: tw, h: fs * 2.2 };
