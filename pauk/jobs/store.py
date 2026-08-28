@@ -98,14 +98,19 @@ def start(db: Database, job_id: str) -> bool:
 
 
 def requeue(db: Database, job_id: str) -> bool:
-    """Put a claimed job back because its resource was taken.
+    """Put a job back because the resource it needs was taken.
 
     Not a failure: the run is still wanted, just not now. The worker that
     let go keeps no claim on it, so any worker may pick it up next.
+
+    Accepts a running job as well as a claimed one. Whether a resource is
+    free is only learned by trying to take it, and by then the job has
+    already been marked as started.
     """
     result = db[COLLECTION].update_one(
-        {"_id": job_id, "state": str(JobState.CLAIMED)},
-        {"$set": {"state": str(JobState.QUEUED), "worker": None}})
+        {"_id": job_id, "state": {"$in": [str(JobState.CLAIMED), str(JobState.RUNNING)]}},
+        {"$set": {"state": str(JobState.QUEUED), "worker": None,
+                  "started_at": None, "heartbeat_at": None}})
     return result.matched_count > 0
 
 

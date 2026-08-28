@@ -39,6 +39,8 @@ from pauk.graph.overrides import (
     record_override,
     record_relationship_override,
 )
+from pauk.jobs.worker import POLL_SECONDS as WORKER_POLL
+from pauk.jobs.worker import Worker
 from pauk.settings import Settings
 
 logger = logging.getLogger("pauk.admin")
@@ -147,6 +149,16 @@ def add_parser(subparsers) -> None:
 
     commands.add_parser("schema", help="list the labels, fields and relationships that can be edited")
 
+    worker = commands.add_parser(
+        "worker", help="perform the scheduled runs, one at a time")
+    worker.add_argument("--once", action="store_true",
+                        help="take at most one job and exit, instead of waiting for more")
+    worker.add_argument("--poll", type=float, default=WORKER_POLL,
+                        help=f"seconds to wait on an empty queue (default: {WORKER_POLL:g})")
+    worker.add_argument("--name", default=None,
+                        help="how this worker is recorded on the jobs it takes "
+                             "(default: host:pid)")
+
     user = commands.add_parser("user", help="panel accounts").add_subparsers(
         dest="user_command", required=True)
     user_add = user.add_parser("add", help="create an account")
@@ -189,6 +201,13 @@ def run(args, config: Settings, db: Database | None) -> None:
         _run_user(args, db)
         return
 
+    # The worker opens its own connections, per job and per step, because a
+    # single one held open for hours is a connection that dies quietly. It
+    # also sets its own actor: each job records who asked for it.
+    if args.admin_command == "worker":
+        _run_worker(args, config, db)
+        return
+
     actor = args.actor or f"user:{getpass.getuser()}"
     client = audited_client(config, db)
     try:
@@ -198,6 +217,22 @@ def run(args, config: Settings, db: Database | None) -> None:
         raise SystemExit(str(error)) from None
     finally:
         client.close()
+
+
+def _run_worker(args, config: Settings, db: Database) -> None:
+    """Perform scheduled runs until asked to stop.
+
+    A second process next to the panel, not a thread inside it: a
+    collection run takes hours, and restarting the web service must not cut
+    one in half.
+    """
+    worker = Worker(config=config, db=db, name=args.name or "",
+                    poll_seconds=args.poll)
+    if args.once:
+        if not worker.run_once():
+            print("nothing queued")
+        return
+    worker.run_forever()
 
 
 def _run_user(args, db: Database) -> None:
