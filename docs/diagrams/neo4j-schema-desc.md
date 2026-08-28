@@ -30,10 +30,11 @@
 * **`second_name_en`** (`String`) — отчество на английском (если известно).
 * **`surname_en`** (`String`) — фамилия на английском.
 * **`name_variants`** (`List[String]`) — варианты написания имени.
-* **`email`** (`String`) — адрес e-mail.
+* **`name_ru`** (`String`) — полное имя на русском.
 * **`first_name_ru`** (`String`) — имя на русском (только у ИТМО-персон).
 * **`second_name_ru`** (`String`) — отчество на русском (только у ИТМО-персон).
 * **`surname_ru`** (`String`) — фамилия на русском (только у ИТМО-персон).
+* **`email`** (`String`) — адрес e-mail.
 * **`degree`** (`String`) — учёная степень (только у ИТМО-персон).
 * **`github`** (`String`) — профиль GitHub (только у ИТМО-персон).
 * **`google_scholar`** (`String`) — профиль Google Scholar (только у ИТМО-персон).
@@ -42,7 +43,6 @@
 * **`scopus_id`** (`String`) — идентификатор Scopus.
 * **`researcher_id`** (`String`) — Web of Science ResearcherID.
 * **`dblp_id`** (`String`) — идентификатор dblp.
-* **`name_ru`** (`String`) — полное имя на русском.
 * **`other_names`** (`List[String]`) — другие имена / псевдонимы.
 * **`biography`** (`String`) — биография.
 * **`country`** (`String`) — страна.
