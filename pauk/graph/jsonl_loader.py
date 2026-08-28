@@ -121,7 +121,7 @@ def load_prepared_rows(client: Neo4jClient | AuditedNeo4jClient, rows_by_file: d
             an empty list, i.e. "this group has none of this entity".
     """
     node_batches: dict[str, list[tuple[str, dict]]] = defaultdict(list)
-    person_batches: dict[bool, list[tuple[str, dict]]] = {True: [], False: []}
+    person_nodes: list[tuple[str, dict]] = []
     rel_batches: dict[tuple[str, str, str, str], list[tuple[str, str, dict]]] = defaultdict(list)
     known_repository_urls: dict[str, str] = {}
     candidate_promotions: dict[str, str] = {}
@@ -156,15 +156,17 @@ def load_prepared_rows(client: Neo4jClient | AuditedNeo4jClient, rows_by_file: d
         if skipped_failed:
             logger.info("%s: skipped %d failed (never enriched) row(s)", filename, skipped_failed)
 
-    # Persons share a single file but use different labels in the graph.
-    # They are merged on the base :Person label (see upsert_person_nodes_batch)
-    # because the same author may be ITMO in one group and external in another.
+    # Persons share a single file but is_itmo picks which relationship
+    # whitelist applies (external persons never get BELONGS_TO/CONTRIBUTED_TO
+    # - see extract.py's itmo_person/external_person specs). The node itself
+    # always carries the single :Person label; is_itmo travels as a sticky
+    # property (see upsert_person_nodes_batch).
     person_merges: list[tuple[str, str]] = []
     for row in rows_by_file.get("persons.jsonl") or ():
         is_itmo = bool(row.get("is_itmo"))
         spec = NODE_REGISTRY["itmo_person" if is_itmo else "external_person"]
         _labels, node = extract_node(row, spec)
-        person_batches[is_itmo].append(node)
+        person_nodes.append(node)
         for merged_id in row.get("merged_ids") or []:
             person_merges.append((merged_id, row["id"]))
         for key, rels in extract_relationships(row, spec).items():
@@ -188,10 +190,13 @@ def load_prepared_rows(client: Neo4jClient | AuditedNeo4jClient, rows_by_file: d
             client.upsert_nodes_batch(labels, chunk)
         logger.info("nodes (:%s): loaded %d", labels, len(nodes))
 
-    for is_itmo, nodes in person_batches.items():
-        for chunk in chunked(nodes):
-            client.upsert_person_nodes_batch(chunk, is_itmo)
-        logger.info("nodes (:Person:%s): loaded %d", "Itmo" if is_itmo else "External", len(nodes))
+    for chunk in chunked(person_nodes):
+        client.upsert_person_nodes_batch(chunk)
+    itmo_count = sum(1 for _, props in person_nodes if props.get("is_itmo"))
+    logger.info(
+        "nodes (:Person): loaded %d (itmo=%d, external=%d)",
+        len(person_nodes), itmo_count, len(person_nodes) - itmo_count,
+    )
 
     # A previous publish may have created LinkCandidates while GitHub was
     # unavailable. Once the repository is known, move those old edges to the

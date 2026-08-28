@@ -1,3 +1,4 @@
+from .author_names import AuthorNamesStage
 from .code_links import CodeLinksStage
 from .dedup import DedupStage
 from .departments import DepartmentsStage
@@ -7,7 +8,6 @@ from .link_relevance import LinkRelevanceStage
 from .pdf import PdfStage
 from .persons import PersonsStage
 from .repositories import RepositoriesStage
-from .russian_names import RussianNamesStage
 from .social_graph import SocialGraphStage
 
 # Dedup runs after the fetching stages: it folds duplicate publications,
@@ -29,6 +29,6 @@ from .social_graph import SocialGraphStage
 # again, until a run finds nothing new.
 ALL_STAGES = (
     PdfStage, PersonsStage, DepartmentsStage, CodeLinksStage, LinkRelevanceStage,
-    EmailsStage, RepositoriesStage, DedupStage, GitHubMatchStage, RussianNamesStage,
+    EmailsStage, RepositoriesStage, DedupStage, GitHubMatchStage, AuthorNamesStage,
 )
 OPTIONAL_STAGES = (SocialGraphStage,)

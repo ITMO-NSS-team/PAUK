@@ -244,16 +244,16 @@ class PersonsStage(EnrichmentStage):
         candidates = [
             person for person in people
             if (state := person.processing.get(self.openreview_name))
-            and state.phase == phase and person.name_en
-            and self._needs_source(state, person.name_en.casefold())
+            and state.phase == phase and person.name_raw
+            and self._needs_source(state, person.name_raw.casefold())
         ]
         changed = found = 0
         for person in self.progress(candidates, total=len(candidates), label=f"OpenReview: {phase}"):
             state = person.processing.get(self.openreview_name)
-            key = person.name_en.casefold()
+            key = person.name_raw.casefold()
             try:
-                payload = client.search(person.name_en)
-                self.raw.append("openreview", payload, {"method": "name_search", "phase": phase, "term": person.name_en})
+                payload = client.search(person.name_raw)
+                self.raw.append("openreview", payload, {"method": "name_search", "phase": phase, "term": person.name_raw})
                 profile = next((p for p in payload.get("profiles", []) if self._profile_matches(person, p)), None)
                 if profile:
                     self._apply_profile(person, profile)
@@ -304,7 +304,7 @@ class PersonsStage(EnrichmentStage):
                     for author in payload.get("message", {}).get("author", []):
                         family = (author.get("family") or "").casefold()
                         orcid = (author.get("ORCID") or "").rstrip("/").split("/")[-1] or None
-                        matches = [p for p in authors if p.name_en and p.name_en.split()[-1].casefold() == family]
+                        matches = [p for p in authors if p.name_raw and p.name_raw.split()[-1].casefold() == family]
                         if orcid and len(matches) == 1 and not matches[0].orcid:
                             matches[0].orcid = orcid
                             matches_count += 1
@@ -339,7 +339,7 @@ class PersonsStage(EnrichmentStage):
                         if source == self.openalex_name:
                             payload = request.get_author(key)
                             self.raw.append("openalex_authors", payload, {"author_id": key})
-                            person.name_en = payload.get("display_name") or person.name_en
+                            person.name_raw = payload.get("display_name") or person.name_raw
                             person.name_variants = list(dict.fromkeys([*person.name_variants,
                                                                        *(payload.get("display_name_alternatives") or [])]))
                             person.orcid = person.orcid or ((payload.get("orcid") or "").rstrip("/").split("/")[-1] or None)

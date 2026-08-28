@@ -20,7 +20,7 @@ from pauk.storage import PreparedStore, RawStore
 
 def person(pid, name, *, itmo=True, email=None, variants=(), works=(), homepage=None):
     return Person(
-        id=pid, openalex_id=pid, is_itmo=itmo, name_en=name, email=email,
+        id=pid, openalex_id=pid, is_itmo=itmo, name_raw=name, email=email,
         homepage=homepage, name_variants=list(variants),
         authored=[{"publication_id": work, "position": 1} for work in works],
     )

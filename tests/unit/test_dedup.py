@@ -20,8 +20,8 @@ from pauk.models import (
     RepoLink,
     Repository,
 )
+from pauk.pipeline.stages.author_names import RussianNamesCatalog
 from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage
-from pauk.pipeline.stages.russian_names import RussianNamesCatalog
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
 from tests.bench.mocks import RecordingNeo4jClient
@@ -32,7 +32,7 @@ CATALOG_HEADER = "name_ru,surname,name,patronymic,degree\n"
 def person(pid, name, works, *, itmo=True, orcid=None, variants=(), merged=(),
            email=None, github=None, departments=()):
     return Person(
-        id=pid, openalex_id=pid, is_itmo=itmo, name_en=name, orcid=orcid,
+        id=pid, openalex_id=pid, is_itmo=itmo, name_raw=name, orcid=orcid,
         name_variants=list(variants), merged_ids=list(merged),
         email=email, github=github, department_ids=list(departments),
         authored=[{"publication_id": w, "position": 1} for w in works],
@@ -868,7 +868,7 @@ class FoldPropertyPreservationTest(unittest.TestCase):
         # A2 -AUTHORED{position}-> W1: the surviving edge needs both.
         client = RecordingNeo4jClient()
         client.upsert_nodes_batch("Publication", [("W1", {})])
-        client.upsert_person_nodes_batch([("A1", {}), ("A2", {})], is_itmo=True)
+        client.upsert_person_nodes_batch([("A1", {"is_itmo": True}), ("A2", {"is_itmo": True})])
         client.upsert_relationships_batch("Person", "Publication", "AUTHORED",
                                           [("A1", "W1", {"affiliation": "ITMO"})])
         client.upsert_relationships_batch("Person", "Publication", "AUTHORED",
@@ -881,7 +881,7 @@ class FoldPropertyPreservationTest(unittest.TestCase):
     def test_canonical_edge_values_win_over_the_duplicates(self):
         client = RecordingNeo4jClient()
         client.upsert_nodes_batch("Publication", [("W1", {})])
-        client.upsert_person_nodes_batch([("A1", {}), ("A2", {})], is_itmo=True)
+        client.upsert_person_nodes_batch([("A1", {"is_itmo": True}), ("A2", {"is_itmo": True})])
         client.upsert_relationships_batch("Person", "Publication", "AUTHORED",
                                           [("A1", "W1", {"position": 5, "affiliation": "Old"})])
         client.upsert_relationships_batch("Person", "Publication", "AUTHORED",

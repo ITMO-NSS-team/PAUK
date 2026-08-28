@@ -12,6 +12,7 @@ CHUNK_SIZE = 2000
 # Keep this explicit per graph label so newly added fields
 # do not accidentally acquire lossy behaviour.
 BOOLEAN_MERGE_FIELDS = {
+    "Person": {"is_itmo"},
     "Publication": {"has_code"},
     "Repository": {"has_readme"},
 }
@@ -123,8 +124,8 @@ class Neo4jClient:
         """Create or update a batch of nodes in one query.
 
         Args:
-            labels: A single label ("Person") or a list of labels to
-                combine (["Person", "Itmo"]).
+            labels: A single label ("Publication") or a list of labels to
+                combine (["Repository", "Deprecated"]).
             nodes: List of (node_id, properties) tuples.
         """
         if not nodes:
@@ -150,41 +151,44 @@ class Neo4jClient:
         with self.driver.session() as session:
             session.execute_write(lambda tx: tx.run(query, batch=batch))
 
-    def upsert_person_nodes_batch(self, nodes: list[tuple[str, dict]], is_itmo: bool):
+    def upsert_person_nodes_batch(self, nodes: list[tuple[str, dict]]):
         """Create or update a batch of Person nodes in one query.
 
-        Persons are merged on the base :Person label because the same author
-        can appear as ITMO in one group and external in another — merging on
-        the full label pair would create a duplicate node and violate the
-        Person.id uniqueness constraint. The :Itmo label is sticky: at least
-        one ITMO affiliation anywhere makes the person ITMO, so an external
-        row never downgrades an existing :Itmo node.
+        is_itmo is a sticky boolean property, not a label: at least one ITMO
+        affiliation anywhere makes the person ITMO, so a row that arrives
+        with is_itmo=False never downgrades a node that is already ITMO. It
+        is excluded from the blind `n += row.properties` merge and set
+        separately via coalesce/OR so the merge can't clobber a True with a
+        later False.
 
         Args:
-            nodes: List of (node_id, properties) tuples.
-            is_itmo: Whether this batch carries ITMO persons.
+            nodes: List of (node_id, properties) tuples. Each properties
+                dict is expected to carry "is_itmo" (see
+                pauk/graph/extract.py's itmo_person/external_person specs).
         """
         if not nodes:
             return
 
         batch = []
         for node_id, properties in nodes:
-            props_clean = {k: v for k, v in properties.items() if k not in ("id", "created_at", "updated_at")}
-            batch.append({"node_id": node_id, "properties": props_clean})
-
-        if is_itmo:
-            label_clause = "SET n:Itmo REMOVE n:External"
-        else:
-            label_clause = "FOREACH (_ IN CASE WHEN n:Itmo THEN [] ELSE [1] END | SET n:External)"
+            props_clean = {
+                k: v for k, v in properties.items()
+                if k not in ("id", "created_at", "updated_at", "is_itmo")
+            }
+            batch.append({
+                "node_id": node_id,
+                "properties": props_clean,
+                "is_itmo": bool(properties.get("is_itmo", False)),
+            })
 
         query = cast(
             LiteralString,
-            f"""
+            """
             UNWIND $batch AS row
-            MERGE (n:Person {{id: row.node_id}})
+            MERGE (n:Person {id: row.node_id})
             ON CREATE SET n += row.properties, n.created_at = datetime(), n.updated_at = datetime()
             ON MATCH SET  n += row.properties, n.updated_at = datetime()
-            {label_clause}
+            SET n.is_itmo = coalesce(n.is_itmo, false) OR row.is_itmo
             """,
         )
 
@@ -388,11 +392,11 @@ class Neo4jClient:
             MATCH (p:Person)
             OPTIONAL MATCH (p)-[:AUTHORED]->(w:Publication)
             OPTIONAL MATCH (p)-[:BELONGS_TO]->(d:Department)
-            RETURN p.id AS id, p.openalex_id AS openalex_id, p.name_en AS name_en,
+            RETURN p.id AS id, p.openalex_id AS openalex_id, p.name_raw AS name_raw,
                    p.name_variants AS name_variants, p.orcid AS orcid, p.email AS email,
                    p.github AS github, p.openreview AS openreview,
                    p.google_scholar AS google_scholar, p.merged_ids AS merged_ids,
-                   'Itmo' IN labels(p) AS is_itmo,
+                   coalesce(p.is_itmo, false) AS is_itmo,
                    collect(DISTINCT w.id) AS publication_ids,
                    collect(DISTINCT d.id) AS department_ids
         """
@@ -418,7 +422,7 @@ class Neo4jClient:
                    p.versions AS versions,
                    p.merged_ids AS merged_ids, count(a) AS author_count,
                    collect(CASE WHEN a IS NULL THEN NULL ELSE
-                       {person_id: a.id, name: a.name_en, position: authored.position}
+                       {person_id: a.id, name: a.name_raw, position: authored.position}
                    END) AS authors
         """
         with self.driver.session() as session:

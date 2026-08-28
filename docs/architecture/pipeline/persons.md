@@ -14,7 +14,7 @@ DOI публикации.
 
 Для каждого `Person`, требующего внимания (`needs_attempt`):
 
-1. Если есть `openalex_id` — `GET /authors/{id}`: обновляет `name_en`,
+1. Если есть `openalex_id` — `GET /authors/{id}`: обновляет `name_raw`,
    собирает варианты имени (`name_variants`), ORCID (если ещё не известен),
    и аффилиации автора из его собственной записи (`affiliations` +
    `last_known_institutions`, последнее без годов — это фолбэк на случай
@@ -93,7 +93,7 @@ OpenReview хранит один статус `Person.processing["openreview"]`.
 `Publication.processing["crossref"]`. Для каждой публикации с DOI, чей
 Crossref-этап ещё не завершён: `GET /works/{doi}`, для каждого автора из
 ответа Crossref — сопоставление по фамилии (`casefold` последнего слова
-`name_en`) с локальными `Person` этой публикации; при однозначном совпадении
+`name_raw`) с локальными `Person` этой публикации; при однозначном совпадении
 (ровно один локальный автор с такой фамилией) и отсутствии у него ORCID —
 проставляется ORCID из Crossref.
 

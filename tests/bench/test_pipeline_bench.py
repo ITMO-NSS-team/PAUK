@@ -30,6 +30,7 @@ from tests.bench.mocks import (
     MockCrossrefClient,
     MockGitHubClient,
     MockOpenAlexClient,
+    MockOpenRouterClient,
     MockOrcidClient,
     RecordingNeo4jClient,
     UnexpectedNetworkClient,
@@ -105,6 +106,8 @@ def bench(tmp_path_factory) -> SimpleNamespace:
         mock.patch("pauk.pipeline.stages.persons.CrossrefClient", lambda *a, **k: MockCrossrefClient(universe)),
         mock.patch("pauk.pipeline.stages.persons.OrcidClient", lambda *a, **k: MockOrcidClient(universe)),
         mock.patch("pauk.pipeline.stages.persons.OpenReviewClient", lambda *a, **k: UnexpectedNetworkClient()),
+        mock.patch("pauk.pipeline.stages.author_names.OpenRouterClient",
+                   lambda *a, **k: MockOpenRouterClient(RUSSIAN_NAMES_CATALOG)),
     )
     for p in patches:
         p.start()
@@ -286,7 +289,7 @@ def test_crossref_orcid_matching(bench):
 
 
 def test_openalex_author_payload_enriches(bench):
-    assert bench.persons["A5000000010"].name_en == "Recovered Name10"
+    assert bench.persons["A5000000010"].name_raw == "Recovered Name10"
     assert bench.persons["A5000000013"].orcid == "0000-0001-0000-0013"
     variants = bench.persons["A5000000011"].name_variants
     assert "Хосе Альварес-Мюллер" in variants and "A. Surname11" in variants
@@ -421,7 +424,7 @@ def test_authors_without_an_openalex_id_still_reach_the_graph(bench):
     by_orcid = bench.persons[UNIDENTIFIED_BY_ORCID]
     assert by_orcid.orcid == UNIDENTIFIED_ORCID
     assert by_orcid.openalex_id is None and by_orcid.is_itmo
-    by_name = next(p for p in authors if p.name_en == UNIDENTIFIED_BY_NAME)
+    by_name = next(p for p in authors if p.name_raw == UNIDENTIFIED_BY_NAME)
     assert by_name.id.startswith("name_") and by_name.openalex_id is None
     assert {(p.id, UNIDENTIFIED_WORK) for p in authors} <= bench.graph.edge_pairs("AUTHORED")
 
@@ -450,7 +453,7 @@ def test_consortium_paper_finds_the_itmo_participant_beyond_the_cut(bench):
 
 
 def test_an_organization_in_an_author_slot_never_becomes_a_person(bench):
-    assert all(p.name_en != CONSORTIUM_ORG_NAME for p in bench.persons.values())
+    assert all(p.name_raw != CONSORTIUM_ORG_NAME for p in bench.persons.values())
     assert "A5900000999" not in bench.persons
 
 
@@ -497,8 +500,15 @@ def test_russian_name_from_staff_catalog(bench):
 
 def test_russian_name_transliteration_fallback(bench):
     pavel = bench.persons["A5000000007"]  # "Pavel Ivanov" is not in the catalog
-    assert pavel.name_ru == "Павел Иванов"
-    assert pavel.surname_ru is None  # parts are never guessed from word order
+    # No directory match, so this is the LLM's own transcription rather than
+    # a copied official record - still filled per rule 4 ("must ALWAYS be
+    # filled in Cyrillic, for every person"), unlike the second_name
+    # (patronymic) fields, which the model is never allowed to invent.
+    assert (pavel.first_name_ru, pavel.surname_ru) == ("Павел", "Иванов")
+    # name_ru is always composed surname-first (see RussianNamesStage.run()),
+    # regardless of the word order the source name happened to use.
+    assert pavel.name_ru == "Иванов Павел"
+    assert pavel.second_name_ru is None
 
 
 # --- departments -----------------------------------------------------------------------
@@ -524,8 +534,8 @@ def test_graph_node_counts(bench):
     assert len(graph.nodes["Repository"]) == 80
     assert len(graph.nodes["GitHubProfile"]) == 16
     assert len(graph.nodes["LinkCandidate"]) == 3
-    labels = list(graph.person_labels.values())
-    assert labels.count("Itmo") == 36 and labels.count("External") == 24
+    itmo_count = sum(1 for props in graph.nodes["Person"].values() if props.get("is_itmo"))
+    assert itmo_count == 36 and len(graph.nodes["Person"]) - itmo_count == 24
     for merged_id in DEDUP_MERGES:
         assert merged_id not in graph.nodes["Person"]
 

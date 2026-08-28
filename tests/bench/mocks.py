@@ -3,11 +3,14 @@ in-memory Neo4j stand-in that records what the loader would upsert."""
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 
 import requests
 
 from pauk.graph.client import _merge_duplicate_properties
+from pauk.models import Person
+from pauk.pipeline.stages.author_names import RussianNamesCatalog, to_cyrillic
 
 
 def _http_404(url: str) -> requests.HTTPError:
@@ -85,6 +88,62 @@ class MockOrcidClient:
         return self.records[orcid]
 
 
+class MockOpenRouterClient:
+    """Fakes author_names.py's LLM name-split call for the bench run.
+
+    Model output *quality* was already validated separately against the real
+    API - this mock isn't re-testing that, it's testing that the pipeline
+    wires the LLM step in and consumes its reply correctly, without a real
+    network call. It answers the way the real prompt asks a model to: copy a
+    catalog candidate verbatim when the folded surname matches (reusing
+    RussianNamesCatalog.match(), the same trusted logic the deterministic
+    degree lookup in author_names.py itself uses), otherwise a plain
+    transliteration (reusing to_cyrillic) - "reasonable" here means the same
+    thing it means there.
+    """
+
+    _RAW_NAME_RE = re.compile(r"mixed:\n {2}(.+)")
+
+    def __init__(self, catalog_rows: list[str]) -> None:
+        """catalog_rows: the same "name_ru,surname,name,patronymic,degree"
+        strings the bench fixture writes to russian_names.csv (see
+        tests.bench.universe.RUSSIAN_NAMES_CATALOG) - not part of the
+        `universe` dict itself, which build_universe() doesn't touch."""
+        self.last_response = None
+        self.last_usage = None
+        self._catalog = RussianNamesCatalog([
+            dict(zip(("name_ru", "surname", "name", "patronymic", "degree"), row.split(","), strict=True))
+            for row in catalog_rows
+        ])
+
+    def chat_json(self, prompt: str) -> dict | None:
+        match = self._RAW_NAME_RE.search(prompt)
+        name_raw = match.group(1).strip() if match else ""
+        row = self._catalog.match(Person(id="_mock", is_itmo=True, name_raw=name_raw))
+        if row is not None:
+            surname_ru = (row.get("surname") or "").strip() or None
+            first_ru = (row.get("name") or "").strip() or None
+            second_ru = (row.get("patronymic") or "").strip() or None
+            return {
+                "matched_candidate": 0,
+                "surname_ru": surname_ru, "first_name_ru": first_ru, "second_name_ru": second_ru,
+                "surname_en": surname_ru, "first_name_en": first_ru, "second_name_en": second_ru,
+                "reason": "mock: exact catalog match",
+            }
+        words_ru = to_cyrillic(name_raw).split()
+        words_en = name_raw.split()
+        return {
+            "matched_candidate": None,
+            "surname_ru": words_ru[-1] if words_ru else None,
+            "first_name_ru": words_ru[0] if len(words_ru) > 1 else None,
+            "second_name_ru": None,
+            "surname_en": words_en[-1] if words_en else None,
+            "first_name_en": words_en[0] if len(words_en) > 1 else None,
+            "second_name_en": None,
+            "reason": "mock: no catalog match, transliterated",
+        }
+
+
 class UnexpectedNetworkClient:
     """Any call means a stage tried the network although it shouldn't have."""
 
@@ -98,15 +157,14 @@ class UnexpectedNetworkClient:
 class RecordingNeo4jClient:
     """In-memory double of Neo4jClient with just enough MERGE semantics.
 
-    Nodes are stored per primary label; persons follow the sticky-:Itmo rule
-    of upsert_person_nodes_batch. Relationships resolve their endpoints the
-    way the Cypher MATCH would; anything unresolvable is recorded in
-    `unresolved` so tests can assert it never happens.
+    Nodes are stored per primary label; persons follow the sticky is_itmo
+    property rule of upsert_person_nodes_batch. Relationships resolve their
+    endpoints the way the Cypher MATCH would; anything unresolvable is
+    recorded in `unresolved` so tests can assert it never happens.
     """
 
     def __init__(self) -> None:
         self.nodes: dict[str, dict[str, dict]] = defaultdict(dict)
-        self.person_labels: dict[str, str] = {}
         self.edges: dict[tuple[str, str, str, str, str], dict] = {}
         self.unresolved: list[tuple[str, str, str, str, str]] = []
 
@@ -118,14 +176,12 @@ class RecordingNeo4jClient:
             clean = {k: v for k, v in props.items() if k not in ("id", "created_at", "updated_at")}
             self.nodes[primary].setdefault(node_id, {}).update(clean)
 
-    def upsert_person_nodes_batch(self, nodes, is_itmo: bool) -> None:
+    def upsert_person_nodes_batch(self, nodes) -> None:
         for node_id, props in nodes:
             clean = {k: v for k, v in props.items() if k not in ("id", "created_at", "updated_at")}
+            existing = self.nodes["Person"].get(node_id, {})
+            clean["is_itmo"] = bool(existing.get("is_itmo")) or bool(clean.get("is_itmo"))
             self.nodes["Person"].setdefault(node_id, {}).update(clean)
-            if is_itmo:
-                self.person_labels[node_id] = "Itmo"
-            else:
-                self.person_labels.setdefault(node_id, "External")
 
     def upsert_relationships_batch(self, src_label, tgt_label, rel_type, relationships,
                                    tgt_match_prop: str = "id") -> int:
@@ -194,8 +250,6 @@ class RecordingNeo4jClient:
             dup_props = self.nodes[label].pop(dup_id)
             canonical_props = self.nodes[label][canonical_id]
             canonical_props.update(_merge_duplicate_properties(label, canonical_props, dup_props))
-            if label == "Person":
-                self.person_labels.pop(dup_id, None)
             removed += 1
         return removed
 
@@ -206,9 +260,9 @@ class RecordingNeo4jClient:
             rows.append({
                 "id": person_id,
                 **{field: props.get(field) for field in (
-                    "openalex_id", "name_en", "name_variants", "orcid", "email",
+                    "openalex_id", "name_raw", "name_variants", "orcid", "email",
                     "github", "openreview", "google_scholar", "merged_ids")},
-                "is_itmo": self.person_labels.get(person_id) == "Itmo",
+                "is_itmo": bool(props.get("is_itmo")),
                 "publication_ids": sorted({
                     tgt_id for (src_primary, rel_type, _tgt, src_id, tgt_id) in self.edges
                     if src_primary == "Person" and rel_type == "AUTHORED" and src_id == person_id
@@ -234,7 +288,7 @@ class RecordingNeo4jClient:
         for publication_id, props in self.nodes.get("Publication", {}).items():
             authors = [
                 {"person_id": src_id,
-                 "name": self.nodes.get("Person", {}).get(src_id, {}).get("name_en"),
+                 "name": self.nodes.get("Person", {}).get(src_id, {}).get("name_raw"),
                  "position": edge_props.get("position")}
                 for (_src, rel_type, tgt_primary, src_id, tgt_id), edge_props in self.edges.items()
                 if rel_type == "AUTHORED" and tgt_primary == "Publication" and tgt_id == publication_id
@@ -287,6 +341,5 @@ class RecordingNeo4jClient:
     def snapshot(self):
         return (
             {label: dict(items) for label, items in self.nodes.items()},
-            dict(self.person_labels),
             set(self.edges),
         )

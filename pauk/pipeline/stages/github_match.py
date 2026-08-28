@@ -258,7 +258,7 @@ class GitHubMatchStage(EnrichmentStage):
             # OpenAlex spellings and the ones the author registered on
             # ORCID: an account may be signed with any of them.
             names = {_norm_name(name) for name in
-                     (person.name_en, *person.name_variants, *person.other_names)}
+                     (person.name_raw, *person.name_variants, *person.other_names)}
             authors[person.id] = {
                 "names": {name for name in names if name},
                 # Every address the person is known by, not just the one on
@@ -357,7 +357,7 @@ class GitHubMatchStage(EnrichmentStage):
                 "login": login,
                 "url": accounts[login]["url"],
                 "person": author_id,
-                "name_en": by_id[author_id].name_en,
+                "name_raw": by_id[author_id].name_raw,
                 "score": round(score, 2),
                 "signals": signals,
                 "evidence": evidence,

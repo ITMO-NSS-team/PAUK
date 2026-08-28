@@ -16,7 +16,7 @@
 
 | Узел | Уникальный ключ | Метки |
 |---|---|---|
-| Person | `id` (голый OpenAlex author ID) | `Person:Itmo` или `Person:External` |
+| Person | `id` (голый OpenAlex author ID) | `Person` |
 | Department | `id` (uid-слаг из `name_en`) | `Department` |
 | Organization | `id` и `name_en` (оба уникальны) | `Organization` |
 | Publication | `id` (голый OpenAlex work ID) | `Publication` |
@@ -25,10 +25,10 @@
 | LinkCandidate | `id` (сам URL) | `LinkCandidate` |
 
 ```text
-(:Person:Itmo)     -[:BELONGS_TO]->     (:Department)
-(:Person:Itmo)     -[:AUTHORED]->       (:Publication)
-(:Person:External) -[:AUTHORED]->       (:Publication)
-(:Person:Itmo)     -[:CONTRIBUTED_TO]-> (:Repository)
+(:Person {is_itmo: true})  -[:BELONGS_TO]->     (:Department)
+(:Person {is_itmo: true})  -[:AUTHORED]->       (:Publication)
+(:Person {is_itmo: false}) -[:AUTHORED]->       (:Publication)
+(:Person {is_itmo: true})  -[:CONTRIBUTED_TO]-> (:Repository)
 
 (:Department)  -[:PART_OF]->       (:Department | :Organization)
 
@@ -61,10 +61,15 @@
 JSONL и в журнале `github_matches.jsonl`. В граф из собранного профиля
 идёт только `company` — то же по сути, что `location` и `description`.
 
-Person смёржен на базовую метку `:Person` (не на полную пару
-`Person:Itmo`/`Person:External`) — один и тот же автор может быть ИТМО в
-одной группе и внешним в другой; `:Itmo` — «липкая» метка, внешняя строка
-никогда не понижает уже проставленный `:Itmo` (`client.py::upsert_person_nodes_batch`).
+Person всегда имеет одну метку `:Person`; принадлежность к ИТМО — булево
+свойство `is_itmo`, не метка (раньше была пара меток `Person:Itmo`/
+`Person:External`). Свойство «липкое»: один и тот же автор может быть ИТМО в
+одной группе и внешним в другой, но
+`is_itmo` только растёт — external-строка никогда не понижает уже
+проставленный `is_itmo=true`
+(`n.is_itmo = coalesce(n.is_itmo, false) OR row.is_itmo` в
+`client.py::upsert_person_nodes_batch`). При кросс-групповом дедупе то же
+правило соблюдает `BOOLEAN_MERGE_FIELDS["Person"]` в `_fold_nodes_batch`.
 
 Иерархия подразделений рекурсивна: каждый `Department` `PART_OF` ровно одного
 родителя — другого `Department` (`parent_id`) или корневого `Organization`
