@@ -126,14 +126,12 @@ def main() -> None:
             else:
                 from pauk.graph.load import load_jsonl_group
                 group = validate_group(args.group)
-                try:
-                    load_jsonl_group(settings, db, group)
-                except Busy as error:
-                    # Not a crash: something else is writing the graph right
-                    # now, and the right answer is to wait rather than to
-                    # read a stack trace about it.
-                    raise SystemExit(str(error)) from None
+                load_jsonl_group(settings, db, group)
                 logger.info("publish graph %s: done", group)
+        except Busy as error:
+            # Something else holds the graph or the group. Waiting is the
+            # answer, and a stack trace does not say so.
+            raise SystemExit(str(error)) from None
         finally:
             mongo.close()
     elif args.command == "admin":
