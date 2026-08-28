@@ -25,6 +25,10 @@ def ensure_indexes(db: Database) -> None:
     # entity, and everything one person did.
     db.audit.create_index([("entity_type", 1), ("entity_id", 1), ("timestamp", -1)])
     db.audit.create_index([("actor", 1), ("timestamp", -1)])
+    # The unfiltered feed — the page the panel opens on — sorts by time
+    # alone. Without this it is a collection scan plus an in-memory sort,
+    # over a collection nothing ever trims.
+    db.audit.create_index([("timestamp", -1)])
     # Reapplied after every publish and every graph dedup, so the lookup of
     # what is currently in force has to be cheap.
     db.graph_overrides.create_index([("active", 1), ("label", 1), ("op", 1)])
