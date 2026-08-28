@@ -4,9 +4,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import mongomock
+
 from pauk.cache.graph_snapshot import write_snapshot
 from pauk.gui import rebuild
 from pauk.gui.generate_data import write_graph_files
+from pauk.jobs import locks
+from pauk.jobs.models import GRAPH
 from pauk.settings import Settings
 
 
@@ -125,6 +129,10 @@ class RebuildMapTest(unittest.TestCase):
         self.snapshot = self.tmp / "graph_snapshot.json"
         write_snapshot(self.snapshot, snapshot())
         self.config = Settings(map_dir=self.tmp / "map")
+        # The rebuild holds the graph while it reads it, the same way a
+        # publish holds it while it writes: both would otherwise picture a
+        # graph half-written.
+        self.db = mongomock.MongoClient()["pauk_test"]
         self.stats = {"graph_nodes": 3, "graph_rels": 5, "checks": 7, "checks_failed": 0}
 
     def rebuild(self, **kwargs):
@@ -145,12 +153,13 @@ class RebuildMapTest(unittest.TestCase):
 
         with patch.object(rebuild, "write_graph_files", guarded), \
                 patch.object(rebuild, "write_stats", return_value=self.stats):
-            return rebuild.rebuild_map(self.config, snapshot_path=self.snapshot, **kwargs)
+            return rebuild.rebuild_map(self.config, self.db,
+                                       snapshot_path=self.snapshot, **kwargs)
 
     def test_a_given_snapshot_is_not_exported_again(self):
         with patch.object(rebuild, "GraphSnapshotExporter") as exporter, \
                 patch.object(rebuild, "write_stats", return_value=self.stats):
-            rebuild.rebuild_map(self.config, snapshot_path=self.snapshot)
+            rebuild.rebuild_map(self.config, self.db, snapshot_path=self.snapshot)
         exporter.assert_not_called()
 
     def test_it_writes_into_the_configured_directory(self):
@@ -166,6 +175,26 @@ class RebuildMapTest(unittest.TestCase):
         counts = self.rebuild()
         self.assertEqual(counts["map_authors"], 1)
         self.assertEqual(counts["graph_nodes"], 3)
+
+    def test_the_graph_is_held_while_it_is_read(self):
+        held = []
+        write = rebuild.write_graph_files
+
+        def watching(snapshot_path, out_dir, **inner):
+            held.append(locks.holder(self.db, GRAPH))
+            return write(snapshot_path, out_dir, **inner)
+
+        with patch.object(rebuild, "write_graph_files", watching):
+            self.rebuild()
+        self.assertIsNotNone(held[0], "граф не был занят во время пересборки")
+
+    def test_the_graph_is_free_again_afterwards(self):
+        self.rebuild()
+        self.assertIsNone(locks.holder(self.db, GRAPH))
+
+    def test_a_rebuild_waits_for_a_publish(self):
+        with locks.held(self.db, GRAPH, "publisher"), self.assertRaises(locks.Busy):
+            rebuild.rebuild_map(self.config, self.db, snapshot_path=self.snapshot)
 
     def test_the_map_and_the_graph_are_counted_apart(self):
         # The map leaves out publications with no ITMO author, so one number
