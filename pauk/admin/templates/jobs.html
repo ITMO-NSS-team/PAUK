@@ -2,9 +2,82 @@
 {% block content %}
 <h1>Задачи</h1>
 <p class="muted" style="margin:-8px 0 18px">
-  Долгие прогоны: сбор, публикация, дедуп, пересборка карты. Выполняет их
-  отдельный процесс — <code>pauk admin worker</code>.
+  Сбор, публикация, дедуп, пересборка карты,
+  выполняющиеся отдельным процессом <code>pauk admin worker</code>.
 </p>
+
+{% if request.query_params.get("queued") %}
+<p class="note">Задача поставлена в очередь. Её выполнит воркер — если он не запущен, она будет ждать.</p>
+{% endif %}
+
+{% if user.can_run %}
+<div class="card" style="margin-bottom:20px">
+  <b>Запустить</b>
+  <p class="muted" style="margin:6px 0 14px">
+    Прогон начнётся, когда до него дойдёт воркер. Пока идёт задача над графом,
+    остальные ждут своей очереди.
+  </p>
+
+  <form method="post" action="/jobs" class="row" style="margin-bottom:14px">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="kind" value="publish">
+    <div class="grow">
+      <label for="group">Опубликовать группу</label>
+      {# Только группы, у которых есть подготовленные строки: публикация
+         несуществующей загрузит ноль строк и выглядит как поломка. #}
+      <select id="group" name="group" required>
+        {% for name in groups %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div><label>&nbsp;</label>
+      <button type="submit" {% if not groups %}disabled{% endif %}>Опубликовать</button></div>
+  </form>
+  {% if not groups %}
+  <p class="muted" style="margin:-8px 0 14px">
+    Публиковать нечего: подготовленных строк ни в одной группе нет.
+  </p>
+  {% endif %}
+
+  <form method="post" action="/jobs" class="row" style="margin-bottom:14px">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="kind" value="collect">
+    <div>
+      <label for="work_id">Собрать одну работу</label>
+      <input type="text" id="work_id" name="work_id" placeholder="W2741809807">
+    </div>
+    <div>
+      <label for="date_from">или период с</label>
+      <input type="date" id="date_from" name="date_from" max="{{ today }}">
+    </div>
+    <div>
+      <label for="date_to">по</label>
+      <input type="date" id="date_to" name="date_to" max="{{ today }}">
+    </div>
+    <div><label>&nbsp;</label><button type="submit">Собрать</button></div>
+  </form>
+
+  <form method="post" action="/jobs" class="row" style="margin-bottom:0">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="kind" value="map">
+    <div>
+      <label for="seed">Пересобрать карту, seed</label>
+      {# Один и тот же seed даёт ту же раскладку: люди ориентируются по
+         форме карты, и новая при каждой пересборке была бы другой картой. #}
+      <input type="number" id="seed" name="seed" value="42" style="width:90px">
+    </div>
+    <div style="align-self:center">
+      <label for="public"><input type="checkbox" id="public" name="public"> без персональных полей</label>
+    </div>
+    <div><label>&nbsp;</label><button type="submit">Пересобрать</button></div>
+  </form>
+
+  <form method="post" action="/jobs" style="margin-top:14px">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="kind" value="dedup">
+    <button type="submit" class="ghost">Свести дубли по всему графу</button>
+  </form>
+</div>
+{% endif %}
 
 {% if under_way %}
 <div class="card" style="margin-bottom:20px">
@@ -18,7 +91,7 @@
       </td>
       <td>{{ job.actor }}<br><span class="muted">{{ job.worker or "ещё не взята" }}</span></td>
       <td class="val" style="white-space:nowrap">{{ (job.started_at or job.created_at)|moment }}</td>
-      {# Сердцебиение — единственный признак, что прогон жив: шаг внутри
+      {# Сердцебиение - признак, что прогон жив. Шаг внутри
          идёт часами и о себе ничего не сообщает. #}
       <td class="val" style="white-space:nowrap">{{ job.heartbeat_at|moment or "—" }}
         {% if job.cancel_requested %}<br><span class="muted">просили остановить</span>{% endif %}
@@ -70,7 +143,9 @@
 </form>
 
 {% if not rows %}
-  <p class="muted">Задач нет. Их ставят в очередь из терминала; кнопки в панели — следующий этап.</p>
+  <p class="muted">Задач ещё не было.
+  {% if user.can_run %}Поставьте первую формой выше.
+  {% else %}Запускать прогоны может учётная запись с ролью admin.{% endif %}</p>
 {% else %}
 <p class="muted" style="margin:-8px 0 12px">Всего: {{ total }}. Страница {{ page }} из {{ pages }}.</p>
 <div class="card">

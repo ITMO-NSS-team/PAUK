@@ -56,6 +56,12 @@ _N, _R, _P, _SALT, _KEY = 2**14, 8, 1, 16, 32
 ROLES = ("admin", "editor", "viewer")
 CAN_WRITE = frozenset({"admin", "editor"})
 
+# Starting a run is not editing a record. A publish rewrites the whole
+# graph, a collection run spends hours and an API quota, and neither can be
+# taken back by a counter-edit — so they need the role that was until now
+# only a name.
+CAN_RUN = frozenset({"admin"})
+
 
 class AuthError(Exception):
     """Login refused. Deliberately says nothing about which half was wrong."""
@@ -125,6 +131,11 @@ class User:
     @property
     def can_write(self) -> bool:
         return self.role in CAN_WRITE
+
+    @property
+    def can_run(self) -> bool:
+        """Whether this account may start a pipeline run."""
+        return self.role in CAN_RUN
 
     @property
     def actor(self) -> str:

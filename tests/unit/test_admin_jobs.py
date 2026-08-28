@@ -8,8 +8,9 @@ from pauk.admin import deps
 from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user
 from pauk.jobs import store
-from pauk.jobs.models import GRAPH, JobKind
+from pauk.jobs.models import GRAPH, JobKind, JobState
 from pauk.settings import Settings
+from pauk.storage.naming import group_name
 from tests.unit.test_admin_nodes import FakePanelGraph
 
 
@@ -46,7 +47,7 @@ class JobsPageTest(unittest.TestCase):
     def test_an_empty_page_says_so(self):
         page = self.client.get("/jobs")
         self.assertEqual(page.status_code, 200)
-        self.assertIn("Задач нет", page.text)
+        self.assertIn("Задач ещё не было", page.text)
 
     def test_a_finished_run_shows_its_counts(self):
         self.finished(result={"rows_persons": 12})
@@ -194,3 +195,143 @@ class GraphBusyBannerTest(unittest.TestCase):
         page = self.client.get("/nodes/Person/A1").text
         self.assertIn("Идёт публикация", page)
         self.assertEqual(store.running(self.db, resource=GRAPH)[0].kind, JobKind.PUBLISH)
+
+
+class SchedulingTest(unittest.TestCase):
+    """Putting a run in the queue from the panel.
+
+    The form writes a document and nothing else: the worker does the work,
+    so there is no ordering to get wrong here — the run was either asked
+    for or it was not.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.db.publications.insert_one({"id": "W1", "groups": ["2024"]})
+        create_user(self.db, "chief", "hunter2", role="admin")
+        create_user(self.db, "petrov", "hunter2", role="editor")
+        create_user(self.db, "ivanov", "hunter2", role="viewer")
+        self.app = build(Settings(), self.db)
+        self.app.dependency_overrides[deps.graph_for] = lambda: FakePanelGraph()
+        self.client, self.csrf = self.sign_in("chief")
+
+    def sign_in(self, login):
+        client = TestClient(self.app, follow_redirects=False)
+        client.post("/login", data={"login": login, "password": "hunter2"})
+        csrf = self.db[SESSIONS].find_one({"_id": client.cookies[COOKIE]})["csrf"]
+        return client, csrf
+
+    def post(self, client=None, csrf=None, **data):
+        client = client or self.client
+        return client.post("/jobs", data={"csrf": csrf or self.csrf, **data})
+
+    def test_an_admin_can_publish(self):
+        self.assertEqual(self.post(kind="publish", group="2024").status_code, 303)
+        self.assertEqual(store.count(self.db), 1)
+
+    def test_the_job_records_who_asked(self):
+        self.post(kind="publish", group="2024")
+        self.assertEqual(store.recent(self.db)[0].actor, "user:chief")
+
+    def test_an_editor_may_not_start_a_run(self):
+        # Editing one record is a change somebody can look at and undo; a
+        # publish rewrites the whole graph.
+        client, csrf = self.sign_in("petrov")
+        self.assertEqual(self.post(client, csrf, kind="dedup").status_code, 403)
+        self.assertEqual(store.count(self.db), 0)
+
+    def test_a_viewer_may_not_either(self):
+        client, csrf = self.sign_in("ivanov")
+        self.assertEqual(self.post(client, csrf, kind="dedup").status_code, 403)
+
+    def test_only_an_admin_is_offered_the_forms(self):
+        self.assertIn("Запустить", self.client.get("/jobs").text)
+        client, _ = self.sign_in("petrov")
+        self.assertNotIn("Запустить", client.get("/jobs").text)
+
+    def test_a_forged_form_is_refused(self):
+        self.assertEqual(self.post(csrf="not-the-token", kind="dedup").status_code, 403)
+        self.assertEqual(store.count(self.db), 0)
+
+    def test_an_unknown_kind_is_refused(self):
+        response = self.post(kind="rm -rf")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(store.count(self.db), 0)
+
+    def test_a_group_without_prepared_rows_is_refused(self):
+        # The form offers a list; a request that never met the form has to
+        # meet the same list. Publishing an empty group takes the graph
+        # lock to load nothing.
+        response = self.post(kind="publish", group="2025")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(store.count(self.db), 0)
+
+    def test_a_group_name_that_could_not_exist_is_refused(self):
+        self.assertEqual(self.post(kind="publish", group="../etc").status_code, 400)
+
+    def test_the_group_offered_is_one_that_has_rows(self):
+        self.assertIn(">2024</option>", self.client.get("/jobs").text)
+
+    def test_collecting_one_work(self):
+        self.assertEqual(self.post(kind="collect", work_id="W123").status_code, 303)
+        self.assertEqual(store.recent(self.db)[0].payload["work_id"], "W123")
+
+    def test_collecting_a_period(self):
+        self.post(kind="collect", date_from="2024-01-01", date_to="2024-12-31")
+        self.assertEqual(store.recent(self.db)[0].payload["date_to"], "2024-12-31")
+
+    def test_the_group_of_a_collection_run_is_derived_not_typed(self):
+        # group_name is what `pauk run` uses; a second naming rule here
+        # would drift from it.
+        self.post(kind="collect", work_id="W123")
+        group = store.recent(self.db)[0].payload["group"]
+        self.assertEqual(group, group_name(work_id="W123"))
+
+    def test_a_collection_run_holds_only_its_group(self):
+        self.post(kind="collect", work_id="W123")
+        self.assertTrue(store.recent(self.db)[0].resource.startswith("group:"))
+
+    def test_both_a_work_and_a_period_is_refused(self):
+        response = self.post(kind="collect", work_id="W1",
+                             date_from="2024-01-01", date_to="2024-02-01")
+        self.assertEqual(response.status_code, 400)
+
+    def test_neither_a_work_nor_a_period_is_refused(self):
+        self.assertEqual(self.post(kind="collect").status_code, 400)
+
+    def test_a_period_the_wrong_way_round_is_refused(self):
+        response = self.post(kind="collect", date_from="2024-12-31", date_to="2024-01-01")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("позже", response.json()["detail"])
+
+    def test_something_that_is_not_a_date_says_so(self):
+        # Told apart from the wrong order: one message for both would be
+        # wrong half the time.
+        response = self.post(kind="collect", date_from="вчера", date_to="2024-01-01")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("не дата", response.json()["detail"])
+
+    def test_rebuilding_the_map(self):
+        self.post(kind="map", seed="7", public="on")
+        payload = store.recent(self.db)[0].payload
+        self.assertEqual(payload, {"public": True, "seed": 7})
+
+    def test_the_map_defaults_to_keeping_the_names(self):
+        self.post(kind="map", seed="42")
+        self.assertFalse(store.recent(self.db)[0].payload["public"])
+
+    def test_deduplicating_takes_no_arguments(self):
+        self.assertEqual(self.post(kind="dedup").status_code, 303)
+        self.assertEqual(store.recent(self.db)[0].payload, {})
+
+    def test_a_queued_run_is_reported_back(self):
+        response = self.post(kind="dedup")
+        self.assertIn("queued=", response.headers["location"])
+        self.assertIn("поставлена в очередь",
+                      self.client.get(response.headers["location"]).text)
+
+    def test_nothing_is_started_by_the_request_itself(self):
+        # The whole point of the queue: the request writes a document and
+        # returns, and the worker does the rest.
+        self.post(kind="publish", group="2024")
+        self.assertEqual(store.recent(self.db)[0].state, JobState.QUEUED)

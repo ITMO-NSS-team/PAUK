@@ -60,6 +60,21 @@ def require_editor(user: Annotated[User, Depends(require_user)]) -> User:
     return user
 
 
+def require_admin(user: Annotated[User, Depends(require_user)]) -> User:
+    """A caller allowed to set the pipeline going.
+
+    Raises:
+        HTTPException: 403 for anyone else. Editing one record is a change
+            somebody can look at and undo; starting a publish rewrites the
+            whole graph, and a collection run spends hours of somebody's
+            API quota.
+    """
+    if not user.can_run:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "starting a run needs the admin role")
+    return user
+
+
 async def require_csrf(request: Request,
                        session: Annotated[dict | None, Depends(get_session)]) -> None:
     """Reject a form that did not come from our own page.
@@ -180,5 +195,6 @@ Config = Annotated[Settings, Depends(get_config)]
 Session = Annotated[dict | None, Depends(get_session)]
 CurrentUser = Annotated[User, Depends(require_user)]
 Editor = Annotated[User, Depends(require_editor)]
+Admin = Annotated[User, Depends(require_admin)]
 CsrfChecked = Annotated[None, Depends(require_csrf)]
 Graph = Annotated[object, Depends(graph_for)]
