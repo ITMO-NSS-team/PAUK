@@ -11,6 +11,8 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from pauk.settings import settings
+
 logger = logging.getLogger(__name__)
 
 _argv = sys.argv[1:]
@@ -18,7 +20,10 @@ PUBLIC = "--public" in _argv
 _port_args = [a for a in _argv if a != "--public"]
 PORT = int(_port_args[0]) if _port_args else 8501
 ROOT = Path(__file__).parent / "web"
-DATA_DIR = Path(__file__).parent / "data" / ("public" if PUBLIC else "private")
+# The same setting the rebuild writes to. Two copies of this path would let
+# the worker write one directory and the server read another, and the map
+# would quietly stay as it was.
+DATA_DIR = settings.map_out_dir(PUBLIC)
 API_STATS = "/api/stats"
 API_CHECK = "/api/check"
 
