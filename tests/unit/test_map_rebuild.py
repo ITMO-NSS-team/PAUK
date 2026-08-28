@@ -225,3 +225,49 @@ class MapPathTest(unittest.TestCase):
         # this repository, and moving it would drop it from the deploy.
         expected = Path(__file__).resolve().parents[2] / "pauk" / "gui" / "data"
         self.assertEqual(Settings().map_dir, expected)
+
+
+class EmptyGraphTest(unittest.TestCase):
+    """A graph with no ITMO authors is an empty map, not a failure.
+
+    cKDTree refuses an empty array, so the layout step raised ValueError and
+    the rebuild died on a fresh database or a group nobody had published.
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.snapshot = self.tmp / "graph_snapshot.json"
+
+    def build(self, db):
+        write_snapshot(self.snapshot, db)
+        return write_graph_files(self.snapshot, self.tmp / "out", seed=42)
+
+    @staticmethod
+    def blank() -> dict[str, list]:
+        return {"persons": [], "publications": [], "repositories": [], "departments": [],
+                "authorship": [], "person_depts": [], "pub_depts": [],
+                "repo_pubs": [], "repo_persons": [], "repo_depts": []}
+
+    def test_an_empty_graph_builds(self):
+        counts = self.build(self.blank())
+        self.assertEqual(counts["map_authors"], 0)
+
+    def test_a_publication_with_no_itmo_author_builds(self):
+        db = self.blank()
+        db["publications"] = [("W1", "Статья", None, None, None, 2024, False, None)]
+        self.assertEqual(self.build(db)["map_pubs"], 0)
+
+    def test_departments_without_people_build(self):
+        db = self.blank()
+        db["departments"] = [{"id": f"D{n}", "name_ru": f"Кафедра {n}", "name_en": ""}
+                             for n in range(4)]
+        db["publications"] = [("W1", "Статья", None, None, None, 2024, False, None)]
+        db["pub_depts"] = [("W1", "D0")]
+        self.assertEqual(self.build(db)["map_authors"], 0)
+
+    def test_the_files_are_written_even_when_empty(self):
+        self.build(self.blank())
+        out = self.tmp / "out"
+        self.assertEqual(sorted(path.name for path in out.iterdir()),
+                         ["graph-data.js", "graph-search.js"])
+
