@@ -5,8 +5,11 @@ from unittest.mock import patch
 import mongomock
 
 from pauk.admin import cli as admin_cli
+from pauk.admin import decisions
 from pauk.graph.audit import _actor_var, _source_var
+from pauk.graph.mutations import NotFound
 from pauk.graph.overrides import (
+    COLLECTION,
     active_overrides,
     tombstoned_ids,
     tombstoned_relationships,
@@ -291,3 +294,41 @@ class PrintingCommandsTest(unittest.TestCase):
         with self.assertRaises(SystemExit) as caught:
             admin_cli.run(parse("overrides", "list"), self.config, None)
         self.assertIn("MongoDB", str(caught.exception))
+
+
+class DeleteSnapshotTest(unittest.TestCase):
+    """`pauk admin node delete` has to record what it removed.
+
+    The panel took a snapshot and the command did not, so a record deleted
+    from the terminal could only be restored from the feed — which keeps
+    history rather than state, and summarises a bulk operation without
+    listing a single field.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.graph = FakeGraph()
+        self.graph.add("Person", "A1", name_ru="Иван Петров", name_en="Ivan Petrov")
+        self.args = argparse.Namespace(label="Person", id="A1", cascade=False,
+                                       once=False, note="")
+
+    def test_the_decision_carries_the_fields(self):
+        admin_cli._delete(self.args, self.graph, self.db, "user:roman")
+        row = self.db[COLLECTION].find_one({"op": "delete"})
+        self.assertEqual(row["snapshot"], {"name_ru": "Иван Петров", "name_en": "Ivan Petrov"})
+
+    def test_the_record_can_be_restored_from_it(self):
+        admin_cli._delete(self.args, self.graph, self.db, "user:roman")
+        self.assertEqual(decisions.deleted_fields(self.db, "Person", "A1"),
+                         {"name_ru": "Иван Петров", "name_en": "Ivan Petrov"})
+
+    def test_nothing_is_recorded_with_once(self):
+        self.args.once = True
+        admin_cli._delete(self.args, self.graph, self.db, "user:roman")
+        self.assertIsNone(self.db[COLLECTION].find_one({"op": "delete"}))
+
+    def test_deleting_what_is_not_there_is_refused_before_the_decision(self):
+        self.args.id = "nobody"
+        with self.assertRaises(NotFound):
+            admin_cli._delete(self.args, self.graph, self.db, "user:roman")
+        self.assertIsNone(self.db[COLLECTION].find_one({"op": "delete"}))

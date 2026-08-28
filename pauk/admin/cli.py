@@ -262,9 +262,10 @@ def _set_fields(args, client, db, actor: str) -> dict:
 
     Writing straight to the graph would hold until the next
     `pauk publish graph` and then be overwritten by whatever the source
-    says. The edit is recorded as an override first — with the automatic
-    value it replaces, so the conflict screen can later say what the
-    source now claims — and applied second.
+    says. So the edit is also kept as an override, with the automatic value
+    it replaces, so the conflict screen can later say what the source now
+    claims. The graph is written first and the decision recorded second —
+    see the comment below for why that order matters.
     """
     fields = _parse_assignments(args.assignments)
     before = read_node(client, args.label, args.id)
@@ -288,9 +289,15 @@ def _delete(args, client, db, actor: str) -> None:
     # Same order as _set_fields: a node with relationships and no --cascade
     # is refused, and a tombstone left behind would delete it on the next
     # publish anyway.
+    # Snapshot first, like the panel does: afterwards the node is gone, and
+    # the decision has to carry what it removed or the record can only be
+    # restored from the feed — which keeps history, not state.
+    snapshot = read_node(client, args.label, args.id)
     removed = delete_node(client, args.label, args.id, cascade=args.cascade)
     if db is not None and not args.once:
-        record_override(db, args.label, args.id, "delete", actor=actor, note=args.note or "")
+        record_override(db, args.label, args.id, "delete", actor=actor, note=args.note or "",
+                        snapshot={name: value for name, value in snapshot.items()
+                                  if name in NODE_FIELDS[args.label] and value is not None})
     logger.info("deleted %d node(s)", removed)
 
 
