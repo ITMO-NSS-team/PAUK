@@ -82,7 +82,10 @@
 
 {% if pages > 1 %}
 <p style="margin-top:14px">
-  {% set qs = "&actor=" ~ filters.actor ~ "&entity_type=" ~ filters.entity_type ~ "&entity_id=" ~ filters.entity_id ~ "&kind=" ~ filters.kind %}
+  {# Каждое значение кодируется: идентификатор LinkCandidate — это адрес,
+     и его собственные "&" и "?" иначе разрывают строку запроса, так что
+     на следующей странице фильтр оказывается уже другим. #}
+  {% set qs = "&actor=" ~ filters.actor|urlencode ~ "&entity_type=" ~ filters.entity_type|urlencode ~ "&entity_id=" ~ filters.entity_id|urlencode ~ "&kind=" ~ filters.kind|urlencode %}
   {% if page > 1 %}<a href="/audit?page={{ page - 1 }}{{ qs }}">← новее</a>{% endif %}
   {% if page < pages %}<a href="/audit?page={{ page + 1 }}{{ qs }}" style="margin-left:14px">старее →</a>{% endif %}
 </p>

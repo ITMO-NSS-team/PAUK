@@ -321,3 +321,49 @@ class RestoreWithoutTheFeedTest(unittest.TestCase):
         response = self.client.get("/nodes/Person/never-existed")
         self.assertEqual(response.status_code, 404)
         self.assertNotIn("Восстановить", response.text)
+
+
+class PagerKeepsTheFilterTest(unittest.TestCase):
+    """Paging must not quietly change what is being filtered on.
+
+    The pager built its query string by concatenation, so an entity_id that
+    is an address — every LinkCandidate — split at its own "?" and "&", and
+    the next page showed a different filter than the first.
+    """
+
+    URL = "https://github.com/org/repo?ref=main&tab=readme"
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.db[feed.COLLECTION].insert_many([
+            {"entity_type": "LinkCandidate", "entity_id": self.URL, "actor": "pipeline",
+             "change_kind": "updated", "timestamp": f"2026-08-{10 + index // 24:02d}"
+                                                    f"T{index % 24:02d}:00:00",
+             "diff": {"host": ["a", "b"]}}
+            for index in range(feed.PAGE + 10)])
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: FakePanelGraph()
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def next_page_link(self, page):
+        found = re.search(r'href="(/audit\?page=2[^"]*)"', page)
+        self.assertIsNotNone(found, "на первой странице нет ссылки на вторую")
+        return found.group(1).replace("&amp;", "&")
+
+    def test_the_id_is_encoded_in_the_link(self):
+        first = self.client.get("/audit", params={"entity_id": self.URL}).text
+        self.assertIn("%3Fref%3Dmain", self.next_page_link(first))
+
+    def test_the_second_page_filters_on_the_same_thing(self):
+        first = self.client.get("/audit", params={"entity_id": self.URL}).text
+        second = self.client.get(self.next_page_link(first)).text
+        self.assertEqual(re.search(r"Всего: (\d+)", first).group(1),
+                         re.search(r"Всего: (\d+)", second).group(1))
+
+    def test_the_second_page_holds_the_rest_of_the_rows(self):
+        first = self.client.get("/audit", params={"entity_id": self.URL}).text
+        second = self.client.get(self.next_page_link(first)).text
+        self.assertIn("2026-08", second)
+        self.assertNotIn("ничего не найдено", second)
