@@ -158,6 +158,23 @@ def _payload_from(kind: JobKind, db, form) -> dict:
     return {}
 
 
+@router.post("/jobs/cancel")
+async def cancel(request: Request, user: Admin, db: Db, _: CsrfChecked):
+    """Ask a run to stop.
+
+    A queued job is cancelled outright. One already under way is only asked:
+    the worker looks at the request between steps, so a half-written batch
+    is never abandoned. A publish has no steps inside it and runs to the end.
+    """
+    form = await request.form()
+    job_id = str(form.get("job_id", "")).strip()
+    if not store.request_cancel(db, job_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            "задача уже закончилась или её нет")
+    logger.info("%s cancelled job %s", user.actor, job_id)
+    return RedirectResponse("/jobs", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.post("/jobs")
 async def schedule(request: Request, user: Admin, db: Db, _: CsrfChecked):
     """Put a run in the queue.

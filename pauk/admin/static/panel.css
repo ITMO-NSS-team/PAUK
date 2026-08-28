@@ -228,7 +228,10 @@ select {
 .filters .id { flex: 2 1 260px; }
 
 /* Одна задача на странице задач: слева что это и зачем, справа поля. */
+/* Разделитель задаётся положением, а не прописан в разметке: формы
+   переставляют, и прибитая к одной из них рамка уезжает не туда. */
 .task { border-bottom: 1px solid var(--border); padding: 14px 0; }
 .task:first-of-type { padding-top: 0; }
-.task .what { margin-bottom: 10px; }
-.task .what p { margin: 4px 0 0; max-width: 62ch; }
+.task:last-of-type { border-bottom: none; padding-bottom: 0; }
+.task .what { align-self: center; min-width: 15rem; }
+.task .what span { display: block; font-size: 13px; }

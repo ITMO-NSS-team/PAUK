@@ -6,117 +6,91 @@
   выполняющиеся отдельным процессом <code>pauk admin worker</code>.
 </p>
 
-{% if request.query_params.get("queued") %}
-<p class="note">Задача поставлена в очередь. Её выполнит воркер — если он не запущен, она будет ждать.</p>
-{% endif %}
-
 {% if user.can_run %}
 <div class="card" style="margin-bottom:20px">
-  <b>Запустить</b>
-  <p class="muted" style="margin:6px 0 16px">
-    Прогон начнётся, когда до него дойдёт воркер. Пока идёт задача над графом,
-    остальные ждут своей очереди.
-  </p>
-
   <div class="task">
-    <div class="what">
-      <b>Найти новые публикации</b>
-      <p class="muted">Забирает работы из OpenAlex и достаёт из них авторов,
-        организации и ссылки на код. В граф пока ничего не попадёт.</p>
-    </div>
     <form method="post" action="/jobs" class="row">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <input type="hidden" name="kind" value="collect">
+      <div class="what"><b>Сбор публикаций за период</b></div>
       <div>
-        <label for="date_from">за период с</label>
+        <label for="date_from">с</label>
         <input type="date" id="date_from" name="date_from" max="{{ today }}" required>
       </div>
       <div>
         <label for="date_to">по</label>
         <input type="date" id="date_to" name="date_to" max="{{ today }}" required>
       </div>
-      <div><label>&nbsp;</label><button type="submit">Найти</button></div>
+      <div><button type="submit">Запустить</button></div>
     </form>
   </div>
 
   <div class="task">
-    <div class="what">
-      <b>Добавить одну публикацию</b>
-      <p class="muted">То же самое, но для одной работы по её идентификатору
-        в OpenAlex.</p>
-    </div>
     <form method="post" action="/jobs" class="row">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <input type="hidden" name="kind" value="collect">
+      <div class="what"><b>Сбор одной публикации</b></div>
       <div class="grow">
-        <label for="work_id">идентификатор работы</label>
+        <label for="work_id">идентификатор в OpenAlex</label>
         <input type="text" id="work_id" name="work_id" placeholder="W2741809807" required>
       </div>
-      <div><label>&nbsp;</label><button type="submit">Добавить</button></div>
+      <div><button type="submit">Запустить</button></div>
     </form>
   </div>
 
   <div class="task">
-    <div class="what">
-      <b>Выложить найденное в граф</b>
-      <p class="muted">Переносит уже собранные данные в Neo4j, чтобы они
-        появились на карте и в поиске. Ручные правки после этого
-        применяются заново.</p>
-    </div>
     <form method="post" action="/jobs" class="row">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <input type="hidden" name="kind" value="publish">
+      <div class="what"><b>Публикация группы в граф</b></div>
       <div class="grow">
-        <label for="group">какую порцию</label>
         {# Только группы с подготовленными строками: публикация пустой
            загрузит ноль строк и выглядит как поломка. #}
+        <label for="group">группа</label>
         <select id="group" name="group" required>
           {% for name in groups %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
         </select>
       </div>
-      <div><label>&nbsp;</label>
-        <button type="submit" {% if not groups %}disabled{% endif %}>Выложить</button></div>
+      <div><button type="submit" {% if not groups %}disabled{% endif %}>Запустить</button></div>
     </form>
-    {% if not groups %}
-    <p class="muted">Выкладывать нечего: собранных данных ещё нет.
-      Начните с поиска публикаций.</p>
-    {% endif %}
+    {% if not groups %}<p class="muted">Собранных групп пока нет.</p>{% endif %}
   </div>
 
   <div class="task">
-    <div class="what">
-      <b>Склеить одинаковых людей и работы</b>
-      <p class="muted">Один и тот же человек приходит из разных источников
-        под разными написаниями имени. Эта задача находит такие пары по
-        всему графу и оставляет одну запись вместо нескольких.</p>
-    </div>
-    <form method="post" action="/jobs">
-      <input type="hidden" name="csrf" value="{{ csrf }}">
-      <input type="hidden" name="kind" value="dedup">
-      <button type="submit">Склеить</button>
-    </form>
-  </div>
-
-  <div class="task" style="border-bottom:none; padding-bottom:0">
-    <div class="what">
-      <b>Обновить карту</b>
-      <p class="muted">Пересобирает файлы, из которых рисуется карта.
-        Делать после того, как выложили новое в граф, иначе карта показывает
-        старое.</p>
-    </div>
     <form method="post" action="/jobs" class="row">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <input type="hidden" name="kind" value="map">
+      {# Один seed для всех пересборок: карту читают по форме, и новая
+         раскладка каждый раз была бы другой картой. #}
+      <input type="hidden" name="seed" value="42">
+      <div class="what grow"><b>Пересборка карты</b>
+        <span class="muted">после публикации</span></div>
       <div style="align-self:center">
         <label for="public"><input type="checkbox" id="public" name="public">
-          версия без имён и контактов</label>
+          без персональных данных</label>
       </div>
-      {# Один и тот же seed даёт ту же раскладку: люди ориентируются по
-         форме карты, и новая при каждой пересборке была бы другой картой. #}
-      <input type="hidden" name="seed" value="42">
-      <div><button type="submit">Обновить</button></div>
+      <div><button type="submit">Запустить</button></div>
     </form>
   </div>
+
+  <div class="task">
+    <form method="post" action="/jobs" class="row" id="dedup-form">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="kind" value="dedup">
+      <div class="what grow"><b>Дедупликация графа</b>
+        <span class="muted">спорные пары откладываются, сведённое не разделяется</span></div>
+      <div><button type="submit" class="warn">Запустить</button></div>
+    </form>
+    <script>
+      // Спрашиваем, как при удалении узла. Разъединить сведённое нечем.
+      document.getElementById("dedup-form")?.addEventListener("submit", (event) => {
+        if (!confirm("Запустить дедупликацию по всему графу?\n\nОперация необратимая: сведённые записи обратно не разделяются.")) {
+          event.preventDefault();
+        }
+      });
+    </script>
+  </div>
+
 </div>
 {% endif %}
 
@@ -124,7 +98,8 @@
 <div class="card" style="margin-bottom:20px">
   <b>Сейчас</b>
   <table style="margin-top:10px">
-    <tr><th>что</th><th>кто попросил</th><th>начата</th><th>отклик</th></tr>
+    <tr><th>что</th><th>кто попросил</th><th>начата</th><th>отклик</th>
+      {% if user.can_run %}<th></th>{% endif %}</tr>
     {% for job in under_way %}
     <tr>
       <td><b>{{ job.kind }}</b>
@@ -137,6 +112,17 @@
       <td class="val" style="white-space:nowrap">{{ job.heartbeat_at|moment or "—" }}
         {% if job.cancel_requested %}<br><span class="muted">просили остановить</span>{% endif %}
       </td>
+      {% if user.can_run %}
+      <td style="width:1%">
+        {% if not job.cancel_requested %}
+        <form method="post" action="/jobs/cancel">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="job_id" value="{{ job.id }}">
+          <button type="submit" class="ghost">отменить</button>
+        </form>
+        {% endif %}
+      </td>
+      {% endif %}
     </tr>
     {% endfor %}
   </table>
@@ -184,8 +170,8 @@
 </form>
 
 {% if not rows %}
-  <p class="muted">Задач ещё не было.
-  {% if user.can_run %}Поставьте первую формой выше.
+  <p class="muted">Таких задач ещё не было.
+  {% if user.can_run %}Поставьте первую задачу формой выше.
   {% else %}Запускать прогоны может учётная запись с ролью admin.{% endif %}</p>
 {% else %}
 <p class="muted" style="margin:-8px 0 12px">Всего: {{ total }}. Страница {{ page }} из {{ pages }}.</p>
@@ -206,6 +192,13 @@
         {% if job.error %}<span class="note bad" style="display:block">{{ job.error }}</span>
         {% elif job.result %}{% for name, value in job.result %}<div><b>{{ name }}</b>: {{ value }}</div>{% endfor %}
         {% else %}<span class="muted">—</span>{% endif %}
+        {% if user.can_run and job.state not in final and not job.cancel_requested %}
+        <form method="post" action="/jobs/cancel" style="margin-top:6px">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="job_id" value="{{ job.id }}">
+          <button type="submit" class="ghost">отменить</button>
+        </form>
+        {% endif %}
       </td>
     </tr>
     {% endfor %}

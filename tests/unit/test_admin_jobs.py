@@ -47,7 +47,7 @@ class JobsPageTest(unittest.TestCase):
     def test_an_empty_page_says_so(self):
         page = self.client.get("/jobs")
         self.assertEqual(page.status_code, 200)
-        self.assertIn("Задач ещё не было", page.text)
+        self.assertIn("задач ещё не было", page.text.lower())
 
     def test_a_finished_run_shows_its_counts(self):
         self.finished(result={"rows_persons": 12})
@@ -324,14 +324,128 @@ class SchedulingTest(unittest.TestCase):
         self.assertEqual(self.post(kind="dedup").status_code, 303)
         self.assertEqual(store.recent(self.db)[0].payload, {})
 
-    def test_a_queued_run_is_reported_back(self):
+    def test_the_page_can_point_at_what_was_just_queued(self):
         response = self.post(kind="dedup")
         self.assertIn("queued=", response.headers["location"])
-        self.assertIn("поставлена в очередь",
-                      self.client.get(response.headers["location"]).text)
+        self.assertEqual(self.client.get(response.headers["location"]).status_code, 200)
 
     def test_nothing_is_started_by_the_request_itself(self):
         # The whole point of the queue: the request writes a document and
         # returns, and the worker does the rest.
         self.post(kind="publish", group="2024")
         self.assertEqual(store.recent(self.db)[0].state, JobState.QUEUED)
+
+
+class CancelTest(unittest.TestCase):
+    """Stopping a run that should not have been started."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "chief", "hunter2", role="admin")
+        create_user(self.db, "petrov", "hunter2", role="editor")
+        self.app = build(Settings(), self.db)
+        self.app.dependency_overrides[deps.graph_for] = lambda: FakePanelGraph()
+        self.client, self.csrf = self.sign_in("chief")
+
+    def sign_in(self, login):
+        client = TestClient(self.app, follow_redirects=False)
+        client.post("/login", data={"login": login, "password": "hunter2"})
+        csrf = self.db[SESSIONS].find_one({"_id": client.cookies[COOKIE]})["csrf"]
+        return client, csrf
+
+    def queued(self):
+        return store.enqueue(self.db, JobKind.DEDUP, {}, actor="user:chief")
+
+    def running(self):
+        job = store.enqueue(self.db, JobKind.MAP, {}, actor="user:chief")
+        store.claim(self.db, "worker-1")
+        store.start(self.db, job.id)
+        return job
+
+    def cancel(self, job_id, client=None, csrf=None):
+        client = client or self.client
+        return client.post("/jobs/cancel",
+                           data={"csrf": csrf or self.csrf, "job_id": job_id})
+
+    def test_a_waiting_job_is_cancelled_outright(self):
+        job = self.queued()
+        self.assertEqual(self.cancel(job.id).status_code, 303)
+        self.assertEqual(store.read(self.db, job.id).state, JobState.CANCELLED)
+
+    def test_a_running_job_is_only_asked(self):
+        # The worker looks at the request between steps, so a half-written
+        # batch is never abandoned.
+        job = self.running()
+        self.cancel(job.id)
+        stored = store.read(self.db, job.id)
+        self.assertEqual(stored.state, JobState.RUNNING)
+        self.assertTrue(stored.cancel_requested)
+
+    def test_a_finished_job_cannot_be_cancelled(self):
+        job = self.queued()
+        store.finish(self.db, job.id, {})
+        self.assertEqual(self.cancel(job.id).status_code, 404)
+
+    def test_a_job_that_does_not_exist(self):
+        self.assertEqual(self.cancel("no-such-job").status_code, 404)
+
+    def test_an_editor_may_not_cancel(self):
+        job = self.queued()
+        client, csrf = self.sign_in("petrov")
+        self.assertEqual(self.cancel(job.id, client, csrf).status_code, 403)
+        self.assertEqual(store.read(self.db, job.id).state, JobState.QUEUED)
+
+    def test_a_forged_form_is_refused(self):
+        job = self.queued()
+        self.assertEqual(self.cancel(job.id, csrf="not-the-token").status_code, 403)
+
+    def test_the_button_is_offered_while_a_job_can_still_be_stopped(self):
+        waiting, live = self.queued(), self.running()
+        offered = re.findall(r'name="job_id" value="([^"]+)"', self.client.get("/jobs").text)
+        self.assertIn(waiting.id, offered)
+        self.assertIn(live.id, offered)
+
+    def test_no_button_once_the_job_is_over(self):
+        job = self.queued()
+        store.finish(self.db, job.id, {})
+        offered = re.findall(r'name="job_id" value="([^"]+)"', self.client.get("/jobs").text)
+        self.assertNotIn(job.id, offered)
+
+    def test_no_button_once_it_has_been_asked(self):
+        job = self.running()
+        self.cancel(job.id)
+        page = self.client.get("/jobs").text
+        self.assertNotIn(job.id, re.findall(r'name="job_id" value="([^"]+)"', page))
+        self.assertIn("просили остановить", page)
+
+    def test_an_editor_is_offered_no_buttons(self):
+        self.queued()
+        client, _ = self.sign_in("petrov")
+        self.assertNotIn("/jobs/cancel", client.get("/jobs").text)
+
+
+class DedupConfirmationTest(unittest.TestCase):
+    """The merge cannot be undone, so it asks first, like deleting a node."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "chief", "hunter2", role="admin")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: FakePanelGraph()
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "chief", "password": "hunter2"})
+
+    def test_the_form_asks_before_submitting(self):
+        page = self.client.get("/jobs").text
+        self.assertIn("dedup-form", page)
+        self.assertIn("confirm(", page[page.index("dedup-form"):])
+
+    def test_the_question_says_it_cannot_be_undone(self):
+        page = self.client.get("/jobs").text
+        question = re.search(r'confirm\("([^"]+)"', page[page.index("dedup-form"):]).group(1)
+        self.assertIn("необратим", question)
+
+    def test_only_the_merge_is_guarded(self):
+        # Collecting and rebuilding the map can be run again; folding two
+        # records into one cannot be taken back.
+        self.assertEqual(self.client.get("/jobs").text.count("confirm("), 1)
