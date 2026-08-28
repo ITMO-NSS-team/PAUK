@@ -1,12 +1,10 @@
 """What a job is, in types.
 
-Kept beside `pauk.models.processing`, which describes the state of one
-prepared *row*. This describes the state of a whole run: who asked for it,
-what it is allowed to touch, and how it ended.
+`pauk.models.processing` describes the state of one prepared row; this
+describes the state of a whole run.
 
-The payload is a model per kind rather than a free dict. The panel builds
-it from a form, and a form is the one place where a value can be anything
-at all — the same reason `pauk.graph.mutations` keeps closed whitelists.
+The payload is a model per kind rather than a free dict, because the panel
+builds it from a form.
 """
 
 from __future__ import annotations
@@ -20,8 +18,6 @@ from pauk.storage.naming import validate_group
 
 
 class JobKind(StrEnum):
-    """What the worker should do. One entry, one callable — no free text."""
-
     COLLECT = "collect"
     PUBLISH = "publish"
     DEDUP = "dedup"
@@ -29,13 +25,9 @@ class JobKind(StrEnum):
 
 
 class JobState(StrEnum):
-    """Where a job is.
-
-    CLAIMED sits between QUEUED and RUNNING on purpose: a worker takes the
-    document first and the resource lock second, and between the two the
-    job belongs to nobody visible. Without a state of its own it would read
-    as running while nothing is running.
-    """
+    """CLAIMED sits between QUEUED and RUNNING because a worker takes the
+    document first and the resource second. Without a state of its own the
+    gap between them would read as running while nothing runs."""
 
     QUEUED = "queued"
     CLAIMED = "claimed"
@@ -48,39 +40,30 @@ class JobState(StrEnum):
 #: States a job will never leave.
 FINAL = frozenset({JobState.DONE, JobState.FAILED, JobState.CANCELLED})
 
-#: The one resource every write to Neo4j contends for. Publishing,
-#: deduplicating and exporting a snapshot all read or rewrite the whole
-#: graph, so they take turns rather than interleave.
+#: Publishing, deduplicating and exporting a snapshot all rewrite or read
+#: the whole graph, so they take turns.
 GRAPH = "graph"
 
 
 def now() -> datetime:
     """Current time at the precision BSON keeps.
 
-    Mongo stores milliseconds; a plain datetime.now() carries microseconds
-    and comes back rounded, so a document read back would differ from the
-    one that was written. Same rule as `pauk.graph.overrides._now`.
+    Mongo stores milliseconds, so a plain datetime.now() comes back rounded
+    and a document read back differs from the one written.
     """
     moment = datetime.now(UTC)
     return moment.replace(microsecond=moment.microsecond // 1000 * 1000)
 
 
 def aware(moment: datetime) -> datetime:
-    """A stored time with a timezone on it.
-
-    pymongo hands datetimes back naive, in UTC; comparing one against an
-    aware now() raises TypeError instead of answering.
-    """
+    """A stored time with a timezone on it. pymongo returns them naive, and
+    comparing one against an aware now() raises."""
     return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
 
 
 class CollectPayload(BaseModel):
-    """One collection run: a single work, or everything in a date range.
-
-    `--works-file` is deliberately absent. It names a path on the machine
-    running the pipeline, and a path that arrives from a browser form is a
-    way to read files that have nothing to do with this project.
-    """
+    """`--works-file` is deliberately absent: it names a path on the machine
+    running the pipeline, and a path from a browser reads unrelated files."""
 
     group: str
     work_id: str | None = None
@@ -107,12 +90,6 @@ class DedupPayload(BaseModel):
 
 
 class MapPayload(BaseModel):
-    """Rebuild of the map's static files.
-
-    `public` drops personal fields, the way `generate_data --public` does
-    for a build that leaves the corporate network.
-    """
-
     public: bool = False
     seed: int = 42
 
@@ -128,10 +105,9 @@ PAYLOADS: dict[JobKind, type[BaseModel]] = {
 class Job(BaseModel):
     """One scheduled run, as stored.
 
-    `resource` is what the job has to hold before it starts. It is derived
-    from the kind and the payload rather than chosen by the caller, so two
-    jobs that touch the same thing cannot be given different names for it
-    and slip past each other.
+    `resource` is derived from the kind and the payload rather than chosen
+    by the caller, so two jobs touching the same thing cannot name it
+    differently and slip past each other.
     """
 
     id: str
@@ -164,11 +140,8 @@ def parse_payload(kind: JobKind, payload: dict) -> BaseModel:
 
 
 def resource_for(kind: JobKind, payload: BaseModel) -> str:
-    """What this job has to hold to run.
-
-    Collection runs are scoped to their group and can go on side by side.
-    Everything else writes the graph, and those take turns.
-    """
+    """What the job has to hold to run. Collection runs are scoped to their
+    group and can go side by side; everything else writes the graph."""
     if JobKind(kind) is JobKind.COLLECT:
         return f"group:{payload.group}"
     return GRAPH

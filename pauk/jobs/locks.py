@@ -1,19 +1,13 @@
 """Taking turns over something only one runner may touch at a time.
 
-Publishing a group, deduplicating the graph and exporting a snapshot all
-rewrite large parts of Neo4j. Two of them at once leave the graph correct
-by luck and the audit feed nonsense: interleaved batches, overrides
-reapplied against a state that has already moved.
+Two publishes at once leave interleaved batches and an audit feed
+describing an order that never happened.
 
-The lock is taken by the pipeline functions themselves rather than by the
-worker, and that is the point. The likeliest collision is not two workers —
-there is one — but somebody running `pauk publish graph` in a terminal
+The lock is taken by the pipeline functions, not by the worker: the
+likeliest collision is somebody running `pauk publish graph` in a terminal
 while the panel schedules the same thing.
 
-Not a unique partial index (`unique=True, partialFilterExpression=...`):
-mongomock refuses to create one, which would leave the whole mechanism
-untestable. One document per resource, keyed by `_id`, does the same job in
-one atomic operation.
+Not a unique partial index, because mongomock refuses to create one.
 """
 
 from __future__ import annotations
@@ -34,35 +28,27 @@ logger = logging.getLogger(__name__)
 
 COLLECTION = "job_locks"
 
-# How long a lock stays valid without being renewed. Long enough that a
-# publish never loses its own lock mid-run, short enough that a machine
-# killed halfway does not wedge the queue until somebody notices.
+# Long enough that a publish never loses its own lock mid-run, short enough
+# that a machine killed halfway does not wedge the queue until somebody
+# notices.
 LEASE_MINUTES = 15
 
 
 class Busy(RuntimeError):
-    """Someone else holds the resource.
-
-    Carries who and since when: "the graph is busy" sends a person looking
-    for a process, while "held by admin-cli on host:1234 since 12:03" ends
-    the search.
-    """
+    """Someone else holds the resource. Carries who and since when."""
 
 
 def this_process() -> str:
-    """A name for the current runner, for the message the next one reads."""
     return f"{socket.gethostname()}:{os.getpid()}"
 
 
 def acquire(db: Database, resource: str, owner: str) -> bool:
     """Take the resource, or report that it is taken.
 
-    One update does all three cases. The filter matches a lock that has
-    expired, so a run whose machine died is taken over; it matches nothing
-    when the resource is free, and the upsert inserts; and it matches
-    nothing when the lock is live and unexpired, where the upsert collides
-    on `_id` and says so. Checking first and inserting second would leave a
-    gap in which two runners both find it free.
+    One update covers all three cases. An expired lock matches the filter
+    and is taken over; a free resource matches nothing and the upsert
+    inserts; a live lock matches nothing and the upsert collides on `_id`.
+    Checking first and inserting second would leave a gap.
     """
     moment = now()
     try:
@@ -78,25 +64,21 @@ def acquire(db: Database, resource: str, owner: str) -> bool:
 
 def renew(db: Database, resource: str, owner: str) -> bool:
     """Push the lease out. Only the holder can, and only while it holds."""
-    moment = now()
     result = db[COLLECTION].update_one(
         {"_id": resource, "owner": owner},
-        {"$set": {"expires_at": moment + timedelta(minutes=LEASE_MINUTES)}})
+        {"$set": {"expires_at": now() + timedelta(minutes=LEASE_MINUTES)}})
     return result.matched_count > 0
 
 
 def release(db: Database, resource: str, owner: str) -> bool:
-    """Give the resource back. Never removes a lock somebody else took over."""
+    """Give the resource back, never a lock somebody else took over."""
     return db[COLLECTION].delete_one({"_id": resource, "owner": owner}).deleted_count > 0
 
 
 def holder(db: Database, resource: str) -> dict | None:
-    """Who holds the resource right now, or None if nobody does."""
+    """Who holds the resource, or None. An expired lock reads as free."""
     row = db[COLLECTION].find_one({"_id": resource})
-    if row is None:
-        return None
-    if aware(row["expires_at"]) < now():
-        # Expired but not yet taken over: the queue reads this as free.
+    if row is None or aware(row["expires_at"]) < now():
         return None
     return row
 
@@ -106,9 +88,8 @@ def held(db: Database, resource: str, owner: str | None = None) -> Iterator[str]
     """Hold the resource for the length of a block.
 
     Raises:
-        Busy: Somebody else has it. The caller decides whether that is an
-            error to report or a reason to wait — a CLI says so and stops,
-            a worker puts its job back in the queue.
+        Busy: Somebody else has it. The caller decides what that means: a
+            CLI says so and stops, a worker puts its job back in the queue.
     """
     owner = owner or this_process()
     if not acquire(db, resource, owner):

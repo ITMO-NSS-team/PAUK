@@ -1,16 +1,13 @@
 """The process that performs what the panel schedules.
 
-Separate from the panel on purpose: a collection run takes hours, and a
-restart of the web service must not cut one in half. The two share nothing
-but the `jobs` collection.
+Separate from the panel because a collection run takes hours and a restart
+of the web service must not cut one in half. The two share nothing but the
+`jobs` collection.
 
 The worker takes no locks of its own. Every function it calls holds what it
-writes — publishing and deduplicating hold the graph, a collection run holds
-its group, a map rebuild holds the graph while it reads it. That keeps one
-rule instead of two: whoever writes a shared resource takes its lock, and
-the same protection covers somebody running `pauk publish graph` in a
-terminal. When a resource turns out to be busy the job goes back to the
-queue rather than failing — it is still wanted, just not now.
+touches, which keeps one rule instead of two and covers somebody running
+`pauk publish graph` in a terminal as well. A job whose resource turns out
+to be busy goes back to the queue rather than failing.
 """
 
 from __future__ import annotations
@@ -61,9 +58,8 @@ def _rebuild_map(config: Settings, db: Database, payload) -> dict[str, int]:
     return rebuild_map(config, db, public=payload.public, seed=payload.seed)
 
 
-#: What each kind of job actually does. A closed table, looked up by an
-#: enum: nothing here is built from a string that came out of a form, and
-#: no job can name a command of its own.
+#: What each kind of job does. A closed table looked up by an enum, so no
+#: job can name a callable of its own.
 STEPS: dict[JobKind, Callable[[Settings, Database, BaseModel], dict[str, int]]] = {
     JobKind.COLLECT: _collect,
     JobKind.PUBLISH: _publish,
@@ -75,10 +71,9 @@ STEPS: dict[JobKind, Callable[[Settings, Database, BaseModel], dict[str, int]]] 
 class _Beat:
     """Says a running job is alive while it is busy doing something else.
 
-    The work is one long synchronous call — `PipelineRunner.run` does not
-    come back for hours — so nothing would renew the lease from inside it.
-    A daemon thread renews both the job's heartbeat and its resource lock,
-    and stops the moment the call returns.
+    The work is one synchronous call that does not come back for hours, so
+    nothing renews the lease from inside it. A daemon thread renews the
+    heartbeat and the resource lock, and stops when the call returns.
     """
 
     def __init__(self, db: Database, job: Job, owner: str) -> None:
@@ -128,13 +123,11 @@ class Worker:
     def run_forever(self) -> None:
         """Take jobs until asked to stop.
 
-        SIGINT and SIGTERM ask rather than interrupt: killing a publish
-        halfway leaves the graph written and the decision unrecorded, which
-        is the one ordering this project is careful about everywhere else.
+        SIGINT and SIGTERM ask rather than interrupt, because a publish
+        cut in half leaves the graph written and the decision unrecorded.
 
-        Handlers are only installed when this is the process's own main
-        thread. Signals belong to a process, not to a worker: Python
-        refuses to set them anywhere else, and a worker running inside
+        Handlers are installed only in the process's own main thread.
+        Python refuses to set them elsewhere, and a worker running inside
         somebody else's program has no business taking their SIGINT.
         """
         if threading.current_thread() is threading.main_thread():
@@ -151,9 +144,8 @@ class Worker:
 
         Returns:
             True when work was done. False when there was nothing to do, or
-            when the job went back because its resource was busy — either
-            way the caller waits before asking again, rather than spinning
-            on the same job while somebody else holds the graph.
+            when the job went back because its resource was busy. Either
+            way the caller waits before asking again.
         """
         job = store.claim(self.db, self.name)
         if job is None:
@@ -175,9 +167,8 @@ class Worker:
             with _Beat(self.db, job, self.name):
                 result = STEPS[job.kind](self.config, self.db, payload)
         except locks.Busy as error:
-            # Not a failure. Something else holds what this job needs, so it
-            # goes back for whoever gets there next, and this worker waits
-            # instead of picking the same job straight up again.
+            # Not a failure. It goes back for whoever gets there next, and
+            # this worker waits instead of picking it up again at once.
             logger.info("job %s waits: %s", job.id, error)
             store.requeue(self.db, job.id)
             return False

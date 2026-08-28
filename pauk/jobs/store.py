@@ -1,8 +1,7 @@
 """The queue: putting a job in, taking it out, saying how it ended.
 
-Reads and writes `jobs`, one document per scheduled run. Nothing here
-performs work or touches Neo4j — that is the worker's half, and keeping the
-two apart is what lets the queue be tested without a graph.
+One document per scheduled run. Nothing here performs work or touches
+Neo4j, which is what lets the queue be tested without a graph.
 """
 
 from __future__ import annotations
@@ -33,9 +32,8 @@ def enqueue(db: Database, kind: JobKind, payload: dict | None = None,
             actor: str = "unknown") -> Job:
     """Schedule a run.
 
-    The payload is validated here rather than when the worker picks it up:
-    a form that named a group that cannot exist should be refused while
-    there is still somebody looking at the page.
+    The payload is checked here, not when the worker picks it up, so a bad
+    form is refused while somebody is still looking at the page.
 
     Raises:
         ValidationError: The payload does not describe this kind of job.
@@ -68,17 +66,16 @@ def claim(db: Database, worker: str) -> Job | None:
     """Take the oldest queued job, or None when there is nothing to do.
 
     One operation, so two workers cannot walk away with the same document.
-    The job is only *claimed* here: the resource is taken separately, and a
-    job whose resource is busy goes back with `requeue`.
+    The resource is taken separately; a job whose resource is busy goes
+    back with `requeue`.
     """
     moment = now()
     document = db[COLLECTION].find_one_and_update(
         {"state": str(JobState.QUEUED)},
         {"$set": {"state": str(JobState.CLAIMED), "worker": worker,
                   "heartbeat_at": moment}},
-        # `_id` only breaks a tie: two jobs queued inside one millisecond
-        # share a created_at, and without it the order is whatever the
-        # storage happens to return this time.
+        # `_id` only breaks a tie. Two jobs queued inside one millisecond
+        # share a created_at, and the order would otherwise be arbitrary.
         sort=[("created_at", 1), ("_id", 1)],
         return_document=True)
     if document is None:
@@ -100,12 +97,9 @@ def start(db: Database, job_id: str) -> bool:
 def requeue(db: Database, job_id: str) -> bool:
     """Put a job back because the resource it needs was taken.
 
-    Not a failure: the run is still wanted, just not now. The worker that
-    let go keeps no claim on it, so any worker may pick it up next.
-
-    Accepts a running job as well as a claimed one. Whether a resource is
-    free is only learned by trying to take it, and by then the job has
-    already been marked as started.
+    Not a failure: the run is still wanted, just not now. Accepts a running
+    job as well as a claimed one, because a resource turns out to be busy
+    only after the job has been marked as started.
     """
     result = db[COLLECTION].update_one(
         {"_id": job_id, "state": {"$in": [str(JobState.CLAIMED), str(JobState.RUNNING)]}},
@@ -117,10 +111,9 @@ def requeue(db: Database, job_id: str) -> bool:
 def heartbeat(db: Database, job_id: str) -> bool:
     """Say the run is still alive. A job that stops saying so is stuck.
 
-    Answered by `matched_count`, not `modified_count`: two beats inside one
-    millisecond write the same value, and Mongo reports nothing modified.
-    The question here is whether a running job was found, not whether the
-    bytes changed.
+    Answered by `matched_count`. Two beats inside one millisecond write the
+    same value and Mongo reports nothing modified, but the question is
+    whether a running job was found.
     """
     result = db[COLLECTION].update_one(
         {"_id": job_id, "state": str(JobState.RUNNING)},
@@ -146,9 +139,8 @@ def cancelled(db: Database, job_id: str) -> bool:
 def request_cancel(db: Database, job_id: str) -> bool:
     """Ask a job to stop.
 
-    A flag rather than a signal: the worker looks at it between steps, so a
-    half-written batch is never abandoned in the middle. A job that has not
-    started yet is cancelled outright — there is nothing to interrupt.
+    A flag rather than a signal, so a half-written batch is never abandoned
+    in the middle. A job that has not started yet is cancelled outright.
     """
     moment = now()
     queued = db[COLLECTION].update_one(
@@ -160,8 +152,7 @@ def request_cancel(db: Database, job_id: str) -> bool:
     running = db[COLLECTION].update_one(
         {"_id": job_id, "state": {"$in": [str(JobState.CLAIMED), str(JobState.RUNNING)]}},
         {"$set": {"cancel_requested": True}})
-    # matched_count again: asking twice must not answer "no such job" the
-    # second time just because the flag was already set.
+    # Asking twice must not answer "no such job" the second time.
     return running.matched_count > 0
 
 
@@ -184,9 +175,8 @@ def read(db: Database, job_id: str) -> Job | None:
 def running(db: Database, resource: str | None = None) -> list[Job]:
     """Jobs under way, for the banner that warns an editor.
 
-    Includes claimed ones: between the claim and the resource the work has
-    not started, but it is about to, and a person deciding whether to save
-    now wants to know that.
+    Includes claimed ones. The work has not started yet, but it is about
+    to, and somebody deciding whether to save now wants to know.
     """
     query: dict = {"state": {"$in": [str(JobState.CLAIMED), str(JobState.RUNNING)]}}
     if resource is not None:
@@ -214,8 +204,7 @@ def count(db: Database, *, kind: str = "", state: str = "", actor: str = "") -> 
 def _as_job(document: dict) -> Job:
     """One stored document as a Job.
 
-    `_id` is Mongo's name for it and `id` is ours; the rest is validated
-    rather than trusted, so a document written by an older version fails
-    here instead of halfway through a run.
+    Validated rather than trusted, so a document written by an older
+    version fails here instead of halfway through a run.
     """
     return Job.model_validate({**document, "id": document["_id"]})
