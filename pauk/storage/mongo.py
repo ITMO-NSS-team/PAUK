@@ -32,3 +32,7 @@ def ensure_indexes(db: Database) -> None:
     # Reapplied after every publish and every graph dedup, so the lookup of
     # what is currently in force has to be cheap.
     db.graph_overrides.create_index([("active", 1), ("label", 1), ("op", 1)])
+    # A worker asks for the oldest queued job on every turn of its loop, and
+    # the panel warns an editor whenever a run is under way.
+    db.jobs.create_index([("state", 1), ("created_at", 1)])
+    db.jobs.create_index([("created_at", -1)])
