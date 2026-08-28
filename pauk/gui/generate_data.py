@@ -484,11 +484,55 @@ def dump_js(data, prefix: str, suffix: str, path: Path):
     logger.info("Wrote %s (%.1f MB)", path, path.stat().st_size / 1e6)
 
 
-def main():
-    from pauk.cache.graph_snapshot import read_snapshot
-    from pauk.settings import settings
+def write_graph_files(snapshot_path: Path, out_dir: Path, *,
+                      seed: int = 42, public: bool = False) -> dict[str, int]:
+    """Build the map's two data files from a snapshot.
 
-    data_dir = Path(__file__).resolve().parent / "data"
+    The work `main()` used to hold inline, so that a caller which is not a
+    command line — the maintenance worker — can rebuild the map without
+    spawning a process and building an argument list out of a form.
+
+    Args:
+        snapshot_path: A graph snapshot written by `pauk cache export`.
+        out_dir: Where graph-data.js and graph-search.js go. Created if it
+            is not there.
+        seed: FA2 layout seed. The same seed gives the same layout, so a
+            rebuild does not shuffle a map people have learned to read.
+        public: Drop personal fields, for a build that leaves the corporate
+            network.
+
+    Returns:
+        How much was written, for the run to report.
+    """
+    from pauk.cache.graph_snapshot import read_snapshot
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    started = time.time()
+    db = read_snapshot(snapshot_path)
+
+    graph = build_graph_data(db, seed=seed, public=public)
+    dump_js(graph, "window.GRAPH=", "", out_dir / "graph-data.js")
+
+    detail = build_search_detail(db, graph)
+    dump_js(
+        detail,
+        "(function(){var d=",
+        ";if(typeof window._onDetailReady==='function')window._onDetailReady(d);"
+        "else window._pendingDetail=d;})();",
+        out_dir / "graph-search.js",
+    )
+    logger.info("Done in %.1f s", time.time() - started)
+    return {
+        "map_authors": len(graph["authors"]),
+        "map_pubs": len(graph["pubs"]),
+        "map_repos": len(graph["repos"]),
+        "map_departments": len(graph["departments"]),
+        "map_edges": len(graph["all_edges"]),
+    }
+
+
+def main():
+    from pauk.settings import settings
 
     parser = argparse.ArgumentParser(description="Static data generation for the web visualization")
     parser.add_argument(
@@ -503,7 +547,8 @@ def main():
         type=Path,
         default=None,
         help="where to write graph-data.js and graph-search.js "
-        f"(default: {data_dir / 'public'} with --public, else {data_dir / 'private'})",
+        f"(default: {settings.map_out_dir(True)} with --public, "
+        f"else {settings.map_out_dir(False)})",
     )
     parser.add_argument("--seed", type=int, default=42, help="FA2 layout seed")
     parser.add_argument(
@@ -514,31 +559,14 @@ def main():
     )
     args = parser.parse_args()
     if args.out_dir is None:
-        args.out_dir = data_dir / ("public" if args.public else "private")
+        args.out_dir = settings.map_out_dir(args.public)
 
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-
-    t0 = time.time()
-    db = read_snapshot(args.cache)
-
-    graph = build_graph_data(db, seed=args.seed, public=args.public)
-    dump_js(graph, "window.GRAPH=", "", args.out_dir / "graph-data.js")
-
-    detail = build_search_detail(db, graph)
-    dump_js(
-        detail,
-        "(function(){var d=",
-        ";if(typeof window._onDetailReady==='function')window._onDetailReady(d);else window._pendingDetail=d;})();",
-        args.out_dir / "graph-search.js",
-    )
-
-    logger.info("Done in %.1f s", time.time() - t0)
+    write_graph_files(args.cache, args.out_dir, seed=args.seed, public=args.public)
 
 
 if __name__ == "__main__":

@@ -31,7 +31,7 @@ from .checks import BY_ID, CHECKS, GROUP_EN
 
 logger = logging.getLogger(__name__)
 
-OUT_DIR_DEFAULT = Path(__file__).resolve().parent / "data" / "private"
+OUT_DIR_DEFAULT = settings.map_out_dir(public=False)
 
 EXAMPLES_LIMIT_DEFAULT = 300
 EXAMPLES_LIMIT_MAX = 5000
@@ -283,6 +283,24 @@ def write_js(stats, out_dir=OUT_DIR_DEFAULT):
     return path
 
 
+def write_stats(out_dir=OUT_DIR_DEFAULT) -> dict[str, int]:
+    """Collect the numbers and the checks, and write graph-stats.js.
+
+    `snapshot()` and `write_js()` were already separate; this only names the
+    pair, so a caller that is not a command line can ask for the whole step
+    and get back something to report.
+    """
+    stats = snapshot()
+    write_js(stats, out_dir)
+    failed = [check for check in stats["checks"] if check["status"] != "ok"]
+    return {
+        "graph_nodes": stats["totals"]["nodes"],
+        "graph_rels": stats["totals"]["rels"],
+        "checks": len(stats["checks"]),
+        "checks_failed": len(failed),
+    }
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out-dir", default=str(OUT_DIR_DEFAULT))
@@ -305,18 +323,15 @@ def main():
         return
 
     t0 = time.time()
-    stats = snapshot()
-    path = write_js(stats, args.out_dir)
-
-    bad = [c for c in stats["checks"] if c["status"] != "ok"]
+    counts = write_stats(Path(args.out_dir))
     logger.info(
-        "узлов %d, связей %d, проверок %d (с замечаниями %d)",
-        stats["totals"]["nodes"],
-        stats["totals"]["rels"],
-        len(stats["checks"]),
-        len(bad),
+        "узлов %d, связей %d, проверок %d (с замечаниями %d) за %.1f c",
+        counts["graph_nodes"],
+        counts["graph_rels"],
+        counts["checks"],
+        counts["checks_failed"],
+        time.time() - t0,
     )
-    logger.info("wrote %s (%.1f KB) за %.1f c", path, path.stat().st_size / 1024, time.time() - t0)
 
 
 if __name__ == "__main__":
