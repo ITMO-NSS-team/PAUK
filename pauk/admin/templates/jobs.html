@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Задачи</h1>
+<p class="muted" style="margin:-8px 0 18px">
+  Долгие прогоны: сбор, публикация, дедуп, пересборка карты. Выполняет их
+  отдельный процесс — <code>pauk admin worker</code>.
+</p>
+
+{% if under_way %}
+<div class="card" style="margin-bottom:20px">
+  <b>Сейчас</b>
+  <table style="margin-top:10px">
+    <tr><th>что</th><th>кто попросил</th><th>начата</th><th>отклик</th></tr>
+    {% for job in under_way %}
+    <tr>
+      <td><b>{{ job.kind }}</b>
+        {% if job.payload %}<br><span class="muted">{% for name, value in job.payload %}{{ name }}={{ value }} {% endfor %}</span>{% endif %}
+      </td>
+      <td>{{ job.actor }}<br><span class="muted">{{ job.worker or "ещё не взята" }}</span></td>
+      <td class="val" style="white-space:nowrap">{{ (job.started_at or job.created_at)|moment }}</td>
+      {# Сердцебиение — единственный признак, что прогон жив: шаг внутри
+         идёт часами и о себе ничего не сообщает. #}
+      <td class="val" style="white-space:nowrap">{{ job.heartbeat_at|moment or "—" }}
+        {% if job.cancel_requested %}<br><span class="muted">просили остановить</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<form method="get" class="filters" id="filters">
+  <div class="pick">
+    <label for="kind">Что</label>
+    <select id="kind" name="kind">
+      <option value="">всё</option>
+      {% for code, word in kinds.items() %}
+      <option value="{{ code }}" {% if code == filters.kind %}selected{% endif %}>{{ word }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="pick">
+    <label for="state">Как кончилось</label>
+    <select id="state" name="state">
+      <option value="">любое</option>
+      {% for code, word in states.items() %}
+      <option value="{{ code }}" {% if code == filters.state %}selected{% endif %}>{{ word }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="pick">
+    <label for="actor">Кто попросил</label>
+    <select id="actor" name="actor">
+      <option value="">все</option>
+      {% for name in actors %}
+      <option value="{{ name }}" {% if name == filters.actor %}selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit">Показать</button>
+  <script>
+    // Как в журнале: выбор из списка применяется сразу, кнопка нужна на
+    // случай выключенных скриптов.
+    document.querySelectorAll("#filters select").forEach((box) =>
+      box.addEventListener("change", () => box.form.submit()));
+  </script>
+  {% if filters.kind or filters.state or filters.actor %}
+  <a href="/jobs" class="muted" style="align-self:center">сбросить</a>
+  {% endif %}
+</form>
+
+{% if not rows %}
+  <p class="muted">Задач нет. Их ставят в очередь из терминала; кнопки в панели — следующий этап.</p>
+{% else %}
+<p class="muted" style="margin:-8px 0 12px">Всего: {{ total }}. Страница {{ page }} из {{ pages }}.</p>
+<div class="card">
+  <table>
+    <tr><th>когда</th><th>что</th><th>кто</th><th>как</th><th>итог</th></tr>
+    {% for job in rows %}
+    <tr>
+      <td class="val" style="white-space:nowrap">{{ job.created_at|moment }}</td>
+      <td>{{ job.kind }}
+        {% if job.payload %}<br><span class="muted">{% for name, value in job.payload %}{{ name }}={{ value }} {% endfor %}</span>{% endif %}
+      </td>
+      <td>{{ job.actor }}</td>
+      <td>{{ job.state_ru }}
+        {% if job.state in final and job.finished_at %}<br><span class="muted">{{ job.finished_at|moment }}</span>{% endif %}
+      </td>
+      <td>
+        {% if job.error %}<span class="note bad" style="display:block">{{ job.error }}</span>
+        {% elif job.result %}{% for name, value in job.result %}<div><b>{{ name }}</b>: {{ value }}</div>{% endfor %}
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if pages > 1 %}
+<p style="margin-top:14px">
+  {% set qs = "&kind=" ~ filters.kind|urlencode ~ "&state=" ~ filters.state|urlencode ~ "&actor=" ~ filters.actor|urlencode %}
+  {% if page > 1 %}<a href="/jobs?page={{ page - 1 }}{{ qs }}">← новее</a>{% endif %}
+  {% if page < pages %}<a href="/jobs?page={{ page + 1 }}{{ qs }}" style="margin-left:14px">старее →</a>{% endif %}
+</p>
+{% endif %}
+{% endif %}
+{% endblock %}

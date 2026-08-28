@@ -19,8 +19,11 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.templating import Jinja2Templates
 from neo4j.exceptions import AuthError, ServiceUnavailable
 from pymongo.database import Database
+from pymongo.errors import PyMongoError
 
 from pauk.admin.auth import COOKIE, User, check_csrf, read_session
+from pauk.jobs import store
+from pauk.jobs.models import GRAPH
 from pauk.settings import Settings
 
 
@@ -108,9 +111,6 @@ def graph_for(request: Request, user: Annotated[User, Depends(require_user)]) ->
 # Annotated form in every signature.
 logger = logging.getLogger("pauk.admin")
 
-templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
-
-
 def plural(count: int, one: str, few: str, many: str) -> str:
     """Russian noun agreement: 1 узел, 2 узла, 5 узлов.
 
@@ -124,7 +124,56 @@ def plural(count: int, one: str, few: str, many: str) -> str:
     return many
 
 
+def moment(value) -> str:
+    """A stored time as "2026-08-28 14:03:11", or "" when there is none.
+
+    Job times are datetimes, unlike the feed's isoformat strings, and a
+    bare str() of one carries microseconds and a timezone that say nothing
+    to a reader.
+    """
+    if value is None:
+        return ""
+    return value.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def running_job(request: Request) -> dict:
+    """The graph job under way, for the warning strip on every page.
+
+    A context processor rather than an argument threaded through every
+    route: the strip belongs to the layout, and a route that forgot to pass
+    it would silently stop warning.
+
+    Reading the queue must never be what takes the panel down, so a failure
+    here leaves the strip off rather than the page.
+    """
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        return {"graph_job": None}
+    try:
+        under_way = store.running(db, resource=GRAPH)
+    except PyMongoError as error:
+        logger.warning("cannot read the queue for the banner: %s", error)
+        return {"graph_job": None}
+    return {"graph_job": under_way[0] if under_way else None}
+
+
+templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"),
+                            context_processors=[running_job])
 templates.env.filters["plural"] = plural
+templates.env.filters["moment"] = moment
+
+
+def job_words(kind) -> str:
+    """A job kind in the words the panel uses for it.
+
+    Imported late: `job_routes` reads `templates` from here, so naming it
+    at the top would close the circle.
+    """
+    from pauk.admin.job_routes import KINDS
+    return KINDS.get(kind, str(kind))
+
+
+templates.env.filters["job_words"] = job_words
 
 Db = Annotated[Database, Depends(get_db)]
 Config = Annotated[Settings, Depends(get_config)]

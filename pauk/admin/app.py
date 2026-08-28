@@ -28,7 +28,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from pymongo.database import Database
 
-from pauk.admin import audit_routes, decision_routes, nodes
+from pauk.admin import audit_routes, decision_routes, job_routes, nodes
 from pauk.admin.auth import (
     COOKIE,
     SESSION_HOURS,
@@ -262,4 +262,5 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
     app.include_router(nodes.router)
     app.include_router(audit_routes.router)
     app.include_router(decision_routes.router)
+    app.include_router(job_routes.router)
     return app

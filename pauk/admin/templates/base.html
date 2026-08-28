@@ -23,6 +23,9 @@
   <a href="/overrides" class="section {% if request.url.path.startswith('/overrides') %}on{% endif %}">
     Ручные решения
   </a>
+  <a href="/jobs" class="section {% if request.url.path.startswith('/jobs') %}on{% endif %}">
+    Задачи
+  </a>
   <div class="who">
     <span class="muted">{{ user.login }} · {{ user.role }}</span>
     <form method="post" action="/logout">
@@ -32,6 +35,17 @@
   </div>
 </header>
 {% endif %}
-<main>{% block content %}{% endblock %}</main>
+<main>
+{% if user and graph_job %}
+{# Предупреждаем, но не запрещаем: правка проходит, а расхождение потом
+   видно на экране решений. Полоса живёт в разметке, а не в маршрутах —
+   иначе страница, которую забыли научить, молча перестала бы предупреждать. #}
+<p class="note bad">
+  Идёт {{ graph_job.kind|job_words }} — граф сейчас переписывается.
+  Правки пройдут, но публикация может их перекрыть.
+  <a href="/jobs">смотреть задачу</a>
+</p>
+{% endif %}
+{% block content %}{% endblock %}</main>
 </body>
 </html>
