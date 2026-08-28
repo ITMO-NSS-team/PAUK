@@ -8,7 +8,8 @@ from fastapi.testclient import TestClient
 from pauk.admin import deps
 from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user
-from pauk.graph.overrides import COLLECTION, active_overrides
+from pauk.graph.mutations import RELATIONSHIPS
+from pauk.graph.overrides import COLLECTION, active_overrides, tombstoned_relationships
 from pauk.settings import Settings
 from tests.unit.test_mutations import FakeGraph
 
@@ -62,9 +63,14 @@ class FakePanelGraph(FakeGraph):
                 other_id, props = self._by_match(tgt_label, tgt_id)
                 found.append({"type": rel_type, "labels": [tgt_label], "other_id": other_id,
                               "other_props": props, "outgoing": True})
-            elif tgt_label == label or tgt_id == node_id:
+            elif tgt_label == label:
+                # Which property the edge is stored against, the way the
+                # loader decides it. Comparing against every value of the
+                # node instead would attach an edge matched by `url` to a
+                # node that merely has the same text in its `name`.
+                match_prop = RELATIONSHIPS.get((src_label, rel_type, tgt_label), "id")
                 mine = self.nodes.get((label, node_id), {})
-                if tgt_label != label or tgt_id not in {node_id, *mine.values()}:
+                if tgt_id != (node_id if match_prop == "id" else mine.get(match_prop)):
                     continue
                 other_props = self.nodes.get((src_label, src_id), {})
                 found.append({"type": rel_type, "labels": [src_label], "other_id": src_id,
@@ -945,3 +951,155 @@ class UrlAsIdTest(unittest.TestCase):
         self.graph.add("LinkCandidate", ending, url=ending, host="example.org")
         response = self.client.get(f"/nodes/LinkCandidate/{quote(ending, safe='/')}")
         self.assertEqual(response.status_code, 200)
+
+
+class VanishedRecordTest(unittest.TestCase):
+    """Saving a form whose record was deleted meanwhile.
+
+    read_node used to sit above the try, so NotFound escaped the handler
+    and the save answered 500 instead of saying what happened.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add("Person", "A1", name_ru="Иван Петров")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+
+    def test_the_save_is_answered_not_crashed(self):
+        self.graph.nodes.pop(("Person", "A1"))
+        response = self.client.post("/nodes/Person/A1",
+                                    data={"csrf": self.csrf, "name_ru": "Иван"})
+        self.assertEqual(response.status_code, 303)
+
+    def test_it_lands_on_the_record_s_own_page(self):
+        self.graph.nodes.pop(("Person", "A1"))
+        response = self.client.post("/nodes/Person/A1",
+                                    data={"csrf": self.csrf, "name_ru": "Иван"})
+        self.assertEqual(response.headers["location"], "/nodes/Person/A1")
+
+    def test_nothing_is_recorded_as_a_decision(self):
+        self.graph.nodes.pop(("Person", "A1"))
+        self.client.post("/nodes/Person/A1", data={"csrf": self.csrf, "name_ru": "Иван"})
+        self.assertEqual(list(active_overrides(self.db)), [])
+
+
+class UnlinkFromTheTargetTest(unittest.TestCase):
+    """Two links address their target by something other than an id.
+
+    Seen from the target's own page the other end is the *source*, which is
+    addressed by id — and the target is addressed by its url or its login,
+    not by the id the page is opened under. Getting either side wrong finds
+    no edge and the link cannot be removed at all.
+    """
+
+    URL = "https://github.com/org/repo"
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add("Publication", "W1", title="Статья")
+        self.graph.add("Repository", "R1", url=self.URL, name="repo")
+        self.graph.add("GitHubProfile", "G1", login="octocat")
+        self.graph.relationships[
+            ("Publication", "MENTIONS_LINK", "Repository", "W1", self.URL)] = {}
+        self.graph.relationships[
+            ("Repository", "OWNED_BY", "GitHubProfile", "R1", "octocat")] = {}
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+
+    def form_on(self, label, node_id, triple):
+        """The unlink form the page renders for one edge, as it would be sent.
+
+        Picked by its triple: a node has several edges, and taking whichever
+        form comes first tests a different one than intended.
+        """
+        page = self.client.get(f"/nodes/{label}/{node_id}").text
+        for action, body in re.findall(
+                r'<form method="post" action="([^"]*rel/delete[^"]*)">(.*?)</form>', page, re.S):
+            fields = dict(re.findall(r'name="([^"]+)"\s+value="([^"]*)"', body, re.S))
+            if fields.get("triple") == triple:
+                return action, fields
+        raise AssertionError(f"на странице нет формы отвязывания для {triple}")
+
+    def test_the_form_offers_the_source_id_not_a_missing_property(self):
+        _, fields = self.form_on("Repository", "R1", "Publication|MENTIONS_LINK|Repository")
+        self.assertEqual(fields["other_id"], "W1")
+
+    def test_unlinking_a_url_matched_link_from_the_target(self):
+        action, fields = self.form_on("Repository", "R1", "Publication|MENTIONS_LINK|Repository")
+        response = self.client.post(action, data={**fields, "csrf": self.csrf})
+        self.assertEqual(response.status_code, 303)
+        self.assertNotIn(("Publication", "MENTIONS_LINK", "Repository", "W1", self.URL),
+                         self.graph.relationships)
+
+    def test_unlinking_a_login_matched_link_from_the_target(self):
+        action, fields = self.form_on("GitHubProfile", "G1", "Repository|OWNED_BY|GitHubProfile")
+        response = self.client.post(action, data={**fields, "csrf": self.csrf})
+        self.assertEqual(response.status_code, 303)
+        self.assertNotIn(("Repository", "OWNED_BY", "GitHubProfile", "R1", "octocat"),
+                         self.graph.relationships)
+
+    def test_the_decision_names_the_edge_the_way_the_loader_does(self):
+        action, fields = self.form_on("Repository", "R1", "Publication|MENTIONS_LINK|Repository")
+        self.client.post(action, data={**fields, "csrf": self.csrf})
+        self.assertEqual(
+            tombstoned_relationships(self.db),
+            {("Publication", "MENTIONS_LINK", "Repository", "W1", self.URL)})
+
+    def test_an_empty_match_field_is_refused_rather_than_silently_missing(self):
+        # Posted straight at the route rather than read off the page: the
+        # graph keeps the edge on the node itself, while the double here
+        # stores it against the match value, so clearing `url` hides the
+        # row in the double although a real graph would still show it.
+        self.graph.nodes[("Repository", "R1")]["url"] = None
+        response = self.client.post("/nodes/Repository/rel/delete/R1", data={
+            "csrf": self.csrf, "triple": "Publication|MENTIONS_LINK|Repository",
+            "other_id": "W1"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("url", response.json()["detail"])
+
+
+class UnaddressableIdTest(unittest.TestCase):
+    """An id the panel could create and then never open again."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+
+    def create(self, node_id):
+        return self.client.post("/nodes/Person/new",
+                                data={"csrf": self.csrf, "id": node_id, "name_ru": "Иван"})
+
+    def test_a_line_break_is_refused(self):
+        self.assertEqual(self.create("A1\nвторая строка").status_code, 400)
+        self.assertEqual(self.graph.nodes, {})
+
+    def test_a_tab_is_refused(self):
+        self.assertEqual(self.create("A1\tX").status_code, 400)
+
+    def test_an_ordinary_id_still_works(self):
+        self.assertEqual(self.create("A1").status_code, 303)
+        self.assertIn(("Person", "A1"), self.graph.nodes)
+
+    def test_a_url_is_still_a_fine_id(self):
+        # LinkCandidate ids are addresses; only control characters are out.
+        response = self.client.post(
+            "/nodes/LinkCandidate/new",
+            data={"csrf": self.csrf, "id": "https://a.example/b?c=1", "url": "https://a.example/b"})
+        self.assertEqual(response.status_code, 303)

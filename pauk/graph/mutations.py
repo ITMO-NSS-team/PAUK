@@ -225,16 +225,26 @@ def node_relationships(client: Neo4jClient, label: str, node_id: str) -> list[di
     relationship. Usually its id, but a Repository is matched by `url` and
     a GitHubProfile by `login`, and an edge cannot be removed without the
     right one — the id simply finds nothing.
+
+    `match_prop` belongs to the *target* of the triple, so it only applies
+    to the other end when the edge leaves this node. On an incoming edge
+    the other end is the source, and a source is always addressed by its
+    id — reading the target's property off it gave None, and the panel sent
+    the string "None" back as the id to unlink.
     """
     validate_label(label)
     rows = client.fetch_node_relationships(label, node_id)
     for row in rows:
         other = row["labels"][0]
-        triple = (label, row["type"], other) if row["outgoing"] else (other, row["type"], label)
+        outgoing = row["outgoing"]
+        triple = (label, row["type"], other) if outgoing else (other, row["type"], label)
         match_prop = RELATIONSHIPS.get(triple, "id")
         props = row.get("other_props") or {}
         row["match_prop"] = match_prop
-        row["match_value"] = row["other_id"] if match_prop == "id" else props.get(match_prop)
+        if not outgoing or match_prop == "id":
+            row["match_value"] = row["other_id"]
+        else:
+            row["match_value"] = props.get(match_prop)
     return rows
 
 
