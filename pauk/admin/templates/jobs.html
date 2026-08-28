@@ -13,69 +13,110 @@
 {% if user.can_run %}
 <div class="card" style="margin-bottom:20px">
   <b>Запустить</b>
-  <p class="muted" style="margin:6px 0 14px">
+  <p class="muted" style="margin:6px 0 16px">
     Прогон начнётся, когда до него дойдёт воркер. Пока идёт задача над графом,
     остальные ждут своей очереди.
   </p>
 
-  <form method="post" action="/jobs" class="row" style="margin-bottom:14px">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <input type="hidden" name="kind" value="publish">
-    <div class="grow">
-      <label for="group">Опубликовать группу</label>
-      {# Только группы, у которых есть подготовленные строки: публикация
-         несуществующей загрузит ноль строк и выглядит как поломка. #}
-      <select id="group" name="group" required>
-        {% for name in groups %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
-      </select>
+  <div class="task">
+    <div class="what">
+      <b>Найти новые публикации</b>
+      <p class="muted">Забирает работы из OpenAlex и достаёт из них авторов,
+        организации и ссылки на код. В граф пока ничего не попадёт.</p>
     </div>
-    <div><label>&nbsp;</label>
-      <button type="submit" {% if not groups %}disabled{% endif %}>Опубликовать</button></div>
-  </form>
-  {% if not groups %}
-  <p class="muted" style="margin:-8px 0 14px">
-    Публиковать нечего: подготовленных строк ни в одной группе нет.
-  </p>
-  {% endif %}
+    <form method="post" action="/jobs" class="row">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="kind" value="collect">
+      <div>
+        <label for="date_from">за период с</label>
+        <input type="date" id="date_from" name="date_from" max="{{ today }}" required>
+      </div>
+      <div>
+        <label for="date_to">по</label>
+        <input type="date" id="date_to" name="date_to" max="{{ today }}" required>
+      </div>
+      <div><label>&nbsp;</label><button type="submit">Найти</button></div>
+    </form>
+  </div>
 
-  <form method="post" action="/jobs" class="row" style="margin-bottom:14px">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <input type="hidden" name="kind" value="collect">
-    <div>
-      <label for="work_id">Собрать одну работу</label>
-      <input type="text" id="work_id" name="work_id" placeholder="W2741809807">
+  <div class="task">
+    <div class="what">
+      <b>Добавить одну публикацию</b>
+      <p class="muted">То же самое, но для одной работы по её идентификатору
+        в OpenAlex.</p>
     </div>
-    <div>
-      <label for="date_from">или период с</label>
-      <input type="date" id="date_from" name="date_from" max="{{ today }}">
-    </div>
-    <div>
-      <label for="date_to">по</label>
-      <input type="date" id="date_to" name="date_to" max="{{ today }}">
-    </div>
-    <div><label>&nbsp;</label><button type="submit">Собрать</button></div>
-  </form>
+    <form method="post" action="/jobs" class="row">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="kind" value="collect">
+      <div class="grow">
+        <label for="work_id">идентификатор работы</label>
+        <input type="text" id="work_id" name="work_id" placeholder="W2741809807" required>
+      </div>
+      <div><label>&nbsp;</label><button type="submit">Добавить</button></div>
+    </form>
+  </div>
 
-  <form method="post" action="/jobs" class="row" style="margin-bottom:0">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <input type="hidden" name="kind" value="map">
-    <div>
-      <label for="seed">Пересобрать карту, seed</label>
+  <div class="task">
+    <div class="what">
+      <b>Выложить найденное в граф</b>
+      <p class="muted">Переносит уже собранные данные в Neo4j, чтобы они
+        появились на карте и в поиске. Ручные правки после этого
+        применяются заново.</p>
+    </div>
+    <form method="post" action="/jobs" class="row">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="kind" value="publish">
+      <div class="grow">
+        <label for="group">какую порцию</label>
+        {# Только группы с подготовленными строками: публикация пустой
+           загрузит ноль строк и выглядит как поломка. #}
+        <select id="group" name="group" required>
+          {% for name in groups %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div><label>&nbsp;</label>
+        <button type="submit" {% if not groups %}disabled{% endif %}>Выложить</button></div>
+    </form>
+    {% if not groups %}
+    <p class="muted">Выкладывать нечего: собранных данных ещё нет.
+      Начните с поиска публикаций.</p>
+    {% endif %}
+  </div>
+
+  <div class="task">
+    <div class="what">
+      <b>Склеить одинаковых людей и работы</b>
+      <p class="muted">Один и тот же человек приходит из разных источников
+        под разными написаниями имени. Эта задача находит такие пары по
+        всему графу и оставляет одну запись вместо нескольких.</p>
+    </div>
+    <form method="post" action="/jobs">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="kind" value="dedup">
+      <button type="submit">Склеить</button>
+    </form>
+  </div>
+
+  <div class="task" style="border-bottom:none; padding-bottom:0">
+    <div class="what">
+      <b>Обновить карту</b>
+      <p class="muted">Пересобирает файлы, из которых рисуется карта.
+        Делать после того, как выложили новое в граф, иначе карта показывает
+        старое.</p>
+    </div>
+    <form method="post" action="/jobs" class="row">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="kind" value="map">
+      <div style="align-self:center">
+        <label for="public"><input type="checkbox" id="public" name="public">
+          версия без имён и контактов</label>
+      </div>
       {# Один и тот же seed даёт ту же раскладку: люди ориентируются по
          форме карты, и новая при каждой пересборке была бы другой картой. #}
-      <input type="number" id="seed" name="seed" value="42" style="width:90px">
-    </div>
-    <div style="align-self:center">
-      <label for="public"><input type="checkbox" id="public" name="public"> без персональных полей</label>
-    </div>
-    <div><label>&nbsp;</label><button type="submit">Пересобрать</button></div>
-  </form>
-
-  <form method="post" action="/jobs" style="margin-top:14px">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <input type="hidden" name="kind" value="dedup">
-    <button type="submit" class="ghost">Свести дубли по всему графу</button>
-  </form>
+      <input type="hidden" name="seed" value="42">
+      <div><button type="submit">Обновить</button></div>
+    </form>
+  </div>
 </div>
 {% endif %}
 

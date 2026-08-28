@@ -226,3 +226,9 @@ select {
 .filters { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 18px; }
 .filters .pick { flex: 1 1 150px; min-width: 130px; }
 .filters .id { flex: 2 1 260px; }
+
+/* Одна задача на странице задач: слева что это и зачем, справа поля. */
+.task { border-bottom: 1px solid var(--border); padding: 14px 0; }
+.task:first-of-type { padding-top: 0; }
+.task .what { margin-bottom: 10px; }
+.task .what p { margin: 4px 0 0; max-width: 62ch; }
