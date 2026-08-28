@@ -16,6 +16,9 @@ way to create one from the browser.
 from __future__ import annotations
 
 import logging
+import threading
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import quote
@@ -58,11 +61,18 @@ class _LazyGraph:
 
     def __init__(self, config: Settings, db) -> None:
         self._config, self._db, self._shared = config, db, None
+        # Routes are sync, so they run in a threadpool and the first two
+        # requests really do arrive together. Without the lock both see no
+        # driver, both build one, and the loser's connection pool is left
+        # open with nothing holding it.
+        self._lock = threading.Lock()
 
     def audited(self, **who):
         if self._shared is None:
-            self._shared = SharedGraph(self._config, self._db,
-                                       connection_timeout=COUNT_TIMEOUT, retry_time=0)
+            with self._lock:
+                if self._shared is None:
+                    self._shared = SharedGraph(self._config, self._db,
+                                               connection_timeout=COUNT_TIMEOUT, retry_time=0)
         return self._shared.audited(**who)
 
     def close(self) -> None:
@@ -71,7 +81,20 @@ class _LazyGraph:
             self._shared = None
 
 
-def _node_counts(config: Settings, db, graph=None) -> dict[str, int] | None:
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Hand the driver back when the service stops.
+
+    One driver serves the whole panel and no caller closes it — that is the
+    point of sharing it. Which leaves exactly one place where it has to be
+    closed, and this is it: without this the pool outlives the application
+    object, and a reload leaves the previous one holding its connections.
+    """
+    yield
+    app.state.graph.close()
+
+
+def _node_counts(graph: _LazyGraph) -> dict[str, int] | None:
     """How many nodes of each label there are, or None if the graph is silent.
 
     The count is a nicety on an overview page, so the driver is told to
@@ -81,10 +104,10 @@ def _node_counts(config: Settings, db, graph=None) -> dict[str, int] | None:
     stays unreachable — the driver backs off for tens of seconds.
     """
     try:
-        # Тот же общий драйвер, что и у остальных страниц: обзор открывал
-        # себе второй, и заход на главную стоил двух пулов соединений.
+        # The same shared driver every other page uses: the overview used to
+        # open a second one, so landing on the front page cost two pools.
         return count_nodes(graph.audited(actor="panel", source="admin-ui"))
-    except Exception as error:  # noqa: BLE001 — the overview works without a graph
+    except Exception as error:  # the overview works without a graph
         logger.info("overview without counts: %s", error)
         return None
 
@@ -110,11 +133,12 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
             settings otherwise.
     """
     config = config or Settings()
-    app = FastAPI(title="PAUK admin", docs_url=None, redoc_url=None)
+    app = FastAPI(title="PAUK admin", docs_url=None, redoc_url=None, lifespan=_lifespan)
     app.state.config = config
     app.state.db = db if db is not None else get_mongo_client(config)[config.mongo_db]
-    # Один драйвер на сервис. Открывается лениво: панель должна стартовать
-    # и без графа — вход и учётные записи живут в Mongo.
+    # One driver for the whole service, opened lazily: the panel has to
+    # start without a graph, since signing in and the accounts live in
+    # Mongo. `_lifespan` closes it when the service stops.
     app.state.graph = _LazyGraph(config, app.state.db)
 
     @app.exception_handler(status.HTTP_401_UNAUTHORIZED)
@@ -188,7 +212,7 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request, user: CurrentUser, session: Session):
-        counts = _node_counts(config, app.state.db, app.state.graph)
+        counts = _node_counts(app.state.graph)
         labels = [(label, len(NODE_FIELDS[label]), (counts or {}).get(label))
                   for label in sorted(NODE_FIELDS)]
         return templates.TemplateResponse(request, "index.html", {
@@ -197,9 +221,10 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
 
     app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
-    # Версия стиля — время его последней правки. Браузер держит CSS в кеше
-    # цепко, и правка вёрстки могла не доехать до открытой вкладки: шапка
-    # и фильтры оставались в прежней раскладке, хотя файл уже другой.
+    # The stylesheet's version is its own mtime. Browsers hold CSS in cache
+    # firmly, and a layout fix could fail to reach an open tab: the header
+    # and the filters stayed in the old arrangement although the file had
+    # already changed.
     def stylesheet() -> str:
         css = Path(__file__).parent / "static" / "panel.css"
         return f"/static/panel.css?v={int(css.stat().st_mtime) if css.is_file() else 0}"

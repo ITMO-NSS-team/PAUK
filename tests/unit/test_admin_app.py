@@ -1,8 +1,11 @@
+import threading
 import unittest
+from unittest.mock import patch
 
 import mongomock
 from fastapi.testclient import TestClient
 
+from pauk.admin import app as app_module
 from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user, set_active
 from pauk.settings import Settings
@@ -365,3 +368,61 @@ class StylesheetVersionTest(unittest.TestCase):
         client.post("/login", data={"login": "roman", "password": "hunter2"})
         after = re.search(r'\?v=(\d+)', client.get("/").text).group(1)
         self.assertNotEqual(before, after)
+
+
+class SharedDriverTest(unittest.TestCase):
+    """One driver for the service, opened once and closed once.
+
+    Routes are sync, so FastAPI runs them in a threadpool and the first
+    requests really do arrive together: without a lock each of them built
+    its own driver and every loser's connection pool stayed open with
+    nothing holding it. And nothing closed the survivor either — the
+    wrappers deliberately do not, which leaves exactly one place that must.
+    """
+
+    def setUp(self):
+        self.built, self.closed = [], []
+        test = self
+
+        class RecordingShared:
+            def __init__(self, *args, **kwargs):
+                test.built.append(self)
+
+            def audited(self, **who):
+                return object()
+
+            def close(self):
+                test.closed.append(self)
+
+        self.patch = patch.object(app_module, "SharedGraph", RecordingShared)
+        self.patch.start()
+        self.addCleanup(self.patch.stop)
+
+    def test_only_one_driver_is_built_under_a_burst(self):
+        lazy = app_module._LazyGraph(Settings(), None)
+        start = threading.Barrier(8)
+
+        def hit():
+            start.wait()
+            lazy.audited(actor="user:roman", source="admin-ui")
+
+        threads = [threading.Thread(target=hit) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(len(self.built), 1)
+
+    def test_the_driver_is_closed_when_the_service_stops(self):
+        db = mongomock.MongoClient()["pauk_test"]
+        application = build(Settings(), db)
+        application.state.graph.audited(actor="user:roman", source="admin-ui")
+        with TestClient(application):
+            pass
+        self.assertEqual(len(self.closed), 1)
+
+    def test_stopping_without_ever_touching_the_graph_is_fine(self):
+        db = mongomock.MongoClient()["pauk_test"]
+        with TestClient(build(Settings(), db)):
+            pass
+        self.assertEqual(self.built, [])
