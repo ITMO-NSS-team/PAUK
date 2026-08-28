@@ -38,6 +38,16 @@ SESSIONS = "admin_sessions"
 COOKIE = "pauk_admin"
 SESSION_HOURS = 12
 
+ATTEMPTS = "admin_login_attempts"
+
+# Failed logins tolerated before an account stops answering, and for how
+# long. Counted per login rather than per address: the panel sits behind a
+# VPN and often behind one proxy, so addresses say little, while the thing
+# worth protecting is the account. The lock is short on purpose — it costs
+# an attacker their guessing rate and costs the owner one coffee break.
+MAX_FAILURES = 30
+LOCKOUT_MINUTES = 15
+
 # scrypt cost. n=2**14 keeps a single hash near a hundred milliseconds on a
 # laptop — slow enough to make guessing expensive, fast enough that a login
 # form still feels instant.
@@ -49,6 +59,10 @@ CAN_WRITE = frozenset({"admin", "editor"})
 
 class AuthError(Exception):
     """Login refused. Deliberately says nothing about which half was wrong."""
+
+
+class TooManyAttempts(AuthError):
+    """The account is locked for a while after too many failures."""
 
 
 def _now() -> datetime:
@@ -68,6 +82,24 @@ def hash_password(password: str) -> str:
     salt = secrets.token_bytes(_SALT)
     derived = hashlib.scrypt(password.encode(), salt=salt, n=_N, r=_R, p=_P, dklen=_KEY)
     return f"scrypt${salt.hex()}${derived.hex()}"
+
+
+_placeholder: str | None = None
+
+
+def _placeholder_hash() -> str:
+    """A hash to check a made-up password against, derived once.
+
+    Deriving a fresh one per call cost a second scrypt, so a login that
+    does not exist answered about twice as slowly as one that does — the
+    opposite of the intent, and just as good a way to tell them apart.
+    Lazy rather than at import: `pauk.admin.auth` is pulled in by every
+    `pauk` command, and none of the others should pay for a key derivation.
+    """
+    global _placeholder
+    if _placeholder is None:
+        _placeholder = hash_password(secrets.token_urlsafe(16))
+    return _placeholder
 
 
 def verify_password(password: str, stored: str) -> bool:
@@ -146,15 +178,72 @@ def authenticate(db: Database, login: str, password: str) -> User:
             disabled. The message is the same for all three on purpose —
             telling an attacker which logins exist is free information.
     """
-    row = db[USERS].find_one({"_id": login.strip().lower()})
+    login = login.strip().lower()
+    _refuse_while_locked(db, login)
+    row = db[USERS].find_one({"_id": login})
     if row is None or not row.get("active", False):
-        # Hash anyway, so a missing user does not answer measurably faster
-        # than a wrong password and become a way to enumerate logins.
-        verify_password(password, hash_password("placeholder"))
+        # Verify anyway, against a stand-in, so a missing user takes the
+        # same one key derivation as a wrong password and the two cannot be
+        # told apart by how long the answer took.
+        verify_password(password, _placeholder_hash())
+        _count_failure(db, login)
         raise AuthError("wrong login or password")
     if not verify_password(password, row["password_hash"]):
+        _count_failure(db, login)
         raise AuthError("wrong login or password")
+    db[ATTEMPTS].delete_one({"_id": login})
     return User(login=row["_id"], role=row.get("role", "viewer"))
+
+
+def _refuse_while_locked(db: Database, login: str) -> None:
+    """Raise if this login is inside its lockout.
+
+    Raises:
+        TooManyAttempts: The lock is still on. The wait is stated: it is
+            not a secret, and a person who mistyped their password needs to
+            know whether to wait or to ask for help.
+    """
+    row = db[ATTEMPTS].find_one({"_id": login})
+    if row is None:
+        return
+    until = row.get("locked_until")
+    if until is None:
+        return
+    if _aware(until) <= _now():
+        db[ATTEMPTS].delete_one({"_id": login})
+        return
+    minutes = max(int((_aware(until) - _now()).total_seconds() // 60) + 1, 1)
+    raise TooManyAttempts(f"too many failed attempts; try again in {minutes} min")
+
+
+def _count_failure(db: Database, login: str) -> None:
+    """Record one failure, locking the account once there are enough.
+
+    The window slides from the first failure of a run: thirty typos spread
+    over a working day are somebody forgetting a password, while thirty in
+    a quarter of an hour are not a person typing.
+    """
+    now = _now()
+    row = db[ATTEMPTS].find_one({"_id": login})
+    if row is None or _aware(row.get("first_at", now)) + timedelta(minutes=LOCKOUT_MINUTES) < now:
+        db[ATTEMPTS].replace_one({"_id": login},
+                                 {"_id": login, "failures": 1, "first_at": now}, upsert=True)
+        return
+    failures = row.get("failures", 0) + 1
+    update: dict = {"$set": {"failures": failures}}
+    if failures >= MAX_FAILURES:
+        update["$set"]["locked_until"] = now + timedelta(minutes=LOCKOUT_MINUTES)
+        logger.warning("login %s locked after %d failed attempts", login, failures)
+    db[ATTEMPTS].update_one({"_id": login}, update)
+
+
+def _aware(moment: datetime) -> datetime:
+    """A stored time with a timezone on it.
+
+    pymongo hands datetimes back naive, in UTC; comparing one with an aware
+    `_now()` raises instead of answering.
+    """
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
 
 
 def open_session(db: Database, user: User) -> str:
@@ -189,7 +278,7 @@ def read_session(db: Database, token: str | None) -> dict | None:
     if row is None:
         return None
     expires = row.get("expires_at")
-    if expires is not None and expires.replace(tzinfo=expires.tzinfo or UTC) < _now():
+    if expires is not None and _aware(expires) < _now():
         db[SESSIONS].delete_one({"_id": token})
         return None
     # The account may have been disabled after the session was opened.

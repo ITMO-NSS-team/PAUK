@@ -1,8 +1,11 @@
+import statistics
+import time
 import unittest
 from datetime import UTC, datetime, timedelta
 
 import mongomock
 
+from pauk.admin import auth
 from pauk.admin.auth import (
     SESSIONS,
     USERS,
@@ -161,3 +164,99 @@ class SessionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LoginTimingTest(unittest.TestCase):
+    """A login that does not exist must not answer at a different speed.
+
+    Deriving a throwaway hash per call cost a second scrypt, so a missing
+    account answered about twice as slowly as a wrong password — which
+    tells an attacker which logins are real just as plainly as an error
+    message would.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2")
+        auth._placeholder = None
+
+    def measure(self, login, password, runs=7):
+        timings = []
+        for _ in range(runs):
+            self.db[auth.ATTEMPTS].delete_many({})
+            started = time.perf_counter()
+            with self.assertRaises(AuthError):
+                authenticate(self.db, login, password)
+            timings.append(time.perf_counter() - started)
+        return statistics.median(timings)
+
+    def test_a_missing_login_takes_about_as_long_as_a_wrong_password(self):
+        authenticate(self.db, "roman", "hunter2")  # warm the placeholder up
+        wrong = self.measure("roman", "nope")
+        absent = self.measure("nobody-here", "nope")
+        self.assertLess(absent / wrong, 1.4, "время ответа выдаёт, есть ли такой логин")
+
+    def test_the_placeholder_is_derived_once(self):
+        auth._placeholder = None
+        with self.assertRaises(AuthError):
+            authenticate(self.db, "nobody-here", "nope")
+        first = auth._placeholder
+        with self.assertRaises(AuthError):
+            authenticate(self.db, "nobody-here", "nope")
+        self.assertIs(auth._placeholder, first)
+
+
+class LockoutTest(unittest.TestCase):
+    """Guessing has to cost something, or scrypt is just a speed bump."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2")
+
+    def fail(self, times):
+        for _ in range(times):
+            with self.assertRaises(AuthError):
+                authenticate(self.db, "roman", "nope")
+
+    def test_the_right_password_still_works_below_the_limit(self):
+        self.fail(auth.MAX_FAILURES - 1)
+        self.assertEqual(authenticate(self.db, "roman", "hunter2").login, "roman")
+
+    def test_the_account_locks_at_the_limit(self):
+        self.fail(auth.MAX_FAILURES)
+        with self.assertRaises(auth.TooManyAttempts):
+            authenticate(self.db, "roman", "hunter2")
+
+    def test_signing_in_clears_the_count(self):
+        self.fail(auth.MAX_FAILURES - 1)
+        authenticate(self.db, "roman", "hunter2")
+        self.assertIsNone(self.db[auth.ATTEMPTS].find_one({"_id": "roman"}))
+
+    def test_the_lock_lifts_when_it_expires(self):
+        self.fail(auth.MAX_FAILURES)
+        past = datetime.now(UTC) - timedelta(minutes=1)
+        self.db[auth.ATTEMPTS].update_one({"_id": "roman"},
+                                          {"$set": {"locked_until": past}})
+        self.assertEqual(authenticate(self.db, "roman", "hunter2").login, "roman")
+
+    def test_a_stored_time_without_a_zone_does_not_raise(self):
+        # pymongo hands datetimes back naive; comparing one with an aware
+        # now() is a TypeError, not a refusal.
+        self.fail(auth.MAX_FAILURES)
+        naive = datetime.now(UTC).replace(tzinfo=None) + timedelta(minutes=5)
+        self.db[auth.ATTEMPTS].update_one({"_id": "roman"},
+                                          {"$set": {"locked_until": naive}})
+        with self.assertRaises(auth.TooManyAttempts):
+            authenticate(self.db, "roman", "hunter2")
+
+    def test_failures_spread_out_do_not_add_up(self):
+        self.fail(auth.MAX_FAILURES - 1)
+        long_ago = datetime.now(UTC) - timedelta(minutes=auth.LOCKOUT_MINUTES + 1)
+        self.db[auth.ATTEMPTS].update_one({"_id": "roman"}, {"$set": {"first_at": long_ago}})
+        self.fail(1)
+        self.assertEqual(authenticate(self.db, "roman", "hunter2").login, "roman")
+
+    def test_one_account_locking_leaves_another_alone(self):
+        create_user(self.db, "petrov", "hunter2")
+        self.fail(auth.MAX_FAILURES)
+        self.assertEqual(authenticate(self.db, "petrov", "hunter2").login, "petrov")
