@@ -36,13 +36,19 @@ def in_force(request: Request, user: CurrentUser, session: Session, db: Db,
     """
     page = max(page, 1)
     skip = (page - 1) * decisions.PAGE
-    total, disputed = decisions.count_in_force(db), decisions.count_conflicts(db)
+    total = decisions.count_in_force(db)
+    # Walked once, not twice. Both tabs show how many disagreements there
+    # are, and finding out means comparing every decision against what the
+    # source said next — so the page used to do that whole pass for the
+    # number and then again for the rows.
+    disputed_rows = decisions.conflicts(db, limit=None)
+    disputed = len(disputed_rows)
     shown = disputed if tab == "conflicts" else total
     return templates.TemplateResponse(request, "overrides.html", {
         "user": user, "csrf": session["csrf"], "tab": tab, "page": page,
         "pages": max((shown + decisions.PAGE - 1) // decisions.PAGE, 1),
         "rows": decisions.in_force(db, skip=skip) if tab != "conflicts" else [],
-        "conflicts": decisions.conflicts(db, skip=skip) if tab == "conflicts" else [],
+        "conflicts": disputed_rows[skip:skip + decisions.PAGE] if tab == "conflicts" else [],
         "total": total, "disputed": disputed})
 
 

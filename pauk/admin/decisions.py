@@ -74,7 +74,7 @@ def in_force(db: Database, limit: int = PAGE, skip: int = 0) -> list[dict]:
     return rows
 
 
-def conflicts(db: Database, limit: int = PAGE, skip: int = 0) -> list[dict]:
+def conflicts(db: Database, limit: int | None = PAGE, skip: int = 0) -> list[dict]:
     """Fields where the source now says something other than it used to.
 
     For every hand-edited field, the feed is searched for a later write
@@ -82,15 +82,24 @@ def conflicts(db: Database, limit: int = PAGE, skip: int = 0) -> list[dict]:
     from `auto_value`, the pipeline has changed its mind about the field
     and the person's edit is now hiding a fact rather than a mistake.
 
+    Args:
+        db: Mongo database.
+        limit: Rows to return; None for all of them, which is how the page
+            gets its own count without walking every decision a second
+            time.
+        skip: Rows to skip, for paging.
+
     Returns:
         One row per field in disagreement: the decision it belongs to,
         what a person set, what the source used to say, what it says now,
         and who wrote that.
     """
+    edits = [row for row in active_overrides(db)
+             if row.get("kind") != "rel" and row.get("op") == SET]
+    writes = _source_writes(db, edits)
+
     found = []
-    for row in active_overrides(db):
-        if row.get("kind") == "rel" or row.get("op") != SET:
-            continue
+    for row in edits:
         auto = row.get("auto_value") or {}
         since = row.get("created_at")
         stated = row.get("source_value") or {}
@@ -100,8 +109,8 @@ def conflicts(db: Database, limit: int = PAGE, skip: int = 0) -> list[dict]:
                 # value up — the source's own word, without inference.
                 value, actor, when = stated[name], "pipeline", _moment(row.get("updated_at"))
             else:
-                latest = _last_source_write(db, row["label"], row["target_id"], name, since)
-                if latest is None:
+                latest = writes.get((row["label"], row["target_id"], name))
+                if latest is None or (since is not None and latest[2] <= _moment(since)):
                     continue
                 value, actor, when = latest
             if value == auto.get(name):
@@ -117,27 +126,66 @@ def conflicts(db: Database, limit: int = PAGE, skip: int = 0) -> list[dict]:
     # A space sorts before "T", so mixing them sent every decision-sourced
     # row to the bottom regardless of when it happened.
     found.sort(key=lambda row: row["when"], reverse=True)
+    if limit is None:
+        return found[skip:]
     return found[skip:skip + limit]
 
 
-def _last_source_write(db: Database, label: str, node_id: str, field: str,
-                       since) -> tuple[object, str, str] | None:
-    """The most recent non-panel write to one field, or None."""
-    query: dict = {"entity_type": label, "entity_id": node_id,
-                   "source": {"$ne": PANEL}, f"diff.{field}": {"$exists": True}}
-    if since is not None:
-        query["timestamp"] = {"$gt": since.isoformat() if hasattr(since, "isoformat") else since}
-    row = db[feed.COLLECTION].find_one(query, sort=[("timestamp", -1)])
-    if row is None:
-        return None
-    pair = (row.get("diff") or {}).get(field)
-    if not pair:
-        return None
-    return pair[1], row.get("actor", "?"), row.get("timestamp", "")
+def _source_writes(db: Database, edits: list[dict]) -> dict[tuple[str, str, str], tuple]:
+    """The latest non-panel write to each hand-edited field, in one query.
+
+    Asked one decision at a time this was a round trip per field, so a page
+    listing fifty decisions cost hundreds of them and grew with every edit
+    anybody ever made. The entities are known up front, so they are fetched
+    together and the newest write per field is picked while walking the
+    result.
+
+    Returns:
+        (label, node_id, field) -> (value now, who wrote it, when).
+    """
+    if not edits:
+        return {}
+    wanted = {(row["label"], row["target_id"]) for row in edits}
+    # Only the fields somebody edited by hand; a node's other fields move
+    # all the time and say nothing about a decision.
+    fields = {name for row in edits for name in (row.get("fields") or {})}
+    rows = db[feed.COLLECTION].find(
+        {"entity_type": {"$in": sorted({label for label, _ in wanted})},
+         "entity_id": {"$in": sorted({node_id for _, node_id in wanted})},
+         "source": {"$ne": PANEL}},
+        {"entity_type": True, "entity_id": True, "timestamp": True,
+         "actor": True, "diff": True})
+
+    # The newest per field is kept while walking, rather than asking the
+    # database to sort: a sort across several entities cannot lean on the
+    # (entity_type, entity_id, timestamp) index, and Mongo gives up on an
+    # in-memory sort past 32 MB. One pass needs neither.
+    latest: dict[tuple[str, str, str], tuple] = {}
+    for entry in rows:
+        entity = (entry.get("entity_type"), entry.get("entity_id"))
+        if entity not in wanted:
+            # The two $in lists cross more pairs than exist: a label from
+            # one decision and an id from another match nothing real.
+            continue
+        when = entry.get("timestamp", "")
+        for name, pair in (entry.get("diff") or {}).items():
+            if name not in fields or not pair:
+                continue
+            key = (*entity, name)
+            if key not in latest or when > latest[key][2]:
+                latest[key] = (pair[1], entry.get("actor", "?"), when)
+    return latest
 
 
 def count_conflicts(db: Database) -> int:
-    return len(conflicts(db, limit=10_000))
+    """How many disagreements there are in total.
+
+    There is no cheaper way than looking: a conflict is a comparison
+    between a decision and what the source said afterwards, not a flag on a
+    document. So a page that needs both the number and a slice should call
+    `conflicts(db, limit=None)` once and use its length, rather than this.
+    """
+    return len(conflicts(db, limit=None))
 
 
 def count_in_force(db: Database) -> int:
@@ -147,10 +195,11 @@ def count_in_force(db: Database) -> int:
 def deleted_fields(db: Database, label: str, node_id: str) -> dict:
     """What a deleted record held, for putting it back.
 
-    Read from the decision itself: it carries a snapshot taken before the
-    delete. The feed is only a fallback for records deleted before
-    snapshots existed — it stores history rather than state, and a bulk
-    operation lands there as a summary with no fields at all.
+    Read from the decision itself: both the panel and `pauk admin node
+    delete` take a snapshot before removing the node. The feed is only a
+    fallback, for records deleted before snapshots existed — it stores
+    history rather than state, and a bulk operation lands there as a
+    summary with no fields at all.
     """
     row = db[COLLECTION].find_one({"_id": f"node:{label}:{node_id}", "op": "delete"})
     if row and row.get("snapshot"):
