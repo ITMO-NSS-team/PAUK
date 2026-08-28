@@ -22,6 +22,8 @@ from datetime import date
 
 from pymongo.database import Database
 
+from pauk.jobs.locks import held
+from pauk.jobs.models import GRAPH
 from pauk.models import Authorship, Person
 from pauk.pipeline.normalize import _merge_person
 from pauk.pipeline.stages.dedup import (
@@ -387,7 +389,20 @@ def dedup_graph_repositories(client) -> tuple[int, list[dict]]:
 def run_graph_dedup(config: Settings, mongo_db: Database) -> dict[str, int]:
     """CLI entry point for `pauk dedup graph`: persons, publications and
     repositories deduplicated across every published group, with one
-    combined review journal in the cache directory."""
+    combined review journal in the cache directory.
+
+    Holds the graph for the whole run, like a publish does: folding
+    duplicates while another run is writing the same nodes would move
+    relationships onto a node that is being rewritten underneath.
+
+    Raises:
+        Busy: Something else is already writing the graph.
+    """
+    with held(mongo_db, GRAPH):
+        return _dedup_locked(config, mongo_db)
+
+
+def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
     client = audited_client(config, mongo_db)
     try:
         config.cache_dir.mkdir(parents=True, exist_ok=True)

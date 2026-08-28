@@ -7,6 +7,7 @@ from pathlib import Path
 from pymongo.errors import ServerSelectionTimeoutError
 
 from pauk.admin import cli as admin_cli
+from pauk.jobs.locks import Busy
 from pauk.logging import configure_logging
 from pauk.pipeline.collect import Collector
 from pauk.pipeline.enrich import Enricher
@@ -125,7 +126,13 @@ def main() -> None:
             else:
                 from pauk.graph.load import load_jsonl_group
                 group = validate_group(args.group)
-                load_jsonl_group(settings, db, group)
+                try:
+                    load_jsonl_group(settings, db, group)
+                except Busy as error:
+                    # Not a crash: something else is writing the graph right
+                    # now, and the right answer is to wait rather than to
+                    # read a stack trace about it.
+                    raise SystemExit(str(error)) from None
                 logger.info("publish graph %s: done", group)
         finally:
             mongo.close()
@@ -160,7 +167,10 @@ def main() -> None:
         try:
             db = mongo[settings.mongo_db]
             ensure_indexes(db)
-            _log_result("dedup graph", None, run_graph_dedup(settings, db))
+            try:
+                _log_result("dedup graph", None, run_graph_dedup(settings, db))
+            except Busy as error:
+                raise SystemExit(str(error)) from None
         finally:
             mongo.close()
     else:

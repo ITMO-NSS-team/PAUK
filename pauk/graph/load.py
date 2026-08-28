@@ -6,6 +6,8 @@ from pathlib import Path
 
 from pymongo.database import Database
 
+from pauk.jobs.locks import held
+from pauk.jobs.models import GRAPH
 from pauk.settings import Settings, settings
 from pauk.storage import PreparedStore
 
@@ -68,10 +70,29 @@ def _drop_tombstoned(rows_by_file: dict[str, list[dict]], mongo_db: Database) ->
 def load_jsonl_group(config: Settings, mongo_db: Database, group: str) -> None:
     """Load one prepared group from Mongo into Neo4j. Used by `pauk publish graph`.
 
+    Takes the graph lock for the whole run. Two publishes at once interleave
+    their batches and reapply manual decisions against a half-written graph,
+    and the audit feed ends up describing changes in an order that never
+    happened.
+
     Args:
         config: Application settings (Neo4j connection).
         mongo_db: The raw/prepared MongoDB database.
         group: The group whose prepared rows to publish.
+
+    Raises:
+        Busy: Something else is already writing the graph.
+    """
+    with held(mongo_db, GRAPH):
+        _load_locked(config, mongo_db, group)
+
+
+def _load_locked(config: Settings, mongo_db: Database, group: str) -> None:
+    """The publish itself, with the graph already held.
+
+    Split out so the lock wraps the whole run rather than each step: a
+    second publish starting between the upload and apply_overrides would
+    reapply decisions against a graph that is still being written.
     """
     prepared = PreparedStore(mongo_db, group)
     rows_by_file = {
