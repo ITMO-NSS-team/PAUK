@@ -67,7 +67,7 @@ def _drop_tombstoned(rows_by_file: dict[str, list[dict]], mongo_db: Database) ->
     return filtered
 
 
-def load_jsonl_group(config: Settings, mongo_db: Database, group: str) -> None:
+def load_jsonl_group(config: Settings, mongo_db: Database, group: str) -> dict[str, int]:
     """Load one prepared group from Mongo into Neo4j. Used by `pauk publish graph`.
 
     Takes the graph lock for the whole run. Two publishes at once interleave
@@ -80,14 +80,19 @@ def load_jsonl_group(config: Settings, mongo_db: Database, group: str) -> None:
         mongo_db: The raw/prepared MongoDB database.
         group: The group whose prepared rows to publish.
 
+    Returns:
+        How many prepared rows went in per entity, and what the manual
+        decisions did afterwards. The loader itself reports its batches to
+        the log; these are the numbers a scheduled run has to hand back.
+
     Raises:
         Busy: Something else is already writing the graph.
     """
     with held(mongo_db, GRAPH):
-        _load_locked(config, mongo_db, group)
+        return _load_locked(config, mongo_db, group)
 
 
-def _load_locked(config: Settings, mongo_db: Database, group: str) -> None:
+def _load_locked(config: Settings, mongo_db: Database, group: str) -> dict[str, int]:
     """The publish itself, with the graph already held.
 
     Split out so the lock wraps the whole run rather than each step: a
@@ -116,9 +121,11 @@ def _load_locked(config: Settings, mongo_db: Database, group: str) -> None:
             # Last step, after candidate promotion and every fold: publishing
             # overwrites hand-corrected fields with whatever the source says,
             # so the manual decisions are put back on top.
-            apply_overrides(client, mongo_db)
+            counts = apply_overrides(client, mongo_db)
     finally:
         client.close()
+    return {f"rows_{filename.removesuffix('.jsonl')}": len(rows)
+            for filename, rows in rows_by_file.items()} | counts
 
 
 def main() -> None:
