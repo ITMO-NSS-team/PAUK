@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_change.html" as show %}
 {% block content %}
 <h1>Ручные решения</h1>
 
@@ -11,8 +12,8 @@
 <p class="note">Решение отменено, поле вернулось к значению источника.</p>
 {% elif undone %}
 <p class="note">Решение отменено.
-   {% if undone == "1" %}Если это было удаление, а записи не видно — журнал не помнит её полей;
-   она вернётся при следующей публикации, если пайплайн её знает.{% endif %}</p>
+   {% if undone == "1" %}Если это было удаление, а записи не видно, то журнал не помнит её полей.
+   Она вернётся при следующей публикации, если пайплайн её знает.{% endif %}</p>
 {% endif %}
 
 <div class="tabs">
@@ -23,11 +24,10 @@
 
 {% if tab == "conflicts" %}
   {% if not conflicts %}
-  <p class="muted">Расхождений нет: источник не спорит ни с одной ручной правкой.</p>
+  <p class="muted">Расхождений нет. Источник не спорит ни с одной ручной правкой.</p>
   {% else %}
   <p class="muted" style="margin:-8px 0 12px">
-    Здесь поля, где источник после правки начал говорить иначе, чем говорил до неё.
-    Правка держится поверх. Решать, чьё значение верно, приходится человеку.
+    Здесь поля, где источник после правки начал говорить иначе.
   </p>
   <div class="card">
     <table>
@@ -37,8 +37,8 @@
         <td class="val"><a href="/nodes/{{ row.label }}/{{ row.target_id | urlencode }}">{{ row.title }}</a></td>
         <td><b>{{ row.field }}</b></td>
         <td class="val">{{ row.ours if row.ours is not none else "—" }}</td>
-        <td class="val muted">{{ row.was if row.was is not none else "—" }}</td>
-        <td class="val">{{ row.now if row.now is not none else "—" }}</td>
+        <td class="val"><span class="was">{{ row.was if row.was is not none else "—" }}</span></td>
+        <td class="val"><span class="now">{{ row.now if row.now is not none else "—" }}</span></td>
         <td class="muted">{{ row.actor }}<br>{{ row.when[:19]|replace("T", " ") }}</td>
       </tr>
       {% endfor %}
@@ -60,10 +60,7 @@
         </td>
         <td>
           {{ row.what }}
-          {% for name, was, now in row.pairs %}
-          <div class="muted"><b>{{ name }}</b>:
-            {{ was if was is not none else "—" }} → {{ now if now is not none else "—" }}</div>
-          {% endfor %}
+          {% for name, was, now in row.pairs %}{{ show.change(name, was, now) }}{% endfor %}
         </td>
         <td>{{ row.actor }}{% if row.note %}<br><span class="muted">{{ row.note }}</span>{% endif %}</td>
         {% if user.can_write %}
@@ -95,9 +92,9 @@
 
 {% if pages > 1 %}
 <p style="margin-top:14px">
-  {% if page > 1 %}<a href="/overrides?tab={{ tab }}&page={{ page - 1 }}">← новее</a>{% endif %}
+  {% if page > 1 %}<a href="/overrides?tab={{ tab }}&page={{ page - 1 }}"><- новее</a>{% endif %}
   <span class="muted" style="margin:0 12px">страница {{ page }} из {{ pages }}</span>
-  {% if page < pages %}<a href="/overrides?tab={{ tab }}&page={{ page + 1 }}">старее →</a>{% endif %}
+  {% if page < pages %}<a href="/overrides?tab={{ tab }}&page={{ page + 1 }}">старее -></a>{% endif %}
 </p>
 {% endif %}
 {% endblock %}

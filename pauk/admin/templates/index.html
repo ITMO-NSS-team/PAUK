@@ -2,8 +2,8 @@
 {% block content %}
 <h1>Граф</h1>
 <p class="muted" style="margin:-8px 0 20px">
-  Правке доступны {{ labels|length }} меток и {{ relationships }} типов связей.
-  {% if not counted %}Граф сейчас не отвечает, поэтому без числа узлов.{% endif %}
+  Правке доступны {{ labels|length }} видов узлов и {{ relationships }} типов связей.
+  {% if not counted %}Граф сейчас не отвечает.{% endif %}
 </p>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
