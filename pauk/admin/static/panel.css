@@ -56,10 +56,16 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   --font: "Golos Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
-  /* The only colour the panel adds. The map keeps its chrome grayscale and
-     spends colour on departments; here it marks the one thing that has to
-     stand out — a destructive action. */
+  /* The colour the panel adds. The map keeps its chrome grayscale and
+     spends colour on departments; here it marks what a reader has to tell
+     apart at a glance — what was removed, added, or changed.
+
+     All three sit at 6.3-6.6:1 against the background, the same weight as
+     --danger, which was here first. Traffic-light colours would read as a
+     different product next to the map. */
   --danger: #A33A2B;
+  --ok: #2F6B45;
+  --warn: #7E5410;
 }
 
 * { box-sizing: border-box; }
@@ -226,6 +232,29 @@ select {
 .filters { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 18px; }
 .filters .pick { flex: 1 1 150px; min-width: 130px; }
 .filters .id { flex: 2 1 260px; }
+
+/* Одно изменение поля: что было и что стало. Плашки, а не цветной текст —
+   значения бывают длинными, и подложка держит границу значения там, где
+   голый цвет сливается с соседним. */
+.change { margin: 2px 0; line-height: 1.7; }
+.change b { font-weight: 600; margin-right: 4px; }
+.change .was, .change .now {
+  padding: 1px 6px; border-radius: 5px; font-size: 13px;
+  font-variant-numeric: tabular-nums; word-break: break-word;
+}
+.change .was { color: var(--danger); background: rgba(163, 58, 43, 0.09); }
+.change .now { color: var(--ok); background: rgba(47, 107, 69, 0.10); }
+/* Стрелка рисуется, а не лежит в разметке: это оформление, и при
+   копировании строки она не нужна. */
+.change .was + .now::before { content: "→"; color: var(--faint); margin: 0 6px 0 2px; }
+
+/* Как изменилась запись: создано, изменено, удалено. Цвет несёт то же,
+   что и слово, поэтому слово остаётся на месте. */
+.kind { font-weight: 600; }
+.kind-created { color: var(--ok); }
+.kind-updated { color: var(--warn); }
+.kind-deleted { color: var(--danger); }
+.kind-bulk { color: var(--muted); }
 
 /* Одна задача на странице задач: слева что это и зачем, справа поля. */
 /* Разделитель задаётся положением, а не прописан в разметке: формы

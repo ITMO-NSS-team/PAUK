@@ -107,8 +107,6 @@
       </td>
       <td>{{ job.actor }}<br><span class="muted">{{ job.worker or "ещё не взята" }}</span></td>
       <td class="val" style="white-space:nowrap">{{ (job.started_at or job.created_at)|moment }}</td>
-      {# Сердцебиение - признак, что прогон жив. Шаг внутри
-         идёт часами и о себе ничего не сообщает. #}
       <td class="val" style="white-space:nowrap">{{ job.heartbeat_at|moment or "—" }}
         {% if job.cancel_requested %}<br><span class="muted">просили остановить</span>{% endif %}
       </td>
@@ -159,8 +157,6 @@
   </div>
   <button type="submit">Показать</button>
   <script>
-    // Как в журнале: выбор из списка применяется сразу, кнопка нужна на
-    // случай выключенных скриптов.
     document.querySelectorAll("#filters select").forEach((box) =>
       box.addEventListener("change", () => box.form.submit()));
   </script>
@@ -208,8 +204,8 @@
 {% if pages > 1 %}
 <p style="margin-top:14px">
   {% set qs = "&kind=" ~ filters.kind|urlencode ~ "&state=" ~ filters.state|urlencode ~ "&actor=" ~ filters.actor|urlencode %}
-  {% if page > 1 %}<a href="/jobs?page={{ page - 1 }}{{ qs }}">← новее</a>{% endif %}
-  {% if page < pages %}<a href="/jobs?page={{ page + 1 }}{{ qs }}" style="margin-left:14px">старее →</a>{% endif %}
+  {% if page > 1 %}<a href="/jobs?page={{ page - 1 }}{{ qs }}"><- новее</a>{% endif %}
+  {% if page < pages %}<a href="/jobs?page={{ page + 1 }}{{ qs }}" style="margin-left:14px">старее -></a>{% endif %}
 </p>
 {% endif %}
 {% endif %}

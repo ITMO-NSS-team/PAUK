@@ -367,3 +367,73 @@ class PagerKeepsTheFilterTest(unittest.TestCase):
         second = self.client.get(self.next_page_link(first)).text
         self.assertIn("2026-08", second)
         self.assertNotIn("ничего не найдено", second)
+
+
+class ChangeLookTest(unittest.TestCase):
+    """How a change reads: what was, what became, and which of the three
+    things happened to the record."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add("Person", "A1", name_ru="Иванов Иван Петрович")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def record(self, kind, diff, entity_id="A1"):
+        self.db[feed.COLLECTION].insert_one({
+            "entity_type": "Person", "entity_id": entity_id, "actor": "user:roman",
+            "source": "admin-ui", "change_kind": kind,
+            "timestamp": "2026-08-30T10:00:00", "diff": diff})
+
+    def blocks(self, path="/audit"):
+        page = self.client.get(path).text
+        return re.findall(r'<div class="change">(.*?)</div>', page, re.S)
+
+    def test_an_edit_shows_both_halves(self):
+        self.record("updated", {"name_ru": ["Иванов И.", "Иванов Иван Петрович"]})
+        (block,) = self.blocks()
+        self.assertIn('<span class="was">Иванов И.</span>', block)
+        self.assertIn('<span class="now">Иванов Иван Петрович</span>', block)
+
+    def test_a_creation_shows_only_what_appeared(self):
+        # Nothing was replaced, so a struck-out dash would be noise.
+        self.record("created", {"name_ru": [None, "Петров Пётр"]})
+        (block,) = self.blocks()
+        self.assertNotIn('class="was"', block)
+        self.assertIn('<span class="now">Петров Пётр</span>', block)
+
+    def test_a_deletion_shows_only_what_went(self):
+        self.record("deleted", {"name_ru": ["Сидоров", None]})
+        (block,) = self.blocks()
+        self.assertIn('<span class="was">Сидоров</span>', block)
+        self.assertNotIn('class="now"', block)
+
+    def test_each_kind_carries_its_own_class(self):
+        for kind, entity in (("created", "A2"), ("updated", "A3"), ("deleted", "A4")):
+            self.record(kind, {"name_ru": ["a", "b"]}, entity_id=entity)
+        page = self.client.get("/audit").text
+        for kind in ("created", "updated", "deleted"):
+            with self.subTest(kind=kind):
+                self.assertIn(f'class="kind kind-{kind}"', page)
+
+    def test_the_word_stays_beside_the_colour(self):
+        # Colour alone would leave a printout or a colour-blind reader with
+        # nothing to go on.
+        self.record("deleted", {"name_ru": ["Сидоров", None]})
+        page = self.client.get("/audit").text
+        self.assertIn('<span class="kind kind-deleted">удалено</span>', page)
+
+    def test_the_node_page_uses_the_same_markup(self):
+        self.record("updated", {"name_ru": ["Иванов И.", "Иванов Иван Петрович"]})
+        (block,) = self.blocks("/nodes/Person/A1")
+        self.assertIn('<span class="was">', block)
+
+    def test_a_bulk_entry_without_fields_says_so(self):
+        self.record("bulk", {})
+        page = self.client.get("/audit").text
+        self.assertIn("без разбора по полям", page)
+        self.assertEqual(self.blocks(), [])

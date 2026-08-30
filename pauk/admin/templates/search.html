@@ -27,7 +27,7 @@
   <p class="muted" style="margin:-8px 0 12px">
     {% if query %}Найдено: {{ rows|length }}.
     {% else %}Показаны {{ rows|length }} {{ rows|length|plural("узел", "узла", "узлов") }} по возрастанию
-      идентификатора{% if rows|length == limit %} — это первые {{ limit }}, остальные ищите по строке{% endif %}.
+      идентификатора{% if rows|length == limit %}, это первые {{ limit }}{% endif %}.
     {% endif %}
   </p>
   <div class="card">

@@ -1,9 +1,10 @@
 {% extends "base.html" %}
+{% import "_change.html" as show %}
 {% block content %}
 <h1>{{ label }} <span class="muted">{{ node_id }}</span></h1>
 <p class="note">Этой записи в графе нет.
-  {% if history %}Ниже — что с ней происходило.{% endif %}</p>
-<p class="muted"><a href="/nodes/{{ label }}">← к поиску {{ label }}</a></p>
+  {% if history %}Ниже изменения записи.{% endif %}</p>
+<p class="muted"><a href="/nodes/{{ label }}"><- к поиску {{ label }}</a></p>
 
 {% if history %}
 <div class="card">
@@ -13,12 +14,9 @@
     <tr>
       <td class="val" style="white-space:nowrap">{{ row.timestamp[:19]|replace("T", " ") }}</td>
       <td>{{ row.actor }}</td>
-      <td>{{ row.kind_ru }}</td>
+      <td><span class="kind kind-{{ row.change_kind }}">{{ row.kind_ru }}</span></td>
       <td>
-        {% for field, pair in row.changes %}
-        <div><b>{{ field }}</b>:
-          <span class="muted">{{ pair[0] if pair[0] is not none else "—" }}</span>
-          → {{ pair[1] if pair[1] is not none else "—" }}</div>
+        {% for field, pair in row.changes %}{{ show.change(field, pair[0], pair[1]) }}
         {% else %}<span class="muted">без разбора по полям</span>
         {% endfor %}
       </td>
@@ -27,12 +25,10 @@
   </table>
 </div>
 {% else %}
-<p class="muted">Журнал о ней ничего не помнит — осталось только само решение об удалении.</p>
+<p class="muted">В журнале нет истории изменения, только решение об удалении.</p>
 {% endif %}
 
 {% if user.can_write %}
-  {# Одна кнопка и ничего вокруг: что вернётся и что будет с пометкой,
-     видно из истории выше, когда журнал о записи что-то помнит. #}
   {% if restorable %}
   <form method="post" action="/nodes/{{ label }}/restore/{{ node_id | urlencode }}" style="margin-top:24px">
     <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -40,7 +36,7 @@
   </form>
   {% else %}
   <p class="muted" style="margin-top:24px">
-    Чем её вернуть, не сохранилось — только
+    Можно только
     <a href="/nodes/{{ label }}/new">создать заново</a>.
   </p>
   {% endif %}

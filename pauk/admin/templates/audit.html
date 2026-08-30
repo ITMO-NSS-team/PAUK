@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_change.html" as show %}
 {% block content %}
 <h1>Журнал правок</h1>
 <p class="muted" style="margin:-8px 0 18px">
@@ -39,8 +40,6 @@
   </div>
   <button type="submit">Показать</button>
   <script>
-    // Выбор из списка применяется сразу: кнопка нужна только для поля
-    // ввода и для случая, когда скрипты выключены.
     document.querySelectorAll("#filters select").forEach((box) =>
       box.addEventListener("change", () => box.form.submit()));
   </script>
@@ -50,7 +49,7 @@
 </form>
 
 {% if not rows %}
-  <p class="muted">Записей нет. Журнал наполняется правками — и через панель, и через пайплайн.</p>
+  <p class="muted">Записей нет. Журнал наполняется правками через панель и пайплайн.</p>
 {% else %}
 <p class="muted" style="margin:-8px 0 12px">Всего: {{ total }}. Страница {{ page }} из {{ pages }}.</p>
 <div class="card">
@@ -65,14 +64,10 @@
         <a href="/nodes/{{ row.entity_type }}/{{ row.entity_id | urlencode }}">{{ row.entity_type }} {{ row.entity_id }}</a>
         {% else %}{{ row.entity_type }} {{ row.entity_id }}{% endif %}
       </td>
-      <td>{{ row.kind_ru }}</td>
+      <td><span class="kind kind-{{ row.change_kind }}">{{ row.kind_ru }}</span></td>
       <td>
         {% if row.changes %}
-        {% for field, pair in row.changes %}
-        <div><b>{{ field }}</b>:
-          <span class="muted">{{ pair[0] if pair[0] is not none else "—" }}</span>
-          → {{ pair[1] if pair[1] is not none else "—" }}</div>
-        {% endfor %}
+        {% for field, pair in row.changes %}{{ show.change(field, pair[0], pair[1]) }}{% endfor %}
         {% else %}<span class="muted">без разбора по полям</span>{% endif %}
       </td>
     </tr>
@@ -82,12 +77,9 @@
 
 {% if pages > 1 %}
 <p style="margin-top:14px">
-  {# Каждое значение кодируется: идентификатор LinkCandidate — это адрес,
-     и его собственные "&" и "?" иначе разрывают строку запроса, так что
-     на следующей странице фильтр оказывается уже другим. #}
   {% set qs = "&actor=" ~ filters.actor|urlencode ~ "&entity_type=" ~ filters.entity_type|urlencode ~ "&entity_id=" ~ filters.entity_id|urlencode ~ "&kind=" ~ filters.kind|urlencode %}
-  {% if page > 1 %}<a href="/audit?page={{ page - 1 }}{{ qs }}">← новее</a>{% endif %}
-  {% if page < pages %}<a href="/audit?page={{ page + 1 }}{{ qs }}" style="margin-left:14px">старее →</a>{% endif %}
+  {% if page > 1 %}<a href="/audit?page={{ page - 1 }}{{ qs }}"><- новее</a>{% endif %}
+  {% if page < pages %}<a href="/audit?page={{ page + 1 }}{{ qs }}" style="margin-left:14px">старее -></a>{% endif %}
 </p>
 {% endif %}
 {% endif %}

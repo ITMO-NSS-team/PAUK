@@ -1,7 +1,8 @@
 {% extends "base.html" %}
+{% import "_change.html" as show %}
 {% block content %}
 <h1>{{ label }} <span class="muted">{{ node_id }}</span></h1>
-<p class="muted"><a href="/nodes/{{ label }}">← к поиску</a></p>
+<p class="muted"><a href="/nodes/{{ label }}"><- к поиску</a></p>
 
 {% if request.query_params.get("error") %}
 <p class="note bad">{{ request.query_params.get("error") }}</p>
@@ -10,17 +11,15 @@
 {% if request.query_params.get("restored") %}<p class="note">Запись восстановлена из журнала, пометка об удалении снята.</p>{% endif %}
 {% if request.query_params.get("saved") %}<p class="note">Сохранено. Правка записана.</p>{% endif %}
 {% if request.query_params.get("stale") %}
-<p class="note bad">Пока вы правили, запись изменил кто-то ещё — сохранение отклонено,
-   чтобы не потерять его правку. Ниже уже новые значения: внесите своё поверх и сохраните снова.</p>
+<p class="note bad">Пока вы правили, запись изменил кто-то ещё, поэтому сохранение отклонено,
+   чтобы не потерять его правку. Ниже уже новые значения, внесите своё поверх и сохраните снова.</p>
 {% endif %}
-{% if request.query_params.get("unchanged") %}<p class="note">Ничего не изменилось — записывать было нечего.</p>{% endif %}
+{% if request.query_params.get("unchanged") %}<p class="note">Ничего не изменилось.</p>{% endif %}
 {% if request.query_params.get("linked") %}<p class="note">Связь создана.</p>{% endif %}
-{% if request.query_params.get("unlinked") %}<p class="note">Связь удалена и помечена — публикация её не восстановит.</p>{% endif %}
+{% if request.query_params.get("unlinked") %}<p class="note">Связь удалена и помечена удаленной.</p>{% endif %}
 
 <form method="post" action="/nodes/{{ label }}/{{ node_id | urlencode }}">
   <input type="hidden" name="csrf" value="{{ csrf }}">
-  {# Момент, на котором открыли форму. Если запись успели изменить, правка
-     будет отклонена, а не затрёт чужую. #}
   <input type="hidden" name="seen_at" value="{{ props.get("updated_at", "") }}">
   <div class="card">
     <table>
@@ -58,9 +57,6 @@
     {% for rel in relationships %}
     {% set other = rel.labels[0] %}
     <tr>
-      {# Фраза читается от этого узла: «написал публикацию», «здесь работает».
-         Технический тип связи оставлен мелким — он нужен, когда сверяются
-         со схемой графа, а не когда решают, что с чем связать. #}
       <td>{{ label }} <span class="muted">{{ node_id }}</span></td>
       <td><b>{{ rel.words }}</b><br><span class="muted">{{ rel.type }}</span></td>
       <td class="val"><a href="/nodes/{{ other }}/{{ rel.other_id | urlencode }}">{{ other }} {{ rel.other_id }}</a></td>
@@ -70,7 +66,6 @@
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="triple"
                  value="{{ label if rel.outgoing else other }}|{{ rel.type }}|{{ other if rel.outgoing else label }}">
-          {# Не идентификатор: репозиторий адресуется адресом, аккаунт логином. #}
           <input type="hidden" name="other_id" value="{{ rel.match_value }}">
           <button type="submit" class="ghost">отвязать</button>
         </form>
@@ -91,12 +86,9 @@
     <tr>
       <td class="val" style="white-space:nowrap">{{ row.timestamp[:19]|replace("T", " ") }}</td>
       <td>{{ row.actor }}</td>
-      <td>{{ row.kind_ru }}</td>
+      <td><span class="kind kind-{{ row.change_kind }}">{{ row.kind_ru }}</span></td>
       <td>
-        {% for field, pair in row.changes %}
-        <div><b>{{ field }}</b>:
-          <span class="muted">{{ pair[0] if pair[0] is not none else "—" }}</span>
-          → {{ pair[1] if pair[1] is not none else "—" }}</div>
+        {% for field, pair in row.changes %}{{ show.change(field, pair[0], pair[1]) }}
         {% else %}<span class="muted">без разбора по полям</span>
         {% endfor %}
       </td>
@@ -104,7 +96,7 @@
     {% endfor %}
   </table>
   <p class="muted" style="margin:12px 0 0">
-    <a href="/audit?entity_type={{ label }}&entity_id={{ node_id }}">вся история этой записи →</a>
+    <a href="/audit?entity_type={{ label }}&entity_id={{ node_id }}">вся история этой записи -></a>
   </p>
   {% else %}<p class="muted">Правок не было.</p>{% endif %}
 </div>
@@ -140,7 +132,7 @@
 <div class="card danger" style="margin-top:32px">
   <b>Удалить узел</b>
   <p class="muted">Узел будет помечен как удалённый, иначе следующая публикация создаст его заново.
-     {% if relationships %}У узла есть связи — без галочки удаление будет отклонено.{% endif %}</p>
+     {% if relationships %}У узла есть связи. Без галочки удаление будет отклонено.{% endif %}</p>
   <form method="post" action="/nodes/{{ label }}/delete/{{ node_id | urlencode }}" id="delete-form">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     {% if relationships %}
