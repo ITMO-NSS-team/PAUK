@@ -230,17 +230,21 @@ class OverviewTest(unittest.TestCase):
         # A bare "Person 34" read as thirty-four people; it was the field
         # count. Both numbers are now spelled out.
         from unittest import mock
-        counts = dict.fromkeys(
-            ("Person", "Repository", "Publication", "Department",
-             "Organization", "GitHubProfile", "LinkCandidate"), 0)
+
+        from pauk.admin.deps import plural
+        from pauk.graph.mutations import NODE_FIELDS
+        counts = dict.fromkeys(NODE_FIELDS, 0)
         counts["Person"] = 3
         with mock.patch.object(self.client.app.state.graph, "audited"), \
              mock.patch("pauk.admin.app.count_nodes", return_value=counts):
             body = " ".join(self.client.get("/").text.split())
         # The number sits in its own span, so match around the markup.
         self.assertIn(">3</span> узла", body)
-        self.assertIn("34 поля", body)
         self.assertIn(">0</span> узлов", body)
+        # Read off the registry, not written out: a field added to the
+        # pipeline would otherwise fail a test about labelling numbers.
+        fields = len(NODE_FIELDS["Person"])
+        self.assertIn(f"{fields} {plural(fields, 'поле', 'поля', 'полей')}", body)
 
     def test_the_numbers_agree_with_the_noun(self):
         from pauk.admin.deps import plural

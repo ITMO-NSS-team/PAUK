@@ -62,10 +62,14 @@ def _build_relationships() -> dict[tuple[str, str, str], str]:
 
     Not every target is found by `id`: a Repository is matched by `url`, a
     GitHubProfile by `login`.
+
+    The source is the base label, taken off `labels`. Reading it from
+    `rel_src_label` gave the same answer for every spec and tied this to a
+    field the registry does not have to keep.
     """
     relationships: dict[tuple[str, str, str], str] = {}
     for spec in NODE_REGISTRY.values():
-        source = (spec.rel_src_label or spec.labels).split(":")[0]
+        source = spec.labels.split(":")[0]
         for rel in spec.relationships:
             relationships[(source, rel.rel_type, rel.tgt_label)] = rel.tgt_match_field
     return relationships
