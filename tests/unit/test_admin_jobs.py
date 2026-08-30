@@ -454,3 +454,88 @@ class DedupConfirmationTest(unittest.TestCase):
         # Collecting and rebuilding the map can be run again; folding two
         # records into one cannot be taken back.
         self.assertEqual(self.client.get("/jobs").text.count("confirm("), 1)
+
+
+class PipelineOrderTest(unittest.TestCase):
+    """The four buttons are not four equal choices.
+
+    Three of them are a sequence — nothing reaches the graph until it is
+    published, and nothing reaches the map until it is rebuilt — and the
+    page has to say so, or a person picks one at random.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.db.publications.insert_one({"id": "W1", "groups": ["2026-08-30__W1"]})
+        create_user(self.db, "chief", "hunter2", role="admin")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: FakePanelGraph()
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "chief", "password": "hunter2"})
+
+    def page(self):
+        return self.client.get("/jobs").text
+
+    def steps(self):
+        return re.findall(
+            r'<span class="num">(\d)</span>\s*<div class="body">\s*'
+            r'<div class="head">\s*<b>([^<]+)</b>', self.page(), re.S)
+
+    def test_the_pipeline_is_numbered_in_order(self):
+        self.assertEqual([number for number, _ in self.steps()], ["1", "2", "3"])
+
+    def test_collecting_comes_before_publishing(self):
+        names = [name for _, name in self.steps()]
+        self.assertLess(names.index("Собрать публикации"),
+                        names.index("Выложить группу в граф"))
+
+    def test_the_map_comes_last(self):
+        self.assertEqual(self.steps()[-1][1], "Пересобрать карту")
+
+    def test_deduplication_is_not_one_of_the_steps(self):
+        # It is run when it is needed, not after every collection.
+        self.assertNotIn("Дедупликация", [name for _, name in self.steps()])
+        self.assertIn('class="card aside"', self.page())
+
+    def test_the_stages_are_read_off_the_pipeline(self):
+        # Written out here, the page would describe an older pipeline the
+        # day somebody adds a stage.
+        from pauk.pipeline.stages import ALL_STAGES
+        page = self.page()
+        for stage in ALL_STAGES:
+            with self.subTest(stage=stage.name):
+                self.assertIn(stage.name, page)
+
+    def test_a_finished_run_is_dated_beside_its_step(self):
+        job = store.enqueue(self.db, JobKind.PUBLISH, {"group": "2026-08-30__W1"})
+        store.claim(self.db, "worker-1")
+        store.start(self.db, job.id)
+        store.finish(self.db, job.id, {})
+        self.assertIn('class="ago"', self.page())
+
+    def test_nothing_is_dated_before_the_first_run(self):
+        self.assertNotIn('class="ago"', self.page())
+
+    def test_the_three_areas_are_told_apart(self):
+        job = store.enqueue(self.db, JobKind.MAP, {})
+        store.claim(self.db, "worker-1")
+        store.start(self.db, job.id)
+        page = self.page()
+        for marker in ('class="card flow"', 'class="card live"', "История"):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, page)
+
+    def test_the_cards_are_not_glued_together(self):
+        # Three cards run one after another, and the gap used to be an
+        # inline style on each — it went with the card that carried it.
+        from pathlib import Path
+        css = Path("pauk/admin/static/panel.css").read_text(encoding="utf-8")
+        self.assertIn(".card + .card", css)
+
+    def test_the_two_deduplications_are_told_apart(self):
+        # `dedup` is one of the ten enrichment stages *and* a button. The
+        # stage sees one group, the button sees the whole graph, and a page
+        # that does not say so reads as the same thing offered twice.
+        page = self.page()
+        self.assertIn("только внутри", page)
+        self.assertIn("между разными сборами", page)

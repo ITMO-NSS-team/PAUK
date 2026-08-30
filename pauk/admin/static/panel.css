@@ -124,6 +124,11 @@ a:hover { color: var(--muted); }
   box-shadow: var(--shadow);
   padding: 20px;
 }
+/* Отступ между карточками задаётся соседством, а не прописан в разметке:
+   на странице задач их три подряд, и прибитый к одной из них margin
+   пропадает вместе с ней. Через заголовок или форму правило не работает —
+   там разводят они. */
+.card + .card { margin-top: 16px; }
 .narrow { max-width: 340px; margin: 8vh auto 0; }
 
 label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
@@ -264,3 +269,39 @@ select {
 .task:last-of-type { border-bottom: none; padding-bottom: 0; }
 .task .what { align-self: center; min-width: 15rem; }
 .task .what span { display: block; font-size: 13px; }
+
+/* Страница задач. Три блока делают разное, поэтому и выглядят по-разному:
+   конвейер это форма, "сейчас" это состояние, история это таблица. Пока
+   они были тремя одинаковыми карточками, порядок шагов ниоткуда не читался. */
+.flow .step { display: flex; gap: 14px; padding: 18px 0; border-top: 1px solid var(--border); }
+.flow .step:first-of-type { border-top: none; padding-top: 4px; }
+.flow .step:last-of-type { padding-bottom: 0; }
+/* Номер несёт смысл: шаги действительно идут в этом порядке, и второй без
+   первого нечего выкладывать. */
+.flow .num {
+  flex: none; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--text); color: var(--bg);
+  font-size: 13px; font-weight: 700; line-height: 26px; text-align: center;
+}
+.flow .body { flex: 1; min-width: 0; }
+.flow .body p { margin: 4px 0 12px; max-width: 68ch; }
+.flow .row { margin-bottom: 8px; }
+.flow .row:last-child { margin-bottom: 0; }
+.head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.ago { color: var(--faint); font-size: 13px; }
+
+/* Дедуп стоит рядом с конвейером, но в него не входит. */
+.aside { border-left: 3px solid var(--border); }
+.aside p { margin: 4px 0 12px; max-width: 68ch; }
+
+/* Идущий прогон - единственное на странице, что меняется само. */
+.live { border-left: 3px solid var(--ok); }
+.pulse {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--ok); margin-right: 8px; vertical-align: middle;
+  animation: pulse 1.8s ease-in-out infinite;
+}
+@keyframes pulse { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+
+.section-title { font-size: 15px; margin: 28px 0 12px; }
