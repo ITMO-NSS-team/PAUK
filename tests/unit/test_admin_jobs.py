@@ -112,6 +112,11 @@ class JobsPageTest(unittest.TestCase):
         self.assertIn('href="/jobs"', self.client.get("/").text)
 
 
+#: Устойчивая часть полосы-предупреждения. Формулировку вокруг правят,
+#: и тест на неё целиком ломается на каждой редактуре.
+BANNER = "переписывается"
+
+
 class GraphBusyBannerTest(unittest.TestCase):
     """The strip that warns an editor, on whatever page they are on.
 
@@ -137,11 +142,11 @@ class GraphBusyBannerTest(unittest.TestCase):
         return job
 
     def test_nothing_is_shown_when_the_graph_is_free(self):
-        self.assertNotIn("граф сейчас переписывается", self.client.get("/nodes/Person/A1").text)
+        self.assertNotIn(BANNER, self.client.get("/nodes/Person/A1").text)
 
     def test_it_warns_on_a_node_page(self):
         self.start()
-        self.assertIn("граф сейчас переписывается", self.client.get("/nodes/Person/A1").text)
+        self.assertIn(BANNER, self.client.get("/nodes/Person/A1").text)
 
     def test_it_names_the_kind_of_run(self):
         self.start(kind=JobKind.MAP, payload={})
@@ -153,17 +158,17 @@ class GraphBusyBannerTest(unittest.TestCase):
         self.start()
         for path in ("/", "/audit", "/overrides", "/nodes/Person"):
             with self.subTest(path=path):
-                self.assertIn("граф сейчас переписывается", self.client.get(path).text)
+                self.assertIn(BANNER, self.client.get(path).text)
 
     def test_a_collection_run_does_not_warn(self):
         # It holds its group, not the graph. Editing a node is unaffected.
         self.start(kind=JobKind.COLLECT, payload={"group": "2024", "work_id": "W1"})
-        self.assertNotIn("граф сейчас переписывается", self.client.get("/nodes/Person/A1").text)
+        self.assertNotIn(BANNER, self.client.get("/nodes/Person/A1").text)
 
     def test_it_goes_away_when_the_run_ends(self):
         job = self.start()
         store.finish(self.db, job.id, {})
-        self.assertNotIn("граф сейчас переписывается", self.client.get("/nodes/Person/A1").text)
+        self.assertNotIn(BANNER, self.client.get("/nodes/Person/A1").text)
 
     def test_the_edit_still_goes_through(self):
         self.start()
@@ -187,7 +192,7 @@ class GraphBusyBannerTest(unittest.TestCase):
         finally:
             self.db[store.COLLECTION].find = broken
         self.assertEqual(page.status_code, 200)
-        self.assertNotIn("граф сейчас переписывается", page.text)
+        self.assertNotIn(BANNER, page.text)
 
     def test_it_is_the_graph_job_that_is_named(self):
         self.start(kind=JobKind.COLLECT, payload={"group": "2024", "work_id": "W1"})

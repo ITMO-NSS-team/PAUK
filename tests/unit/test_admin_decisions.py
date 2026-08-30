@@ -392,7 +392,8 @@ class PagingTest(unittest.TestCase):
     def test_the_second_page_shows_the_rest(self):
         body = self.client.get("/overrides", params={"page": 2}).text
         self.assertIn("страница 2 из 2", " ".join(body.split()))
-        self.assertIn("← новее", body)
+        # Проверяется ссылка, а не подпись: текст кнопки переписывают.
+        self.assertIn("/overrides?tab=list&page=1", body)
 
     def test_a_page_out_of_range_does_not_break(self):
         self.assertEqual(self.client.get("/overrides", params={"page": 99}).status_code, 200)
