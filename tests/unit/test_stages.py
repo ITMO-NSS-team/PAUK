@@ -168,6 +168,44 @@ class StagesTest(unittest.TestCase):
         self.assertEqual(repository.publication_ids, ["W-outside-this-group"])
         github_client.return_value.get_repository.assert_not_called()
 
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_repositories_preserves_claim_without_a_matching_discovered_link(
+        self, github_client,
+    ):
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        completed = ProcessingState(status=ProcessingStatus.COMPLETED)
+        prepared.write_models("repositories", [
+            Repository(
+                id="github_org_curated",
+                name="curated",
+                url="https://github.com/org/curated",
+                publication_ids=["W1"],
+                processing={"repositories": completed},
+            ),
+            Repository(
+                id="github_org_mentioned",
+                name="mentioned",
+                url="https://github.com/org/mentioned",
+                processing={"repositories": completed},
+            ),
+        ])
+        prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1", links=[CodeLink(
+                url="https://github.com/org/mentioned", is_relevant=False,
+            )]),
+        ])
+
+        RepositoriesStage(prepared, raw).run()
+
+        repositories = {
+            repository.id: repository
+            for repository in prepared.read_models("repositories", Repository)
+        }
+        self.assertEqual(repositories["github_org_curated"].publication_ids, ["W1"])
+        self.assertEqual(repositories["github_org_mentioned"].publication_ids, [])
+        github_client.return_value.get_repository.assert_not_called()
+
     def test_force_reprocesses_completed_rows(self):
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")

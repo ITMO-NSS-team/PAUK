@@ -163,22 +163,46 @@ class RepositoriesStage(EnrichmentStage):
         client = GitHubClient(self.config.request_timeout, self.config.github_token)
         changed = 0
         attempted_repo_ids: set[str] = set()
-        scoped_publication_ids = {
-            row.publication_id for row in rows if self._row_in_scope(row)
-        }
         selected_repository_ids = (
             self.selection.ids
             if self.selection is not None and self.selection.entity == "repositories"
             else None
         )
+
+        repository_ids_by_citation: dict[str, set[str]] = {}
         for repo in repositories.values():
             if selected_repository_ids is not None and repo.id not in selected_repository_ids:
                 continue
-            repo.publication_ids = [
-                publication_id
-                for publication_id in repo.publication_ids
-                if publication_id not in scoped_publication_ids
-            ]
+            repository_ids_by_citation.setdefault(repo.id, set()).add(repo.id)
+            for citation in [repo.url, *repo.cited_urls]:
+                parsed = urlparse(citation.rstrip("/"))
+                parts = parsed.path.strip("/").split("/")
+                if parsed.netloc.lower() in GITHUB_HOSTS and len(parts) == 2:
+                    citation_id = f"github_{parts[0].lower()}_{parts[1].lower()}"
+                    repository_ids_by_citation.setdefault(citation_id, set()).add(repo.id)
+
+        # Refresh only claims backed by a matching discovered link. A
+        # publication_id can also come from an imported or curated repository
+        # row, so removing it from every repository mentioned by that paper
+        # would silently erase independent provenance.
+        for row in rows:
+            if not self._row_in_scope(row):
+                continue
+            for link in row.links:
+                parsed = urlparse(link.url.rstrip("/"))
+                parts = parsed.path.strip("/").split("/")
+                if parsed.netloc.lower() not in GITHUB_HOSTS or len(parts) != 2:
+                    continue
+                repo_id = f"github_{parts[0].lower()}_{parts[1].lower()}"
+                if selected_repository_ids is not None and repo_id not in selected_repository_ids:
+                    continue
+                for existing_id in repository_ids_by_citation.get(repo_id, ()):
+                    repo = repositories[existing_id]
+                    repo.publication_ids = [
+                        publication_id
+                        for publication_id in repo.publication_ids
+                        if publication_id != row.publication_id
+                    ]
         progress = self.progress_bar(
             total=len(self._pending_repository_ids(rows, repositories)), unit="repository")
         for row in rows:

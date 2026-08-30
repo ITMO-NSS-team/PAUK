@@ -144,6 +144,24 @@ class MockOpenRouterClient:
         }
 
 
+class MockLinkRelevanceClient:
+    """Classifies the synthetic bench code citations without an LLM call."""
+
+    def __init__(self) -> None:
+        self.last_response = None
+        self.last_usage = None
+        self.last_error = None
+
+    def chat_json(self, prompt: str) -> dict:
+        result = {
+            "is_authors_artifact": True,
+            "confidence": 1.0,
+            "reason": "mock: synthetic benchmark repository",
+        }
+        self.last_response = result
+        return result
+
+
 class UnexpectedNetworkClient:
     """Any call means a stage tried the network although it shouldn't have."""
 
