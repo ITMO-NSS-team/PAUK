@@ -531,6 +531,34 @@ class PipelineOrderTest(unittest.TestCase):
         from pathlib import Path
         css = Path("pauk/admin/static/panel.css").read_text(encoding="utf-8")
         self.assertIn(".card + .card", css)
+        # `.card + .card` stops at the folded block: <details> is not a
+        # card, so the last card inside it would touch what comes next.
+        self.assertIn(".steps { margin-top: 6px; margin-bottom: 22px; }", css)
+
+    def test_the_fold_is_named_for_more_than_one_step(self):
+        self.assertIn("Запустить шаги по отдельности", self.page())
+
+    def test_the_whole_pipeline_is_offered_first(self):
+        # The ordinary day is one button. Three forms with their
+        # explanations are for when something is being redone by hand.
+        page = self.page()
+        self.assertLess(page.index("Запустить конвейер"),
+                        page.index("Запустить шаги по отдельности"))
+
+    def test_the_separate_steps_start_folded_away(self):
+        page = self.page()
+        self.assertIn("<details", page)
+        # <details> rather than a script of our own: it works from the
+        # keyboard and without JS.
+        self.assertNotIn("<details open", page)
+
+    def test_the_pipeline_can_be_queued(self):
+        response = self.client.post("/jobs", data={
+            "csrf": self.db[SESSIONS].find_one(
+                {"_id": self.client.cookies[COOKIE]})["csrf"],
+            "kind": "pipeline", "work_id": "W123", "seed": "42"})
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(store.recent(self.db)[0].kind, JobKind.PIPELINE)
 
     def test_the_two_deduplications_are_told_apart(self):
         # `dedup` is one of the ten enrichment stages *and* a button. The

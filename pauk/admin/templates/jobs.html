@@ -6,114 +6,136 @@
 </p>
 
 {% if user.can_run %}
-<div class="card flow">
-  <b>Конвейер</b>
-  <p class="muted" style="margin:4px 0 18px">
-    Шаги идут в этом порядке. Данные не попадут в граф, пока не выложены. И данные не попадут на карту, пока она не пересобрана.
+<div class="card">
+  <b>Запустить конвейер</b>
+  <p class="muted" style="margin:4px 0 14px; max-width:68ch">
+    Соберёт публикации, выложит их в граф и пересоберёт карту одним нажатием.
   </p>
-
-  <div class="step">
-    <span class="num">1</span>
-    <div class="body">
-      <div class="head">
-        <b>Собрать публикации</b>
-        {% if last_done.collect %}<span class="ago">последний раз {{ last_done.collect|moment }}</span>{% endif %}
-      </div>
-      <p class="muted">Из OpenAlex и прогон через все
-        {{ stages|length }} этапов обогащения: {{ stages|join(", ") }}.
-        Складывает результат в отдельную группу.
-        Этап <code>dedup</code> здесь сводит дубли только внутри неё.</p>
-      <form method="post" action="/jobs" class="row">
-        <input type="hidden" name="csrf" value="{{ csrf }}">
-        <input type="hidden" name="kind" value="collect">
-        <div><label for="date_from">за период с</label>
-          <input type="date" id="date_from" name="date_from" max="{{ today }}" required></div>
-        <div><label for="date_to">по</label>
-          <input type="date" id="date_to" name="date_to" max="{{ today }}" required></div>
-        <div><button type="submit">Запустить</button></div>
-      </form>
-      <form method="post" action="/jobs" class="row">
-        <input type="hidden" name="csrf" value="{{ csrf }}">
-        <input type="hidden" name="kind" value="collect">
-        <div class="grow"><label for="work_id">или одна работа по идентификатору</label>
-          <input type="text" id="work_id" name="work_id" placeholder="W2741809807" required></div>
-        <div><button type="submit">Запустить</button></div>
-      </form>
-    </div>
-  </div>
-
-  <div class="step">
-    <span class="num">2</span>
-    <div class="body">
-      <div class="head">
-        <b>Выложить группу в граф</b>
-        {% if last_done.publish %}<span class="ago">последний раз {{ last_done.publish|moment }}</span>{% endif %}
-      </div>
-      <p class="muted">Переносит собранную группу в Neo4j. Ручные правки применяются заново.</p>
-      <form method="post" action="/jobs" class="row">
-        <input type="hidden" name="csrf" value="{{ csrf }}">
-        <input type="hidden" name="kind" value="publish">
-        <div class="grow"><label for="group">группа</label>
-          {# Только группы с подготовленными строками: публикация пустой
-             загрузит ноль строк и выглядит как поломка. #}
-          <select id="group" name="group" required>
-            {% for name in groups %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
-          </select></div>
-        <div><button type="submit" {% if not groups %}disabled{% endif %}>Запустить</button></div>
-      </form>
-      {% if not groups %}<p class="muted">Собранных групп пока нет, начните с первого шага.</p>{% endif %}
-    </div>
-  </div>
-
-  <div class="step">
-    <span class="num">3</span>
-    <div class="body">
-      <div class="head">
-        <b>Пересобрать карту</b>
-        {% if last_done.map %}<span class="ago">последний раз {{ last_done.map|moment }}</span>{% endif %}
-      </div>
-      <p class="muted">Карта рисуется из заранее собранных файлов, пока не пересоберёте, там будут старые данные.</p>
-      <form method="post" action="/jobs" class="row">
-        <input type="hidden" name="csrf" value="{{ csrf }}">
-        <input type="hidden" name="kind" value="map">
-        {# Один seed для всех пересборок: карту читают по форме, и новая
-           раскладка каждый раз была бы другой картой. #}
-        <input type="hidden" name="seed" value="42">
-        <div style="align-self:center">
-          <label for="public"><input type="checkbox" id="public" name="public">
-            без персональных данных</label></div>
-        <div><button type="submit">Запустить</button></div>
-      </form>
-    </div>
-  </div>
-</div>
-
-<div class="card aside">
-  <div class="head">
-    <b>Дедупликация графа</b>
-    {% if last_done.dedup %}<span class="ago">последний раз {{ last_done.dedup|moment }}</span>{% endif %}
-  </div>
-  <p class="muted">Сводит дубли <b>между разными сборами</b>. Дедуп внутри
-    сбора видит только свою группу, поэтому один человек, пришедший в
-    январском и мартовском прогонах под разными написаниями имени, там не
-    ловится — его видно только по всему графу сразу.</p>
-  <p class="muted">Не часть конвейера, запускается по необходимости. Очевидные
-    дубли сводит, спорные пары откладывает на ручной разбор. Сведённое
-    обратно не разделяется.</p>
-  <form method="post" action="/jobs" id="dedup-form">
+  <form method="post" action="/jobs" class="row">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <input type="hidden" name="kind" value="dedup">
-    <button type="submit" class="warn">Запустить</button>
+    <input type="hidden" name="kind" value="pipeline">
+    <input type="hidden" name="seed" value="42">
+    <div><label for="p_from">за период с</label>
+      <input type="date" id="p_from" name="date_from" max="{{ today }}"></div>
+    <div><label for="p_to">по</label>
+      <input type="date" id="p_to" name="date_to" max="{{ today }}"></div>
+    <div class="grow"><label for="p_work">или одна работа</label>
+      <input type="text" id="p_work" name="work_id" placeholder="W2741809807"></div>
+    <div><button type="submit">Запустить</button></div>
   </form>
-  <script>
-    // Спрашиваем, как при удалении узла. Разъединить сведённое нечем.
-    document.getElementById("dedup-form")?.addEventListener("submit", (event) => {
-      if (!confirm("Запустить дедупликацию по всему графу?\n\nОперация необратимая: сведённые записи обратно не разделяются.")) {
-        event.preventDefault();
-      }
-    });
-  </script>
+  <p class="muted" style="margin:10px 0 0">
+    Карта пересоберётся с персональными данными.
+  </p>
 </div>
+
+<details class="steps">
+  <summary>Запустить шаги по отдельности</summary>
+  <div class="card flow">
+    <p class="muted" style="margin:0 0 18px; max-width:68ch">
+      То же самое по частям.
+    </p>
+
+    <div class="step">
+      <span class="num">1</span>
+      <div class="body">
+        <div class="head">
+          <b>Собрать публикации</b>
+          {% if last_done.collect %}<span class="ago">последний раз {{ last_done.collect|moment }}</span>{% endif %}
+        </div>
+        <p class="muted">Из OpenAlex и прогон через все
+          {{ stages|length }} этапов обогащения: {{ stages|join(", ") }}.
+          Складывает результат в отдельную группу.
+          Этап <code>dedup</code> здесь сводит дубли только внутри неё.</p>
+        <form method="post" action="/jobs" class="row">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="kind" value="collect">
+          <div><label for="date_from">за период с</label>
+            <input type="date" id="date_from" name="date_from" max="{{ today }}" required></div>
+          <div><label for="date_to">по</label>
+            <input type="date" id="date_to" name="date_to" max="{{ today }}" required></div>
+          <div><button type="submit">Запустить</button></div>
+        </form>
+        <form method="post" action="/jobs" class="row">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="kind" value="collect">
+          <div class="grow"><label for="work_id">или одна работа по идентификатору</label>
+            <input type="text" id="work_id" name="work_id" placeholder="W2741809807" required></div>
+          <div><button type="submit">Запустить</button></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="num">2</span>
+      <div class="body">
+        <div class="head">
+          <b>Выложить группу в граф</b>
+          {% if last_done.publish %}<span class="ago">последний раз {{ last_done.publish|moment }}</span>{% endif %}
+        </div>
+        <p class="muted">Переносит собранную группу в Neo4j. Ручные правки
+          применяются заново.</p>
+        <form method="post" action="/jobs" class="row">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="kind" value="publish">
+          <div class="grow"><label for="group">группа</label>
+            {# Только группы с подготовленными строками: публикация пустой
+               загрузит ноль строк и выглядит как поломка. #}
+            <select id="group" name="group" required>
+              {% for name in groups %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+            </select></div>
+          <div><button type="submit" {% if not groups %}disabled{% endif %}>Запустить</button></div>
+        </form>
+        {% if not groups %}<p class="muted">Собранных групп пока нет.</p>{% endif %}
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="num">3</span>
+      <div class="body">
+        <div class="head">
+          <b>Пересобрать карту</b>
+          {% if last_done.map %}<span class="ago">последний раз {{ last_done.map|moment }}</span>{% endif %}
+        </div>
+        <p class="muted">Карта рисуется из заранее собранных файлов и за
+          графом сама не следит.</p>
+        <form method="post" action="/jobs" class="row">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="kind" value="map">
+          {# Один seed для всех пересборок: карту читают по форме, и новая
+             раскладка каждый раз была бы другой картой. #}
+          <input type="hidden" name="seed" value="42">
+          <div style="align-self:center">
+            <label for="public"><input type="checkbox" id="public" name="public">
+              без персональных данных</label></div>
+          <div><button type="submit">Запустить</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="card aside">
+    <div class="head">
+      <b>Дедупликация графа</b>
+      {% if last_done.dedup %}<span class="ago">последний раз {{ last_done.dedup|moment }}</span>{% endif %}
+    </div>
+    <p class="muted">Сводит дубли <b>между разными сборами</b>. Не часть конвейера, запускается по необходимости. Очевидные
+      дубли сводит, спорные пары откладывает на ручной разбор. Сведённое
+      обратно не разделяется.</p>
+    <form method="post" action="/jobs" id="dedup-form">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="kind" value="dedup">
+      <button type="submit" class="warn">Запустить</button>
+    </form>
+    <script>
+      // Спрашиваем, как при удалении узла. Разъединить сведённое нечем.
+      document.getElementById("dedup-form")?.addEventListener("submit", (event) => {
+        if (!confirm("Запустить дедупликацию по всему графу?\n\nОперация необратимая: сведённые записи обратно не разделяются.")) {
+          event.preventDefault();
+        }
+      });
+    </script>
+  </div>
+</details>
 {% endif %}
 
 {% if under_way %}

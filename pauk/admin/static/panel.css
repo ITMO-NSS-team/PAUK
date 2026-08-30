@@ -305,3 +305,17 @@ select {
 @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
 
 .section-title { font-size: 15px; margin: 28px 0 12px; }
+
+/* Разбор конвейера по шагам. Свёрнут по умолчанию: обычный день это одна
+   кнопка, а три формы с описаниями нужны, когда что-то доделывают руками.
+   <details> вместо своего скрипта — работает с клавиатуры и без JS. */
+/* Прижат к блоку запуска и отодвинут от того, что ниже: посередине он
+   читался как заголовок следующего раздела, а не как продолжение
+   предыдущего. `.card + .card` сюда не достаёт — <details> не карточка. */
+.steps { margin-top: 6px; margin-bottom: 22px; }
+.steps > summary {
+  cursor: pointer; color: var(--muted); font-size: 14px;
+  padding: 6px 0; width: fit-content;
+}
+.steps > summary:hover { color: var(--text); }
+.steps[open] > summary { margin-bottom: 10px; }
