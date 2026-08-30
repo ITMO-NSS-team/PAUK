@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,8 +8,8 @@ from urllib.parse import parse_qs, urlparse
 import fitz
 import mongomock
 
-from pauk.models import CodeLink, GitHubProfile, Publication, RepoLink, Repository
-from pauk.models.processing import ProcessingStatus
+from pauk.models import CodeLink, GitHubProfile, LinkOccurrence, Publication, RepoLink, Repository
+from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.stages.base import PreparedSelection
 from pauk.pipeline.stages.code_links import (
     CodeLinksStage,
@@ -66,7 +67,8 @@ class StagesTest(unittest.TestCase):
         rows = {row.id: row for row in prepared.read_models("publications", Publication)}
         self.assertEqual(rows["W1"].processing["code_links"].status, ProcessingStatus.COMPLETED)
         self.assertEqual(rows["W2"].processing["code_links"].status, ProcessingStatus.COMPLETED_EMPTY)
-        self.assertTrue(rows["W1"].has_code)
+        self.assertFalse(rows["W1"].has_code)
+        self.assertIsNone(rows["W1"].code_url)
         links = {r.publication_id: r for r in prepared.read_models("repo_links", RepoLink)}
         # code_links only records what was found; whether it's the
         # authors' own artifact is link_relevance's call, not this stage's.
@@ -109,6 +111,101 @@ class StagesTest(unittest.TestCase):
         RepositoriesStage(prepared, raw, force=True).run()
         self.assertEqual(github_client.return_value.get_repository.call_count, 1)
 
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_repositories_enriches_every_mention_but_only_links_authors_artifacts(
+        self, github_client,
+    ):
+        github_client.return_value.get_repository.return_value = {
+            "html_url": "https://github.com/org/repo",
+            "name": "repo",
+            "owner": {"login": "org", "type": "Organization"},
+        }
+        github_client.return_value.has_readme.return_value = True
+        github_client.return_value.contributors.return_value = []
+        github_client.return_value.commits.return_value = []
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1", links=[CodeLink(
+                url="https://github.com/org/repo", is_relevant=True,
+            )]),
+            RepoLink(publication_id="W2", links=[CodeLink(
+                url="https://github.com/org/repo", is_relevant=False,
+            )]),
+        ])
+
+        RepositoriesStage(prepared, raw).run()
+
+        repository = next(prepared.read_models("repositories", Repository))
+        self.assertEqual(repository.publication_ids, ["W1"])
+        self.assertEqual(repository.cited_urls, ["https://github.com/org/repo"])
+        self.assertEqual(github_client.return_value.get_repository.call_count, 1)
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_repositories_removes_a_stale_implementation_but_keeps_other_groups(
+        self, github_client,
+    ):
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        prepared.write_models("repositories", [Repository(
+            id="github_org_repo",
+            name="repo",
+            url="https://github.com/org/repo",
+            publication_ids=["W1", "W-outside-this-group"],
+            processing={
+                "repositories": ProcessingState(status=ProcessingStatus.COMPLETED),
+            },
+        )])
+        prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1", links=[CodeLink(
+                url="https://github.com/org/repo", is_relevant=False,
+            )]),
+        ])
+
+        RepositoriesStage(prepared, raw).run()
+
+        repository = next(prepared.read_models("repositories", Repository))
+        self.assertEqual(repository.publication_ids, ["W-outside-this-group"])
+        github_client.return_value.get_repository.assert_not_called()
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_repositories_preserves_claim_without_a_matching_discovered_link(
+        self, github_client,
+    ):
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        completed = ProcessingState(status=ProcessingStatus.COMPLETED)
+        prepared.write_models("repositories", [
+            Repository(
+                id="github_org_curated",
+                name="curated",
+                url="https://github.com/org/curated",
+                publication_ids=["W1"],
+                processing={"repositories": completed},
+            ),
+            Repository(
+                id="github_org_mentioned",
+                name="mentioned",
+                url="https://github.com/org/mentioned",
+                processing={"repositories": completed},
+            ),
+        ])
+        prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1", links=[CodeLink(
+                url="https://github.com/org/mentioned", is_relevant=False,
+            )]),
+        ])
+
+        RepositoriesStage(prepared, raw).run()
+
+        repositories = {
+            repository.id: repository
+            for repository in prepared.read_models("repositories", Repository)
+        }
+        self.assertEqual(repositories["github_org_curated"].publication_ids, ["W1"])
+        self.assertEqual(repositories["github_org_mentioned"].publication_ids, [])
+        github_client.return_value.get_repository.assert_not_called()
+
     def test_force_reprocesses_completed_rows(self):
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
@@ -134,14 +231,32 @@ class StagesTest(unittest.TestCase):
             Publication(id="W3", title="ablab/spades: Release v4.3.0", type="article"),
         ])
         CodeLinksStage(prepared, raw).run()
+        LinkRelevanceStage(prepared, raw).run()
         rows = {r.id: r for r in prepared.read_models("publications", Publication)}
-        self.assertEqual(rows["W1"].code_url, "https://github.com/asl/BandageNG")
+        self.assertEqual(json.loads(rows["W1"].code_url), ["https://github.com/asl/BandageNG"])
         links = {r.publication_id: r for r in prepared.read_models("repo_links", RepoLink)}
         self.assertEqual(links["W1"].links[0].llm_reason, "repository_archived_by_this_deposit")
         # A title with a space before the colon is prose, not owner/name,
         # and a plain article is never read as an archive.
         self.assertIsNone(rows["W2"].code_url)
         self.assertIsNone(rows["W3"].code_url)
+
+    def test_code_links_invalidates_a_verdict_based_on_previous_contexts(self):
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        prepared.write_models("publications", [Publication(
+            id="W1",
+            title="paper",
+            abstract="https://github.com/org/repo",
+            processing={
+                "link_relevance": ProcessingState(status=ProcessingStatus.COMPLETED),
+            },
+        )])
+
+        CodeLinksStage(prepared, raw).run()
+
+        publication = next(prepared.read_models("publications", Publication))
+        self.assertNotIn("link_relevance", publication.processing)
 
     @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
     def test_link_relevance_classifies_pending_links(self, openrouter_client):
@@ -163,6 +278,144 @@ class StagesTest(unittest.TestCase):
         self.assertTrue(link.is_relevant)
         self.assertEqual(link.llm_confidence, 0.9)
         self.assertEqual(link.llm_reason, "authors say so")
+        self.assertTrue(rows["W1"].has_code)
+        self.assertEqual(json.loads(rows["W1"].code_url), ["https://github.com/org/repo"])
+
+    def test_link_relevance_stores_all_authors_repositories_in_discovery_order(self):
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        prepared.write_models("publications", [Publication(id="W1", title="paper")])
+        prepared.write_models("repo_links", [RepoLink(publication_id="W1", links=[
+            CodeLink(
+                url="https://github.com/org/first",
+                is_relevant=True,
+                llm_confidence=0.6,
+                llm_reason="authors' repository",
+            ),
+            CodeLink(
+                url="https://github.com/org/third-party",
+                is_relevant=False,
+                llm_confidence=1.0,
+                llm_reason="dependency",
+            ),
+            CodeLink(
+                url="https://github.com/org/best",
+                is_relevant=True,
+                llm_confidence=0.9,
+                llm_reason="authors' repository",
+            ),
+        ])])
+
+        LinkRelevanceStage(prepared, raw).run()
+
+        publication = next(prepared.read_models("publications", Publication))
+        self.assertTrue(publication.has_code)
+        self.assertEqual(
+            json.loads(publication.code_url),
+            ["https://github.com/org/first", "https://github.com/org/best"],
+        )
+
+    def test_link_relevance_does_not_count_false_or_uncertain_links_as_code(self):
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        prepared.write_models("publications", [Publication(
+            id="W1", title="paper", has_code=True, code_url="https://github.com/org/stale",
+        )])
+        prepared.write_models("repo_links", [RepoLink(publication_id="W1", links=[
+            CodeLink(
+                url="https://github.com/org/dependency",
+                is_relevant=False,
+                llm_confidence=0.9,
+                llm_reason="dependency",
+            ),
+            CodeLink(
+                url="https://github.com/org/uncertain",
+                is_relevant=None,
+                llm_confidence=0.2,
+                llm_reason="insufficient context",
+            ),
+        ])])
+
+        LinkRelevanceStage(prepared, raw).run()
+
+        publication = next(prepared.read_models("publications", Publication))
+        self.assertFalse(publication.has_code)
+        self.assertIsNone(publication.code_url)
+
+    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
+    def test_link_relevance_sends_every_occurrence_in_one_prompt(self, openrouter_client):
+        openrouter_client.return_value.chat_json.return_value = {
+            "is_authors_artifact": True, "confidence": 0.9, "reason": "later context confirms it",
+        }
+        openrouter_client.return_value.last_response = {"choices": []}
+        openrouter_client.return_value.last_usage = None
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        prepared.write_models("publications", [Publication(id="W1", title="paper")])
+        prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1", links=[CodeLink(
+                url="https://github.com/org/repo",
+                occurrences=[
+                    LinkOccurrence(context="We use this library as a dependency."),
+                    LinkOccurrence(context="Our complete implementation is available here.", page_number=7),
+                ],
+            )]),
+        ])
+
+        LinkRelevanceStage(prepared, raw).run()
+
+        [call] = openrouter_client.return_value.chat_json.call_args_list
+        prompt = call.args[0]
+        self.assertIn("We use this library as a dependency.", prompt)
+        self.assertIn("Our complete implementation is available here.", prompt)
+        self.assertIn("абстракт OpenAlex", prompt)
+        self.assertIn("страница 7", prompt)
+
+    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
+    def test_link_relevance_keeps_an_explicit_uncertain_verdict(self, openrouter_client):
+        openrouter_client.return_value.chat_json.return_value = {
+            "is_authors_artifact": None, "confidence": 0.3, "reason": "insufficient context",
+        }
+        openrouter_client.return_value.last_response = {"choices": []}
+        openrouter_client.return_value.last_usage = None
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        prepared.write_models("publications", [Publication(id="W1", title="paper")])
+        prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1", links=[CodeLink(url="https://github.com/org/repo")]),
+        ])
+
+        LinkRelevanceStage(prepared, raw).run()
+
+        rows = {r.id: r for r in prepared.read_models("publications", Publication)}
+        self.assertEqual(rows["W1"].processing["link_relevance"].status, ProcessingStatus.COMPLETED)
+        link = next(prepared.read_models("repo_links", RepoLink)).links[0]
+        self.assertIsNone(link.is_relevant)
+        self.assertEqual(link.llm_confidence, 0.3)
+        self.assertEqual(link.llm_reason, "insufficient context")
+
+    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
+    def test_link_relevance_rejects_a_non_boolean_verdict(self, openrouter_client):
+        openrouter_client.return_value.chat_json.return_value = {
+            "is_authors_artifact": "false", "confidence": 0.8, "reason": "wrong JSON type",
+        }
+        openrouter_client.return_value.last_response = {"choices": []}
+        openrouter_client.return_value.last_usage = None
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        prepared.write_models("publications", [Publication(id="W1", title="paper")])
+        prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1", links=[CodeLink(url="https://github.com/org/repo")]),
+        ])
+
+        LinkRelevanceStage(prepared, raw).run()
+
+        rows = {r.id: r for r in prepared.read_models("publications", Publication)}
+        self.assertEqual(rows["W1"].processing["link_relevance"].status, ProcessingStatus.FAILED)
+        link = next(prepared.read_models("repo_links", RepoLink)).links[0]
+        self.assertIsNone(link.is_relevant)
+        [log] = list(self.db["llm_logs_link_relevance"].find({}))
+        self.assertEqual(log["error"], "is_authors_artifact must be true, false, or null")
 
     @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
     def test_link_relevance_logs_every_llm_call(self, openrouter_client):
@@ -189,7 +442,7 @@ class StagesTest(unittest.TestCase):
         self.assertEqual(log["context"], {"publication_id": "W1", "url": "https://github.com/org/repo"})
 
     @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
-    def test_link_relevance_skips_already_classified_links(self, openrouter_client):
+    def test_link_relevance_reuses_already_classified_links_without_an_llm_call(self, openrouter_client):
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
         prepared.write_models("publications", [Publication(id="W1", title="paper")])
@@ -199,8 +452,11 @@ class StagesTest(unittest.TestCase):
                 llm_confidence=1.0, llm_reason="repository_archived_by_this_deposit")]),
         ])
         result = LinkRelevanceStage(prepared, raw).run()
-        self.assertEqual(result["publications"], 0)
+        self.assertEqual(result["publications"], 1)
         openrouter_client.return_value.chat_json.assert_not_called()
+        publication = next(prepared.read_models("publications", Publication))
+        self.assertTrue(publication.has_code)
+        self.assertEqual(json.loads(publication.code_url), ["https://github.com/asl/BandageNG"])
 
     @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
     def test_link_relevance_force_rejudges_llm_verdicts_but_not_the_archived_deposit(self, openrouter_client):
@@ -243,6 +499,39 @@ class StagesTest(unittest.TestCase):
         self.assertEqual(rows["W1"].processing["link_relevance"].status, ProcessingStatus.FAILED)
         link = next(prepared.read_models("repo_links", RepoLink)).links[0]
         self.assertIsNone(link.is_relevant)
+
+    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
+    def test_link_relevance_force_failure_clears_the_stale_verdict_for_retry(self, openrouter_client):
+        openrouter_client.return_value.chat_json.return_value = None
+        openrouter_client.return_value.last_response = None
+        openrouter_client.return_value.last_usage = None
+        openrouter_client.return_value.last_error = "temporary failure"
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        prepared.write_models("publications", [Publication(
+            id="W1",
+            title="paper",
+            has_code=True,
+            code_url='["https://github.com/org/repo"]',
+        )])
+        prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1", links=[CodeLink(
+                url="https://github.com/org/repo",
+                is_relevant=True,
+                llm_confidence=0.9,
+                llm_reason="old verdict",
+            )]),
+        ])
+
+        LinkRelevanceStage(prepared, raw, force=True).run()
+
+        link = next(prepared.read_models("repo_links", RepoLink)).links[0]
+        self.assertIsNone(link.is_relevant)
+        self.assertIsNone(link.llm_confidence)
+        self.assertIsNone(link.llm_reason)
+        publication = next(prepared.read_models("publications", Publication))
+        self.assertTrue(publication.has_code)
+        self.assertEqual(publication.code_url, '["https://github.com/org/repo"]')
 
     def test_code_links_respects_publication_input_scope(self):
         prepared = PreparedStore(self.db, "sample")

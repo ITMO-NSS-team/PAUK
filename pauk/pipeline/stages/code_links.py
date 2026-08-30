@@ -234,8 +234,10 @@ class CodeLinksStage(EnrichmentStage):
                     **occurrences_by_url,
                 }
             urls = list(occurrences_by_url)
-            pub.has_code = bool(urls)
-            pub.code_url = urls[0] if urls else None
+            # Replacing the evidence invalidates any verdict made from the
+            # previous contexts; the next link_relevance pass must judge the
+            # new set even when that stage had already completed.
+            pub.processing.pop("link_relevance", None)
             pub.processing[self.name] = ProcessingState(
                 status=ProcessingStatus.FAILED
                 if pdf_error

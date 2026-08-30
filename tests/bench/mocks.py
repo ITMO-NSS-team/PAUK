@@ -144,6 +144,24 @@ class MockOpenRouterClient:
         }
 
 
+class MockLinkRelevanceClient:
+    """Classifies the synthetic bench code citations without an LLM call."""
+
+    def __init__(self) -> None:
+        self.last_response = None
+        self.last_usage = None
+        self.last_error = None
+
+    def chat_json(self, prompt: str) -> dict:
+        result = {
+            "is_authors_artifact": True,
+            "confidence": 1.0,
+            "reason": "mock: synthetic benchmark repository",
+        }
+        self.last_response = result
+        return result
+
+
 class UnexpectedNetworkClient:
     """Any call means a stage tried the network although it shouldn't have."""
 
@@ -168,13 +186,22 @@ class RecordingNeo4jClient:
         self.edges: dict[tuple[str, str, str, str, str], dict] = {}
         self.unresolved: list[tuple[str, str, str, str, str]] = []
 
+    @staticmethod
+    def _set_properties(target: dict, properties: dict) -> None:
+        """Mirror Neo4j SET += semantics, where a scalar null removes a property."""
+        for key, value in properties.items():
+            if value is None:
+                target.pop(key, None)
+            else:
+                target[key] = value
+
     # --- Neo4jClient interface -------------------------------------------------
     def upsert_nodes_batch(self, labels, nodes) -> None:
         label_str = ":".join(labels) if isinstance(labels, list) else labels
         primary = label_str.split(":")[0]
         for node_id, props in nodes:
             clean = {k: v for k, v in props.items() if k not in ("id", "created_at", "updated_at")}
-            self.nodes[primary].setdefault(node_id, {}).update(clean)
+            self._set_properties(self.nodes[primary].setdefault(node_id, {}), clean)
 
     def upsert_person_nodes_batch(self, nodes) -> None:
         for node_id, props in nodes:
@@ -197,11 +224,28 @@ class RecordingNeo4jClient:
                              for node in self.nodes.get(tgt_primary, {}).values())
             if src_ok and tgt_ok:
                 key = (src_primary, rel_type, tgt_primary, src_id, tgt_id)
-                self.edges.setdefault(key, {}).update(props)
+                self._set_properties(self.edges.setdefault(key, {}), props)
                 matched += 1
             else:
                 self.unresolved.append((src_label, rel_type, tgt_label, src_id, tgt_id))
         return matched
+
+    def sync_implements_relationships_batch(self, publications) -> int:
+        removed = 0
+        for publication_id, repository_ids in publications:
+            desired = set(repository_ids)
+            for key in list(self.edges):
+                src_label, rel_type, tgt_label, src_id, tgt_id = key
+                if (
+                    src_label == "Repository"
+                    and rel_type == "IMPLEMENTS"
+                    and tgt_label == "Publication"
+                    and tgt_id == publication_id
+                    and src_id not in desired
+                ):
+                    del self.edges[key]
+                    removed += 1
+        return removed
 
     def promote_link_candidates_batch(self, candidates) -> None:
         """Mirror of Neo4jClient.promote_link_candidates_batch: move

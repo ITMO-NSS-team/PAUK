@@ -570,3 +570,38 @@ class Neo4jClient:
                 len(batch) - matched,
             )
         return matched
+
+    def sync_implements_relationships_batch(
+        self, publications: list[tuple[str, list[str]]]
+    ) -> int:
+        """Remove IMPLEMENTS edges that disagree with classified repository links.
+
+        Each publication carries the complete set of repository ids currently
+        confirmed as its authors' artifacts. Only stale edges are deleted here;
+        the regular relationship upsert remains responsible for creating the
+        desired ones.
+        """
+        if not publications:
+            return 0
+
+        batch = [
+            {"publication_id": publication_id, "repository_ids": repository_ids}
+            for publication_id, repository_ids in publications
+        ]
+        query = cast(
+            LiteralString,
+            """
+            UNWIND $batch AS row
+            MATCH (publication:Publication {id: row.publication_id})
+            OPTIONAL MATCH (repository:Repository)-[relationship:IMPLEMENTS]->(publication)
+            WITH row, repository, relationship
+            WHERE relationship IS NOT NULL
+              AND NOT (repository.id IN row.repository_ids)
+            DELETE relationship
+            RETURN count(*) AS removed
+            """,
+        )
+        with self.driver.session() as session:
+            return session.execute_write(
+                lambda tx: tx.run(query, batch=batch).single()["removed"]
+            )
