@@ -304,6 +304,20 @@ class AuditedNeo4jClient:
         self._emit_diffs("upsert_relationships", entity_type, before, after)
         return matched
 
+    def sync_implements_relationships_batch(
+        self, publications: list[tuple[str, list[str]]]
+    ) -> int:
+        if not publications:
+            return 0
+        removed = self._client.sync_implements_relationships_batch(publications)
+        if removed:
+            self._emit_bulk_summary(
+                "sync_implements_relationships",
+                "(Repository)-[:IMPLEMENTS]->(Publication)",
+                removed,
+            )
+        return removed
+
     def _wrap_merge(self, label: str, method_name: str, merges: list[tuple[str, str]]) -> int:
         """Shared wrapper for merge_person/publication/repository_nodes_batch.
 

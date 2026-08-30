@@ -71,6 +71,8 @@ class Repository(BaseModel):
     contributors: list[str] = Field(default_factory=list)
     owner_login: str | None = None
     department_ids: list[str] = Field(default_factory=list)
+    # Publications whose authors produced this repository. Plain citations
+    # stay in RepoLink and become MENTIONS_LINK relationships instead.
     publication_ids: list[str] = Field(default_factory=list)
     processing: dict[str, ProcessingState] = Field(default_factory=dict, alias="_processing")
 

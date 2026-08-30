@@ -163,6 +163,22 @@ class RepositoriesStage(EnrichmentStage):
         client = GitHubClient(self.config.request_timeout, self.config.github_token)
         changed = 0
         attempted_repo_ids: set[str] = set()
+        scoped_publication_ids = {
+            row.publication_id for row in rows if self._row_in_scope(row)
+        }
+        selected_repository_ids = (
+            self.selection.ids
+            if self.selection is not None and self.selection.entity == "repositories"
+            else None
+        )
+        for repo in repositories.values():
+            if selected_repository_ids is not None and repo.id not in selected_repository_ids:
+                continue
+            repo.publication_ids = [
+                publication_id
+                for publication_id in repo.publication_ids
+                if publication_id not in scoped_publication_ids
+            ]
         progress = self.progress_bar(
             total=len(self._pending_repository_ids(rows, repositories)), unit="repository")
         for row in rows:
@@ -184,7 +200,7 @@ class RepositoriesStage(EnrichmentStage):
                     continue
                 repo = repositories.get(repo_id)
                 if repo is not None:
-                    if row.publication_id not in repo.publication_ids:
+                    if link.is_relevant is True and row.publication_id not in repo.publication_ids:
                         repo.publication_ids.append(row.publication_id)
                     if url not in repo.cited_urls:
                         repo.cited_urls.append(url)
@@ -192,14 +208,20 @@ class RepositoriesStage(EnrichmentStage):
                     if not self.needs_attempt(state):
                         continue
                 else:
-                    repo = Repository(id=repo_id, url=url, name=name,
-                                      publication_ids=[row.publication_id], cited_urls=[url])
+                    repo = Repository(
+                        id=repo_id,
+                        url=url,
+                        name=name,
+                        publication_ids=[row.publication_id] if link.is_relevant is True else [],
+                        cited_urls=[url],
+                    )
                     repositories[repo_id] = repo
                     state = None
                 # One repository can be mentioned by many publications. Its
-                # publication IDs are collected above, but the GitHub API must
-                # be called at most once per enrichment run (especially with
-                # --force, which otherwise retries every mention).
+                # author-artifact publication IDs and every cited URL are
+                # collected above, but the GitHub API must be called at most
+                # once per enrichment run (especially with --force, which
+                # otherwise retries every mention).
                 if repo_id in attempted_repo_ids:
                     continue
                 attempted_repo_ids.add(repo_id)

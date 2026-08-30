@@ -13,6 +13,7 @@ class FakeNeo4jClient:
     def __init__(self):
         self.calls: list[tuple[str, tuple]] = []
         self.relationships_matched = 0
+        self.relationships_removed = 0
         self.nodes_removed = 0
 
     def upsert_nodes_batch(self, labels, nodes):
@@ -24,6 +25,10 @@ class FakeNeo4jClient:
     def upsert_relationships_batch(self, src_label, tgt_label, rel_type, relationships, tgt_match_prop="id"):
         self.calls.append(("upsert_relationships_batch", (src_label, tgt_label, rel_type, relationships)))
         return self.relationships_matched
+
+    def sync_implements_relationships_batch(self, publications):
+        self.calls.append(("sync_implements_relationships_batch", (publications,)))
+        return self.relationships_removed
 
     def merge_person_nodes_batch(self, merges):
         self.calls.append(("merge_person_nodes_batch", (merges,)))
@@ -154,6 +159,22 @@ class UpsertRelationshipsDiffTest(unittest.TestCase):
         self.assertEqual(entry.entity_type, "(Person)-[:AUTHORED]->(Publication)")
         self.assertEqual(entry.entity_id, "p1 -> pub1")
         self.assertEqual(entry.change_kind, "created")
+
+
+class SyncImplementsAuditTest(unittest.TestCase):
+    def test_removed_relationships_are_recorded_as_a_bulk_change(self):
+        client, fake, sink = audited_client()
+        fake.relationships_removed = 2
+        batch = [("W1", ["github_org_authors_repo"])]
+
+        removed = client.sync_implements_relationships_batch(batch)
+
+        self.assertEqual(removed, 2)
+        self.assertEqual(fake.calls, [("sync_implements_relationships_batch", (batch,))])
+        [entry] = sink.entries
+        self.assertEqual(entry.operation, "sync_implements_relationships")
+        self.assertEqual(entry.entity_type, "(Repository)-[:IMPLEMENTS]->(Publication)")
+        self.assertEqual(entry.change_kind, "bulk")
 
 
 class MergeNodesDiffTest(unittest.TestCase):

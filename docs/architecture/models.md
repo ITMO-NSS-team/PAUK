@@ -81,7 +81,9 @@ Pydantic-модели того, что лежит в `data/prepared/<group>/*.js
   числовой id GitHub, переживает переименования/передачу владения, ключ
   дедупа. `cited_urls` — все URL, под которыми на репозиторий когда-либо
   ссылались (до канонизации) — по ним граф-загрузчик резолвит старые
-  ссылки на этот узел. `merged_ids` — id репозиториев, схлопнутых в этот.
+  ссылки на этот узел. `publication_ids` — только публикации, чьим
+  авторским результатом признан репозиторий; обычные упоминания остаются в
+  `RepoLink`. `merged_ids` — id репозиториев, схлопнутых в этот.
 - **`GitHubProfile`** — аккаунт, найденный за репозиторием: владелец или
   автор коммитов (`login` уникален, отдельно от `id`). Кроме полей самого
   профиля (`name`, `company`, `location`, `description`) несёт то, против
@@ -99,7 +101,8 @@ Pydantic-модели того, что лежит в `data/prepared/<group>/*.js
   ссылку, встретившуюся и в абстракте, и на нескольких страницах.
 - **`CodeLink`** — url, host, `occurrences: list[LinkOccurrence]`,
   `is_relevant`/`llm_confidence`/`llm_reason` — заполняются
-  `code_links.py`, см. [pipeline/code-links.md](pipeline/code-links.md).
+  `link_relevance.py` (кроме детерминированного Zenodo-архива), см.
+  [pipeline/code-links.md](pipeline/code-links.md).
 - **`RepoLink`** — обёртка `{publication_id, links: list[CodeLink]}`,
   ровно то, что лежит одной строкой в `repo_links.jsonl`.
 
