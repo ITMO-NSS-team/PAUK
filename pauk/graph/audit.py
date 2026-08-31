@@ -53,6 +53,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, LiteralString, Protocol, cast
 
+from pymongo.database import Database
+
+from pauk.settings import Settings
+
 from .client import Neo4jClient
 
 logger = logging.getLogger(__name__)
@@ -83,6 +87,19 @@ class actor_context:
     def __exit__(self, *exc_info) -> None:
         _actor_var.reset(self._actor_token)
         _source_var.reset(self._source_token)
+
+
+def set_actor(actor: str, source: str | None = None) -> None:
+    """Name the actor for everything this context audits from now on.
+
+    The block form (`actor_context`) restores the previous actor on exit,
+    which needs the entry and the exit to happen in one context. A
+    generator dependency in FastAPI is entered and resumed in different
+    ones, and resetting a token across that boundary raises. Callers in
+    that position set the actor and let the next one overwrite it.
+    """
+    _actor_var.set(actor)
+    _source_var.set(source or actor)
 
 
 @dataclass(frozen=True)
@@ -140,6 +157,109 @@ class JSONLAuditSink:
             fh.write("\n".join(lines) + "\n")
 
 
+def _storable(value: Any) -> Any:
+    """A value MongoDB can store, or its string form.
+
+    Property values come back from the driver as whatever type Neo4j used
+    (neo4j.time.DateTime among them), and pymongo refuses what it cannot
+    encode. The audit path must never be the thing that fails a write, so
+    anything unrecognised is kept as text — same reasoning as `default=str`
+    in the JSONL sink.
+    """
+    if isinstance(value, (str, int, float, bool, type(None))):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_storable(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _storable(item) for key, item in value.items()}
+    return str(value)
+
+
+class MongoAuditSink:
+    """Audit entries in a MongoDB collection, for the panel's change feed.
+
+    JSONL stays useful for grepping a run; a feed in the UI needs filters
+    by actor and entity plus pagination, which a flat file cannot serve.
+    Both sinks can run side by side — AuditedNeo4jClient takes one sink, so
+    pair them with `MultiAuditSink` when both are wanted.
+    """
+
+    COLLECTION = "audit"
+
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    def write(self, entries: Sequence[AuditEntry]) -> None:
+        if not entries:
+            return
+        self.db[self.COLLECTION].insert_many([
+            {
+                "timestamp": entry.timestamp,
+                "actor": entry.actor,
+                "source": entry.source,
+                "operation": entry.operation,
+                "entity_type": entry.entity_type,
+                "entity_id": entry.entity_id,
+                "change_kind": entry.change_kind,
+                # Tuples become two-element lists: BSON has no tuple type,
+                # and readers already expect [old, new] from the JSONL sink.
+                "diff": {field: [_storable(old), _storable(new)]
+                         for field, (old, new) in entry.diff.items()},
+            }
+            for entry in entries
+        ])
+
+
+class MultiAuditSink:
+    """Fans one batch of entries out to several sinks, in order.
+
+    A sink that raises stops the rest: losing an audit record silently is
+    worse than a loud failure, and the caller already treats an audit
+    error as a failed write.
+    """
+
+    def __init__(self, *sinks: AuditSink) -> None:
+        self.sinks = sinks
+
+    def write(self, entries: Sequence[AuditEntry]) -> None:
+        for sink in self.sinks:
+            sink.write(entries)
+
+
+def build_audit_sink(config: Settings, db: Database | None = None) -> AuditSink:
+    """The sink every entry point should use.
+
+    JSONL stays for grepping a run from the shell; the Mongo collection is
+    what the panel's change feed can filter and paginate. Without a
+    database only the file is written, which keeps the CLI usable when
+    Mongo is not at hand.
+    """
+    config.audit_dir.mkdir(parents=True, exist_ok=True)
+    jsonl = JSONLAuditSink(config.audit_dir / "audit.jsonl")
+    return MultiAuditSink(jsonl, MongoAuditSink(db)) if db is not None else jsonl
+
+
+def audited_client(config: Settings, db: Database | None = None,
+                   actor: str | None = None, source: str | None = None,
+                   **driver_options) -> AuditedNeo4jClient:
+    """An open Neo4j client that records what it changes.
+
+    Callers own the returned client and must close() it, same as with a
+    plain Neo4jClient.
+
+    Args:
+        actor: Name to record for every change this client makes. Leave it
+            out inside a CLI command and wrap the work in `actor_context`
+            instead; pass it where the work spans contexts, such as a web
+            request, because a contextvar set in a dependency is not
+            visible in the route.
+        source: Where the changes come from, e.g. "admin-ui".
+    """
+    raw = Neo4jClient(config.neo4j_uri, config.neo4j_user, config.neo4j_password,
+                      **driver_options)
+    return AuditedNeo4jClient(raw, build_audit_sink(config, db), actor=actor, source=source)
+
+
 def _diff_props(before: dict | None, after: dict | None) -> tuple[dict[str, tuple[Any, Any]], str]:
     """Field-level diff between two property maps for the same entity id."""
     if before is None:
@@ -161,17 +281,33 @@ class AuditedNeo4jClient:
     snapshot -> underlying call -> snapshot -> diff -> sink.
     """
 
-    def __init__(self, client: Neo4jClient, sink: AuditSink, diff_threshold: int = 50):
+    def __init__(self, client: Neo4jClient, sink: AuditSink, diff_threshold: int = 50,
+                 actor: str | None = None, source: str | None = None):
         """
         Args:
             client: The real Neo4jClient to wrap.
             sink: Where audit entries go.
             diff_threshold: Batches with this many rows or more get one coarse summary entry instead of a per-row
                 diff. Keeps large ETL loads cheap while front-end single-row edits still get full field-level diffs.
+            actor: Who to record as the author, fixed for this client's
+                lifetime. Callers that cannot rely on `actor_context` pass
+                it here — a web request enters its dependency in one
+                context and runs the route in another, and a contextvar
+                does not cross that boundary: entries came out as
+                "unknown" even though a person was signed in.
+            source: Where the change came from, alongside `actor`.
         """
         self._client = client
         self._sink = sink
         self._diff_threshold = diff_threshold
+        self._actor = actor
+        self._source = source
+
+    def _who(self) -> tuple[str, str]:
+        """The actor to record: the fixed one if set, else the context's."""
+        if self._actor is not None:
+            return self._actor, self._source or self._actor
+        return _actor_var.get(), _source_var.get()
 
     def __getattr__(self, name: str):
         return getattr(self._client, name)
@@ -187,8 +323,8 @@ class AuditedNeo4jClient:
             [
                 AuditEntry(
                     timestamp=self._now(),
-                    actor=_actor_var.get(),
-                    source=_source_var.get(),
+                    actor=self._who()[0],
+                    source=self._who()[1],
                     operation=operation,
                     entity_type=entity_type,
                     entity_id=f"<bulk: {row_count} rows>",
@@ -206,7 +342,7 @@ class AuditedNeo4jClient:
         after_by_id: dict[str, dict],
     ) -> None:
         now = self._now()
-        actor, source = _actor_var.get(), _source_var.get()
+        actor, source = self._who()
         entries = []
         for entity_id in before_by_id.keys() | after_by_id.keys():
             diff, kind = _diff_props(before_by_id.get(entity_id), after_by_id.get(entity_id))
@@ -330,6 +466,37 @@ class AuditedNeo4jClient:
     def merge_repository_nodes_batch(self, merges: list[tuple[str, str]]) -> int:
         return self._wrap_merge("Repository", "merge_repository_nodes_batch", merges)
 
+    def delete_nodes_batch(self, label: str, ids: list[str], detach: bool = True) -> int:
+        # Always diffed per node, whatever the batch size: a deletion is the
+        # one change that cannot be reconstructed from the graph afterwards,
+        # so the entry carrying the node's last known fields is the only
+        # record left of what was there.
+        if not ids:
+            return 0
+        before = self._fetch_node_props(label, ids)
+        removed = self._client.delete_nodes_batch(label, ids, detach)
+        after = self._fetch_node_props(label, ids)
+        self._emit_diffs("delete_nodes", label, before, after)
+        return removed
+
+    def delete_relationships_batch(
+        self,
+        src_label: str,
+        tgt_label: str,
+        rel_type: str,
+        pairs: list[tuple[str, str]],
+        tgt_match_prop: str = "id",
+    ) -> int:
+        if not pairs:
+            return 0
+        entity_type = f"({src_label})-[:{rel_type}]->({tgt_label})"
+        before = self._fetch_rel_props(src_label, tgt_label, rel_type, tgt_match_prop, pairs)
+        removed = self._client.delete_relationships_batch(
+            src_label, tgt_label, rel_type, pairs, tgt_match_prop)
+        after = self._fetch_rel_props(src_label, tgt_label, rel_type, tgt_match_prop, pairs)
+        self._emit_diffs("delete_relationships", entity_type, before, after)
+        return removed
+
     def promote_link_candidates_batch(self, candidates: list[tuple[str, str]]) -> None:
         if not candidates:
             return
@@ -338,3 +505,37 @@ class AuditedNeo4jClient:
         self._client.promote_link_candidates_batch(candidates)
         after = self._fetch_node_props("LinkCandidate", ids)  # candidates that were promoted vanish -> "deleted"
         self._emit_diffs("promote_link_candidates", "LinkCandidate", before, after)
+
+
+class SharedGraph:
+    """One driver for the whole service, one audited wrapper per caller.
+
+    A driver owns a connection pool and is meant to outlive a single
+    request; opening one per page means building and tearing down that
+    pool every time. The wrapper around it is cheap and carries the actor,
+    so each caller gets its own without touching the connection.
+
+    Callers close nothing: `close()` belongs to whoever owns the service.
+    """
+
+    def __init__(self, config: Settings, db: Database | None = None, **driver_options):
+        self._raw = Neo4jClient(config.neo4j_uri, config.neo4j_user, config.neo4j_password,
+                                **driver_options)
+        self._sink = build_audit_sink(config, db)
+
+    def audited(self, actor: str | None = None, source: str | None = None) -> AuditedNeo4jClient:
+        return _NonClosing(self._raw, self._sink, actor=actor, source=source)
+
+    def close(self) -> None:
+        self._raw.close()
+
+
+class _NonClosing(AuditedNeo4jClient):
+    """A wrapper whose close() leaves the shared driver alone.
+
+    Routes close their client when the request ends, which must not take
+    the connection pool with it.
+    """
+
+    def close(self) -> None:
+        return None

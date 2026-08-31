@@ -94,6 +94,53 @@ pauk dedup graph
 запускается вручную, когда накопилось несколько групп. См.
 [pipeline/dedup.md](pipeline/dedup.md).
 
+## `admin` — ручная правка графа
+
+```
+pauk admin schema
+pauk admin node show   <Label> <id>
+pauk admin node create <Label> <id> --set поле=значение [--set ...]
+pauk admin node set    <Label> <id> --set поле=значение [--expect-updated-at <метка>]
+pauk admin node delete <Label> <id> [--cascade]
+pauk admin rel add     <SrcLabel> <REL_TYPE> <TgtLabel> <src_id> <tgt_id> [--set ...]
+pauk admin rel delete  <SrcLabel> <REL_TYPE> <TgtLabel> <src_id> <tgt_id>
+pauk admin merge       <Label> <дубль> <канонический> [--yes]
+```
+
+Правки идут через `pauk/graph/mutations.py` — метки, типы связей и поля
+проверяются по белому списку, выведенному из `NODE_REGISTRY`
+(см. [neo4j-graph.md](neo4j-graph.md)). `pauk admin schema` печатает этот
+список целиком и единственная из команд не требует ни Mongo, ни Neo4j.
+
+Значения `--set` читаются как JSON, если это возможно: `stars_num=10` даёт
+число, `has_readme=true` — булево, `name_ru=Иванов И. И.` — строку.
+
+Каждая правка попадает в аудит с актором `user:<логин ОС>` (или тем, что
+задан `--actor`) и источником `admin-cli`.
+
+`node set` и `node delete` не просто пишут в граф, а записывают решение в
+`graph_overrides` и применяют его — иначе правка жила бы до следующего
+`publish graph`. `--once` пропускает запись решения (разовая правка,
+которую публикация затрёт), `--note` сохраняет причину.
+
+`rel delete` тоже запоминается — иначе `MERGE` пересоздаст ребро из той
+же строки при следующей публикации. `rel add` не запоминается: добавленное
+руками ребро загрузчик не трогает.
+
+```
+pauk admin overrides list           # какие ручные решения в силе
+pauk admin overrides apply          # переприменить их к графу
+pauk admin overrides undo <Label> <id>   # перестать применять, запись сохранится
+pauk admin overrides undo-rel <Src> <REL> <Tgt> <src_id> <tgt_id>   # вернуть связь
+```
+
+`--expect-updated-at` — защита от одновременного редактирования: передайте
+`updated_at`, который вернул `node show`, и запись отклонится, если узел с
+тех пор изменился.
+
+`merge` необратим: дубль удаляется вместе со связями, а восстановить их
+потом не из чего. Команда спрашивает подтверждение, `--yes` его пропускает.
+
 ## `cache export`
 
 ```

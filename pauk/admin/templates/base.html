@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin PAUK</title>
+  {# Ровно то же объявление, что у карты в pauk/gui/web/index.html: один
+     тег, без sizes и без query. Safari разборчив — с sizes="any" (подсказка
+     для масштабируемых форматов) он PNG отбрасывает, и вкладка остаётся
+     пустой, хотя /favicon.ico при этом открывается вручную. #}
+  <link rel="icon" type="image/png" href="/assets/icons/pauk-frame.png" />
+  <link rel="stylesheet" href="{{ stylesheet() }}">
+</head>
+<body>
+{% if user %}
+<header>
+  {# Логотип — кнопка на главную страницу.#}
+  <a href="/" class="logo" title="На главную"><img src="/assets/icons/pauk-frame.png" alt="Admin PAUK"></a>
+  <a href="/audit" class="section {% if request.url.path.startswith('/audit') %}on{% endif %}">
+    Журнал правок
+  </a>
+  <a href="/overrides" class="section {% if request.url.path.startswith('/overrides') %}on{% endif %}">
+    Ручные решения
+  </a>
+  <a href="/jobs" class="section {% if request.url.path.startswith('/jobs') %}on{% endif %}">
+    Задачи
+  </a>
+  <div class="who">
+    <span class="muted">{{ user.login }} · {{ user.role }}</span>
+    <form method="post" action="/logout">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button type="submit" class="ghost">выйти</button>
+    </form>
+  </div>
+</header>
+{% endif %}
+<main>
+{% if user and graph_job %}
+<p class="note bad">
+  Идёт {{ graph_job.kind|job_words }}. Граф сейчас переписывается.
+  Правки пройдут, но публикация может их перекрыть.
+  <a href="/jobs">смотреть задачу</a>
+</p>
+{% endif %}
+{% block content %}{% endblock %}</main>
+</body>
+</html>

@@ -1,7 +1,21 @@
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-from pauk.graph.audit import AuditedNeo4jClient, actor_context
+import mongomock
+
+from pauk.graph.audit import (
+    AuditedNeo4jClient,
+    AuditEntry,
+    JSONLAuditSink,
+    MongoAuditSink,
+    MultiAuditSink,
+    _storable,
+    actor_context,
+    build_audit_sink,
+)
+from pauk.settings import Settings
 
 
 class FakeNeo4jClient:
@@ -232,5 +246,174 @@ class ActorContextTest(unittest.TestCase):
         self.assertEqual(outer_entry.actor, "etl-pipeline")
 
 
+class MongoAuditSinkTest(unittest.TestCase):
+    """The sink the panel's change feed reads from."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.sink = MongoAuditSink(self.db)
+
+    @staticmethod
+    def entry(**overrides):
+        fields = {
+            "timestamp": "2026-08-14T10:00:00+00:00", "actor": "user:petrov",
+            "source": "admin-ui", "operation": "upsert_nodes",
+            "entity_type": "Person", "entity_id": "A1",
+            "change_kind": "updated", "diff": {"name_ru": ("Ivanov I.", "Иванов И. И.")},
+        }
+        return AuditEntry(**{**fields, **overrides})
+
+    def test_an_entry_is_stored_field_by_field(self):
+        self.sink.write([self.entry()])
+        (row,) = self.db.audit.find({}, {"_id": False})
+        self.assertEqual(row["actor"], "user:petrov")
+        self.assertEqual(row["entity_id"], "A1")
+        # BSON has no tuple: readers get [old, new], same as from JSONL.
+        self.assertEqual(row["diff"]["name_ru"], ["Ivanov I.", "Иванов И. И."])
+
+    def test_nothing_is_written_for_an_empty_batch(self):
+        self.sink.write([])
+        self.assertEqual(self.db.audit.count_documents({}), 0)
+
+    def test_a_value_mongo_cannot_store_is_kept_as_text(self):
+        # Neo4j hands back its own types (DateTime and friends). The audit
+        # path must not be the thing that fails a write.
+        class Exotic:
+            def __str__(self):
+                return "2026-08-14T10:00:00"
+
+        self.sink.write([self.entry(diff={"access_date": (None, Exotic())})])
+        (row,) = self.db.audit.find({}, {"_id": False})
+        self.assertEqual(row["diff"]["access_date"], [None, "2026-08-14T10:00:00"])
+
+    def test_the_feed_can_be_read_by_entity_and_by_actor(self):
+        self.sink.write([
+            self.entry(entity_id="A1", actor="user:petrov"),
+            self.entry(entity_id="A2", actor="user:ivanova"),
+        ])
+        self.assertEqual(self.db.audit.count_documents({"entity_type": "Person", "entity_id": "A1"}), 1)
+        self.assertEqual(self.db.audit.count_documents({"actor": "user:ivanova"}), 1)
+
+
+class MultiAuditSinkTest(unittest.TestCase):
+    def test_every_sink_receives_the_batch(self):
+        first, second = InMemorySink(), InMemorySink()
+        entry = MongoAuditSinkTest.entry()
+        MultiAuditSink(first, second).write([entry])
+        self.assertEqual((len(first.entries), len(second.entries)), (1, 1))
+
+    def test_a_failing_sink_is_not_swallowed(self):
+        # Losing an audit record quietly is worse than a loud failure.
+        class Broken:
+            def write(self, entries):
+                raise RuntimeError("mongo is down")
+
+        with self.assertRaises(RuntimeError):
+            MultiAuditSink(Broken(), InMemorySink()).write([MongoAuditSinkTest.entry()])
+
+
+class DeleteAuditTest(unittest.TestCase):
+    """Deletion is the one change nothing can reconstruct afterwards."""
+
+    def setUp(self):
+        self.fake = FakeNeo4jClient()
+        self.fake.delete_nodes_batch = lambda label, ids, detach=True: len(ids)
+        self.fake.delete_relationships_batch = lambda s, t, r, pairs, m="id": len(pairs)
+        self.sink = InMemorySink()
+        self.client = AuditedNeo4jClient(self.fake, self.sink)
+
+    def test_a_deleted_node_is_recorded_with_its_last_values(self):
+        with patch.object(AuditedNeo4jClient, "_fetch_node_props",
+                          side_effect=[{"A1": {"id": "A1", "name_en": "Ivan"}}, {}]), \
+             actor_context("user:petrov", source="admin-cli"):
+            removed = self.client.delete_nodes_batch("Person", ["A1"])
+        self.assertEqual(removed, 1)
+        entry = self.sink.entries[0]
+        self.assertEqual((entry.change_kind, entry.entity_id, entry.actor),
+                         ("deleted", "A1", "user:petrov"))
+        self.assertEqual(entry.diff["name_en"], ("Ivan", None))
+
+    def test_a_large_delete_is_still_diffed_row_by_row(self):
+        # Unlike upsert, deletion never collapses into a bulk summary: the
+        # entry carrying the node's fields is the only record left of it.
+        many = [f"A{i}" for i in range(60)]
+        before = {node_id: {"id": node_id, "name_en": node_id} for node_id in many}
+        with patch.object(AuditedNeo4jClient, "_fetch_node_props", side_effect=[before, {}]):
+            self.client.delete_nodes_batch("Person", many)
+        self.assertEqual(len(self.sink.entries), 60)
+
+    def test_a_deleted_relationship_is_recorded(self):
+        with patch.object(AuditedNeo4jClient, "_fetch_rel_props",
+                          side_effect=[{"A1 -> W1": {"position": 1}}, {}]):
+            removed = self.client.delete_relationships_batch(
+                "Person", "Publication", "AUTHORED", [("A1", "W1")])
+        self.assertEqual(removed, 1)
+        entry = self.sink.entries[0]
+        self.assertEqual(entry.entity_type, "(Person)-[:AUTHORED]->(Publication)")
+        self.assertEqual(entry.change_kind, "deleted")
+
+    def test_an_empty_delete_touches_neither_driver_nor_sink(self):
+        self.assertEqual(self.client.delete_nodes_batch("Person", []), 0)
+        self.assertEqual(self.client.delete_relationships_batch(
+            "Person", "Publication", "AUTHORED", []), 0)
+        self.assertEqual(self.sink.entries, [])
+
+
+class SinkAssemblyTest(unittest.TestCase):
+    """build_audit_sink is what every entry point uses to open the graph."""
+
+    def test_without_a_database_only_the_file_is_written(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sink = build_audit_sink(Settings(data_dir=Path(tmp)))
+            self.assertIsInstance(sink, JSONLAuditSink)
+            self.assertTrue(sink.path.parent.exists())
+
+    def test_with_a_database_both_sinks_receive_the_entry(self):
+        db = mongomock.MongoClient()["pauk_test"]
+        with tempfile.TemporaryDirectory() as tmp:
+            sink = build_audit_sink(Settings(data_dir=Path(tmp)), db)
+            sink.write([MongoAuditSinkTest.entry()])
+            self.assertEqual(db.audit.count_documents({}), 1)
+            written = (Path(tmp) / "audit" / "audit.jsonl")
+            self.assertTrue(written.exists() and written.read_text(encoding="utf-8").strip())
+
+
+class StorableTest(unittest.TestCase):
+    def test_nested_values_survive(self):
+        self.assertEqual(_storable(["a", 1, None]), ["a", 1, None])
+        self.assertEqual(_storable({"k": ["v"]}), {"k": ["v"]})
+
+    def test_keys_that_are_not_text_become_text(self):
+        self.assertEqual(_storable({1: "a"}), {"1": "a"})
+
+
 if __name__ == "__main__":
     unittest.main()
+
+class FixedActorTest(unittest.TestCase):
+    """An actor pinned to the client, for callers that span contexts."""
+
+    def pinned(self, **who):
+        fake, sink = FakeNeo4jClient(), InMemorySink()
+        return AuditedNeo4jClient(fake, sink, **who), sink
+
+    def test_a_pinned_actor_wins_over_the_context(self):
+        # The panel opens its client in a dependency and edits in the
+        # route — different contexts, so a contextvar set in the first is
+        # not visible in the second, and every entry read "unknown".
+        client, sink = self.pinned(actor="user:roman", source="admin-ui")
+        with patch.object(AuditedNeo4jClient, "_fetch_node_props",
+                          side_effect=[{"p1": {}}, {"p1": {"email": "new@x.com"}}]), \
+             actor_context("someone-else", source="cli"):
+            client.upsert_nodes_batch("Person", [("p1", {"email": "new@x.com"})])
+        self.assertEqual([entry.actor for entry in sink.entries], ["user:roman"])
+        self.assertEqual([entry.source for entry in sink.entries], ["admin-ui"])
+
+    def test_without_a_pinned_actor_the_context_still_decides(self):
+        # The CLI relies on this: it wraps its work in actor_context.
+        client, sink = self.pinned()
+        with patch.object(AuditedNeo4jClient, "_fetch_node_props",
+                          side_effect=[{"p1": {}}, {"p1": {"email": "new@x.com"}}]), \
+             actor_context("pipeline", source="publish"):
+            client.upsert_nodes_batch("Person", [("p1", {"email": "new@x.com"})])
+        self.assertEqual([entry.actor for entry in sink.entries], ["pipeline"])

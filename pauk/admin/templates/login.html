@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card narrow">
+  <div style="margin-bottom:18px">
+    <div style="font-weight:700; letter-spacing:.04em">Admin PAUK</div>
+    <div class="muted">панель редактирования графа</div>
+  </div>
+  {% if error %}<p class="error">Неверный логин или пароль.</p>{% endif %}
+  <form method="post" action="/login">
+    <input type="hidden" name="next" value="{{ next|default("/") }}">
+    <div style="margin-bottom:14px">
+      <label for="login">Логин</label>
+      <input type="text" id="login" name="login" autocomplete="username" autofocus required>
+    </div>
+    <div style="margin-bottom:18px">
+      <label for="password">Пароль</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+    </div>
+    <button type="submit" style="width:100%">Войти</button>
+  </form>
+</div>
+{% endblock %}

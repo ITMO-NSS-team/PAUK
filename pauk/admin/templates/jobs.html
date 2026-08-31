@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Задачи</h1>
+<p class="muted" style="margin:-8px 0 22px">
+  Выполняет процесс <code>pauk admin worker</code>
+</p>
+
+{% if user.can_run %}
+<div class="card">
+  <b>Запустить конвейер</b>
+  <p class="muted" style="margin:4px 0 14px; max-width:68ch">
+    Соберёт публикации, выложит их в граф и пересоберёт карту одним нажатием.
+  </p>
+  <form method="post" action="/jobs" class="row">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="kind" value="pipeline">
+    <input type="hidden" name="seed" value="42">
+    <div><label for="p_from">за период с</label>
+      <input type="date" id="p_from" name="date_from" max="{{ today }}"></div>
+    <div><label for="p_to">по</label>
+      <input type="date" id="p_to" name="date_to" max="{{ today }}"></div>
+    <div class="grow"><label for="p_work">или одна работа</label>
+      <input type="text" id="p_work" name="work_id" placeholder="W2741809807"></div>
+    <div><button type="submit">Запустить</button></div>
+  </form>
+  <p class="muted" style="margin:10px 0 0">
+    Карта пересоберётся с персональными данными.
+  </p>
+</div>
+
+<details class="steps">
+  <summary>Запустить шаги по отдельности</summary>
+  <div class="card flow">
+    <p class="muted" style="margin:0 0 18px; max-width:68ch">
+      То же самое по частям.
+    </p>
+
+    <div class="step">
+      <span class="num">1</span>
+      <div class="body">
+        <div class="head">
+          <b>Собрать публикации</b>
+          {% if last_done.collect %}<span class="ago">последний раз {{ last_done.collect|moment }}</span>{% endif %}
+        </div>
+        <p class="muted">Из OpenAlex и прогон через все
+          {{ stages|length }} этапов обогащения: {{ stages|join(", ") }}.
+          Складывает результат в отдельную группу.
+          Этап <code>dedup</code> здесь сводит дубли только внутри неё.</p>
+        <form method="post" action="/jobs" class="row">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="kind" value="collect">
+          <div><label for="date_from">за период с</label>
+            <input type="date" id="date_from" name="date_from" max="{{ today }}" required></div>
+          <div><label for="date_to">по</label>
+            <input type="date" id="date_to" name="date_to" max="{{ today }}" required></div>
+          <div><button type="submit">Запустить</button></div>
+        </form>
+        <form method="post" action="/jobs" class="row">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="kind" value="collect">
+          <div class="grow"><label for="work_id">или одна работа по идентификатору</label>
+            <input type="text" id="work_id" name="work_id" placeholder="W2741809807" required></div>
+          <div><button type="submit">Запустить</button></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="num">2</span>
+      <div class="body">
+        <div class="head">
+          <b>Выложить группу в граф</b>
+          {% if last_done.publish %}<span class="ago">последний раз {{ last_done.publish|moment }}</span>{% endif %}
+        </div>
+        <p class="muted">Переносит собранную группу в Neo4j. Ручные правки
+          применяются заново.</p>
+        <form method="post" action="/jobs" class="row">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="kind" value="publish">
+          <div class="grow"><label for="group">группа</label>
+            {# Только группы с подготовленными строками: публикация пустой
+               загрузит ноль строк и выглядит как поломка. #}
+            <select id="group" name="group" required>
+              {% for name in groups %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+            </select></div>
+          <div><button type="submit" {% if not groups %}disabled{% endif %}>Запустить</button></div>
+        </form>
+        {% if not groups %}<p class="muted">Собранных групп пока нет.</p>{% endif %}
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="num">3</span>
+      <div class="body">
+        <div class="head">
+          <b>Пересобрать карту</b>
+          {% if last_done.map %}<span class="ago">последний раз {{ last_done.map|moment }}</span>{% endif %}
+        </div>
+        <p class="muted">Карта рисуется из заранее собранных файлов и за
+          графом сама не следит.</p>
+        <form method="post" action="/jobs" class="row">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="kind" value="map">
+          {# Один seed для всех пересборок: карту читают по форме, и новая
+             раскладка каждый раз была бы другой картой. #}
+          <input type="hidden" name="seed" value="42">
+          <div style="align-self:center">
+            <label for="public"><input type="checkbox" id="public" name="public">
+              без персональных данных</label></div>
+          <div><button type="submit">Запустить</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="card aside">
+    <div class="head">
+      <b>Дедупликация графа</b>
+      {% if last_done.dedup %}<span class="ago">последний раз {{ last_done.dedup|moment }}</span>{% endif %}
+    </div>
+    <p class="muted">Сводит дубли <b>между разными сборами</b>. Не часть конвейера, запускается по необходимости. Очевидные
+      дубли сводит, спорные пары откладывает на ручной разбор. Сведённое
+      обратно не разделяется.</p>
+    <form method="post" action="/jobs" id="dedup-form">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="kind" value="dedup">
+      <button type="submit" class="warn">Запустить</button>
+    </form>
+    <script>
+      // Спрашиваем, как при удалении узла. Разъединить сведённое нечем.
+      document.getElementById("dedup-form")?.addEventListener("submit", (event) => {
+        if (!confirm("Запустить дедупликацию по всему графу?\n\nОперация необратимая: сведённые записи обратно не разделяются.")) {
+          event.preventDefault();
+        }
+      });
+    </script>
+  </div>
+</details>
+{% endif %}
+
+{% if under_way %}
+<div class="card live">
+  <b><span class="pulse"></span>Сейчас идёт</b>
+  <table style="margin-top:12px">
+    <tr><th>что</th><th>кто запросил</th><th>начата</th><th>отклик</th>
+      {% if user.can_run %}<th></th>{% endif %}</tr>
+    {% for job in under_way %}
+    <tr>
+      <td><b>{{ job.kind }}</b>
+        {% if job.payload %}<br><span class="muted">{% for name, value in job.payload %}{{ name }}={{ value }} {% endfor %}</span>{% endif %}
+      </td>
+      <td>{{ job.actor }}<br><span class="muted">{{ job.worker or "ещё не взята" }}</span></td>
+      <td class="val" style="white-space:nowrap">{{ (job.started_at or job.created_at)|moment }}</td>
+      <td class="val" style="white-space:nowrap">{{ job.heartbeat_at|moment or "—" }}
+        {% if job.cancel_requested %}<br><span class="muted">просили остановить</span>{% endif %}
+      </td>
+      {% if user.can_run %}
+      <td style="width:1%">
+        {% if not job.cancel_requested %}
+        <form method="post" action="/jobs/cancel">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="job_id" value="{{ job.id }}">
+          <button type="submit" class="ghost">отменить</button>
+        </form>
+        {% endif %}
+      </td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<h2 class="section-title">История</h2>
+<form method="get" class="filters" id="filters">
+  <div class="pick">
+    <label for="kind">Что</label>
+    <select id="kind" name="kind">
+      <option value="">всё</option>
+      {% for code, word in kinds.items() %}
+      <option value="{{ code }}" {% if code == filters.kind %}selected{% endif %}>{{ word }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="pick">
+    <label for="state">Как кончилось</label>
+    <select id="state" name="state">
+      <option value="">любое</option>
+      {% for code, word in states.items() %}
+      <option value="{{ code }}" {% if code == filters.state %}selected{% endif %}>{{ word }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="pick">
+    <label for="actor">Кто запросил</label>
+    <select id="actor" name="actor">
+      <option value="">все</option>
+      {% for name in actors %}
+      <option value="{{ name }}" {% if name == filters.actor %}selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit">Показать</button>
+  <script>
+    document.querySelectorAll("#filters select").forEach((box) =>
+      box.addEventListener("change", () => box.form.submit()));
+  </script>
+  {% if filters.kind or filters.state or filters.actor %}
+  <a href="/jobs" class="muted" style="align-self:center">сбросить</a>
+  {% endif %}
+</form>
+
+{% if not rows %}
+  <p class="muted">Таких задач ещё не было.
+  {% if user.can_run %}Поставьте первую задачу формой выше.
+  {% else %}Запускать прогоны может учётная запись с ролью admin.{% endif %}</p>
+{% else %}
+<p class="muted" style="margin:-8px 0 12px">Всего: {{ total }}. Страница {{ page }} из {{ pages }}.</p>
+<div class="card">
+  <table>
+    <tr><th>когда</th><th>что</th><th>кто</th><th>состояние</th><th>итог</th></tr>
+    {% for job in rows %}
+    <tr>
+      <td class="val" style="white-space:nowrap">{{ job.created_at|moment }}</td>
+      <td>{{ job.kind }}
+        {% if job.payload %}<br><span class="muted">{% for name, value in job.payload %}{{ name }}={{ value }} {% endfor %}</span>{% endif %}
+      </td>
+      <td>{{ job.actor }}</td>
+      <td>{{ job.state_ru }}
+        {% if job.state in final and job.finished_at %}<br><span class="muted">{{ job.finished_at|moment }}</span>{% endif %}
+      </td>
+      <td>
+        {% if job.error %}<span class="note bad" style="display:block">{{ job.error }}</span>
+        {% elif job.result %}{% for name, value in job.result %}<div><b>{{ name }}</b>: {{ value }}</div>{% endfor %}
+        {% else %}<span class="muted">—</span>{% endif %}
+        {% if user.can_run and job.state not in final and not job.cancel_requested %}
+        <form method="post" action="/jobs/cancel" style="margin-top:6px">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="job_id" value="{{ job.id }}">
+          <button type="submit" class="ghost">отменить</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if pages > 1 %}
+<p style="margin-top:14px">
+  {% set qs = "&kind=" ~ filters.kind|urlencode ~ "&state=" ~ filters.state|urlencode ~ "&actor=" ~ filters.actor|urlencode %}
+  {% if page > 1 %}<a href="/jobs?page={{ page - 1 }}{{ qs }}"><- новее</a>{% endif %}
+  {% if page < pages %}<a href="/jobs?page={{ page + 1 }}{{ qs }}" style="margin-left:14px">старее -></a>{% endif %}
+</p>
+{% endif %}
+{% endif %}
+{% endblock %}

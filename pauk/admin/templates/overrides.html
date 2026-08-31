@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% import "_change.html" as show %}
+{% block content %}
+<h1>Ручные решения</h1>
+
+{% set undone = request.query_params.get("undone") %}
+{% if undone == "node" %}
+<p class="note">Решение отменено, запись восстановлена из журнала.</p>
+{% elif undone == "link" %}
+<p class="note">Решение отменено, связь восстановлена.</p>
+{% elif undone == "field" %}
+<p class="note">Решение отменено, поле вернулось к значению источника.</p>
+{% elif undone %}
+<p class="note">Решение отменено.
+   {% if undone == "1" %}Если это было удаление, а записи не видно, то журнал не помнит её полей.
+   Она вернётся при следующей публикации, если пайплайн её знает.{% endif %}</p>
+{% endif %}
+
+<div class="tabs">
+  <a href="/overrides" {% if tab != "conflicts" %}class="on"{% endif %}>Действующие {{ total }}</a>
+  <a href="/overrides?tab=conflicts" {% if tab == "conflicts" %}class="on"{% endif %}>
+    Расхождения{% if disputed %} {{ disputed }}{% endif %}</a>
+</div>
+
+{% if tab == "conflicts" %}
+  {% if not conflicts %}
+  <p class="muted">Расхождений нет. Источник не спорит ни с одной ручной правкой.</p>
+  {% else %}
+  <p class="muted" style="margin:-8px 0 12px">
+    Здесь поля, где источник после правки начал говорить иначе.
+  </p>
+  <div class="card">
+    <table>
+      <tr><th>запись</th><th>поле</th><th>у нас</th><th>было в источнике</th><th>стало</th><th>кто и когда</th></tr>
+      {% for row in conflicts %}
+      <tr>
+        <td class="val"><a href="/nodes/{{ row.label }}/{{ row.target_id | urlencode }}">{{ row.title }}</a></td>
+        <td><b>{{ row.field }}</b></td>
+        <td class="val">{{ row.ours if row.ours is not none else "—" }}</td>
+        <td class="val"><span class="was">{{ row.was if row.was is not none else "—" }}</span></td>
+        <td class="val"><span class="now">{{ row.now if row.now is not none else "—" }}</span></td>
+        <td class="muted">{{ row.actor }}<br>{{ row.when[:19]|replace("T", " ") }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
+{% else %}
+  {% if not rows %}
+  <p class="muted">Ручных правок нет. Граф после пайплайна.</p>
+  {% else %}
+  <div class="card">
+    <table>
+      <tr><th>запись</th><th>что решили</th><th>кто и почему</th>{% if user.can_write %}<th></th>{% endif %}</tr>
+      {% for row in rows %}
+      <tr>
+        <td class="val">
+          {% if row.kind == "rel" %}{{ row.title }}
+          {% else %}<a href="/nodes/{{ row.label }}/{{ row.target_id | urlencode }}">{{ row.title }}</a>{% endif %}
+        </td>
+        <td>
+          {{ row.what }}
+          {% for name, was, now in row.pairs %}{{ show.change(name, was, now) }}{% endfor %}
+        </td>
+        <td>{{ row.actor }}{% if row.note %}<br><span class="muted">{{ row.note }}</span>{% endif %}</td>
+        {% if user.can_write %}
+        <td style="width:1%">
+          <form method="post" action="/overrides/undo">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="kind" value="{{ row.kind }}">
+            <input type="hidden" name="op" value="{{ row.op }}">
+            <input type="hidden" name="tab" value="{{ tab }}">
+            {% if row.kind == "rel" %}
+            <input type="hidden" name="src_label" value="{{ row.src_label }}">
+            <input type="hidden" name="rel_type" value="{{ row.rel_type }}">
+            <input type="hidden" name="tgt_label" value="{{ row.tgt_label }}">
+            <input type="hidden" name="src_id" value="{{ row.src_id }}">
+            {% else %}
+            <input type="hidden" name="label" value="{{ row.label }}">
+            {% endif %}
+            <input type="hidden" name="target_id" value="{{ row.target_id }}">
+            <button type="submit" class="ghost">отменить</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
+{% endif %}
+
+{% if pages > 1 %}
+<p style="margin-top:14px">
+  {% if page > 1 %}<a href="/overrides?tab={{ tab }}&page={{ page - 1 }}"><- новее</a>{% endif %}
+  <span class="muted" style="margin:0 12px">страница {{ page }} из {{ pages }}</span>
+  {% if page < pages %}<a href="/overrides?tab={{ tab }}&page={{ page + 1 }}">старее -></a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

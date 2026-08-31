@@ -1,0 +1,321 @@
+/* PAUK admin — the map's design system, applied to forms.
+
+   The palette is the map's seven-gray scale, taken verbatim from
+   pauk/gui/web/style.css: same names, same values, no invented steps. The
+   panel and the map are one product, and a second palette would show.
+
+   Fonts are served from the map's own files rather than copied here — one
+   place to update, and nothing duplicated in the tree. Unlike the map the
+   panel is light only: it is a work tool that people keep open next to
+   other documents, and a second theme is a second set of contrasts to
+   keep correct for no gain here. */
+
+@font-face {
+  font-family: "Golos Text";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("/assets/fonts/golos-text-cyrillic.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "Golos Text";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("/assets/fonts/golos-text-cyrillic-ext.woff2") format("woff2");
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: "Golos Text";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("/assets/fonts/golos-text-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+                 U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215;
+}
+
+:root {
+  --g1: #F2F2F2;
+  --g2: #C4C4C4;
+  --g3: #9D9D9D;
+  --g4: #7F7F7F;
+  --g5: #616161;
+  --g6: #303332;
+  --g7: #191F1D;
+
+  --bg: #ffffff;
+  --surface: var(--g1);
+  --border: var(--g2);
+  --text: var(--g7);
+  --muted: var(--g5);
+  --faint: var(--g3);
+  --topbar-bg: rgba(255, 255, 255, 0.88);
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --font: "Golos Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  /* The colour the panel adds. The map keeps its chrome grayscale and
+     spends colour on departments; here it marks what a reader has to tell
+     apart at a glance — what was removed, added, or changed.
+
+     All three sit at 6.3-6.6:1 against the background, the same weight as
+     --danger, which was here first. Traffic-light colours would read as a
+     different product next to the map. */
+  --danger: #A33A2B;
+  --ok: #2F6B45;
+  --warn: #7E5410;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 22px;
+  background: var(--topbar-bg);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+header .logo { display: flex; line-height: 0; }
+header .logo img { width: 40px; height: 40px; border-radius: 9px; }
+header .section {
+  margin-left: 10px;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  background: var(--bg);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+}
+header .section:hover { border-color: var(--g4); }
+header .section.on { background: var(--text); border-color: var(--text); color: var(--bg); }
+header .who { display: flex; align-items: center; gap: 12px; margin-left: auto; font-size: 13px; }
+header .who form { margin: 0; }
+
+
+main { max-width: 1000px; margin: 0 auto; padding: 28px 22px 72px; }
+h1 { font-size: 21px; font-weight: 700; margin: 0 0 18px; letter-spacing: -.01em; }
+h1 .id { color: var(--muted); font-weight: 400; font-size: 15px; }
+a { color: var(--text); text-underline-offset: 2px; }
+a:hover { color: var(--muted); }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+}
+/* Отступ между карточками задаётся соседством, а не прописан в разметке:
+   на странице задач их три подряд, и прибитый к одной из них margin
+   пропадает вместе с ней. Через заголовок или форму правило не работает —
+   там разводят они. */
+.card + .card { margin-top: 16px; }
+.narrow { max-width: 340px; margin: 8vh auto 0; }
+
+label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+input[type=text], input[type=password] {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+input:focus-visible, button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--g4);
+  outline-offset: 2px;
+}
+input:disabled { color: var(--faint); }
+
+button {
+  padding: 8px 15px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--text);
+  border: 1px solid var(--text);
+  border-radius: 8px;
+  cursor: pointer;
+}
+button:hover { background: var(--g5); border-color: var(--g5); }
+button.ghost { background: transparent; color: var(--text); border-color: var(--border); }
+button.warn { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+td.val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; word-break: break-word; }
+tr.ro td { color: var(--muted); }
+
+.tabs { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 20px; }
+.tabs a {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  background: var(--bg);
+  text-decoration: none;
+  font-size: 13px;
+}
+.tabs a.on { background: var(--text); border-color: var(--text); color: var(--bg); }
+
+.row { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 20px; }
+.row .grow { flex: 1; }
+
+.note {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--g4);
+  border-radius: 8px;
+  padding: 9px 13px;
+  font-size: 14px;
+  margin-bottom: 18px;
+}
+.note.bad { border-left-color: var(--danger); color: var(--danger); }
+.danger { border-color: var(--danger); }
+.muted { color: var(--muted); font-size: 13px; }
+.error { color: var(--danger); font-size: 14px; margin-bottom: 14px; }
+
+/* Обзор: плитка на метку. Два числа с подписями — узлов в графе и полей,
+   доступных правке; без подписи цифра читается как что угодно. */
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+.tile {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  align-items: center;
+  padding: 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--text);
+}
+.tile:hover { border-color: var(--g4); }
+.tile .ico { grid-row: 1 / 3; width: 30px; height: 30px; color: var(--muted); }
+.tile b { font-size: 15px; }
+.tile .counts { font-size: 13px; color: var(--muted); }
+.tile .n { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+
+.req { color: var(--danger); font-weight: 600; }
+
+select {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+/* Фильтры журнала: раньше выпадающие списки жались к своему тексту и
+   выглядели мельче соседнего поля ввода. */
+.filters { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 18px; }
+.filters .pick { flex: 1 1 150px; min-width: 130px; }
+.filters .id { flex: 2 1 260px; }
+
+/* Одно изменение поля: что было и что стало. Плашки, а не цветной текст —
+   значения бывают длинными, и подложка держит границу значения там, где
+   голый цвет сливается с соседним. */
+.change { margin: 2px 0; line-height: 1.7; }
+.change b { font-weight: 600; margin-right: 4px; }
+.change .was, .change .now {
+  padding: 1px 6px; border-radius: 5px; font-size: 13px;
+  font-variant-numeric: tabular-nums; word-break: break-word;
+}
+.change .was { color: var(--danger); background: rgba(163, 58, 43, 0.09); }
+.change .now { color: var(--ok); background: rgba(47, 107, 69, 0.10); }
+/* Стрелка рисуется, а не лежит в разметке: это оформление, и при
+   копировании строки она не нужна. */
+.change .was + .now::before { content: "→"; color: var(--faint); margin: 0 6px 0 2px; }
+
+/* Как изменилась запись: создано, изменено, удалено. Цвет несёт то же,
+   что и слово, поэтому слово остаётся на месте. */
+.kind { font-weight: 600; }
+.kind-created { color: var(--ok); }
+.kind-updated { color: var(--warn); }
+.kind-deleted { color: var(--danger); }
+.kind-bulk { color: var(--muted); }
+
+/* Одна задача на странице задач: слева что это и зачем, справа поля. */
+/* Разделитель задаётся положением, а не прописан в разметке: формы
+   переставляют, и прибитая к одной из них рамка уезжает не туда. */
+.task { border-bottom: 1px solid var(--border); padding: 14px 0; }
+.task:first-of-type { padding-top: 0; }
+.task:last-of-type { border-bottom: none; padding-bottom: 0; }
+.task .what { align-self: center; min-width: 15rem; }
+.task .what span { display: block; font-size: 13px; }
+
+/* Страница задач. Три блока делают разное, поэтому и выглядят по-разному:
+   конвейер это форма, "сейчас" это состояние, история это таблица. Пока
+   они были тремя одинаковыми карточками, порядок шагов ниоткуда не читался. */
+.flow .step { display: flex; gap: 14px; padding: 18px 0; border-top: 1px solid var(--border); }
+.flow .step:first-of-type { border-top: none; padding-top: 4px; }
+.flow .step:last-of-type { padding-bottom: 0; }
+/* Номер несёт смысл: шаги действительно идут в этом порядке, и второй без
+   первого нечего выкладывать. */
+.flow .num {
+  flex: none; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--text); color: var(--bg);
+  font-size: 13px; font-weight: 700; line-height: 26px; text-align: center;
+}
+.flow .body { flex: 1; min-width: 0; }
+.flow .body p { margin: 4px 0 12px; max-width: 68ch; }
+.flow .row { margin-bottom: 8px; }
+.flow .row:last-child { margin-bottom: 0; }
+.head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.ago { color: var(--faint); font-size: 13px; }
+
+/* Дедуп стоит рядом с конвейером, но в него не входит. */
+.aside { border-left: 3px solid var(--border); }
+.aside p { margin: 4px 0 12px; max-width: 68ch; }
+
+/* Идущий прогон - единственное на странице, что меняется само. */
+.live { border-left: 3px solid var(--ok); }
+.pulse {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--ok); margin-right: 8px; vertical-align: middle;
+  animation: pulse 1.8s ease-in-out infinite;
+}
+@keyframes pulse { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+
+.section-title { font-size: 15px; margin: 28px 0 12px; }
+
+/* Разбор конвейера по шагам. Свёрнут по умолчанию: обычный день это одна
+   кнопка, а три формы с описаниями нужны, когда что-то доделывают руками.
+   <details> вместо своего скрипта — работает с клавиатуры и без JS. */
+/* Прижат к блоку запуска и отодвинут от того, что ниже: посередине он
+   читался как заголовок следующего раздела, а не как продолжение
+   предыдущего. `.card + .card` сюда не достаёт — <details> не карточка. */
+.steps { margin-top: 6px; margin-bottom: 22px; }
+.steps > summary {
+  cursor: pointer; color: var(--muted); font-size: 14px;
+  padding: 6px 0; width: fit-content;
+}
+.steps > summary:hover { color: var(--text); }
+.steps[open] > summary { margin-bottom: 10px; }
