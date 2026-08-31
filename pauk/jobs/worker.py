@@ -34,7 +34,12 @@ POLL_SECONDS = 5.0
 BEAT_SECONDS = 60.0
 
 
-def _collect(config: Settings, db: Database, payload) -> dict[str, int]:
+#: Asked between phases of a job that has more than one. Returns True when
+#: somebody pressed cancel while the run was under way.
+Stop = Callable[[], bool]
+
+
+def _collect(config: Settings, db: Database, payload, stop: Stop) -> dict[str, int]:
     from pauk.pipeline.runner import PipelineRunner
     from pauk.pipeline.selectors import PeriodSelector, WorkSelector
 
@@ -43,28 +48,58 @@ def _collect(config: Settings, db: Database, payload) -> dict[str, int]:
     return PipelineRunner(config, payload.group, db).run(selector)
 
 
-def _publish(config: Settings, db: Database, payload) -> dict[str, int]:
+def _publish(config: Settings, db: Database, payload, stop: Stop) -> dict[str, int]:
     from pauk.graph.load import load_jsonl_group
     return load_jsonl_group(config, db, payload.group)
 
 
-def _dedup(config: Settings, db: Database, payload) -> dict[str, int]:
+def _dedup(config: Settings, db: Database, payload, stop: Stop) -> dict[str, int]:
     from pauk.graph.dedup import run_graph_dedup
     return run_graph_dedup(config, db)
 
 
-def _rebuild_map(config: Settings, db: Database, payload) -> dict[str, int]:
+def _rebuild_map(config: Settings, db: Database, payload, stop: Stop) -> dict[str, int]:
     from pauk.gui.rebuild import rebuild_map
     return rebuild_map(config, db, public=payload.public, seed=payload.seed)
 
 
+class Cancelled(Exception):
+    """A job that was asked to stop, and did, between two of its phases."""
+
+
+def _pipeline(config: Settings, db: Database, payload, stop: Stop) -> dict[str, int]:
+    """Collect, publish, rebuild the map. One job, three phases.
+
+    Not three queued jobs: publishing names a group, and when the queue is
+    filled that group has no rows for the check to accept. As one job the
+    order is also guaranteed — nothing else slips in between the collection
+    and its publish.
+
+    Each phase takes and releases its own lock, so nothing is held across
+    the whole run: a collection can take hours, and holding the graph for
+    all of it would stop every other run from touching it.
+
+    Raises:
+        Cancelled: Somebody pressed cancel. Checked between phases only —
+            a phase is never abandoned half-written.
+    """
+    counts = _collect(config, db, payload, stop)
+    if stop():
+        raise Cancelled("остановлено после сбора")
+    counts |= _publish(config, db, payload, stop)
+    if stop():
+        raise Cancelled("остановлено после публикации")
+    return counts | _rebuild_map(config, db, payload, stop)
+
+
 #: What each kind of job does. A closed table looked up by an enum, so no
 #: job can name a callable of its own.
-STEPS: dict[JobKind, Callable[[Settings, Database, BaseModel], dict[str, int]]] = {
+STEPS: dict[JobKind, Callable[[Settings, Database, BaseModel, Stop], dict[str, int]]] = {
     JobKind.COLLECT: _collect,
     JobKind.PUBLISH: _publish,
     JobKind.DEDUP: _dedup,
     JobKind.MAP: _rebuild_map,
+    JobKind.PIPELINE: _pipeline,
 }
 
 
@@ -163,15 +198,24 @@ class Worker:
             logger.info("job %s was already settled", job.id)
             return True
         payload = parse_payload(job.kind, job.payload)
+
+        def stop() -> bool:
+            current = store.read(self.db, job.id)
+            return bool(current and current.cancel_requested)
+
         try:
             with _Beat(self.db, job, self.name):
-                result = STEPS[job.kind](self.config, self.db, payload)
+                result = STEPS[job.kind](self.config, self.db, payload, stop)
         except locks.Busy as error:
             # Not a failure. It goes back for whoever gets there next, and
             # this worker waits instead of picking it up again at once.
             logger.info("job %s waits: %s", job.id, error)
             store.requeue(self.db, job.id)
             return False
+        except Cancelled as reason:
+            logger.info("job %s stopped: %s", job.id, reason)
+            store.cancelled(self.db, job.id)
+            return True
         except Exception as error:  # the worker outlives one bad job
             logger.exception("job %s failed", job.id)
             store.fail(self.db, job.id, f"{type(error).__name__}: {error}")

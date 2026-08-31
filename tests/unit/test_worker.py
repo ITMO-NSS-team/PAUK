@@ -26,7 +26,7 @@ class WorkerTest(unittest.TestCase):
 
     def step(self, result=None, raises=None):
         """A stand-in for the work, recording what it was handed."""
-        def run(config, db, payload):
+        def run(config, db, payload, stop):
             self.seen.append(payload)
             if raises is not None:
                 raise raises
@@ -115,7 +115,7 @@ class WorkerTest(unittest.TestCase):
         """
         job = self.queue()
 
-        def cancel_then_wait(config, db, payload):
+        def cancel_then_wait(config, db, payload, stop):
             store.request_cancel(db, job.id)
             raise locks.Busy("graph is busy")
 
@@ -180,7 +180,7 @@ class HeartbeatTest(unittest.TestCase):
     def run_with_beat(self, body):
         beaten = threading.Event()
 
-        def step(config, db, payload):
+        def step(config, db, payload, stop):
             beaten.wait(timeout=2)
             return {}
 
@@ -259,10 +259,92 @@ class StopTest(unittest.TestCase):
     def test_the_job_in_hand_is_finished_first(self):
         job = store.enqueue(self.db, JobKind.PUBLISH, {"group": "2024"})
 
-        def step(config, db, payload):
+        def step(config, db, payload, stop):
             self.worker.stop()
             return {"rows_persons": 3}
 
         with patch.dict(worker.STEPS, {JobKind.PUBLISH: step}):
             self.worker.run_forever()
         self.assertEqual(store.read(self.db, job.id).state, JobState.DONE)
+
+
+class PipelineJobTest(unittest.TestCase):
+    """Collect, publish, rebuild the map — one job, three phases.
+
+    Not three queued jobs: publishing names a group, and when the queue is
+    filled that group has no rows for the check to accept.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.worker = worker.Worker(config=Settings(neo4j_uri="bolt://127.0.0.1:7699"),
+                                    db=self.db, name="worker-1", poll_seconds=0)
+        self.done = []
+
+    def queue(self):
+        return store.enqueue(self.db, JobKind.PIPELINE,
+                             {"group": "2026-08-30__W1", "work_id": "W1"},
+                             actor="user:chief")
+
+    def phase(self, name, result=None, cancels=None, raises=None):
+        def step(config, db, payload, stop):
+            self.done.append(name)
+            if cancels is not None:
+                store.request_cancel(db, cancels)
+            if raises is not None:
+                raise raises
+            return result or {}
+        return step
+
+    def run_phases(self, **overrides):
+        steps = {"_collect": self.phase("collect", {"raw_works": 5}),
+                 "_publish": self.phase("publish", {"rows_persons": 5}),
+                 "_rebuild_map": self.phase("map", {"map_authors": 5})}
+        steps.update(overrides)
+        with patch.multiple(worker, **steps):
+            self.worker.run_once()
+
+    def test_the_phases_run_in_order(self):
+        self.queue()
+        self.run_phases()
+        self.assertEqual(self.done, ["collect", "publish", "map"])
+
+    def test_the_counts_of_all_three_come_back(self):
+        job = self.queue()
+        self.run_phases()
+        self.assertEqual(store.read(self.db, job.id).result,
+                         {"raw_works": 5, "rows_persons": 5, "map_authors": 5})
+
+    def test_it_is_one_job_not_three(self):
+        self.queue()
+        self.run_phases()
+        self.assertEqual(store.count(self.db), 1)
+
+    def test_cancelling_during_the_collection_stops_before_publishing(self):
+        job = self.queue()
+        self.run_phases(_collect=self.phase("collect", cancels=job.id))
+        self.assertEqual(self.done, ["collect"])
+        self.assertEqual(store.read(self.db, job.id).state, JobState.CANCELLED)
+
+    def test_cancelling_during_the_publish_stops_before_the_map(self):
+        job = self.queue()
+        self.run_phases(_publish=self.phase("publish", cancels=job.id))
+        self.assertEqual(self.done, ["collect", "publish"])
+        self.assertEqual(store.read(self.db, job.id).state, JobState.CANCELLED)
+
+    def test_a_phase_already_under_way_is_never_abandoned(self):
+        # The check sits between phases, so a half-written publish cannot
+        # be left behind by pressing cancel.
+        job = self.queue()
+        self.run_phases(_publish=self.phase("publish", cancels=job.id))
+        self.assertIn("publish", self.done)
+
+    def test_a_failing_phase_stops_the_rest(self):
+        job = self.queue()
+        self.run_phases(_publish=self.phase("publish", raises=RuntimeError("boom")))
+        self.assertEqual(self.done, ["collect", "publish"])
+        self.assertEqual(store.read(self.db, job.id).state, JobState.FAILED)
+
+    def test_it_contends_for_the_graph(self):
+        # It ends by publishing, so the panel has to warn while it runs.
+        self.assertEqual(self.queue().resource, GRAPH)

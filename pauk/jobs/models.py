@@ -22,6 +22,10 @@ class JobKind(StrEnum):
     PUBLISH = "publish"
     DEDUP = "dedup"
     MAP = "map"
+    #: Collect, publish and rebuild the map, in that order, as one job.
+    #: Not three jobs queued together: publishing needs a group, and at the
+    #: moment the queue is filled that group has no rows yet.
+    PIPELINE = "pipeline"
 
 
 class JobState(StrEnum):
@@ -94,11 +98,19 @@ class MapPayload(BaseModel):
     seed: int = 42
 
 
+class PipelinePayload(CollectPayload):
+    """The collection run, plus what to do with what it found."""
+
+    public: bool = False
+    seed: int = 42
+
+
 PAYLOADS: dict[JobKind, type[BaseModel]] = {
     JobKind.COLLECT: CollectPayload,
     JobKind.PUBLISH: PublishPayload,
     JobKind.DEDUP: DedupPayload,
     JobKind.MAP: MapPayload,
+    JobKind.PIPELINE: PipelinePayload,
 }
 
 
@@ -140,8 +152,12 @@ def parse_payload(kind: JobKind, payload: dict) -> BaseModel:
 
 
 def resource_for(kind: JobKind, payload: BaseModel) -> str:
-    """What the job has to hold to run. Collection runs are scoped to their
-    group and can go side by side; everything else writes the graph."""
+    """What the job contends for, for the queue to show and the panel to warn about.
+
+    A collection run is scoped to its group and several can go side by side.
+    Everything else writes the graph, including the whole pipeline: it
+    collects into a group of its own, but it ends by publishing.
+    """
     if JobKind(kind) is JobKind.COLLECT:
         return f"group:{payload.group}"
     return GRAPH
