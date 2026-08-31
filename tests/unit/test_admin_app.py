@@ -430,3 +430,36 @@ class SharedDriverTest(unittest.TestCase):
         with TestClient(build(Settings(), db)):
             pass
         self.assertEqual(self.built, [])
+
+
+class LogoutIsAFormLikeAnyOtherTest(unittest.TestCase):
+    """The template has always sent a token; the route used to ignore it.
+
+    Logging somebody out from another site is a nuisance rather than a
+    loss, but a guard that looks present and is not is worse than none.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.client = TestClient(build(Settings(), self.db), follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+
+    def sessions(self):
+        return self.db[SESSIONS].count_documents({})
+
+    def test_a_forged_logout_is_refused(self):
+        self.assertEqual(self.client.post("/logout", data={"csrf": "чужой"}).status_code, 403)
+        self.assertEqual(self.sessions(), 1)
+
+    def test_a_logout_with_no_token_is_refused(self):
+        self.assertEqual(self.client.post("/logout").status_code, 403)
+        self.assertEqual(self.sessions(), 1)
+
+    def test_the_real_form_still_works(self):
+        self.assertEqual(self.client.post("/logout", data={"csrf": self.csrf}).status_code, 303)
+        self.assertEqual(self.sessions(), 0)
+
+    def test_the_page_sends_the_token(self):
+        self.assertIn('action="/logout"', self.client.get("/").text)

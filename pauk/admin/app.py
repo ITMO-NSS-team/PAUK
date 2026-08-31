@@ -39,7 +39,7 @@ from pauk.admin.auth import (
     open_session,
     read_session,
 )
-from pauk.admin.deps import CurrentUser, Db, Session, templates
+from pauk.admin.deps import CsrfChecked, CurrentUser, Db, Session, templates
 from pauk.graph.audit import SharedGraph
 from pauk.graph.mutations import NODE_FIELDS, RELATIONSHIPS, count_nodes
 from pauk.settings import Settings
@@ -204,7 +204,14 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
         return response
 
     @app.post("/logout")
-    def logout(request: Request, db: Db):
+    def logout(request: Request, db: Db, _: CsrfChecked):
+        """End the session.
+
+        Checked like every other form. Logging somebody out from another
+        site is a nuisance rather than a loss, but the template has always
+        sent the token and the route quietly ignored it — a guard that
+        looks present and is not is worse than none.
+        """
         close_session(db, request.cookies.get(COOKIE))
         response = RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
         response.delete_cookie(COOKIE, path="/")
