@@ -241,22 +241,41 @@ def deactivate_override(db: Database, label: str, target_id: str,
     document: the panel still has to show that the edit existed and who
     made it.
 
+    Withdrawing a deletion from a node that was also edited leaves the edit
+    standing: one document holds both, and switching the whole thing off
+    used to drop a field correction the next publish then overwrote. The
+    record came back with the right value and lost it a week later, which
+    is the worst way for a decision to disappear.
+
     Args:
         db: Mongo database.
         label: Node label.
         target_id: Which node.
-        only_op: Switch it off only if the decision is this operation.
-            Creating a node by hand withdraws the tombstone that would
-            delete it again — but the same document also carries a field
-            edit when there is one, and that edit is nobody's business
-            here. Left unset, any decision about the node is switched off.
+        only_op: Withdraw only if the decision is this operation. Creating
+            a node by hand withdraws the tombstone that would delete it
+            again, and nothing else. Left unset, the decision is withdrawn
+            whatever it says.
+
+    Returns:
+        Whether anything was withdrawn.
     """
-    query: dict = {"_id": override_id(label, target_id)}
-    if only_op is not None:
-        query["op"] = only_op
-    result = db[COLLECTION].update_one(
-        query, {"$set": {"active": False, "updated_at": _now()}})
-    return result.modified_count > 0
+    document_id = override_id(label, target_id)
+    row = db[COLLECTION].find_one({"_id": document_id})
+    if row is None or not row.get("active"):
+        return False
+    if only_op is not None and row.get("op") != only_op:
+        return False
+    if row.get("op") == DELETE and row.get("fields"):
+        # The deletion goes, the edit stays. The snapshot goes with the
+        # deletion: it describes a node that is no longer deleted, and a
+        # later delete writes its own.
+        db[COLLECTION].update_one(
+            {"_id": document_id},
+            {"$set": {"op": SET, "updated_at": _now()}, "$unset": {"snapshot": ""}})
+        return True
+    db[COLLECTION].update_one(
+        {"_id": document_id}, {"$set": {"active": False, "updated_at": _now()}})
+    return True
 
 
 def active_overrides(db: Database) -> list[dict]:

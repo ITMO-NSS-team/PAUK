@@ -4,13 +4,17 @@ from datetime import UTC, datetime
 import mongomock
 from fastapi.testclient import TestClient
 
-from pauk.admin import decisions, feed
+from pauk.admin import decisions, deps, feed
 from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user
+from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.overrides import (
     active_overrides,
+    apply_overrides,
     record_override,
     record_relationship_override,
+    tombstoned_ids,
+    tombstoned_relationships,
 )
 from pauk.settings import Settings
 from tests.unit.test_admin_nodes import FakePanelGraph
@@ -501,3 +505,69 @@ class PartiallyRewrittenTest(unittest.TestCase):
         back = decisions.source_of_truth(self.db, "Person", "A1")
         self.assertEqual(back["name_ru"], "SRC-B")
         self.assertEqual(back["name_en"], "SRC-A2")
+
+
+class UndoingADeletionKeepsTheEditTest(unittest.TestCase):
+    """Correcting a field, deleting the record, then taking the deletion back.
+
+    One document holds both decisions. Switching it off whole brought the
+    record back with the corrected value and dropped the correction, so the
+    next publish overwrote it — the edit vanished a week after it looked
+    like it had been restored.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add("Person", "A1", name_ru="Иванов И.", name_en="I. Ivanov")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        self.client.post("/nodes/Person/A1", data={
+            "csrf": self.csrf, "name_ru": "Иванов Иван Петрович", "name_en": "I. Ivanov",
+            "seen_at": self.graph.nodes[("Person", "A1")]["updated_at"]})
+        self.client.post("/nodes/Person/delete/A1", data={"csrf": self.csrf})
+
+    def take_it_back(self, how):
+        if how == "undo":
+            return self.client.post("/overrides/undo", data={
+                "csrf": self.csrf, "kind": "node", "op": "delete",
+                "label": "Person", "target_id": "A1"})
+        return self.client.post("/nodes/Person/restore/A1", data={"csrf": self.csrf})
+
+    def publish(self):
+        load_prepared_rows(
+            self.graph,
+            {"persons.jsonl": [{"id": "A1", "is_itmo": True, "name_ru": "Иванов И."}]},
+            tombstoned_relationships(self.db), tombstoned_ids(self.db, "LinkCandidate"))
+        apply_overrides(self.graph, self.db)
+
+    def test_undo_brings_the_record_back_at_once(self):
+        self.take_it_back("undo")
+        self.assertIn(("Person", "A1"), self.graph.nodes)
+
+    def test_restore_brings_the_record_back_at_once(self):
+        self.take_it_back("restore")
+        self.assertIn(("Person", "A1"), self.graph.nodes)
+
+    def test_the_edit_outlives_the_next_publish_after_undo(self):
+        self.take_it_back("undo")
+        self.publish()
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иванов Иван Петрович")
+
+    def test_the_edit_outlives_the_next_publish_after_restore(self):
+        self.take_it_back("restore")
+        self.publish()
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иванов Иван Петрович")
+
+    def test_the_decision_still_reads_as_an_edit(self):
+        self.take_it_back("undo")
+        (row,) = active_overrides(self.db)
+        self.assertEqual(row["op"], "set")
+
+    def test_the_record_is_no_longer_tombstoned(self):
+        self.take_it_back("undo")
+        self.assertEqual(tombstoned_ids(self.db, "Person"), set())

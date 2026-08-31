@@ -424,3 +424,59 @@ class VanishingTargetTest(unittest.TestCase):
         graph.fetch_node_properties = read_then_vanish
         result = apply_overrides(graph, db)     # must not raise
         self.assertEqual(result["overrides_missing"], 1)
+
+
+class WithdrawingADeletionKeepsTheEditTest(unittest.TestCase):
+    """One document holds both decisions about a node.
+
+    Correcting a field and later deleting the record leaves `fields` and a
+    `delete` on the same document. Switching the whole thing off to undo
+    the deletion dropped the correction too — the record came back with the
+    right value, and the next publish quietly overwrote it.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        record_override(self.db, "Person", "A1", "set", {"name_ru": "Иванов Иван Петрович"},
+                        actor="user:roman", auto_value={"name_ru": "Иванов И."})
+        record_override(self.db, "Person", "A1", "delete", actor="user:roman",
+                        snapshot={"name_ru": "Иванов Иван Петрович"})
+
+    def document(self):
+        return self.db[COLLECTION].find_one({"_id": "node:Person:A1"})
+
+    def test_the_delete_replaced_the_op_but_kept_the_fields(self):
+        row = self.document()
+        self.assertEqual(row["op"], "delete")
+        self.assertEqual(row["fields"], {"name_ru": "Иванов Иван Петрович"})
+
+    def test_withdrawing_the_deletion_leaves_the_edit_in_force(self):
+        self.assertTrue(deactivate_override(self.db, "Person", "A1", only_op="delete"))
+        row = self.document()
+        self.assertTrue(row["active"], "решение выключено целиком вместе с правкой поля")
+        self.assertEqual(row["op"], "set")
+
+    def test_the_edit_survives_the_next_publish(self):
+        graph = FakeGraph()
+        graph.add("Person", "A1", name_ru="Иванов Иван Петрович")
+        deactivate_override(self.db, "Person", "A1", only_op="delete")
+        load_prepared_rows(graph, {"persons.jsonl": [
+            {"id": "A1", "is_itmo": True, "name_ru": "Иванов И."}]}, set(), set())
+        apply_overrides(graph, self.db)
+        self.assertEqual(graph.nodes[("Person", "A1")]["name_ru"], "Иванов Иван Петрович")
+
+    def test_the_tombstone_is_gone(self):
+        deactivate_override(self.db, "Person", "A1", only_op="delete")
+        self.assertEqual(tombstoned_ids(self.db, "Person"), set())
+
+    def test_a_deletion_with_no_edit_behind_it_is_switched_off(self):
+        db = mongomock.MongoClient()["pauk_other"]
+        record_override(db, "Person", "A2", "delete", actor="user:roman",
+                        snapshot={"name_ru": "Петров"})
+        self.assertTrue(deactivate_override(db, "Person", "A2", only_op="delete"))
+        self.assertFalse(db[COLLECTION].find_one({"_id": "node:Person:A2"})["active"])
+
+    def test_withdrawing_the_edit_itself_switches_it_off(self):
+        deactivate_override(self.db, "Person", "A1", only_op="delete")
+        self.assertTrue(deactivate_override(self.db, "Person", "A1"))
+        self.assertFalse(self.document()["active"])

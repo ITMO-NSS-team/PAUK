@@ -200,6 +200,9 @@ def deleted_fields(db: Database, label: str, node_id: str) -> dict:
     fallback, for records deleted before snapshots existed — it stores
     history rather than state, and a bulk operation lands there as a
     summary with no fields at all.
+
+    Call it before withdrawing the deletion, not after: withdrawing drops
+    the snapshot along with the decision it belongs to.
     """
     row = db[COLLECTION].find_one({"_id": f"node:{label}:{node_id}", "op": "delete"})
     if row and row.get("snapshot"):

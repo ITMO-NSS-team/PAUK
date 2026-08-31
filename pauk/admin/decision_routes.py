@@ -63,6 +63,12 @@ async def undo(request: Request, user: Editor, db: Db, graph: Graph, _: CsrfChec
     form = await request.form()
     kind = str(form.get("kind", "node"))
     op = str(form.get("op", ""))
+    # Read before withdrawing. Both of these are looked up on the decision
+    # itself, and withdrawing rewrites it: the snapshot goes with the
+    # deletion it describes, and after that there is nothing to restore
+    # the record from.
+    snapshot: dict = {}
+    back: dict = {}
     try:
         if kind == "rel":
             triple = (str(form["src_label"]), str(form["rel_type"]), str(form["tgt_label"]))
@@ -70,6 +76,10 @@ async def undo(request: Request, user: Editor, db: Db, graph: Graph, _: CsrfChec
             dropped = deactivate_relationship_override(db, *triple, src_id, tgt_id)
         else:
             label, node_id = str(form["label"]), str(form["target_id"])
+            if op == DELETE:
+                snapshot = decisions.deleted_fields(db, label, node_id)
+            elif op == SET:
+                back = decisions.source_of_truth(db, label, node_id)
             dropped = deactivate_override(db, label, node_id)
     except KeyError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "не хватает данных о решении") from None
@@ -91,20 +101,17 @@ async def undo(request: Request, user: Editor, db: Db, graph: Graph, _: CsrfChec
             # anything, so the hand-written value would sit in the graph
             # until a publish happened to touch that field — and if the
             # record drops out of the pipeline's scope, forever.
-            back = decisions.source_of_truth(db, label, node_id)
             if back:
                 update_node(graph, label, node_id, back)
                 restored = "field"
         elif op == DELETE and kind == "rel":
             create_relationship(graph, *triple, src_id, tgt_id)
             restored = "link"
-        elif op == DELETE:
-            fields = decisions.deleted_fields(db, label, node_id)
-            if fields:
-                create_node(graph, label, node_id,
-                            {name: value for name, value in fields.items()
-                             if name in NODE_FIELDS[label]})
-                restored = "node"
+        elif op == DELETE and snapshot:
+            create_node(graph, label, node_id,
+                        {name: value for name, value in snapshot.items()
+                         if name in NODE_FIELDS[label]})
+            restored = "node"
         apply_overrides(graph, db)
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
