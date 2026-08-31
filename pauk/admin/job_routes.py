@@ -21,6 +21,7 @@ from pauk.admin.deps import Admin, CsrfChecked, CurrentUser, Db, Session, templa
 from pauk.jobs import store
 from pauk.jobs.models import FINAL, JobKind, JobState
 from pauk.pipeline.selectors import PeriodSelector
+from pauk.pipeline.stages import ALL_STAGES
 from pauk.storage import PreparedStore
 from pauk.storage.naming import group_name, validate_group
 
@@ -31,6 +32,7 @@ router = APIRouter()
 # What each kind and state is called on the page. `JobKind.PUBLISH` is a
 # name for the code, not for a reader.
 KINDS = {
+    JobKind.PIPELINE: "весь конвейер",
     JobKind.COLLECT: "сбор",
     JobKind.PUBLISH: "публикация",
     JobKind.DEDUP: "дедуп",
@@ -69,6 +71,23 @@ def _shown(job) -> dict:
     }
 
 
+def _last_done(db) -> dict[str, object]:
+    """When each kind of run last finished.
+
+    Shown beside its step, because the question a person opens this page
+    with is usually "has anybody published since the last collection", and
+    counting rows in the history to answer it is work the page can do.
+    """
+    found = {}
+    for kind in JobKind:
+        row = db[store.COLLECTION].find_one(
+            {"kind": str(kind), "state": str(JobState.DONE)},
+            sort=[("created_at", -1)])
+        if row is not None:
+            found[str(kind)] = row.get("finished_at")
+    return found
+
+
 @router.get("/jobs", response_class=HTMLResponse)
 def jobs(request: Request, user: CurrentUser, session: Session, db: Db,
          kind: str = "", state: str = "", actor: str = "", page: int = 1):
@@ -92,6 +111,10 @@ def jobs(request: Request, user: CurrentUser, session: Session, db: Db,
         "filters": filters, "kinds": KINDS, "states": STATES,
         "final": {str(name) for name in FINAL},
         "actors": sorted(db[store.COLLECTION].distinct("actor")),
+        "last_done": _last_done(db),
+        # Read off the pipeline, not written out here: a stage added to the
+        # registry would otherwise leave the page describing the old one.
+        "stages": [stage.name for stage in ALL_STAGES],
         # Only groups with prepared rows. Publishing an empty one loads
         # nothing and looks like a broken publish.
         "groups": PreparedStore.known_groups(db),
@@ -144,6 +167,10 @@ def _payload_from(kind: JobKind, db, form) -> dict:
     """What the form said, in the shape this kind of job expects."""
     if kind is JobKind.COLLECT:
         return _collect_payload(form)
+    if kind is JobKind.PIPELINE:
+        # The group is not checked against the ones that exist here, unlike
+        # a plain publish: this run is the thing that creates it.
+        return _collect_payload(form) | _map_options(form)
     if kind is JobKind.PUBLISH:
         group = str(form.get("group", "")).strip()
         # Checked against the groups that exist, not only the shape of a
@@ -153,9 +180,25 @@ def _payload_from(kind: JobKind, db, form) -> dict:
                                 f"нет подготовленных строк для группы {group!r}")
         return {"group": group}
     if kind is JobKind.MAP:
-        return {"public": bool(form.get("public")),
-                "seed": int(str(form.get("seed", "")).strip() or 42)}
+        return _map_options(form)
     return {}
+
+
+def _map_options(form) -> dict:
+    """How to rebuild the map, left for the payload model to check.
+
+    Converting here meant `int(...)` on whatever arrived, and `int("null")`
+    raises ValueError, which nothing above turns into an answer — the
+    request ended in a 500. An absent key is left out rather than passed as
+    an empty string, so the model's own default applies.
+    """
+    options: dict = {}
+    if form.get("public") is not None:
+        options["public"] = str(form.get("public"))
+    seed = str(form.get("seed", "")).strip()
+    if seed:
+        options["seed"] = seed
+    return options
 
 
 @router.post("/jobs/cancel")

@@ -567,3 +567,46 @@ class PipelineOrderTest(unittest.TestCase):
         page = self.page()
         self.assertIn("только внутри", page)
         self.assertIn("между разными сборами", page)
+
+
+class MapOptionsTest(unittest.TestCase):
+    """The seed and the flag are checked by the payload model, not converted
+    by hand: `int("null")` raises ValueError, and nothing above the route
+    turns that into an answer — the request ended in a 500."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "chief", "hunter2", role="admin")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: FakePanelGraph()
+        self.client = TestClient(app, follow_redirects=False, raise_server_exceptions=False)
+        self.client.post("/login", data={"login": "chief", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+
+    def post(self, **data):
+        return self.client.post("/jobs", data={"csrf": self.csrf, **data})
+
+    def test_a_seed_that_is_not_a_number_is_refused_not_crashed(self):
+        for value in ("null", "1e999", "NaN", "{}", "3.5", "0x10"):
+            with self.subTest(seed=value):
+                self.assertEqual(self.post(kind="map", seed=value).status_code, 400)
+
+    def test_the_same_holds_for_the_whole_pipeline(self):
+        self.assertEqual(
+            self.post(kind="pipeline", work_id="W1", seed="null").status_code, 400)
+
+    def test_a_missing_seed_falls_back_to_the_default(self):
+        self.assertEqual(self.post(kind="map").status_code, 303)
+        self.assertEqual(store.recent(self.db)[0].payload["seed"], 42)
+
+    def test_a_real_seed_is_kept(self):
+        self.post(kind="map", seed="7")
+        self.assertEqual(store.recent(self.db)[0].payload["seed"], 7)
+
+    def test_an_unticked_box_means_the_names_stay(self):
+        self.post(kind="map", seed="42")
+        self.assertFalse(store.recent(self.db)[0].payload["public"])
+
+    def test_a_ticked_box_drops_them(self):
+        self.post(kind="map", seed="42", public="on")
+        self.assertTrue(store.recent(self.db)[0].payload["public"])
