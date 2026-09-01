@@ -67,6 +67,11 @@ class IsItmoOrganizationTest(unittest.TestCase):
         self.assertTrue(self.judge("Digiratory", name="Digiratory",
                                    location="Санкт-Петербург"))
 
+    def test_the_cyrillic_city_spelled_without_a_hyphen(self):
+        # A profile typed by hand, not copied from a form; the Latin
+        # spellings already allow the space.
+        self.assertTrue(self.judge("some-lab", location="Россия, Санкт Петербург"))
+
     def test_an_employee_committing_there_does_not_make_it_ours(self):
         # The rule this replaces followed any organization a confirmed
         # account had committed to, which on real data meant google,

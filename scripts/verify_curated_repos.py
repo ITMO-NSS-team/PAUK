@@ -36,6 +36,15 @@ FUZZY_CUTOFF = 0.90
 
 YES, NO = "да", "нет"
 
+# The report's columns, in order. Named here rather than read off the first
+# built row so that a run over an empty CSV still writes a usable header.
+REPORT_COLUMNS = [
+    "title", "repo_url", "confidence", "note", "статус", "репозиторий_в_графе",
+    "url_в_графе", "переименован", "id_узла_репозитория", "статья_в_графе",
+    "id_статьи", "год", "заголовок_в_графе", "совпадение_заголовка",
+    "связь_IMPLEMENTS", "связь_MENTIONS_LINK", "пояснение",
+]
+
 
 def fold(text: str) -> str:
     """Letters and digits only — what two records of one paper always share."""
@@ -176,7 +185,10 @@ def main() -> None:
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(out_rows[0]))
+        # Fixed column list, not list(out_rows[0]): a CSV holding nothing but
+        # a header is a legitimate input, and it must produce an empty report
+        # rather than an IndexError.
+        writer = csv.DictWriter(handle, fieldnames=REPORT_COLUMNS)
         writer.writeheader()
         writer.writerows(out_rows)
     logger.info("written: %s", args.out)

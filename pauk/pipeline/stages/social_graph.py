@@ -48,12 +48,13 @@ MAX_REPOS_PER_SEED = 30
 MAX_RINGS = 5
 
 # The city appears in every spelling its labs happen to use: "Saint
-# Petersburg", "St. Petersburg", "St-Petersburg", the Cyrillic form.
+# Petersburg", "St. Petersburg", "St-Petersburg", and the Cyrillic form with
+# either a hyphen or a space.
 ITMO_IN_TEXT = re.compile(
     r"\bitmo\b"
     r"|\b(?:saint|st)\.?[-\s]?petersburg\b"
     r"|\bsankt"
-    r"|санкт-петербург",
+    r"|санкт[-\s]?петербург",
     re.I,
 )
 

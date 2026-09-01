@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import argparse
 import csv
-import random
+import hashlib
 import sys
 from pathlib import Path
 
@@ -270,12 +270,26 @@ def export_papers(
     return _sample(rows, limit, seed)
 
 
+def _row_key(row: dict) -> str:
+    """Identity of a row, independent of where Mongo happened to store it."""
+    return f"{row.get('publication_id', '')}|{row.get('url', '')}"
+
+
 def _sample(rows: list[dict], limit: int | None, seed: int) -> list[dict]:
     """Seeded sample so the same --limit/--seed always yields the same sheet -
-    a re-export must not silently reshuffle work already annotated."""
-    if limit is None or limit >= len(rows):
-        return rows
-    return random.Random(seed).sample(rows, limit)
+    a re-export must not silently reshuffle work already annotated.
+
+    Selection is by a hash of the row's own identity, not by its position:
+    read_models() returns whatever order Mongo holds, which shifts as the
+    pipeline updates documents, and a positional sample would also redraw the
+    whole sheet the moment the group gains a single row.
+    """
+    ordered = sorted(rows, key=_row_key)
+    if limit is None or limit >= len(ordered):
+        return ordered
+    chosen = sorted(ordered, key=lambda row: hashlib.md5(
+        f"{seed}:{_row_key(row)}".encode()).hexdigest())[:limit]
+    return sorted(chosen, key=_row_key)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -344,6 +344,7 @@ def _cell(text: str) -> str:
 
 
 def command_plan(args, config: Settings, db: Database) -> None:
+    group = args.group or f"curated-repos-{date.today().isoformat()}"
     rows = read_csv(args.csv)
     logger.info("csv rows: %d", len(rows))
     by_title = load_publications(db)
@@ -359,7 +360,7 @@ def command_plan(args, config: Settings, db: Database) -> None:
     plan = {
         "created_at": datetime.now(UTC).isoformat(),
         "csv": str(args.csv),
-        "group": args.group,
+        "group": group,
         "confidence": sorted(args.confidence),
         "selected": selected,
         "failures": failures,
@@ -406,7 +407,10 @@ def main() -> None:
     parser.add_argument("--plan", type=Path, default=Path("data/reports/curated-repos-plan.json"))
     parser.add_argument("--report", type=Path,
                         default=Path("data/reports/curated-repos-unmatched.md"))
-    parser.add_argument("--group", default=f"curated-repos-{date.today().isoformat()}")
+    # No default: apply falls back to the group recorded in the plan, and a
+    # default here would always win over it, silently retagging the import.
+    parser.add_argument("--group", default=None,
+                        help="group to write under (plan: today's date; apply: the plan's group)")
     parser.add_argument("--confidence", nargs="+", default=["high"],
                         help="which CSV confidence levels to import (default: high)")
     parser.add_argument("--yes", action="store_true", help="skip the apply confirmation")
