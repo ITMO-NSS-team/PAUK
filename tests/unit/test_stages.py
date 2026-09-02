@@ -8,7 +8,7 @@ import fitz
 import mongomock
 
 from pauk.models import CodeLink, GitHubProfile, Publication, RepoLink, Repository
-from pauk.models.processing import ProcessingStatus
+from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.stages.base import PreparedSelection
 from pauk.pipeline.stages.code_links import (
     CodeLinksStage,
@@ -17,6 +17,7 @@ from pauk.pipeline.stages.code_links import (
     _occurrences_in_text,
 )
 from pauk.pipeline.stages.link_relevance import LinkRelevanceStage
+from pauk.pipeline.stages.repo_people import RepoPeopleStage
 from pauk.pipeline.stages.repositories import RepositoriesStage
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
@@ -449,6 +450,7 @@ class HarvestAccountsTest(unittest.TestCase):
             RepoLink(publication_id="W1", links=[CodeLink(url="https://github.com/org/repo")]),
         ])
         RepositoriesStage(prepared, raw).run()
+        RepoPeopleStage(prepared, raw).run()
         repos = list(prepared.read_models("repositories", Repository))
         profiles = {p.login: p for p in prepared.read_models("github_profiles", GitHubProfile)}
         return repos[0], profiles
@@ -515,7 +517,8 @@ class HarvestAccountsTest(unittest.TestCase):
                 CodeLink(url="https://github.com/alice/second"),
             ]),
         ])
-        with patch("pauk.pipeline.stages.repositories.GitHubClient") as client:
+        with patch("pauk.pipeline.stages.repositories.GitHubClient") as client, \
+                patch("pauk.pipeline.stages.repo_people.GitHubClient", client):
             client.return_value.get_repository.side_effect = lambda owner, name: {
                 "html_url": f"https://github.com/{owner}/{name}", "name": name, "id": 1,
                 "owner": {"login": "alice", "type": "User"}}
@@ -525,24 +528,30 @@ class HarvestAccountsTest(unittest.TestCase):
                 self.commit("alice", f"alice@{name}.org", "Alice Ivanova")]
             client.return_value.get_user.return_value = {"name": "Alice Ivanova"}
             RepositoriesStage(prepared, raw).run()
+            RepoPeopleStage(prepared, raw).run()
         profile = {p.login: p for p in prepared.read_models("github_profiles", GitHubProfile)}["alice"]
         self.assertEqual(profile.emails, ["alice@first.org", "alice@second.org"])
         self.assertEqual(profile.repos, ["https://github.com/alice/first",
                                          "https://github.com/alice/second"])
 
     def test_a_failing_contributor_call_keeps_the_repository(self):
-        # Contributors are an extra: GitHub answers 403 on repositories it
-        # has not analysed, and that must not cost the metadata already
-        # fetched — the row stays completed, only without candidates.
-        with patch("pauk.pipeline.stages.repositories.GitHubClient") as client:
+        # GitHub answers 403 on repositories it has not analysed. Since the
+        # split that is a failure of repo_people alone: the metadata the
+        # repositories stage already fetched keeps its completed status, and
+        # the two halves record their state separately.
+        with patch("pauk.pipeline.stages.repositories.GitHubClient") as client, \
+                patch("pauk.pipeline.stages.repo_people.GitHubClient", client):
             client.return_value.contributors.side_effect = RuntimeError("403")
             repo, _profiles = self.run_stage(client)
         self.assertEqual(repo.github_id, 1)
         self.assertEqual(repo.contributors, [])
         self.assertEqual(repo.processing["repositories"].status, ProcessingStatus.COMPLETED)
+        self.assertEqual(repo.processing["repo_people"].status, ProcessingStatus.FAILED)
 
     def run_stage_wrapper(self, **kwargs):
-        with patch("pauk.pipeline.stages.repositories.GitHubClient") as client:
+        # Both stages build their own client; one mock stands in for both.
+        with patch("pauk.pipeline.stages.repositories.GitHubClient") as client, \
+                patch("pauk.pipeline.stages.repo_people.GitHubClient", client):
             return self.run_stage(client, **kwargs)
 
 
@@ -641,6 +650,355 @@ class NormalizeLigaturesTest(unittest.TestCase):
         text = "See https://github.com/weiliu89/caﬀe and also https://github.com/weiliu89/caffe."
         found = _occurrences_in_text(_normalize_ligatures(text), None)
         self.assertEqual(list(found), ["https://github.com/weiliu89/caffe"])
+
+
+class UnlinkedRepositoriesTest(unittest.TestCase):
+    """Rows that arrived without a repo_links line behind them.
+
+    A curated import writes the Repository straight into the collection, so a
+    work list built only from repo_links can never reach it again.
+    """
+
+    PAYLOAD = {
+        "html_url": "https://github.com/org/curated", "name": "curated", "id": 7,
+        "owner": {"login": "org", "type": "Organization"}, "language": "Python",
+        "topics": ["ml"], "stargazers_count": 3,
+    }
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.prepared = PreparedStore(self.db, "sample")
+        self.raw = RawStore(self.db, "sample")
+
+    def _client(self, github_client):
+        github_client.return_value.get_repository.return_value = self.PAYLOAD
+        github_client.return_value.has_readme.return_value = True
+        github_client.return_value.contributors.return_value = []
+        github_client.return_value.commits.return_value = []
+        return github_client
+
+    def _row(self):
+        return {row.id: row for row in self.prepared.read_models("repositories", Repository)}
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_row_without_a_link_is_still_enriched(self, github_client):
+        self._client(github_client)
+        self.prepared.write_models("repositories", [
+            Repository(id="github_org_curated", name="curated",
+                       url="https://github.com/org/curated"),
+        ])
+        RepositoriesStage(self.prepared, self.raw).run()
+        row = self._row()["github_org_curated"]
+        self.assertEqual(row.language, "Python")
+        self.assertEqual(row.topics, ["ml"])
+        self.assertEqual(row.processing["repositories"].status, ProcessingStatus.COMPLETED)
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_a_completed_row_is_left_alone_until_forced(self, github_client):
+        self._client(github_client)
+        self.prepared.write_models("repositories", [
+            Repository(id="github_org_curated", name="curated",
+                       url="https://github.com/org/curated"),
+        ])
+        RepositoriesStage(self.prepared, self.raw).run()
+        self.assertEqual(github_client.return_value.get_repository.call_count, 1)
+
+        RepositoriesStage(self.prepared, self.raw).run()
+        self.assertEqual(github_client.return_value.get_repository.call_count, 1)
+
+        RepositoriesStage(self.prepared, self.raw, force=True).run()
+        self.assertEqual(github_client.return_value.get_repository.call_count, 2)
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_a_linked_row_is_not_fetched_twice_by_the_second_pass(self, github_client):
+        self._client(github_client)
+        self.prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1",
+                     links=[CodeLink(url="https://github.com/org/curated")]),
+        ])
+        RepositoriesStage(self.prepared, self.raw).run()
+        self.assertEqual(github_client.return_value.get_repository.call_count, 1)
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_a_row_whose_url_is_not_a_github_repository_is_skipped(self, github_client):
+        self._client(github_client)
+        self.prepared.write_models("repositories", [
+            Repository(id="gitlab_org_thing", name="thing",
+                       url="https://gitlab.com/org/thing"),
+        ])
+        RepositoriesStage(self.prepared, self.raw).run()
+        self.assertEqual(github_client.return_value.get_repository.call_count, 0)
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_a_row_whose_url_was_rewritten_is_not_fetched_twice(self, github_client):
+        """A rename redirects the fetch, and the row keeps the canonical URL.
+
+        The failure comes later, so the row still needs an attempt — and the
+        second pass, keyed by `repo.url`, must recognise it as one already
+        made instead of spending another call on the same repository.
+        """
+        self._client(github_client)
+        github_client.return_value.get_repository.return_value = {
+            **self.PAYLOAD, "html_url": "https://github.com/org/renamed", "name": "renamed",
+        }
+        github_client.return_value.has_readme.side_effect = RuntimeError("502")
+        self.prepared.write_models("repositories", [
+            Repository(id="github_org_curated", name="curated",
+                       url="https://github.com/org/curated"),
+        ])
+        self.prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1",
+                     links=[CodeLink(url="https://github.com/org/curated")]),
+        ])
+        RepositoriesStage(self.prepared, self.raw).run()
+        self.assertEqual(github_client.return_value.get_repository.call_count, 1)
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_two_rows_for_one_url_are_folded_rather_than_dropped(self, github_client):
+        """Same repository under two ids — a curated import and a link pass.
+
+        Keying the second pass by URL collapses them onto one key. The loser
+        must not simply vanish from the work list: rows are read in a stable
+        order, so it would lose on every run and never be enriched at all.
+        """
+        self._client(github_client)
+        self.prepared.write_models("repositories", [
+            Repository(id="curated_1", name="curated", publication_ids=["W1"],
+                       url="https://github.com/org/curated"),
+            Repository(id="curated_2", name="curated", publication_ids=["W2"],
+                       cited_urls=["https://github.com/org/Curated"],
+                       url="https://github.com/org/curated"),
+        ])
+        RepositoriesStage(self.prepared, self.raw).run()
+        self.assertEqual(github_client.return_value.get_repository.call_count, 1)
+        rows = self._row()
+        self.assertEqual(list(rows), ["github_org_curated"])
+        row = rows["github_org_curated"]
+        self.assertEqual(row.processing["repositories"].status, ProcessingStatus.COMPLETED)
+        self.assertEqual(sorted(row.publication_ids), ["W1", "W2"])
+        self.assertEqual(row.merged_ids, ["curated_2"])
+        self.assertIn("https://github.com/org/Curated", row.cited_urls)
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_a_folded_row_never_lists_the_id_it_ends_up_with(self, github_client):
+        """The loser can be keyed by the very id canonicalization then hands
+        the winner; a row listing itself as merged away would confuse the
+        graph loader's alias table."""
+        self._client(github_client)
+        self.prepared.write_models("repositories", [
+            Repository(id="curated_1", name="curated",
+                       url="https://github.com/org/curated"),
+            Repository(id="github_org_curated", name="curated",
+                       url="https://github.com/org/curated"),
+        ])
+        RepositoriesStage(self.prepared, self.raw).run()
+        row = self._row()["github_org_curated"]
+        self.assertNotIn("github_org_curated", row.merged_ids)
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_the_row_that_already_reached_the_api_wins_the_fold(self, github_client):
+        """github_id is only ever set from a payload, so the row carrying one
+        is the row whose name and URL are canonical."""
+        self._client(github_client)
+        self.prepared.write_models("repositories", [
+            Repository(id="aaa_first_by_id", name="curated",
+                       url="https://github.com/org/curated"),
+            Repository(id="zzz_last_by_id", name="curated", github_id=7,
+                       url="https://github.com/org/curated"),
+        ])
+        RepositoriesStage(self.prepared, self.raw, force=True).run()
+        rows = self._row()
+        self.assertEqual(list(rows), ["github_org_curated"])
+        self.assertIn("aaa_first_by_id", rows["github_org_curated"].merged_ids)
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_the_attempt_history_survives_the_fold(self, github_client):
+        """With no payload on either row, the one that has already been tried
+        wins — folding it away would reset the attempt counter."""
+        self._client(github_client)
+        github_client.return_value.get_repository.side_effect = RuntimeError("404")
+        tried = Repository(id="zzz_last_by_id", name="curated",
+                           url="https://github.com/org/curated")
+        tried.processing["repositories"] = ProcessingState(
+            status=ProcessingStatus.FAILED, attempts=2)
+        self.prepared.write_models("repositories", [
+            Repository(id="aaa_first_by_id", name="curated",
+                       url="https://github.com/org/curated"),
+            tried,
+        ])
+        RepositoriesStage(self.prepared, self.raw).run()
+        rows = self._row()
+        self.assertEqual(list(rows), ["zzz_last_by_id"])
+        self.assertEqual(rows["zzz_last_by_id"].processing["repositories"].attempts, 3)
+        self.assertIn("aaa_first_by_id", rows["zzz_last_by_id"].merged_ids)
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_an_id_scoped_run_skips_rows_it_does_not_name(self, github_client):
+        self._client(github_client)
+        self.prepared.write_models("repositories", [
+            Repository(id="github_org_curated", name="curated",
+                       url="https://github.com/org/curated"),
+            Repository(id="github_org_other", name="other",
+                       url="https://github.com/org/other"),
+        ])
+        selection = PreparedSelection(entity="repositories", ids={"github_org_curated"})
+        RepositoriesStage(self.prepared, self.raw, selection=selection).run()
+        self.assertEqual(github_client.return_value.get_repository.call_count, 1)
+
+
+class RepoPeopleStageTest(unittest.TestCase):
+    """Metadata and people are two stages, so each can go stale on its own."""
+
+    PAYLOAD = {
+        "html_url": "https://github.com/org/repo", "name": "repo", "id": 1,
+        "owner": {"login": "alice", "type": "User"},
+    }
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.prepared = PreparedStore(self.db, "sample")
+        self.raw = RawStore(self.db, "sample")
+        self.prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1", links=[CodeLink(url="https://github.com/org/repo")]),
+        ])
+
+    def _client(self, client, *, users=None):
+        client.return_value.get_repository.return_value = self.PAYLOAD
+        client.return_value.has_readme.return_value = True
+        client.return_value.contributors.return_value = [{"login": "bob", "type": "User"}]
+        client.return_value.commits.return_value = []
+        client.return_value.get_user.side_effect = lambda login: (users or {}).get(login, {})
+        return client
+
+    def _profiles(self):
+        return {p.login: p for p in self.prepared.read_models("github_profiles", GitHubProfile)}
+
+    def _repo(self):
+        return list(self.prepared.read_models("repositories", Repository))[0]
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_the_metadata_stage_no_longer_touches_people(self, client):
+        self._client(client)
+        RepositoriesStage(self.prepared, self.raw).run()
+        self.assertEqual(client.return_value.get_repository.call_count, 1)
+        self.assertEqual(client.return_value.contributors.call_count, 0)
+        self.assertEqual(client.return_value.commits.call_count, 0)
+        self.assertEqual(client.return_value.get_user.call_count, 0)
+        self.assertEqual(self._repo().contributors, [])
+
+    @patch("pauk.pipeline.stages.repo_people.GitHubClient")
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_each_half_records_its_own_state(self, repos_client, people_client):
+        self._client(repos_client)
+        self._client(people_client)
+        RepositoriesStage(self.prepared, self.raw).run()
+        RepoPeopleStage(self.prepared, self.raw).run()
+        repo = self._repo()
+        self.assertEqual(repo.processing["repositories"].status, ProcessingStatus.COMPLETED)
+        self.assertEqual(repo.processing["repo_people"].status, ProcessingStatus.COMPLETED)
+        # The owner's type round-tripped through the stored profile, which
+        # lowercased it — he still counts as a person.
+        self.assertEqual(repo.contributors, ["alice", "bob"])
+
+    @patch("pauk.pipeline.stages.repo_people.GitHubClient")
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_forcing_the_metadata_stage_does_not_re_harvest_people(self, repos_client, people_client):
+        self._client(repos_client)
+        self._client(people_client)
+        RepositoriesStage(self.prepared, self.raw).run()
+        RepoPeopleStage(self.prepared, self.raw).run()
+        before = people_client.return_value.contributors.call_count
+
+        RepositoriesStage(self.prepared, self.raw, force=True).run()
+        self.assertEqual(repos_client.return_value.get_repository.call_count, 2)
+        self.assertEqual(people_client.return_value.contributors.call_count, before)
+
+    @patch("pauk.pipeline.stages.repo_people.GitHubClient")
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_a_filled_profile_is_not_fetched_again(self, repos_client, people_client):
+        users = {"alice": {"html_url": "https://github.com/alice", "name": "Alice"},
+                 "bob": {"html_url": "https://github.com/bob", "name": "Bob"}}
+        self._client(repos_client, users=users)
+        self._client(people_client, users=users)
+        RepositoriesStage(self.prepared, self.raw).run()
+        RepoPeopleStage(self.prepared, self.raw).run()
+        self.assertEqual(people_client.return_value.get_user.call_count, 2)
+        self.assertEqual(self._profiles()["bob"].name, "Bob")
+
+        RepoPeopleStage(self.prepared, self.raw, force=True).run()
+        # Forced: the profiles are re-read, but only because they were asked for.
+        self.assertEqual(people_client.return_value.get_user.call_count, 4)
+
+    @patch("pauk.pipeline.stages.repo_people.GitHubClient")
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_a_second_repository_reuses_the_profile_it_already_has(self, repos_client, people_client):
+        users = {"bob": {"html_url": "https://github.com/bob", "name": "Bob"}}
+        self._client(repos_client, users=users)
+        self._client(people_client, users=users)
+        repos_client.return_value.get_repository.side_effect = lambda owner, name: {
+            "html_url": f"https://github.com/{owner}/{name}", "name": name, "id": 1,
+            "owner": {"login": "org", "type": "Organization"}}
+        self.prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1", links=[
+                CodeLink(url="https://github.com/org/first"),
+                CodeLink(url="https://github.com/org/second"),
+            ]),
+        ])
+        RepositoriesStage(self.prepared, self.raw).run()
+        RepoPeopleStage(self.prepared, self.raw).run()
+        # bob is credited on both repositories; his profile is fetched once.
+        self.assertEqual(people_client.return_value.contributors.call_count, 2)
+        self.assertEqual(people_client.return_value.get_user.call_count, 1)
+        self.assertEqual(sorted(self._profiles()["bob"].repos),
+                         ["https://github.com/org/first", "https://github.com/org/second"])
+
+    @patch("pauk.pipeline.stages.repo_people.GitHubClient")
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_a_publication_scoped_run_leaves_other_papers_repositories_alone(
+            self, repos_client, people_client):
+        """`--input pubs.txt --entity publications` means those publications.
+
+        `in_scope` alone answers True for every repository when the selection
+        names publications, so without a scope of its own this stage would
+        walk the whole group and spend the GitHub quota on repositories
+        nobody asked about.
+        """
+        users = {"bob": {"html_url": "https://github.com/bob", "name": "Bob"}}
+        self._client(repos_client, users=users)
+        self._client(people_client, users=users)
+        repos_client.return_value.get_repository.side_effect = lambda owner, name: {
+            "html_url": f"https://github.com/{owner}/{name}", "name": name, "id": 1,
+            "owner": {"login": "org", "type": "Organization"}}
+        self.prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1", links=[CodeLink(url="https://github.com/org/first")]),
+            RepoLink(publication_id="W2", links=[CodeLink(url="https://github.com/org/second")]),
+        ])
+        RepositoriesStage(self.prepared, self.raw).run()
+        selection = PreparedSelection(entity="publications", ids=frozenset({"W1"}))
+        RepoPeopleStage(self.prepared, self.raw, selection=selection).run()
+        self.assertEqual(people_client.return_value.contributors.call_count, 1)
+        people_client.return_value.contributors.assert_called_once_with("org", "first")
+
+    @patch("pauk.pipeline.stages.repo_people.GitHubClient")
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_an_id_scoped_run_still_filters_by_repository(self, repos_client, people_client):
+        """A selection aimed at repositories keeps working as it did."""
+        self._client(repos_client, users={})
+        self._client(people_client, users={})
+        repos_client.return_value.get_repository.side_effect = lambda owner, name: {
+            "html_url": f"https://github.com/{owner}/{name}", "name": name, "id": 1,
+            "owner": {"login": "org", "type": "Organization"}}
+        self.prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1", links=[
+                CodeLink(url="https://github.com/org/first"),
+                CodeLink(url="https://github.com/org/second"),
+            ]),
+        ])
+        RepositoriesStage(self.prepared, self.raw).run()
+        selection = PreparedSelection(entity="repositories",
+                                      ids=frozenset({"github_org_second"}))
+        RepoPeopleStage(self.prepared, self.raw, selection=selection).run()
+        people_client.return_value.contributors.assert_called_once_with("org", "second")
 
 
 if __name__ == "__main__":

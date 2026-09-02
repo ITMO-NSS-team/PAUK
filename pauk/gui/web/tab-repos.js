@@ -4,11 +4,29 @@ function showRepoCard(key) {
   const n = nodeByKey.get(key); if (!n) return;
   const persons = (repoPersons.get(key) || [])
     .map(p => ({ ...p, node: nodeByKey.get(p.key) })).filter(p => p.node);
-  let html = `<div class="card-kind">${t("repo.kind")}</div><div class="card-title">${esc(n.label)}</div>`;
+  let html = `<div class="card-kind">${t("repo.kind")}</div><div class="card-title">${esc(n.label)}`;
+  if (n.archived) html += ` <span class="tag gray">${t("repo.archived")}</span>`;
+  // A fork says the code started somewhere else, which is worth knowing
+  // before reading anything into the repository's own activity.
+  if (n.is_fork) html += ` <span class="tag gray">${t("repo.isFork")}</span>`;
+  html += `</div>`;
   html += `<div class="card-row"><b>${t("repo.department")}</b> ${esc(deptDisplayName(deptById.get(n.dept)) || t("common.noDept"))}</div>`;
-  if (n.stars)       html += `<div class="card-row"><b>${t("repo.stars")}</b> ★ ${n.stars}</div>`;
-  if (n.description) html += `<div class="card-row">${esc(n.description)}</div>`;
-  if (n.url)         html += `<div class="card-row"><a href="${esc(n.url)}" target="_blank">${esc(n.url.replace("https://github.com/", ""))}</a></div>`;
+  if (n.owner) {
+    const orgTag = n.owner_type === "organization" ? ` <span class="tag gray">${t("repo.org")}</span>` : "";
+    html += `<div class="card-row"><b>${t("repo.owner")}</b> ${esc(n.owner)}${orgTag}</div>`;
+  }
+  if (n.stars)        html += `<div class="card-row"><b>${t("repo.stars")}</b> ★ ${n.stars}</div>`;
+  if (n.forks)        html += `<div class="card-row"><b>${t("repo.forks")}</b> ${n.forks}</div>`;
+  if (n.language)     html += `<div class="card-row"><b>${t("repo.language")}</b> ${esc(n.language)}</div>`;
+  if (n.license)      html += `<div class="card-row"><b>${t("repo.license")}</b> ${esc(n.license)}</div>`;
+  if (n.last_updated) html += `<div class="card-row"><b>${t("repo.lastUpdated")}</b> ${esc(n.last_updated)}</div>`;
+  if (n.description)  html += `<div class="card-row">${esc(n.description)}</div>`;
+  if ((n.topics || []).length) {
+    html += `<div class="card-section">${t("repo.topics")}</div><div class="card-row">`;
+    html += n.topics.map(x => `<span class="tag gray">${esc(x)}</span>`).join(" ");
+    html += `</div>`;
+  }
+  if (n.url)          html += `<div class="card-row"><a href="${esc(n.url)}" target="_blank">${esc(n.url.replace("https://github.com/", ""))}</a></div>`;
   if (persons.length) {
     html += `<div class="card-section">${t("repo.itmoMembers", persons.length)}</div><ul class="card-list">`;
     persons.forEach(p => html += `<li data-k="${esc(p.key)}">${esc(authorDisplayName(p.node))} <span class="tag gray">${esc(p.role)}</span></li>`);
@@ -36,4 +54,32 @@ function showRepoCard(key) {
       selectNode(k);
     };
   });
+}
+function showClusterCard(id) {
+  const c = repoClusterById.get(id); if (!c) return;
+  const members = DATA.repos.filter(r => r.cluster === id)
+    .sort((a, b) => (b.stars || 0) - (a.stars || 0));
+  let html = `<div class="card-kind">${t("cluster.kind." + c.kind)}</div>`;
+  html += `<div class="card-title">${esc(groupDisplayName(c))}</div>`;
+  html += `<div class="card-row"><b>${t("cluster.reposCount")}</b> ${members.length}</div>`;
+  html += `<div class="card-row" style="color:var(--muted);font-size:13px">${t("cluster.why." + c.kind)}</div>`;
+  if (members.length) {
+    html += `<div class="card-section">${t("cluster.reposSection")}</div><ul class="card-list">`;
+    html += members.slice(0, 20).map(r =>
+      `<li data-k="${esc(r.key)}">
+        <div class="li-name">${esc(r.label || r.key)}</div>
+        ${r.language ? `<span class="tag gray" style="font-size:9px;padding:0 5px">${esc(r.language)}</span>` : ""}
+        <span class="li-count">${r.stars ? "\u2605 " + r.stars : ""}</span>
+      </li>`).join("") + `</ul>`;
+  }
+  // A department cluster is the same department the other two tabs show, so
+  // its full profile is worth an exit; an organization or a field has none.
+  if (c.kind === "dept" && c.dept != null)
+    html += `<button class="detail-profile-btn">${t("dept.more")}</button>`;
+  showDetail(html);
+  detailBody.querySelectorAll("li[data-k]").forEach(li => {
+    li.onclick = () => selectNode(li.getAttribute("data-k"));
+  });
+  const btn = detailBody.querySelector(".detail-profile-btn");
+  if (btn) btn.onclick = () => { setTab(4); spShowDeptProfile(c.dept); };
 }

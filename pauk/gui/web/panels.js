@@ -81,7 +81,13 @@ function showEdgeCard(props) {
     html += `<div class="card-kind">${t("edge.repoRepoKind")}</div>`;
     html += `<div class="card-row"><a href="${esc(sn.url)}" target="_blank">${esc(sn.label)}</a></div>`;
     html += `<div class="card-row"><a href="${esc(tn.url)}" target="_blank">${esc(tn.label)}</a></div>`;
-    html += `<div class="card-row"><b>${t("edge.sharedContributorsCountLabel")}</b> ${w}</div>`;
+    const via = repoEdgeVia.get(props.s + "\u0000" + props.t) || [];
+    if (via.length) {
+      html += `<div class="card-row"><b>${t("edge.repoVia")}</b> `;
+      html += via.map(k => esc(t("edge.via." + k))).join(", ");
+      html += `</div>`;
+    }
+    html += `<div class="card-row"><b>${t("edge.strengthLabel")}</b> ${w}</div>`;
   } else {
     html += `<div class="card-kind">${t("edge.genericKind")}</div>`;
     html += `<div class="card-row"><b>${esc(authorDisplayName(sn))}</b></div>`;

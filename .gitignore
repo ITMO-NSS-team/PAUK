@@ -15,9 +15,12 @@ data/static/russian_names.csv
 data/cache/*
 data/pdf/*
 data/audit/*
+data/reports/*
+data/backups/*
 !data/cache/.gitkeep
 !data/audit/.gitkeep
 
+docs/reports/*
 pauk/gui/data/private/*
 !pauk/gui/data/private/.gitkeep
 
