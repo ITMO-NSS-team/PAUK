@@ -233,13 +233,19 @@ def fa2_blended_layout(edge_weights, all_ids, max_iter, seed):
     return pos, stats
 
 
-def majority_dept(dept_lists):
-    """Department by majority vote; ties broken by id (not by global popularity —
-    that would create a rich-get-richer feedback loop favoring already-large depts)."""
+def majority_vote(value_lists):
+    """The value most of the lists carry; ties broken by id (not by global
+    popularity — that would create a rich-get-richer feedback loop favoring
+    already-large groups).
+
+    Used for departments and for publication fields alike: both are read off
+    rows that arrive from Neo4j in no defined order, so a tie has to be
+    settled by the value itself or the answer moves between runs.
+    """
     cnt = Counter()
-    for depts in dept_lists:
-        for d in depts:
-            cnt[d] += 1
+    for values in value_lists:
+        for value in values:
+            cnt[value] += 1
     if not cnt:
         return None
     return sorted(cnt.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]

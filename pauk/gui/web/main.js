@@ -242,8 +242,12 @@ map.on("load", () => {
     if (ef.length) { selectEdge(ef[0].properties); return; }
     // Repositories stay visible at every zoom, so their tab never falls into
     // the department-click branch above — the territory is still worth a click.
-    const df2 = map.queryRenderedFeatures(e.point, { layers: ["dept-fill"] });
-    if (df2.length) { selectDept(df2[0].properties.id); return; }
+    // Tab 2 only: territories are drawn on 1 and 3 as well, where a click that
+    // misses a node has always meant "clear the selection".
+    if (tab === 2) {
+      const df2 = map.queryRenderedFeatures(e.point, { layers: ["dept-fill"] });
+      if (df2.length) { selectDept(df2[0].properties.id); return; }
+    }
     clearAll();
   });
 

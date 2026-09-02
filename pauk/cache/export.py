@@ -98,7 +98,8 @@ def load_db(driver) -> dict[str, list]:
         "       r.description AS description, r.stars_num AS stars_num, gh.login AS owner, "
         "       gh.type AS owner_type, r.language AS language, r.topics AS topics, "
         "       toString(r.last_updated) AS last_updated, r.license AS license, "
-        "       r.archived AS archived",
+        "       r.archived AS archived, r.forks_num AS forks_num, "
+        "       r.is_fork AS is_fork",
     )
 
     db["departments"] = cypher_dict(

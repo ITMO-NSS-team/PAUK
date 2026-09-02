@@ -46,7 +46,7 @@ from .layout import (
     dense_rank,
     fa2_blended_layout,
     golden_color,
-    majority_dept,
+    majority_vote,
     sparse_dept_edges,
     spread_min_distance,
     top_k_edges,
@@ -189,7 +189,7 @@ def build_graph_data(db, seed: int, public: bool = False):
 
     pub_primary = {}
     for pid in pub_ids:
-        primary = majority_dept(static_depts.get(per, []) for per in pub_authors[pid])
+        primary = majority_vote(static_depts.get(per, []) for per in pub_authors[pid])
         if primary is None and pub_dept_rows.get(pid):
             primary = pub_dept_rows[pid][0]
         pub_primary[pid] = primary
@@ -227,7 +227,7 @@ def build_graph_data(db, seed: int, public: bool = False):
     repo_dept = {}
     for row in db["repositories"]:
         rid = row["id"]
-        primary = majority_dept(
+        primary = majority_vote(
             [pub_primary[p]] for p in repo_pub_map.get(rid, []) if pub_primary.get(p)
         )
         if primary is None and repo_dept_rows.get(rid):
@@ -236,7 +236,7 @@ def build_graph_data(db, seed: int, public: bool = False):
             # Last resort: the people who actually wrote it. Weaker than the
             # publication it implements — someone can contribute far outside
             # their own department — so it only speaks when nothing else does.
-            primary = majority_dept(
+            primary = majority_vote(
                 static_depts.get(per, []) for per in repo_contributors.get(rid, ())
             )
         repo_dept[rid] = primary
@@ -319,10 +319,11 @@ def build_graph_data(db, seed: int, public: bool = False):
     }
 
     def field_of(rid):
-        top = Counter(
-            f for pid in repo_pub_map.get(rid, []) for f in pub_fields.get(pid, [])
-        ).most_common(1)
-        return top[0][0] if top else None
+        # majority_vote and not Counter.most_common: `repo_pubs` comes back
+        # from Neo4j with no ORDER BY, so on a tie most_common would let the
+        # row order pick the field — and with it the cluster and the colour —
+        # anew on every run over the same data.
+        return majority_vote(pub_fields.get(pid, []) for pid in repo_pub_map.get(rid, []))
 
     repo_ids_all = [row["id"] for row in db["repositories"]]
     repo_cluster_key = repo_cluster_keys(
@@ -425,15 +426,7 @@ def build_graph_data(db, seed: int, public: bool = False):
     # which degenerates for solo-authored pubs). Full w>=1 graph is ~310k
     # edges, so keep only each pub's top-K strongest links.
     t0 = time.time()
-    strongest = defaultdict(list)
-    for (a, b), w in pub_pair_w.items():
-        strongest[a].append((w, b))
-        strongest[b].append((w, a))
-    pub_layout_w = {}
-    for n, lst in strongest.items():
-        lst.sort(key=lambda t: (-t[0], t[1]))
-        for w, o in lst[:PUB_LAYOUT_TOP_K]:
-            pub_layout_w[(n, o) if n < o else (o, n)] = w
+    pub_layout_w = top_k_edges(pub_pair_w, PUB_LAYOUT_TOP_K)
     for pair, w in sparse_dept_edges(
         pub_ids,
         pub_primary,
@@ -577,6 +570,8 @@ def build_graph_data(db, seed: int, public: bool = False):
                 "license": row.get("license") or "",
                 "last_updated": row.get("last_updated") or "",
                 "archived": bool(row.get("archived")),
+                "forks": row.get("forks_num") or 0,
+                "is_fork": bool(row.get("is_fork")),
                 "rank": rank_r[rid],
                 "gx": x,
                 "gy": y,

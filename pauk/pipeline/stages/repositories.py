@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import UTC, date, datetime
 from urllib.parse import urlparse
 
@@ -32,6 +33,32 @@ def _github_owner_name(url: str | None) -> tuple[str, str] | None:
     if parsed.netloc.lower() not in GITHUB_HOSTS or len(parts) != 2:
         return None
     return parts[0], parts[1]
+
+
+def _url_repo_id(url: str | None) -> str | None:
+    """`github_{owner}_{name}` for a repository URL, or None if it is not one.
+
+    The id a row is reached by, as opposed to `_canonical_repo_id`, which is
+    the identity the fetched payload gives it. Both passes of the stage key
+    their work by this, so it lives in one place.
+    """
+    parsed = _github_owner_name(url)
+    return f"github_{parsed[0].lower()}_{parsed[1].lower()}" if parsed else None
+
+
+def _fold_into(winner: Repository, loser: Repository) -> None:
+    """Fold one row of a repository into another row of the same repository.
+
+    Only what a row accumulates from the outside moves: the publications that
+    cited it and the URLs they cited it by. Everything else is either fetched
+    (and the winner is the one that was fetched) or derived from the payload.
+    """
+    winner.publication_ids = list(dict.fromkeys([
+        *winner.publication_ids, *loser.publication_ids,
+    ]))
+    winner.cited_urls = list(dict.fromkeys([
+        *winner.cited_urls, *loser.cited_urls,
+    ]))
 
 
 def _canonical_repo_id(repo: Repository) -> str:
@@ -123,26 +150,26 @@ class RepositoriesStage(EnrichmentStage):
 
     def _pending_repository_ids(
         self, rows: list[RepoLink], repositories: dict[str, Repository],
+        unlinked: dict[str, list[Repository]],
     ) -> set[str]:
         pending: set[str] = set()
         for row in rows:
             if not self._row_in_scope(row):
                 continue
             for link in row.links:
-                parsed = _github_owner_name(link.url)
-                if parsed is None:
-                    continue
-                repo_id = f"github_{parsed[0].lower()}_{parsed[1].lower()}"
-                if not self.in_scope("repositories", repo_id):
+                repo_id = _url_repo_id(link.url)
+                if repo_id is None or not self.in_scope("repositories", repo_id):
                     continue
                 repo = repositories.get(repo_id)
                 if repo is None or self.needs_attempt(repo.processing.get(self.name)):
                     pending.add(repo_id)
-        pending |= set(self._unlinked_repositories(repositories))
+        pending |= set(unlinked)
         return pending
 
-    def _unlinked_repositories(self, repositories: dict[str, Repository]) -> dict[str, Repository]:
-        """Rows still needing an attempt, keyed by the id their own URL gives.
+    def _unlinked_repositories(
+        self, repositories: dict[str, Repository],
+    ) -> dict[str, list[Repository]]:
+        """Rows still needing an attempt, grouped by the id their own URL gives.
 
         A curated import writes the Repository row straight into the
         collection with no link behind it, so a work list built only from
@@ -152,16 +179,49 @@ class RepositoriesStage(EnrichmentStage):
         once a row has been re-keyed to its canonical identity: the link pass
         works from the cited URL, and without a shared key a forced run would
         fetch such a row twice.
+
+        A key can hold more than one row — a curated import brings its own id
+        and the link pass derives one from the cited URL, and both can point
+        at the same owner/name. They are one repository, so they are grouped
+        rather than overwritten: `run()` fetches the group once and folds the
+        rest into what it fetched. Overwriting would starve the same row on
+        every run, since rows are read in a stable order.
         """
-        found: dict[str, Repository] = {}
+        found: dict[str, list[Repository]] = defaultdict(list)
         for repo in repositories.values():
-            parsed = _github_owner_name(repo.url)
-            if parsed is None or not self.in_scope("repositories", repo.id):
+            url_id = _url_repo_id(repo.url)
+            if url_id is None or not self.in_scope("repositories", repo.id):
                 continue
             if not self.needs_attempt(repo.processing.get(self.name)):
                 continue
-            found[f"github_{parsed[0].lower()}_{parsed[1].lower()}"] = repo
-        return found
+            found[url_id].append(repo)
+        return dict(found)
+
+    def _fold_duplicates(self, rows: list[Repository],
+                         repositories: dict[str, Repository]) -> Repository:
+        """The one row of a URL group worth fetching, with the rest folded in.
+
+        The row that has been to the API wins: `github_id` only ever comes
+        from a payload, so that row's name and URL are the canonical ones, and
+        a `processing` entry for this stage is the attempt history that would
+        otherwise be lost. Ties fall back to the id, so the winner does not
+        depend on the order rows are read in. The losers leave their id behind
+        in `merged_ids`, which is what lets the graph loader resolve a link
+        that still points at them.
+        """
+        def rank(repo: Repository) -> tuple[int, int, str]:
+            return (0 if repo.github_id else 1,
+                    0 if self.name in repo.processing else 1,
+                    repo.id)
+
+        winner, *losers = sorted(rows, key=rank)
+        for loser in losers:
+            _fold_into(winner, loser)
+            winner.merged_ids = list(dict.fromkeys([
+                *winner.merged_ids, loser.id, *loser.merged_ids,
+            ]))
+            repositories.pop(loser.id, None)
+        return winner
 
     def run(self) -> dict[str, int]:
         rows = list(self.prepared.read_models("repo_links", RepoLink))
@@ -172,8 +232,14 @@ class RepositoriesStage(EnrichmentStage):
         client = GitHubClient(self.config.request_timeout, self.config.github_token)
         changed = 0
         attempted_repo_ids: set[str] = set()
+        # Taken before the first fetch, because a fetch can rewrite `repo.url`
+        # to the canonical one GitHub redirects to. Recomputing this after the
+        # link pass would key the same row under its new URL, miss it in
+        # `attempted_repo_ids` and fetch it a second time.
+        unlinked = self._unlinked_repositories(repositories)
         progress = self.progress_bar(
-            total=len(self._pending_repository_ids(rows, repositories)), unit="repository")
+            total=len(self._pending_repository_ids(rows, repositories, unlinked)),
+            unit="repository")
         for row in rows:
             if not self._row_in_scope(row):
                 continue
@@ -207,6 +273,10 @@ class RepositoriesStage(EnrichmentStage):
                 if repo_id in attempted_repo_ids:
                     continue
                 attempted_repo_ids.add(repo_id)
+                # A row reached by a link can carry a URL of its own that
+                # differs from the cited one; the second pass is keyed by
+                # that, so claim it here — before the fetch rewrites it.
+                attempted_repo_ids.add(_url_repo_id(repo.url) or repo_id)
                 self._enrich_repository(client, repo, owner, name, url, profiles, state)
                 progress.update()
                 changed += 1
@@ -214,7 +284,8 @@ class RepositoriesStage(EnrichmentStage):
         # Second pass: rows the links never reach. The loop above is what
         # *discovers* repositories, this is what keeps already-known ones
         # enriched — including the curated rows that arrived without a link.
-        for url_id, repo in sorted(self._unlinked_repositories(repositories).items()):
+        for url_id, group in sorted(unlinked.items()):
+            repo = self._fold_duplicates(group, repositories)
             if url_id in attempted_repo_ids:
                 continue
             attempted_repo_ids.add(url_id)
@@ -233,14 +304,13 @@ class RepositoriesStage(EnrichmentStage):
             winner = canonical.get(canonical_id)
             if winner is None:
                 repo.id = canonical_id
+                # A row folded away earlier can have been keyed by the very id
+                # this row is about to take; nothing should list itself as
+                # merged away, least of all the graph loader's alias table.
+                repo.merged_ids = [m for m in repo.merged_ids if m != canonical_id]
                 canonical[canonical_id] = repo
             else:
-                winner.publication_ids = list(dict.fromkeys([
-                    *winner.publication_ids, *repo.publication_ids,
-                ]))
-                winner.cited_urls = list(dict.fromkeys([
-                    *winner.cited_urls, *repo.cited_urls,
-                ]))
+                _fold_into(winner, repo)
         repositories = canonical
 
         for repo in repositories.values():

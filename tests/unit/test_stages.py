@@ -8,7 +8,7 @@ import fitz
 import mongomock
 
 from pauk.models import CodeLink, GitHubProfile, Publication, RepoLink, Repository
-from pauk.models.processing import ProcessingStatus
+from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.stages.base import PreparedSelection
 from pauk.pipeline.stages.code_links import (
     CodeLinksStage,
@@ -730,6 +730,109 @@ class UnlinkedRepositoriesTest(unittest.TestCase):
         self.assertEqual(github_client.return_value.get_repository.call_count, 0)
 
     @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_a_row_whose_url_was_rewritten_is_not_fetched_twice(self, github_client):
+        """A rename redirects the fetch, and the row keeps the canonical URL.
+
+        The failure comes later, so the row still needs an attempt — and the
+        second pass, keyed by `repo.url`, must recognise it as one already
+        made instead of spending another call on the same repository.
+        """
+        self._client(github_client)
+        github_client.return_value.get_repository.return_value = {
+            **self.PAYLOAD, "html_url": "https://github.com/org/renamed", "name": "renamed",
+        }
+        github_client.return_value.has_readme.side_effect = RuntimeError("502")
+        self.prepared.write_models("repositories", [
+            Repository(id="github_org_curated", name="curated",
+                       url="https://github.com/org/curated"),
+        ])
+        self.prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1",
+                     links=[CodeLink(url="https://github.com/org/curated")]),
+        ])
+        RepositoriesStage(self.prepared, self.raw).run()
+        self.assertEqual(github_client.return_value.get_repository.call_count, 1)
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_two_rows_for_one_url_are_folded_rather_than_dropped(self, github_client):
+        """Same repository under two ids — a curated import and a link pass.
+
+        Keying the second pass by URL collapses them onto one key. The loser
+        must not simply vanish from the work list: rows are read in a stable
+        order, so it would lose on every run and never be enriched at all.
+        """
+        self._client(github_client)
+        self.prepared.write_models("repositories", [
+            Repository(id="curated_1", name="curated", publication_ids=["W1"],
+                       url="https://github.com/org/curated"),
+            Repository(id="curated_2", name="curated", publication_ids=["W2"],
+                       cited_urls=["https://github.com/org/Curated"],
+                       url="https://github.com/org/curated"),
+        ])
+        RepositoriesStage(self.prepared, self.raw).run()
+        self.assertEqual(github_client.return_value.get_repository.call_count, 1)
+        rows = self._row()
+        self.assertEqual(list(rows), ["github_org_curated"])
+        row = rows["github_org_curated"]
+        self.assertEqual(row.processing["repositories"].status, ProcessingStatus.COMPLETED)
+        self.assertEqual(sorted(row.publication_ids), ["W1", "W2"])
+        self.assertEqual(row.merged_ids, ["curated_2"])
+        self.assertIn("https://github.com/org/Curated", row.cited_urls)
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_a_folded_row_never_lists_the_id_it_ends_up_with(self, github_client):
+        """The loser can be keyed by the very id canonicalization then hands
+        the winner; a row listing itself as merged away would confuse the
+        graph loader's alias table."""
+        self._client(github_client)
+        self.prepared.write_models("repositories", [
+            Repository(id="curated_1", name="curated",
+                       url="https://github.com/org/curated"),
+            Repository(id="github_org_curated", name="curated",
+                       url="https://github.com/org/curated"),
+        ])
+        RepositoriesStage(self.prepared, self.raw).run()
+        row = self._row()["github_org_curated"]
+        self.assertNotIn("github_org_curated", row.merged_ids)
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_the_row_that_already_reached_the_api_wins_the_fold(self, github_client):
+        """github_id is only ever set from a payload, so the row carrying one
+        is the row whose name and URL are canonical."""
+        self._client(github_client)
+        self.prepared.write_models("repositories", [
+            Repository(id="aaa_first_by_id", name="curated",
+                       url="https://github.com/org/curated"),
+            Repository(id="zzz_last_by_id", name="curated", github_id=7,
+                       url="https://github.com/org/curated"),
+        ])
+        RepositoriesStage(self.prepared, self.raw, force=True).run()
+        rows = self._row()
+        self.assertEqual(list(rows), ["github_org_curated"])
+        self.assertIn("aaa_first_by_id", rows["github_org_curated"].merged_ids)
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_the_attempt_history_survives_the_fold(self, github_client):
+        """With no payload on either row, the one that has already been tried
+        wins — folding it away would reset the attempt counter."""
+        self._client(github_client)
+        github_client.return_value.get_repository.side_effect = RuntimeError("404")
+        tried = Repository(id="zzz_last_by_id", name="curated",
+                           url="https://github.com/org/curated")
+        tried.processing["repositories"] = ProcessingState(
+            status=ProcessingStatus.FAILED, attempts=2)
+        self.prepared.write_models("repositories", [
+            Repository(id="aaa_first_by_id", name="curated",
+                       url="https://github.com/org/curated"),
+            tried,
+        ])
+        RepositoriesStage(self.prepared, self.raw).run()
+        rows = self._row()
+        self.assertEqual(list(rows), ["zzz_last_by_id"])
+        self.assertEqual(rows["zzz_last_by_id"].processing["repositories"].attempts, 3)
+        self.assertIn("aaa_first_by_id", rows["zzz_last_by_id"].merged_ids)
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
     def test_an_id_scoped_run_skips_rows_it_does_not_name(self, github_client):
         self._client(github_client)
         self.prepared.write_models("repositories", [
@@ -848,6 +951,54 @@ class RepoPeopleStageTest(unittest.TestCase):
         self.assertEqual(people_client.return_value.get_user.call_count, 1)
         self.assertEqual(sorted(self._profiles()["bob"].repos),
                          ["https://github.com/org/first", "https://github.com/org/second"])
+
+    @patch("pauk.pipeline.stages.repo_people.GitHubClient")
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_a_publication_scoped_run_leaves_other_papers_repositories_alone(
+            self, repos_client, people_client):
+        """`--input pubs.txt --entity publications` means those publications.
+
+        `in_scope` alone answers True for every repository when the selection
+        names publications, so without a scope of its own this stage would
+        walk the whole group and spend the GitHub quota on repositories
+        nobody asked about.
+        """
+        users = {"bob": {"html_url": "https://github.com/bob", "name": "Bob"}}
+        self._client(repos_client, users=users)
+        self._client(people_client, users=users)
+        repos_client.return_value.get_repository.side_effect = lambda owner, name: {
+            "html_url": f"https://github.com/{owner}/{name}", "name": name, "id": 1,
+            "owner": {"login": "org", "type": "Organization"}}
+        self.prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1", links=[CodeLink(url="https://github.com/org/first")]),
+            RepoLink(publication_id="W2", links=[CodeLink(url="https://github.com/org/second")]),
+        ])
+        RepositoriesStage(self.prepared, self.raw).run()
+        selection = PreparedSelection(entity="publications", ids=frozenset({"W1"}))
+        RepoPeopleStage(self.prepared, self.raw, selection=selection).run()
+        self.assertEqual(people_client.return_value.contributors.call_count, 1)
+        people_client.return_value.contributors.assert_called_once_with("org", "first")
+
+    @patch("pauk.pipeline.stages.repo_people.GitHubClient")
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_an_id_scoped_run_still_filters_by_repository(self, repos_client, people_client):
+        """A selection aimed at repositories keeps working as it did."""
+        self._client(repos_client, users={})
+        self._client(people_client, users={})
+        repos_client.return_value.get_repository.side_effect = lambda owner, name: {
+            "html_url": f"https://github.com/{owner}/{name}", "name": name, "id": 1,
+            "owner": {"login": "org", "type": "Organization"}}
+        self.prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1", links=[
+                CodeLink(url="https://github.com/org/first"),
+                CodeLink(url="https://github.com/org/second"),
+            ]),
+        ])
+        RepositoriesStage(self.prepared, self.raw).run()
+        selection = PreparedSelection(entity="repositories",
+                                      ids=frozenset({"github_org_second"}))
+        RepoPeopleStage(self.prepared, self.raw, selection=selection).run()
+        people_client.return_value.contributors.assert_called_once_with("org", "second")
 
 
 if __name__ == "__main__":

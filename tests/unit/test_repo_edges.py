@@ -1,8 +1,8 @@
 import unittest
 
 from pauk.gui.generate_data import repo_cluster_keys
-from pauk.gui.layout import co_membership_weights, top_k_edges
-from pauk.pipeline.stages.repositories import _payload_date
+from pauk.gui.layout import co_membership_weights, majority_vote, top_k_edges
+from pauk.pipeline.stages.repositories import _payload_date, _url_repo_id
 
 
 class CoMembershipWeightsTest(unittest.TestCase):
@@ -129,3 +129,41 @@ class RepoClusterKeysTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MajorityVoteTest(unittest.TestCase):
+    """One vote for departments and publication fields alike.
+
+    Both are read off rows Neo4j returns in no defined order, so a tie has to
+    be settled by the value itself — otherwise the cluster a repository lands
+    in, and the colour it is drawn with, move between runs over one dataset.
+    """
+
+    def test_the_most_common_value_wins(self):
+        self.assertEqual(majority_vote([["ml"], ["ml"], ["bio"]]), "ml")
+
+    def test_a_tie_is_broken_by_name_not_by_input_order(self):
+        forward = majority_vote([["bio"], ["ml"]])
+        backward = majority_vote([["ml"], ["bio"]])
+        self.assertEqual(forward, "bio")
+        self.assertEqual(forward, backward)
+
+    def test_nothing_to_count_is_no_answer(self):
+        self.assertIsNone(majority_vote([]))
+        self.assertIsNone(majority_vote([[], []]))
+
+
+class UrlRepoIdTest(unittest.TestCase):
+    """The key both passes of RepositoriesStage claim their work by."""
+
+    def test_owner_and_name_are_lowercased(self):
+        self.assertEqual(_url_repo_id("https://github.com/Org/Repo"), "github_org_repo")
+
+    def test_a_trailing_slash_does_not_change_the_key(self):
+        self.assertEqual(_url_repo_id("https://github.com/org/repo/"),
+                         _url_repo_id("https://github.com/org/repo"))
+
+    def test_anything_that_is_not_a_repository_url_has_no_key(self):
+        self.assertIsNone(_url_repo_id("https://gitlab.com/org/repo"))
+        self.assertIsNone(_url_repo_id("https://github.com/org/repo/tree/main"))
+        self.assertIsNone(_url_repo_id(None))
