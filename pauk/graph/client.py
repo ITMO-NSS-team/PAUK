@@ -20,6 +20,7 @@ LIST_MERGE_FIELDS = {
     "Person": {"name_variants", "other_names", "merged_ids"},
     "Publication": {"fields", "merged_ids"},
     "Repository": {"cited_urls", "contributors", "merged_ids"},
+    "Department": {"name_variants", "context_aliases", "merged_ids"},
 }
 JSON_LIST_MERGE_FIELDS = {
     "Person": {"affiliations"},
@@ -501,6 +502,45 @@ class Neo4jClient:
         ), incoming=(
             ("Publication", "MENTIONS_LINK"),
             ("Person", "CONTRIBUTED_TO"),
+        ))
+
+    def fetch_departments_for_dedup(self) -> list[dict]:
+        """Every Department node with the fields the department merge rules read.
+
+        staff_ids / publication_ids are the BELONGS_TO and PRODUCED_BY
+        neighbours — corroboration that two names denote one unit; parent_id
+        is the PART_OF target, used by the kind/level guard.
+        """
+        query = """
+            MATCH (d:Department)
+            OPTIONAL MATCH (d)-[:PART_OF]->(parent)
+            OPTIONAL MATCH (d)<-[:BELONGS_TO]-(person:Person)
+            OPTIONAL MATCH (d)<-[:PRODUCED_BY]-(pub:Publication)
+            RETURN d.id AS id, d.name_en AS name_en, d.name_ru AS name_ru,
+                   coalesce(d.name_variants, []) AS name_variants, d.kind AS kind,
+                   parent.id AS parent_id, coalesce(d.merged_ids, []) AS merged_ids,
+                   collect(DISTINCT person.id) AS staff_ids,
+                   collect(DISTINCT pub.id) AS publication_ids
+        """
+        with self.driver.session() as session:
+            return session.execute_read(
+                lambda tx: [dict(record) for record in tx.run(query)])
+
+    def merge_department_nodes_batch(self, merges: list[tuple[str, str]]) -> int:
+        """Fold duplicate Department nodes into the surviving unit.
+
+        Incoming PART_OF carries child units up to the canonical node; the
+        two outgoing PART_OF specs cover a parent that is a Department and a
+        top-level unit's Organization.
+        """
+        return self._fold_nodes_batch("Department", merges, outgoing=(
+            ("PART_OF", "Department"),
+            ("PART_OF", "Organization"),
+        ), incoming=(
+            ("Person", "BELONGS_TO"),
+            ("Publication", "PRODUCED_BY"),
+            ("Repository", "DEVELOPED_BY"),
+            ("Department", "PART_OF"),
         ))
 
     def upsert_relationships_batch(

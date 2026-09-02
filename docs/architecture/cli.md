@@ -94,6 +94,19 @@ pauk dedup graph
 запускается вручную, когда накопилось несколько групп. См.
 [pipeline/dedup.md](pipeline/dedup.md).
 
+## `dedup departments`
+
+```
+pauk dedup departments [--dry-run] [--embedder <labse|minilm|model-id>]
+```
+
+Схлопывает дубли узлов `Department` без ручного словаря `aliases`:
+нормализация → блокинг → детерминированные сигналы → LLM-арбитраж
+неоднозначных пар. `--dry-run` только считает и пишет журнал
+(`data/cache/dedup_candidates_departments.jsonl`), не трогая граф.
+`--embedder` включает семантический блокинг (нужен `sentence-transformers`,
+не в зависимостях проекта). См. [graph-dept-dedup.md](graph-dept-dedup.md).
+
 ## `cache export`
 
 ```

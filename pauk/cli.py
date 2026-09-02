@@ -78,8 +78,14 @@ def main() -> None:
     p.add_argument("target", choices=["graph"])
     p.add_argument("--group", required=True)
     p = sub.add_parser("dedup")
-    p.add_argument("target", choices=["graph"],
-                   help="deduplicate persons across every published group in the graph")
+    p.add_argument("target", choices=["graph", "departments"],
+                   help="graph: persons/publications/repositories across every published group; "
+                        "departments: fold duplicate Department nodes")
+    p.add_argument("--dry-run", action="store_true",
+                   help="departments only: compute and journal merges without applying them")
+    p.add_argument("--embedder", default="",
+                   help="departments only: multilingual embedder for stage-1 blocking "
+                        "(labse | minilm | a sentence-transformers model id); default is lexical-only")
     p = sub.add_parser("cache")
     cache_sub = p.add_subparsers(dest="cache_command", required=True)
     p = cache_sub.add_parser("export")
@@ -126,12 +132,18 @@ def main() -> None:
         finally:
             mongo.close()
     elif args.command == "dedup":
-        from pauk.graph.dedup import run_graph_dedup
         mongo = get_mongo_client(settings)
         try:
             db = mongo[settings.mongo_db]
             ensure_indexes(db)
-            _log_result("dedup graph", None, run_graph_dedup(settings, db))
+            if args.target == "departments":
+                from pauk.graph.dept_dedup import run_department_dedup
+                _log_result("dedup departments", None,
+                            run_department_dedup(settings, db, dry_run=args.dry_run,
+                                                 embedder=args.embedder))
+            else:
+                from pauk.graph.dedup import run_graph_dedup
+                _log_result("dedup graph", None, run_graph_dedup(settings, db))
         finally:
             mongo.close()
     else:
