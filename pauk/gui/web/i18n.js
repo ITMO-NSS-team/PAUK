@@ -73,7 +73,9 @@ const LOCALES = {
     "repo.license": "Лицензия:",
     "repo.lastUpdated": "Последний коммит:",
     "repo.topics": "Темы",
+    "repo.forks": "Форки:",
     "repo.archived": "архив",
+    "repo.isFork": "форк",
     "repo.org": "организация",
     "edge.repoVia": "Связаны через:",
     "edge.via.pub": "общую публикацию",
@@ -97,7 +99,9 @@ const LOCALES = {
     "edge.pubPubKind": "публикации — общие авторы",
     "edge.sharedAuthorsCountLabel": "Общих авторов ИТМО:",
     "edge.authorsSection": "Авторы",
-    "edge.repoRepoKind": "репозитории — общие контрибьюторы",
+    // Which signals actually tie the two is spelled out in the card body
+    // (edge.repoVia); an edge can be pure `owner`, with no shared contributor.
+    "edge.repoRepoKind": "репозитории — связаны",
     "edge.strengthLabel": "Сила связи:",
     "edge.genericKind": "связь",
 
@@ -239,7 +243,9 @@ const LOCALES = {
     "repo.license": "License:",
     "repo.lastUpdated": "Last commit:",
     "repo.topics": "Topics",
+    "repo.forks": "Forks:",
     "repo.archived": "archived",
+    "repo.isFork": "fork",
     "repo.org": "organization",
     "edge.repoVia": "Linked by:",
     "edge.via.pub": "a shared publication",
@@ -263,7 +269,7 @@ const LOCALES = {
     "edge.pubPubKind": "publications — shared authors",
     "edge.sharedAuthorsCountLabel": "Shared ITMO authors:",
     "edge.authorsSection": "Authors",
-    "edge.repoRepoKind": "repositories — shared contributors",
+    "edge.repoRepoKind": "repositories — linked",
     "edge.strengthLabel": "Link strength:",
     "edge.genericKind": "link",
 

@@ -6,6 +6,9 @@ function showRepoCard(key) {
     .map(p => ({ ...p, node: nodeByKey.get(p.key) })).filter(p => p.node);
   let html = `<div class="card-kind">${t("repo.kind")}</div><div class="card-title">${esc(n.label)}`;
   if (n.archived) html += ` <span class="tag gray">${t("repo.archived")}</span>`;
+  // A fork says the code started somewhere else, which is worth knowing
+  // before reading anything into the repository's own activity.
+  if (n.is_fork) html += ` <span class="tag gray">${t("repo.isFork")}</span>`;
   html += `</div>`;
   html += `<div class="card-row"><b>${t("repo.department")}</b> ${esc(deptDisplayName(deptById.get(n.dept)) || t("common.noDept"))}</div>`;
   if (n.owner) {
@@ -13,6 +16,7 @@ function showRepoCard(key) {
     html += `<div class="card-row"><b>${t("repo.owner")}</b> ${esc(n.owner)}${orgTag}</div>`;
   }
   if (n.stars)        html += `<div class="card-row"><b>${t("repo.stars")}</b> ★ ${n.stars}</div>`;
+  if (n.forks)        html += `<div class="card-row"><b>${t("repo.forks")}</b> ${n.forks}</div>`;
   if (n.language)     html += `<div class="card-row"><b>${t("repo.language")}</b> ${esc(n.language)}</div>`;
   if (n.license)      html += `<div class="card-row"><b>${t("repo.license")}</b> ${esc(n.license)}</div>`;
   if (n.last_updated) html += `<div class="card-row"><b>${t("repo.lastUpdated")}</b> ${esc(n.last_updated)}</div>`;

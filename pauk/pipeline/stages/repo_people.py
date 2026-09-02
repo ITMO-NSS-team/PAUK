@@ -84,6 +84,23 @@ class RepoPeopleStage(EnrichmentStage):
     name = "repo_people"
     progress_label = "Repositories: collecting the people behind them"
 
+    def _repo_in_scope(self, repo: Repository) -> bool:
+        """What a publication-scoped run means for a repository row.
+
+        `in_scope` alone would answer True for every row here: it only filters
+        a selection aimed at repositories, and lets one aimed at publications
+        through untouched. That would walk the whole group on
+        `--input pubs.txt --entity publications` and spend the GitHub quota on
+        repositories nobody asked about. `RepositoriesStage` reads the scope
+        off the RepoLink row it is working from; by this stage the Repository
+        exists and carries the publications itself.
+        """
+        if self.selection is None:
+            return True
+        if self.selection.entity in {"repo_links", "publications"}:
+            return bool(set(repo.publication_ids) & self.selection.ids)
+        return self.in_scope("repositories", repo.id)
+
     def _harvest(self, client: GitHubClient, repo: Repository, owner: str, name: str,
                  profiles: dict[str, GitHubProfile]) -> None:
         """Collect the people behind one repository into github_profiles.
@@ -146,7 +163,7 @@ class RepoPeopleStage(EnrichmentStage):
         }
         pending = [
             repo for repo in repositories.values()
-            if self.in_scope("repositories", repo.id)
+            if self._repo_in_scope(repo)
             and _github_owner_name(repo.url) is not None
             and self.needs_attempt(repo.processing.get(self.name))
         ]
