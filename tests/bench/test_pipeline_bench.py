@@ -102,6 +102,9 @@ def bench(tmp_path_factory) -> SimpleNamespace:
     github = MockGitHubClient(universe)
     patches = (
         mock.patch("pauk.pipeline.stages.repositories.GitHubClient", lambda *a, **k: github),
+        # repo_people imports GitHubClient for itself; unpatched, the bench
+        # spends the whole fixture on live calls to api.github.com.
+        mock.patch("pauk.pipeline.stages.repo_people.GitHubClient", lambda *a, **k: github),
         mock.patch("pauk.pipeline.stages.persons.OpenAlexClient", lambda *a, **k: MockOpenAlexClient(universe)),
         mock.patch("pauk.pipeline.stages.persons.CrossrefClient", lambda *a, **k: MockCrossrefClient(universe)),
         mock.patch("pauk.pipeline.stages.persons.OrcidClient", lambda *a, **k: MockOrcidClient(universe)),
