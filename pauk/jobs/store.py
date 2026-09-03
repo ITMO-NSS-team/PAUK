@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from datetime import timedelta
 
 from pymongo.database import Database
 
@@ -16,6 +17,7 @@ from pauk.jobs.models import (
     Job,
     JobKind,
     JobState,
+    aware,
     now,
     parse_payload,
     resource_for,
@@ -26,6 +28,12 @@ logger = logging.getLogger(__name__)
 COLLECTION = "jobs"
 
 PAGE = 50
+
+# How long a job may go without saying it is alive before it counts as
+# abandoned. The beat is every minute (worker.BEAT_SECONDS), so this is
+# several missed beats, not a slow step: the beat runs in its own thread
+# and does not wait for the work.
+STALE_MINUTES = 5
 
 
 def enqueue(db: Database, kind: JobKind, payload: dict | None = None,
@@ -165,6 +173,43 @@ def _settle(db: Database, job_id: str, state: JobState, **fields) -> bool:
     if result.matched_count:
         logger.info("job %s %s", job_id, state)
     return result.matched_count > 0
+
+
+def is_stale(job: Job, minutes: int = STALE_MINUTES) -> bool:
+    """Whether nobody is running this job any more.
+
+    The beat comes from a thread of its own, independent of the work, so a
+    job that stops beating is a job whose process is gone — killed worker,
+    a machine that went away, Ctrl+C at the wrong moment.
+    """
+    if job.state not in (JobState.CLAIMED, JobState.RUNNING):
+        return False
+    last = job.heartbeat_at or job.started_at or job.created_at
+    return aware(last) < now() - timedelta(minutes=minutes)
+
+
+def reap_stale(db: Database, minutes: int = STALE_MINUTES) -> int:
+    """Settle jobs whose worker stopped answering.
+
+    Without this they sit in "under way" for ever: the only thing that ever
+    moved a job out of that state was the worker that had it, and that
+    worker is gone. A run somebody asked to stop is recorded as stopped;
+    anything else as failed, because it was.
+
+    Returns:
+        How many were settled.
+    """
+    settled = 0
+    for job in running(db):
+        if not is_stale(job, minutes):
+            continue
+        if job.cancel_requested:
+            settled += cancelled(db, job.id)
+        else:
+            settled += fail(db, job.id, "воркер перестал отвечать")
+    if settled:
+        logger.warning("settled %d job(s) nobody was running", settled)
+    return settled
 
 
 def read(db: Database, job_id: str) -> Job | None:

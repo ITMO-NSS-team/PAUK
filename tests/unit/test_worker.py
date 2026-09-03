@@ -1,11 +1,12 @@
 import threading
 import unittest
+from datetime import timedelta
 from unittest.mock import patch
 
 import mongomock
 
 from pauk.jobs import locks, store, worker
-from pauk.jobs.models import GRAPH, PAYLOADS, JobKind, JobState, PublishPayload
+from pauk.jobs.models import GRAPH, PAYLOADS, JobKind, JobState, PublishPayload, now
 from pauk.settings import Settings
 
 
@@ -348,3 +349,77 @@ class PipelineJobTest(unittest.TestCase):
     def test_it_contends_for_the_graph(self):
         # It ends by publishing, so the panel has to warn while it runs.
         self.assertEqual(self.queue().resource, GRAPH)
+
+
+class AbandonedJobTest(unittest.TestCase):
+    """A job whose worker is gone must not sit in "under way" for ever.
+
+    Nothing else ever moved a job out of that state: the only process that
+    could was the one that died holding it. Stopping the worker while a run
+    was going left the row there, and pressing cancel only added a line
+    saying somebody had asked it to stop.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.worker = worker.Worker(config=Settings(neo4j_uri="bolt://127.0.0.1:7699"),
+                                    db=self.db, name="worker-2", poll_seconds=0)
+
+    def abandoned(self, minutes=10, cancelled=False):
+        job = store.enqueue(self.db, JobKind.PUBLISH, {"group": "g"}, actor="user:chief")
+        store.claim(self.db, "worker-1")
+        store.start(self.db, job.id)
+        if cancelled:
+            store.request_cancel(self.db, job.id)
+        self.db[store.COLLECTION].update_one(
+            {"_id": job.id},
+            {"$set": {"heartbeat_at": now() - timedelta(minutes=minutes)}})
+        return job
+
+    def test_a_job_that_still_beats_is_left_alone(self):
+        job = self.abandoned(minutes=0)
+        self.assertEqual(store.reap_stale(self.db), 0)
+        self.assertEqual(store.read(self.db, job.id).state, JobState.RUNNING)
+
+    def test_a_silent_job_is_recorded_as_failed(self):
+        job = self.abandoned()
+        self.assertEqual(store.reap_stale(self.db), 1)
+        stored = store.read(self.db, job.id)
+        self.assertEqual(stored.state, JobState.FAILED)
+        self.assertIn("отвеча", stored.error)
+
+    def test_a_silent_job_somebody_cancelled_is_recorded_as_cancelled(self):
+        job = self.abandoned(cancelled=True)
+        store.reap_stale(self.db)
+        self.assertEqual(store.read(self.db, job.id).state, JobState.CANCELLED)
+
+    def test_it_leaves_the_list_of_what_is_under_way(self):
+        self.abandoned()
+        store.reap_stale(self.db)
+        self.assertEqual(store.running(self.db), [])
+
+    def test_the_worker_clears_them_on_its_way_past(self):
+        # Starting the worker again is the ordinary way this gets noticed.
+        job = self.abandoned()
+        self.worker.run_once()
+        self.assertEqual(store.read(self.db, job.id).state, JobState.FAILED)
+
+    def test_a_finished_job_is_never_touched(self):
+        job = store.enqueue(self.db, JobKind.MAP, {})
+        store.claim(self.db, "worker-1")
+        store.start(self.db, job.id)
+        store.finish(self.db, job.id, {"map_authors": 1})
+        self.db[store.COLLECTION].update_one(
+            {"_id": job.id}, {"$set": {"heartbeat_at": now() - timedelta(minutes=99)}})
+        self.assertEqual(store.reap_stale(self.db), 0)
+        self.assertEqual(store.read(self.db, job.id).state, JobState.DONE)
+
+    def test_a_job_claimed_but_never_started_is_reaped_too(self):
+        # The worker can die between taking the document and taking the
+        # resource; there is no heartbeat after the claim to go by.
+        job = store.enqueue(self.db, JobKind.DEDUP, {})
+        store.claim(self.db, "worker-1")
+        self.db[store.COLLECTION].update_one(
+            {"_id": job.id}, {"$set": {"heartbeat_at": now() - timedelta(minutes=10)}})
+        store.reap_stale(self.db)
+        self.assertEqual(store.read(self.db, job.id).state, JobState.FAILED)

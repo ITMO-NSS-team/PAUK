@@ -182,6 +182,10 @@ class Worker:
             when the job went back because its resource was busy. Either
             way the caller waits before asking again.
         """
+        # Jobs left behind by a worker that is gone. Nothing else ever moves
+        # them out of "under way": the only process that could was the one
+        # that died holding them.
+        store.reap_stale(self.db)
         job = store.claim(self.db, self.name)
         if job is None:
             return False
