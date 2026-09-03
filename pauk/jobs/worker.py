@@ -20,6 +20,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 from pymongo.database import Database
+from pymongo.errors import PyMongoError
 
 from pauk.jobs import locks, store
 from pauk.jobs.models import Job, JobKind, parse_payload
@@ -119,8 +120,16 @@ class _Beat:
 
     def _loop(self) -> None:
         while not self._stop.wait(BEAT_SECONDS):
-            store.heartbeat(self._db, self._job.id)
-            locks.renew(self._db, self._job.resource, self._owner)
+            try:
+                store.heartbeat(self._db, self._job.id)
+                locks.renew(self._db, self._job.resource, self._owner)
+            except PyMongoError as error:
+                # One blip must not end the beating. An unhandled error
+                # here killed the thread outright, and after that the run
+                # kept going in silence: the lease it holds on the graph
+                # would expire under it and let a second writer in, which
+                # is the one thing the lock exists to prevent.
+                logger.warning("job %s could not report in: %s", self._job.id, error)
 
     def __enter__(self) -> _Beat:
         self._thread.start()
@@ -186,7 +195,9 @@ class Worker:
         # them out of "under way": the only process that could was the one
         # that died holding them.
         store.reap_stale(self.db)
-        job = store.claim(self.db, self.name)
+        # Jobs waiting on something somebody else holds are passed over,
+        # not taken and handed straight back.
+        job = store.claim(self.db, self.name, busy=locks.taken(self.db))
         if job is None:
             return False
         if job.cancel_requested:

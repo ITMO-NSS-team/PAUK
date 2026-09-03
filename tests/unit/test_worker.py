@@ -4,6 +4,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 import mongomock
+from pymongo.errors import AutoReconnect
 
 from pauk.jobs import locks, store, worker
 from pauk.jobs.models import GRAPH, PAYLOADS, JobKind, JobState, PublishPayload, now
@@ -134,8 +135,8 @@ class WorkerTest(unittest.TestCase):
         job = self.queue()
         original = store.claim
 
-        def settle_then_claim(db, name):
-            claimed = original(db, name)
+        def settle_then_claim(db, name, busy=None):
+            claimed = original(db, name, busy)
             store.fail(db, job.id, "settled elsewhere")
             return claimed
 
@@ -212,20 +213,34 @@ class HeartbeatTest(unittest.TestCase):
         self.assertGreaterEqual(len(seen), 2, "сердцебиение не обновлялось")
 
     def test_the_lease_is_pushed_out(self):
+        # The lock is taken inside the step, the way the real functions
+        # take it: taking it first would leave the resource busy and the
+        # worker would pass the job over instead of claiming it.
         store.enqueue(self.db, JobKind.PUBLISH, {"group": "2024"})
-        locks.acquire(self.db, GRAPH, "worker-1")
-        first = self.db[locks.COLLECTION].find_one({"_id": GRAPH})["expires_at"]
+        beaten = threading.Event()
+        first = []
+
+        def step(config, db, payload, stop):
+            locks.acquire(db, GRAPH, "worker-1")
+            first.append(self.db[locks.COLLECTION].find_one({"_id": GRAPH})["expires_at"])
+            beaten.wait(timeout=2)
+            return {}
+
         seen = []
-
-        def watch():
-            for _ in range(200):
-                row = self.db[locks.COLLECTION].find_one({"_id": GRAPH})
-                if row and row["expires_at"] != first:
-                    seen.append(row["expires_at"])
-                    return
-                threading.Event().wait(0.01)
-
-        self.run_with_beat(watch)
+        with patch.object(worker, "BEAT_SECONDS", 0.01), \
+                patch.dict(worker.STEPS, {JobKind.PUBLISH: step}):
+            thread = threading.Thread(target=self.worker.run_once)
+            thread.start()
+            try:
+                for _ in range(300):
+                    row = self.db[locks.COLLECTION].find_one({"_id": GRAPH})
+                    if row and first and row["expires_at"] != first[0]:
+                        seen.append(row["expires_at"])
+                        break
+                    threading.Event().wait(0.01)
+            finally:
+                beaten.set()
+                thread.join(timeout=5)
         self.assertTrue(seen, "срок замка не продлевался")
 
     def test_the_beat_stops_with_the_job(self):
@@ -365,7 +380,7 @@ class AbandonedJobTest(unittest.TestCase):
         self.worker = worker.Worker(config=Settings(neo4j_uri="bolt://127.0.0.1:7699"),
                                     db=self.db, name="worker-2", poll_seconds=0)
 
-    def abandoned(self, minutes=10, cancelled=False):
+    def abandoned(self, minutes=20, cancelled=False):
         job = store.enqueue(self.db, JobKind.PUBLISH, {"group": "g"}, actor="user:chief")
         store.claim(self.db, "worker-1")
         store.start(self.db, job.id)
@@ -420,6 +435,98 @@ class AbandonedJobTest(unittest.TestCase):
         job = store.enqueue(self.db, JobKind.DEDUP, {})
         store.claim(self.db, "worker-1")
         self.db[store.COLLECTION].update_one(
-            {"_id": job.id}, {"$set": {"heartbeat_at": now() - timedelta(minutes=10)}})
+            {"_id": job.id}, {"$set": {"heartbeat_at": now() - timedelta(minutes=20)}})
         store.reap_stale(self.db)
+        self.assertEqual(store.read(self.db, job.id).state, JobState.FAILED)
+
+
+class SeveralRunsAtOnceTest(unittest.TestCase):
+    """What several people launching together run into.
+
+    Three separate faults, all of them about locks and time: a beat that
+    dies of one blip, a blocked job holding up the ones behind it, and a
+    verdict of "abandoned" passed while the lease is still alive.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.worker = worker.Worker(config=Settings(neo4j_uri="bolt://127.0.0.1:7699"),
+                                    db=self.db, name="worker-1", poll_seconds=0)
+        self.done = []
+
+    def records(self, name):
+        def step(config, db, payload, stop):
+            self.done.append(name)
+            return {}
+        return step
+
+    def test_one_blip_does_not_end_the_beating(self):
+        # An unhandled error killed the thread outright, and the run then
+        # went on in silence until the lease it held expired under it.
+        job = store.enqueue(self.db, JobKind.PUBLISH, {"group": "g"})
+        store.claim(self.db, "worker-1")
+        store.start(self.db, job.id)
+        tries = []
+
+        def flaky(db, job_id):
+            tries.append(len(tries))
+            if len(tries) <= 3:
+                raise AutoReconnect("blip")
+            return True
+
+        with patch.object(worker, "BEAT_SECONDS", 0.01), \
+                patch.object(worker.store, "heartbeat", flaky), \
+                worker._Beat(self.db, store.read(self.db, job.id), "worker-1"):
+            threading.Event().wait(0.2)
+        self.assertGreater(len(tries), 5, "поток отметок умер на первой ошибке")
+
+    def test_a_blocked_job_does_not_hold_up_the_rest(self):
+        store.enqueue(self.db, JobKind.PUBLISH, {"group": "g"})
+        store.enqueue(self.db, JobKind.COLLECT, {"group": "2024", "work_id": "W1"})
+        locks.acquire(self.db, GRAPH, "somebody-in-a-terminal")
+        with patch.dict(worker.STEPS, {JobKind.PUBLISH: self.records("publish"),
+                                       JobKind.COLLECT: self.records("collect")}):
+            for _ in range(3):
+                self.worker.run_once()
+        self.assertEqual(self.done, ["collect"])
+
+    def test_the_blocked_job_goes_as_soon_as_the_resource_frees_up(self):
+        job = store.enqueue(self.db, JobKind.PUBLISH, {"group": "g"})
+        locks.acquire(self.db, GRAPH, "somebody-in-a-terminal")
+        with patch.dict(worker.STEPS, {JobKind.PUBLISH: self.records("publish")}):
+            self.worker.run_once()
+            self.assertEqual(store.read(self.db, job.id).state, JobState.QUEUED)
+            locks.release(self.db, GRAPH, "somebody-in-a-terminal")
+            self.worker.run_once()
+        self.assertEqual(self.done, ["publish"])
+
+    def test_an_expired_lock_does_not_hold_anything_up(self):
+        store.enqueue(self.db, JobKind.PUBLISH, {"group": "g"})
+        locks.acquire(self.db, GRAPH, "a-worker-that-died")
+        self.db[locks.COLLECTION].update_one(
+            {"_id": GRAPH}, {"$set": {"expires_at": now() - timedelta(minutes=1)}})
+        with patch.dict(worker.STEPS, {JobKind.PUBLISH: self.records("publish")}):
+            self.worker.run_once()
+        self.assertEqual(self.done, ["publish"])
+
+    def test_a_quiet_job_is_not_buried_while_its_lease_could_be_alive(self):
+        # Five minutes of silence is enough to warn about and not enough to
+        # act on: the run may still hold the graph and still be writing.
+        job = store.enqueue(self.db, JobKind.PUBLISH, {"group": "g"})
+        store.claim(self.db, "worker-1")
+        store.start(self.db, job.id)
+        self.db[store.COLLECTION].update_one(
+            {"_id": job.id}, {"$set": {"heartbeat_at": now() - timedelta(minutes=6)}})
+        stored = store.read(self.db, job.id)
+        self.assertTrue(store.is_quiet(stored), "страница должна предупредить")
+        self.assertEqual(store.reap_stale(self.db), 0, "но хоронить рано")
+
+    def test_it_is_buried_once_the_lease_cannot_be_alive(self):
+        job = store.enqueue(self.db, JobKind.PUBLISH, {"group": "g"})
+        store.claim(self.db, "worker-1")
+        store.start(self.db, job.id)
+        self.db[store.COLLECTION].update_one(
+            {"_id": job.id},
+            {"$set": {"heartbeat_at": now() - timedelta(minutes=locks.LEASE_MINUTES + 1)}})
+        self.assertEqual(store.reap_stale(self.db), 1)
         self.assertEqual(store.read(self.db, job.id).state, JobState.FAILED)
