@@ -29,6 +29,7 @@ from pauk.storage import PreparedStore, RawStore
 from tests.bench.mocks import (
     MockCrossrefClient,
     MockGitHubClient,
+    MockLinkRelevanceClient,
     MockOpenAlexClient,
     MockOpenRouterClient,
     MockOrcidClient,
@@ -108,6 +109,8 @@ def bench(tmp_path_factory) -> SimpleNamespace:
         mock.patch("pauk.pipeline.stages.persons.OpenReviewClient", lambda *a, **k: UnexpectedNetworkClient()),
         mock.patch("pauk.pipeline.stages.author_names.OpenRouterClient",
                    lambda *a, **k: MockOpenRouterClient(RUSSIAN_NAMES_CATALOG)),
+        mock.patch("pauk.pipeline.stages.link_relevance.OpenRouterClient",
+                   lambda *a, **k: MockLinkRelevanceClient()),
     )
     for p in patches:
         p.start()

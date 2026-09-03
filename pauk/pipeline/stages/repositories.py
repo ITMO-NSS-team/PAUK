@@ -27,7 +27,10 @@ BOT_LOGIN = re.compile(r"\[bot\]$|^dependabot|^github-actions|^renovate|^web-flo
 
 
 def _is_person(login: str, account_type: str | None) -> bool:
-    return bool(login) and not BOT_LOGIN.search(login) and (account_type or "User") == "User"
+    # The type arrives either straight from GitHub ("User", "Organization") or
+    # from a stored GitHubProfile, which keeps it lowercased. Comparing exactly
+    # would silently drop every account already in the database.
+    return bool(login) and not BOT_LOGIN.search(login) and (account_type or "user").lower() == "user"
 
 
 def _git_identities(commits: list[dict]) -> dict[str, tuple[set[str], set[str]]]:
@@ -163,6 +166,7 @@ class RepositoriesStage(EnrichmentStage):
         client = GitHubClient(self.config.request_timeout, self.config.github_token)
         changed = 0
         attempted_repo_ids: set[str] = set()
+        fetched_orgs: set[str] = set()
         progress = self.progress_bar(
             total=len(self._pending_repository_ids(rows, repositories)), unit="repository")
         for row in rows:
@@ -182,9 +186,11 @@ class RepositoriesStage(EnrichmentStage):
                     and repo_id not in self.selection.ids
                 ):
                     continue
+                # None is "not judged yet", not "no", and still implements.
+                implements = link.is_relevant is not False
                 repo = repositories.get(repo_id)
                 if repo is not None:
-                    if row.publication_id not in repo.publication_ids:
+                    if implements and row.publication_id not in repo.publication_ids:
                         repo.publication_ids.append(row.publication_id)
                     if url not in repo.cited_urls:
                         repo.cited_urls.append(url)
@@ -193,7 +199,8 @@ class RepositoriesStage(EnrichmentStage):
                         continue
                 else:
                     repo = Repository(id=repo_id, url=url, name=name,
-                                      publication_ids=[row.publication_id], cited_urls=[url])
+                                      publication_ids=[row.publication_id] if implements else [],
+                                      cited_urls=[url])
                     repositories[repo_id] = repo
                     state = None
                 # One repository can be mentioned by many publications. Its
@@ -231,6 +238,24 @@ class RepositoriesStage(EnrichmentStage):
                         # serves explicit nulls, which .get(key, "") passes on.
                         known.html_url = owner_data.get("html_url") or known.html_url
                         known.type = (owner_data.get("type") or "").lower() or known.type
+                        # An organization is nobody's candidate, so
+                        # _harvest_accounts skips it and the stub above is all
+                        # its profile ever gets — leaving social_graph nothing
+                        # to recognise an ITMO lab by. One call per
+                        # organization per run fills the fields it reads.
+                        if known.type == "organization" and profile_id not in fetched_orgs:
+                            fetched_orgs.add(profile_id)
+                            try:
+                                org = client.get_user(repo.owner_login)
+                            except Exception:
+                                org = {}
+                            self.raw.append("github_user", org, {"login": repo.owner_login})
+                            # Organizations carry `description`; users carry `bio`.
+                            known.name = org.get("name") or known.name
+                            known.description = (org.get("description") or org.get("bio")
+                                                 or known.description)
+                            known.location = org.get("location") or known.location
+                            known.company = org.get("company") or known.company
                     self._harvest_accounts(client, repo, owner, name,
                                            owner_data.get("type"), profiles)
                     repo.processing[self.name] = ProcessingState(
