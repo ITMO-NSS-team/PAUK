@@ -86,6 +86,8 @@ def main() -> int:
 
     client = get_mongo_client(settings)
     db = client[settings.mongo_db]
+    processed: list[dict] = []
+    complete = False
     try:
         reachable = reachable_ids(db)
         repo_collection = db[PreparedStore.COLLECTIONS["repositories"]]
@@ -129,7 +131,6 @@ def main() -> int:
             return 0
 
         github = GitHubClient(settings.request_timeout, settings.github_token)
-        processed: list[dict] = []
         budget = args.limit
         for group, repos in sorted(by_group.items()):
             prepared = PreparedStore(db, group)
@@ -166,13 +167,20 @@ def main() -> int:
                     "github_profiles",
                     [profiles[f"github_{login.lower()}"] for login in sorted(logins)
                      if f"github_{login.lower()}" in profiles])
+        complete = True
     finally:
         client.close()
+        # In the finally, not after it: the upsert above has already run for
+        # every group that finished, so a crash in a later one would otherwise
+        # change the database and leave nothing saying which repositories were
+        # touched. A dry run writes nothing and so reports nothing.
+        if not args.dry_run:
+            args.report.parent.mkdir(parents=True, exist_ok=True)
+            args.report.write_text(json.dumps(
+                {"created_at": datetime.now(UTC).isoformat(), "complete": complete,
+                 "repositories": processed},
+                ensure_ascii=False, indent=2), encoding="utf-8")
 
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(json.dumps(
-        {"created_at": datetime.now(UTC).isoformat(), "repositories": processed},
-        ensure_ascii=False, indent=2), encoding="utf-8")
     harvested = sum(1 for r in processed if r["contributors_after"])
     print(f"\nprocessed: {len(processed)}   with contributors: {harvested}   "
           f"empty: {len(processed) - harvested}")

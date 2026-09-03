@@ -26,14 +26,13 @@ next. A ring that walks no new repository ends the walk.
 from __future__ import annotations
 
 import logging
-import re
 
 from pauk.models import GitHubProfile, Person, Repository
 from pauk.sources.github import GitHubClient
 from pauk.storage.static import StaticStore
 
 from .base import EnrichmentStage
-from .github_match import GitHubMatchStage
+from .github_match import ITMO_IN_TEXT, GitHubMatchStage
 from .repositories import COMMIT_PAGES, _git_identities, _is_person
 
 logger = logging.getLogger(__name__)
@@ -46,17 +45,6 @@ MAX_REPOS_PER_SEED = 30
 # Rings walked before giving up on convergence. On earlier data the graph
 # settled in two; the rest is headroom, not an expectation.
 MAX_RINGS = 5
-
-# The city appears in every spelling its labs happen to use: "Saint
-# Petersburg", "St. Petersburg", "St-Petersburg", and the Cyrillic form with
-# either a hyphen or a space.
-ITMO_IN_TEXT = re.compile(
-    r"\bitmo\b"
-    r"|\b(?:saint|st)\.?[-\s]?petersburg\b"
-    r"|\bsankt"
-    r"|санкт[-\s]?петербург",
-    re.I,
-)
 
 
 def is_itmo_organization(login: str, profile: GitHubProfile | None,

@@ -27,7 +27,10 @@ BOT_LOGIN = re.compile(r"\[bot\]$|^dependabot|^github-actions|^renovate|^web-flo
 
 
 def _is_person(login: str, account_type: str | None) -> bool:
-    return bool(login) and not BOT_LOGIN.search(login) and (account_type or "User") == "User"
+    # The type arrives either straight from GitHub ("User", "Organization") or
+    # from a stored GitHubProfile, which keeps it lowercased. Comparing exactly
+    # would silently drop every account already in the database.
+    return bool(login) and not BOT_LOGIN.search(login) and (account_type or "user").lower() == "user"
 
 
 def _git_identities(commits: list[dict]) -> dict[str, tuple[set[str], set[str]]]:

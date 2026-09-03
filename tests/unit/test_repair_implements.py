@@ -5,6 +5,7 @@ tools, not an importable package.
 """
 
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -103,6 +104,36 @@ class ApplyTest(unittest.TestCase):
         stored = self.repos.find_one({"_id": "github_lab_tool"})
         self.assertEqual(stored["publication_ids"], ["W1"])
         self.assertEqual(stored.get("groups") or [], [])
+
+    def test_the_report_survives_a_run_that_died_halfway(self):
+        """--apply writes to Mongo group by group.
+
+        A crash after the first group leaves the database changed, and the
+        report is the only record of what changed — so it is written from the
+        finally, with `complete` saying the walk did not finish.
+        """
+        self.repos.insert_one(repo_doc("github_lab_tool", "https://github.com/lab/tool",
+                                       publication_ids=["W1", "W2"]))
+        report = Path(self.enterContext(tempfile.TemporaryDirectory())) / "report.json"
+        argv = ["repair_implements.py", "--apply", "--report", str(report)]
+        settings = type(repair_implements.settings)(mongo_db=self.db.name)
+        with patch.object(sys, "argv", argv), \
+             patch.object(repair_implements, "settings", settings), \
+             patch.object(repair_implements, "get_mongo_client", lambda *_: self.db.client), \
+             patch.object(repair_implements.PreparedStore, "upsert_models",
+                          side_effect=RuntimeError("boom")), \
+             self.assertRaises(RuntimeError):
+            repair_implements.main()
+
+        written = json.loads(report.read_text(encoding="utf-8"))
+        self.assertFalse(written["complete"])
+        self.assertEqual([c["id"] for c in written["changes"]], ["github_lab_tool"])
+
+    def test_a_finished_run_says_so(self):
+        self.repos.insert_one(repo_doc("github_lab_tool", "https://github.com/lab/tool",
+                                       publication_ids=["W1"]))
+        written = json.loads(self.run_script().read_text(encoding="utf-8"))
+        self.assertTrue(written["complete"])
 
 
 if __name__ == "__main__":

@@ -206,10 +206,18 @@ def build_documents(db: Database, selected: list[dict],
 
     Existing rows are extended, never replaced: publication ids and cited URLs
     are unioned into what is already there.
+
+    A row found only under the id the CSV cited is re-keyed to the canonical
+    one, and then the row it came from has to go: an upsert under the new id
+    creates a second document while the old one stays behind holding the same
+    url — exactly the duplicate the canonical keying exists to prevent. The
+    old id travels in `merged_ids`, so a graph node still carrying it resolves
+    to the survivor, and `apply` deletes the document itself.
     """
     existing = {doc["id"]: doc for doc in db.repositories.find({}, {"_id": 0})}
     built: dict[str, Repository] = {}
     failures: list[dict] = []
+    superseded: dict[str, str] = {}
 
     for row in selected:
         result = payloads.get(row["repo_id"], {})
@@ -224,11 +232,21 @@ def build_documents(db: Database, selected: list[dict],
 
         repo = built.get(canonical_id)
         if repo is None:
-            source = existing.get(canonical_id) or existing.get(row["repo_id"])
+            source = existing.get(canonical_id)
+            renamed_from = None
+            if source is None and row["repo_id"] != canonical_id:
+                source = existing.get(row["repo_id"])
+                renamed_from = row["repo_id"] if source is not None else None
             repo = Repository.model_validate(source) if source else Repository(
                 id=canonical_id, name=payload.get("name") or row["name"],
                 url=payload.get("html_url") or cited_url)
             repo.id = canonical_id
+            if renamed_from:
+                superseded[canonical_id] = renamed_from
+                # Minus the canonical id: a row can already list the very id it
+                # is about to be re-keyed to, and would then name itself.
+                repo.merged_ids = sorted(
+                    (set(repo.merged_ids) | {renamed_from}) - {canonical_id})
             built[canonical_id] = repo
 
         # Metadata from the payload wins over whatever an earlier run stored:
@@ -267,6 +285,7 @@ def build_documents(db: Database, selected: list[dict],
         documents.append({
             "id": repo.id,
             "is_new": before is None,
+            "superseded_id": superseded.get(repo.id),
             "added_publication_ids": sorted(
                 set(repo.publication_ids) - set((before or {}).get("publication_ids") or [])),
             "document": repo.model_dump(mode="json", by_alias=True),
@@ -375,6 +394,9 @@ def command_plan(args, config: Settings, db: Database) -> None:
     print(f"\nplan: {len(documents)} repository row(s) — {new} new, {len(documents)-new} updated")
     print(f"      {sum(len(d['added_publication_ids']) for d in documents)} new IMPLEMENTS pair(s)")
     print(f"      {len(rejected) + len(failures)} row(s) reported, nothing written")
+    renamed = sum(1 for doc in documents if doc.get("superseded_id"))
+    if renamed:
+        print(f"      {renamed} row(s) renamed on GitHub — apply retires the old id")
 
 
 def command_apply(args, config: Settings, db: Database) -> None:
@@ -398,6 +420,15 @@ def command_apply(args, config: Settings, db: Database) -> None:
     store.upsert_models("repositories", [Repository.model_validate(doc["document"])
                                          for doc in documents])
     logger.info("wrote %d repository row(s) to group %s", len(documents), group)
+
+    # After the upsert, never before it: if the write fails, the row the plan
+    # renamed is still the only copy of that repository.
+    retired = sorted({doc["superseded_id"] for doc in documents if doc.get("superseded_id")}
+                     - {doc["id"] for doc in documents})
+    if retired:
+        removed = db[PreparedStore.COLLECTIONS["repositories"]].delete_many(
+            {"_id": {"$in": retired}}).deleted_count
+        logger.info("removed %d row(s) superseded by a rename: %s", removed, ", ".join(retired))
     print(f"done. next: uv run python -m pauk.cli publish graph --group {group}")
 
 

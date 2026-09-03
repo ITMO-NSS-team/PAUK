@@ -22,14 +22,38 @@ MONGO_SNAPSHOT="$PWD/data/backups/mongo-before-works-2026-08-24"
 VOLUME=pauk-rehearsal-neo4j
 PASSWORD=rehearsal
 
+[ -f "$DUMP_DIR/neo4j.dump" ] || { echo "missing $DUMP_DIR/neo4j.dump" >&2; exit 1; }
+[ -d "$MONGO_SNAPSHOT" ] || { echo "missing $MONGO_SNAPSHOT" >&2; exit 1; }
+
 # Collections the pipeline reads or merges into. Loading them is what makes
 # the rehearsal faithful: an author who already exists must be *merged* with,
 # not created fresh, and that path only exists when the row is there.
-COLLECTIONS=(publications persons departments organizations
-             repositories repo_links github_profiles)
+#
+# Taken from the snapshot's own manifest rather than repeated here: a second
+# list drifts from snapshot_mongo.py's, and the divergence only shows up as a
+# stand that came up short a collection.
+if [ -f "$MONGO_SNAPSHOT/manifest.json" ]; then
+    mapfile -t COLLECTIONS < <(python3 -c '
+import json, sys
+manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+print("\n".join(c["collection"] for c in manifest["collections"]))' \
+        "$MONGO_SNAPSHOT/manifest.json")
+else
+    # Snapshots taken before the manifest existed. Same list as
+    # snapshot_mongo.DEFAULT, and the check below says so if it is wrong.
+    COLLECTIONS=(publications persons departments organizations
+                 repositories repo_links github_profiles)
+fi
 
-[ -f "$DUMP_DIR/neo4j.dump" ] || { echo "missing $DUMP_DIR/neo4j.dump" >&2; exit 1; }
-[ -d "$MONGO_SNAPSHOT" ] || { echo "missing $MONGO_SNAPSHOT" >&2; exit 1; }
+missing=()
+for name in "${COLLECTIONS[@]}"; do
+    [ -f "$MONGO_SNAPSHOT/${name}.jsonl" ] || missing+=("${name}.jsonl")
+done
+if [ ${#missing[@]} -gt 0 ]; then
+    echo "missing from $MONGO_SNAPSHOT: ${missing[*]}" >&2
+    echo "take a fresh snapshot: uv run python scripts/snapshot_mongo.py --out $MONGO_SNAPSHOT" >&2
+    exit 1
+fi
 
 echo "--- removing anything left from a previous run ---"
 docker rm -f pauk-rehearsal-neo4j pauk-rehearsal-mongo >/dev/null 2>&1 || true
@@ -72,9 +96,11 @@ echo "--- loading the collection snapshots ---"
 for name in "${COLLECTIONS[@]}"; do
     # The snapshots are Extended JSON written by bson.json_util, which is what
     # mongoimport reads natively — dates and ObjectIds survive the round trip.
+    # Not piped anywhere: mongoimport reports on stderr, and `| tail -1` both
+    # truncated the diagnosis and left the exit status to pipefail alone.
     docker exec pauk-rehearsal-mongo mongoimport \
         --quiet --db pauk --collection "$name" --drop \
-        --file "/snapshot/${name}.jsonl" 2>&1 | tail -1
+        --file "/snapshot/${name}.jsonl"
     count=$(docker exec pauk-rehearsal-mongo mongosh --quiet pauk \
         --eval "db.${name}.countDocuments({})")
     printf '  %-16s %s\n' "$name" "$count"

@@ -1,7 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlparse
 
 import fitz
@@ -17,7 +17,7 @@ from pauk.pipeline.stages.code_links import (
     _occurrences_in_text,
 )
 from pauk.pipeline.stages.link_relevance import LinkRelevanceStage
-from pauk.pipeline.stages.repositories import RepositoriesStage
+from pauk.pipeline.stages.repositories import RepositoriesStage, _is_person
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
 
@@ -544,6 +544,45 @@ class HarvestAccountsTest(unittest.TestCase):
     def run_stage_wrapper(self, **kwargs):
         with patch("pauk.pipeline.stages.repositories.GitHubClient") as client:
             return self.run_stage(client, **kwargs)
+
+
+class AccountTypeSpellingTest(unittest.TestCase):
+    """The account type reaches _is_person in two spellings.
+
+    The stage passes what GitHub answered ("User", "Organization"); anything
+    reading a stored GitHubProfile passes what the store keeps, which is
+    lowercased. Comparing exactly made scripts/harvest_orphan_repos.py drop
+    every owner whose profile was already in the database — silently, since
+    a missing owner looks exactly like a repository nobody owns.
+    """
+
+    def test_both_spellings_of_a_user_are_a_person(self):
+        self.assertTrue(_is_person("alice", "User"))
+        self.assertTrue(_is_person("alice", "user"))
+
+    def test_both_spellings_of_an_organization_are_not(self):
+        self.assertFalse(_is_person("some-lab", "Organization"))
+        self.assertFalse(_is_person("some-lab", "organization"))
+
+    def test_an_unknown_type_is_still_taken_for_a_person(self):
+        self.assertTrue(_is_person("alice", None))
+
+    def test_a_bot_is_never_a_person(self):
+        self.assertFalse(_is_person("dependabot[bot]", "user"))
+
+    def test_the_owner_is_kept_when_the_type_came_from_a_stored_profile(self):
+        # The call harvest_orphan_repos makes: the profile is already in the
+        # database, so the type arrives lowercased.
+        db = mongomock.MongoClient()["pauk_test"]
+        stage = RepositoriesStage(PreparedStore(db, "sample"), RawStore(db, "sample"))
+        repo = Repository(id="github_alice_tool", name="tool",
+                          url="https://github.com/alice/tool", owner_login="alice")
+        client = Mock()
+        client.contributors.return_value = []
+        client.commits.return_value = []
+        client.get_user.return_value = {"login": "alice", "type": "User"}
+        stage._harvest_accounts(client, repo, "alice", "tool", "user", {})
+        self.assertEqual(repo.contributors, ["alice"])
 
 
 class OrganizationOwnerProfileTest(unittest.TestCase):

@@ -105,6 +105,7 @@ def main() -> int:
     db = client[settings.mongo_db]
     changes: list[dict] = []
     skipped: list[str] = []
+    complete = False
     try:
         drop = irrelevant_claims(db)
         collection = db[PreparedStore.COLLECTIONS["repositories"]]
@@ -152,15 +153,20 @@ def main() -> int:
                       f"see {args.report}")
         else:
             print("\ndry run — nothing written; pass --apply")
+        complete = True
     finally:
         client.close()
-
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(json.dumps(
-        {"created_at": datetime.now(UTC).isoformat(), "applied": args.apply,
-         "skipped_no_group": skipped, "changes": changes},
-        ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"report: {args.report}")
+        # In the finally, not after it: under --apply the writes to Mongo are
+        # already made by the time anything downstream can fail, and a run that
+        # changed the database while leaving no record of what it changed is
+        # the one case there is no recovering from. `complete` says whether the
+        # walk finished, so a partial report cannot be read as a whole one.
+        args.report.parent.mkdir(parents=True, exist_ok=True)
+        args.report.write_text(json.dumps(
+            {"created_at": datetime.now(UTC).isoformat(), "applied": args.apply,
+             "complete": complete, "skipped_no_group": skipped, "changes": changes},
+            ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"report: {args.report}")
     return 0
 
 

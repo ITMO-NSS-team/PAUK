@@ -12,6 +12,12 @@ from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
 from pauk.storage.static import StaticStore
 
+# The repository root, so the shipped-catalogue test reads the same file
+# wherever it is run from. A StaticStore pointed at a directory that is not
+# there answers with an empty catalogue rather than raising, so a relative
+# path would fail as "licaibeerlab is missing" instead of "wrong cwd".
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 def person(pid, name, *, github=None, itmo=True):
     return Person(id=pid, openalex_id=pid, is_itmo=itmo, name_raw=name, github=github)
@@ -246,9 +252,6 @@ class SocialGraphStageTest(unittest.TestCase):
         self.assertEqual(result["social_repositories"], 0)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 class ItmoGithubOrgCatalogTest(unittest.TestCase):
     """The curated list of ITMO organizations StaticStore hands the stage."""
 
@@ -276,6 +279,10 @@ class ItmoGithubOrgCatalogTest(unittest.TestCase):
         self.assertEqual(self.store().itmo_github_orgs, frozenset())
 
     def test_the_catalogue_shipped_with_the_repository_parses(self):
-        catalog = StaticStore(Path("data/static")).itmo_github_orgs
+        catalog = StaticStore(REPO_ROOT / "data" / "static").itmo_github_orgs
         self.assertIn("licaibeerlab", catalog)
         self.assertNotIn("google", catalog)
+
+
+if __name__ == "__main__":
+    unittest.main()
