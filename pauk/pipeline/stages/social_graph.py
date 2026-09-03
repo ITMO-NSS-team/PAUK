@@ -11,10 +11,10 @@ harvested for the people behind them, and those people are matched like any
 other candidate. A person found this way becomes a seed once github_match confirms them,
 so running the two in turn walks the graph outward one ring at a time.
 
-An organization is only followed when ITMO is behind it — either it employs
-someone already matched, or it says so in its profile. The alternative is
-following every organization whose library a paper cited, which means
-walking into google and microsoft for nothing.
+An organization is only followed when it says ITMO itself — in its login, in
+its profile, or by being in data/static/itmo_github_orgs.json. The
+alternative is following every organization whose library a paper cited,
+which means walking into google and microsoft for nothing.
 
 The walk runs ring by ring until it converges. Seeds are only the accounts
 already confirmed — following the unproven ones would mean four hundred
@@ -26,13 +26,13 @@ next. A ring that walks no new repository ends the walk.
 from __future__ import annotations
 
 import logging
-import re
 
 from pauk.models import GitHubProfile, Person, Repository
 from pauk.sources.github import GitHubClient
+from pauk.storage.static import StaticStore
 
 from .base import EnrichmentStage
-from .github_match import GitHubMatchStage
+from .github_match import ITMO_IN_TEXT, GitHubMatchStage
 from .repositories import COMMIT_PAGES, _git_identities, _is_person
 
 logger = logging.getLogger(__name__)
@@ -46,18 +46,27 @@ MAX_REPOS_PER_SEED = 30
 # settled in two; the rest is headroom, not an expectation.
 MAX_RINGS = 5
 
-ITMO_IN_TEXT = re.compile(r"\bitmo\b|saint[- ]petersburg|sankt", re.I)
 
-
-def is_itmo_organization(profile: GitHubProfile | None, confirmed: set[str],
-                         members: set[str]) -> bool:
+def is_itmo_organization(login: str, profile: GitHubProfile | None,
+                         catalog: frozenset[str]) -> bool:
     """Whether an organization is ITMO's, and so worth walking into.
 
-    Either someone already matched works there, or the organization says
-    ITMO in its own profile. Without this every library a paper cites — and
-    google is one of them — becomes a seed worth hundreds of calls.
+    Three ways to tell, all of them about the organization itself: it is in
+    the curated catalogue, its login says ITMO, or its profile does.
+
+    Sharing a member with a confirmed account is deliberately *not* one of
+    them. That rule read as "an ITMO employee committed here", which is true
+    of google, microsoft, JetBrains and llvm-mirror — on real data it was the
+    only rule that ever fired, and it made seeds of all four. Walking into
+    them costs far more than API calls now: everyone credited on the
+    repositories they lead to becomes a GitHubProfile node.
+
+    A lab whose profile says nothing and whose login gives nothing away is
+    invisible here by design; that is what the catalogue is for.
     """
-    if members & confirmed:
+    if login.lower() in catalog:
+        return True
+    if ITMO_IN_TEXT.search(login):
         return True
     if profile is None:
         return False
@@ -73,18 +82,15 @@ class SocialGraphStage(EnrichmentStage):
     def _seeds(self, people: list[Person], repositories: list[Repository],
                profiles: dict[str, GitHubProfile]) -> list[str]:
         confirmed = {person.github for person in people if person.github}
-        members_of: dict[str, set[str]] = {}
-        for repository in repositories:
-            if repository.owner_login:
-                members_of.setdefault(repository.owner_login, set()).update(
-                    repository.contributors)
+        catalog = StaticStore(self.config.static_dir).itmo_github_orgs
+        owner_logins = {repository.owner_login for repository in repositories
+                        if repository.owner_login}
 
         organizations = [
-            login for login, members in members_of.items()
+            login for login in owner_logins
             if (profiles.get(f"github_{login.lower()}") or GitHubProfile(
                 id="", login=login)).type == "organization"
-            and is_itmo_organization(profiles.get(f"github_{login.lower()}"),
-                                     confirmed, members)
+            and is_itmo_organization(login, profiles.get(f"github_{login.lower()}"), catalog)
         ]
         return sorted(confirmed | set(organizations))
 

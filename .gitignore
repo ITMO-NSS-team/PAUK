@@ -38,3 +38,13 @@ logs/
 
 graphify-out/
 .graphifyignore
+
+# Database dumps and pre-write snapshots — large, never committed.
+data/backups/
+# Script output: plans, verdicts, unmatched rows. Regenerated from the data,
+# so it is never the record of anything. What is worth keeping — a runbook, a
+# list someone decided on — goes to docs/reports/ by hand.
+data/reports/
+docs/reports/
+
+*.log

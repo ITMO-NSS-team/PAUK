@@ -1,7 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlparse
 
 import fitz
@@ -17,7 +17,7 @@ from pauk.pipeline.stages.code_links import (
     _occurrences_in_text,
 )
 from pauk.pipeline.stages.link_relevance import LinkRelevanceStage
-from pauk.pipeline.stages.repositories import RepositoriesStage
+from pauk.pipeline.stages.repositories import RepositoriesStage, _is_person
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
 
@@ -544,6 +544,159 @@ class HarvestAccountsTest(unittest.TestCase):
     def run_stage_wrapper(self, **kwargs):
         with patch("pauk.pipeline.stages.repositories.GitHubClient") as client:
             return self.run_stage(client, **kwargs)
+
+
+class AccountTypeSpellingTest(unittest.TestCase):
+    """The account type reaches _is_person in two spellings.
+
+    The stage passes what GitHub answered ("User", "Organization"); anything
+    reading a stored GitHubProfile passes what the store keeps, which is
+    lowercased. Comparing exactly made scripts/harvest_orphan_repos.py drop
+    every owner whose profile was already in the database — silently, since
+    a missing owner looks exactly like a repository nobody owns.
+    """
+
+    def test_both_spellings_of_a_user_are_a_person(self):
+        self.assertTrue(_is_person("alice", "User"))
+        self.assertTrue(_is_person("alice", "user"))
+
+    def test_both_spellings_of_an_organization_are_not(self):
+        self.assertFalse(_is_person("some-lab", "Organization"))
+        self.assertFalse(_is_person("some-lab", "organization"))
+
+    def test_an_unknown_type_is_still_taken_for_a_person(self):
+        self.assertTrue(_is_person("alice", None))
+
+    def test_a_bot_is_never_a_person(self):
+        self.assertFalse(_is_person("dependabot[bot]", "user"))
+
+    def test_the_owner_is_kept_when_the_type_came_from_a_stored_profile(self):
+        # The call harvest_orphan_repos makes: the profile is already in the
+        # database, so the type arrives lowercased.
+        db = mongomock.MongoClient()["pauk_test"]
+        stage = RepositoriesStage(PreparedStore(db, "sample"), RawStore(db, "sample"))
+        repo = Repository(id="github_alice_tool", name="tool",
+                          url="https://github.com/alice/tool", owner_login="alice")
+        client = Mock()
+        client.contributors.return_value = []
+        client.commits.return_value = []
+        client.get_user.return_value = {"login": "alice", "type": "User"}
+        stage._harvest_accounts(client, repo, "alice", "tool", "user", {})
+        self.assertEqual(repo.contributors, ["alice"])
+
+
+class OrganizationOwnerProfileTest(unittest.TestCase):
+    """An organization owner gets a real profile, not just the owner stub."""
+
+    URL = "https://github.com/some-lab/tool"
+
+    def run_stage(self, github_client, owner_type, *, user_payload=None, repos=1):
+        github_client.return_value.get_repository.side_effect = [
+            {"html_url": f"https://github.com/some-lab/tool{i or ''}",
+             "name": f"tool{i or ''}", "id": i + 1,
+             "owner": {"login": "some-lab", "type": owner_type}}
+            for i in range(repos)
+        ]
+        github_client.return_value.has_readme.return_value = True
+        github_client.return_value.contributors.return_value = []
+        github_client.return_value.commits.return_value = []
+        github_client.return_value.get_user.return_value = user_payload or {}
+        db = mongomock.MongoClient()["pauk_test"]
+        prepared = PreparedStore(db, "sample")
+        prepared.write_models("repo_links", [
+            RepoLink(publication_id=f"W{i}", links=[
+                CodeLink(url=f"https://github.com/some-lab/tool{i or ''}")])
+            for i in range(repos)
+        ])
+        RepositoriesStage(prepared, RawStore(db, "sample")).run()
+        return github_client.return_value, {
+            p.login: p for p in prepared.read_models("github_profiles", GitHubProfile)}
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_an_organization_profile_is_filled_in(self, github_client):
+        # The nested owner object carries no name or location, and
+        # _harvest_accounts skips organizations, so without this the fields
+        # social_graph reads would never be populated.
+        _, profiles = self.run_stage(github_client, "Organization", user_payload={
+            "name": "Some Lab", "description": "a lab at ITMO University",
+            "location": "Saint Petersburg", "type": "Organization"})
+        self.assertEqual(profiles["some-lab"].name, "Some Lab")
+        self.assertEqual(profiles["some-lab"].description, "a lab at ITMO University")
+        self.assertEqual(profiles["some-lab"].location, "Saint Petersburg")
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_the_organization_is_fetched_once_however_many_repositories(self, github_client):
+        client, _ = self.run_stage(github_client, "Organization", repos=3,
+                                   user_payload={"name": "Some Lab"})
+        self.assertEqual(client.get_user.call_count, 1)
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_a_personal_owner_is_left_to_the_harvest(self, github_client):
+        # A user owning the repository is a contributor candidate, and
+        # _harvest_accounts fetches them with everyone else.
+        client, _ = self.run_stage(github_client, "User")
+        self.assertEqual(
+            [call.args for call in client.get_user.call_args_list], [("some-lab",)])
+
+
+class ImplementsFromRelevanceTest(unittest.TestCase):
+    """publication_ids, and so the IMPLEMENTS edge, follows link_relevance."""
+
+    # The owner here must match the URL's: the stage re-keys each row to
+    # github_{owner}_{name} taken from the fetched payload.
+    PAYLOAD = {"html_url": "https://github.com/org/repo", "name": "repo", "id": 1,
+               "owner": {"login": "org", "type": "Organization"}}
+    REPO_ID = "github_org_repo"
+    URL = "https://github.com/org/repo"
+
+    def run_stage(self, github_client, rows):
+        github_client.return_value.get_repository.return_value = self.PAYLOAD
+        github_client.return_value.has_readme.return_value = True
+        github_client.return_value.contributors.return_value = []
+        github_client.return_value.commits.return_value = []
+        db = mongomock.MongoClient()["pauk_test"]
+        prepared = PreparedStore(db, "sample")
+        prepared.write_models("repo_links", rows)
+        RepositoriesStage(prepared, RawStore(db, "sample")).run()
+        return {repo.id: repo for repo in prepared.read_models("repositories", Repository)}
+
+    def link(self, publication, is_relevant):
+        return RepoLink(publication_id=publication,
+                        links=[CodeLink(url=self.URL, is_relevant=is_relevant)])
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_a_tool_the_paper_merely_cites_is_not_implemented(self, github_client):
+        repos = self.run_stage(github_client, [self.link("W1", False)])
+        self.assertEqual(repos[self.REPO_ID].publication_ids, [])
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_the_citation_survives_even_when_the_claim_does_not(self, github_client):
+        repos = self.run_stage(github_client, [self.link("W1", False)])
+        self.assertEqual(repos[self.REPO_ID].cited_urls, [self.URL])
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_the_authors_own_code_is_implemented(self, github_client):
+        repos = self.run_stage(github_client, [self.link("W1", True)])
+        self.assertEqual(repos[self.REPO_ID].publication_ids, ["W1"])
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_an_unjudged_link_is_implemented(self, github_client):
+        repos = self.run_stage(github_client, [self.link("W1", None)])
+        self.assertEqual(repos[self.REPO_ID].publication_ids, ["W1"])
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_only_the_paper_whose_code_it_is_makes_a_claim(self, github_client):
+        repos = self.run_stage(github_client, [self.link("W1", False), self.link("W2", True)])
+        self.assertEqual(repos[self.REPO_ID].publication_ids, ["W2"])
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_one_relevant_link_is_enough_within_a_publication(self, github_client):
+        rows = [RepoLink(publication_id="W1", links=[
+            CodeLink(url=self.URL, is_relevant=False),
+            CodeLink(url=self.URL, is_relevant=True),
+        ])]
+        repos = self.run_stage(github_client, rows)
+        self.assertEqual(repos[self.REPO_ID].publication_ids, ["W1"])
 
 
 class CollectOccurrencesTest(unittest.TestCase):
