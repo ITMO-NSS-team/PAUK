@@ -610,3 +610,57 @@ class MapOptionsTest(unittest.TestCase):
     def test_a_ticked_box_drops_them(self):
         self.post(kind="map", seed="42", public="on")
         self.assertTrue(store.recent(self.db)[0].payload["public"])
+
+
+class SilentJobOnThePageTest(unittest.TestCase):
+    """A run whose worker went away, seen from the panel.
+
+    Clearing it needs a worker, and the complaint came from a panel with no
+    worker running at all: the page has to say so on its own, or the row
+    sits under "under way" claiming to be in progress for ever.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "chief", "hunter2", role="admin")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: FakePanelGraph()
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "chief", "password": "hunter2"})
+        self.job = store.enqueue(self.db, JobKind.PUBLISH, {"group": "g"})
+        store.claim(self.db, "worker-1")
+        store.start(self.db, self.job.id)
+
+    def page(self):
+        return self.client.get("/jobs").text
+
+    def go_quiet(self, minutes=10):
+        from datetime import timedelta
+
+        from pauk.jobs.models import now
+        self.db[store.COLLECTION].update_one(
+            {"_id": self.job.id},
+            {"$set": {"heartbeat_at": now() - timedelta(minutes=minutes)}})
+
+    def test_a_running_job_is_not_marked(self):
+        self.assertNotIn("не отвечает", self.page())
+
+    def test_a_silent_job_is_marked(self):
+        self.go_quiet()
+        self.assertIn("не отвечает", self.page())
+
+    def test_it_is_marked_even_after_somebody_asked_it_to_stop(self):
+        # This is the shape the complaint arrived in: cancelled, and then
+        # sitting there saying it had been asked to stop, with nothing
+        # ever moving it on.
+        store.request_cancel(self.db, self.job.id)
+        self.go_quiet()
+        self.assertIn("не отвечает", self.page())
+
+    def test_a_worker_coming_back_clears_it(self):
+        store.request_cancel(self.db, self.job.id)
+        self.go_quiet()
+        store.reap_stale(self.db)
+        self.assertEqual(store.read(self.db, self.job.id).state, JobState.CANCELLED)
+        self.assertNotIn("Сейчас идёт", self.page())
+

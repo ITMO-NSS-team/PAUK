@@ -152,7 +152,8 @@
       <td>{{ job.actor }}<br><span class="muted">{{ job.worker or "ещё не взята" }}</span></td>
       <td class="val" style="white-space:nowrap">{{ (job.started_at or job.created_at)|moment }}</td>
       <td class="val" style="white-space:nowrap">{{ job.heartbeat_at|moment or "—" }}
-        {% if job.cancel_requested %}<br><span class="muted">просили остановить</span>{% endif %}
+        {% if job.stale %}<br><span class="kind kind-deleted">не отвечает</span>
+        {% elif job.cancel_requested %}<br><span class="muted">просили остановить</span>{% endif %}
       </td>
       {% if user.can_run %}
       <td style="width:1%">
