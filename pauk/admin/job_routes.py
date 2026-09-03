@@ -67,7 +67,7 @@ def _shown(job) -> dict:
         "cancel_requested": job.cancel_requested,
         # Показывается, даже когда подбирать брошенные некому: без воркера
         # такая задача так и висела бы «идёт» без всяких оговорок.
-        "stale": store.is_stale(job),
+        "stale": store.is_quiet(job),
         # Sorted so two renders list the counts the same way.
         "result": sorted((job.result or {}).items()),
         "payload": sorted((job.payload or {}).items()),

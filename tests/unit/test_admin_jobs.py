@@ -634,7 +634,7 @@ class SilentJobOnThePageTest(unittest.TestCase):
     def page(self):
         return self.client.get("/jobs").text
 
-    def go_quiet(self, minutes=10):
+    def go_quiet(self, minutes=20):
         from datetime import timedelta
 
         from pauk.jobs.models import now
