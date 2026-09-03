@@ -20,9 +20,20 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from neo4j.exceptions import Neo4jError
+from pymongo.errors import PyMongoError
 
 from pauk.admin import decisions, feed
-from pauk.admin.deps import CsrfChecked, CurrentUser, Db, Editor, Graph, Session, templates
+from pauk.admin.deps import (
+    CsrfChecked,
+    CurrentUser,
+    Db,
+    Editor,
+    Graph,
+    Session,
+    StoresReady,
+    templates,
+)
 from pauk.graph.mutations import (
     NODE_FIELDS,
     RELATIONSHIPS,
@@ -89,6 +100,44 @@ def _node_url(label: str, node_id: str, query: str = "") -> str:
     """
     address = f"/nodes/{label}/{quote(node_id, safe='/')}"
     return f"{address}?{query}" if query else address
+
+
+def _record(undo, write) -> None:
+    """Write the decision that protects a change already made to the graph.
+
+    Neo4j and Mongo are two databases with no transaction across them, so
+    the decision can fail after the graph has already moved. Left there,
+    the next publish takes the change back without a word: an edit reverts,
+    a deleted record returns, a created one disappears.
+
+    So the graph is put back instead. The undo lands in the audit feed
+    beside the change, which is the only way anybody later sees what
+    happened.
+
+    Args:
+        undo: Puts the graph back the way it was.
+        write: Records the decision.
+
+    Raises:
+        HTTPException: 503. The wording says which of the two happened,
+            because "saved" and "saved but unprotected" need different
+            things from the person reading it.
+    """
+    try:
+        write()
+    except PyMongoError as error:
+        logger.error("could not record the decision: %s", error)
+        try:
+            undo()
+        except (MutationError, Neo4jError) as failure:
+            logger.exception("and the graph could not be put back")
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "правка записана в граф, но не сохранилась как решение "
+                f"и не откатилась ({failure}). Следующая публикация её снимет") from None
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "правка не сохранилась: Mongo не ответила, граф возвращён как был") from None
 
 
 def _known_label(label: str) -> str:
@@ -174,7 +223,7 @@ def create_form(request: Request, label: str, user: Editor, session: Session):
 
 @router.post("/nodes/{label}/new")
 async def create(request: Request, label: str, user: Editor,
-                 db: Db, graph: Graph, _: CsrfChecked):
+                 db: Db, graph: Graph, _: CsrfChecked, __: StoresReady):
     """Add a node by hand.
 
     No override is recorded: the loader only touches ids it has rows for,
@@ -214,7 +263,7 @@ async def create(request: Request, label: str, user: Editor,
 
 @router.post("/nodes/{label}/restore/{node_id:path}")
 async def restore(label: str, node_id: str, user: Editor,
-                  db: Db, graph: Graph, _: CsrfChecked):
+                  db: Db, graph: Graph, _: CsrfChecked, __: StoresReady):
     """Put a deleted node back as it was, from the snapshot on its decision.
 
     A deletion records every field the node carried, so this is a real
@@ -273,7 +322,7 @@ def show(request: Request, label: str, node_id: str, user: CurrentUser,
 
 @router.post("/nodes/{label}/delete/{node_id:path}")
 async def remove(request: Request, label: str, node_id: str, user: Editor,
-                 db: Db, graph: Graph, _: CsrfChecked):
+                 db: Db, graph: Graph, _: CsrfChecked, __: StoresReady):
     """Remove a node and tombstone it, so publishing does not bring it back."""
     _known_label(label)
     form = await request.form()
@@ -286,11 +335,17 @@ async def remove(request: Request, label: str, node_id: str, user: Editor,
         # decision has to carry what it removed so the record can be put
         # back without asking the feed.
         snapshot = read_node(graph, label, node_id)
+        kept = {name: value for name, value in snapshot.items()
+                if name in NODE_FIELDS[label] and value is not None}
         delete_node(graph, label, node_id, cascade=cascade)
-        record_override(db, label, node_id, "delete", actor=user.actor,
-                        note=str(form.get("note", "")).strip(),
-                        snapshot={name: value for name, value in snapshot.items()
-                                  if name in NODE_FIELDS[label] and value is not None})
+        # Without the tombstone the next publish brings the record back, so
+        # the delete is undone rather than left half-made. Relationships
+        # removed by a cascade do not come back with it — the loader
+        # rebuilds those from its own rows.
+        _record(undo=lambda: create_node(graph, label, node_id, kept),
+                write=lambda: record_override(
+                    db, label, node_id, "delete", actor=user.actor,
+                    note=str(form.get("note", "")).strip(), snapshot=kept))
         # No reapply afterwards, and `pauk admin node delete` never did one
         # either: the node is already gone and its decision says "delete",
         # so applying it again reads every other decision in the database to
@@ -381,7 +436,7 @@ def _link_failed(label: str, node_id: str, message: str) -> RedirectResponse:
 
 @router.post("/nodes/{label}/rel/add/{node_id:path}")
 async def link(request: Request, label: str, node_id: str, user: Editor,
-               graph: Graph, _: CsrfChecked):
+               graph: Graph, _: CsrfChecked, __: StoresReady):
     """Connect this node to another one.
 
     No override is recorded, and that is not an omission: the loader only
@@ -456,7 +511,7 @@ def _self_match_value(graph, label: str, node_id: str, match_prop: str) -> str:
 
 @router.post("/nodes/{label}/rel/delete/{node_id:path}")
 async def unlink(request: Request, label: str, node_id: str, user: Editor,
-                 db: Db, graph: Graph, _: CsrfChecked):
+                 db: Db, graph: Graph, _: CsrfChecked, __: StoresReady):
     """Disconnect two nodes and remember it, so a publish cannot relink them.
 
     Here the override does matter: the edge comes from a prepared row, and
@@ -501,7 +556,7 @@ async def unlink(request: Request, label: str, node_id: str, user: Editor,
 # label's id holds a slash at all.
 @router.post("/nodes/{label}/{node_id:path}")
 async def edit(request: Request, label: str, node_id: str, user: Editor,
-               db: Db, graph: Graph, _: CsrfChecked):
+               db: Db, graph: Graph, _: CsrfChecked, __: StoresReady):
     """Change fields, and remember the decision so a publish cannot undo it."""
     _known_label(label)
     form = await request.form()
@@ -531,8 +586,12 @@ async def edit(request: Request, label: str, node_id: str, user: Editor,
         # word to anyone.
         update_node(graph, label, node_id, changed,
                     expected_updated_at=str(form.get("seen_at") or "") or None)
-        record_override(db, label, node_id, "set", changed, actor=user.actor, note=note,
-                        auto_value={name: before.get(name) for name in changed})
+        _record(
+            undo=lambda: update_node(graph, label, node_id,
+                                     {name: before.get(name) for name in changed}),
+            write=lambda: record_override(
+                db, label, node_id, "set", changed, actor=user.actor, note=note,
+                auto_value={name: before.get(name) for name in changed}))
     except VersionConflict:
         # Not an error to shout about: someone got there first. Hand the
         # page back with what is there now, so the edit can be redone on

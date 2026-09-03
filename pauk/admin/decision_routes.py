@@ -6,7 +6,16 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from pauk.admin import decisions
-from pauk.admin.deps import CsrfChecked, CurrentUser, Db, Editor, Graph, Session, templates
+from pauk.admin.deps import (
+    CsrfChecked,
+    CurrentUser,
+    Db,
+    Editor,
+    Graph,
+    Session,
+    StoresReady,
+    templates,
+)
 from pauk.graph.mutations import (
     NODE_FIELDS,
     MutationError,
@@ -53,7 +62,8 @@ def in_force(request: Request, user: CurrentUser, session: Session, db: Db,
 
 
 @router.post("/overrides/undo")
-async def undo(request: Request, user: Editor, db: Db, graph: Graph, _: CsrfChecked):
+async def undo(request: Request, user: Editor, db: Db, graph: Graph,
+               _: CsrfChecked, __: StoresReady):
     """Stop applying one decision, keeping the record that it was made.
 
     The graph is not put back by hand: the decision is switched off and

@@ -60,6 +60,32 @@ def require_editor(user: Annotated[User, Depends(require_user)]) -> User:
     return user
 
 
+def require_stores(db: Annotated[Database, Depends(get_db)]) -> None:
+    """Refuse a write when the store that has to record it is not answering.
+
+    A change to the graph is only protected by a decision in Mongo, and the
+    two are separate databases with no transaction across them.
+
+    This does not close that gap and is not meant to: Mongo can still fail
+    in the moment between this check and the write. What it does catch is
+    the sustained case — Mongo down or unreachable — which becomes a clean
+    refusal with the graph untouched, instead of a change nobody recorded.
+    The moment-of-failure case is caught afterwards, by putting the graph
+    back (see `pauk.admin.nodes._record`).
+
+    Raises:
+        HTTPException: 503, so the person is told to wait rather than shown
+            a stack trace.
+    """
+    try:
+        db.client.admin.command("ping")
+    except PyMongoError as error:
+        logger.warning("mongo is not answering: %s", error)
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Mongo не отвечает: правка не сохранилась бы как решение") from None
+
+
 def require_admin(user: Annotated[User, Depends(require_user)]) -> User:
     """A caller allowed to set the pipeline going.
 
@@ -197,4 +223,5 @@ CurrentUser = Annotated[User, Depends(require_user)]
 Editor = Annotated[User, Depends(require_editor)]
 Admin = Annotated[User, Depends(require_admin)]
 CsrfChecked = Annotated[None, Depends(require_csrf)]
+StoresReady = Annotated[None, Depends(require_stores)]
 Graph = Annotated[object, Depends(graph_for)]

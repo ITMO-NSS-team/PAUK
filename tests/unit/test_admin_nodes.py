@@ -1,14 +1,16 @@
 import re
 import unittest
+from unittest.mock import patch
 from urllib.parse import quote
 
 import mongomock
 from fastapi.testclient import TestClient
+from pymongo.errors import AutoReconnect
 
-from pauk.admin import deps
+from pauk.admin import deps, nodes
 from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key
-from pauk.graph.mutations import RELATIONSHIPS
+from pauk.graph.mutations import RELATIONSHIPS, MutationError
 from pauk.graph.overrides import COLLECTION, active_overrides, tombstoned_relationships
 from pauk.settings import Settings
 from tests.unit.test_mutations import FakeGraph
@@ -1103,3 +1105,94 @@ class UnaddressableIdTest(unittest.TestCase):
             "/nodes/LinkCandidate/new",
             data={"csrf": self.csrf, "id": "https://a.example/b?c=1", "url": "https://a.example/b"})
         self.assertEqual(response.status_code, 303)
+
+
+class TwoStoresOneChangeTest(unittest.TestCase):
+    """Neo4j and Mongo are two databases with no transaction across them.
+
+    A change to the graph is only protected by a decision in Mongo. If the
+    decision cannot be written, the change is left in the graph unrecorded
+    and the next publish quietly takes it back — the edit reverts, the
+    deleted record returns. Two guards: refuse early when Mongo is not
+    answering at all, and put the graph back when it fails in between.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add("Person", "A1", name_ru="Иванов И.", name_en="I. Ivanov")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False,
+                                 raise_server_exceptions=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one(
+            {"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
+
+    def seen(self):
+        return self.graph.nodes[("Person", "A1")]["updated_at"]
+
+    def edit(self):
+        return self.client.post("/nodes/Person/A1", data={
+            "csrf": self.csrf, "name_ru": "Пётр Иванов", "seen_at": self.seen()})
+
+    @staticmethod
+    def unreachable(*args, **kwargs):
+        raise AutoReconnect("mongo is not answering")
+
+    def mongo_is_down(self):
+        return patch.object(type(self.db.client.admin), "command", self.unreachable)
+
+    def mongo_dies_mid_request(self):
+        return patch.object(nodes, "record_override", self.unreachable)
+
+    def test_a_dead_mongo_is_refused_before_the_graph_is_touched(self):
+        with self.mongo_is_down():
+            response = self.edit()
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иванов И.")
+
+    def test_the_refusal_says_what_is_wrong(self):
+        with self.mongo_is_down():
+            self.assertIn("Mongo", self.edit().json()["detail"])
+
+    def test_an_edit_is_taken_back_when_the_decision_cannot_be_written(self):
+        with self.mongo_dies_mid_request():
+            response = self.edit()
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иванов И.")
+
+    def test_nothing_is_left_behind_in_the_decisions(self):
+        with self.mongo_dies_mid_request():
+            self.edit()
+        self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
+
+    def test_a_deletion_is_taken_back_too(self):
+        # Without the tombstone the next publish brings the record back
+        # anyway; undoing it at once is the difference between a record
+        # that never went and one that reappears a week later.
+        with self.mongo_dies_mid_request():
+            response = self.client.post("/nodes/Person/delete/A1", data={"csrf": self.csrf})
+        self.assertEqual(response.status_code, 503)
+        self.assertIn(("Person", "A1"), self.graph.nodes)
+
+    def test_the_deleted_record_comes_back_with_its_fields(self):
+        with self.mongo_dies_mid_request():
+            self.client.post("/nodes/Person/delete/A1", data={"csrf": self.csrf})
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_en"], "I. Ivanov")
+
+    def test_an_undo_that_also_fails_says_so_plainly(self):
+        # Both stores gone. Nothing can be done about the graph, and the
+        # message has to say that rather than claim it was put back.
+        with self.mongo_dies_mid_request(), \
+                patch.object(nodes, "update_node", side_effect=[None, MutationError("no")]):
+            response = self.edit()
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("не откатилась", response.json()["detail"])
+
+    def test_an_ordinary_edit_still_goes_through(self):
+        response = self.edit()
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Пётр Иванов")
+        self.assertEqual(self.db[COLLECTION].count_documents({}), 1)
