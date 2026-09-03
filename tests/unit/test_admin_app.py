@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from pauk.admin import app as app_module
 from pauk.admin.app import build
-from pauk.admin.auth import COOKIE, SESSIONS, create_user, set_active
+from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key, set_active
 from pauk.settings import Settings
 
 
@@ -88,9 +88,10 @@ class PanelTest(unittest.TestCase):
 
     def test_logging_out_drops_the_session_row_as_well_as_the_cookie(self):
         token = self.sign_in().cookies[COOKIE]
-        csrf = self.db[SESSIONS].find_one({"_id": token})["csrf"]
+        csrf = self.db[SESSIONS].find_one({"_id": session_key(token)})["csrf"]
         self.client.post("/logout", data={"csrf": csrf})
-        self.assertEqual(self.db[SESSIONS].count_documents({"_id": token}), 0)
+        self.assertEqual(
+            self.db[SESSIONS].count_documents({"_id": session_key(token)}), 0)
         self.assertEqual(self.client.get("/").status_code, 401)
 
     def test_a_session_stops_working_the_moment_the_account_is_blocked(self):
@@ -309,7 +310,7 @@ class ActorContextTest(unittest.TestCase):
     def test_the_edit_is_recorded_under_the_signed_in_user(self):
         from unittest import mock
         token = self.client.cookies[COOKIE]
-        csrf = self.db[SESSIONS].find_one({"_id": token})["csrf"]
+        csrf = self.db[SESSIONS].find_one({"_id": session_key(token)})["csrf"]
         with mock.patch.object(self.client.app.state.graph, "audited",
                                return_value=self.graph):
             self.client.post("/nodes/Person/A1", data={"csrf": csrf, "name_ru": "Пётр"})
@@ -444,7 +445,7 @@ class LogoutIsAFormLikeAnyOtherTest(unittest.TestCase):
         create_user(self.db, "roman", "hunter2", role="editor")
         self.client = TestClient(build(Settings(), self.db), follow_redirects=False)
         self.client.post("/login", data={"login": "roman", "password": "hunter2"})
-        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def sessions(self):
         return self.db[SESSIONS].count_documents({})

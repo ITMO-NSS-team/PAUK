@@ -18,6 +18,7 @@ from pauk.admin.auth import (
     list_users,
     open_session,
     read_session,
+    session_key,
     set_active,
     verify_password,
 )
@@ -118,9 +119,11 @@ class SessionTest(unittest.TestCase):
     def test_an_expired_session_is_refused_and_swept_away(self):
         token = open_session(self.db, self.user)
         self.db[SESSIONS].update_one(
-            {"_id": token}, {"$set": {"expires_at": datetime.now(UTC) - timedelta(minutes=1)}})
+            {"_id": session_key(token)},
+            {"$set": {"expires_at": datetime.now(UTC) - timedelta(minutes=1)}})
         self.assertIsNone(read_session(self.db, token))
-        self.assertEqual(self.db[SESSIONS].count_documents({"_id": token}), 0)
+        self.assertEqual(
+            self.db[SESSIONS].count_documents({"_id": session_key(token)}), 0)
 
     def test_disabling_an_account_ends_the_sessions_it_already_had(self):
         # The reason sessions live in Mongo rather than in a signed cookie:
@@ -136,7 +139,8 @@ class SessionTest(unittest.TestCase):
         token = open_session(self.db, self.user)
         self.db[USERS].update_one({"_id": "roman"}, {"$set": {"active": False}})
         self.assertIsNone(read_session(self.db, token))
-        self.assertEqual(self.db[SESSIONS].count_documents({"_id": token}), 0)
+        self.assertEqual(
+            self.db[SESSIONS].count_documents({"_id": session_key(token)}), 0)
 
     def test_a_role_change_takes_effect_on_the_open_session(self):
         token = open_session(self.db, self.user)
@@ -260,3 +264,51 @@ class LockoutTest(unittest.TestCase):
         create_user(self.db, "petrov", "hunter2")
         self.fail(auth.MAX_FAILURES)
         self.assertEqual(authenticate(self.db, "petrov", "hunter2").login, "petrov")
+
+
+class SessionTokenIsNotStoredTest(unittest.TestCase):
+    """A session token is a bearer credential: whoever holds it is signed
+    in, no password needed. Kept verbatim, one read of the collection — a
+    dump, a backup, a copy made for support — handed over every live
+    session, while the passwords beside them were hashed."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2")
+        self.user = authenticate(self.db, "roman", "hunter2")
+        self.token = open_session(self.db, self.user)
+
+    def stored(self):
+        return self.db[SESSIONS].find_one({})
+
+    def test_the_token_itself_is_nowhere_in_the_row(self):
+        self.assertNotIn(self.token, str(self.stored()))
+
+    def test_the_row_is_keyed_by_the_hash(self):
+        self.assertEqual(self.stored()["_id"], session_key(self.token))
+
+    def test_the_cookie_still_opens_the_session(self):
+        self.assertIsNotNone(read_session(self.db, self.token))
+
+    def test_a_stolen_row_cannot_be_used_as_a_cookie(self):
+        # The whole point: what is in the database is not what the browser
+        # sends, so reading the database is not enough to sign in.
+        self.assertIsNone(read_session(self.db, self.stored()["_id"]))
+
+    def test_closing_still_finds_the_row(self):
+        self.assertTrue(close_session(self.db, self.token))
+        self.assertEqual(self.db[SESSIONS].count_documents({}), 0)
+
+    def test_two_sessions_get_two_keys(self):
+        other = open_session(self.db, self.user)
+        self.assertNotEqual(session_key(self.token), session_key(other))
+        self.assertEqual(self.db[SESSIONS].count_documents({}), 2)
+
+    def test_the_hash_is_fast_because_there_is_nothing_to_guess(self):
+        # Not scrypt: a password is slow-hashed because it is guessable,
+        # while this is 256 bits of randomness. The session is read on
+        # every request, so a slow hash would tax every page.
+        started = time.perf_counter()
+        for _ in range(1000):
+            session_key(self.token)
+        self.assertLess((time.perf_counter() - started) * 1000, 50)

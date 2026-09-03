@@ -257,15 +257,32 @@ def _aware(moment: datetime) -> datetime:
     return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
 
 
+def session_key(token: str) -> str:
+    """How a session token is stored.
+
+    Not the token itself. A session token is a bearer credential: whoever
+    holds it is signed in, no password needed. Kept verbatim, one read of
+    `admin_sessions` — a dump, a backup, a copy made for support — handed
+    over every live session, while the passwords beside them were hashed.
+
+    A fast hash, deliberately, and not `scrypt` like a password. A password
+    is slow-hashed because it is guessable; this is 256 bits of randomness
+    with nothing to guess. The session is read on every single request, so
+    a slow hash here would tax every page for no gain at all.
+    """
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def open_session(db: Database, user: User) -> str:
     """Start a session and return the token that names it.
 
-    The token goes to the browser in a cookie; the row here is what makes
-    it possible to end the session from the server side.
+    The token goes to the browser in a cookie and is not kept anywhere
+    else; the row holds only its hash, which is enough to find it again
+    and to end the session from the server side.
     """
     token = secrets.token_urlsafe(32)
     db[SESSIONS].insert_one({
-        "_id": token,
+        "_id": session_key(token),
         "login": user.login,
         "role": user.role,
         "csrf": secrets.token_urlsafe(24),
@@ -285,17 +302,18 @@ def read_session(db: Database, token: str | None) -> dict | None:
     """
     if not token:
         return None
-    row = db[SESSIONS].find_one({"_id": token})
+    key = session_key(token)
+    row = db[SESSIONS].find_one({"_id": key})
     if row is None:
         return None
     expires = row.get("expires_at")
     if expires is not None and _aware(expires) < _now():
-        db[SESSIONS].delete_one({"_id": token})
+        db[SESSIONS].delete_one({"_id": key})
         return None
     # The account may have been disabled after the session was opened.
     account = db[USERS].find_one({"_id": row["login"]}, {"active": True, "role": True})
     if account is None or not account.get("active", False):
-        db[SESSIONS].delete_one({"_id": token})
+        db[SESSIONS].delete_one({"_id": key})
         return None
     row["role"] = account.get("role", row.get("role", "viewer"))
     return row
@@ -304,7 +322,7 @@ def read_session(db: Database, token: str | None) -> dict | None:
 def close_session(db: Database, token: str | None) -> bool:
     if not token:
         return False
-    return db[SESSIONS].delete_one({"_id": token}).deleted_count > 0
+    return db[SESSIONS].delete_one({"_id": session_key(token)}).deleted_count > 0
 
 
 def check_csrf(session: dict, submitted: str | None) -> bool:

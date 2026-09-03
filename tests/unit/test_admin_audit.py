@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from pauk.admin import deps, feed
 from pauk.admin.app import build
-from pauk.admin.auth import COOKIE, SESSIONS, create_user
+from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key
 from pauk.settings import Settings
 from tests.unit.test_admin_nodes import FakePanelGraph
 
@@ -218,7 +218,7 @@ class RestoreTest(unittest.TestCase):
     def sign_in(self, login="roman"):
         self.client.post("/login", data={"login": login, "password": "hunter2"})
         from pauk.admin.auth import COOKIE, SESSIONS
-        return self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        return self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def test_the_node_comes_back_with_the_fields_it_had(self):
         csrf = self.sign_in()
@@ -296,7 +296,7 @@ class RestoreWithoutTheFeedTest(unittest.TestCase):
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False)
         self.client.post("/login", data={"login": "roman", "password": "hunter2"})
-        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
         self.client.post("/nodes/Person/delete/A1", data={"csrf": self.csrf})
         self.db[feed.COLLECTION].delete_many({})
 

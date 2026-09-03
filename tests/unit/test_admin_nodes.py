@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from pauk.admin import deps
 from pauk.admin.app import build
-from pauk.admin.auth import COOKIE, SESSIONS, create_user
+from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key
 from pauk.graph.mutations import RELATIONSHIPS
 from pauk.graph.overrides import COLLECTION, active_overrides, tombstoned_relationships
 from pauk.settings import Settings
@@ -99,7 +99,7 @@ class NodeScreenTest(unittest.TestCase):
     def sign_in(self, login="roman"):
         self.client.post("/login", data={"login": login, "password": "hunter2"})
         token = self.client.cookies[COOKIE]
-        return self.db[SESSIONS].find_one({"_id": token})["csrf"]
+        return self.db[SESSIONS].find_one({"_id": session_key(token)})["csrf"]
 
     def test_the_screens_are_closed_without_a_session(self):
         self.assertEqual(self.client.get("/nodes/Person").status_code, 401)
@@ -257,7 +257,7 @@ class RelationshipScreenTest(unittest.TestCase):
 
     def sign_in(self, login="roman"):
         self.client.post("/login", data={"login": login, "password": "hunter2"})
-        return self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        return self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def link_data(self, csrf, **extra):
         return {"csrf": csrf, "triple": "Person|AUTHORED|Publication",
@@ -372,7 +372,7 @@ class CreateNodeTest(unittest.TestCase):
 
     def sign_in(self, login="roman"):
         self.client.post("/login", data={"login": login, "password": "hunter2"})
-        return self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        return self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def test_the_form_is_not_mistaken_for_a_node_called_new(self):
         # /nodes/Person/new must reach the form, not a lookup for a node
@@ -465,7 +465,7 @@ class DeleteConfirmationTest(unittest.TestCase):
 
     def sign_in(self, login="roman"):
         self.client.post("/login", data={"login": login, "password": "hunter2"})
-        return self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        return self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def test_the_page_asks_before_deleting(self):
         self.sign_in()
@@ -490,7 +490,7 @@ class DeleteConfirmationTest(unittest.TestCase):
         # A prompt lives in the browser and can be skipped by posting
         # directly, so the server checks still have to hold on their own.
         self.sign_in(login="guest")
-        csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
         response = self.client.post("/nodes/Person/delete/A1", data={"csrf": csrf})
         self.assertEqual(response.status_code, 403)
         self.assertIn(("Person", "A1"), self.graph.nodes)
@@ -513,7 +513,7 @@ class LinkMistakeTest(unittest.TestCase):
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False)
         self.client.post("/login", data={"login": "roman", "password": "hunter2"})
-        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def link(self, page, triple, other):
         label, node_id = page.split("/", 1)
@@ -579,7 +579,7 @@ class LinkDirectionTest(unittest.TestCase):
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False)
         self.client.post("/login", data={"login": "roman", "password": "hunter2"})
-        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def link(self, page, triple, other):
         label, node_id = page.split("/", 1)
@@ -720,7 +720,7 @@ class UnlinkByMatchFieldTest(unittest.TestCase):
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False)
         self.client.post("/login", data={"login": "roman", "password": "hunter2"})
-        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def form_value(self, page, triple):
         """What the page would submit to unlink one particular edge.
@@ -877,7 +877,7 @@ class UrlAsIdTest(unittest.TestCase):
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False)
         self.client.post("/login", data={"login": "roman", "password": "hunter2"})
-        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
         self.path = quote(self.URL, safe="/")
 
     def test_the_search_links_to_a_page_that_opens(self):
@@ -969,7 +969,7 @@ class VanishedRecordTest(unittest.TestCase):
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False)
         self.client.post("/login", data={"login": "roman", "password": "hunter2"})
-        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def test_the_save_is_answered_not_crashed(self):
         self.graph.nodes.pop(("Person", "A1"))
@@ -1015,7 +1015,7 @@ class UnlinkFromTheTargetTest(unittest.TestCase):
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False)
         self.client.post("/login", data={"login": "roman", "password": "hunter2"})
-        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def form_on(self, label, node_id, triple):
         """The unlink form the page renders for one edge, as it would be sent.
@@ -1080,7 +1080,7 @@ class UnaddressableIdTest(unittest.TestCase):
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False)
         self.client.post("/login", data={"login": "roman", "password": "hunter2"})
-        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def create(self, node_id):
         return self.client.post("/nodes/Person/new",

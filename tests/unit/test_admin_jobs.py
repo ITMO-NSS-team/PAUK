@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from pauk.admin import deps
 from pauk.admin.app import build
-from pauk.admin.auth import COOKIE, SESSIONS, create_user
+from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key
 from pauk.jobs import store
 from pauk.jobs.models import GRAPH, JobKind, JobState
 from pauk.settings import Settings
@@ -133,7 +133,7 @@ class GraphBusyBannerTest(unittest.TestCase):
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False)
         self.client.post("/login", data={"login": "roman", "password": "hunter2"})
-        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def start(self, kind=JobKind.PUBLISH, payload=None):
         job = store.enqueue(self.db, kind, payload or {"group": "2024"})
@@ -223,7 +223,7 @@ class SchedulingTest(unittest.TestCase):
     def sign_in(self, login):
         client = TestClient(self.app, follow_redirects=False)
         client.post("/login", data={"login": login, "password": "hunter2"})
-        csrf = self.db[SESSIONS].find_one({"_id": client.cookies[COOKIE]})["csrf"]
+        csrf = self.db[SESSIONS].find_one({"_id": session_key(client.cookies[COOKIE])})["csrf"]
         return client, csrf
 
     def post(self, client=None, csrf=None, **data):
@@ -355,7 +355,7 @@ class CancelTest(unittest.TestCase):
     def sign_in(self, login):
         client = TestClient(self.app, follow_redirects=False)
         client.post("/login", data={"login": login, "password": "hunter2"})
-        csrf = self.db[SESSIONS].find_one({"_id": client.cookies[COOKIE]})["csrf"]
+        csrf = self.db[SESSIONS].find_one({"_id": session_key(client.cookies[COOKIE])})["csrf"]
         return client, csrf
 
     def queued(self):
@@ -555,7 +555,7 @@ class PipelineOrderTest(unittest.TestCase):
     def test_the_pipeline_can_be_queued(self):
         response = self.client.post("/jobs", data={
             "csrf": self.db[SESSIONS].find_one(
-                {"_id": self.client.cookies[COOKIE]})["csrf"],
+                {"_id": session_key(self.client.cookies[COOKIE])})["csrf"],
             "kind": "pipeline", "work_id": "W123", "seed": "42"})
         self.assertEqual(response.status_code, 303)
         self.assertEqual(store.recent(self.db)[0].kind, JobKind.PIPELINE)
@@ -581,7 +581,7 @@ class MapOptionsTest(unittest.TestCase):
         app.dependency_overrides[deps.graph_for] = lambda: FakePanelGraph()
         self.client = TestClient(app, follow_redirects=False, raise_server_exceptions=False)
         self.client.post("/login", data={"login": "chief", "password": "hunter2"})
-        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def post(self, **data):
         return self.client.post("/jobs", data={"csrf": self.csrf, **data})

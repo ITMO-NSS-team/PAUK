@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from pauk.admin import decisions, deps, feed
 from pauk.admin.app import build
-from pauk.admin.auth import COOKIE, SESSIONS, create_user
+from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key
 from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.overrides import (
     active_overrides,
@@ -141,7 +141,7 @@ class DecisionsPageTest(unittest.TestCase):
 
     def sign_in(self, login="roman"):
         self.client.post("/login", data={"login": login, "password": "hunter2"})
-        return self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        return self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def test_the_page_is_closed_without_a_session(self):
         self.assertEqual(self.client.get("/overrides").status_code, 401)
@@ -242,7 +242,7 @@ class UndoRestoresTest(unittest.TestCase):
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False)
         self.client.post("/login", data={"login": "roman", "password": "hunter2"})
-        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def test_undoing_a_deleted_node_brings_it_back_with_its_fields(self):
         # Lifting the ban alone left the graph unchanged: the record would
@@ -300,7 +300,7 @@ class SnapshotTest(unittest.TestCase):
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False)
         self.client.post("/login", data={"login": "roman", "password": "hunter2"})
-        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def delete_it(self):
         return self.client.post("/nodes/Department/delete/D1", data={"csrf": self.csrf})
@@ -432,7 +432,7 @@ class UndoRestoresFieldTest(unittest.TestCase):
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False)
         self.client.post("/login", data={"login": "roman", "password": "hunter2"})
-        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def undo(self):
         return self.client.post("/overrides/undo", data={
@@ -525,7 +525,7 @@ class UndoingADeletionKeepsTheEditTest(unittest.TestCase):
         app.dependency_overrides[deps.graph_for] = lambda: self.graph
         self.client = TestClient(app, follow_redirects=False)
         self.client.post("/login", data={"login": "roman", "password": "hunter2"})
-        self.csrf = self.db[SESSIONS].find_one({"_id": self.client.cookies[COOKIE]})["csrf"]
+        self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
         self.client.post("/nodes/Person/A1", data={
             "csrf": self.csrf, "name_ru": "Иванов Иван Петрович", "name_en": "I. Ivanov",
             "seen_at": self.graph.nodes[("Person", "A1")]["updated_at"]})
