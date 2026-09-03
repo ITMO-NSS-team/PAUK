@@ -83,6 +83,17 @@ def holder(db: Database, resource: str) -> dict | None:
     return row
 
 
+def taken(db: Database) -> set[str]:
+    """Resources somebody holds right now.
+
+    Read before claiming, so a worker does not take a job it will only have
+    to hand back. Expired locks are left out: nobody is holding those.
+    """
+    moment = now()
+    return {row["_id"] for row in db[COLLECTION].find({}, {"expires_at": True})
+            if aware(row["expires_at"]) >= moment}
+
+
 @contextmanager
 def held(db: Database, resource: str, owner: str | None = None) -> Iterator[str]:
     """Hold the resource for the length of a block.

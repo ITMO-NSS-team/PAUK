@@ -12,6 +12,7 @@ from datetime import timedelta
 
 from pymongo.database import Database
 
+from pauk.jobs.locks import LEASE_MINUTES
 from pauk.jobs.models import (
     FINAL,
     Job,
@@ -29,11 +30,11 @@ COLLECTION = "jobs"
 
 PAGE = 50
 
-# How long a job may go without saying it is alive before it counts as
-# abandoned. The beat is every minute (worker.BEAT_SECONDS), so this is
-# several missed beats, not a slow step: the beat runs in its own thread
-# and does not wait for the work.
-STALE_MINUTES = 5
+# How long a job may go without saying it is alive before the page says so.
+# The beat is every minute (worker.BEAT_SECONDS), so this is several missed
+# beats, not a slow step: the beat runs in its own thread and does not wait
+# for the work.
+QUIET_MINUTES = 5
 
 
 def enqueue(db: Database, kind: JobKind, payload: dict | None = None,
@@ -70,16 +71,26 @@ def enqueue(db: Database, kind: JobKind, payload: dict | None = None,
     return _as_job(document)
 
 
-def claim(db: Database, worker: str) -> Job | None:
+def claim(db: Database, worker: str, busy: set[str] | None = None) -> Job | None:
     """Take the oldest queued job, or None when there is nothing to do.
 
     One operation, so two workers cannot walk away with the same document.
     The resource is taken separately; a job whose resource is busy goes
     back with `requeue`.
+
+    Args:
+        busy: Resources somebody already holds. Jobs waiting on those are
+            passed over rather than taken and handed straight back. Without
+            it the oldest job was claimed every turn, and while it waited
+            for the graph it held up everything behind it — including runs
+            wanting a different resource entirely.
     """
     moment = now()
+    query: dict = {"state": str(JobState.QUEUED)}
+    if busy:
+        query["resource"] = {"$nin": sorted(busy)}
     document = db[COLLECTION].find_one_and_update(
-        {"state": str(JobState.QUEUED)},
+        query,
         {"$set": {"state": str(JobState.CLAIMED), "worker": worker,
                   "heartbeat_at": moment}},
         # `_id` only breaks a tie. Two jobs queued inside one millisecond
@@ -175,12 +186,13 @@ def _settle(db: Database, job_id: str, state: JobState, **fields) -> bool:
     return result.matched_count > 0
 
 
-def is_stale(job: Job, minutes: int = STALE_MINUTES) -> bool:
-    """Whether nobody is running this job any more.
+def is_quiet(job: Job, minutes: int = QUIET_MINUTES) -> bool:
+    """Whether the job has stopped saying it is alive.
 
-    The beat comes from a thread of its own, independent of the work, so a
-    job that stops beating is a job whose process is gone — killed worker,
-    a machine that went away, Ctrl+C at the wrong moment.
+    Enough to warn about, not enough to act on. The beat comes from a
+    thread of its own, so silence usually means the process is gone — but
+    it can also mean Mongo was unreachable for a few minutes while the run
+    carried on.
     """
     if job.state not in (JobState.CLAIMED, JobState.RUNNING):
         return False
@@ -188,7 +200,7 @@ def is_stale(job: Job, minutes: int = STALE_MINUTES) -> bool:
     return aware(last) < now() - timedelta(minutes=minutes)
 
 
-def reap_stale(db: Database, minutes: int = STALE_MINUTES) -> int:
+def reap_stale(db: Database, minutes: int = LEASE_MINUTES) -> int:
     """Settle jobs whose worker stopped answering.
 
     Without this they sit in "under way" for ever: the only thing that ever
@@ -196,12 +208,19 @@ def reap_stale(db: Database, minutes: int = STALE_MINUTES) -> int:
     worker is gone. A run somebody asked to stop is recorded as stopped;
     anything else as failed, because it was.
 
+    Waits out the lock lease rather than the shorter quiet threshold. A job
+    that has been silent for five minutes may still hold a live lease and
+    still be writing; declaring it dead then would settle a run that is
+    going on, and would not free anything either — the lock outlives the
+    verdict by another ten minutes. The page warns at five; this acts at
+    fifteen, when the lease cannot be alive any more.
+
     Returns:
         How many were settled.
     """
     settled = 0
     for job in running(db):
-        if not is_stale(job, minutes):
+        if not is_quiet(job, minutes):
             continue
         if job.cancel_requested:
             settled += cancelled(db, job.id)
