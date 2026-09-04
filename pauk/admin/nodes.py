@@ -254,8 +254,13 @@ async def create(request: Request, label: str, user: Editor,
     # A tombstone from an earlier deletion would remove this node again on
     # the next publish. Creating the id by hand says plainly that it is
     # wanted, so the decision to delete it is withdrawn.
-    if deactivate_override(db, label, node_id, only_op="delete"):
-        logger.info("%s revoked the tombstone on %s %s", user.actor, label, node_id)
+    #
+    # Undone if that cannot be written. Pessimistic: most of the time there
+    # is no tombstone and the node would have been fine, but whether there
+    # is one can only be learned from the store that is refusing to answer,
+    # and a node that disappears at the next publish is the worse outcome.
+    _record(undo=lambda: delete_node(graph, label, node_id),
+            write=lambda: deactivate_override(db, label, node_id, only_op="delete"))
     logger.info("%s created %s %s", user.actor, label, node_id)
     return RedirectResponse(_node_url(label, node_id, "created=1"),
                             status_code=status.HTTP_303_SEE_OTHER)
@@ -281,7 +286,8 @@ async def restore(label: str, node_id: str, user: Editor,
                      if name in NODE_FIELDS[label]})
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
-    deactivate_override(db, label, node_id, only_op="delete")
+    _record(undo=lambda: delete_node(graph, label, node_id),
+            write=lambda: deactivate_override(db, label, node_id, only_op="delete"))
     logger.info("%s restored %s %s", user.actor, label, node_id)
     return RedirectResponse(_node_url(label, node_id, "restored=1"),
                             status_code=status.HTTP_303_SEE_OTHER)
@@ -536,8 +542,12 @@ async def unlink(request: Request, label: str, node_id: str, user: Editor,
         removed = delete_relationship(graph, src_label, rel_type, tgt_label, src_id, tgt_id)
         if not removed:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "there is no such link")
-        record_relationship_override(db, src_label, rel_type, tgt_label, src_id, tgt_id,
-                                     actor=user.actor, note=str(form.get("note", "")).strip())
+        _record(
+            undo=lambda: create_relationship(graph, src_label, rel_type, tgt_label,
+                                             src_id, tgt_id),
+            write=lambda: record_relationship_override(
+                db, src_label, rel_type, tgt_label, src_id, tgt_id,
+                actor=user.actor, note=str(form.get("note", "")).strip()))
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     logger.info("%s unlinked (%s %s)-[:%s]->(%s %s)",

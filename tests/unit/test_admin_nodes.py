@@ -11,7 +11,12 @@ from pauk.admin import deps, nodes
 from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key
 from pauk.graph.mutations import RELATIONSHIPS, MutationError
-from pauk.graph.overrides import COLLECTION, active_overrides, tombstoned_relationships
+from pauk.graph.overrides import (
+    COLLECTION,
+    active_overrides,
+    record_override,
+    tombstoned_relationships,
+)
 from pauk.settings import Settings
 from tests.unit.test_mutations import FakeGraph
 
@@ -1196,3 +1201,80 @@ class TwoStoresOneChangeTest(unittest.TestCase):
         self.assertEqual(response.status_code, 303)
         self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Пётр Иванов")
         self.assertEqual(self.db[COLLECTION].count_documents({}), 1)
+
+
+class EveryWritePathIsGuardedTest(unittest.TestCase):
+    """`_record` on every route that writes to both stores, not just two.
+
+    A guard on two paths out of five is worse than none: it reads as
+    handled. Linking is the one exception and stays without — it records
+    nothing, so there is no second write to fail.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add("Person", "A1", name_ru="Иванов И.")
+        self.graph.add("Publication", "W1", title="Статья")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False,
+                                 raise_server_exceptions=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one(
+            {"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
+
+    @staticmethod
+    def unreachable(*args, **kwargs):
+        raise AutoReconnect("mongo is not answering")
+
+    def test_unlinking_puts_the_link_back(self):
+        edge = ("Person", "AUTHORED", "Publication", "A1", "W1")
+        self.graph.relationships[edge] = {}
+        with patch.object(nodes, "record_relationship_override", self.unreachable):
+            response = self.client.post("/nodes/Person/rel/delete/A1", data={
+                "csrf": self.csrf, "triple": "Person|AUTHORED|Publication",
+                "other_id": "W1"})
+        self.assertEqual(response.status_code, 503)
+        self.assertIn(edge, self.graph.relationships)
+
+    def test_creating_takes_the_new_node_away_again(self):
+        # Pessimistic on purpose: usually there is no tombstone to withdraw
+        # and the node would have been fine, but whether there is one can
+        # only be learned from the store that is refusing to answer.
+        with patch.object(nodes, "deactivate_override", self.unreachable):
+            response = self.client.post("/nodes/Person/new", data={
+                "csrf": self.csrf, "id": "A9", "name_ru": "Новый"})
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn(("Person", "A9"), self.graph.nodes)
+
+    def test_restoring_takes_the_record_away_again(self):
+        record_override(self.db, "Person", "A2", "delete", actor="user:roman",
+                        snapshot={"name_ru": "Петров"})
+        with patch.object(nodes, "deactivate_override", self.unreachable):
+            response = self.client.post("/nodes/Person/restore/A2",
+                                        data={"csrf": self.csrf})
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn(("Person", "A2"), self.graph.nodes)
+
+    def test_an_undo_that_would_tear_out_links_refuses_and_says_so(self):
+        # Somebody attached the record while this was going on. Undoing
+        # would take their links with it, so it does not.
+        record_override(self.db, "Person", "A2", "delete", actor="user:roman",
+                        snapshot={"name_ru": "Петров"})
+        self.graph.relationships[("Person", "AUTHORED", "Publication", "A2", "W1")] = {}
+        with patch.object(nodes, "deactivate_override", self.unreachable):
+            response = self.client.post("/nodes/Person/restore/A2",
+                                        data={"csrf": self.csrf})
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("не откатилась", response.json()["detail"])
+
+    def test_linking_needs_no_guard(self):
+        # It records no decision, so there is no second write to fail: a
+        # link made by hand survives publishing on its own.
+        response = self.client.post("/nodes/Person/rel/add/A1", data={
+            "csrf": self.csrf, "triple": "Person|AUTHORED|Publication",
+            "other_id": "W1"})
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
