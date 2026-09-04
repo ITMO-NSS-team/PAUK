@@ -29,14 +29,18 @@
   <p class="muted" style="margin:-8px 0 12px">
     Здесь поля, где источник после правки начал говорить иначе.
   </p>
-  <div class="card">
-    <table>
+  <div class="card scroll">
+    <table class="fixed">
+      <colgroup>
+        <col style="width:10rem"><col style="width:7rem"><col><col><col>
+        <col style="width:9rem">
+      </colgroup>
       <tr><th>запись</th><th>поле</th><th>у нас</th><th>было в источнике</th><th>стало</th><th>кто и когда</th></tr>
       {% for row in conflicts %}
       <tr>
         <td class="val"><a href="/nodes/{{ row.label }}/{{ row.target_id | urlencode }}">{{ row.title }}</a></td>
         <td><b>{{ row.field }}</b></td>
-        <td class="val">{{ row.ours if row.ours is not none else "—" }}</td>
+        <td class="val"><span class="clip">{{ row.ours if row.ours is not none else "—" }}</span></td>
         <td class="val"><span class="was">{{ row.was if row.was is not none else "—" }}</span></td>
         <td class="val"><span class="now">{{ row.now if row.now is not none else "—" }}</span></td>
         <td class="muted">{{ row.actor }}<br>{{ row.when[:19]|replace("T", " ") }}</td>
@@ -49,8 +53,12 @@
   {% if not rows %}
   <p class="muted">Ручных правок нет. Граф после пайплайна.</p>
   {% else %}
-  <div class="card">
-    <table>
+  <div class="card scroll">
+    <table class="fixed">
+      <colgroup>
+        <col style="width:11rem"><col><col style="width:9rem">
+        {% if user.can_write %}<col style="width:7rem">{% endif %}
+      </colgroup>
       <tr><th>запись</th><th>что решили</th><th>кто и почему</th>{% if user.can_write %}<th></th>{% endif %}</tr>
       {% for row in rows %}
       <tr>
@@ -64,7 +72,7 @@
         </td>
         <td>{{ row.actor }}{% if row.note %}<br><span class="muted">{{ row.note }}</span>{% endif %}</td>
         {% if user.can_write %}
-        <td style="width:1%">
+        <td>
           <form method="post" action="/overrides/undo">
             <input type="hidden" name="csrf" value="{{ csrf }}">
             <input type="hidden" name="kind" value="{{ row.kind }}">

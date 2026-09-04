@@ -52,8 +52,12 @@
   <p class="muted">Записей нет. Журнал наполняется правками через панель и пайплайн.</p>
 {% else %}
 <p class="muted" style="margin:-8px 0 12px">Всего: {{ total }}. Страница {{ page }} из {{ pages }}.</p>
-<div class="card">
-  <table>
+<div class="card scroll">
+  <table class="fixed">
+    <colgroup>
+      <col style="width:11rem"><col style="width:7rem"><col style="width:13rem">
+      <col style="width:6rem"><col>
+    </colgroup>
     <tr><th>когда</th><th>кто</th><th>что</th><th>как</th><th>изменения</th></tr>
     {% for row in rows %}
     <tr>

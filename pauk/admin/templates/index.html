@@ -54,9 +54,9 @@
     <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-{{ label }}"/></svg>
     <b>{{ label }}</b>
     <span class="counts">
-      {% if nodes is not none %}<span class="n">{{ nodes }}</span>
-        {{ nodes|plural("узел", "узла", "узлов") }} · {% endif %}
-      {{ fields }} {{ fields|plural("поле", "поля", "полей") }}
+      {% if nodes is not none %}<span><span class="n">{{ nodes }}</span>
+        {{ nodes|plural("узел", "узла", "узлов") }}</span> · {% endif %}
+      <span>{{ fields }} {{ fields|plural("поле", "поля", "полей") }}</span>
     </span>
   </a>
   {% endfor %}

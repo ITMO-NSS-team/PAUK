@@ -4,10 +4,6 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Admin PAUK</title>
-  {# Ровно то же объявление, что у карты в pauk/gui/web/index.html: один
-     тег, без sizes и без query. Safari разборчив — с sizes="any" (подсказка
-     для масштабируемых форматов) он PNG отбрасывает, и вкладка остаётся
-     пустой, хотя /favicon.ico при этом открывается вручную. #}
   <link rel="icon" type="image/png" href="/assets/icons/pauk-frame.png" />
   <link rel="stylesheet" href="{{ stylesheet() }}">
 </head>
@@ -43,5 +39,29 @@
 </p>
 {% endif %}
 {% block content %}{% endblock %}</main>
+<script>
+  {
+    const values = [...document.querySelectorAll(".was, .now, .clip")];
+    values.forEach((value) => value.classList.add("clipped"));
+    const cut = values.map((value) => value.scrollHeight > value.clientHeight);
+    values.forEach((value, index) => {
+      if (!cut[index]) {
+        value.classList.remove("clipped");
+        return;
+      }
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "more";
+      more.textContent = "развернуть";
+      more.setAttribute("aria-expanded", "false");
+      more.addEventListener("click", () => {
+        const open = !value.classList.toggle("clipped");
+        more.textContent = open ? "свернуть" : "развернуть";
+        more.setAttribute("aria-expanded", String(open));
+      });
+      value.after(more);
+    });
+  }
+</script>
 </body>
 </html>

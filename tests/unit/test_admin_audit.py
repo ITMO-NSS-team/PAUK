@@ -111,7 +111,9 @@ class AuditPageTest(unittest.TestCase):
         # dropdown, so searching the whole page proves nothing.
         self.sign_in()
         body = self.client.get("/audit", params={"actor": "pipeline"}).text
-        table = body.split("<table>")[1].split("</table>")[0]
+        # Открывающий тег ищется без атрибутов: у таблицы есть класс, и с ним
+        # появится ещё, а проверка тут не про оформление.
+        table = body.split("<table")[1].split("</table>")[0]
         self.assertIn("pipeline", table)
         self.assertNotIn("user:roman", table)
         self.assertIn("Всего: 1", body)
