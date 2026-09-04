@@ -7,7 +7,11 @@ from unittest.mock import patch
 import mongomock
 
 from pauk.models import GitHubProfile, Person, Repository
-from pauk.pipeline.stages.social_graph import SocialGraphStage, is_itmo_organization
+from pauk.pipeline.stages.social_graph import (
+    SocialGraphStage,
+    is_itmo_organization,
+    itmo_organization_status,
+)
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
 from pauk.storage.static import StaticStore
@@ -23,9 +27,9 @@ def person(pid, name, *, github=None, itmo=True):
     return Person(id=pid, openalex_id=pid, is_itmo=itmo, name_raw=name, github=github)
 
 
-def profile(login, *, account_type="user", name=None, bio=None, location=None):
+def profile(login, *, account_type="user", name=None, bio=None, company=None, location=None):
     return GitHubProfile(id=f"github_{login.lower()}", login=login, type=account_type,
-                         name=name, description=bio, location=location)
+                         name=name, description=bio, company=company, location=location)
 
 
 def repository(owner, name, *, contributors=()):
@@ -62,21 +66,19 @@ class IsItmoOrganizationTest(unittest.TestCase):
     def test_an_organization_naming_itmo_in_its_profile(self):
         self.assertTrue(self.judge("aimclub", name="AIM.club, ITMO University"))
 
-    def test_the_city_spelled_with_a_full_stop(self):
-        self.assertTrue(self.judge("ai-chem", name="Center for AI in Chemistry",
-                                   location="Russia, St. Petersburg"))
+    def test_city_only_is_a_possible_organization_not_a_seed(self):
+        for location in ("Saint Petersburg", "Санкт-Петербург"):
+            with self.subTest(location=location):
+                given = profile("some-lab", account_type="organization", location=location)
+                self.assertFalse(is_itmo_organization("some-lab", given, self.CATALOG))
+                self.assertEqual(
+                    itmo_organization_status("some-lab", given, self.CATALOG),
+                    ("possible", "petersburg"),
+                )
 
-    def test_the_city_spelled_with_a_hyphen(self):
-        self.assertTrue(self.judge("some-lab", location="St-Petersburg, Russia"))
-
-    def test_the_city_spelled_in_cyrillic(self):
-        self.assertTrue(self.judge("Digiratory", name="Digiratory",
-                                   location="Санкт-Петербург"))
-
-    def test_the_cyrillic_city_spelled_without_a_hyphen(self):
-        # A profile typed by hand, not copied from a form; the Latin
-        # spellings already allow the space.
-        self.assertTrue(self.judge("some-lab", location="Россия, Санкт Петербург"))
+    def test_description_and_company_are_strong_evidence(self):
+        self.assertTrue(self.judge("lab", bio="Laboratory at ITMO University"))
+        self.assertTrue(self.judge("lab", company="ИТМО"))
 
     def test_an_employee_committing_there_does_not_make_it_ours(self):
         # The rule this replaces followed any organization a confirmed
