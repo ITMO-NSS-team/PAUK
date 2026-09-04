@@ -318,8 +318,27 @@ class AuditedNeo4jClient:
     def _now() -> str:
         return datetime.now(UTC).isoformat()
 
+    def _record(self, entries: Sequence[AuditEntry]) -> None:
+        """Write the journal entries, never failing the change they describe.
+
+        The journal is a record *of* a change, not a condition *for* one.
+        Letting the sink raise meant a mutation that had already gone into
+        Neo4j came back as an error from inside `update_node`, before the
+        caller could either record its decision or put the graph back: the
+        change stayed, unrecorded and unexplained, and the request looked
+        like it had failed.
+
+        A lost entry is logged whole, so it can be read back out of the log
+        if anyone needs it.
+        """
+        try:
+            self._sink.write(entries)
+        except Exception:
+            logger.exception("audit not written, %d entr(y/ies) lost: %s",
+                             len(entries), entries)
+
     def _emit_bulk_summary(self, operation: str, entity_type: str, row_count: int) -> None:
-        self._sink.write(
+        self._record(
             [
                 AuditEntry(
                     timestamp=self._now(),
@@ -349,7 +368,7 @@ class AuditedNeo4jClient:
             if not diff:
                 continue
             entries.append(AuditEntry(now, actor, source, operation, entity_type, entity_id, kind, diff))
-        self._sink.write(entries)
+        self._record(entries)
 
     def _fetch_node_props(self, labels: str | list[str], ids: list[str]) -> dict[str, dict]:
         if not ids:

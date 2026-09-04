@@ -417,3 +417,56 @@ class FixedActorTest(unittest.TestCase):
              actor_context("pipeline", source="publish"):
             client.upsert_nodes_batch("Person", [("p1", {"email": "new@x.com"})])
         self.assertEqual([entry.actor for entry in sink.entries], ["pipeline"])
+
+
+class SinkFailureDoesNotUndoTheChangeTest(unittest.TestCase):
+    """The journal records a change; it is not a condition for making one.
+
+    Letting the sink raise meant a mutation already written to Neo4j came
+    back as an error from inside `update_node`, before the caller could
+    record its decision or put the graph back. The change stayed, with no
+    override and no journal entry, and the request looked like it failed.
+    """
+
+    class DeadSink:
+        def write(self, entries):
+            raise RuntimeError("the sink is not writable")
+
+    def audited(self):
+        fake = FakeNeo4jClient()
+        return AuditedNeo4jClient(fake, self.DeadSink()), fake
+
+    def test_the_mutation_still_happens(self):
+        client, fake = self.audited()
+        with patch.object(AuditedNeo4jClient, "_fetch_node_props",
+                          side_effect=[{}, {"p1": {"a": 1}}]):
+            client.upsert_nodes_batch("Person", [("p1", {"a": 1})])
+        self.assertEqual([name for name, _ in fake.calls], ["upsert_nodes_batch"])
+
+    def test_nothing_is_raised_at_the_caller(self):
+        client, _ = self.audited()
+        with patch.object(AuditedNeo4jClient, "_fetch_node_props",
+                          side_effect=[{}, {"p1": {"a": 1}}]):
+            client.upsert_nodes_batch("Person", [("p1", {"a": 1})])
+
+    def test_a_bulk_summary_survives_it_too(self):
+        client, fake = self.audited()
+        rows = [(f"p{n}", {"a": n}) for n in range(60)]
+        client.upsert_nodes_batch("Person", rows)
+        self.assertEqual([name for name, _ in fake.calls], ["upsert_nodes_batch"])
+
+    def test_the_lost_entries_are_logged(self):
+        # The only way anybody sees them afterwards.
+        client, _ = self.audited()
+        with patch.object(AuditedNeo4jClient, "_fetch_node_props",
+                          side_effect=[{}, {"p1": {"a": 1}}]), \
+                self.assertLogs("pauk.graph.audit", level="ERROR") as caught:
+            client.upsert_nodes_batch("Person", [("p1", {"a": 1})])
+        self.assertIn("audit not written", "".join(caught.output))
+
+    def test_a_working_sink_still_gets_its_entries(self):
+        client, _, sink = audited_client()
+        with patch.object(AuditedNeo4jClient, "_fetch_node_props",
+                          side_effect=[{}, {"p1": {"a": 1}}]):
+            client.upsert_nodes_batch("Person", [("p1", {"a": 1})])
+        self.assertEqual(len(sink.entries), 1)
