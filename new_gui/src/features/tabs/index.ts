@@ -4,16 +4,17 @@ import type { AppState, Store, TabId } from "../../core/state";
 import { authorsTab } from "./authors";
 import { pubsTab } from "./pubs";
 import { reposTab } from "./repos";
+import { searchTab } from "./search";
 import type { TabModule } from "./types";
 
-// Кнопки для вкладки 4 (поиск) в разметке пока нет — не с чем связывать,
-// добавим вместе с самой вкладкой. Вкладку "Здоровье БД" из старого GUI
-// в new_gui не переносим вообще — поэтому в TabId для неё нет номера
-// и здесь для неё нет записи (см. core/state.ts).
+// Вкладку "Здоровье БД" из старого GUI в new_gui не переносим вообще —
+// поэтому в TabId для неё нет номера и здесь для неё нет записи
+// (см. core/state.ts).
 const TAB_MODULES: Partial<Record<TabId, TabModule>> = {
   1: authorsTab,
   2: reposTab,
   3: pubsTab,
+  4: searchTab,
 };
 
 /**
@@ -42,7 +43,6 @@ export function mountTabs(
     activeUnmount?.();
     activeTab = tabId;
     const tabModule = TAB_MODULES[tabId];
-    // Для 4/5 модуля пока нет — контейнер просто остаётся пустым, это не ошибка.
     activeUnmount = tabModule ? tabModule.mount(tabContentEl, store, map, data) : null;
 
     for (const button of tabButtonsEl.querySelectorAll<HTMLButtonElement>("button[data-tab]")) {

@@ -15,9 +15,8 @@
       #map { flex: 1; min-width: 0; }
 
       /* Кнопки переключения вкладок — по одной на каждый TabModule из
-         features/tabs/index.ts. Пока только 3 (авторы/репозитории/
-         публикации) — кнопок для поиска и здоровья БД нет, пока нет и
-         самих вкладок. */
+         features/tabs/index.ts. "Здоровье БД" из старого GUI сознательно
+         не переносим — для неё кнопки нет и не будет. */
       #tab-buttons { display: flex; border-bottom: 1px solid #c4c4c4; }
       #tab-buttons button {
         flex: 1;
@@ -51,6 +50,22 @@
       .tab-list-item__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .tab-list-item__meta { flex-shrink: 0; color: #616161; }
 
+      /* Вкладка "Поиск" (features/tabs/search.ts): поле ввода "прилипает"
+         к верху при прокрутке списка результатов вниз (sticky), чтобы не
+         приходилось скроллить обратно наверх, чтобы поправить запрос. */
+      .search-input {
+        position: sticky;
+        top: 0;
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px 12px;
+        border: none;
+        border-bottom: 1px solid #c4c4c4;
+        font-size: 13px;
+        background: #ffffff;
+      }
+      .search-results .tab-list-item__label { white-space: normal; }
+
       /* Плавающая карточка выбранного узла поверх карты. */
       #panel {
         position: absolute;
@@ -80,6 +95,7 @@
           <button type="button" data-tab="1">Авторы</button>
           <button type="button" data-tab="2">Репозитории</button>
           <button type="button" data-tab="3">Публикации</button>
+          <button type="button" data-tab="4">Поиск</button>
         </nav>
         <div id="tab-content"></div>
       </aside>
