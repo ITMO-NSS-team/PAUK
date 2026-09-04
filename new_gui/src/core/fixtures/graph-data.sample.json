@@ -1,0 +1,125 @@
+{
+  "departments": [
+    {
+      "id": 0,
+      "name": "Институт прикладных систем",
+      "name_en": "Institute of Applied Systems",
+      "color": "#3555e0",
+      "n": 5,
+      "n_authors": 2,
+      "n_pubs": 2,
+      "n_repos": 1
+    },
+    {
+      "id": 1,
+      "name": "Лаборатория анализа данных",
+      "name_en": "Data Analysis Lab",
+      "color": "#1a9d54",
+      "n": 3,
+      "n_authors": 1,
+      "n_pubs": 1,
+      "n_repos": 1
+    }
+  ],
+  "dept_edges": [{ "s": "dept:0", "t": "dept:1", "w": 2 }],
+  "authors": [
+    {
+      "key": "A1",
+      "kind": "author",
+      "dept": 0,
+      "label": "Иванов И.И.",
+      "label_en": "Ivanov I.I.",
+      "pubs_count": 2,
+      "rank": 1,
+      "gx": 0.1,
+      "gy": 0.2
+    },
+    {
+      "key": "A2",
+      "kind": "author",
+      "dept": 0,
+      "label": "Петрова А.С.",
+      "label_en": "Petrova A.S.",
+      "pubs_count": 1,
+      "rank": 2,
+      "gx": 0.3,
+      "gy": 0.1
+    },
+    {
+      "key": "A3",
+      "kind": "author",
+      "dept": 1,
+      "label": "Сидоров П.",
+      "label_en": "Sidorov P.",
+      "pubs_count": 1,
+      "rank": 3,
+      "gx": -0.2,
+      "gy": 0.4
+    }
+  ],
+  "coauth_edges": [{ "s": "A1", "t": "A2", "w": 2 }],
+  "repos": [
+    {
+      "key": "R1",
+      "kind": "repo",
+      "dept": 0,
+      "label": "graph-toolkit",
+      "description": "Инструменты для построения раскладки графа",
+      "stars": 42,
+      "owner": "example-org",
+      "url": "https://github.com/example-org/graph-toolkit",
+      "rank": 1,
+      "gx": 0.15,
+      "gy": 0.25
+    },
+    {
+      "key": "R2",
+      "kind": "repo",
+      "dept": 1,
+      "label": "data-pipeline",
+      "description": "Пайплайн подготовки данных",
+      "stars": 7,
+      "owner": "example-org",
+      "url": "https://github.com/example-org/data-pipeline",
+      "rank": 2,
+      "gx": -0.1,
+      "gy": 0.35
+    }
+  ],
+  "repo_edges": [{ "s": "R1", "t": "R2", "w": 1 }],
+  "repo_author_edges": [
+    { "s": "R1", "t": "A1", "role": "maintainer" },
+    { "s": "R2", "t": "A3", "role": "contributor" }
+  ],
+  "repo_pub_edges": [{ "s": "R1", "t": "P1" }],
+  "pubs": [
+    {
+      "key": "P1",
+      "kind": "pub",
+      "dept": 0,
+      "depts": [0],
+      "year": 2024,
+      "n_authors": 2,
+      "rank": 1,
+      "gx": 0.12,
+      "gy": 0.22
+    },
+    {
+      "key": "P2",
+      "kind": "pub",
+      "dept": 1,
+      "depts": [0, 1],
+      "year": null,
+      "n_authors": 1,
+      "rank": 2,
+      "gx": -0.15,
+      "gy": 0.38
+    }
+  ],
+  "pub_edges": [{ "s": "P1", "t": "P2", "w": 1 }],
+  "all_edges": [
+    { "s": "A1", "t": "P1" },
+    { "s": "A2", "t": "P1" },
+    { "s": "A3", "t": "P2" }
+  ]
+}

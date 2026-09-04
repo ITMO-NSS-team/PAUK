@@ -1,16 +1,17 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Map as MapLibreMap, NavigationControl, setWorkerUrl } from "maplibre-gl";
-// The `?worker&url` query tells Vite to emit this as a self-contained
-// worker chunk instead of pre-bundling it as a regular ESM dependency —
-// without it Vite's dep optimizer looks for the worker file in the wrong
-// place and the map fails at runtime with a "file does not exist" error.
+// Параметр `?worker&url` говорит Vite собрать этот файл отдельным
+// самодостаточным чанком воркера, а не тащить его через обычный
+// оптимизатор зависимостей — без этого Vite ищет файл воркера не там,
+// где он реально лежит, и карта падает в рантайме с "file does not exist".
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+import { loadSampleGraphData } from "../core/data";
 
 setWorkerUrl(workerUrl);
 
-// Same placeholder style as the old GUI: this is a synthetic coordinate
-// space for the graph layout, not a geographic basemap, so no tile
-// provider or API key is needed.
+// Тот же placeholder-стиль, что и в старом GUI: это не географическая
+// карта, а холст для собственной раскладки графа, поэтому тайловый
+// провайдер и API-ключ не нужны.
 const map = new MapLibreMap({
   container: "map",
   style: {
@@ -29,3 +30,20 @@ const map = new MapLibreMap({
 map.dragRotate.disable();
 map.touchZoomRotate.disableRotation();
 map.addControl(new NavigationControl({ showCompass: false }), "bottom-left");
+
+// Пока только загружаем и проверяем данные — сама отрисовка узлов на карте
+// (map/build.ts) будет отдельным следующим шагом. Ошибка здесь (расхождение
+// формата с контрактом) явно всплывёт в консоли браузера. Данные пока
+// синтетические (v2-прототип), реальный pauk/gui/data не трогаем.
+loadSampleGraphData()
+  .then((data) => {
+    console.info("Фикстур-данные загружены:", {
+      департаменты: data.departments.length,
+      авторы: data.authors.length,
+      репозитории: data.repos.length,
+      публикации: data.pubs.length,
+    });
+  })
+  .catch((error: unknown) => {
+    console.error("Не удалось загрузить фикстур-данные:", error);
+  });
