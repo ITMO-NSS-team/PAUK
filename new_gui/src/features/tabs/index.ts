@@ -2,7 +2,6 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 import type { GraphData } from "../../contracts/graph";
 import { t, type Lang, type LocaleKey } from "../../core/i18n";
 import type { AppState, Store, TabId } from "../../core/state";
-import { refreshGraphForTab } from "../../map/build";
 import { authorsTab } from "./authors";
 import { pubsTab } from "./pubs";
 import { reposTab } from "./repos";
@@ -35,11 +34,11 @@ const TAB_LABEL_KEYS: Record<TabId, LocaleKey> = {
  * if/else в одной функции, как было в старом main.js (setTab()). Заодно
  * следит за store.lang: подписи кнопок переключаются на нужный язык.
  *
- * Помимо списка в сайдбаре, смена вкладки переключает и то, что показывает
- * карта — это три разных графа (авторы+соавторство / репозитории+их связи /
- * публикации+их связи), а не один граф со всеми сущностями сразу, поэтому
- * activateTab() ниже вызывает refreshGraphForTab() точно так же, как
- * пересоздаёт список в сайдбаре.
+ * То, что показывает карта (три разных графа — авторы+соавторство /
+ * репозитории+их связи / публикации+их связи), переключается не отсюда:
+ * map/build.ts::mountReactiveGraph() сама следит за store.tab и
+ * перерисовывается — activateTab() ниже отвечает только за список в
+ * сайдбаре, не за карту.
  */
 export function mountTabs(
   tabButtonsEl: HTMLElement,
@@ -65,7 +64,6 @@ export function mountTabs(
     activeTab = tabId;
     const tabModule = TAB_MODULES[tabId];
     activeUnmount = tabModule ? tabModule.mount(tabContentEl, store, map, data) : null;
-    refreshGraphForTab(map, data, store.get().lang, tabId);
 
     for (const button of buttons) {
       button.classList.toggle("tab-button--active", Number(button.dataset.tab) === tabId);

@@ -16,9 +16,10 @@ import type { AuthorNode, Edge, GraphData, PubNode, RepoNode } from "../contract
 import { MAP_CONFIG } from "../core/config";
 import { nodeLabel } from "../core/data";
 import type { Lang } from "../core/i18n";
-import type { TabId } from "../core/state";
+import type { AppState, Store, TabId } from "../core/state";
 
 type GraphNode = AuthorNode | RepoNode | PubNode;
+type Filters = AppState["filters"];
 
 /** Свойства, которые кладутся в каждую GeoJSON-точку узла — доступны в paint-выражениях слоя через ["get", "имя"]. */
 interface NodeProps {
@@ -40,29 +41,41 @@ function allNodes(data: GraphData): GraphNode[] {
   return [...data.authors, ...data.repos, ...data.pubs];
 }
 
-/** Какие узлы показывает вкладка. Вкладки 4 (поиск) — пустой список, карта не привязана ни к одному из трёх графов. */
-function tabGraphNodes(data: GraphData, tab: TabId): GraphNode[] {
+/**
+ * Какие узлы показывает вкладка. Вкладки 4 (поиск) — пустой список, карта
+ * не привязана ни к одному из трёх графов. Единственный узловой фильтр —
+ * год публикации на вкладке 3 (filters.yearMax); публикации без известного
+ * года (year === null) никогда не скрываются фильтром по году — мы не
+ * знаем их год, а не знаем, что он "слишком поздний".
+ */
+function tabGraphNodes(data: GraphData, tab: TabId, filters: Filters): GraphNode[] {
   switch (tab) {
     case 1:
       return data.authors;
     case 2:
       return data.repos;
     case 3:
-      return data.pubs;
+      return data.pubs.filter((pub) => pub.year === null || pub.year <= filters.yearMax);
     default:
       return [];
   }
 }
 
-/** Какие рёбра показывает вкладка — см. tabGraphNodes(), тот же принцип. */
-function tabGraphEdges(data: GraphData, tab: TabId): Edge[] {
+/**
+ * Какие рёбра показывает вкладка — тот же принцип, что и у tabGraphNodes(),
+ * плюс порог веса: на вкладке "Авторы" прячем слабое соавторство (меньше
+ * filters.minCoauth совместных публикаций), на "Публикациях" — связи
+ * между публикациями с малым числом общих авторов (filters.minSharedAuthors).
+ * У репозиториев (вкладка 2) порога веса нет вообще — как и в старом GUI.
+ */
+function tabGraphEdges(data: GraphData, tab: TabId, filters: Filters): Edge[] {
   switch (tab) {
     case 1:
-      return data.coauth_edges;
+      return data.coauth_edges.filter((edge) => edge.w >= filters.minCoauth);
     case 2:
       return data.repo_edges;
     case 3:
-      return data.pub_edges;
+      return data.pub_edges.filter((edge) => edge.w >= filters.minSharedAuthors);
     default:
       return [];
   }
@@ -73,12 +86,17 @@ function tabGraphEdges(data: GraphData, tab: TabId): Edge[] {
  * (core/colors.ts с этой логикой — отдельный следующий шаг), только базовая
  * раскраска, чтобы точки на карте были различимы по департаментам.
  */
-export function buildNodeFeatures(data: GraphData, lang: Lang, tab: TabId): FeatureCollection<Point, NodeProps> {
+export function buildNodeFeatures(
+  data: GraphData,
+  lang: Lang,
+  tab: TabId,
+  filters: Filters,
+): FeatureCollection<Point, NodeProps> {
   // Map по id департамента, а не поиск в массиве на каждый узел —
   // департаментов немного, но узлов может быть тысячи.
   const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
 
-  const features: Feature<Point, NodeProps>[] = tabGraphNodes(data, tab).map((node) => ({
+  const features: Feature<Point, NodeProps>[] = tabGraphNodes(data, tab, filters).map((node) => ({
     type: "Feature",
     // id нужен, чтобы MapLibre мог адресовать конкретную фичу (например,
     // для будущей подсветки через feature-state), а не только через
@@ -103,18 +121,33 @@ export function buildNodeFeatures(data: GraphData, lang: Lang, tab: TabId): Feat
  * вкладки — концы ребра всегда того же вида, что и сама вкладка (например,
  * coauth_edges всегда между авторами), так что это не смешивает графы,
  * а просто самый простой способ получить карту "ключ -> координаты".
+ * Ребро между публикациями, у одной из которых год скрыт фильтром
+ * (tabGraphNodes выше), автоматически пропадает тем же путём — обе
+ * позиции ищутся в allNodes (там публикация всё ещё есть физически), но
+ * "нет позиции" здесь означает буквально "нет такого ключа в authors/
+ * repos/pubs", а не "скрыт фильтром" — поэтому год отдельно проверяется
+ * ниже через posByYear.
  */
-export function buildEdgeFeatures(data: GraphData, tab: TabId): FeatureCollection<LineString, EdgeProps> {
+export function buildEdgeFeatures(data: GraphData, tab: TabId, filters: Filters): FeatureCollection<LineString, EdgeProps> {
   const posByKey = new Map(allNodes(data).map((node) => [node.key, [node.gx, node.gy] as [number, number]]));
+  const pubYearByKey = new Map(data.pubs.map((pub) => [pub.key, pub.year]));
 
   const features: Feature<LineString, EdgeProps>[] = [];
-  for (const edge of tabGraphEdges(data, tab)) {
+  for (const edge of tabGraphEdges(data, tab, filters)) {
     const s = posByKey.get(edge.s);
     const t = posByKey.get(edge.t);
     // Ребро без одной из позиций значит, что второй конец не попал в
     // authors/repos/pubs (например, отфильтрован раньше) — такое ребро
     // рисовать некуда, молча пропускаем, а не падаем с ошибкой.
     if (!s || !t) continue;
+
+    if (tab === 3) {
+      const sYear = pubYearByKey.get(edge.s);
+      const tYear = pubYearByKey.get(edge.t);
+      // Публикация без известного года (null/undefined) фильтром по году
+      // не задевается — прячем ребро, только если год ИЗВЕСТЕН и превышает порог.
+      if ((sYear ?? filters.yearMax) > filters.yearMax || (tYear ?? filters.yearMax) > filters.yearMax) continue;
+    }
 
     features.push({
       type: "Feature",
@@ -152,8 +185,6 @@ export const EDGE_LAYER_ID = "graph-edges-line";
 // выглядит" и "где кликается" — стандартный приём для тонких линий:
 // сделать линию визуально тонкой, но реальную область попадания шире.
 export const EDGE_HIT_LAYER_ID = "graph-edges-hit";
-// Не экспортируем ID источников наружу — единственный код, которому они
-// нужны, это refreshGraphForTab() ниже, в этом же файле.
 const NODE_SOURCE_ID = "graph-nodes";
 const EDGE_SOURCE_ID = "graph-edges";
 
@@ -165,11 +196,10 @@ const NO_SELECTION = "";
 
 /**
  * Одно и то же MapLibre-выражение "если это выбранная точка — value1,
- * иначе — value2" нужно и при первой отрисовке (mountGraphLayers), и при
- * каждой смене выбора (setSelectedNode) — раньше оба места писали это
- * выражение и оба числа (8/4, 2/1) заново, что уже привело к рассинхрону
- * при правке. Теперь оба вызывающих места используют одну функцию и одни
- * значения из MAP_CONFIG — сменить размер выбранного узла можно в одном месте.
+ * иначе — value2" нужно и при первой отрисовке, и при каждой смене выбора
+ * (setSelectedNode) — раньше оба места писали это выражение и оба числа
+ * (8/4, 2/1) заново, что уже привело к рассинхрону при правке. Теперь оба
+ * вызывающих места используют одну функцию и одни значения из MAP_CONFIG.
  */
 function selectedNodeExpression(
   compareTo: string,
@@ -179,16 +209,9 @@ function selectedNodeExpression(
   return ["case", ["==", ["get", "key"], compareTo], selectedValue, defaultValue];
 }
 
-/**
- * Добавляет узлы и рёбра текущей вкладки на карту как источники и слои.
- * Сам клик (выбор узла/ребра) собирается отдельно в features/selection.ts —
- * эта функция только рисует, ничего не слушает. Вызывать один раз после
- * map.on("load", ...); дальнейшие смены вкладки/языка — через
- * refreshGraphForTab() ниже, не через повторный вызов этой функции
- * (addSource/addLayer второй раз на те же id упадёт с ошибкой).
- */
-export function mountGraphLayers(map: MapLibreMap, data: GraphData, lang: Lang, tab: TabId): void {
-  map.addSource(EDGE_SOURCE_ID, { type: "geojson", data: buildEdgeFeatures(data, tab) });
+/** Добавляет источники и слои узлов/рёбер текущей вкладки — вызывается один раз изнутри mountReactiveGraph(). */
+function addGraphLayers(map: MapLibreMap, data: GraphData, lang: Lang, tab: TabId, filters: Filters): void {
+  map.addSource(EDGE_SOURCE_ID, { type: "geojson", data: buildEdgeFeatures(data, tab, filters) });
   map.addLayer({
     id: EDGE_LAYER_ID,
     type: "line",
@@ -211,7 +234,7 @@ export function mountGraphLayers(map: MapLibreMap, data: GraphData, lang: Lang, 
     paint: { "line-width": MAP_CONFIG.edge.hitWidth, "line-opacity": 0 },
   });
 
-  map.addSource(NODE_SOURCE_ID, { type: "geojson", data: buildNodeFeatures(data, lang, tab) });
+  map.addSource(NODE_SOURCE_ID, { type: "geojson", data: buildNodeFeatures(data, lang, tab, filters) });
   map.addLayer({
     id: NODE_LAYER_ID,
     type: "circle",
@@ -233,6 +256,15 @@ export function mountGraphLayers(map: MapLibreMap, data: GraphData, lang: Lang, 
   });
 }
 
+/** Пересобирает узлы и рёбра под новые вкладку/язык/фильтры — источники уже добавлены (addGraphLayers), здесь только setData(). */
+function refreshGraphLayers(map: MapLibreMap, data: GraphData, lang: Lang, tab: TabId, filters: Filters): void {
+  const nodeSource = map.getSource(NODE_SOURCE_ID) as GeoJSONSource | undefined;
+  nodeSource?.setData(buildNodeFeatures(data, lang, tab, filters));
+
+  const edgeSource = map.getSource(EDGE_SOURCE_ID) as GeoJSONSource | undefined;
+  edgeSource?.setData(buildEdgeFeatures(data, tab, filters));
+}
+
 /**
  * Подсвечивает выбранный узел на карте (крупнее, с более толстой обводкой)
  * и снимает подсветку с остальных. key === null — снять выделение совсем.
@@ -252,15 +284,27 @@ export function setSelectedNode(map: MapLibreMap, key: string | null): void {
 }
 
 /**
- * Пересобирает узлы и рёбра под новую вкладку и/или язык — вызывать при
- * смене store.tab или store.lang. Заменяет прежний refreshNodeLabels():
- * теперь один и тот же вызов нужен и для языка, и для смены графа, так
- * что незачем было держать две отдельные функции обновления.
+ * Единственная точка входа для отрисовки графа: добавляет слои под текущее
+ * состояние (store.get()) и дальше сама следит за store — пересобирает
+ * узлы/рёбра при смене вкладки, языка ИЛИ фильтров. Раньше три разных
+ * места (main.ts, features/tabs/index.ts, features/langToggle.ts) сами
+ * решали, когда дёргать пересборку графа, — теперь это знает только сам
+ * граф, а остальным фичам достаточно менять store.tab/lang/filters, не
+ * заботясь о том, что ещё нужно перерисовать.
  */
-export function refreshGraphForTab(map: MapLibreMap, data: GraphData, lang: Lang, tab: TabId): void {
-  const nodeSource = map.getSource(NODE_SOURCE_ID) as GeoJSONSource | undefined;
-  nodeSource?.setData(buildNodeFeatures(data, lang, tab));
+export function mountReactiveGraph(map: MapLibreMap, store: Store<AppState>, data: GraphData): () => void {
+  const initial = store.get();
+  addGraphLayers(map, data, initial.lang, initial.tab, initial.filters);
 
-  const edgeSource = map.getSource(EDGE_SOURCE_ID) as GeoJSONSource | undefined;
-  edgeSource?.setData(buildEdgeFeatures(data, tab));
+  let prev = initial;
+  const unsubscribe = store.subscribe((state) => {
+    // filters — новый объект только когда его реально меняли (Store.set
+    // мержит патч поверх состояния, не трогая поля вне патча), поэтому
+    // сравнение по ссылке здесь корректно и дешевле глубокого сравнения.
+    if (state.tab === prev.tab && state.lang === prev.lang && state.filters === prev.filters) return;
+    prev = state;
+    refreshGraphLayers(map, data, state.lang, state.tab, state.filters);
+  });
+
+  return unsubscribe;
 }

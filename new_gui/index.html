@@ -11,7 +11,11 @@
          занимает всё оставшееся место. Общая тема light/dark и палитра
          (core/colors.ts) — отдельный следующий шаг, здесь только layout. */
       #app { display: flex; height: 100%; }
-      #sidebar { width: 280px; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid #c4c4c4; }
+      /* overflow-x: hidden — подстраховка: если внутри забудут про
+         min-width: 0 на новом flex-элементе (как уже дважды случалось —
+         см. .filter-row input и .tab-list-item__label ниже), контент
+         обрежется по границе сайдбара, а не вылезет поверх карты. */
+      #sidebar { width: 280px; flex-shrink: 0; overflow-x: hidden; display: flex; flex-direction: column; border-right: 1px solid #c4c4c4; }
       #map { flex: 1; min-width: 0; }
 
       /* Кнопки переключения вкладок — по одной на каждый TabModule из
@@ -28,6 +32,19 @@
         border-bottom: 2px solid transparent;
       }
       #tab-buttons button.tab-button--active { border-bottom-color: #3555e0; font-weight: 600; }
+
+      /* Регуляторы порогов фильтрации (features/filters.ts) — видны только
+         для вкладок, у которых вообще есть фильтр (сейчас 1 и 3). */
+      #filter-bar { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border-bottom: 1px solid #c4c4c4; }
+      #filter-bar[hidden] { display: none; }
+      .filter-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+      .filter-row__label { flex-shrink: 0; color: #616161; }
+      /* min-width: 0 обязателен — без него flex-элемент с nowrap-содержимым
+         (тут это встроенный вид ползунка) не сжимается меньше своей
+         "естественной" ширины и выталкивает строку за пределы сайдбара,
+         когда подпись слева длинная (например "Мин. общих авторов"). */
+      .filter-row input[type="range"] { flex: 1; min-width: 0; }
+      .filter-row__value { flex-shrink: 0; min-width: 2.5em; text-align: right; }
 
       /* Список карточек внутри активной вкладки — отрисовывается через
          core/render.ts::renderList(), см. features/tabs/authors.ts. */
@@ -47,7 +64,12 @@
       }
       .tab-list-item:hover { background: #f2f2f2; }
       .tab-list-item--selected { background: #e8ecfc; }
-      .tab-list-item__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      /* min-width: 0 — та же причина, что у .filter-row input выше: без
+         него текст с white-space: nowrap не сжимается и вылезает за край
+         строки (в поиске это выглядело как "буквы не отображаются" —
+         текст на самом деле рисовался, просто за пределами видимой
+         ширины сайдбара). */
+      .tab-list-item__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .tab-list-item__meta { flex-shrink: 0; color: #616161; }
 
       /* Вкладка "Поиск" (features/tabs/search.ts): поле ввода "прилипает"
@@ -111,6 +133,9 @@
           <button type="button" data-tab="3">Публикации</button>
           <button type="button" data-tab="4">Поиск</button>
         </nav>
+        <!-- Заполняется через features/filters.ts::mountFilters(); пусто и
+             скрыто, пока не смонтирована активная вкладка с фильтром. -->
+        <div id="filter-bar" hidden></div>
         <div id="tab-content"></div>
       </aside>
       <div id="map"></div>

@@ -1,22 +1,37 @@
-import { describe, expect, it } from "vitest";
-import { buildEdgeFeatures, buildNodeFeatures, nodeBounds } from "../src/map/build";
+import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
+import { describe, expect, it, vi } from "vitest";
 import { loadSampleGraphData } from "../src/core/data";
+import { Store, type AppState } from "../src/core/state";
+import { buildEdgeFeatures, buildNodeFeatures, mountReactiveGraph, nodeBounds } from "../src/map/build";
+
+// Пороги, которые ничего не отсекают — для тестов, где фильтрация не в фокусе.
+const NO_FILTER = { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026 };
+
+function initialState(overrides: Partial<AppState> = {}): AppState {
+  return {
+    tab: 1,
+    lang: "ru",
+    selection: null,
+    filters: NO_FILTER,
+    ...overrides,
+  };
+}
 
 describe("map/build на фикстур-данных", () => {
   it("buildNodeFeatures отдаёт только узлы вкладки, а не всех сущностей сразу", async () => {
     const data = await loadSampleGraphData();
 
     // Три разных графа — авторы/репозитории/публикации не смешиваются в одной вкладке.
-    expect(buildNodeFeatures(data, "ru", 1).features).toHaveLength(data.authors.length);
-    expect(buildNodeFeatures(data, "ru", 2).features).toHaveLength(data.repos.length);
-    expect(buildNodeFeatures(data, "ru", 3).features).toHaveLength(data.pubs.length);
+    expect(buildNodeFeatures(data, "ru", 1, NO_FILTER).features).toHaveLength(data.authors.length);
+    expect(buildNodeFeatures(data, "ru", 2, NO_FILTER).features).toHaveLength(data.repos.length);
+    expect(buildNodeFeatures(data, "ru", 3, NO_FILTER).features).toHaveLength(data.pubs.length);
     // Вкладка 4 (поиск) не привязана ни к одному из трёх графов — карта пуста.
-    expect(buildNodeFeatures(data, "ru", 4).features).toHaveLength(0);
+    expect(buildNodeFeatures(data, "ru", 4, NO_FILTER).features).toHaveLength(0);
   });
 
   it("buildNodeFeatures красит узлы цветом их департамента", async () => {
     const data = await loadSampleGraphData();
-    const fc = buildNodeFeatures(data, "ru", 1);
+    const fc = buildNodeFeatures(data, "ru", 1, NO_FILTER);
     const deptColor = new Map(data.departments.map((d) => [d.id, d.color]));
 
     for (const feature of fc.features) {
@@ -28,16 +43,47 @@ describe("map/build на фикстур-данных", () => {
   it("buildEdgeFeatures отдаёт рёбра только своей вкладки", async () => {
     const data = await loadSampleGraphData();
 
-    expect(buildEdgeFeatures(data, 1).features).toHaveLength(data.coauth_edges.length);
-    expect(buildEdgeFeatures(data, 2).features).toHaveLength(data.repo_edges.length);
-    expect(buildEdgeFeatures(data, 3).features).toHaveLength(data.pub_edges.length);
-    expect(buildEdgeFeatures(data, 4).features).toHaveLength(0);
+    expect(buildEdgeFeatures(data, 1, NO_FILTER).features).toHaveLength(data.coauth_edges.length);
+    expect(buildEdgeFeatures(data, 2, NO_FILTER).features).toHaveLength(data.repo_edges.length);
+    expect(buildEdgeFeatures(data, 3, NO_FILTER).features).toHaveLength(data.pub_edges.length);
+    expect(buildEdgeFeatures(data, 4, NO_FILTER).features).toHaveLength(0);
   });
 
   it("buildEdgeFeatures пропускает рёбра без резолвящихся позиций", async () => {
     const data = await loadSampleGraphData();
     // Во фикстуре все s/t у coauth-рёбер существуют как узлы — ничего не отфильтровано.
-    expect(buildEdgeFeatures(data, 1).features).toHaveLength(data.coauth_edges.length);
+    expect(buildEdgeFeatures(data, 1, NO_FILTER).features).toHaveLength(data.coauth_edges.length);
+  });
+
+  it("filters.minCoauth скрывает слабые связи соавторства на вкладке 1", async () => {
+    const data = await loadSampleGraphData();
+    const strong = data.coauth_edges.filter((e) => e.w >= 2).length;
+
+    expect(buildEdgeFeatures(data, 1, { ...NO_FILTER, minCoauth: 2 }).features).toHaveLength(strong);
+    expect(strong).toBeLessThan(data.coauth_edges.length); // проверка, что фикстура вообще даёт разброс весов
+  });
+
+  it("filters.minSharedAuthors скрывает слабые связи публикаций на вкладке 3", async () => {
+    const data = await loadSampleGraphData();
+    const strong = data.pub_edges.filter((e) => e.w >= 2).length;
+
+    expect(buildEdgeFeatures(data, 3, { ...NO_FILTER, minSharedAuthors: 2 }).features).toHaveLength(strong);
+  });
+
+  it("filters.yearMax скрывает публикации позже указанного года, но не публикации без известного года", async () => {
+    const data = await loadSampleGraphData();
+    const filters = { ...NO_FILTER, yearMax: 2022 };
+    const expectedPubs = data.pubs.filter((p) => p.year === null || p.year <= 2022);
+
+    const nodeKeys = buildNodeFeatures(data, "ru", 3, filters).features.map((f) => f.properties.key);
+    expect(nodeKeys.sort()).toEqual(expectedPubs.map((p) => p.key).sort());
+    expect(expectedPubs.some((p) => p.year === null)).toBe(true); // фикстура правда содержит пример без года
+
+    // Ребро между публикациями, у одной из которых год скрыт фильтром, тоже пропадает.
+    for (const feature of buildEdgeFeatures(data, 3, filters).features) {
+      expect(nodeKeys).toContain(feature.properties.s);
+      expect(nodeKeys).toContain(feature.properties.t);
+    }
   });
 
   it("nodeBounds охватывает координаты всех узлов, а не только текущей вкладки", async () => {
@@ -51,5 +97,39 @@ describe("map/build на фикстур-данных", () => {
       expect(node.gy).toBeGreaterThanOrEqual(minLat);
       expect(node.gy).toBeLessThanOrEqual(maxLat);
     }
+  });
+});
+
+describe("mountReactiveGraph", () => {
+  function fakeMapWithSource(): { map: MapLibreMap; setData: ReturnType<typeof vi.fn> } {
+    const setData = vi.fn();
+    const map = {
+      addSource: vi.fn(),
+      addLayer: vi.fn(),
+      getSource: () => ({ setData }) as unknown as GeoJSONSource,
+    } as unknown as MapLibreMap;
+    return { map, setData };
+  }
+
+  it("рисует граф один раз при монтировании и пересобирает его при смене tab/lang/filters, но не при смене selection", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState());
+    const { map, setData } = fakeMapWithSource();
+
+    mountReactiveGraph(map, store, data);
+    expect(map.addSource).toHaveBeenCalledTimes(2); // узлы + рёбра
+    expect(setData).not.toHaveBeenCalled();
+
+    store.set({ selection: { kind: "node", key: "A1" } });
+    expect(setData).not.toHaveBeenCalled(); // выбор — не повод пересобирать граф
+
+    store.set({ tab: 2 });
+    expect(setData).toHaveBeenCalledTimes(2); // узлы + рёбра пересобраны под новую вкладку
+
+    store.set({ lang: "en" });
+    expect(setData).toHaveBeenCalledTimes(4);
+
+    store.set({ filters: { ...store.get().filters, minCoauth: 5 } });
+    expect(setData).toHaveBeenCalledTimes(6);
   });
 });

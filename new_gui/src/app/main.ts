@@ -12,11 +12,12 @@ import { MAP_CONFIG } from "../core/config";
 import { loadSampleGraphData } from "../core/data";
 import { requireElement } from "../core/dom";
 import { Store, type AppState } from "../core/state";
+import { mountFilters } from "../features/filters";
 import { mountLangToggle } from "../features/langToggle";
 import { mountPanel } from "../features/panels";
 import { mountSelection } from "../features/selection";
 import { mountTabs } from "../features/tabs";
-import { mountGraphLayers, nodeBounds } from "../map/build";
+import { mountReactiveGraph, nodeBounds } from "../map/build";
 
 setWorkerUrl(workerUrl);
 
@@ -29,7 +30,7 @@ const store = new Store<AppState>({
   tab: 1,
   lang: "ru",
   selection: null,
-  filters: { minCoauth: 1, minPubAuthors: 1, yearMax: new Date().getFullYear() },
+  filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: new Date().getFullYear() },
 });
 
 // Тот же placeholder-стиль, что и в старом GUI: это не географическая
@@ -61,22 +62,26 @@ map.addControl(new NavigationControl({ showCompass: false }), "bottom-left");
 map.on("load", () => {
   loadSampleGraphData()
     .then((data) => {
-      mountGraphLayers(map, data, store.get().lang, store.get().tab);
+      // mountReactiveGraph рисует граф под текущие tab/lang/filters и сама
+      // следит за store дальше — остальным фичам достаточно менять
+      // store.tab/lang/filters, не заботясь о том, что ещё перерисовать.
+      mountReactiveGraph(map, store, data);
       map.fitBounds(nodeBounds(data), { padding: MAP_CONFIG.fitPadding, animate: false });
 
       // mountSelection слушает клики по карте и пишет выбор в store;
       // mountPanel слушает store и рисует карточку; mountTabs слушает клики
-      // по кнопкам вкладок и переключает список в сайдбаре; mountLangToggle
-      // слушает клик по кнопке языка и пишет lang в store. Они не знают
-      // друг о друге напрямую — связь только через общий Store. Функции
-      // отписки (unmount) не вызываются: все они живут всё время работы
-      // страницы — здесь ничего не пересоздаётся поверх них самих (внутри
-      // mountTabs свои unmount вызываются при смене вкладки — это
-      // устройство самой этой фичи).
+      // по кнопкам вкладок и переключает список в сайдбаре; mountFilters —
+      // регуляторы порогов; mountLangToggle слушает клик по кнопке языка.
+      // Они не знают друг о друге напрямую — связь только через общий
+      // Store. Функции отписки (unmount) не вызываются: все они живут всё
+      // время работы страницы — здесь ничего не пересоздаётся поверх них
+      // самих (внутри mountTabs свои unmount вызываются при смене вкладки —
+      // это устройство самой этой фичи).
       mountSelection(map, store);
       mountPanel(store, data);
       mountTabs(requireElement("tab-buttons"), requireElement("tab-content"), store, map, data);
-      mountLangToggle(store, map, data);
+      mountFilters(store);
+      mountLangToggle(store);
 
       console.info("Граф отрисован:", {
         департаменты: data.departments.length,

@@ -14,7 +14,7 @@ function initialState(): AppState {
     tab: 4,
     lang: "ru",
     selection: null,
-    filters: { minCoauth: 1, minPubAuthors: 1, yearMax: 2026 },
+    filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026 },
   };
 }
 

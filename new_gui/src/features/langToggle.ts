@@ -1,17 +1,15 @@
-import type { Map as MapLibreMap } from "maplibre-gl";
-import type { GraphData } from "../contracts/graph";
 import { requireElement } from "../core/dom";
 import { t } from "../core/i18n";
 import type { AppState, Store } from "../core/state";
-import { refreshGraphForTab } from "../map/build";
 
 /**
  * Кнопка переключения языка — единственное место в приложении, которое
- * пишет в state.lang. Все остальные фичи (панель, вкладки, карта) только
- * читают lang из подписки на Store, не знают друг о друге и не хранят
- * язык у себя — источник правды один.
+ * пишет в state.lang. Все остальные фичи (панель, вкладки, карта через
+ * map/build.ts::mountReactiveGraph) сами следят за store.lang и
+ * перерисовываются — эта функция ничего, кроме store.set(), не делает,
+ * и поэтому ей не нужны ни map, ни data.
  */
-export function mountLangToggle(store: Store<AppState>, map: MapLibreMap, data: GraphData): () => void {
+export function mountLangToggle(store: Store<AppState>): () => void {
   const button = requireElement("lang-toggle");
 
   function render(state: AppState): void {
@@ -21,12 +19,7 @@ export function mountLangToggle(store: Store<AppState>, map: MapLibreMap, data: 
   }
 
   function onClick(): void {
-    const nextLang = store.get().lang === "ru" ? "en" : "ru";
-    store.set({ lang: nextLang });
-    // properties узлов/рёбер на карте не обновляются сами через подписку
-    // на Store (в отличие от DOM-фич) — это отдельные GeoJSON-источники,
-    // их нужно пересобрать явно, для той же вкладки, что активна сейчас.
-    refreshGraphForTab(map, data, nextLang, store.get().tab);
+    store.set({ lang: store.get().lang === "ru" ? "en" : "ru" });
   }
 
   button.addEventListener("click", onClick);

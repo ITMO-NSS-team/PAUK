@@ -28,10 +28,20 @@ export interface AppState {
   tab: TabId;
   lang: "ru" | "en";
   selection: Selection;
-  // Пороги фильтров (например, "показывать только соавторство с весом
-  // не меньше N") — значения по умолчанию задаются при создании Store
-  // в main.ts, здесь только форма.
-  filters: { minCoauth: number; minPubAuthors: number; yearMax: number };
+  /**
+   * Пороги фильтров рёбер/узлов на карте — применяются в map/build.ts,
+   * управляются из features/filters.ts. Значения по умолчанию задаются
+   * при создании Store в main.ts, здесь только форма.
+   * - minCoauth — вкладка "Авторы": скрыть связи соавторства слабее N
+   *   совместных публикаций (coauth_edges.w).
+   * - minSharedAuthors — вкладка "Публикации": скрыть связи между
+   *   публикациями слабее N общих авторов (pub_edges.w). НЕ "число
+   *   авторов у одной публикации" — раньше поле было названо
+   *   minPubAuthors, что описывало не то, что оно реально фильтрует.
+   * - yearMax — вкладка "Публикации": скрыть публикации (и их рёбра)
+   *   позже этого года.
+   */
+  filters: { minCoauth: number; minSharedAuthors: number; yearMax: number };
 }
 
 /**

@@ -13,9 +13,7 @@ import { reposTab } from "../src/features/tabs/repos";
  * поэтому подставляем минимальную заглушку вместо реальной карты.
  */
 function fakeMap(): MapLibreMap {
-  // getSource — нужен mountTabs()/activateTab(), которая при смене вкладки
-  // просит карту пересобрать граф через refreshGraphForTab().
-  return { flyTo: vi.fn(), getSource: () => ({ setData: vi.fn() }) } as unknown as MapLibreMap;
+  return { flyTo: vi.fn() } as unknown as MapLibreMap;
 }
 
 function initialState(): AppState {
@@ -23,7 +21,7 @@ function initialState(): AppState {
     tab: 1,
     lang: "ru",
     selection: null,
-    filters: { minCoauth: 1, minPubAuthors: 1, yearMax: 2026 },
+    filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026 },
   };
 }
 

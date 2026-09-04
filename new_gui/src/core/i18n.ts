@@ -54,7 +54,10 @@ export type LocaleKey =
   | "field.total"
   | "search.placeholder"
   | "search.pubsCountShort"
-  | "lang.toggle";
+  | "lang.toggle"
+  | "filter.coauth"
+  | "filter.sharedAuthors"
+  | "filter.yearMax";
 
 const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
   ru: {
@@ -85,6 +88,9 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "search.placeholder": "Поиск по авторам, репозиториям, публикациям, департаментам…",
     "search.pubsCountShort": "публ.",
     "lang.toggle": "EN",
+    "filter.coauth": "Мин. соавторство",
+    "filter.sharedAuthors": "Мин. общих авторов",
+    "filter.yearMax": "До года",
   },
   en: {
     "tab.authors": "Authors",
@@ -114,6 +120,9 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "search.placeholder": "Search authors, repositories, publications, departments…",
     "search.pubsCountShort": "pubs",
     "lang.toggle": "RU",
+    "filter.coauth": "Min. co-authorship",
+    "filter.sharedAuthors": "Min. shared authors",
+    "filter.yearMax": "Up to year",
   },
 };
 
