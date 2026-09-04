@@ -5,10 +5,8 @@
 
 import type { GraphData } from "../contracts/graph";
 import { indexByKey, nodeLabel } from "../core/data";
+import { requireElement } from "../core/dom";
 import type { AppState, Store } from "../core/state";
-
-/** id контейнера в index.html, куда рисуется панель — если его там нет, это ошибка вёрстки, а не тихий сбой. */
-const PANEL_ID = "panel";
 
 /**
  * Подключает панель информации: подписывается на Store и перерисовывает
@@ -16,17 +14,7 @@ const PANEL_ID = "panel";
  * функцию отписки (unmount).
  */
 export function mountPanel(store: Store<AppState>, data: GraphData): () => void {
-  const maybeContainer = document.getElementById(PANEL_ID);
-  if (!maybeContainer) {
-    // Явная ошибка вместо тихого "ничего не происходит" — так сразу видно
-    // в консоли, что забыли добавить <div id="panel"> в index.html.
-    throw new Error(`mountPanel: не найден элемент #${PANEL_ID} в index.html`);
-  }
-  // Отдельная переменная (не просто снятие "!" с maybeContainer) — TypeScript
-  // не переносит сужение типа через null-проверку внутрь функции render,
-  // объявленной ниже (замыкание могло бы вызваться в другой момент времени),
-  // поэтому нужна новая константа с уже точным типом HTMLElement.
-  const container: HTMLElement = maybeContainer;
+  const container = requireElement("panel");
 
   // Строится один раз при монтировании, а не на каждый рендер — поиск по
   // ключу должен быть мгновенным, а не пересчитывать индекс на каждый клик.

@@ -9,9 +9,11 @@ import { Map as MapLibreMap, NavigationControl, setWorkerUrl } from "maplibre-gl
 // где он реально лежит, и карта падает в рантайме с "file does not exist".
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { loadSampleGraphData } from "../core/data";
+import { requireElement } from "../core/dom";
 import { Store, type AppState } from "../core/state";
-import { mountSelection } from "../features/selection";
 import { mountPanel } from "../features/panels";
+import { mountSelection } from "../features/selection";
+import { mountTabs } from "../features/tabs";
 import { mountGraphLayers, nodeBounds } from "../map/build";
 
 setWorkerUrl(workerUrl);
@@ -62,13 +64,16 @@ map.on("load", () => {
       map.fitBounds(nodeBounds(data), { padding: 40, animate: false });
 
       // mountSelection слушает клики по карте и пишет выбор в store;
-      // mountPanel слушает store и рисует карточку — они не знают друг
-      // о друге напрямую, связь только через общий Store. Ни одна из
-      // этих функций пока не вызывает возвращённую функцию отписки —
-      // на этом шаге фичи живут всё время работы страницы, без
-      // переключения вкладок, которое потребовало бы unmount.
+      // mountPanel слушает store и рисует карточку; mountTabs слушает клики
+      // по кнопкам вкладок и переключает список в сайдбаре. Они не знают
+      // друг о друге напрямую — связь только через общий Store. Функции
+      // отписки (unmount) от mountSelection/mountPanel/mountTabs не
+      // вызываются: все три живут всё время работы страницы — здесь ничего
+      // не пересоздаётся поверх них самих (внутри mountTabs свои unmount
+      // вызываются при смене вкладки — это устройство самой этой фичи).
       mountSelection(map, store);
       mountPanel(store, data);
+      mountTabs(requireElement("tab-buttons"), requireElement("tab-content"), store, map, data);
 
       console.info("Граф отрисован:", {
         департаменты: data.departments.length,
