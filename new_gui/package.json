@@ -32,7 +32,6 @@
     "vitest": "^5.0.0"
   },
   "dependencies": {
-    "d3-delaunay": "^6.0.4",
     "maplibre-gl": "^6.7.0"
   }
 }
