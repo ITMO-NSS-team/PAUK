@@ -3,30 +3,44 @@ import { buildEdgeFeatures, buildNodeFeatures, nodeBounds } from "../src/map/bui
 import { loadSampleGraphData } from "../src/core/data";
 
 describe("map/build на фикстур-данных", () => {
-  it("buildNodeFeatures отдаёт по одной точке на каждый узел, окрашенную по департаменту", async () => {
+  it("buildNodeFeatures отдаёт только узлы вкладки, а не всех сущностей сразу", async () => {
     const data = await loadSampleGraphData();
-    const fc = buildNodeFeatures(data, "ru");
 
-    const expectedCount = data.authors.length + data.repos.length + data.pubs.length;
-    expect(fc.features).toHaveLength(expectedCount);
+    // Три разных графа — авторы/репозитории/публикации не смешиваются в одной вкладке.
+    expect(buildNodeFeatures(data, "ru", 1).features).toHaveLength(data.authors.length);
+    expect(buildNodeFeatures(data, "ru", 2).features).toHaveLength(data.repos.length);
+    expect(buildNodeFeatures(data, "ru", 3).features).toHaveLength(data.pubs.length);
+    // Вкладка 4 (поиск) не привязана ни к одному из трёх графов — карта пуста.
+    expect(buildNodeFeatures(data, "ru", 4).features).toHaveLength(0);
+  });
 
+  it("buildNodeFeatures красит узлы цветом их департамента", async () => {
+    const data = await loadSampleGraphData();
+    const fc = buildNodeFeatures(data, "ru", 1);
     const deptColor = new Map(data.departments.map((d) => [d.id, d.color]));
+
     for (const feature of fc.features) {
-      const node = [...data.authors, ...data.repos, ...data.pubs].find((n) => n.key === feature.properties.key);
-      expect(feature.properties.color).toBe(deptColor.get(node?.dept ?? -1));
+      const author = data.authors.find((a) => a.key === feature.properties.key);
+      expect(feature.properties.color).toBe(deptColor.get(author?.dept ?? -1));
     }
+  });
+
+  it("buildEdgeFeatures отдаёт рёбра только своей вкладки", async () => {
+    const data = await loadSampleGraphData();
+
+    expect(buildEdgeFeatures(data, 1).features).toHaveLength(data.coauth_edges.length);
+    expect(buildEdgeFeatures(data, 2).features).toHaveLength(data.repo_edges.length);
+    expect(buildEdgeFeatures(data, 3).features).toHaveLength(data.pub_edges.length);
+    expect(buildEdgeFeatures(data, 4).features).toHaveLength(0);
   });
 
   it("buildEdgeFeatures пропускает рёбра без резолвящихся позиций", async () => {
     const data = await loadSampleGraphData();
-    const fc = buildEdgeFeatures(data);
-
-    // Во фикстуре все s/t у coauth/repo/pub-рёбер существуют как узлы.
-    const expectedCount = data.coauth_edges.length + data.repo_edges.length + data.pub_edges.length;
-    expect(fc.features).toHaveLength(expectedCount);
+    // Во фикстуре все s/t у coauth-рёбер существуют как узлы — ничего не отфильтровано.
+    expect(buildEdgeFeatures(data, 1).features).toHaveLength(data.coauth_edges.length);
   });
 
-  it("nodeBounds охватывает координаты всех узлов", async () => {
+  it("nodeBounds охватывает координаты всех узлов, а не только текущей вкладки", async () => {
     const data = await loadSampleGraphData();
     const [[minLon, minLat], [maxLon, maxLat]] = nodeBounds(data);
     const nodes = [...data.authors, ...data.repos, ...data.pubs];

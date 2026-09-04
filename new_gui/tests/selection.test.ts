@@ -2,7 +2,7 @@ import type { GeoJSONFeature, Map as MapLibreMap, MapMouseEvent } from "maplibre
 import { describe, expect, it, vi } from "vitest";
 import { Store, type AppState } from "../src/core/state";
 import { mountSelection } from "../src/features/selection";
-import { EDGE_LAYER_ID, NODE_LAYER_ID } from "../src/map/build";
+import { EDGE_HIT_LAYER_ID, NODE_LAYER_ID } from "../src/map/build";
 
 function initialState(): AppState {
   return {
@@ -61,7 +61,7 @@ describe("mountSelection", () => {
 
   it("клик по ребру (без узла под курсором) выбирает ребро", () => {
     const store = new Store<AppState>(initialState());
-    const { map, click } = fakeMap({ [EDGE_LAYER_ID]: edgeFeature("A1", "A2", 3) });
+    const { map, click } = fakeMap({ [EDGE_HIT_LAYER_ID]: edgeFeature("A1", "A2", 3) });
 
     mountSelection(map, store);
     click();
@@ -73,7 +73,7 @@ describe("mountSelection", () => {
     const store = new Store<AppState>(initialState());
     const { map, click } = fakeMap({
       [NODE_LAYER_ID]: nodeFeature("A1"),
-      [EDGE_LAYER_ID]: edgeFeature("A1", "A2", 3),
+      [EDGE_HIT_LAYER_ID]: edgeFeature("A1", "A2", 3),
     });
 
     mountSelection(map, store);

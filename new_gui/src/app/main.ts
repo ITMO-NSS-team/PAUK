@@ -60,7 +60,7 @@ map.addControl(new NavigationControl({ showCompass: false }), "bottom-left");
 map.on("load", () => {
   loadSampleGraphData()
     .then((data) => {
-      mountGraphLayers(map, data, store.get().lang);
+      mountGraphLayers(map, data, store.get().lang, store.get().tab);
       map.fitBounds(nodeBounds(data), { padding: 40, animate: false });
 
       // mountSelection слушает клики по карте и пишет выбор в store;

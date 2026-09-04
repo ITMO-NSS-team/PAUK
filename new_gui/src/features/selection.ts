@@ -5,15 +5,17 @@
 
 import type { Map as MapLibreMap, MapMouseEvent } from "maplibre-gl";
 import type { AppState, Store } from "../core/state";
-import { EDGE_LAYER_ID, NODE_LAYER_ID, setSelectedNode } from "../map/build";
+import { EDGE_HIT_LAYER_ID, NODE_LAYER_ID, setSelectedNode } from "../map/build";
 
 /**
  * Подключает выбор узла/ребра кликом по карте: клик по точке — выбрать
- * узел, клик по линии (если под курсором нет узла) — выбрать ребро, клик
- * по пустому месту — снять выбор. Узел приоритетнее ребра: узлы рисуются
- * поверх линий (см. порядок addLayer в map/build.ts), поэтому клик рядом
- * с пересечением узла и ребра ожидаемо выбирает узел. Курсор меняется на
- * "руку" при наведении на узел — обычная подсказка "тут можно кликнуть".
+ * узел, клик рядом с линией (в пределах невидимого широкого EDGE_HIT_LAYER_ID
+ * из map/build.ts, а не видимой тонкой линии) — выбрать ребро, клик по
+ * пустому месту — снять выбор. Узел проверяется первым и безусловно
+ * приоритетнее ребра: даже там, где широкая область клика ребра
+ * перекрывает узел, клик по самому узлу должен выбирать именно узел.
+ * Курсор меняется на "руку" при наведении на узел ИЛИ на область ребра —
+ * без этого непонятно, что тонкую линию вообще можно выбрать.
  *
  * Возвращает функцию отписки (unmount) — снимает все обработчики событий
  * с карты, чтобы при пересборке фичи (например, смене вкладки) не
@@ -31,7 +33,7 @@ export function mountSelection(map: MapLibreMap, store: Store<AppState>): () => 
       return;
     }
 
-    const edgeFeature = map.queryRenderedFeatures(event.point, { layers: [EDGE_LAYER_ID] })[0];
+    const edgeFeature = map.queryRenderedFeatures(event.point, { layers: [EDGE_HIT_LAYER_ID] })[0];
     const edgeProps = edgeFeature?.properties as { s?: string; t?: string; w?: number } | undefined;
     if (edgeProps?.s && edgeProps.t && typeof edgeProps.w === "number") {
       store.set({ selection: { kind: "edge", s: edgeProps.s, t: edgeProps.t, w: edgeProps.w } });
@@ -41,20 +43,23 @@ export function mountSelection(map: MapLibreMap, store: Store<AppState>): () => 
     store.set({ selection: null });
   }
 
-  function onEnterNode(): void {
+  function onEnterInteractive(): void {
     map.getCanvas().style.cursor = "pointer";
   }
 
-  function onLeaveNode(): void {
+  function onLeaveInteractive(): void {
     map.getCanvas().style.cursor = "";
   }
 
   // Обычный клик по карте (не по конкретному слою) — единая точка входа и
   // для выбора узла/ребра, и для снятия выбора, поэтому не нужен отдельный
-  // обработчик "клик по пустому месту".
+  // обработчик "клик по пустому месту". Курсор — один и тот же обработчик
+  // на оба слоя, поведение при наведении одинаковое что на узел, что на ребро.
   map.on("click", onClick);
-  map.on("mouseenter", NODE_LAYER_ID, onEnterNode);
-  map.on("mouseleave", NODE_LAYER_ID, onLeaveNode);
+  map.on("mouseenter", NODE_LAYER_ID, onEnterInteractive);
+  map.on("mouseleave", NODE_LAYER_ID, onLeaveInteractive);
+  map.on("mouseenter", EDGE_HIT_LAYER_ID, onEnterInteractive);
+  map.on("mouseleave", EDGE_HIT_LAYER_ID, onLeaveInteractive);
 
   // Подписка на Store: как только selection в состоянии меняется (в том
   // числе не из-за клика по карте, а, например, из поиска), карта
@@ -67,8 +72,10 @@ export function mountSelection(map: MapLibreMap, store: Store<AppState>): () => 
 
   return () => {
     map.off("click", onClick);
-    map.off("mouseenter", NODE_LAYER_ID, onEnterNode);
-    map.off("mouseleave", NODE_LAYER_ID, onLeaveNode);
+    map.off("mouseenter", NODE_LAYER_ID, onEnterInteractive);
+    map.off("mouseleave", NODE_LAYER_ID, onLeaveInteractive);
+    map.off("mouseenter", EDGE_HIT_LAYER_ID, onEnterInteractive);
+    map.off("mouseleave", EDGE_HIT_LAYER_ID, onLeaveInteractive);
     unsubscribe();
   };
 }

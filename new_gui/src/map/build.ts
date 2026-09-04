@@ -2,12 +2,20 @@
 // Логика интерпретации данных (какая подпись у узла, как искать узел по
 // ключу) живёт в core/data.ts — этот файл только про геометрию и слои
 // карты, ничего не решает про сами данные.
+//
+// Важно: карта показывает не всё сразу, а один из ТРЁХ РАЗНЫХ ГРАФОВ —
+// какой набор узлов/рёбер рисовать, зависит от активной вкладки, ровно
+// как tabNodes()/tabEdges() в старом core.js: вкладка "Авторы" — только
+// авторы и соавторство, "Репозитории" — только репозитории и их связи,
+// "Публикации" — только публикации. Показывать все сущности одновременно
+// было бы другим (и неверным) поведением, а не тем же графом "покрасивее".
 
 import type { Feature, FeatureCollection, LineString, Point } from "geojson";
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import type { AuthorNode, Edge, GraphData, PubNode, RepoNode } from "../contracts/graph";
 import { nodeLabel } from "../core/data";
 import type { Lang } from "../core/i18n";
+import type { TabId } from "../core/state";
 
 type GraphNode = AuthorNode | RepoNode | PubNode;
 
@@ -19,16 +27,44 @@ interface NodeProps {
   color: string;
 }
 
-/** Свойства ребра: s/t — ключи узлов на концах (нужны, чтобы построить Selection по клику), w — вес (для будущей толщины линии, сейчас линия одной толщины). */
+/** Свойства ребра: s/t — ключи узлов на концах (нужны, чтобы построить Selection по клику), w — вес. */
 interface EdgeProps {
   s: string;
   t: string;
   w: number;
 }
 
-/** Все три вида узлов в одном списке — раздельная отрисовка по kind делает уже слой карты, не эта функция. */
+/** Все три вида узлов сразу — нужно только для nodeBounds() (общая рамка камеры) и для поиска позиций концов ребра, не для отрисовки. */
 function allNodes(data: GraphData): GraphNode[] {
   return [...data.authors, ...data.repos, ...data.pubs];
+}
+
+/** Какие узлы показывает вкладка. Вкладки 4 (поиск) — пустой список, карта не привязана ни к одному из трёх графов. */
+function tabGraphNodes(data: GraphData, tab: TabId): GraphNode[] {
+  switch (tab) {
+    case 1:
+      return data.authors;
+    case 2:
+      return data.repos;
+    case 3:
+      return data.pubs;
+    default:
+      return [];
+  }
+}
+
+/** Какие рёбра показывает вкладка — см. tabGraphNodes(), тот же принцип. */
+function tabGraphEdges(data: GraphData, tab: TabId): Edge[] {
+  switch (tab) {
+    case 1:
+      return data.coauth_edges;
+    case 2:
+      return data.repo_edges;
+    case 3:
+      return data.pub_edges;
+    default:
+      return [];
+  }
 }
 
 /**
@@ -36,12 +72,12 @@ function allNodes(data: GraphData): GraphNode[] {
  * (core/colors.ts с этой логикой — отдельный следующий шаг), только базовая
  * раскраска, чтобы точки на карте были различимы по департаментам.
  */
-export function buildNodeFeatures(data: GraphData, lang: Lang): FeatureCollection<Point, NodeProps> {
+export function buildNodeFeatures(data: GraphData, lang: Lang, tab: TabId): FeatureCollection<Point, NodeProps> {
   // Map по id департамента, а не поиск в массиве на каждый узел —
   // департаментов немного, но узлов может быть тысячи.
   const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
 
-  const features: Feature<Point, NodeProps>[] = allNodes(data).map((node) => ({
+  const features: Feature<Point, NodeProps>[] = tabGraphNodes(data, tab).map((node) => ({
     type: "Feature",
     // id нужен, чтобы MapLibre мог адресовать конкретную фичу (например,
     // для будущей подсветки через feature-state), а не только через
@@ -61,17 +97,17 @@ export function buildNodeFeatures(data: GraphData, lang: Lang): FeatureCollectio
 }
 
 /**
- * Рёбра — только те, для которых есть обе позиции. Связи репозиторий-автор
- * и репозиторий-публикация без веса (w) сюда не входят — это отдельные
- * визуальные слои, добавим при необходимости.
+ * Рёбра текущей вкладки — только те, для которых есть обе позиции.
+ * Позиции ищем среди ВСЕХ узлов (allNodes), а не только узлов текущей
+ * вкладки — концы ребра всегда того же вида, что и сама вкладка (например,
+ * coauth_edges всегда между авторами), так что это не смешивает графы,
+ * а просто самый простой способ получить карту "ключ -> координаты".
  */
-export function buildEdgeFeatures(data: GraphData): FeatureCollection<LineString, EdgeProps> {
+export function buildEdgeFeatures(data: GraphData, tab: TabId): FeatureCollection<LineString, EdgeProps> {
   const posByKey = new Map(allNodes(data).map((node) => [node.key, [node.gx, node.gy] as [number, number]]));
 
-  const weightedEdges: Edge[] = [...data.coauth_edges, ...data.repo_edges, ...data.pub_edges];
-
   const features: Feature<LineString, EdgeProps>[] = [];
-  for (const edge of weightedEdges) {
+  for (const edge of tabGraphEdges(data, tab)) {
     const s = posByKey.get(edge.s);
     const t = posByKey.get(edge.t);
     // Ребро без одной из позиций значит, что второй конец не попал в
@@ -90,10 +126,10 @@ export function buildEdgeFeatures(data: GraphData): FeatureCollection<LineString
 }
 
 /**
- * Прямоугольник, охватывающий все узлы — координаты gx/gy не привязаны
- * к реальной географии и их диапазон зависит от раскладки (у фикстуры он
- * крошечный, у настоящих данных — намного больше), поэтому карту нужно
- * подстраивать под данные явно, а не полагаться на фиксированный zoom.
+ * Прямоугольник, охватывающий вообще все узлы (а не только текущей
+ * вкладки) — камера подгоняется под него один раз при загрузке и больше
+ * не трогается при переключении вкладок (так же вело себя старое
+ * main.js: fitBounds там был на фиксированный box, общий для всех вкладок).
  */
 export function nodeBounds(data: GraphData): [[number, number], [number, number]] {
   const nodes = allNodes(data);
@@ -110,8 +146,13 @@ export function nodeBounds(data: GraphData): [[number, number], [number, number]
 // подсветки, чтобы не дублировать строки-литералы в двух файлах.
 export const NODE_LAYER_ID = "graph-nodes-circle";
 export const EDGE_LAYER_ID = "graph-edges-line";
+// Невидимый слой поверх того же источника — шире видимой линии, нужен
+// только для клика/наведения (features/selection.ts). Разделять "как
+// выглядит" и "где кликается" — стандартный приём для тонких линий:
+// сделать линию визуально тонкой, но реальную область попадания шире.
+export const EDGE_HIT_LAYER_ID = "graph-edges-hit";
 // Не экспортируем ID источников наружу — единственный код, которому они
-// нужны, это refreshNodeLabels() ниже, в этом же файле.
+// нужны, это refreshGraphForTab() ниже, в этом же файле.
 const NODE_SOURCE_ID = "graph-nodes";
 const EDGE_SOURCE_ID = "graph-edges";
 
@@ -122,20 +163,34 @@ const EDGE_SOURCE_ID = "graph-edges";
 const NO_SELECTION = "";
 
 /**
- * Добавляет узлы и рёбра графа на карту как источники и слои. Сам клик
- * (выбор узла) собирается отдельно в features/selection.ts — эта функция
- * только рисует, ничего не слушает. Вызывать один раз после map.on("load", ...).
+ * Добавляет узлы и рёбра текущей вкладки на карту как источники и слои.
+ * Сам клик (выбор узла/ребра) собирается отдельно в features/selection.ts —
+ * эта функция только рисует, ничего не слушает. Вызывать один раз после
+ * map.on("load", ...); дальнейшие смены вкладки/языка — через
+ * refreshGraphForTab() ниже, не через повторный вызов этой функции
+ * (addSource/addLayer второй раз на те же id упадёт с ошибкой).
  */
-export function mountGraphLayers(map: MapLibreMap, data: GraphData, lang: Lang): void {
-  map.addSource(EDGE_SOURCE_ID, { type: "geojson", data: buildEdgeFeatures(data) });
+export function mountGraphLayers(map: MapLibreMap, data: GraphData, lang: Lang, tab: TabId): void {
+  map.addSource(EDGE_SOURCE_ID, { type: "geojson", data: buildEdgeFeatures(data, tab) });
   map.addLayer({
     id: EDGE_LAYER_ID,
     type: "line",
     source: EDGE_SOURCE_ID,
     paint: { "line-color": "#9d9d9d", "line-width": 0.6, "line-opacity": 0.5 },
   });
+  // Тот же источник, полностью прозрачная линия в 14px — реальная область
+  // клика/наведения (см. features/selection.ts), сама видимая линия выше
+  // остаётся тонкой. Клик по узлу это не задевает: узловой слой
+  // запрашивается отдельно и первым (см. mountSelection), этот слой шире
+  // только для рёбер.
+  map.addLayer({
+    id: EDGE_HIT_LAYER_ID,
+    type: "line",
+    source: EDGE_SOURCE_ID,
+    paint: { "line-width": 14, "line-opacity": 0 },
+  });
 
-  map.addSource(NODE_SOURCE_ID, { type: "geojson", data: buildNodeFeatures(data, lang) });
+  map.addSource(NODE_SOURCE_ID, { type: "geojson", data: buildNodeFeatures(data, lang, tab) });
   map.addLayer({
     id: NODE_LAYER_ID,
     type: "circle",
@@ -164,13 +219,15 @@ export function setSelectedNode(map: MapLibreMap, key: string | null): void {
 }
 
 /**
- * Пересобирает properties.label узлов под новый язык — вызывается при
- * переключении lang. Свойство label сейчас нигде визуально не
- * используется (подписи на самой карте — overlay.ts, отдельный будущий
- * шаг), но держать его в актуальном состоянии дешевле, чем потом
- * вспоминать, что источник этого свойства мог протухнуть при смене языка.
+ * Пересобирает узлы и рёбра под новую вкладку и/или язык — вызывать при
+ * смене store.tab или store.lang. Заменяет прежний refreshNodeLabels():
+ * теперь один и тот же вызов нужен и для языка, и для смены графа, так
+ * что незачем было держать две отдельные функции обновления.
  */
-export function refreshNodeLabels(map: MapLibreMap, data: GraphData, lang: Lang): void {
-  const source = map.getSource(NODE_SOURCE_ID) as GeoJSONSource | undefined;
-  source?.setData(buildNodeFeatures(data, lang));
+export function refreshGraphForTab(map: MapLibreMap, data: GraphData, lang: Lang, tab: TabId): void {
+  const nodeSource = map.getSource(NODE_SOURCE_ID) as GeoJSONSource | undefined;
+  nodeSource?.setData(buildNodeFeatures(data, lang, tab));
+
+  const edgeSource = map.getSource(EDGE_SOURCE_ID) as GeoJSONSource | undefined;
+  edgeSource?.setData(buildEdgeFeatures(data, tab));
 }

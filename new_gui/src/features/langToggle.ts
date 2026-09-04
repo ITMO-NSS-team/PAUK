@@ -3,7 +3,7 @@ import type { GraphData } from "../contracts/graph";
 import { requireElement } from "../core/dom";
 import { t } from "../core/i18n";
 import type { AppState, Store } from "../core/state";
-import { refreshNodeLabels } from "../map/build";
+import { refreshGraphForTab } from "../map/build";
 
 /**
  * Кнопка переключения языка — единственное место в приложении, которое
@@ -23,10 +23,10 @@ export function mountLangToggle(store: Store<AppState>, map: MapLibreMap, data: 
   function onClick(): void {
     const nextLang = store.get().lang === "ru" ? "en" : "ru";
     store.set({ lang: nextLang });
-    // properties.label узлов на карте не обновляются сами через подписку
-    // на Store (в отличие от DOM-фич) — это отдельный GeoJSON-источник,
-    // его нужно пересобрать явно.
-    refreshNodeLabels(map, data, nextLang);
+    // properties узлов/рёбер на карте не обновляются сами через подписку
+    // на Store (в отличие от DOM-фич) — это отдельные GeoJSON-источники,
+    // их нужно пересобрать явно, для той же вкладки, что активна сейчас.
+    refreshGraphForTab(map, data, nextLang, store.get().tab);
   }
 
   button.addEventListener("click", onClick);

@@ -13,7 +13,7 @@ function initialState(): AppState {
   };
 }
 
-/** setData — единственный метод карты, который использует refreshNodeLabels() внутри mountLangToggle. */
+/** setData — единственный метод карты, который использует refreshGraphForTab() внутри mountLangToggle. */
 function fakeMapWithSource(): { map: MapLibreMap; setData: ReturnType<typeof vi.fn> } {
   const setData = vi.fn();
   const map = { getSource: () => ({ setData }) } as unknown as MapLibreMap;
@@ -38,7 +38,8 @@ describe("mountLangToggle", () => {
       button.click();
       expect(store.get().lang).toBe("en");
       expect(button.textContent).toBe("RU");
-      expect(setData).toHaveBeenCalledOnce();
+      // Обновляются оба источника (узлы и рёбра текущей вкладки), поэтому 2 вызова, не 1.
+      expect(setData).toHaveBeenCalledTimes(2);
 
       button.click();
       expect(store.get().lang).toBe("ru");
