@@ -19,8 +19,10 @@ interface NodeProps {
   color: string;
 }
 
-/** Свойства ребра — пока только вес (используется для будущей толщины линии, сейчас линия одной толщины). */
+/** Свойства ребра: s/t — ключи узлов на концах (нужны, чтобы построить Selection по клику), w — вес (для будущей толщины линии, сейчас линия одной толщины). */
 interface EdgeProps {
+  s: string;
+  t: string;
   w: number;
 }
 
@@ -80,7 +82,7 @@ export function buildEdgeFeatures(data: GraphData): FeatureCollection<LineString
     features.push({
       type: "Feature",
       geometry: { type: "LineString", coordinates: [s, t] },
-      properties: { w: edge.w },
+      properties: { s: edge.s, t: edge.t, w: edge.w },
     });
   }
 

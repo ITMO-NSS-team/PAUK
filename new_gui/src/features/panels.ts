@@ -1,7 +1,8 @@
 // Слой "features" — панель с информацией о том, что сейчас выбрано.
-// Пока умеет показывать только карточку узла (автор/репозиторий/публикация);
-// карточки ребра и департамента, а также сама вкладка "Обзор" из старого
-// GUI — отдельные следующие шаги, когда дойдём до параллельных фич.
+// Умеет показывать карточку узла (автор/репозиторий/публикация), ребра
+// (кто с кем связан и с каким весом) и департамента (сводные числа из
+// самого Department). Вкладка "Обзор" из старого GUI (что показывается,
+// когда вообще ничего не выбрано) — отдельный будущий шаг.
 
 import type { GraphData } from "../contracts/graph";
 import { indexByKey, nodeLabel } from "../core/data";
@@ -24,41 +25,71 @@ export function mountPanel(store: Store<AppState>, data: GraphData): () => void 
   const index = indexByKey(data);
   const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
 
-  /** Полностью пересобирает содержимое панели под текущее состояние. Только textContent — никакого innerHTML, данные из графа не должны интерпретироваться как разметка. */
-  function render(state: AppState): void {
-    if (state.selection === null || state.selection.kind !== "node") {
-      container.hidden = true;
-      container.replaceChildren();
-      return;
-    }
+  function hide(): void {
+    container.hidden = true;
+    container.replaceChildren();
+  }
 
-    const node = index.get(state.selection.key);
-    if (!node) {
+  /** Только textContent — никакого innerHTML, данные из графа не должны интерпретироваться как разметка. */
+  function show(title: string, rows: [string, string][]): void {
+    container.hidden = false;
+    container.replaceChildren(buildCard(title, rows));
+  }
+
+  /** Пересобирает содержимое панели под текущее состояние — один из трёх видов карточки либо ничего, если ничего не выбрано. */
+  function render(state: AppState): void {
+    const { selection, lang } = state;
+    if (selection === null) return hide();
+
+    if (selection.kind === "node") {
+      const node = index.get(selection.key);
       // Ключ выбран, но узла с таким ключом нет в текущих данных — такое
       // не должно происходить (клик по карте берёт key прямо из тех же
       // данных), но если вдруг случится рассинхрон, лучше молча спрятать
       // панель, чем показать пустую карточку.
-      container.hidden = true;
-      container.replaceChildren();
-      return;
+      if (!node) return hide();
+
+      const dept = deptById.get(node.dept);
+      const rows: [string, string][] = [
+        [t("field.key", lang), node.key],
+        [t("field.kind", lang), kindLabel(node.kind, lang)],
+        [t("field.dept", lang), dept ? localize(dept.name, dept.name_en, lang) : t("field.unknownDept", lang)],
+      ];
+      if (node.kind === "author") rows.push([t("field.pubsCount", lang), String(node.pubs_count)]);
+      if (node.kind === "repo") {
+        rows.push([t("field.stars", lang), String(node.stars)], [t("field.owner", lang), node.owner]);
+      }
+      if (node.kind === "pub") {
+        rows.push([t("field.year", lang), node.year === null ? t("field.yearUnknown", lang) : String(node.year)]);
+      }
+
+      return show(nodeLabel(node, lang), rows);
     }
 
-    const { lang } = state;
-    const dept = deptById.get(node.dept);
+    if (selection.kind === "edge") {
+      const from = index.get(selection.s);
+      const to = index.get(selection.t);
+      if (!from || !to) return hide();
+
+      const rows: [string, string][] = [
+        [t("field.edgeFrom", lang), nodeLabel(from, lang)],
+        [t("field.edgeTo", lang), nodeLabel(to, lang)],
+        [t("field.edgeWeight", lang), String(selection.w)],
+      ];
+      return show(t("kind.edge", lang), rows);
+    }
+
+    // selection.kind === "dept"
+    const dept = deptById.get(selection.id);
+    if (!dept) return hide();
 
     const rows: [string, string][] = [
-      [t("field.key", lang), node.key],
-      [t("field.kind", lang), kindLabel(node.kind, lang)],
-      [t("field.dept", lang), dept ? localize(dept.name, dept.name_en, lang) : t("field.unknownDept", lang)],
+      [t("field.authorsCount", lang), String(dept.n_authors)],
+      [t("field.pubsCount", lang), String(dept.n_pubs)],
+      [t("field.reposCount", lang), String(dept.n_repos)],
+      [t("field.total", lang), String(dept.n)],
     ];
-    if (node.kind === "author") rows.push([t("field.pubsCount", lang), String(node.pubs_count)]);
-    if (node.kind === "repo") rows.push([t("field.stars", lang), String(node.stars)], [t("field.owner", lang), node.owner]);
-    if (node.kind === "pub") {
-      rows.push([t("field.year", lang), node.year === null ? t("field.yearUnknown", lang) : String(node.year)]);
-    }
-
-    container.hidden = false;
-    container.replaceChildren(buildCard(nodeLabel(node, lang), rows));
+    return show(localize(dept.name, dept.name_en, lang), rows);
   }
 
   render(store.get());

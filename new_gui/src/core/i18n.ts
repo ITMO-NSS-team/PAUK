@@ -36,6 +36,7 @@ export type LocaleKey =
   // `kind.${node.kind}` (node.kind: NodeKind) проверяется компилятором
   // по-настоящему, без приведения типов через as в местах вызова.
   | `kind.${NodeKind | "dept"}`
+  | "kind.edge"
   | "field.key"
   | "field.kind"
   | "field.dept"
@@ -45,6 +46,12 @@ export type LocaleKey =
   | "field.year"
   | "field.yearUnknown"
   | "field.unknownDept"
+  | "field.edgeFrom"
+  | "field.edgeTo"
+  | "field.edgeWeight"
+  | "field.authorsCount"
+  | "field.reposCount"
+  | "field.total"
   | "search.placeholder"
   | "search.pubsCountShort"
   | "lang.toggle";
@@ -59,6 +66,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "kind.repo": "Репозиторий",
     "kind.pub": "Публикация",
     "kind.dept": "Департамент",
+    "kind.edge": "Связь",
     "field.key": "Ключ",
     "field.kind": "Тип",
     "field.dept": "Департамент",
@@ -68,6 +76,12 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.year": "Год",
     "field.yearUnknown": "неизвестен",
     "field.unknownDept": "—",
+    "field.edgeFrom": "От",
+    "field.edgeTo": "К",
+    "field.edgeWeight": "Вес",
+    "field.authorsCount": "Авторов",
+    "field.reposCount": "Репозиториев",
+    "field.total": "Всего",
     "search.placeholder": "Поиск по авторам, репозиториям, публикациям, департаментам…",
     "search.pubsCountShort": "публ.",
     "lang.toggle": "EN",
@@ -81,6 +95,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "kind.repo": "Repository",
     "kind.pub": "Publication",
     "kind.dept": "Department",
+    "kind.edge": "Link",
     "field.key": "Key",
     "field.kind": "Type",
     "field.dept": "Department",
@@ -90,6 +105,12 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.year": "Year",
     "field.yearUnknown": "unknown",
     "field.unknownDept": "—",
+    "field.edgeFrom": "From",
+    "field.edgeTo": "To",
+    "field.edgeWeight": "Weight",
+    "field.authorsCount": "Authors",
+    "field.reposCount": "Repositories",
+    "field.total": "Total",
     "search.placeholder": "Search authors, repositories, publications, departments…",
     "search.pubsCountShort": "pubs",
     "lang.toggle": "RU",
