@@ -1,9 +1,16 @@
+// Слой "map" — превращает GraphData в GeoJSON и рисует его на MapLibre.
+// Логика интерпретации данных (какая подпись у узла, как искать узел по
+// ключу) живёт в core/data.ts — этот файл только про геометрию и слои
+// карты, ничего не решает про сами данные.
+
 import type { Feature, FeatureCollection, LineString, Point } from "geojson";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { AuthorNode, Edge, GraphData, PubNode, RepoNode } from "../contracts/graph";
+import { nodeLabel } from "../core/data";
 
 type GraphNode = AuthorNode | RepoNode | PubNode;
 
+/** Свойства, которые кладутся в каждую GeoJSON-точку узла — доступны в paint-выражениях слоя через ["get", "имя"]. */
 interface NodeProps {
   key: string;
   kind: GraphNode["kind"];
@@ -11,6 +18,7 @@ interface NodeProps {
   color: string;
 }
 
+/** Свойства ребра — пока только вес (используется для будущей толщины линии, сейчас линия одной толщины). */
 interface EdgeProps {
   w: number;
 }
@@ -20,21 +28,23 @@ function allNodes(data: GraphData): GraphNode[] {
   return [...data.authors, ...data.repos, ...data.pubs];
 }
 
-/** У PubNode нет своего label (подпись публикации приходит отдельно, из SearchDetail) — используем key как заглушку. */
-function nodeLabel(node: GraphNode): string {
-  return "label" in node ? node.label : node.key;
-}
-
 /**
  * Цвет узла — цвет его департамента. Пока без приглушения/hover-состояний
  * (core/colors.ts с этой логикой — отдельный следующий шаг), только базовая
  * раскраска, чтобы точки на карте были различимы по департаментам.
  */
 export function buildNodeFeatures(data: GraphData): FeatureCollection<Point, NodeProps> {
+  // Map по id департамента, а не поиск в массиве на каждый узел —
+  // департаментов немного, но узлов может быть тысячи.
   const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
 
   const features: Feature<Point, NodeProps>[] = allNodes(data).map((node) => ({
     type: "Feature",
+    // id нужен, чтобы MapLibre мог адресовать конкретную фичу (например,
+    // для будущей подсветки через feature-state), а не только через
+    // properties — сейчас используется только properties.key, но id
+    // задаём сразу, чтобы не переделывать источник данных позже.
+    id: node.key,
     geometry: { type: "Point", coordinates: [node.gx, node.gy] },
     properties: {
       key: node.key,
@@ -61,6 +71,9 @@ export function buildEdgeFeatures(data: GraphData): FeatureCollection<LineString
   for (const edge of weightedEdges) {
     const s = posByKey.get(edge.s);
     const t = posByKey.get(edge.t);
+    // Ребро без одной из позиций значит, что второй конец не попал в
+    // authors/repos/pubs (например, отфильтрован раньше) — такое ребро
+    // рисовать некуда, молча пропускаем, а не падаем с ошибкой.
     if (!s || !t) continue;
 
     features.push({
@@ -89,18 +102,29 @@ export function nodeBounds(data: GraphData): [[number, number], [number, number]
   ];
 }
 
+// Экспортируем id-константы наружу (не просто private) — features/selection.ts
+// должен знать, по какому слою кликать и на каком слое менять paint-свойства
+// подсветки, чтобы не дублировать строки-литералы в двух файлах.
+export const NODE_LAYER_ID = "graph-nodes-circle";
+export const EDGE_LAYER_ID = "graph-edges-line";
 const NODE_SOURCE_ID = "graph-nodes";
 const EDGE_SOURCE_ID = "graph-edges";
 
+// Ключ узла в GeoJSON-свойствах никогда не бывает пустой строкой (это
+// либо OpenAlex-подобный id автора/публикации, либо repo-ключ) — поэтому
+// пустая строка безопасно используется как "ничего не выбрано": ни одна
+// настоящая точка на карте с ней не совпадёт.
+const NO_SELECTION = "";
+
 /**
- * Добавляет узлы и рёбра графа на карту как источники и слои. Без
- * интерактивности (клик/hover/выбор) — это отдельный следующий шаг
- * (features/selection.ts). Вызывать один раз после map.on("load", ...).
+ * Добавляет узлы и рёбра графа на карту как источники и слои. Сам клик
+ * (выбор узла) собирается отдельно в features/selection.ts — эта функция
+ * только рисует, ничего не слушает. Вызывать один раз после map.on("load", ...).
  */
 export function mountGraphLayers(map: MapLibreMap, data: GraphData): void {
   map.addSource(EDGE_SOURCE_ID, { type: "geojson", data: buildEdgeFeatures(data) });
   map.addLayer({
-    id: "graph-edges-line",
+    id: EDGE_LAYER_ID,
     type: "line",
     source: EDGE_SOURCE_ID,
     paint: { "line-color": "#9d9d9d", "line-width": 0.6, "line-opacity": 0.5 },
@@ -108,14 +132,28 @@ export function mountGraphLayers(map: MapLibreMap, data: GraphData): void {
 
   map.addSource(NODE_SOURCE_ID, { type: "geojson", data: buildNodeFeatures(data) });
   map.addLayer({
-    id: "graph-nodes-circle",
+    id: NODE_LAYER_ID,
     type: "circle",
     source: NODE_SOURCE_ID,
     paint: {
-      "circle-radius": 4,
+      // MapLibre "case"-выражение: сравниваем properties.key текущей точки
+      // с выбранным ключом (setSelectedNode ниже подставляет его сюда через
+      // setPaintProperty) и рисуем крупнее с более толстой обводкой именно
+      // выбранный узел, остальные — как обычно. Изначально не выбрано ничего.
+      "circle-radius": ["case", ["==", ["get", "key"], NO_SELECTION], 8, 4],
       "circle-color": ["get", "color"],
-      "circle-stroke-width": 1,
+      "circle-stroke-width": ["case", ["==", ["get", "key"], NO_SELECTION], 2, 1],
       "circle-stroke-color": "#ffffff",
     },
   });
+}
+
+/**
+ * Подсвечивает выбранный узел на карте (крупнее, с более толстой обводкой)
+ * и снимает подсветку с остальных. key === null — снять выделение совсем.
+ */
+export function setSelectedNode(map: MapLibreMap, key: string | null): void {
+  const compareTo = key ?? NO_SELECTION;
+  map.setPaintProperty(NODE_LAYER_ID, "circle-radius", ["case", ["==", ["get", "key"], compareTo], 8, 4]);
+  map.setPaintProperty(NODE_LAYER_ID, "circle-stroke-width", ["case", ["==", ["get", "key"], compareTo], 2, 1]);
 }

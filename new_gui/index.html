@@ -6,10 +6,36 @@
     <title>PAUK</title>
     <style>
       html, body, #map { margin: 0; height: 100%; }
+
+      /* Плавающая карточка поверх карты — минимальная вёрстка, без
+         системы палитры/тем (core/colors.ts) — та часть будет отдельным
+         следующим шагом, когда появится общая тема light/dark. */
+      #panel {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        max-width: 320px;
+        background: #ffffff;
+        border: 1px solid #c4c4c4;
+        border-radius: 8px;
+        padding: 12px 16px;
+        font-family: system-ui, sans-serif;
+        font-size: 13px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+      }
+      #panel[hidden] { display: none; }
+      #panel h3 { margin: 0 0 8px; font-size: 14px; }
+      #panel dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; }
+      #panel dt { color: #616161; }
+      #panel dd { margin: 0; }
     </style>
   </head>
   <body>
     <div id="map"></div>
+    <!-- Карточка с информацией о выбранном узле — заполняется через
+         features/panels.ts::mountPanel(). Изначально скрыта (hidden),
+         пока ничего не выбрано. -->
+    <div id="panel" hidden></div>
     <script type="module" src="/src/app/main.ts"></script>
   </body>
 </html>

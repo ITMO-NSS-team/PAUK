@@ -1,5 +1,8 @@
-import type { GraphData } from "../contracts/graph";
+import type { AuthorNode, GraphData, PubNode, RepoNode } from "../contracts/graph";
 import sampleGraphData from "./fixtures/graph-data.sample.json";
+
+/** Любой из трёх видов узлов графа — авторы, репозитории, публикации. */
+type GraphNode = AuthorNode | RepoNode | PubNode;
 
 /**
  * Старый и новый GUI работают с одними и теми же файлами, которые генерирует
@@ -81,4 +84,30 @@ export function assertGraphData(data: unknown): asserts data is GraphData {
       "assertGraphData: форма AuthorNode разошлась с контрактом (нет key/label_en) — проверь generate_data.py",
     );
   }
+}
+
+/**
+ * Быстрый поиск узла по его ключу (например "A5133538481" для автора или
+ * "W7164652155" для публикации) — без этой карты пришлось бы каждый раз
+ * перебирать три массива (authors/repos/pubs) целиком. Строится один раз
+ * при монтировании фичи (клика по карте, панели информации и т.д.), не на
+ * каждый клик — иначе на большом графе это было бы заметно медленно.
+ */
+export function indexByKey(data: GraphData): Map<string, GraphNode> {
+  const index = new Map<string, GraphNode>();
+  for (const node of [...data.authors, ...data.repos, ...data.pubs]) {
+    index.set(node.key, node);
+  }
+  return index;
+}
+
+/**
+ * Подпись узла для интерфейса. У PubNode своего label нет вообще —
+ * заголовок публикации приходит отдельно, из SearchDetail (graph-search.js),
+ * а не из самого узла графа (см. contracts/graph.ts). Пока нет доступа к
+ * SearchDetail, используем ключ как временную заглушку — так понятно,
+ * что перед нами публикация, а не "пустое" название.
+ */
+export function nodeLabel(node: GraphNode): string {
+  return "label" in node ? node.label : node.key;
 }
