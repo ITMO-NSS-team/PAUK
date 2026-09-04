@@ -1,5 +1,6 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { GraphData } from "../../contracts/graph";
+import { t, type Lang, type LocaleKey } from "../../core/i18n";
 import type { AppState, Store, TabId } from "../../core/state";
 import { authorsTab } from "./authors";
 import { pubsTab } from "./pubs";
@@ -17,12 +18,21 @@ const TAB_MODULES: Partial<Record<TabId, TabModule>> = {
   4: searchTab,
 };
 
+/** Какой ключ i18n соответствует подписи кнопки каждой вкладки — статичная разметка кнопок в index.html не хранит текст, только data-tab. */
+const TAB_LABEL_KEYS: Record<TabId, LocaleKey> = {
+  1: "tab.authors",
+  2: "tab.repos",
+  3: "tab.pubs",
+  4: "tab.search",
+};
+
 /**
  * Управляет переключением вкладок: слушает клики по кнопкам вкладок и
  * пишет номер в store.tab; слушает store и при смене tab размонтирует
  * текущую вкладку (activeUnmount) и монтирует новую — ровно тот паттерн
  * "unmount текущей, mount новой" из архитектуры, вместо разрастающегося
- * if/else в одной функции, как было в старом main.js (setTab()).
+ * if/else в одной функции, как было в старом main.js (setTab()). Заодно
+ * следит за store.lang: подписи кнопок переключаются на нужный язык.
  */
 export function mountTabs(
   tabButtonsEl: HTMLElement,
@@ -31,13 +41,17 @@ export function mountTabs(
   map: MapLibreMap,
   data: GraphData,
 ): () => void {
-  let activeUnmount: (() => void) | null = null;
-  // Отдельно храним, какая вкладка сейчас смонтирована, чтобы не
-  // пересоздавать список заново, если store поменялся по другой причине
-  // (например, изменилось selection), а не из-за смены вкладки.
-  let activeTab: TabId | null = null;
+  const buttons = tabButtonsEl.querySelectorAll<HTMLButtonElement>("button[data-tab]");
 
-  function activate(tabId: TabId): void {
+  let activeUnmount: (() => void) | null = null;
+  // Отдельно храним, какая вкладка сейчас смонтирована и на каком языке
+  // подписаны кнопки, чтобы не пересоздавать список / не переписывать
+  // textContent зря, если store поменялся по другой причине (например,
+  // изменилось selection).
+  let activeTab: TabId | null = null;
+  let activeLang: Lang | null = null;
+
+  function activateTab(tabId: TabId): void {
     if (tabId === activeTab) return;
 
     activeUnmount?.();
@@ -45,8 +59,18 @@ export function mountTabs(
     const tabModule = TAB_MODULES[tabId];
     activeUnmount = tabModule ? tabModule.mount(tabContentEl, store, map, data) : null;
 
-    for (const button of tabButtonsEl.querySelectorAll<HTMLButtonElement>("button[data-tab]")) {
+    for (const button of buttons) {
       button.classList.toggle("tab-button--active", Number(button.dataset.tab) === tabId);
+    }
+  }
+
+  function applyLang(lang: Lang): void {
+    if (lang === activeLang) return;
+    activeLang = lang;
+
+    for (const button of buttons) {
+      const tabId = Number(button.dataset.tab) as TabId;
+      button.textContent = t(TAB_LABEL_KEYS[tabId], lang);
     }
   }
 
@@ -59,8 +83,12 @@ export function mountTabs(
   }
 
   tabButtonsEl.addEventListener("click", onButtonsClick);
-  activate(store.get().tab);
-  const unsubscribe = store.subscribe((state) => activate(state.tab));
+  applyLang(store.get().lang);
+  activateTab(store.get().tab);
+  const unsubscribe = store.subscribe((state) => {
+    applyLang(state.lang);
+    activateTab(state.tab);
+  });
 
   return () => {
     tabButtonsEl.removeEventListener("click", onButtonsClick);

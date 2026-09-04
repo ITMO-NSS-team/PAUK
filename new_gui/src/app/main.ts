@@ -11,6 +11,7 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { loadSampleGraphData } from "../core/data";
 import { requireElement } from "../core/dom";
 import { Store, type AppState } from "../core/state";
+import { mountLangToggle } from "../features/langToggle";
 import { mountPanel } from "../features/panels";
 import { mountSelection } from "../features/selection";
 import { mountTabs } from "../features/tabs";
@@ -59,20 +60,22 @@ map.addControl(new NavigationControl({ showCompass: false }), "bottom-left");
 map.on("load", () => {
   loadSampleGraphData()
     .then((data) => {
-      mountGraphLayers(map, data);
+      mountGraphLayers(map, data, store.get().lang);
       map.fitBounds(nodeBounds(data), { padding: 40, animate: false });
 
       // mountSelection слушает клики по карте и пишет выбор в store;
       // mountPanel слушает store и рисует карточку; mountTabs слушает клики
-      // по кнопкам вкладок и переключает список в сайдбаре. Они не знают
+      // по кнопкам вкладок и переключает список в сайдбаре; mountLangToggle
+      // слушает клик по кнопке языка и пишет lang в store. Они не знают
       // друг о друге напрямую — связь только через общий Store. Функции
-      // отписки (unmount) от mountSelection/mountPanel/mountTabs не
-      // вызываются: все три живут всё время работы страницы — здесь ничего
-      // не пересоздаётся поверх них самих (внутри mountTabs свои unmount
-      // вызываются при смене вкладки — это устройство самой этой фичи).
+      // отписки (unmount) не вызываются: все они живут всё время работы
+      // страницы — здесь ничего не пересоздаётся поверх них самих (внутри
+      // mountTabs свои unmount вызываются при смене вкладки — это
+      // устройство самой этой фичи).
       mountSelection(map, store);
       mountPanel(store, data);
       mountTabs(requireElement("tab-buttons"), requireElement("tab-content"), store, map, data);
+      mountLangToggle(store, map, data);
 
       console.info("Граф отрисован:", {
         департаменты: data.departments.length,

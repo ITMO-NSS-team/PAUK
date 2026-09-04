@@ -1,3 +1,4 @@
+import { localize } from "../../core/i18n";
 import { renderList } from "../../core/render";
 import type { AppState } from "../../core/state";
 import type { TabModule } from "./types";
@@ -35,7 +36,7 @@ export const authorsTab: TabModule = {
 
         const name = document.createElement("span");
         name.className = "tab-list-item__label";
-        name.textContent = author.label;
+        name.textContent = localize(author.label, author.label_en, state.lang);
 
         const count = document.createElement("span");
         count.className = "tab-list-item__meta";

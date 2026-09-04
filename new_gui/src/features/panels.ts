@@ -6,12 +6,15 @@
 import type { GraphData } from "../contracts/graph";
 import { indexByKey, nodeLabel } from "../core/data";
 import { requireElement } from "../core/dom";
+import { kindLabel, localize, t } from "../core/i18n";
 import type { AppState, Store } from "../core/state";
 
 /**
  * Подключает панель информации: подписывается на Store и перерисовывает
- * содержимое каждый раз, когда меняется state.selection. Возвращает
- * функцию отписки (unmount).
+ * содержимое каждый раз, когда меняется state.selection ИЛИ state.lang —
+ * оба поля читаются в одном render(), поэтому одной подписки достаточно,
+ * без отдельной логики "что именно изменилось". Возвращает функцию
+ * отписки (unmount).
  */
 export function mountPanel(store: Store<AppState>, data: GraphData): () => void {
   const container = requireElement("panel");
@@ -40,31 +43,28 @@ export function mountPanel(store: Store<AppState>, data: GraphData): () => void 
       return;
     }
 
+    const { lang } = state;
     const dept = deptById.get(node.dept);
 
     const rows: [string, string][] = [
-      ["Ключ", node.key],
-      ["Тип", KIND_LABELS[node.kind]],
-      ["Департамент", dept ? dept.name : "—"],
+      [t("field.key", lang), node.key],
+      [t("field.kind", lang), kindLabel(node.kind, lang)],
+      [t("field.dept", lang), dept ? localize(dept.name, dept.name_en, lang) : t("field.unknownDept", lang)],
     ];
-    if (node.kind === "author") rows.push(["Публикаций", String(node.pubs_count)]);
-    if (node.kind === "repo") rows.push(["Звёзд", String(node.stars)], ["Владелец", node.owner]);
-    if (node.kind === "pub") rows.push(["Год", node.year === null ? "неизвестен" : String(node.year)]);
+    if (node.kind === "author") rows.push([t("field.pubsCount", lang), String(node.pubs_count)]);
+    if (node.kind === "repo") rows.push([t("field.stars", lang), String(node.stars)], [t("field.owner", lang), node.owner]);
+    if (node.kind === "pub") {
+      rows.push([t("field.year", lang), node.year === null ? t("field.yearUnknown", lang) : String(node.year)]);
+    }
 
     container.hidden = false;
-    container.replaceChildren(buildCard(nodeLabel(node), rows));
+    container.replaceChildren(buildCard(nodeLabel(node, lang), rows));
   }
 
   render(store.get());
   const unsubscribe = store.subscribe(render);
   return unsubscribe;
 }
-
-const KIND_LABELS: Record<"author" | "repo" | "pub", string> = {
-  author: "Автор",
-  repo: "Репозиторий",
-  pub: "Публикация",
-};
 
 /** Собирает DOM-карточку из заголовка и списка пар "подпись — значение", без единой строки innerHTML. */
 function buildCard(title: string, rows: [string, string][]): HTMLElement {

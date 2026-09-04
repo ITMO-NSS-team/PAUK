@@ -29,7 +29,7 @@ describe("deptHitKey / parseDeptHitKey", () => {
 describe("buildSearchIndex", () => {
   it("включает все виды сущностей: авторов, репозитории, публикации, департаменты", async () => {
     const data = await loadSampleGraphData();
-    const index = buildSearchIndex(data);
+    const index = buildSearchIndex(data, "ru");
 
     const total = data.authors.length + data.repos.length + data.pubs.length + data.departments.length;
     expect(index).toHaveLength(total);
@@ -40,14 +40,14 @@ describe("buildSearchIndex", () => {
 describe("searchHits", () => {
   it("пустой запрос — пустой список результатов, а не всё подряд", async () => {
     const data = await loadSampleGraphData();
-    const index = buildSearchIndex(data);
+    const index = buildSearchIndex(data, "ru");
     expect(searchHits(index, "")).toEqual([]);
     expect(searchHits(index, "   ")).toEqual([]);
   });
 
   it("находит по подстроке в label без учёта регистра", async () => {
     const data = await loadSampleGraphData();
-    const index = buildSearchIndex(data);
+    const index = buildSearchIndex(data, "ru");
     const author = data.authors[0];
     if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
 

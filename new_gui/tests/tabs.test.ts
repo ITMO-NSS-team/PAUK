@@ -45,6 +45,20 @@ describe("authorsTab", () => {
     expect(container.firstElementChild?.classList.contains("tab-list-item--selected")).toBe(true);
   });
 
+  it("переключение lang на en показывает label_en вместо label", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState());
+    const container = document.createElement("div");
+
+    authorsTab.mount(container, store, fakeMap(), data);
+    store.set({ lang: "en" });
+
+    const sorted = [...data.authors].sort((a, b) => b.pubs_count - a.pubs_count);
+    expect(Array.from(container.children).map((el) => el.textContent)).toEqual(
+      sorted.map((a) => `${a.label_en}${a.pubs_count}`),
+    );
+  });
+
   it("клик по автору пишет выбор в store и подлетает к нему на карте", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());

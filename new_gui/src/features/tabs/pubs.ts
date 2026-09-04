@@ -1,4 +1,5 @@
 import { nodeLabel } from "../../core/data";
+import { t } from "../../core/i18n";
 import { renderList } from "../../core/render";
 import type { AppState } from "../../core/state";
 import type { TabModule } from "./types";
@@ -27,11 +28,11 @@ export const pubsTab: TabModule = {
 
         const title = document.createElement("span");
         title.className = "tab-list-item__label";
-        title.textContent = nodeLabel(pub);
+        title.textContent = nodeLabel(pub, state.lang);
 
         const year = document.createElement("span");
         year.className = "tab-list-item__meta";
-        year.textContent = pub.year === null ? "год неизвестен" : String(pub.year);
+        year.textContent = pub.year === null ? t("field.yearUnknown", state.lang) : String(pub.year);
 
         item.append(title, year);
         item.addEventListener("click", () => {

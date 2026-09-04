@@ -1,4 +1,5 @@
 import type { AuthorNode, GraphData, PubNode, RepoNode } from "../contracts/graph";
+import { localize, type Lang } from "./i18n";
 import sampleGraphData from "./fixtures/graph-data.sample.json";
 
 /** Любой из трёх видов узлов графа — авторы, репозитории, публикации. */
@@ -102,12 +103,18 @@ export function indexByKey(data: GraphData): Map<string, GraphNode> {
 }
 
 /**
- * Подпись узла для интерфейса. У PubNode своего label нет вообще —
- * заголовок публикации приходит отдельно, из SearchDetail (graph-search.js),
- * а не из самого узла графа (см. contracts/graph.ts). Пока нет доступа к
- * SearchDetail, используем ключ как временную заглушку — так понятно,
- * что перед нами публикация, а не "пустое" название.
+ * Подпись узла для интерфейса, на нужном языке. У PubNode своего label
+ * нет вообще — заголовок публикации приходит отдельно, из SearchDetail
+ * (graph-search.js), а не из самого узла графа (см. contracts/graph.ts).
+ * Пока нет доступа к SearchDetail, используем ключ как временную заглушку
+ * (язык тут ни при чём, ключ одинаковый на обоих языках).
+ *
+ * У AuthorNode есть пара label/label_en — переключаем через localize().
+ * У RepoNode своего _en варианта нет (имя репозитория не переводится),
+ * поэтому для него localize() просто вернёт repo.label на любом языке.
  */
-export function nodeLabel(node: GraphNode): string {
-  return "label" in node ? node.label : node.key;
+export function nodeLabel(node: GraphNode, lang: Lang): string {
+  if (!("label" in node)) return node.key;
+  const labelEn = "label_en" in node ? node.label_en : undefined;
+  return localize(node.label, labelEn, lang);
 }

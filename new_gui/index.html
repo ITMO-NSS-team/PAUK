@@ -84,6 +84,20 @@
       #panel dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; }
       #panel dt { color: #616161; }
       #panel dd { margin: 0; }
+
+      /* Переключатель языка (app/main.ts) — сам текст ("EN"/"RU") ставит
+         JS через core/i18n.ts::t("lang.toggle", lang), тут только позиция. */
+      #lang-toggle {
+        position: absolute;
+        top: 12px;
+        left: 292px;
+        padding: 6px 10px;
+        border: 1px solid #c4c4c4;
+        border-radius: 6px;
+        background: #ffffff;
+        font-size: 12px;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
@@ -101,6 +115,9 @@
       </aside>
       <div id="map"></div>
     </div>
+    <!-- Текст ("EN"/"RU") ставит app/main.ts при монтировании и при
+         каждом клике — сам переключатель ничего не знает про язык. -->
+    <button type="button" id="lang-toggle"></button>
     <!-- Карточка с информацией о выбранном узле — заполняется через
          features/panels.ts::mountPanel(). Изначально скрыта (hidden),
          пока ничего не выбрано. -->

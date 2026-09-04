@@ -29,8 +29,8 @@ describe("indexByKey и nodeLabel", () => {
     const pub = data.pubs[0];
     if (!author || !pub) throw new Error("фикстура должна содержать хотя бы одного автора и одну публикацию");
 
-    expect(nodeLabel(author)).toBe(author.label);
-    expect(nodeLabel(pub)).toBe(pub.key);
+    expect(nodeLabel(author, "ru")).toBe(author.label);
+    expect(nodeLabel(pub, "ru")).toBe(pub.key);
   });
 });
 

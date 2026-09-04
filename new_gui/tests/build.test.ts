@@ -5,7 +5,7 @@ import { loadSampleGraphData } from "../src/core/data";
 describe("map/build на фикстур-данных", () => {
   it("buildNodeFeatures отдаёт по одной точке на каждый узел, окрашенную по департаменту", async () => {
     const data = await loadSampleGraphData();
-    const fc = buildNodeFeatures(data);
+    const fc = buildNodeFeatures(data, "ru");
 
     const expectedCount = data.authors.length + data.repos.length + data.pubs.length;
     expect(fc.features).toHaveLength(expectedCount);

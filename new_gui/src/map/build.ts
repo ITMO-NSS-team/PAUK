@@ -4,9 +4,10 @@
 // карты, ничего не решает про сами данные.
 
 import type { Feature, FeatureCollection, LineString, Point } from "geojson";
-import type { Map as MapLibreMap } from "maplibre-gl";
+import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import type { AuthorNode, Edge, GraphData, PubNode, RepoNode } from "../contracts/graph";
 import { nodeLabel } from "../core/data";
+import type { Lang } from "../core/i18n";
 
 type GraphNode = AuthorNode | RepoNode | PubNode;
 
@@ -33,7 +34,7 @@ function allNodes(data: GraphData): GraphNode[] {
  * (core/colors.ts с этой логикой — отдельный следующий шаг), только базовая
  * раскраска, чтобы точки на карте были различимы по департаментам.
  */
-export function buildNodeFeatures(data: GraphData): FeatureCollection<Point, NodeProps> {
+export function buildNodeFeatures(data: GraphData, lang: Lang): FeatureCollection<Point, NodeProps> {
   // Map по id департамента, а не поиск в массиве на каждый узел —
   // департаментов немного, но узлов может быть тысячи.
   const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
@@ -49,7 +50,7 @@ export function buildNodeFeatures(data: GraphData): FeatureCollection<Point, Nod
     properties: {
       key: node.key,
       kind: node.kind,
-      label: nodeLabel(node),
+      label: nodeLabel(node, lang),
       color: deptById.get(node.dept)?.color ?? "#9d9d9d",
     },
   }));
@@ -107,6 +108,8 @@ export function nodeBounds(data: GraphData): [[number, number], [number, number]
 // подсветки, чтобы не дублировать строки-литералы в двух файлах.
 export const NODE_LAYER_ID = "graph-nodes-circle";
 export const EDGE_LAYER_ID = "graph-edges-line";
+// Не экспортируем ID источников наружу — единственный код, которому они
+// нужны, это refreshNodeLabels() ниже, в этом же файле.
 const NODE_SOURCE_ID = "graph-nodes";
 const EDGE_SOURCE_ID = "graph-edges";
 
@@ -121,7 +124,7 @@ const NO_SELECTION = "";
  * (выбор узла) собирается отдельно в features/selection.ts — эта функция
  * только рисует, ничего не слушает. Вызывать один раз после map.on("load", ...).
  */
-export function mountGraphLayers(map: MapLibreMap, data: GraphData): void {
+export function mountGraphLayers(map: MapLibreMap, data: GraphData, lang: Lang): void {
   map.addSource(EDGE_SOURCE_ID, { type: "geojson", data: buildEdgeFeatures(data) });
   map.addLayer({
     id: EDGE_LAYER_ID,
@@ -130,7 +133,7 @@ export function mountGraphLayers(map: MapLibreMap, data: GraphData): void {
     paint: { "line-color": "#9d9d9d", "line-width": 0.6, "line-opacity": 0.5 },
   });
 
-  map.addSource(NODE_SOURCE_ID, { type: "geojson", data: buildNodeFeatures(data) });
+  map.addSource(NODE_SOURCE_ID, { type: "geojson", data: buildNodeFeatures(data, lang) });
   map.addLayer({
     id: NODE_LAYER_ID,
     type: "circle",
@@ -156,4 +159,16 @@ export function setSelectedNode(map: MapLibreMap, key: string | null): void {
   const compareTo = key ?? NO_SELECTION;
   map.setPaintProperty(NODE_LAYER_ID, "circle-radius", ["case", ["==", ["get", "key"], compareTo], 8, 4]);
   map.setPaintProperty(NODE_LAYER_ID, "circle-stroke-width", ["case", ["==", ["get", "key"], compareTo], 2, 1]);
+}
+
+/**
+ * Пересобирает properties.label узлов под новый язык — вызывается при
+ * переключении lang. Свойство label сейчас нигде визуально не
+ * используется (подписи на самой карте — overlay.ts, отдельный будущий
+ * шаг), но держать его в актуальном состоянии дешевле, чем потом
+ * вспоминать, что источник этого свойства мог протухнуть при смене языка.
+ */
+export function refreshNodeLabels(map: MapLibreMap, data: GraphData, lang: Lang): void {
+  const source = map.getSource(NODE_SOURCE_ID) as GeoJSONSource | undefined;
+  source?.setData(buildNodeFeatures(data, lang));
 }

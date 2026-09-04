@@ -1,16 +1,9 @@
 import type { SearchHit } from "../../contracts/search";
 import { indexByKey } from "../../core/data";
+import { kindLabel, t, type Lang } from "../../core/i18n";
 import { renderList } from "../../core/render";
 import { buildSearchIndex, parseDeptHitKey, searchHits } from "../search";
 import type { TabModule } from "./types";
-
-/** Короткая русская подпись типа результата — показывается перед названием, чтобы не путать одноимённые сущности разных видов. */
-const KIND_PREFIX: Record<SearchHit["kind"], string> = {
-  author: "Автор",
-  repo: "Репозиторий",
-  pub: "Публикация",
-  dept: "Департамент",
-};
 
 /**
  * Вкладка "Поиск" — полноэкранный (в рамках сайдбара) поиск по всем
@@ -24,22 +17,21 @@ const KIND_PREFIX: Record<SearchHit["kind"], string> = {
  */
 export const searchTab: TabModule = {
   mount(container, store, map, data) {
-    // Строится один раз при монтировании — сам список авторов/репозиториев/
-    // публикаций/департаментов между нажатиями клавиш не меняется.
-    const index = buildSearchIndex(data);
     const nodeByKey = indexByKey(data);
 
     let query = "";
+    // Индекс поиска зависит от языка (label/sub переведены) — пересобирается
+    // заново только когда lang реально поменялся, не на каждое изменение store.
+    let index: SearchHit[] = buildSearchIndex(data, store.get().lang);
 
     const input = document.createElement("input");
     input.type = "search";
-    input.placeholder = "Поиск по авторам, репозиториям, публикациям, департаментам…";
     input.className = "search-input";
 
     const results = document.createElement("div");
     results.className = "search-results";
 
-    function renderResults(): void {
+    function renderResults(lang: Lang): void {
       const hits = searchHits(index, query);
       renderList(results, hits, (hit) => {
         const item = document.createElement("button");
@@ -51,7 +43,7 @@ export const searchTab: TabModule = {
 
         const label = document.createElement("span");
         label.className = "tab-list-item__label";
-        label.textContent = `${KIND_PREFIX[hit.kind]}: ${hit.label}`;
+        label.textContent = `${kindLabel(hit.kind, lang)}: ${hit.label}`;
 
         item.appendChild(label);
         if (hit.sub) {
@@ -76,20 +68,27 @@ export const searchTab: TabModule = {
       });
     }
 
+    function applyLang(lang: Lang): void {
+      input.placeholder = t("search.placeholder", lang);
+      renderResults(lang);
+    }
+
     input.addEventListener("input", () => {
       query = input.value;
-      renderResults();
+      renderResults(store.get().lang);
     });
 
     container.replaceChildren(input, results);
-    renderResults();
+    applyLang(store.get().lang);
 
-    // У этой вкладки нет подписки на store (в отличие от authors/repos/pubs) —
-    // результаты поиска не зависят от того, что сейчас выбрано, только от
-    // текста запроса, который уже вызывает renderResults() сам по себе.
-    return () => {
-      // Явных подписок/таймеров не заводили — размонтирование сводится
-      // к тому, что mountTabs очищает container через следующий mount().
-    };
+    let currentLang = store.get().lang;
+    const unsubscribe = store.subscribe((state) => {
+      if (state.lang === currentLang) return;
+      currentLang = state.lang;
+      index = buildSearchIndex(data, currentLang);
+      applyLang(currentLang);
+    });
+
+    return unsubscribe;
   },
 };

@@ -5,6 +5,7 @@
 
 import type { SearchHit } from "../../contracts/search";
 import { nodeLabel } from "../../core/data";
+import { localize, t, type Lang } from "../../core/i18n";
 import type { GraphData } from "../../contracts/graph";
 
 // Формат ключа department-хита ("dept:<id>") — в одном месте, чтобы
@@ -29,15 +30,18 @@ export function parseDeptHitKey(key: string): number {
  * число публикаций, для репозитория — путь на GitHub без "https://",
  * для публикации — год и департамент, у департамента своей sub нет.
  */
-export function buildSearchIndex(data: GraphData): SearchHit[] {
+export function buildSearchIndex(data: GraphData, lang: Lang): SearchHit[] {
   const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
-  const deptName = (id: number): string => deptById.get(id)?.name ?? "—";
+  const deptName = (id: number): string => {
+    const dept = deptById.get(id);
+    return dept ? localize(dept.name, dept.name_en, lang) : t("field.unknownDept", lang);
+  };
 
   const authorHits: SearchHit[] = data.authors.map((author) => ({
     key: author.key,
     kind: "author",
-    label: author.label,
-    sub: `${deptName(author.dept)} · ${author.pubs_count} публ.`,
+    label: localize(author.label, author.label_en, lang),
+    sub: `${deptName(author.dept)} · ${author.pubs_count} ${t("search.pubsCountShort", lang)}`,
   }));
 
   const repoHits: SearchHit[] = data.repos.map((repo) => ({
@@ -52,7 +56,7 @@ export function buildSearchIndex(data: GraphData): SearchHit[] {
   const pubHits: SearchHit[] = data.pubs.map((pub) => ({
     key: pub.key,
     kind: "pub",
-    label: nodeLabel(pub),
+    label: nodeLabel(pub, lang),
     // Строку журнала сюда не добавляем — она приходит из SearchDetail
     // (graph-search.js), а этот источник данных ещё не подключён.
     sub: [pub.year, deptName(pub.dept)].filter(Boolean).join(" · ") || null,
@@ -61,7 +65,7 @@ export function buildSearchIndex(data: GraphData): SearchHit[] {
   const deptHits: SearchHit[] = data.departments.map((dept) => ({
     key: deptHitKey(dept.id),
     kind: "dept",
-    label: dept.name,
+    label: localize(dept.name, dept.name_en, lang),
     sub: null,
   }));
 
