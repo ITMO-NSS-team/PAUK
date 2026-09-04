@@ -6,8 +6,10 @@ import { pubsTab } from "./pubs";
 import { reposTab } from "./repos";
 import type { TabModule } from "./types";
 
-// Кнопок для вкладок 4 (поиск) и 5 (здоровье БД) в разметке пока нет —
-// их ещё не с чем связывать, добавим вместе с самими вкладками.
+// Кнопки для вкладки 4 (поиск) в разметке пока нет — не с чем связывать,
+// добавим вместе с самой вкладкой. Вкладку "Здоровье БД" из старого GUI
+// в new_gui не переносим вообще — поэтому в TabId для неё нет номера
+// и здесь для неё нет записи (см. core/state.ts).
 const TAB_MODULES: Partial<Record<TabId, TabModule>> = {
   1: authorsTab,
   2: reposTab,

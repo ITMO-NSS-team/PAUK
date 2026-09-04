@@ -28,7 +28,6 @@ const store = new Store<AppState>({
   lang: "ru",
   selection: null,
   filters: { minCoauth: 1, minPubAuthors: 1, yearMax: new Date().getFullYear() },
-  stats: { busy: false, error: null },
 });
 
 // Тот же placeholder-стиль, что и в старом GUI: это не географическая
