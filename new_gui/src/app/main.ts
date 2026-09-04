@@ -8,6 +8,7 @@ import { Map as MapLibreMap, NavigationControl, setWorkerUrl } from "maplibre-gl
 // оптимизатор зависимостей — без этого Vite ищет файл воркера не там,
 // где он реально лежит, и карта падает в рантайме с "file does not exist".
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+import { MAP_CONFIG } from "../core/config";
 import { loadSampleGraphData } from "../core/data";
 import { requireElement } from "../core/dom";
 import { Store, type AppState } from "../core/state";
@@ -39,12 +40,12 @@ const map = new MapLibreMap({
   style: {
     version: 8,
     sources: {},
-    layers: [{ id: "bg", type: "background", paint: { "background-color": "#ffffff" } }],
+    layers: [{ id: "bg", type: "background", paint: { "background-color": MAP_CONFIG.backgroundColor } }],
   },
   center: [0, 0],
-  zoom: 5,
-  minZoom: 4.3,
-  maxZoom: 15,
+  zoom: MAP_CONFIG.initialZoom,
+  minZoom: MAP_CONFIG.minZoom,
+  maxZoom: MAP_CONFIG.maxZoom,
   renderWorldCopies: false,
   attributionControl: false,
 });
@@ -61,7 +62,7 @@ map.on("load", () => {
   loadSampleGraphData()
     .then((data) => {
       mountGraphLayers(map, data, store.get().lang, store.get().tab);
-      map.fitBounds(nodeBounds(data), { padding: 40, animate: false });
+      map.fitBounds(nodeBounds(data), { padding: MAP_CONFIG.fitPadding, animate: false });
 
       // mountSelection слушает клики по карте и пишет выбор в store;
       // mountPanel слушает store и рисует карточку; mountTabs слушает клики

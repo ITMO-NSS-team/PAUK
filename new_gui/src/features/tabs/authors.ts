@@ -1,5 +1,5 @@
 import { localize } from "../../core/i18n";
-import { renderList } from "../../core/render";
+import { renderList, renderListItem } from "../../core/render";
 import type { AppState } from "../../core/state";
 import type { TabModule } from "./types";
 
@@ -25,33 +25,19 @@ export const authorsTab: TabModule = {
       // а не ребро/департамент) — дальше сравниваем с ним каждую строку.
       const selectedKey = state.selection?.kind === "node" ? state.selection.key : null;
 
-      renderList(container, sortedAuthors, (author) => {
-        const item = document.createElement("button");
-        // type="button" обязателен — иначе клик по кнопке внутри произвольной
-        // формы попытался бы её отправить (сабмит); тут формы нет, но
-        // задавать type явно — привычка, которая на будущее не даст об это споткнуться.
-        item.type = "button";
-        item.className = "tab-list-item";
-        if (author.key === selectedKey) item.classList.add("tab-list-item--selected");
-
-        const name = document.createElement("span");
-        name.className = "tab-list-item__label";
-        name.textContent = localize(author.label, author.label_en, state.lang);
-
-        const count = document.createElement("span");
-        count.className = "tab-list-item__meta";
-        count.textContent = String(author.pubs_count);
-
-        item.append(name, count);
-        item.addEventListener("click", () => {
-          store.set({ selection: { kind: "node", key: author.key } });
-          // Подлетаем к автору на карте, не меняя zoom — просто центрируем,
-          // чтобы выбранная точка не осталась за пределами экрана.
-          map.flyTo({ center: [author.gx, author.gy] });
-        });
-
-        return item;
-      });
+      renderList(container, sortedAuthors, (author) =>
+        renderListItem({
+          label: localize(author.label, author.label_en, state.lang),
+          meta: String(author.pubs_count),
+          selected: author.key === selectedKey,
+          onClick: () => {
+            store.set({ selection: { kind: "node", key: author.key } });
+            // Подлетаем к автору на карте, не меняя zoom — просто
+            // центрируем, чтобы выбранная точка не осталась за экраном.
+            map.flyTo({ center: [author.gx, author.gy] });
+          },
+        }),
+      );
     }
 
     render(store.get());

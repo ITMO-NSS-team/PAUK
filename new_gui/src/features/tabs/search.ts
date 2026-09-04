@@ -1,7 +1,7 @@
 import type { SearchHit } from "../../contracts/search";
 import { indexByKey } from "../../core/data";
 import { kindLabel, t, type Lang } from "../../core/i18n";
-import { renderList } from "../../core/render";
+import { renderList, renderListItem } from "../../core/render";
 import { buildSearchIndex, parseDeptHitKey, searchHits } from "../search";
 import type { TabModule } from "./types";
 
@@ -33,39 +33,25 @@ export const searchTab: TabModule = {
 
     function renderResults(lang: Lang): void {
       const hits = searchHits(index, query);
-      renderList(results, hits, (hit) => {
-        const item = document.createElement("button");
-        item.type = "button";
-        item.className = "tab-list-item";
-        // Пригодится и для стилизации по виду результата, и чтобы найти
-        // конкретный результат в тестах, не завязываясь на порядок в списке.
-        item.dataset.kind = hit.kind;
+      renderList(results, hits, (hit) =>
+        renderListItem({
+          label: `${kindLabel(hit.kind, lang)}: ${hit.label}`,
+          meta: hit.sub ?? undefined,
+          // Пригодится и для стилизации по виду результата, и чтобы найти
+          // конкретный результат в тестах, не завязываясь на порядок в списке.
+          dataKind: hit.kind,
+          onClick: () => {
+            if (hit.kind === "dept") {
+              store.set({ selection: { kind: "dept", id: parseDeptHitKey(hit.key) } });
+              return;
+            }
 
-        const label = document.createElement("span");
-        label.className = "tab-list-item__label";
-        label.textContent = `${kindLabel(hit.kind, lang)}: ${hit.label}`;
-
-        item.appendChild(label);
-        if (hit.sub) {
-          const sub = document.createElement("span");
-          sub.className = "tab-list-item__meta";
-          sub.textContent = hit.sub;
-          item.appendChild(sub);
-        }
-
-        item.addEventListener("click", () => {
-          if (hit.kind === "dept") {
-            store.set({ selection: { kind: "dept", id: parseDeptHitKey(hit.key) } });
-            return;
-          }
-
-          store.set({ selection: { kind: "node", key: hit.key } });
-          const node = nodeByKey.get(hit.key);
-          if (node) map.flyTo({ center: [node.gx, node.gy] });
-        });
-
-        return item;
-      });
+            store.set({ selection: { kind: "node", key: hit.key } });
+            const node = nodeByKey.get(hit.key);
+            if (node) map.flyTo({ center: [node.gx, node.gy] });
+          },
+        }),
+      );
     }
 
     function applyLang(lang: Lang): void {

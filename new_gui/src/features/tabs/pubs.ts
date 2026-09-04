@@ -1,6 +1,6 @@
 import { nodeLabel } from "../../core/data";
 import { t } from "../../core/i18n";
-import { renderList } from "../../core/render";
+import { renderList, renderListItem } from "../../core/render";
 import type { AppState } from "../../core/state";
 import type { TabModule } from "./types";
 
@@ -20,28 +20,17 @@ export const pubsTab: TabModule = {
     function render(state: AppState): void {
       const selectedKey = state.selection?.kind === "node" ? state.selection.key : null;
 
-      renderList(container, sortedPubs, (pub) => {
-        const item = document.createElement("button");
-        item.type = "button";
-        item.className = "tab-list-item";
-        if (pub.key === selectedKey) item.classList.add("tab-list-item--selected");
-
-        const title = document.createElement("span");
-        title.className = "tab-list-item__label";
-        title.textContent = nodeLabel(pub, state.lang);
-
-        const year = document.createElement("span");
-        year.className = "tab-list-item__meta";
-        year.textContent = pub.year === null ? t("field.yearUnknown", state.lang) : String(pub.year);
-
-        item.append(title, year);
-        item.addEventListener("click", () => {
-          store.set({ selection: { kind: "node", key: pub.key } });
-          map.flyTo({ center: [pub.gx, pub.gy] });
-        });
-
-        return item;
-      });
+      renderList(container, sortedPubs, (pub) =>
+        renderListItem({
+          label: nodeLabel(pub, state.lang),
+          meta: pub.year === null ? t("field.yearUnknown", state.lang) : String(pub.year),
+          selected: pub.key === selectedKey,
+          onClick: () => {
+            store.set({ selection: { kind: "node", key: pub.key } });
+            map.flyTo({ center: [pub.gx, pub.gy] });
+          },
+        }),
+      );
     }
 
     render(store.get());

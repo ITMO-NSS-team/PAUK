@@ -11,8 +11,9 @@
 // было бы другим (и неверным) поведением, а не тем же графом "покрасивее".
 
 import type { Feature, FeatureCollection, LineString, Point } from "geojson";
-import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
+import type { ExpressionSpecification, GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import type { AuthorNode, Edge, GraphData, PubNode, RepoNode } from "../contracts/graph";
+import { MAP_CONFIG } from "../core/config";
 import { nodeLabel } from "../core/data";
 import type { Lang } from "../core/i18n";
 import type { TabId } from "../core/state";
@@ -89,7 +90,7 @@ export function buildNodeFeatures(data: GraphData, lang: Lang, tab: TabId): Feat
       key: node.key,
       kind: node.kind,
       label: nodeLabel(node, lang),
-      color: deptById.get(node.dept)?.color ?? "#9d9d9d",
+      color: deptById.get(node.dept)?.color ?? MAP_CONFIG.node.fallbackColor,
     },
   }));
 
@@ -163,6 +164,22 @@ const EDGE_SOURCE_ID = "graph-edges";
 const NO_SELECTION = "";
 
 /**
+ * Одно и то же MapLibre-выражение "если это выбранная точка — value1,
+ * иначе — value2" нужно и при первой отрисовке (mountGraphLayers), и при
+ * каждой смене выбора (setSelectedNode) — раньше оба места писали это
+ * выражение и оба числа (8/4, 2/1) заново, что уже привело к рассинхрону
+ * при правке. Теперь оба вызывающих места используют одну функцию и одни
+ * значения из MAP_CONFIG — сменить размер выбранного узла можно в одном месте.
+ */
+function selectedNodeExpression(
+  compareTo: string,
+  selectedValue: number,
+  defaultValue: number,
+): ExpressionSpecification {
+  return ["case", ["==", ["get", "key"], compareTo], selectedValue, defaultValue];
+}
+
+/**
  * Добавляет узлы и рёбра текущей вкладки на карту как источники и слои.
  * Сам клик (выбор узла/ребра) собирается отдельно в features/selection.ts —
  * эта функция только рисует, ничего не слушает. Вызывать один раз после
@@ -176,9 +193,13 @@ export function mountGraphLayers(map: MapLibreMap, data: GraphData, lang: Lang, 
     id: EDGE_LAYER_ID,
     type: "line",
     source: EDGE_SOURCE_ID,
-    paint: { "line-color": "#9d9d9d", "line-width": 0.6, "line-opacity": 0.5 },
+    paint: {
+      "line-color": MAP_CONFIG.edge.color,
+      "line-width": MAP_CONFIG.edge.width,
+      "line-opacity": MAP_CONFIG.edge.opacity,
+    },
   });
-  // Тот же источник, полностью прозрачная линия в 14px — реальная область
+  // Тот же источник, полностью прозрачная широкая линия — реальная область
   // клика/наведения (см. features/selection.ts), сама видимая линия выше
   // остаётся тонкой. Клик по узлу это не задевает: узловой слой
   // запрашивается отдельно и первым (см. mountSelection), этот слой шире
@@ -187,7 +208,7 @@ export function mountGraphLayers(map: MapLibreMap, data: GraphData, lang: Lang, 
     id: EDGE_HIT_LAYER_ID,
     type: "line",
     source: EDGE_SOURCE_ID,
-    paint: { "line-width": 14, "line-opacity": 0 },
+    paint: { "line-width": MAP_CONFIG.edge.hitWidth, "line-opacity": 0 },
   });
 
   map.addSource(NODE_SOURCE_ID, { type: "geojson", data: buildNodeFeatures(data, lang, tab) });
@@ -196,14 +217,18 @@ export function mountGraphLayers(map: MapLibreMap, data: GraphData, lang: Lang, 
     type: "circle",
     source: NODE_SOURCE_ID,
     paint: {
-      // MapLibre "case"-выражение: сравниваем properties.key текущей точки
-      // с выбранным ключом (setSelectedNode ниже подставляет его сюда через
-      // setPaintProperty) и рисуем крупнее с более толстой обводкой именно
+      // selectedNodeExpression сравнивает properties.key текущей точки с
+      // выбранным ключом (setSelectedNode ниже подставляет его сюда через
+      // setPaintProperty) и рисует крупнее с более толстой обводкой именно
       // выбранный узел, остальные — как обычно. Изначально не выбрано ничего.
-      "circle-radius": ["case", ["==", ["get", "key"], NO_SELECTION], 8, 4],
+      "circle-radius": selectedNodeExpression(NO_SELECTION, MAP_CONFIG.node.radiusSelected, MAP_CONFIG.node.radius),
       "circle-color": ["get", "color"],
-      "circle-stroke-width": ["case", ["==", ["get", "key"], NO_SELECTION], 2, 1],
-      "circle-stroke-color": "#ffffff",
+      "circle-stroke-width": selectedNodeExpression(
+        NO_SELECTION,
+        MAP_CONFIG.node.strokeWidthSelected,
+        MAP_CONFIG.node.strokeWidth,
+      ),
+      "circle-stroke-color": MAP_CONFIG.node.strokeColor,
     },
   });
 }
@@ -214,8 +239,16 @@ export function mountGraphLayers(map: MapLibreMap, data: GraphData, lang: Lang, 
  */
 export function setSelectedNode(map: MapLibreMap, key: string | null): void {
   const compareTo = key ?? NO_SELECTION;
-  map.setPaintProperty(NODE_LAYER_ID, "circle-radius", ["case", ["==", ["get", "key"], compareTo], 8, 4]);
-  map.setPaintProperty(NODE_LAYER_ID, "circle-stroke-width", ["case", ["==", ["get", "key"], compareTo], 2, 1]);
+  map.setPaintProperty(
+    NODE_LAYER_ID,
+    "circle-radius",
+    selectedNodeExpression(compareTo, MAP_CONFIG.node.radiusSelected, MAP_CONFIG.node.radius),
+  );
+  map.setPaintProperty(
+    NODE_LAYER_ID,
+    "circle-stroke-width",
+    selectedNodeExpression(compareTo, MAP_CONFIG.node.strokeWidthSelected, MAP_CONFIG.node.strokeWidth),
+  );
 }
 
 /**
