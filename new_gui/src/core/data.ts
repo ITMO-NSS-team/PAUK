@@ -121,6 +121,34 @@ export function indexByKey(data: GraphData): Map<string, GraphNode> {
 }
 
 /**
+ * Обратные индексы автор <-> публикация, построенные из GraphData.all_edges —
+ * единственного места в контракте, где вообще есть такая связь напрямую
+ * (author.pubs_count — просто число, а не список ключей). Нужны для карточки
+ * ребра (features/panels.ts): "какие именно публикации общие у пары
+ * соавторов" / "какие именно авторы общие у пары связанных публикаций" —
+ * то, что сам вес ребра (coauth_edges.w / pub_edges.w) только считает, не называя.
+ */
+export function buildAuthorPubIndex(data: GraphData): {
+  authorPubs: Map<string, string[]>;
+  pubAuthors: Map<string, string[]>;
+} {
+  const authorPubs = new Map<string, string[]>();
+  const pubAuthors = new Map<string, string[]>();
+
+  for (const { s, t } of data.all_edges) {
+    const pubsOfAuthor = authorPubs.get(s) ?? [];
+    pubsOfAuthor.push(t);
+    authorPubs.set(s, pubsOfAuthor);
+
+    const authorsOfPub = pubAuthors.get(t) ?? [];
+    authorsOfPub.push(s);
+    pubAuthors.set(t, authorsOfPub);
+  }
+
+  return { authorPubs, pubAuthors };
+}
+
+/**
  * Подпись узла для интерфейса, на нужном языке. У PubNode своего label
  * нет вообще — заголовок публикации приходит отдельно, из SearchDetail
  * (graph-search.js), а не из самого узла графа (см. contracts/graph.ts).

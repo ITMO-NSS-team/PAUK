@@ -6,7 +6,7 @@
 
 import type { GraphData } from "../contracts/graph";
 import type { SearchDetail } from "../contracts/search";
-import { indexByKey, nodeLabel } from "../core/data";
+import { buildAuthorPubIndex, indexByKey, nodeLabel } from "../core/data";
 import { requireElement } from "../core/dom";
 import { kindLabel, localize, t } from "../core/i18n";
 import type { AppState, Store } from "../core/state";
@@ -69,6 +69,17 @@ export function mountPanel(
   // ключу должен быть мгновенным, а не пересчитывать индекс на каждый клик.
   const index = indexByKey(data);
   const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
+  const { authorPubs, pubAuthors } = buildAuthorPubIndex(data);
+
+  /** Подписи узлов по списку ключей, через запятую — для строк "общие публикации"/"общие авторы" в карточке ребра. */
+  function labelsOf(keys: string[], lang: AppState["lang"]): string {
+    return keys
+      .map((key) => {
+        const node = index.get(key);
+        return node ? nodeLabel(node, lang, searchDetails) : key;
+      })
+      .join(", ");
+  }
 
   function hide(): void {
     container.hidden = true;
@@ -137,6 +148,21 @@ export function mountPanel(
         [t("field.edgeTo", lang), nodeLabel(to, lang, searchDetails)],
         [t("field.edgeWeight", lang), String(selection.w)],
       ];
+
+      // Сам вес — это только число; что конкретно за ним стоит, видно только
+      // через all_edges. Показываем список, только если он не пуст — как и
+      // в старом showEdgeCard(), у ребра без общих публикаций/авторов (или
+      // между узлами другого вида, например репозиториями) этой строки нет.
+      if (from.kind === "author" && to.kind === "author") {
+        const shared = (authorPubs.get(from.key) ?? []).filter((pub) => (authorPubs.get(to.key) ?? []).includes(pub));
+        if (shared.length > 0) rows.push([t("field.sharedPubs", lang), labelsOf(shared, lang)]);
+      } else if (from.kind === "pub" && to.kind === "pub") {
+        const shared = (pubAuthors.get(from.key) ?? []).filter((author) =>
+          (pubAuthors.get(to.key) ?? []).includes(author),
+        );
+        if (shared.length > 0) rows.push([t("field.sharedAuthors", lang), labelsOf(shared, lang)]);
+      }
+
       return show(t("kind.edge", lang), rows);
     }
 

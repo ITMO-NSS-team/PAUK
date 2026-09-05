@@ -136,6 +136,50 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain(String(edge.w));
   });
 
+  it("карточка ребра автор-автор показывает список общих публикаций", async () => {
+    const data = await loadSampleGraphData();
+    // A1-A2 во фикстуре: w=2, и ровно две реально общие публикации (P1, P5) —
+    // согласовано с all_edges, а не просто совпадающее число.
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "edge", s: "A1", t: "A2", w: 2 },
+    });
+
+    mountPanel(store, data, NO_SEARCH_DETAILS);
+
+    expect(panel.textContent).toContain("Общие публикации");
+    expect(panel.textContent).toContain("P1");
+    expect(panel.textContent).toContain("P5");
+  });
+
+  it("карточка ребра публикация-публикация показывает список общих авторов", async () => {
+    const data = await loadSampleGraphData();
+    // P1-P2 во фикстуре: w=1, общий автор — A1 (Иванов И.И.).
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "edge", s: "P1", t: "P2", w: 1 },
+    });
+
+    mountPanel(store, data, NO_SEARCH_DETAILS);
+
+    expect(panel.textContent).toContain("Общие авторы");
+    expect(panel.textContent).toContain("Иванов И.И.");
+  });
+
+  it("не показывает строку общих публикаций, когда общих публикаций реально нет", async () => {
+    const data = await loadSampleGraphData();
+    // A3-A4 во фикстуре: вес есть (соавторство посчитано иначе), но по
+    // all_edges общих публикаций нет вообще — строка не должна появляться.
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "edge", s: "A3", t: "A4", w: 1 },
+    });
+
+    mountPanel(store, data, NO_SEARCH_DETAILS);
+
+    expect(panel.textContent).not.toContain("Общие публикации");
+  });
+
   it("показывает карточку департамента со сводными числами", async () => {
     const data = await loadSampleGraphData();
     const dept = data.departments[0];
