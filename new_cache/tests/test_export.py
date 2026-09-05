@@ -138,6 +138,27 @@ class LoadDbShapeTest(unittest.TestCase):
             [{"pid": "P1", "candidate_id": "https://x", "url": "https://x"}],
         )
 
+    def test_result_has_all_thirteen_expected_keys(self):
+        db = load_db(SequentialFakeDriver(self._empty_responses()))
+        self.assertEqual(
+            set(db.keys()),
+            {
+                "persons",
+                "publications",
+                "repositories",
+                "departments",
+                "organizations",
+                "authorship",
+                "person_depts",
+                "pub_depts",
+                "repo_pubs",
+                "mentions_repos",
+                "mentions_candidates",
+                "repo_persons",
+                "repo_depts",
+            },
+        )
+
     def test_debatable_fields_are_present_pending_manual_review(self):
         """По прямой просьбе запросы включают буквально все свойства из
         NODE_REGISTRY, в том числе те, что раньше были осознанно исключены
@@ -162,27 +183,6 @@ class LoadDbShapeTest(unittest.TestCase):
             "p.status AS status",
         ):
             self.assertIn(included, combined, f"поле {included!r} должно быть в запросе (удалите вручную, если не нужно)")
-
-    def test_result_has_all_thirteen_expected_keys(self):
-        db = load_db(SequentialFakeDriver(self._empty_responses()))
-        self.assertEqual(
-            set(db.keys()),
-            {
-                "persons",
-                "publications",
-                "repositories",
-                "departments",
-                "organizations",
-                "authorship",
-                "person_depts",
-                "pub_depts",
-                "repo_pubs",
-                "mentions_repos",
-                "mentions_candidates",
-                "repo_persons",
-                "repo_depts",
-            },
-        )
 
     def test_slice_4_capabilities_are_wired_into_the_actual_queries(self):
         """Не только форма результата (test_new_slice_4_tables_are_dict_shaped),
