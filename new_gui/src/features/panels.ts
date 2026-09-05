@@ -7,7 +7,14 @@
 import type { GraphData, PubNode, RepoNode } from "../contracts/graph";
 import type { SearchDetail } from "../contracts/search";
 import { PANEL_CONFIG } from "../core/config";
-import { buildAuthorPubIndex, buildAuthorRepoIndex, buildCoauthIndex, indexByKey, nodeLabel } from "../core/data";
+import {
+  buildAuthorPubIndex,
+  buildAuthorRepoIndex,
+  buildCoauthIndex,
+  buildDeptEdgeIndex,
+  indexByKey,
+  nodeLabel,
+} from "../core/data";
 import { requireElement } from "../core/dom";
 import { kindLabel, localize, t } from "../core/i18n";
 import type { AppState, Store } from "../core/state";
@@ -73,6 +80,17 @@ export function mountPanel(
   const { authorPubs, pubAuthors } = buildAuthorPubIndex(data);
   const coauthIndex = buildCoauthIndex(data);
   const authorRepoIndex = buildAuthorRepoIndex(data);
+  const deptEdgeIndex = buildDeptEdgeIndex(data);
+
+  /** Подписи департаментов по списку id, через запятую — для строки "связанные департаменты" в карточке департамента. */
+  function deptLabelsOf(ids: number[], lang: AppState["lang"]): string {
+    return ids
+      .map((id) => {
+        const dept = deptById.get(id);
+        return dept ? localize(dept.name, dept.name_en, lang) : String(id);
+      })
+      .join(", ");
+  }
 
   /** Подписи узлов по списку ключей, через запятую — для строк "общие публикации"/"общие авторы" в карточке ребра и списков в карточке автора. */
   function labelsOf(keys: string[], lang: AppState["lang"]): string {
@@ -221,6 +239,13 @@ export function mountPanel(
       [t("field.reposCount", lang), String(dept.n_repos)],
       [t("field.total", lang), String(dept.n)],
     ];
+
+    const relatedIds = [...(deptEdgeIndex.get(dept.id) ?? new Map<number, number>()).entries()]
+      .sort(([, weightA], [, weightB]) => weightB - weightA)
+      .slice(0, PANEL_CONFIG.listLimit)
+      .map(([id]) => id);
+    if (relatedIds.length > 0) rows.push([t("field.relatedDepts", lang), deptLabelsOf(relatedIds, lang)]);
+
     return show(localize(dept.name, dept.name_en, lang), rows);
   }
 

@@ -32,9 +32,9 @@
     }
   ],
   "dept_edges": [
-    { "s": "dept:0", "t": "dept:1", "w": 2 },
-    { "s": "dept:1", "t": "dept:2", "w": 1 },
-    { "s": "dept:0", "t": "dept:2", "w": 1 }
+    { "s": 0, "t": 1, "w": 2 },
+    { "s": 1, "t": 2, "w": 1 },
+    { "s": 0, "t": 2, "w": 1 }
   ],
   "authors": [
     { "key": "A1", "kind": "author", "dept": 0, "label": "Иванов И.И.", "label_en": "Ivanov I.I.", "pubs_count": 4, "rank": 1, "gx": 0.1, "gy": 0.2 },

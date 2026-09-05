@@ -52,6 +52,7 @@ export type LocaleKey =
   | "field.sharedPubs"
   | "field.sharedAuthors"
   | "field.topCoauthors"
+  | "field.relatedDepts"
   | "field.authorsCount"
   | "field.reposCount"
   | "field.deptsCount"
@@ -92,6 +93,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.sharedPubs": "Общие публикации",
     "field.sharedAuthors": "Общие авторы",
     "field.topCoauthors": "Топ соавторов",
+    "field.relatedDepts": "Связанные департаменты",
     "field.authorsCount": "Авторов",
     "field.reposCount": "Репозиториев",
     "field.deptsCount": "Департаментов",
@@ -131,6 +133,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.sharedPubs": "Shared publications",
     "field.sharedAuthors": "Shared authors",
     "field.topCoauthors": "Top co-authors",
+    "field.relatedDepts": "Related departments",
     "field.authorsCount": "Authors",
     "field.reposCount": "Repositories",
     "field.deptsCount": "Departments",

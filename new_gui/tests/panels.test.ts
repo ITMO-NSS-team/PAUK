@@ -235,6 +235,23 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain(String(dept.n_repos));
   });
 
+  it("карточка департамента показывает связанные департаменты по убыванию веса (dept_edges)", async () => {
+    const data = await loadSampleGraphData();
+    // Департамент 0 во фикстуре связан с 1 (w=2) и 2 (w=1) — 1 должен идти первым.
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "dept", id: 0 } });
+
+    mountPanel(store, data, NO_SEARCH_DETAILS);
+
+    const dept1 = data.departments.find((d) => d.id === 1);
+    const dept2 = data.departments.find((d) => d.id === 2);
+    if (!dept1 || !dept2) throw new Error("фикстура должна содержать департаменты 1 и 2");
+
+    const text = panel.textContent ?? "";
+    expect(text).toContain("Связанные департаменты");
+    expect(text.indexOf(dept1.name)).toBeGreaterThan(-1);
+    expect(text.indexOf(dept1.name)).toBeLessThan(text.indexOf(dept2.name));
+  });
+
   it("возвращается к карточке «Обзор», когда selection сбрасывают в null", async () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];

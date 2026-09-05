@@ -174,6 +174,30 @@ export function buildCoauthIndex(data: GraphData): Map<string, Map<string, numbe
 }
 
 /**
+ * Связи между департаментами (общие публикации через их авторов) — та же
+ * идея, что и buildCoauthIndex, только ключи не строковые (author.key), а
+ * числовые (Department.id, см. DeptEdge в contracts/graph.ts). Нужен
+ * карточке департамента (features/panels.ts) для списка "связанные
+ * департаменты", отсортированного по силе связи.
+ */
+export function buildDeptEdgeIndex(data: GraphData): Map<number, Map<number, number>> {
+  const index = new Map<number, Map<number, number>>();
+
+  function addWeight(from: number, to: number, weight: number): void {
+    const neighbors = index.get(from) ?? new Map<number, number>();
+    neighbors.set(to, (neighbors.get(to) ?? 0) + weight);
+    index.set(from, neighbors);
+  }
+
+  for (const edge of data.dept_edges) {
+    addWeight(edge.s, edge.t, edge.w);
+    addWeight(edge.t, edge.s, edge.w);
+  }
+
+  return index;
+}
+
+/**
  * Автор -> ключи репозиториев, где он указан контрибьютором, из
  * GraphData.repo_author_edges (s — репозиторий, t — автор — см. контракт
  * RepoAuthorEdge). Только прямая связь, без учёта "репозиторий связан с

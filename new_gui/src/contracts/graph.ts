@@ -70,6 +70,16 @@ export interface Edge {
   w: number;
 }
 
+// В отличие от Edge выше (s/t — строковые ключи author/pub/repo), у
+// dept_edges s/t — это Department.id (сквозной числовой gid, см.
+// generate_data.py: g() возвращает int, а не строку) — отдельный тип, а не
+// переиспользование Edge, чтобы не смешивать два разных вида ключей.
+export interface DeptEdge {
+  s: number;
+  t: number;
+  w: number;
+}
+
 export interface RepoAuthorEdge {
   s: string;
   t: string;
@@ -84,7 +94,7 @@ export interface UnweightedEdge {
 
 export interface GraphData {
   departments: Department[];
-  dept_edges: Edge[];
+  dept_edges: DeptEdge[];
   authors: AuthorNode[];
   coauth_edges: Edge[];
   repos: RepoNode[];
