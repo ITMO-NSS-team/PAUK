@@ -4,15 +4,22 @@ import type { TabModule } from "./types";
 
 /**
  * Вкладка "Репозитории" — список, отсортированный по звёздам по убыванию
- * (как и в старом tab-repos.js). Устройство один в один как у authorsTab —
- * общий механизм выбора через store.selection, подписка на весь store
- * ради подсветки текущего выбора в списке. Подробное объяснение паттерна —
- * в features/tabs/authors.ts.
+ * (как и в старом `tab-repos.js`). Устройство один в один как у
+ * `authorsTab` (features/tabs/authors.ts) — общий механизм выбора через
+ * `store.selection`, подписка на весь store ради подсветки текущего
+ * выбора в списке. Подробное объяснение паттерна — там же.
+ *
+ * Реализует {@link TabModule}.
  */
 export const reposTab: TabModule = {
   mount(container, store, map, data) {
     const sortedRepos = [...data.repos].sort((a, b) => b.stars - a.stars);
 
+    /**
+     * Перерисовывает список репозиториев под текущую подсветку выбора.
+     *
+     * @param state - текущее состояние приложения.
+     */
     function render(state: AppState): void {
       const selectedKey = state.selection?.kind === "node" ? state.selection.key : null;
 

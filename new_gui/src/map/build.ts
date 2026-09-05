@@ -23,7 +23,7 @@ type GraphNode = AuthorNode | RepoNode | PubNode;
 type Filters = AppState["filters"];
 type SearchDetailsByKey = Map<string, SearchDetail>;
 
-/** Свойства, которые кладутся в каждую GeoJSON-точку узла — доступны в paint-выражениях слоя через ["get", "имя"]. */
+/** Свойства, которые кладутся в каждую GeoJSON-точку узла — доступны в paint-выражениях слоя через `["get", "имя"]`. */
 interface NodeProps {
   key: string;
   kind: GraphNode["kind"];
@@ -31,24 +31,44 @@ interface NodeProps {
   color: string;
 }
 
-/** Свойства ребра: s/t — ключи узлов на концах (нужны, чтобы построить Selection по клику), w — вес. */
+/** Свойства ребра: `s`/`t` — ключи узлов на концах (нужны, чтобы построить Selection по клику), `w` — вес. */
 interface EdgeProps {
   s: string;
   t: string;
   w: number;
 }
 
-/** Все три вида узлов сразу — нужно только для nodeBounds() (общая рамка камеры) и для поиска позиций концов ребра, не для отрисовки. */
+/**
+ * Все три вида узлов сразу, одним плоским списком. Нужна только для
+ * {@link nodeBounds} (общая рамка камеры, которая должна охватывать вообще
+ * всё) и для поиска позиций концов ребра в {@link buildEdgeFeatures} — не
+ * для отрисовки текущей вкладки (для этого есть {@link tabGraphNodes}).
+ *
+ * @param data - данные графа.
+ * @returns Авторы, репозитории и публикации одним списком, в этом порядке.
+ */
 function allNodes(data: GraphData): GraphNode[] {
   return [...data.authors, ...data.repos, ...data.pubs];
 }
 
 /**
- * Какие узлы показывает вкладка. Вкладки 4 (поиск) — пустой список, карта
- * не привязана ни к одному из трёх графов. Единственный узловой фильтр —
- * год публикации на вкладке 3 (filters.yearMax); публикации без известного
- * года (year === null) никогда не скрываются фильтром по году — мы не
- * знаем их год, а не знаем, что он "слишком поздний".
+ * Возвращает узлы, которые должна показывать активная вкладка. Вкладка 4
+ * (поиск) — пустой список, карта на ней не привязана ни к одному из трёх
+ * графов.
+ *
+ * Единственный узловой фильтр — год публикации на вкладке 3
+ * (`filters.yearMax`): публикации без известного года (`year === null`)
+ * никогда не скрываются этим фильтром — мы не знаем их год, а не знаем,
+ * что он "слишком поздний", это разные вещи.
+ *
+ * @param data - данные графа.
+ * @param tab - активная вкладка.
+ * @param filters - текущие пороги фильтров (используется только `yearMax`, только для `tab === 3`).
+ * @returns Список узлов, которые нужно нарисовать на карте для этой вкладки.
+ *
+ * @example
+ * tabGraphNodes(data, 1, filters); // data.authors — вкладка "Авторы"
+ * tabGraphNodes(data, 4, filters); // [] — у вкладки "Поиск" своего графа нет
  */
 function tabGraphNodes(data: GraphData, tab: TabId, filters: Filters): GraphNode[] {
   switch (tab) {
@@ -64,11 +84,21 @@ function tabGraphNodes(data: GraphData, tab: TabId, filters: Filters): GraphNode
 }
 
 /**
- * Какие рёбра показывает вкладка — тот же принцип, что и у tabGraphNodes(),
- * плюс порог веса: на вкладке "Авторы" прячем слабое соавторство (меньше
- * filters.minCoauth совместных публикаций), на "Публикациях" — связи
- * между публикациями с малым числом общих авторов (filters.minSharedAuthors).
- * У репозиториев (вкладка 2) порога веса нет вообще — как и в старом GUI.
+ * Возвращает рёбра, которые должна показывать активная вкладка — тот же
+ * принцип, что и {@link tabGraphNodes}, плюс порог веса: на вкладке
+ * "Авторы" прячутся слабые связи соавторства (меньше `filters.minCoauth`
+ * совместных публикаций), на "Публикациях" — связи между публикациями с
+ * малым числом общих авторов (`filters.minSharedAuthors`). У репозиториев
+ * (вкладка 2) порога веса нет вообще — как и в старом GUI.
+ *
+ * @param data - данные графа.
+ * @param tab - активная вкладка.
+ * @param filters - текущие пороги фильтров.
+ * @returns Список рёбер, которые нужно нарисовать на карте для этой вкладки.
+ *
+ * @example
+ * tabGraphEdges(data, 1, { minCoauth: 2, ... }); // только coauth_edges с w >= 2
+ * tabGraphEdges(data, 2, filters);               // все repo_edges, без порога веса
  */
 function tabGraphEdges(data: GraphData, tab: TabId, filters: Filters): Edge[] {
   switch (tab) {
@@ -84,9 +114,18 @@ function tabGraphEdges(data: GraphData, tab: TabId, filters: Filters): Edge[] {
 }
 
 /**
- * Цвет узла — цвет его департамента. Пока без приглушения/hover-состояний
- * (core/colors.ts с этой логикой — отдельный следующий шаг), только базовая
- * раскраска, чтобы точки на карте были различимы по департаментам.
+ * Строит GeoJSON-коллекцию точек узлов активной вкладки, готовую для
+ * `map.addSource`/`GeoJSONSource.setData`. Цвет узла — цвет его
+ * департамента (пока без приглушения/hover-состояний — это отдельный
+ * будущий шаг, только базовая раскраска, чтобы точки были различимы по
+ * департаментам).
+ *
+ * @param data - данные графа.
+ * @param lang - язык интерфейса (влияет на `properties.label`).
+ * @param tab - активная вкладка.
+ * @param filters - текущие пороги фильтров.
+ * @param searchDetails - карта деталей публикаций (для настоящих названий публикаций в подписях).
+ * @returns GeoJSON `FeatureCollection` точек с свойствами {@link NodeProps} на каждой.
  */
 export function buildNodeFeatures(
   data: GraphData,
@@ -119,17 +158,23 @@ export function buildNodeFeatures(
 }
 
 /**
- * Рёбра текущей вкладки — только те, для которых есть обе позиции.
- * Позиции ищем среди ВСЕХ узлов (allNodes), а не только узлов текущей
- * вкладки — концы ребра всегда того же вида, что и сама вкладка (например,
- * coauth_edges всегда между авторами), так что это не смешивает графы,
- * а просто самый простой способ получить карту "ключ -> координаты".
- * Ребро между публикациями, у одной из которых год скрыт фильтром
- * (tabGraphNodes выше), автоматически пропадает тем же путём — обе
- * позиции ищутся в allNodes (там публикация всё ещё есть физически), но
- * "нет позиции" здесь означает буквально "нет такого ключа в authors/
- * repos/pubs", а не "скрыт фильтром" — поэтому год отдельно проверяется
- * ниже через posByYear.
+ * Строит GeoJSON-коллекцию линий рёбер активной вкладки — только тех, для
+ * которых нашлись обе позиции. Позиции ищутся среди ВСЕХ узлов
+ * ({@link allNodes}), а не только узлов текущей вкладки: концы ребра всегда
+ * того же вида, что и сама вкладка (например, `coauth_edges` всегда между
+ * авторами), так что это не смешивает графы, а просто самый простой способ
+ * получить карту "ключ -> координаты".
+ *
+ * Ребро между публикациями, у одной из которых год скрыт фильтром года
+ * (см. {@link tabGraphNodes}), автоматически пропадает не через "нет
+ * позиции" (позиция физически есть в `allNodes`), а через отдельную
+ * проверку `pubYearByKey` ниже — "нет позиции" здесь означает буквально
+ * "нет такого ключа в authors/repos/pubs", а не "скрыт фильтром".
+ *
+ * @param data - данные графа.
+ * @param tab - активная вкладка.
+ * @param filters - текущие пороги фильтров.
+ * @returns GeoJSON `FeatureCollection` линий с свойствами {@link EdgeProps} на каждой.
  */
 export function buildEdgeFeatures(data: GraphData, tab: TabId, filters: Filters): FeatureCollection<LineString, EdgeProps> {
   const posByKey = new Map(allNodes(data).map((node) => [node.key, [node.gx, node.gy] as [number, number]]));
@@ -163,10 +208,14 @@ export function buildEdgeFeatures(data: GraphData, tab: TabId, filters: Filters)
 }
 
 /**
- * Прямоугольник, охватывающий вообще все узлы (а не только текущей
- * вкладки) — камера подгоняется под него один раз при загрузке и больше
- * не трогается при переключении вкладок (так же вело себя старое
- * main.js: fitBounds там был на фиксированный box, общий для всех вкладок).
+ * Вычисляет прямоугольник, охватывающий вообще все узлы (а не только
+ * текущей вкладки) — камера подгоняется под него один раз при загрузке и
+ * больше не трогается при переключении вкладок (так же вело себя старое
+ * `main.js`: `fitBounds` там был на фиксированный box, общий для всех вкладок).
+ *
+ * @param data - данные графа.
+ * @returns Пара координат `[[minLon, minLat], [maxLon, maxLat]]`, формат,
+ *   который MapLibre принимает напрямую в `map.fitBounds(...)`.
  */
 export function nodeBounds(data: GraphData): [[number, number], [number, number]] {
   const nodes = allNodes(data);
@@ -181,12 +230,15 @@ export function nodeBounds(data: GraphData): [[number, number], [number, number]
 // Экспортируем id-константы наружу (не просто private) — features/selection.ts
 // должен знать, по какому слою кликать и на каком слое менять paint-свойства
 // подсветки, чтобы не дублировать строки-литералы в двух файлах.
+/** id слоя с видимыми точками узлов (MapLibre `circle`-слой). */
 export const NODE_LAYER_ID = "graph-nodes-circle";
+/** id слоя с видимыми линиями рёбер (MapLibre `line`-слой, тонкий). */
 export const EDGE_LAYER_ID = "graph-edges-line";
 // Невидимый слой поверх того же источника — шире видимой линии, нужен
 // только для клика/наведения (features/selection.ts). Разделять "как
 // выглядит" и "где кликается" — стандартный приём для тонких линий:
 // сделать линию визуально тонкой, но реальную область попадания шире.
+/** id невидимого слоя-приёмника кликов по рёбрам (шире видимой линии, `line-opacity: 0`). */
 export const EDGE_HIT_LAYER_ID = "graph-edges-hit";
 const NODE_SOURCE_ID = "graph-nodes";
 const EDGE_SOURCE_ID = "graph-edges";
@@ -198,11 +250,18 @@ const EDGE_SOURCE_ID = "graph-edges";
 const NO_SELECTION = "";
 
 /**
- * Одно и то же MapLibre-выражение "если это выбранная точка — value1,
- * иначе — value2" нужно и при первой отрисовке, и при каждой смене выбора
- * (setSelectedNode) — раньше оба места писали это выражение и оба числа
- * (8/4, 2/1) заново, что уже привело к рассинхрону при правке. Теперь оба
- * вызывающих места используют одну функцию и одни значения из MAP_CONFIG.
+ * Строит MapLibre-выражение вида "если это выбранная точка (по
+ * `properties.key`) — `selectedValue`, иначе — `defaultValue`". Нужно и при
+ * первой отрисовке (в {@link addGraphLayers}), и при каждой смене выбора
+ * (в {@link setSelectedNode}) — раньше оба места писали это выражение и
+ * оба числа (`8`/`4`, `2`/`1`) заново, что уже приводило к рассинхрону при
+ * правке. Теперь оба вызывающих места используют одну функцию и одни
+ * значения из {@link MAP_CONFIG}.
+ *
+ * @param compareTo - ключ узла, который считается выбранным (или {@link NO_SELECTION}, если не выбрано ничего).
+ * @param selectedValue - значение paint-свойства для выбранного узла.
+ * @param defaultValue - значение paint-свойства для всех остальных узлов.
+ * @returns MapLibre-выражение, пригодное для paint-свойства слоя.
  */
 function selectedNodeExpression(
   compareTo: string,
@@ -213,9 +272,15 @@ function selectedNodeExpression(
 }
 
 /**
- * То же самое, но для ребра — у него нет одного ключа, есть пара (s, t) на
- * концах, поэтому сравниваем оба сразу. compareS/compareT === NO_SELECTION
- * гарантированно не совпадут ни с одним настоящим ребром (см. NO_SELECTION).
+ * То же самое, что и {@link selectedNodeExpression}, но для ребра — у него
+ * нет одного ключа, есть пара `(s, t)` на концах, поэтому сравниваются оба
+ * сразу через `["all", ...]`.
+ *
+ * @param compareS - `s` выбранного ребра (или {@link NO_SELECTION}).
+ * @param compareT - `t` выбранного ребра (или {@link NO_SELECTION}).
+ * @param selectedValue - значение paint-свойства для выбранного ребра.
+ * @param defaultValue - значение paint-свойства для всех остальных рёбер.
+ * @returns MapLibre-выражение, пригодное для paint-свойства слоя.
  */
 function selectedEdgeExpression(
   compareS: string,
@@ -231,7 +296,19 @@ function selectedEdgeExpression(
   ];
 }
 
-/** Добавляет источники и слои узлов/рёбер текущей вкладки — вызывается один раз изнутри mountReactiveGraph(). */
+/**
+ * Добавляет источники и слои узлов/рёбер текущей вкладки на карту.
+ * Вызывается один раз изнутри {@link mountReactiveGraph}, при первом
+ * монтировании графа — дальнейшие обновления идут через
+ * {@link refreshGraphLayers} (источники уже существуют, меняются только данные).
+ *
+ * @param map - экземпляр карты MapLibre.
+ * @param data - данные графа.
+ * @param lang - язык интерфейса.
+ * @param tab - активная вкладка на момент монтирования.
+ * @param filters - текущие пороги фильтров.
+ * @param searchDetails - карта деталей публикаций.
+ */
 function addGraphLayers(
   map: MapLibreMap,
   data: GraphData,
@@ -293,7 +370,18 @@ function addGraphLayers(
   });
 }
 
-/** Пересобирает узлы и рёбра под новые вкладку/язык/фильтры — источники уже добавлены (addGraphLayers), здесь только setData(). */
+/**
+ * Пересобирает узлы и рёбра под новые вкладку/язык/фильтры — источники уже
+ * добавлены ({@link addGraphLayers} к этому моменту уже вызывалась один
+ * раз), здесь только `setData()` на существующих источниках.
+ *
+ * @param map - экземпляр карты MapLibre.
+ * @param data - данные графа.
+ * @param lang - новый язык интерфейса.
+ * @param tab - новая активная вкладка.
+ * @param filters - новые пороги фильтров.
+ * @param searchDetails - карта деталей публикаций.
+ */
 function refreshGraphLayers(
   map: MapLibreMap,
   data: GraphData,
@@ -311,7 +399,17 @@ function refreshGraphLayers(
 
 /**
  * Подсвечивает выбранный узел на карте (крупнее, с более толстой обводкой)
- * и снимает подсветку с остальных. key === null — снять выделение совсем.
+ * и снимает подсветку с остальных. `key === null` — снять выделение
+ * совсем. Категориальный цвет узла (`circle-color`, цвет департамента) при
+ * этом не трогается — выделение показывается размером и обводкой, а не
+ * сменой цвета.
+ *
+ * @param map - экземпляр карты MapLibre.
+ * @param key - ключ узла, который нужно подсветить, либо `null`, чтобы снять подсветку.
+ *
+ * @example
+ * setSelectedNode(map, "A1"); // A1 рисуется крупнее остальных
+ * setSelectedNode(map, null); // подсветка снята, все узлы обычного размера
  */
 export function setSelectedNode(map: MapLibreMap, key: string | null): void {
   const compareTo = key ?? NO_SELECTION;
@@ -328,8 +426,18 @@ export function setSelectedNode(map: MapLibreMap, key: string | null): void {
 }
 
 /**
- * То же самое для ребра (толще и непрозрачнее вместо крупнее) — edge === null
- * снимает выделение совсем, ровно как key === null у setSelectedNode.
+ * То же самое, что и {@link setSelectedNode}, но для ребра — вместо
+ * "крупнее" выбранное ребро рисуется толще и полностью непрозрачным
+ * (обычные рёбра — тонкие и полупрозрачные, см. {@link MAP_CONFIG}).
+ * `edge === null` снимает выделение совсем, ровно как `key === null` у
+ * {@link setSelectedNode}.
+ *
+ * @param map - экземпляр карты MapLibre.
+ * @param edge - концы ребра, которое нужно подсветить (`s`/`t`, порядок как в данных), либо `null`.
+ *
+ * @example
+ * setSelectedEdge(map, { s: "A1", t: "A2" }); // это ребро толще и непрозрачнее остальных
+ * setSelectedEdge(map, null); // подсветка снята
  */
 export function setSelectedEdge(map: MapLibreMap, edge: { s: string; t: string } | null): void {
   const compareS = edge?.s ?? NO_SELECTION;
@@ -348,12 +456,23 @@ export function setSelectedEdge(map: MapLibreMap, edge: { s: string; t: string }
 
 /**
  * Единственная точка входа для отрисовки графа: добавляет слои под текущее
- * состояние (store.get()) и дальше сама следит за store — пересобирает
+ * состояние (`store.get()`) и дальше сама следит за store — пересобирает
  * узлы/рёбра при смене вкладки, языка ИЛИ фильтров. Раньше три разных
- * места (main.ts, features/tabs/index.ts, features/langToggle.ts) сами
- * решали, когда дёргать пересборку графа, — теперь это знает только сам
- * граф, а остальным фичам достаточно менять store.tab/lang/filters, не
- * заботясь о том, что ещё нужно перерисовать.
+ * места (`app/main.ts`, `features/tabs/index.ts`, `features/langToggle.ts`)
+ * сами решали, когда дёргать пересборку графа, — теперь это знает только
+ * сам граф, а остальным фичам достаточно менять `store.tab`/`lang`/`filters`,
+ * не заботясь о том, что ещё нужно перерисовать.
+ *
+ * Смена `selection` намеренно НЕ пересобирает граф (подсветка выбранного
+ * узла/ребра — отдельная, гораздо более дешёвая операция через
+ * {@link setSelectedNode}/{@link setSelectedEdge} в features/selection.ts,
+ * без пересоздания всего источника данных).
+ *
+ * @param map - экземпляр карты MapLibre.
+ * @param store - Store приложения.
+ * @param data - данные графа.
+ * @param searchDetails - карта деталей публикаций.
+ * @returns Функция отписки от store (unmount) — снимает подписку, добавленную этим вызовом.
  */
 export function mountReactiveGraph(
   map: MapLibreMap,

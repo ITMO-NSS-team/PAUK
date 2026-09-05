@@ -9,15 +9,28 @@ import { requireElement } from "../core/dom";
 import { t, type Lang } from "../core/i18n";
 import type { AppState, Store } from "../core/state";
 
+/** Параметры одной строки регулятора — вход {@link buildFilterRow}. */
 interface FilterRowOptions {
+  /** Текст подписи слева от ползунка. */
   label: string;
+  /** Минимально допустимое значение ползунка. */
   min: number;
+  /** Максимально допустимое значение ползунка. */
   max: number;
+  /** Текущее значение ползунка. */
   value: number;
+  /** Вызывается при каждом движении ползунка с новым числовым значением. */
   onChange: (value: number) => void;
 }
 
-/** Одна строка "подпись + ползунок + текущее значение" — тот же принцип, что и core/render.ts::renderListItem: один способ собрать строку регулятора вместо копирования разметки под каждый фильтр. */
+/**
+ * Собирает одну строку "подпись + ползунок + текущее значение" — тот же
+ * принцип, что и `core/render.ts::renderListItem`: один способ собрать
+ * строку регулятора вместо копирования разметки под каждый фильтр.
+ *
+ * @param options - см. {@link FilterRowOptions}.
+ * @returns Готовый `<label class="filter-row">` с ползунком внутри, ещё не вставленный в DOM.
+ */
 function buildFilterRow(options: FilterRowOptions): HTMLElement {
   const row = document.createElement("label");
   row.className = "filter-row";
@@ -46,11 +59,15 @@ function buildFilterRow(options: FilterRowOptions): HTMLElement {
 }
 
 /**
- * Подключает регуляторы фильтров. Перестраивает разметку только при смене
- * вкладки или языка (state.tab/state.lang) — сам ползунок уже обновляет
- * свою подпись значения по месту через onChange, поэтому реагировать на
- * каждое изменение store целиком (в том числе на смену selection от
- * клика по карте) незачем — как и в features/tabs/index.ts::activateTab().
+ * Подключает регуляторы фильтров для активной вкладки. Перестраивает
+ * разметку только при смене вкладки или языка (`state.tab`/`state.lang`) —
+ * сам ползунок уже обновляет свою подпись значения по месту через
+ * `onChange`, поэтому реагировать на каждое изменение store целиком (в том
+ * числе на смену `selection` от клика по карте) незачем — как и в
+ * `features/tabs/index.ts::activateTab()`.
+ *
+ * @param store - Store приложения.
+ * @returns Функция отписки (unmount) от Store.
  */
 export function mountFilters(store: Store<AppState>): () => void {
   const container = requireElement("filter-bar");
@@ -58,10 +75,24 @@ export function mountFilters(store: Store<AppState>): () => void {
   let prevTab: AppState["tab"] | null = null;
   let prevLang: Lang | null = null;
 
+  /**
+   * Точечно обновляет пороги фильтров в Store, мержа `patch` поверх
+   * текущих `filters` (по тому же принципу, что и сам `Store.set`).
+   *
+   * @param patch - изменяемые поля фильтров (обычно одно поле за раз, из `onChange` конкретного ползунка).
+   */
   function setFilter(patch: Partial<AppState["filters"]>): void {
     store.set({ filters: { ...store.get().filters, ...patch } });
   }
 
+  /**
+   * Перестраивает разметку регуляторов под текущую вкладку/язык. Не
+   * делает ничего, если ни то, ни другое не изменилось с прошлого вызова
+   * (см. `prevTab`/`prevLang` выше) — иначе разметка пересобиралась бы на
+   * любое изменение store, включая смену `selection`.
+   *
+   * @param state - текущее состояние приложения.
+   */
   function render(state: AppState): void {
     if (state.tab === prevTab && state.lang === prevLang) return;
     prevTab = state.tab;

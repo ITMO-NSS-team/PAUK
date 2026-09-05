@@ -5,30 +5,64 @@
 
 import type { GraphData } from "../../contracts/graph";
 import type { SearchDetail, SearchHit } from "../../contracts/search";
-import { nodeLabel } from "../../core/data";
+import { githubShortPath, nodeLabel } from "../../core/data";
 import { localize, t, type Lang } from "../../core/i18n";
 
 // Формат ключа department-хита ("dept:<id>") — в одном месте, чтобы
 // сборка (deptHitKey) и разбор (parseDeptHitKey) точно не разъехались.
 const DEPT_KEY_PREFIX = "dept:";
 
-/** department id -> ключ SearchHit. */
+/**
+ * Строит ключ результата поиска для департамента — департаменты, в отличие
+ * от узлов графа, не имеют своего строкового `key` (только числовой `id`),
+ * а `SearchHit.key` должен быть строкой, единой для всех видов результатов.
+ *
+ * @param deptId - числовой id департамента (`Department.id`).
+ * @returns Строковый ключ вида `"dept:<id>"`.
+ *
+ * @example
+ * deptHitKey(0); // "dept:0"
+ */
 export function deptHitKey(deptId: number): string {
   return `${DEPT_KEY_PREFIX}${deptId}`;
 }
 
-/** Обратное преобразование: ключ department-хита -> department id. */
+/**
+ * Обратное преобразование к {@link deptHitKey}: достаёт числовой id
+ * департамента из ключа результата поиска.
+ *
+ * @param key - ключ результата поиска вида `"dept:<id>"` (см. {@link deptHitKey}).
+ * @returns Числовой id департамента.
+ *
+ * @example
+ * parseDeptHitKey("dept:0"); // 0
+ * parseDeptHitKey(deptHitKey(42)) === 42; // true — обратимость гарантирована тестом
+ */
 export function parseDeptHitKey(key: string): number {
   return Number(key.slice(DEPT_KEY_PREFIX.length));
 }
 
 /**
- * Строит плоский индекс из всех авторов, репозиториев, публикаций и
- * департаментов — вызывается один раз при монтировании вкладки поиска,
- * а не на каждое нажатие клавиши. sub — короткая вторая строка под
- * основным названием, как и в старом GUI: для автора это департамент и
- * число публикаций, для репозитория — путь на GitHub без "https://",
- * для публикации — год и департамент, у департамента своей sub нет.
+ * Строит плоский индекс результатов поиска из всех авторов, репозиториев,
+ * публикаций и департаментов сразу. Вызывается один раз при монтировании
+ * вкладки поиска и при каждой смене языка (см. features/tabs/search.ts) —
+ * не на каждое нажатие клавиши, это отдельная функция {@link searchHits}.
+ *
+ * `sub` — короткая вторая строка под основным названием, как и в старом
+ * GUI: для автора это департамент и число публикаций, для репозитория —
+ * путь на GitHub без `"https://"`, для публикации — год, департамент и
+ * (если есть) журнал, у департамента своей `sub` нет.
+ *
+ * @param data - данные графа.
+ * @param lang - язык интерфейса (влияет на `label`/`sub` каждого результата).
+ * @param searchDetails - карта деталей публикаций (см. `core/data.ts::indexSearchDetailsByKey`) —
+ *   нужна, чтобы у публикаций в поиске было настоящее название и журнал, а не голый ключ.
+ * @returns Список результатов поиска всех видов, в порядке author → repo → pub → dept.
+ *
+ * @example
+ * const index = buildSearchIndex(data, "ru", searchDetailsByKey);
+ * index.find((hit) => hit.kind === "dept");
+ * // { key: "dept:0", kind: "dept", label: "Институт прикладных систем", sub: null }
  */
 export function buildSearchIndex(data: GraphData, lang: Lang, searchDetails: Map<string, SearchDetail>): SearchHit[] {
   const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
@@ -50,7 +84,7 @@ export function buildSearchIndex(data: GraphData, lang: Lang, searchDetails: Map
     label: repo.label,
     // Ссылка на GitHub обычно длиннее видимого места в списке — оставляем
     // только "owner/repo", без протокола и домена.
-    sub: repo.url.replace("https://github.com/", ""),
+    sub: githubShortPath(repo.url),
   }));
 
   const pubHits: SearchHit[] = data.pubs.map((pub) => ({
@@ -73,9 +107,20 @@ export function buildSearchIndex(data: GraphData, lang: Lang, searchDetails: Map
 }
 
 /**
- * Фильтрует индекс по подстроке в названии или в sub, без учёта регистра.
- * Пустой запрос — пустой список результатов (а не "показать всё") —
- * так же вело себя старое полноэкранное окно поиска.
+ * Фильтрует индекс результатов поиска по подстроке в названии или в `sub`,
+ * без учёта регистра. Пустой запрос даёт пустой список результатов (а не
+ * "показать всё") — так же вело себя старое полноэкранное окно поиска.
+ *
+ * @param index - индекс результатов (см. {@link buildSearchIndex}).
+ * @param query - текст запроса, как он есть в поле ввода (пробелы по краям обрезаются).
+ * @returns Отфильтрованный список результатов, в том же порядке, что и в `index`.
+ *
+ * @example
+ * const hits = searchHits(index, "иванов");
+ * // все результаты, чьи label/sub содержат "иванов" без учёта регистра
+ *
+ * searchHits(index, "");   // [] — пустой запрос не значит "показать всё"
+ * searchHits(index, "  "); // [] — то же самое для запроса из одних пробелов
  */
 export function searchHits(index: SearchHit[], query: string): SearchHit[] {
   const needle = query.trim().toLowerCase();

@@ -9,8 +9,10 @@ import {
   buildNodeFeatures,
   EDGE_LAYER_ID,
   mountReactiveGraph,
+  NODE_LAYER_ID,
   nodeBounds,
   setSelectedEdge,
+  setSelectedNode,
 } from "../src/map/build";
 
 // Пороги, которые ничего не отсекают — для тестов, где фильтрация не в фокусе.
@@ -123,6 +125,43 @@ describe("map/build на фикстур-данных", () => {
       expect(node.gy).toBeGreaterThanOrEqual(minLat);
       expect(node.gy).toBeLessThanOrEqual(maxLat);
     }
+  });
+});
+
+describe("setSelectedNode", () => {
+  function fakeMapWithPaint(): { map: MapLibreMap; setPaintProperty: ReturnType<typeof vi.fn> } {
+    const setPaintProperty = vi.fn();
+    return { map: { setPaintProperty } as unknown as MapLibreMap, setPaintProperty };
+  }
+
+  it("красит именно NODE_LAYER_ID (circle-radius и circle-stroke-width)", () => {
+    const { map, setPaintProperty } = fakeMapWithPaint();
+    setSelectedNode(map, "A1");
+
+    expect(setPaintProperty).toHaveBeenCalledWith(NODE_LAYER_ID, "circle-radius", [
+      "case",
+      ["==", ["get", "key"], "A1"],
+      MAP_CONFIG.node.radiusSelected,
+      MAP_CONFIG.node.radius,
+    ]);
+    expect(setPaintProperty).toHaveBeenCalledWith(NODE_LAYER_ID, "circle-stroke-width", [
+      "case",
+      ["==", ["get", "key"], "A1"],
+      MAP_CONFIG.node.strokeWidthSelected,
+      MAP_CONFIG.node.strokeWidth,
+    ]);
+  });
+
+  it("null снимает выделение — сравнение с пустой строкой не совпадёт ни с одним настоящим ключом", () => {
+    const { map, setPaintProperty } = fakeMapWithPaint();
+    setSelectedNode(map, null);
+
+    expect(setPaintProperty).toHaveBeenCalledWith(NODE_LAYER_ID, "circle-radius", [
+      "case",
+      ["==", ["get", "key"], ""],
+      MAP_CONFIG.node.radiusSelected,
+      MAP_CONFIG.node.radius,
+    ]);
   });
 });
 

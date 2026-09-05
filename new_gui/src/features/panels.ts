@@ -14,6 +14,8 @@ import {
   buildDeptEdgeIndex,
   buildRepoAuthorIndex,
   buildRepoPubIndex,
+  githubProfileUrl,
+  githubShortPath,
   indexByKey,
   nodeLabel,
 } from "../core/data";
@@ -21,43 +23,95 @@ import { requireElement } from "../core/dom";
 import { kindLabel, localize, t } from "../core/i18n";
 import type { AppState, Store } from "../core/state";
 
-/** Значение строки карточки — обычный текст либо один или несколько кликабельных ссылок (DOI, ссылка(и) на код). */
+/** Значение строки карточки — обычный текст либо один или несколько кликабельных ссылок (DOI, GitHub/ORCID, ссылка(и) на код). */
 type PanelRowValue = string | PanelLink[];
+/** Одна кликабельная ссылка в строке карточки — всегда открывается в новой вкладке ({@link buildCard}). */
 interface PanelLink {
   href: string;
   text: string;
 }
+/** Одна строка карточки: `[подпись, значение]`. */
 type PanelRow = [label: string, value: PanelRowValue];
 
 /**
- * Ссылка на DOI — как и в старом GUI (search.js): если doi уже пришёл
- * полным URL вида https://doi.org/..., не задваиваем префикс.
+ * Строит ссылку на DOI публикации — как и в старом GUI (`search.js`): если
+ * `doi` уже пришёл полным URL вида `https://doi.org/...`, префикс не
+ * задваивается.
+ *
+ * Отдельной проверки схемы (как у {@link codeLink}) не требует: схема
+ * `"https://doi.org/"` всегда захардкожена нами, значение подставляется
+ * только в путь — оно физически не может подменить схему ссылки.
+ *
+ * @param doi - DOI публикации, с префиксом `https://doi.org/` или без него.
+ * @returns Ссылка с полным `https://doi.org/...` в `href` и исходным `doi` в `text`.
+ *
+ * @example
+ * doiLink("10.1000/xyz123"); // { href: "https://doi.org/10.1000/xyz123", text: "10.1000/xyz123" }
+ * doiLink("https://doi.org/10.1000/xyz123"); // тот же результат — префикс не задвоился
  */
 function doiLink(doi: string): PanelLink {
   return { href: `https://doi.org/${doi.replace(/^https?:\/\/doi\.org\//, "")}`, text: doi };
 }
 
 /**
- * Ссылки на GitHub-профиль и ORCID автора — та же схема, что и у doiLink:
- * схема "https://..." захардкожена нами, значение (логин/id) подставляется
- * только в путь, поэтому отдельной проверки схемы (как у codeLink) не
- * требуется.
+ * Строит ссылку на GitHub-профиль автора по его логину. Использует общий
+ * {@link githubProfileUrl} из `core/data.ts`, а не собственный литерал
+ * `"https://github.com/"` — так сборка ссылки (здесь) и укорачивание уже
+ * готовой ссылки (см. {@link codeLink}) не могут разойтись между собой.
+ *
+ * @param username - логин автора на GitHub (`AuthorNode.github`).
+ * @returns Ссылка на профиль с логином в `text`.
+ *
+ * @example
+ * githubLink("ivanov-ii"); // { href: "https://github.com/ivanov-ii", text: "ivanov-ii" }
  */
 function githubLink(username: string): PanelLink {
-  return { href: `https://github.com/${username}`, text: username };
+  return { href: githubProfileUrl(username), text: username };
 }
+
+/**
+ * Строит ссылку на ORCID автора по его id. Схема `"https://orcid.org/"`
+ * захардкожена нами — та же логика безопасности, что и у {@link doiLink}.
+ *
+ * @param id - ORCID id автора (`AuthorNode.orcid`), формата `"0000-0001-2345-6789"`.
+ * @returns Ссылка на страницу ORCID с id в `text`.
+ *
+ * @example
+ * orcidLink("0000-0001-2345-6789"); // { href: "https://orcid.org/0000-0001-2345-6789", text: "0000-0001-2345-6789" }
+ */
 function orcidLink(id: string): PanelLink {
   return { href: `https://orcid.org/${id}`, text: id };
 }
 
 /**
- * Подпись ссылки на код — путь без "https://github.com/", как в старом
- * GUI, чтобы длинный URL не распирал панель. url в перспективе приходит
- * из харвестинга GitHub (внешние данные, не только наша синтетическая
- * fixture) — перед тем как класть его в href, проверяем схему: без этого
- * "javascript:..." в поле code_url привело бы к выполнению кода по клику.
- * DOI (doiLink выше) той же проверки не требует — там схема "https://doi.org/"
- * всегда захардкожена нами, значение подставляется только в путь.
+ * Строит ссылку на код публикации из `SearchDetail.code_url`, проверяя
+ * схему получившегося URL перед тем, как класть его в `href`.
+ *
+ * `url` в перспективе приходит из харвестинга GitHub (внешние данные, не
+ * только наша синтетическая fixture) — без проверки схемы значение вроде
+ * `"javascript:alert(1)"` в поле `code_url` привело бы к выполнению
+ * произвольного кода по клику на ссылку (XSS). Если схема не `http:`/`https:`,
+ * или `url` вообще не парсится как URL, ссылка заменяется на безопасный
+ * `"about:blank"`, а в консоль пишется предупреждение — не тихо, чтобы
+ * проблема с данными была заметна разработчику.
+ *
+ * DOI ({@link doiLink}) и GitHub/ORCID ({@link githubLink}, {@link orcidLink})
+ * такой проверки не требуют — там схема `"https://..."` всегда захардкожена
+ * нами, а значение из данных подставляется только в путь, поэтому не может
+ * подменить схему ссылки. Здесь же схему определяет сам `url` целиком, так
+ * что она может быть чем угодно, включая опасное `javascript:`.
+ *
+ * @param url - произвольная ссылка на код из `SearchDetail.code_url`.
+ * @returns Ссылка с проверенной схемой в `href` (или `"about:blank"`, если
+ *   схема небезопасна/не распознана) и коротким путём без
+ *   `"https://github.com/"` в `text` (см. {@link githubShortPath}).
+ *
+ * @example
+ * codeLink("https://github.com/example-org/graph-toolkit");
+ * // { href: "https://github.com/example-org/graph-toolkit", text: "example-org/graph-toolkit" }
+ *
+ * codeLink("javascript:alert(1)");
+ * // { href: "about:blank", text: "javascript:alert(1)" } — плюс предупреждение в консоли
  */
 function codeLink(url: string): PanelLink {
   let href = "about:blank";
@@ -71,15 +125,24 @@ function codeLink(url: string): PanelLink {
   } catch {
     console.warn(`codeLink: code_url не распознан как URL, ссылка заменена на "about:blank": ${url}`);
   }
-  return { href, text: url.replace("https://github.com/", "") };
+  return { href, text: githubShortPath(url) };
 }
 
 /**
  * Подключает панель информации: подписывается на Store и перерисовывает
- * содержимое каждый раз, когда меняется state.selection ИЛИ state.lang —
- * оба поля читаются в одном render(), поэтому одной подписки достаточно,
- * без отдельной логики "что именно изменилось". Возвращает функцию
- * отписки (unmount).
+ * содержимое каждый раз, когда меняется `state.selection` ИЛИ
+ * `state.lang` — оба поля читаются в одном `render()`, поэтому одной
+ * подписки достаточно, без отдельной логики "что именно изменилось".
+ *
+ * При монтировании один раз строит все нужные обратные индексы
+ * (`indexByKey`, `buildAuthorPubIndex` и т.д.) — они не меняются, пока не
+ * поменялись сами `data`, поэтому пересчитывать их на каждый рендер не
+ * нужно, только на каждый клик искать в уже готовых структурах.
+ *
+ * @param store - Store приложения.
+ * @param data - данные графа.
+ * @param searchDetails - карта деталей публикаций (настоящие названия/DOI/код публикаций).
+ * @returns Функция отписки (unmount) от Store.
  */
 export function mountPanel(
   store: Store<AppState>,
@@ -99,7 +162,14 @@ export function mountPanel(
   const repoAuthorIndex = buildRepoAuthorIndex(data);
   const repoPubIndex = buildRepoPubIndex(data);
 
-  /** Подписи департаментов по списку id, через запятую — для строки "связанные департаменты" в карточке департамента. */
+  /**
+   * Строит подписи департаментов по списку их id, через запятую — для
+   * строки "связанные департаменты" в карточке департамента.
+   *
+   * @param ids - список id департаментов.
+   * @param lang - язык интерфейса.
+   * @returns Подписи через `", "`, в том же порядке, что и `ids`.
+   */
   function deptLabelsOf(ids: number[], lang: AppState["lang"]): string {
     return ids
       .map((id) => {
@@ -109,7 +179,17 @@ export function mountPanel(
       .join(", ");
   }
 
-  /** Подписи узлов по списку ключей, через запятую — для строк "общие публикации"/"общие авторы" в карточке ребра и списков в карточке автора. */
+  /**
+   * Строит подписи узлов графа по списку их ключей, через запятую — общая
+   * функция для строк "общие публикации"/"общие авторы" в карточке ребра
+   * и всех похожих списков в карточках автора/репозитория/публикации.
+   *
+   * @param keys - список ключей узлов (авторов, репозиториев или публикаций).
+   * @param lang - язык интерфейса.
+   * @returns Подписи через `", "`, в том же порядке, что и `keys`. Ключ,
+   *   которого нет в `index` (не должно случаться на согласованных
+   *   данных), используется как есть, а не отбрасывается.
+   */
   function labelsOf(keys: string[], lang: AppState["lang"]): string {
     return keys
       .map((key) => {
@@ -119,7 +199,15 @@ export function mountPanel(
       .join(", ");
   }
 
-  /** Публикации автора, недавние сверху (год по убыванию), обрезано до PANEL_CONFIG.listLimit — как и topCoauthorKeys ниже, без этого список на реальных данных не поместился бы в карточку. */
+  /**
+   * Возвращает ключи публикаций автора, недавние сверху (год по
+   * убыванию), обрезано до {@link PANEL_CONFIG.listLimit} — без этого
+   * список на реальных данных (у активного автора может быть сотни
+   * публикаций) не поместился бы в небольшую карточку.
+   *
+   * @param authorKey - ключ автора.
+   * @returns До `PANEL_CONFIG.listLimit` ключей публикаций, от новых к старым.
+   */
   function recentPubKeysOf(authorKey: string): string[] {
     return (authorPubs.get(authorKey) ?? [])
       .map((key) => index.get(key))
@@ -129,7 +217,13 @@ export function mountPanel(
       .map((node) => node.key);
   }
 
-  /** Соавторы автора, по убыванию суммарного веса связи (числа совместных публикаций), обрезано до PANEL_CONFIG.listLimit. */
+  /**
+   * Возвращает ключи соавторов автора, по убыванию суммарного веса связи
+   * (числа совместных публикаций), обрезано до {@link PANEL_CONFIG.listLimit}.
+   *
+   * @param authorKey - ключ автора.
+   * @returns До `PANEL_CONFIG.listLimit` ключей соавторов, от самых частых к редким.
+   */
   function topCoauthorKeys(authorKey: string): string[] {
     return [...(coauthIndex.get(authorKey) ?? new Map<string, number>()).entries()]
       .sort(([, weightA], [, weightB]) => weightB - weightA)
@@ -137,7 +231,13 @@ export function mountPanel(
       .map(([key]) => key);
   }
 
-  /** Репозитории автора, по убыванию звёзд (как и в старом GUI), обрезано до PANEL_CONFIG.listLimit. */
+  /**
+   * Возвращает ключи репозиториев автора, по убыванию звёзд (как и в
+   * старом GUI), обрезано до {@link PANEL_CONFIG.listLimit}.
+   *
+   * @param authorKey - ключ автора.
+   * @returns До `PANEL_CONFIG.listLimit` ключей репозиториев, от самых популярных к менее популярным.
+   */
   function authorRepoKeysOf(authorKey: string): string[] {
     return (authorRepoIndex.get(authorKey) ?? [])
       .map((key) => index.get(key))
@@ -147,7 +247,16 @@ export function mountPanel(
       .map((node) => node.key);
   }
 
-  /** Участники репозитория с ролью ("Имя (роль)"), через запятую — своя функция, а не labelsOf: нужно дописать роль к подписи. */
+  /**
+   * Строит подпись участников репозитория с ролью в формате `"Имя (роль)"`,
+   * через запятую, обрезано до {@link PANEL_CONFIG.listLimit}. Отдельная
+   * функция, а не {@link labelsOf}: нужно дописать роль после имени, а не
+   * только саму подпись узла.
+   *
+   * @param repoKey - ключ репозитория.
+   * @param lang - язык интерфейса.
+   * @returns Подписи участников с ролями через `", "` (например, `"Иванов И.И. (maintainer)"`).
+   */
   function repoContributorsOf(repoKey: string, lang: AppState["lang"]): string {
     return (repoAuthorIndex.get(repoKey) ?? [])
       .slice(0, PANEL_CONFIG.listLimit)
@@ -159,7 +268,13 @@ export function mountPanel(
       .join(", ");
   }
 
-  /** Публикации репозитория, недавние сверху, обрезано до PANEL_CONFIG.listLimit. */
+  /**
+   * Возвращает ключи публикаций, связанных с репозиторием, недавние
+   * сверху, обрезано до {@link PANEL_CONFIG.listLimit}.
+   *
+   * @param repoKey - ключ репозитория.
+   * @returns До `PANEL_CONFIG.listLimit` ключей публикаций, от новых к старым.
+   */
   function repoPubKeysOf(repoKey: string): string[] {
     return (repoPubIndex.get(repoKey) ?? [])
       .map((key) => index.get(key))
@@ -169,17 +284,31 @@ export function mountPanel(
       .map((node) => node.key);
   }
 
+  /** Скрывает панель и очищает её содержимое — для случая рассинхрона данных (см. `render()`) или отсутствующего selection. */
   function hide(): void {
     container.hidden = true;
     container.replaceChildren();
   }
 
+  /**
+   * Показывает панель с готовой карточкой.
+   *
+   * @param title - заголовок карточки (`<h3>`).
+   * @param rows - строки карточки, см. {@link PanelRow}.
+   */
   function show(title: string, rows: PanelRow[]): void {
     container.hidden = false;
     container.replaceChildren(buildCard(title, rows));
   }
 
-  /** Карточка по умолчанию, пока ничего не выбрано — сводные числа по всему текущему графу данных (не зависит от активной вкладки). */
+  /**
+   * Рисует карточку "Обзор" по умолчанию, когда ничего не выбрано —
+   * сводные числа по всему текущему набору данных, не зависят от активной
+   * вкладки (в отличие от того, что рисует карта, которая всегда
+   * показывает только граф активной вкладки).
+   *
+   * @param lang - язык интерфейса.
+   */
   function renderOverview(lang: AppState["lang"]): void {
     const rows: PanelRow[] = [
       [t("field.authorsCount", lang), String(data.authors.length)],
@@ -190,7 +319,24 @@ export function mountPanel(
     show(t("overview.title", lang), rows);
   }
 
-  /** Пересобирает содержимое панели под текущее состояние — один из видов карточки (обзор/узел/ребро/департамент) либо ничего, если рассинхрон данных. */
+  /**
+   * Пересобирает содержимое панели под текущее состояние — вызывается
+   * сразу при монтировании и на каждое изменение Store. Показывает один
+   * из четырёх видов карточки:
+   * - "Обзор" (см. {@link renderOverview}), если `selection === null`;
+   * - карточку узла (автор/репозиторий/публикация), со своим набором
+   *   дополнительных строк для каждого вида;
+   * - карточку ребра, с общими публикациями/авторами, если оба конца
+   *   ребра одного вида (автор-автор или публикация-публикация);
+   * - карточку департамента, со связанными департаментами.
+   *
+   * Если выбранного узла/ребра/департамента вдруг нет в текущих `data`
+   * (рассинхрон, которого не должно случаться на согласованных данных —
+   * клик по карте или списку берёт ключ прямо из тех же `data`), панель
+   * молча скрывается через {@link hide} вместо показа пустой карточки.
+   *
+   * @param state - текущее состояние приложения.
+   */
   function render(state: AppState): void {
     const { selection, lang } = state;
     if (selection === null) return renderOverview(lang);
@@ -267,13 +413,18 @@ export function mountPanel(
       // через all_edges. Показываем список, только если он не пуст — как и
       // в старом showEdgeCard(), у ребра без общих публикаций/авторов (или
       // между узлами другого вида, например репозиториями) этой строки нет.
+      // Так же, как и у остальных списков в этом файле, режем до
+      // PANEL_CONFIG.listLimit — у активных соавторов общих публикаций
+      // может быть больше, чем поместится в карточку.
       if (from.kind === "author" && to.kind === "author") {
-        const shared = (authorPubs.get(from.key) ?? []).filter((pub) => (authorPubs.get(to.key) ?? []).includes(pub));
+        const shared = (authorPubs.get(from.key) ?? [])
+          .filter((pub) => (authorPubs.get(to.key) ?? []).includes(pub))
+          .slice(0, PANEL_CONFIG.listLimit);
         if (shared.length > 0) rows.push([t("field.sharedPubs", lang), labelsOf(shared, lang)]);
       } else if (from.kind === "pub" && to.kind === "pub") {
-        const shared = (pubAuthors.get(from.key) ?? []).filter((author) =>
-          (pubAuthors.get(to.key) ?? []).includes(author),
-        );
+        const shared = (pubAuthors.get(from.key) ?? [])
+          .filter((author) => (pubAuthors.get(to.key) ?? []).includes(author))
+          .slice(0, PANEL_CONFIG.listLimit);
         if (shared.length > 0) rows.push([t("field.sharedAuthors", lang), labelsOf(shared, lang)]);
       }
 
@@ -307,9 +458,13 @@ export function mountPanel(
 
 /**
  * Собирает DOM-карточку из заголовка и списка пар "подпись — значение".
- * Только textContent для обычного текста и явные <a> с фиксированными
- * href/text для ссылок — никакого innerHTML, данные из графа не должны
- * интерпретироваться как разметка.
+ * Только `textContent` для обычного текста и явные `<a>` с фиксированными
+ * `href`/`text` для ссылок — никакого `innerHTML`, данные из графа не
+ * должны интерпретироваться как разметка.
+ *
+ * @param title - заголовок карточки (например, имя автора или "Обзор").
+ * @param rows - строки карточки в порядке отображения.
+ * @returns `<div class="panel-card">` с заголовком `<h3>` и списком `<dl>`, ещё не вставленный в DOM.
  */
 function buildCard(title: string, rows: PanelRow[]): HTMLElement {
   const card = document.createElement("div");
