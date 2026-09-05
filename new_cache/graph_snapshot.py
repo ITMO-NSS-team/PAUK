@@ -1,14 +1,19 @@
-"""Конверт вокруг словаря графа: версия схемы + дата снятия + сами данные.
+"""Жизненный цикл файла-снепшота графа: запись, чтение, проверка свежести.
 
 `write_snapshot`/`read_snapshot` не знают, что именно лежит внутри `graph`
 (это забота `export.py::load_db()`) — их работа только в том, чтобы файл на
 диске нельзя было случайно скормить коду, который ждёт другую версию формата.
+
+`is_fresh` жил раньше отдельным файлом (`freshness.py`) — вынесен обратно
+сюда: это тоже часть жизненного цикла того же самого файла на диске (когда
+его в последний раз записывали), а не отдельная сущность, которой нужен
+собственный модуль ради одной функции на десяток строк.
 """
 
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -72,3 +77,36 @@ def read_snapshot(path: Path) -> dict[str, list]:
     if not isinstance(graph, dict):
         raise ValueError("graph snapshot has no graph object")
     return graph
+
+
+def is_fresh(path: Path, max_age: timedelta) -> bool:
+    """Проверяет, что файл снепшота существует и не старше заданного TTL.
+
+    Снепшот — не то, что пересобирается на каждый запуск: это дорогой шаг
+    (тринадцать запросов к боевому Neo4j), поэтому его снимают вручную
+    командой `pauk cache export` и переиспользуют. `is_fresh` даёт способ
+    спросить "а не пора ли пересобрать", сравнивая возраст файла с
+    допустимым TTL по mtime — не открывая и не парся сам файл целиком ради
+    простого вопроса "не протухло ли".
+
+    Аргументы:
+        path: Путь к файлу снепшота на диске.
+        max_age: Максимально допустимый возраст файла, после которого он
+            считается устаревшим.
+
+    Возвращает:
+        `False`, если файла нет вообще (отсутствующий снепшот — это тоже
+        "не свежий", а не особый случай, который нужно обрабатывать отдельно
+        в вызывающем коде). Иначе — `True`, если время с последней записи
+        файла не превышает `max_age`.
+
+    Пример:
+        >>> from pathlib import Path
+        >>> from datetime import timedelta
+        >>> is_fresh(Path("/несуществующий/файл.json"), timedelta(days=1))
+        False
+    """
+    if not path.is_file():
+        return False
+    modified = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+    return datetime.now(UTC) - modified <= max_age
