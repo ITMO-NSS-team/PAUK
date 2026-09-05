@@ -212,6 +212,25 @@ function selectedNodeExpression(
   return ["case", ["==", ["get", "key"], compareTo], selectedValue, defaultValue];
 }
 
+/**
+ * То же самое, но для ребра — у него нет одного ключа, есть пара (s, t) на
+ * концах, поэтому сравниваем оба сразу. compareS/compareT === NO_SELECTION
+ * гарантированно не совпадут ни с одним настоящим ребром (см. NO_SELECTION).
+ */
+function selectedEdgeExpression(
+  compareS: string,
+  compareT: string,
+  selectedValue: number,
+  defaultValue: number,
+): ExpressionSpecification {
+  return [
+    "case",
+    ["all", ["==", ["get", "s"], compareS], ["==", ["get", "t"], compareT]],
+    selectedValue,
+    defaultValue,
+  ];
+}
+
 /** Добавляет источники и слои узлов/рёбер текущей вкладки — вызывается один раз изнутри mountReactiveGraph(). */
 function addGraphLayers(
   map: MapLibreMap,
@@ -228,8 +247,16 @@ function addGraphLayers(
     source: EDGE_SOURCE_ID,
     paint: {
       "line-color": MAP_CONFIG.edge.color,
-      "line-width": MAP_CONFIG.edge.width,
-      "line-opacity": MAP_CONFIG.edge.opacity,
+      // Тот же приём, что и у circle-radius/circle-stroke-width узла ниже:
+      // одно выражение и для первой отрисовки, и для setSelectedEdge() —
+      // изначально не выбрано ничего.
+      "line-width": selectedEdgeExpression(NO_SELECTION, NO_SELECTION, MAP_CONFIG.edge.widthSelected, MAP_CONFIG.edge.width),
+      "line-opacity": selectedEdgeExpression(
+        NO_SELECTION,
+        NO_SELECTION,
+        MAP_CONFIG.edge.opacitySelected,
+        MAP_CONFIG.edge.opacity,
+      ),
     },
   });
   // Тот же источник, полностью прозрачная широкая линия — реальная область
@@ -297,6 +324,25 @@ export function setSelectedNode(map: MapLibreMap, key: string | null): void {
     NODE_LAYER_ID,
     "circle-stroke-width",
     selectedNodeExpression(compareTo, MAP_CONFIG.node.strokeWidthSelected, MAP_CONFIG.node.strokeWidth),
+  );
+}
+
+/**
+ * То же самое для ребра (толще и непрозрачнее вместо крупнее) — edge === null
+ * снимает выделение совсем, ровно как key === null у setSelectedNode.
+ */
+export function setSelectedEdge(map: MapLibreMap, edge: { s: string; t: string } | null): void {
+  const compareS = edge?.s ?? NO_SELECTION;
+  const compareT = edge?.t ?? NO_SELECTION;
+  map.setPaintProperty(
+    EDGE_LAYER_ID,
+    "line-width",
+    selectedEdgeExpression(compareS, compareT, MAP_CONFIG.edge.widthSelected, MAP_CONFIG.edge.width),
+  );
+  map.setPaintProperty(
+    EDGE_LAYER_ID,
+    "line-opacity",
+    selectedEdgeExpression(compareS, compareT, MAP_CONFIG.edge.opacitySelected, MAP_CONFIG.edge.opacity),
   );
 }
 

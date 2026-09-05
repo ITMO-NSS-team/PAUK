@@ -91,7 +91,7 @@ describe("searchTab", () => {
     expect(results.children.length).toBeGreaterThan(0);
   });
 
-  it("клик по результату-департаменту пишет selection dept, без flyTo (у департамента нет своих координат)", async () => {
+  it("клик по результату-департаменту пишет selection dept, без flyTo (у департамента нет своих координат) и без переключения вкладки", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
@@ -113,5 +113,53 @@ describe("searchTab", () => {
 
     expect(store.get().selection).toEqual({ kind: "dept", id: dept.id });
     expect(map.flyTo).not.toHaveBeenCalled();
+    expect(store.get().tab).toBe(4); // у департамента нет своей вкладки с графом — вкладку не трогаем
+  });
+
+  it("клик по результату-автору переключает вкладку на 1 (иначе выбор невидим — карта на вкладке 4 пуста)", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState());
+    const container = document.createElement("div");
+    const map = fakeMap();
+
+    searchTab.mount(container, store, map, data, NO_SEARCH_DETAILS);
+    const input = container.querySelector("input") as HTMLInputElement;
+    const author = data.authors[0];
+    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    input.value = author.label;
+    input.dispatchEvent(new Event("input"));
+
+    const results = container.querySelector(".search-results") as HTMLElement;
+    const authorButton = results.querySelector('[data-kind="author"]') as HTMLButtonElement;
+    authorButton.click();
+
+    expect(store.get().tab).toBe(1);
+    expect(store.get().selection).toEqual({ kind: "node", key: author.key });
+    expect(map.flyTo).toHaveBeenCalledOnce();
+  });
+
+  it("клик по результату-репозиторию переключает вкладку на 2, по результату-публикации — на 3", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState());
+    const container = document.createElement("div");
+    const map = fakeMap();
+
+    searchTab.mount(container, store, map, data, NO_SEARCH_DETAILS);
+    const input = container.querySelector("input") as HTMLInputElement;
+    const results = container.querySelector(".search-results") as HTMLElement;
+
+    const repo = data.repos[0];
+    if (!repo) throw new Error("фикстура должна содержать хотя бы один репозиторий");
+    input.value = repo.label;
+    input.dispatchEvent(new Event("input"));
+    (results.querySelector('[data-kind="repo"]') as HTMLButtonElement).click();
+    expect(store.get().tab).toBe(2);
+
+    const pub = data.pubs[0];
+    if (!pub) throw new Error("фикстура должна содержать хотя бы одну публикацию");
+    input.value = pub.key;
+    input.dispatchEvent(new Event("input"));
+    (results.querySelector('[data-kind="pub"]') as HTMLButtonElement).click();
+    expect(store.get().tab).toBe(3);
   });
 });

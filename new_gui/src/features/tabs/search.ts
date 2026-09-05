@@ -2,8 +2,16 @@ import type { SearchHit } from "../../contracts/search";
 import { indexByKey } from "../../core/data";
 import { kindLabel, t, type Lang } from "../../core/i18n";
 import { renderList, renderListItem } from "../../core/render";
+import type { TabId } from "../../core/state";
 import { buildSearchIndex, parseDeptHitKey, searchHits } from "../search";
 import type { TabModule } from "./types";
+
+/**
+ * Какая вкладка отвечает за узел найденного вида — как и в старом
+ * search.js::runSearch() (targetTab = repo ? 2 : pub ? 3 : 1). Департамента
+ * здесь нет: у него нет своей вкладки с графом, dept-хиты вкладку не меняют.
+ */
+const HIT_KIND_TAB: Record<"author" | "repo" | "pub", TabId> = { author: 1, repo: 2, pub: 3 };
 
 /**
  * Вкладка "Поиск" — полноэкранный (в рамках сайдбара) поиск по всем
@@ -46,7 +54,13 @@ export const searchTab: TabModule = {
               return;
             }
 
-            store.set({ selection: { kind: "node", key: hit.key } });
+            // Переключаем вкладку на ту, что реально рисует граф для этого
+            // вида узла — иначе выбор был бы невидим: карта показывает граф
+            // только активной вкладки (map/build.ts), а поиск сам живёт на
+            // отдельной вкладке 4 без собственного графа. Одним store.set(),
+            // а не двумя — иначе подписчики (mountReactiveGraph и др.)
+            // перерисовались бы дважды на один клик.
+            store.set({ tab: HIT_KIND_TAB[hit.kind], selection: { kind: "node", key: hit.key } });
             const node = nodeByKey.get(hit.key);
             if (node) map.flyTo({ center: [node.gx, node.gy] });
           },

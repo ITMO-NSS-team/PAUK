@@ -1,9 +1,17 @@
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import { describe, expect, it, vi } from "vitest";
 import type { SearchDetail } from "../src/contracts/search";
+import { MAP_CONFIG } from "../src/core/config";
 import { loadSampleGraphData, loadSampleSearchDetails, indexSearchDetailsByKey } from "../src/core/data";
 import { Store, type AppState } from "../src/core/state";
-import { buildEdgeFeatures, buildNodeFeatures, mountReactiveGraph, nodeBounds } from "../src/map/build";
+import {
+  buildEdgeFeatures,
+  buildNodeFeatures,
+  EDGE_LAYER_ID,
+  mountReactiveGraph,
+  nodeBounds,
+  setSelectedEdge,
+} from "../src/map/build";
 
 // Пороги, которые ничего не отсекают — для тестов, где фильтрация не в фокусе.
 const NO_FILTER = { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026 };
@@ -115,6 +123,43 @@ describe("map/build на фикстур-данных", () => {
       expect(node.gy).toBeGreaterThanOrEqual(minLat);
       expect(node.gy).toBeLessThanOrEqual(maxLat);
     }
+  });
+});
+
+describe("setSelectedEdge", () => {
+  function fakeMapWithPaint(): { map: MapLibreMap; setPaintProperty: ReturnType<typeof vi.fn> } {
+    const setPaintProperty = vi.fn();
+    return { map: { setPaintProperty } as unknown as MapLibreMap, setPaintProperty };
+  }
+
+  it("красит именно EDGE_LAYER_ID (line-width и line-opacity), а не слой узлов", () => {
+    const { map, setPaintProperty } = fakeMapWithPaint();
+    setSelectedEdge(map, { s: "A1", t: "A2" });
+
+    expect(setPaintProperty).toHaveBeenCalledWith(EDGE_LAYER_ID, "line-width", [
+      "case",
+      ["all", ["==", ["get", "s"], "A1"], ["==", ["get", "t"], "A2"]],
+      MAP_CONFIG.edge.widthSelected,
+      MAP_CONFIG.edge.width,
+    ]);
+    expect(setPaintProperty).toHaveBeenCalledWith(EDGE_LAYER_ID, "line-opacity", [
+      "case",
+      ["all", ["==", ["get", "s"], "A1"], ["==", ["get", "t"], "A2"]],
+      MAP_CONFIG.edge.opacitySelected,
+      MAP_CONFIG.edge.opacity,
+    ]);
+  });
+
+  it("null снимает выделение — сравнение с пустой строкой не совпадёт ни с одним настоящим s/t", () => {
+    const { map, setPaintProperty } = fakeMapWithPaint();
+    setSelectedEdge(map, null);
+
+    expect(setPaintProperty).toHaveBeenCalledWith(EDGE_LAYER_ID, "line-width", [
+      "case",
+      ["all", ["==", ["get", "s"], ""], ["==", ["get", "t"], ""]],
+      MAP_CONFIG.edge.widthSelected,
+      MAP_CONFIG.edge.width,
+    ]);
   });
 });
 

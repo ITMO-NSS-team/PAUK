@@ -5,7 +5,7 @@
 
 import type { Map as MapLibreMap, MapMouseEvent } from "maplibre-gl";
 import type { AppState, Store } from "../core/state";
-import { EDGE_HIT_LAYER_ID, NODE_LAYER_ID, setSelectedNode } from "../map/build";
+import { EDGE_HIT_LAYER_ID, NODE_LAYER_ID, setSelectedEdge, setSelectedNode } from "../map/build";
 
 /**
  * Подключает выбор узла/ребра кликом по карте: клик по точке — выбрать
@@ -65,9 +65,12 @@ export function mountSelection(map: MapLibreMap, store: Store<AppState>): () => 
   // числе не из-за клика по карте, а, например, из поиска), карта
   // перерисовывает подсветку — источник правды один (Store), а не два
   // рассинхронизированных состояния (что выбрано на карте и что в Store).
+  // Ровно один из двух вызовов ниже реально что-то меняет: Selection — это
+  // один из вариантов (node/edge/dept/null), поэтому выбор ребра сам собой
+  // снимает подсветку узла и наоборот — не нужно делать это отдельным шагом.
   const unsubscribe = store.subscribe((state) => {
-    const key = state.selection?.kind === "node" ? state.selection.key : null;
-    setSelectedNode(map, key);
+    setSelectedNode(map, state.selection?.kind === "node" ? state.selection.key : null);
+    setSelectedEdge(map, state.selection?.kind === "edge" ? { s: state.selection.s, t: state.selection.t } : null);
   });
 
   return () => {
