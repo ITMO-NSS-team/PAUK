@@ -1,0 +1,106 @@
+{
+  "departments": [
+    {
+      "id": 0,
+      "name": "Институт прикладных систем",
+      "name_en": "Institute of Applied Systems",
+      "color": "#3555e0",
+      "n": 7,
+      "n_authors": 3,
+      "n_pubs": 2,
+      "n_repos": 2
+    },
+    {
+      "id": 1,
+      "name": "Лаборатория анализа данных",
+      "name_en": "Data Analysis Lab",
+      "color": "#1a9d54",
+      "n": 7,
+      "n_authors": 3,
+      "n_pubs": 2,
+      "n_repos": 2
+    },
+    {
+      "id": 2,
+      "name": "Центр робототехники",
+      "name_en": "Robotics Center",
+      "color": "#b5790f",
+      "n": 5,
+      "n_authors": 2,
+      "n_pubs": 2,
+      "n_repos": 1
+    }
+  ],
+  "dept_edges": [
+    { "s": 0, "t": 1, "w": 2 },
+    { "s": 1, "t": 2, "w": 1 },
+    { "s": 0, "t": 2, "w": 1 }
+  ],
+  "authors": [
+    { "key": "A1", "kind": "author", "dept": 0, "label": "Иванов И.И.", "label_en": "Ivanov I.I.", "pubs_count": 4, "rank": 1, "gx": 0.1, "gy": 0.2, "degree": "к.т.н.", "github": "ivanov-ii", "orcid": "0000-0001-2345-6789", "name_variants": ["Ivanov Ivan", "I. Ivanov"] },
+    { "key": "A2", "kind": "author", "dept": 0, "label": "Петрова А.С.", "label_en": "Petrova A.S.", "pubs_count": 2, "rank": 2, "gx": 0.3, "gy": 0.1 },
+    { "key": "A3", "kind": "author", "dept": 1, "label": "Сидоров П.", "label_en": "Sidorov P.", "pubs_count": 3, "rank": 3, "gx": -0.2, "gy": 0.4 },
+    { "key": "A4", "kind": "author", "dept": 1, "label": "Кузнецова Е.В.", "label_en": "Kuznetsova E.V.", "pubs_count": 1, "rank": 4, "gx": -0.35, "gy": 0.5 },
+    { "key": "A5", "kind": "author", "dept": 2, "label": "Смирнов Д.А.", "label_en": "Smirnov D.A.", "pubs_count": 2, "rank": 5, "gx": 0.5, "gy": -0.3 },
+    { "key": "A6", "kind": "author", "dept": 0, "label": "Фёдоров Н.С.", "label_en": "Fedorov N.S.", "pubs_count": 1, "rank": 6, "gx": 0.15, "gy": 0.05 },
+    { "key": "A7", "kind": "author", "dept": 2, "label": "Волкова М.И.", "label_en": "Volkova M.I.", "pubs_count": 3, "rank": 7, "gx": 0.6, "gy": -0.15 },
+    { "key": "A8", "kind": "author", "dept": 1, "label": "Никитин А.А.", "label_en": "Nikitin A.A.", "pubs_count": 1, "rank": 8, "gx": -0.25, "gy": 0.6 }
+  ],
+  "coauth_edges": [
+    { "s": "A1", "t": "A2", "w": 2 },
+    { "s": "A1", "t": "A3", "w": 1 },
+    { "s": "A3", "t": "A4", "w": 1 },
+    { "s": "A5", "t": "A7", "w": 2 },
+    { "s": "A2", "t": "A6", "w": 1 },
+    { "s": "A7", "t": "A8", "w": 1 }
+  ],
+  "repos": [
+    { "key": "R1", "kind": "repo", "dept": 0, "label": "graph-toolkit", "description": "Инструменты для построения раскладки графа", "stars": 42, "owner": "example-org", "url": "https://github.com/example-org/graph-toolkit", "rank": 1, "gx": 0.12, "gy": 0.22 },
+    { "key": "R2", "kind": "repo", "dept": 1, "label": "data-pipeline", "description": "Пайплайн подготовки данных", "stars": 7, "owner": "example-org", "url": "https://github.com/example-org/data-pipeline", "rank": 2, "gx": -0.18, "gy": 0.42 },
+    { "key": "R3", "kind": "repo", "dept": 2, "label": "robo-sim", "description": "Симулятор роботов", "stars": 15, "owner": "example-org", "url": "https://github.com/example-org/robo-sim", "rank": 3, "gx": 0.52, "gy": -0.28 },
+    { "key": "R4", "kind": "repo", "dept": 0, "label": "vision-lib", "description": "Библиотека компьютерного зрения", "stars": 3, "owner": "example-org", "url": "https://github.com/example-org/vision-lib", "rank": 4, "gx": 0.2, "gy": 0.08 },
+    { "key": "R5", "kind": "repo", "dept": 1, "label": "stat-tools", "description": "Статистические утилиты", "stars": 21, "owner": "example-org", "url": "https://github.com/example-org/stat-tools", "rank": 5, "gx": -0.3, "gy": 0.55 }
+  ],
+  "repo_edges": [
+    { "s": "R1", "t": "R2", "w": 1 },
+    { "s": "R2", "t": "R5", "w": 1 },
+    { "s": "R3", "t": "R4", "w": 1 }
+  ],
+  "repo_author_edges": [
+    { "s": "R1", "t": "A1", "role": "maintainer" },
+    { "s": "R2", "t": "A3", "role": "contributor" },
+    { "s": "R3", "t": "A5", "role": "maintainer" },
+    { "s": "R4", "t": "A6", "role": "contributor" },
+    { "s": "R5", "t": "A4", "role": "maintainer" }
+  ],
+  "repo_pub_edges": [
+    { "s": "R1", "t": "P1" },
+    { "s": "R2", "t": "P3" }
+  ],
+  "pubs": [
+    { "key": "P1", "kind": "pub", "dept": 0, "depts": [0], "year": 2024, "n_authors": 2, "rank": 1, "gx": 0.11, "gy": 0.21 },
+    { "key": "P2", "kind": "pub", "dept": 1, "depts": [0, 1], "year": null, "n_authors": 1, "rank": 2, "gx": -0.15, "gy": 0.38 },
+    { "key": "P3", "kind": "pub", "dept": 1, "depts": [1], "year": 2023, "n_authors": 2, "rank": 3, "gx": -0.22, "gy": 0.45 },
+    { "key": "P4", "kind": "pub", "dept": 2, "depts": [2], "year": 2022, "n_authors": 1, "rank": 4, "gx": 0.48, "gy": -0.32 },
+    { "key": "P5", "kind": "pub", "dept": 0, "depts": [0], "year": 2021, "n_authors": 3, "rank": 5, "gx": 0.14, "gy": 0.03 },
+    { "key": "P6", "kind": "pub", "dept": 2, "depts": [1, 2], "year": 2024, "n_authors": 2, "rank": 6, "gx": 0.58, "gy": -0.18 }
+  ],
+  "pub_edges": [
+    { "s": "P1", "t": "P2", "w": 1 },
+    { "s": "P2", "t": "P3", "w": 1 },
+    { "s": "P4", "t": "P6", "w": 1 }
+  ],
+  "all_edges": [
+    { "s": "A1", "t": "P1" },
+    { "s": "A2", "t": "P1" },
+    { "s": "A3", "t": "P2" },
+    { "s": "A1", "t": "P2" },
+    { "s": "A1", "t": "P5" },
+    { "s": "A4", "t": "P3" },
+    { "s": "A5", "t": "P4" },
+    { "s": "A7", "t": "P6" },
+    { "s": "A8", "t": "P6" },
+    { "s": "A6", "t": "P5" },
+    { "s": "A2", "t": "P5" }
+  ]
+}
