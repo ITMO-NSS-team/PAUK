@@ -3,9 +3,10 @@
 Ловят опечатки в алиасах `RETURN` и в сборке словаря `load_db()`, а также
 служат регрессионным тестом на сам баг слайса 1 (метка `:Itmo` вместо
 свойства `is_itmo`). Того, что сам текст Cypher структурно соответствует
-реальной графовой модели (существуют ли такие метки/рёбра вообще), эти
-тесты не проверяют в принципе — это задача `test_integration.py` с
-одноразовым Neo4j-контейнером.
+реальной графовой модели (существуют ли такие метки/рёбра/свойства вообще),
+эти тесты не проверяют в принципе — по решению этого проекта здесь только
+юнит-тесты с драйвером-заглушкой, без интеграционных тестов на реальном
+Neo4j (см. память проекта: осознанный выбор в пользу простоты и скорости).
 """
 
 from __future__ import annotations
@@ -15,12 +16,12 @@ from unittest import mock
 
 from neo4j.exceptions import ServiceUnavailable
 
-from new_cache.export import GraphSnapshotExporter, cypher, cypher_dict, load_db
+from new_cache.export import GraphSnapshotExporter, cypher_dict, load_db
 from pauk.settings import Settings
 
 
 class FakeRecord:
-    """Минимальная замена `neo4j.Record` — только то, что использует `cypher()`/`cypher_dict()`."""
+    """Минимальная замена `neo4j.Record` — только то, что использует `cypher_dict()`."""
 
     def __init__(self, mapping: dict):
         self._mapping = mapping
@@ -56,11 +57,6 @@ class SequentialFakeDriver:
 
 
 class CypherHelpersTest(unittest.TestCase):
-    def test_cypher_returns_positional_tuples_in_return_order(self):
-        driver = SequentialFakeDriver([[{"id": "P1", "year": 2024}]])
-        rows = cypher(driver, "MATCH (pub:Publication) RETURN pub.id AS id, pub.year AS year")
-        self.assertEqual(rows, [("P1", 2024)])
-
     def test_cypher_dict_returns_column_keyed_dicts(self):
         driver = SequentialFakeDriver([[{"id": "A1", "name_ru": "Иванов"}]])
         rows = cypher_dict(driver, "MATCH (p:Person) RETURN p.id AS id, p.name_ru AS name_ru")
@@ -81,9 +77,9 @@ class ExecuteRetryingTest(unittest.TestCase):
                 return [FakeRecord({"id": "ok"})], None, None
 
         with mock.patch("new_cache.export.time.sleep") as sleep_mock:
-            rows = cypher(FlakyDriver(), "MATCH (n) RETURN n.id AS id")
+            rows = cypher_dict(FlakyDriver(), "MATCH (n) RETURN n.id AS id")
 
-        self.assertEqual(rows, [("ok",)])
+        self.assertEqual(rows, [{"id": "ok"}])
         self.assertEqual(attempts["n"], 2)
         sleep_mock.assert_called_once()
 
@@ -93,7 +89,7 @@ class ExecuteRetryingTest(unittest.TestCase):
                 raise ServiceUnavailable("недоступна")
 
         with mock.patch("new_cache.export.time.sleep"), self.assertRaises(ServiceUnavailable):
-            cypher(AlwaysFailingDriver(), "MATCH (n) RETURN n.id AS id")
+            cypher_dict(AlwaysFailingDriver(), "MATCH (n) RETURN n.id AS id")
 
 
 class LoadDbShapeTest(unittest.TestCase):
@@ -109,6 +105,45 @@ class LoadDbShapeTest(unittest.TestCase):
         responses[0] = [{"id": "A1", "name_ru": "Иванов"}]
         db = load_db(SequentialFakeDriver(responses))
         self.assertEqual(db["persons"], [{"id": "A1", "name_ru": "Иванов"}])
+
+    def test_publications_repositories_and_authorship_are_dict_shaped(self):
+        """Слайс 2 переводит publications/repositories/authorship на
+        cypher_dict() — их форма стала расти (много новых полей), и по той
+        же логике, что уже применялась к persons, растущей форме нужны
+        именованные словари, а не хрупкая позиционная распаковка."""
+        responses = self._empty_responses()
+        responses[1] = [{"id": "P1", "title": "Заголовок"}]
+        responses[2] = [{"id": "R1", "name": "repo"}]
+        responses[4] = [{"pid": "P1", "per": "A1", "position": 1}]
+        db = load_db(SequentialFakeDriver(responses))
+        self.assertEqual(db["publications"], [{"id": "P1", "title": "Заголовок"}])
+        self.assertEqual(db["repositories"], [{"id": "R1", "name": "repo"}])
+        self.assertEqual(db["authorship"], [{"pid": "P1", "per": "A1", "position": 1}])
+
+    def test_debatable_fields_are_present_pending_manual_review(self):
+        """По прямой просьбе запросы включают буквально все свойства из
+        NODE_REGISTRY, в том числе те, что раньше были осознанно исключены
+        (email/emails - открытое противоречие документации и extract.py;
+        заглушки Person из #152, которые на графе сегодня всегда null;
+        Publication.full_text - по размеру). У каждого поля в export.py
+        рядом стоит комментарий "оставить"/аргумент против - решение,
+        что вычеркнуть, за человеком, а не за этим тестом. Тест лишь
+        фиксирует, что все эти поля сейчас реально запрашиваются."""
+        driver = SequentialFakeDriver(self._empty_responses())
+        load_db(driver)
+        combined = " ".join(driver.queries)
+        for included in (
+            "p.email AS email",
+            "p.emails AS emails",
+            "pub.full_text AS full_text",
+            "p.scopus_id AS scopus_id",
+            "p.biography AS biography",
+            "p.h_index AS h_index",
+            "p.counts_by_year AS counts_by_year",
+            "p.thesis AS thesis",
+            "p.status AS status",
+        ):
+            self.assertIn(included, combined, f"поле {included!r} должно быть в запросе (удалите вручную, если не нужно)")
 
     def test_result_has_all_ten_expected_keys(self):
         db = load_db(SequentialFakeDriver(self._empty_responses()))
