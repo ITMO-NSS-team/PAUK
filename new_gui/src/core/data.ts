@@ -385,27 +385,41 @@ export function buildRepoAuthorIndex(data: GraphData): Map<string, RepoAuthorEdg
 }
 
 /**
- * Строит индекс "репозиторий -> ключи связанных публикаций" из
- * `GraphData.repo_pub_edges`.
+ * Строит обратные индексы репозиторий ↔ публикация из
+ * `GraphData.repo_pub_edges` — тем же приёмом, что и {@link buildAuthorPubIndex}.
  *
- * Нужен карточке репозитория (features/panels.ts): "какие публикации с ним
- * связаны".
+ * Нужны карточке репозитория (features/panels.ts): "какие публикации с ним
+ * связаны", и карточке публикации: "в каком репозитории её код" — в
+ * старом GUI (`tab-pubs.js::showPubCard`) при наличии связанного репозитория
+ * его ссылка показывалась ВМЕСТО голого `code_url` из `SearchDetail` —
+ * связь через собственные данные надёжнее, чем внешний харвестинг.
  *
  * @param data - данные графа.
- * @returns Map от ключа репозитория к списку ключей публикаций.
+ * @returns Объект с двумя картами:
+ *   - `repoPubs` — ключ репозитория -> список ключей связанных публикаций;
+ *   - `pubRepos` — ключ публикации -> список ключей связанных репозиториев.
  *
  * @example
  * // repo_pub_edges: [{s:"R1",t:"P1"}]
- * buildRepoPubIndex(data).get("R1"); // ["P1"]
+ * const { repoPubs, pubRepos } = buildRepoPubIndex(data);
+ * repoPubs.get("R1"); // ["P1"]
+ * pubRepos.get("P1"); // ["R1"]
  */
-export function buildRepoPubIndex(data: GraphData): Map<string, string[]> {
-  const index = new Map<string, string[]>();
-  for (const edge of data.repo_pub_edges) {
-    const pubs = index.get(edge.s) ?? [];
-    pubs.push(edge.t);
-    index.set(edge.s, pubs);
+export function buildRepoPubIndex(data: GraphData): { repoPubs: Map<string, string[]>; pubRepos: Map<string, string[]> } {
+  const repoPubs = new Map<string, string[]>();
+  const pubRepos = new Map<string, string[]>();
+
+  for (const { s, t } of data.repo_pub_edges) {
+    const pubsOfRepo = repoPubs.get(s) ?? [];
+    pubsOfRepo.push(t);
+    repoPubs.set(s, pubsOfRepo);
+
+    const reposOfPub = pubRepos.get(t) ?? [];
+    reposOfPub.push(s);
+    pubRepos.set(t, reposOfPub);
   }
-  return index;
+
+  return { repoPubs, pubRepos };
 }
 
 // Общий префикс GitHub-ссылок — используется и для сборки ссылки на профиль

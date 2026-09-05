@@ -119,6 +119,26 @@ describe("mountPanel", () => {
     expect(panel.textContent).not.toContain("Репозитории");
   });
 
+  it("карточка автора показывает варианты имени (name_variants), когда они есть", async () => {
+    const data = await loadSampleGraphData();
+    // A1 во фикстуре — name_variants: ["Ivanov Ivan", "I. Ivanov"].
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A1" } });
+
+    mountPanel(store, data, NO_SEARCH_DETAILS);
+
+    expect(panel.textContent).toContain("Варианты имени");
+    expect(panel.textContent).toContain("Ivanov Ivan");
+  });
+
+  it("не показывает строку вариантов имени у автора без name_variants", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A2" } });
+
+    mountPanel(store, data, NO_SEARCH_DETAILS);
+
+    expect(panel.textContent).not.toContain("Варианты имени");
+  });
+
   it("карточка репозитория показывает участников с ролью и публикации репозитория", async () => {
     const data = await loadSampleGraphData();
     // R1 во фикстуре: A1 — maintainer (repo_author_edges), P1 — его публикация (repo_pub_edges).
@@ -129,6 +149,17 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain("Участники");
     expect(panel.textContent).toContain("Иванов И.И. (maintainer)");
     expect(panel.textContent).toContain("P1");
+  });
+
+  it("карточка репозитория показывает описание (RepoNode.description)", async () => {
+    const data = await loadSampleGraphData();
+    const repo = data.repos.find((r) => r.key === "R1");
+    if (!repo) throw new Error("фикстура должна содержать репозиторий R1");
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "R1" } });
+
+    mountPanel(store, data, NO_SEARCH_DETAILS);
+
+    expect(panel.textContent).toContain(repo.description);
   });
 
   it("не показывает строки участников/публикаций у репозитория без единой связи", async () => {
@@ -166,15 +197,16 @@ describe("mountPanel", () => {
     expect(title).not.toBe(pub.key);
   });
 
-  it("показывает DOI и ссылку на код как кликабельные <a>, когда есть searchDetails", async () => {
+  it("показывает DOI и ссылку на код как кликабельные <a>, когда есть searchDetails и нет связанного репозитория", async () => {
     const data = await loadSampleGraphData();
     const searchDetails = indexSearchDetailsByKey(await loadSampleSearchDetails());
-    // P1 во фикстуре — has_code: true, один code_url.
-    const detail = searchDetails.get("P1");
+    // P4 во фикстуре — has_code: true, один code_url, и НЕ участвует ни в
+    // одном repo_pub_edges (в отличие от P1) — код показываем как ссылку.
+    const detail = searchDetails.get("P4");
     if (!detail?.has_code || detail.code_url.length === 0) {
-      throw new Error("фикстура graph-search.sample.json должна содержать P1 с has_code и хотя бы одним code_url");
+      throw new Error("фикстура graph-search.sample.json должна содержать P4 с has_code и хотя бы одним code_url");
     }
-    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "P1" } });
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "P4" } });
 
     mountPanel(store, data, searchDetails);
 
@@ -187,10 +219,32 @@ describe("mountPanel", () => {
     expect(codeLink?.textContent).toBe(detail.code_url[0]?.replace("https://github.com/", ""));
   });
 
+  it("показывает ссылку на связанный репозиторий ВМЕСТО code_url, когда публикация связана с репозиторием (repo_pub_edges)", async () => {
+    const data = await loadSampleGraphData();
+    const searchDetails = indexSearchDetailsByKey(await loadSampleSearchDetails());
+    // P1 во фикстуре связана с R1 (repo_pub_edges) и одновременно имеет
+    // свой code_url в searchDetails — репозиторий должен победить.
+    const detail = searchDetails.get("P1");
+    if (!detail?.has_code || detail.code_url.length === 0) {
+      throw new Error("фикстура graph-search.sample.json должна содержать P1 с has_code и code_url");
+    }
+    const repo = data.repos.find((r) => r.key === "R1");
+    if (!repo) throw new Error("фикстура должна содержать репозиторий R1");
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "P1" } });
+
+    mountPanel(store, data, searchDetails);
+
+    expect(panel.textContent).toContain(repo.label);
+    expect(panel.querySelector(`a[href="${detail.code_url[0]}"]`)).toBeNull();
+  });
+
   it("заменяет code_url с небезопасной схемой (javascript:) на about:blank вместо того, чтобы класть её в href", async () => {
     const data = await loadSampleGraphData();
-    const pub = data.pubs[0];
-    if (!pub) throw new Error("фикстура должна содержать хотя бы одну публикацию");
+    // P2 — специально не P1: P1 связана с репозиторием через repo_pub_edges,
+    // и тогда ссылка на репозиторий заслонила бы собой code_url целиком,
+    // а этому тесту нужно, чтобы код реально дошёл до ветки с codeLink().
+    const pub = data.pubs.find((p) => p.key === "P2");
+    if (!pub) throw new Error("фикстура должна содержать публикацию P2");
     const malicious: SearchDetail = {
       key: pub.key,
       label: "Тестовая публикация",

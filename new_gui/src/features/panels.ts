@@ -160,7 +160,7 @@ export function mountPanel(
   const authorRepoIndex = buildAuthorRepoIndex(data);
   const deptEdgeIndex = buildDeptEdgeIndex(data);
   const repoAuthorIndex = buildRepoAuthorIndex(data);
-  const repoPubIndex = buildRepoPubIndex(data);
+  const { repoPubs: repoPubIndex, pubRepos: pubRepoIndex } = buildRepoPubIndex(data);
 
   /**
    * Строит подписи департаментов по списку их id, через запятую — для
@@ -360,6 +360,9 @@ export function mountPanel(
         if (node.degree) rows.push([t("field.degree", lang), node.degree]);
         if (node.github) rows.push([t("field.github", lang), [githubLink(node.github)]]);
         if (node.orcid) rows.push([t("field.orcid", lang), [orcidLink(node.orcid)]]);
+        if (node.name_variants && node.name_variants.length > 0) {
+          rows.push([t("field.nameVariants", lang), node.name_variants.join(", ")]);
+        }
 
         // Сами счётчики выше не говорят, КАКИЕ именно публикации/соавторы —
         // строки ниже показывают список, только когда он не пуст (как и у
@@ -375,6 +378,7 @@ export function mountPanel(
       }
       if (node.kind === "repo") {
         rows.push([t("field.stars", lang), String(node.stars)], [t("field.owner", lang), node.owner]);
+        if (node.description) rows.push([t("field.description", lang), node.description]);
 
         const contributors = repoContributorsOf(node.key, lang);
         if (contributors.length > 0) rows.push([t("field.contributors", lang), contributors]);
@@ -387,7 +391,16 @@ export function mountPanel(
 
         const detail = searchDetails.get(node.key);
         if (detail?.doi) rows.push([t("field.doi", lang), [doiLink(detail.doi)]]);
-        if (detail?.has_code && detail.code_url.length > 0) {
+
+        // Как и в старом showPubCard(): если публикация связана с нашим
+        // собственным репозиторием (repo_pub_edges), показываем ссылку на
+        // него ВМЕСТО голого code_url — связь через собственные данные
+        // надёжнее внешнего харвестинга, а раз она есть, дублировать её
+        // ещё и code_url незачем.
+        const pubRepoKeys = (pubRepoIndex.get(node.key) ?? []).slice(0, PANEL_CONFIG.listLimit);
+        if (pubRepoKeys.length > 0) {
+          rows.push([t("tab.repos", lang), labelsOf(pubRepoKeys, lang)]);
+        } else if (detail?.has_code && detail.code_url.length > 0) {
           rows.push([t("field.code", lang), detail.code_url.map(codeLink)]);
         }
 

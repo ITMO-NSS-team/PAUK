@@ -58,9 +58,11 @@ export type LocaleKey =
   | "field.dept"
   | "field.pubsCount"
   | "field.degree"
+  | "field.nameVariants"
   | "field.github"
   | "field.orcid"
   | "field.stars"
+  | "field.description"
   | "field.owner"
   | "field.year"
   | "field.yearUnknown"
@@ -103,9 +105,11 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.dept": "Департамент",
     "field.pubsCount": "Публикаций",
     "field.degree": "Учёная степень",
+    "field.nameVariants": "Варианты имени",
     "field.github": "GitHub",
     "field.orcid": "ORCID",
     "field.stars": "Звёзд",
+    "field.description": "Описание",
     "field.owner": "Владелец",
     "field.year": "Год",
     "field.yearUnknown": "неизвестен",
@@ -147,9 +151,11 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.dept": "Department",
     "field.pubsCount": "Publications",
     "field.degree": "Degree",
+    "field.nameVariants": "Other spellings",
     "field.github": "GitHub",
     "field.orcid": "ORCID",
     "field.stars": "Stars",
+    "field.description": "Description",
     "field.owner": "Owner",
     "field.year": "Year",
     "field.yearUnknown": "unknown",
