@@ -174,6 +174,24 @@ export function buildCoauthIndex(data: GraphData): Map<string, Map<string, numbe
 }
 
 /**
+ * Автор -> ключи репозиториев, где он указан контрибьютором, из
+ * GraphData.repo_author_edges (s — репозиторий, t — автор — см. контракт
+ * RepoAuthorEdge). Только прямая связь, без учёта "репозиторий связан с
+ * публикацией автора" через repo_pub_edges — так делал старый GUI
+ * (authorRepos), но это отдельный, более сложный источник той же
+ * информации; пока хватает прямой связи.
+ */
+export function buildAuthorRepoIndex(data: GraphData): Map<string, string[]> {
+  const index = new Map<string, string[]>();
+  for (const edge of data.repo_author_edges) {
+    const repos = index.get(edge.t) ?? [];
+    repos.push(edge.s);
+    index.set(edge.t, repos);
+  }
+  return index;
+}
+
+/**
  * Подпись узла для интерфейса, на нужном языке. У PubNode своего label
  * нет вообще — заголовок публикации приходит отдельно, из SearchDetail
  * (graph-search.js), а не из самого узла графа (см. contracts/graph.ts).

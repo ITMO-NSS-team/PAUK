@@ -4,10 +4,10 @@
 // самого Department) и карточку "Обзор" по умолчанию, когда вообще
 // ничего не выбрано (сводные числа по всему графу, а не по одному узлу).
 
-import type { GraphData, PubNode } from "../contracts/graph";
+import type { GraphData, PubNode, RepoNode } from "../contracts/graph";
 import type { SearchDetail } from "../contracts/search";
 import { PANEL_CONFIG } from "../core/config";
-import { buildAuthorPubIndex, buildCoauthIndex, indexByKey, nodeLabel } from "../core/data";
+import { buildAuthorPubIndex, buildAuthorRepoIndex, buildCoauthIndex, indexByKey, nodeLabel } from "../core/data";
 import { requireElement } from "../core/dom";
 import { kindLabel, localize, t } from "../core/i18n";
 import type { AppState, Store } from "../core/state";
@@ -72,6 +72,7 @@ export function mountPanel(
   const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
   const { authorPubs, pubAuthors } = buildAuthorPubIndex(data);
   const coauthIndex = buildCoauthIndex(data);
+  const authorRepoIndex = buildAuthorRepoIndex(data);
 
   /** Подписи узлов по списку ключей, через запятую — для строк "общие публикации"/"общие авторы" в карточке ребра и списков в карточке автора. */
   function labelsOf(keys: string[], lang: AppState["lang"]): string {
@@ -99,6 +100,16 @@ export function mountPanel(
       .sort(([, weightA], [, weightB]) => weightB - weightA)
       .slice(0, PANEL_CONFIG.listLimit)
       .map(([key]) => key);
+  }
+
+  /** Репозитории автора, по убыванию звёзд (как и в старом GUI), обрезано до PANEL_CONFIG.listLimit. */
+  function authorRepoKeysOf(authorKey: string): string[] {
+    return (authorRepoIndex.get(authorKey) ?? [])
+      .map((key) => index.get(key))
+      .filter((node): node is RepoNode => node?.kind === "repo")
+      .sort((a, b) => b.stars - a.stars)
+      .slice(0, PANEL_CONFIG.listLimit)
+      .map((node) => node.key);
   }
 
   function hide(): void {
@@ -152,6 +163,9 @@ export function mountPanel(
 
         const topCoauthors = topCoauthorKeys(node.key);
         if (topCoauthors.length > 0) rows.push([t("field.topCoauthors", lang), labelsOf(topCoauthors, lang)]);
+
+        const authorRepos = authorRepoKeysOf(node.key);
+        if (authorRepos.length > 0) rows.push([t("tab.repos", lang), labelsOf(authorRepos, lang)]);
       }
       if (node.kind === "repo") {
         rows.push([t("field.stars", lang), String(node.stars)], [t("field.owner", lang), node.owner]);

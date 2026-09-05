@@ -70,6 +70,28 @@ describe("mountPanel", () => {
     expect(text.indexOf("Петрова А.С.")).toBeLessThan(text.indexOf("Сидоров П."));
   });
 
+  it("карточка автора показывает его репозитории (repo_author_edges)", async () => {
+    const data = await loadSampleGraphData();
+    // A1 во фикстуре — maintainer репозитория R1 (repo_author_edges).
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A1" } });
+
+    mountPanel(store, data, NO_SEARCH_DETAILS);
+
+    const r1 = data.repos.find((repo) => repo.key === "R1");
+    if (!r1) throw new Error("фикстура должна содержать репозиторий R1");
+    expect(panel.textContent).toContain(r1.label);
+  });
+
+  it("не показывает строку репозиториев у автора без единого repo_author_edges", async () => {
+    const data = await loadSampleGraphData();
+    // A2 во фикстуре ни в одном repo_author_edges не участвует.
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A2" } });
+
+    mountPanel(store, data, NO_SEARCH_DETAILS);
+
+    expect(panel.textContent).not.toContain("Репозитории");
+  });
+
   it("показывает настоящее название публикации из searchDetails, а не её ключ", async () => {
     const data = await loadSampleGraphData();
     const searchDetails = indexSearchDetailsByKey(await loadSampleSearchDetails());
