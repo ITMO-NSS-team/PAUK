@@ -228,6 +228,9 @@ export function mountPanel(
         if (detail?.has_code && detail.code_url.length > 0) {
           rows.push([t("field.code", lang), detail.code_url.map(codeLink)]);
         }
+
+        const pubAuthorKeys = (pubAuthors.get(node.key) ?? []).slice(0, PANEL_CONFIG.listLimit);
+        if (pubAuthorKeys.length > 0) rows.push([t("tab.authors", lang), labelsOf(pubAuthorKeys, lang)]);
       }
 
       return show(nodeLabel(node, lang, searchDetails), rows);

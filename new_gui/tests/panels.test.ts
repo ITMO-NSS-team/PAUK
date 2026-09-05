@@ -114,6 +114,17 @@ describe("mountPanel", () => {
     expect(panel.textContent).not.toContain("Публикации");
   });
 
+  it("карточка публикации показывает список её авторов (all_edges)", async () => {
+    const data = await loadSampleGraphData();
+    // P1 во фикстуре: авторы A1 и A2 (all_edges).
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "P1" } });
+
+    mountPanel(store, data, NO_SEARCH_DETAILS);
+
+    expect(panel.textContent).toContain("Иванов И.И.");
+    expect(panel.textContent).toContain("Петрова А.С.");
+  });
+
   it("показывает настоящее название публикации из searchDetails, а не её ключ", async () => {
     const data = await loadSampleGraphData();
     const searchDetails = indexSearchDetailsByKey(await loadSampleSearchDetails());
