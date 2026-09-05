@@ -51,7 +51,9 @@ export type LocaleKey =
   | "field.edgeWeight"
   | "field.authorsCount"
   | "field.reposCount"
+  | "field.deptsCount"
   | "field.total"
+  | "overview.title"
   | "field.doi"
   | "field.code"
   | "search.placeholder"
@@ -86,9 +88,11 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.edgeWeight": "Вес",
     "field.authorsCount": "Авторов",
     "field.reposCount": "Репозиториев",
+    "field.deptsCount": "Департаментов",
     "field.total": "Всего",
     "field.doi": "DOI",
     "field.code": "Код",
+    "overview.title": "Обзор",
     "search.placeholder": "Поиск по авторам, репозиториям, публикациям, департаментам…",
     "search.pubsCountShort": "публ.",
     "lang.toggle": "EN",
@@ -120,9 +124,11 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.edgeWeight": "Weight",
     "field.authorsCount": "Authors",
     "field.reposCount": "Repositories",
+    "field.deptsCount": "Departments",
     "field.total": "Total",
     "field.doi": "DOI",
     "field.code": "Code",
+    "overview.title": "Overview",
     "search.placeholder": "Search authors, repositories, publications, departments…",
     "search.pubsCountShort": "pubs",
     "lang.toggle": "RU",

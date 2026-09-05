@@ -25,12 +25,17 @@ describe("mountPanel", () => {
     return () => panel.remove();
   });
 
-  it("скрыта, пока ничего не выбрано", async () => {
+  it("показывает карточку «Обзор» со сводными числами, пока ничего не выбрано", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
     mountPanel(store, data, NO_SEARCH_DETAILS);
 
-    expect(panel.hidden).toBe(true);
+    expect(panel.hidden).toBe(false);
+    expect(panel.querySelector("h3")?.textContent).toBe("Обзор");
+    expect(panel.textContent).toContain(String(data.authors.length));
+    expect(panel.textContent).toContain(String(data.repos.length));
+    expect(panel.textContent).toContain(String(data.pubs.length));
+    expect(panel.textContent).toContain(String(data.departments.length));
   });
 
   it("показывает карточку узла с полями, специфичными для автора", async () => {
@@ -145,16 +150,17 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain(String(dept.n_repos));
   });
 
-  it("скрывается обратно, когда selection сбрасывают в null", async () => {
+  it("возвращается к карточке «Обзор», когда selection сбрасывают в null", async () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];
     if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: author.key } });
 
     mountPanel(store, data, NO_SEARCH_DETAILS);
-    expect(panel.hidden).toBe(false);
+    expect(panel.querySelector("h3")?.textContent).toBe(author.label);
 
     store.set({ selection: null });
-    expect(panel.hidden).toBe(true);
+    expect(panel.hidden).toBe(false);
+    expect(panel.querySelector("h3")?.textContent).toBe("Обзор");
   });
 });

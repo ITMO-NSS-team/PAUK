@@ -1,8 +1,8 @@
 // Слой "features" — панель с информацией о том, что сейчас выбрано.
 // Умеет показывать карточку узла (автор/репозиторий/публикация), ребра
-// (кто с кем связан и с каким весом) и департамента (сводные числа из
-// самого Department). Вкладка "Обзор" из старого GUI (что показывается,
-// когда вообще ничего не выбрано) — отдельный будущий шаг.
+// (кто с кем связан и с каким весом), департамента (сводные числа из
+// самого Department) и карточку "Обзор" по умолчанию, когда вообще
+// ничего не выбрано (сводные числа по всему графу, а не по одному узлу).
 
 import type { GraphData } from "../contracts/graph";
 import type { SearchDetail } from "../contracts/search";
@@ -80,10 +80,21 @@ export function mountPanel(
     container.replaceChildren(buildCard(title, rows));
   }
 
-  /** Пересобирает содержимое панели под текущее состояние — один из трёх видов карточки либо ничего, если ничего не выбрано. */
+  /** Карточка по умолчанию, пока ничего не выбрано — сводные числа по всему текущему графу данных (не зависит от активной вкладки). */
+  function renderOverview(lang: AppState["lang"]): void {
+    const rows: PanelRow[] = [
+      [t("field.authorsCount", lang), String(data.authors.length)],
+      [t("field.reposCount", lang), String(data.repos.length)],
+      [t("field.pubsCount", lang), String(data.pubs.length)],
+      [t("field.deptsCount", lang), String(data.departments.length)],
+    ];
+    show(t("overview.title", lang), rows);
+  }
+
+  /** Пересобирает содержимое панели под текущее состояние — один из видов карточки (обзор/узел/ребро/департамент) либо ничего, если рассинхрон данных. */
   function render(state: AppState): void {
     const { selection, lang } = state;
-    if (selection === null) return hide();
+    if (selection === null) return renderOverview(lang);
 
     if (selection.kind === "node") {
       const node = index.get(selection.key);
