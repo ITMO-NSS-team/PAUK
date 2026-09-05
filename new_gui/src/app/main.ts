@@ -12,11 +12,13 @@ import { FILTER_CONFIG, MAP_CONFIG } from "../core/config";
 import { indexSearchDetailsByKey, loadSampleGraphData, loadSampleSearchDetails } from "../core/data";
 import { requireElement } from "../core/dom";
 import { Store, type AppState } from "../core/state";
+import { parseUrlState } from "../core/url";
 import { mountFilters } from "../features/filters";
 import { mountLangToggle } from "../features/langToggle";
 import { mountPanel } from "../features/panels";
 import { mountSelection } from "../features/selection";
 import { mountTabs } from "../features/tabs";
+import { mountUrlSync } from "../features/urlSync";
 import { mountReactiveGraph, nodeBounds } from "../map/build";
 
 setWorkerUrl(workerUrl);
@@ -68,6 +70,12 @@ map.on("load", () => {
     .then(([data, searchDetails]) => {
       const searchDetailsByKey = indexSearchDetailsByKey(searchDetails);
 
+      // URL при первой загрузке может задавать другую вкладку/выбор, чем
+      // дефолт Store (например, открыли сохранённую ссылку) — применяем это
+      // ДО монтирования остальных фич, чтобы они сразу увидели нужное
+      // состояние, а не мигнули дефолтом и тут же переключились на него.
+      store.set(parseUrlState(location.search, data));
+
       // mountReactiveGraph рисует граф под текущие tab/lang/filters и сама
       // следит за store дальше — остальным фичам достаточно менять
       // store.tab/lang/filters, не заботясь о том, что ещё перерисовать.
@@ -88,6 +96,7 @@ map.on("load", () => {
       mountTabs(requireElement("tab-buttons"), requireElement("tab-content"), store, map, data, searchDetailsByKey);
       mountFilters(store);
       mountLangToggle(store);
+      mountUrlSync(store, data);
 
       console.info("Граф отрисован:", {
         департаменты: data.departments.length,
