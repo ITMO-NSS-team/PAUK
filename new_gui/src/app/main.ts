@@ -8,7 +8,7 @@ import { Map as MapLibreMap, NavigationControl, setWorkerUrl } from "maplibre-gl
 // оптимизатор зависимостей — без этого Vite ищет файл воркера не там,
 // где он реально лежит, и карта падает в рантайме с "file does not exist".
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
-import { MAP_CONFIG } from "../core/config";
+import { FILTER_CONFIG, MAP_CONFIG } from "../core/config";
 import { indexSearchDetailsByKey, loadSampleGraphData, loadSampleSearchDetails } from "../core/data";
 import { requireElement } from "../core/dom";
 import { Store, type AppState } from "../core/state";
@@ -23,14 +23,15 @@ setWorkerUrl(workerUrl);
 
 // Единственное место, где создаётся Store — дальше он просто передаётся
 // в конструкторы фич (features/*), которые сами решают, на какую часть
-// state подписаться. Значения по умолчанию ни на что пока не влияют
-// (фильтры/вкладки/язык ещё не читает ни один код) — заданы такими, какими
-// реально должны быть, когда соответствующие фичи появятся, а не "как попало".
+// state подписаться. yearMax по умолчанию — это FILTER_CONFIG.year.max
+// (текущий год), а не отдельно вычисленный new Date().getFullYear(): так
+// стартовое "без фильтра по году" значение и верхняя граница самого
+// слайдера физически не могут разойтись, это одно и то же число.
 const store = new Store<AppState>({
   tab: 1,
   lang: "ru",
   selection: null,
-  filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: new Date().getFullYear() },
+  filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: FILTER_CONFIG.year.max },
 });
 
 // Тот же placeholder-стиль, что и в старом GUI: это не географическая
