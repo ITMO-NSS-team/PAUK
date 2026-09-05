@@ -1,6 +1,8 @@
 import type { AuthorNode, GraphData, PubNode, RepoNode } from "../contracts/graph";
+import type { SearchDetail } from "../contracts/search";
 import { localize, type Lang } from "./i18n";
 import sampleGraphData from "./fixtures/graph-data.sample.json";
+import sampleSearchDetails from "./fixtures/graph-search.sample.json";
 
 /** Любой из трёх видов узлов графа — авторы, репозитории, публикации. */
 type GraphNode = AuthorNode | RepoNode | PubNode;
@@ -50,6 +52,22 @@ export async function loadSampleGraphData(): Promise<GraphData> {
   const data = sampleGraphData as GraphData;
   if (import.meta.env.DEV) assertGraphData(data);
   return data;
+}
+
+/**
+ * Синтетический аналог graph-search.js — детали публикаций (настоящее
+ * название, журнал, DOI, ссылка на код), которых нет в самом GraphData.
+ * Соответствует по ключам публикациям из loadSampleGraphData() (P1-P6) —
+ * реальный graph-search.js подключим тем же следующим шагом, что и
+ * graph-data.js (см. loadGraphData выше).
+ */
+export async function loadSampleSearchDetails(): Promise<SearchDetail[]> {
+  return sampleSearchDetails as SearchDetail[];
+}
+
+/** Быстрый поиск деталей публикации по ключу — тот же принцип, что и indexByKey() ниже. */
+export function indexSearchDetailsByKey(details: SearchDetail[]): Map<string, SearchDetail> {
+  return new Map(details.map((detail) => [detail.key, detail]));
 }
 
 /**
@@ -106,15 +124,19 @@ export function indexByKey(data: GraphData): Map<string, GraphNode> {
  * Подпись узла для интерфейса, на нужном языке. У PubNode своего label
  * нет вообще — заголовок публикации приходит отдельно, из SearchDetail
  * (graph-search.js), а не из самого узла графа (см. contracts/graph.ts).
- * Пока нет доступа к SearchDetail, используем ключ как временную заглушку
- * (язык тут ни при чём, ключ одинаковый на обоих языках).
+ * searchDetails — необязательный параметр: если для публикации нашлось
+ * название, используем его; если карта не передана или в ней нет такого
+ * ключа, откатываемся на key как и раньше — так вызывающему коду, у
+ * которого ещё нет доступа к SearchDetail, не обязательно ничего менять.
  *
  * У AuthorNode есть пара label/label_en — переключаем через localize().
  * У RepoNode своего _en варианта нет (имя репозитория не переводится),
  * поэтому для него localize() просто вернёт repo.label на любом языке.
+ * У SearchDetail тоже нет _en-варианта (реальный graph-search.js его не
+ * содержит) — название публикации всегда на одном языке, независимо от lang.
  */
-export function nodeLabel(node: GraphNode, lang: Lang): string {
-  if (!("label" in node)) return node.key;
+export function nodeLabel(node: GraphNode, lang: Lang, searchDetails?: Map<string, SearchDetail>): string {
+  if (!("label" in node)) return searchDetails?.get(node.key)?.label ?? node.key;
   const labelEn = "label_en" in node ? node.label_en : undefined;
   return localize(node.label, labelEn, lang);
 }

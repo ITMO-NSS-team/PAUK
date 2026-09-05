@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { loadSampleGraphData } from "../src/core/data";
+import type { SearchDetail } from "../src/contracts/search";
+import { indexSearchDetailsByKey, loadSampleGraphData, loadSampleSearchDetails } from "../src/core/data";
 import { Store, type AppState } from "../src/core/state";
 import { mountPanel } from "../src/features/panels";
+
+const NO_SEARCH_DETAILS = new Map<string, SearchDetail>();
 
 function initialState(): AppState {
   return {
@@ -25,7 +28,7 @@ describe("mountPanel", () => {
   it("скрыта, пока ничего не выбрано", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
-    mountPanel(store, data);
+    mountPanel(store, data, NO_SEARCH_DETAILS);
 
     expect(panel.hidden).toBe(true);
   });
@@ -36,11 +39,25 @@ describe("mountPanel", () => {
     if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: author.key } });
 
-    mountPanel(store, data);
+    mountPanel(store, data, NO_SEARCH_DETAILS);
 
     expect(panel.hidden).toBe(false);
     expect(panel.querySelector("h3")?.textContent).toBe(author.label);
     expect(panel.textContent).toContain(String(author.pubs_count));
+  });
+
+  it("показывает настоящее название публикации из searchDetails, а не её ключ", async () => {
+    const data = await loadSampleGraphData();
+    const searchDetails = indexSearchDetailsByKey(await loadSampleSearchDetails());
+    const pub = data.pubs[0];
+    if (!pub) throw new Error("фикстура должна содержать хотя бы одну публикацию");
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: pub.key } });
+
+    mountPanel(store, data, searchDetails);
+
+    const title = panel.querySelector("h3")?.textContent;
+    expect(title).toBe(searchDetails.get(pub.key)?.label);
+    expect(title).not.toBe(pub.key);
   });
 
   it("показывает карточку ребра с обоими концами и весом", async () => {
@@ -52,7 +69,7 @@ describe("mountPanel", () => {
       selection: { kind: "edge", s: edge.s, t: edge.t, w: edge.w },
     });
 
-    mountPanel(store, data);
+    mountPanel(store, data, NO_SEARCH_DETAILS);
 
     expect(panel.hidden).toBe(false);
     expect(panel.textContent).toContain(String(edge.w));
@@ -64,7 +81,7 @@ describe("mountPanel", () => {
     if (!dept) throw new Error("фикстура должна содержать хотя бы один департамент");
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "dept", id: dept.id } });
 
-    mountPanel(store, data);
+    mountPanel(store, data, NO_SEARCH_DETAILS);
 
     expect(panel.hidden).toBe(false);
     expect(panel.querySelector("h3")?.textContent).toBe(dept.name);
@@ -78,7 +95,7 @@ describe("mountPanel", () => {
     if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: author.key } });
 
-    mountPanel(store, data);
+    mountPanel(store, data, NO_SEARCH_DETAILS);
     expect(panel.hidden).toBe(false);
 
     store.set({ selection: null });

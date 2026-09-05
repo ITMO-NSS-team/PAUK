@@ -3,10 +3,10 @@
 // индекс строится здесь же, в браузере, из уже загруженного GraphData
 // (ровно как и в старом search.js).
 
-import type { SearchHit } from "../../contracts/search";
+import type { GraphData } from "../../contracts/graph";
+import type { SearchDetail, SearchHit } from "../../contracts/search";
 import { nodeLabel } from "../../core/data";
 import { localize, t, type Lang } from "../../core/i18n";
-import type { GraphData } from "../../contracts/graph";
 
 // Формат ключа department-хита ("dept:<id>") — в одном месте, чтобы
 // сборка (deptHitKey) и разбор (parseDeptHitKey) точно не разъехались.
@@ -30,7 +30,7 @@ export function parseDeptHitKey(key: string): number {
  * число публикаций, для репозитория — путь на GitHub без "https://",
  * для публикации — год и департамент, у департамента своей sub нет.
  */
-export function buildSearchIndex(data: GraphData, lang: Lang): SearchHit[] {
+export function buildSearchIndex(data: GraphData, lang: Lang, searchDetails: Map<string, SearchDetail>): SearchHit[] {
   const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
   const deptName = (id: number): string => {
     const dept = deptById.get(id);
@@ -56,10 +56,10 @@ export function buildSearchIndex(data: GraphData, lang: Lang): SearchHit[] {
   const pubHits: SearchHit[] = data.pubs.map((pub) => ({
     key: pub.key,
     kind: "pub",
-    label: nodeLabel(pub, lang),
-    // Строку журнала сюда не добавляем — она приходит из SearchDetail
-    // (graph-search.js), а этот источник данных ещё не подключён.
-    sub: [pub.year, deptName(pub.dept)].filter(Boolean).join(" · ") || null,
+    label: nodeLabel(pub, lang, searchDetails),
+    // Журнал добавляется, только если для публикации нашлась запись в
+    // searchDetails — без неё (как и раньше) остаются год и департамент.
+    sub: [pub.year, deptName(pub.dept), searchDetails.get(pub.key)?.journal].filter(Boolean).join(" · ") || null,
   }));
 
   const deptHits: SearchHit[] = data.departments.map((dept) => ({

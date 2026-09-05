@@ -16,13 +16,13 @@ import type { TabModule } from "./types";
  * вкладки, а не что-то, на что должны реагировать другие части приложения.
  */
 export const searchTab: TabModule = {
-  mount(container, store, map, data) {
+  mount(container, store, map, data, searchDetails) {
     const nodeByKey = indexByKey(data);
 
     let query = "";
     // Индекс поиска зависит от языка (label/sub переведены) — пересобирается
     // заново только когда lang реально поменялся, не на каждое изменение store.
-    let index: SearchHit[] = buildSearchIndex(data, store.get().lang);
+    let index: SearchHit[] = buildSearchIndex(data, store.get().lang, searchDetails);
 
     const input = document.createElement("input");
     input.type = "search";
@@ -71,7 +71,7 @@ export const searchTab: TabModule = {
     const unsubscribe = store.subscribe((state) => {
       if (state.lang === currentLang) return;
       currentLang = state.lang;
-      index = buildSearchIndex(data, currentLang);
+      index = buildSearchIndex(data, currentLang, searchDetails);
       applyLang(currentLang);
     });
 

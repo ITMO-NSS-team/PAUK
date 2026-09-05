@@ -1,11 +1,15 @@
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import { describe, expect, it, vi } from "vitest";
-import { loadSampleGraphData } from "../src/core/data";
+import type { SearchDetail } from "../src/contracts/search";
+import { loadSampleGraphData, loadSampleSearchDetails, indexSearchDetailsByKey } from "../src/core/data";
 import { Store, type AppState } from "../src/core/state";
 import { buildEdgeFeatures, buildNodeFeatures, mountReactiveGraph, nodeBounds } from "../src/map/build";
 
 // Пороги, которые ничего не отсекают — для тестов, где фильтрация не в фокусе.
 const NO_FILTER = { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026 };
+// Большинство тестов здесь не про названия публикаций — пустая карта
+// оставляет nodeLabel() на старом поведении (заглушка — ключ публикации).
+const NO_SEARCH_DETAILS = new Map<string, SearchDetail>();
 
 function initialState(overrides: Partial<AppState> = {}): AppState {
   return {
@@ -22,21 +26,33 @@ describe("map/build на фикстур-данных", () => {
     const data = await loadSampleGraphData();
 
     // Три разных графа — авторы/репозитории/публикации не смешиваются в одной вкладке.
-    expect(buildNodeFeatures(data, "ru", 1, NO_FILTER).features).toHaveLength(data.authors.length);
-    expect(buildNodeFeatures(data, "ru", 2, NO_FILTER).features).toHaveLength(data.repos.length);
-    expect(buildNodeFeatures(data, "ru", 3, NO_FILTER).features).toHaveLength(data.pubs.length);
+    expect(buildNodeFeatures(data, "ru", 1, NO_FILTER, NO_SEARCH_DETAILS).features).toHaveLength(data.authors.length);
+    expect(buildNodeFeatures(data, "ru", 2, NO_FILTER, NO_SEARCH_DETAILS).features).toHaveLength(data.repos.length);
+    expect(buildNodeFeatures(data, "ru", 3, NO_FILTER, NO_SEARCH_DETAILS).features).toHaveLength(data.pubs.length);
     // Вкладка 4 (поиск) не привязана ни к одному из трёх графов — карта пуста.
-    expect(buildNodeFeatures(data, "ru", 4, NO_FILTER).features).toHaveLength(0);
+    expect(buildNodeFeatures(data, "ru", 4, NO_FILTER, NO_SEARCH_DETAILS).features).toHaveLength(0);
   });
 
   it("buildNodeFeatures красит узлы цветом их департамента", async () => {
     const data = await loadSampleGraphData();
-    const fc = buildNodeFeatures(data, "ru", 1, NO_FILTER);
+    const fc = buildNodeFeatures(data, "ru", 1, NO_FILTER, NO_SEARCH_DETAILS);
     const deptColor = new Map(data.departments.map((d) => [d.id, d.color]));
 
     for (const feature of fc.features) {
       const author = data.authors.find((a) => a.key === feature.properties.key);
       expect(feature.properties.color).toBe(deptColor.get(author?.dept ?? -1));
+    }
+  });
+
+  it("buildNodeFeatures подставляет настоящее название публикации из searchDetails вместо ключа", async () => {
+    const data = await loadSampleGraphData();
+    const searchDetails = indexSearchDetailsByKey(await loadSampleSearchDetails());
+
+    const fc = buildNodeFeatures(data, "ru", 3, NO_FILTER, searchDetails);
+    for (const feature of fc.features) {
+      const detail = searchDetails.get(feature.properties.key);
+      expect(feature.properties.label).toBe(detail?.label);
+      expect(feature.properties.label).not.toBe(feature.properties.key);
     }
   });
 
@@ -75,7 +91,9 @@ describe("map/build на фикстур-данных", () => {
     const filters = { ...NO_FILTER, yearMax: 2022 };
     const expectedPubs = data.pubs.filter((p) => p.year === null || p.year <= 2022);
 
-    const nodeKeys = buildNodeFeatures(data, "ru", 3, filters).features.map((f) => f.properties.key);
+    const nodeKeys = buildNodeFeatures(data, "ru", 3, filters, NO_SEARCH_DETAILS).features.map(
+      (f) => f.properties.key,
+    );
     expect(nodeKeys.sort()).toEqual(expectedPubs.map((p) => p.key).sort());
     expect(expectedPubs.some((p) => p.year === null)).toBe(true); // фикстура правда содержит пример без года
 
@@ -116,7 +134,7 @@ describe("mountReactiveGraph", () => {
     const store = new Store<AppState>(initialState());
     const { map, setData } = fakeMapWithSource();
 
-    mountReactiveGraph(map, store, data);
+    mountReactiveGraph(map, store, data, NO_SEARCH_DETAILS);
     expect(map.addSource).toHaveBeenCalledTimes(2); // узлы + рёбра
     expect(setData).not.toHaveBeenCalled();
 

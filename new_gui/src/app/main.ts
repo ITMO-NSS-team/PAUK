@@ -9,7 +9,7 @@ import { Map as MapLibreMap, NavigationControl, setWorkerUrl } from "maplibre-gl
 // где он реально лежит, и карта падает в рантайме с "file does not exist".
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { MAP_CONFIG } from "../core/config";
-import { loadSampleGraphData } from "../core/data";
+import { indexSearchDetailsByKey, loadSampleGraphData, loadSampleSearchDetails } from "../core/data";
 import { requireElement } from "../core/dom";
 import { Store, type AppState } from "../core/state";
 import { mountFilters } from "../features/filters";
@@ -60,12 +60,17 @@ map.addControl(new NavigationControl({ showCompass: false }), "bottom-left");
 // Данные пока синтетические (v2-прототип), реальный pauk/gui/data не
 // трогаем.
 map.on("load", () => {
-  loadSampleGraphData()
-    .then((data) => {
+  // graph-data и graph-search — два независимых источника (в реальном
+  // пайплайне это graph-data.js и graph-search.js), поэтому грузим их
+  // параллельно, не один после другого.
+  Promise.all([loadSampleGraphData(), loadSampleSearchDetails()])
+    .then(([data, searchDetails]) => {
+      const searchDetailsByKey = indexSearchDetailsByKey(searchDetails);
+
       // mountReactiveGraph рисует граф под текущие tab/lang/filters и сама
       // следит за store дальше — остальным фичам достаточно менять
       // store.tab/lang/filters, не заботясь о том, что ещё перерисовать.
-      mountReactiveGraph(map, store, data);
+      mountReactiveGraph(map, store, data, searchDetailsByKey);
       map.fitBounds(nodeBounds(data), { padding: MAP_CONFIG.fitPadding, animate: false });
 
       // mountSelection слушает клики по карте и пишет выбор в store;
@@ -78,8 +83,8 @@ map.on("load", () => {
       // самих (внутри mountTabs свои unmount вызываются при смене вкладки —
       // это устройство самой этой фичи).
       mountSelection(map, store);
-      mountPanel(store, data);
-      mountTabs(requireElement("tab-buttons"), requireElement("tab-content"), store, map, data);
+      mountPanel(store, data, searchDetailsByKey);
+      mountTabs(requireElement("tab-buttons"), requireElement("tab-content"), store, map, data, searchDetailsByKey);
       mountFilters(store);
       mountLangToggle(store);
 
@@ -88,6 +93,7 @@ map.on("load", () => {
         авторы: data.authors.length,
         репозитории: data.repos.length,
         публикации: data.pubs.length,
+        деталиПубликаций: searchDetails.length,
       });
     })
     .catch((error: unknown) => {

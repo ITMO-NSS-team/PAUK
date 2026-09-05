@@ -8,13 +8,13 @@ import type { TabModule } from "./types";
  * Вкладка "Публикации" — список, отсортированный по году по убыванию,
  * публикации без года (year === null) — в конце списка. Устройство то же,
  * что у authorsTab/reposTab (см. authors.ts для подробного объяснения),
- * с одной особенностью: у PubNode нет своего label, поэтому подпись
- * берём через core/data.ts::nodeLabel() — она возвращает ключ публикации
- * как временную заглушку, пока не подключён SearchDetail с настоящими
- * заголовками (graph-search.js).
+ * с одной особенностью: у PubNode нет своего label — настоящее название
+ * приходит из searchDetails (core/data.ts::loadSampleSearchDetails(),
+ * синтетический аналог graph-search.js), nodeLabel() откатится на ключ
+ * публикации, только если для неё нет записи в searchDetails.
  */
 export const pubsTab: TabModule = {
-  mount(container, store, map, data) {
+  mount(container, store, map, data, searchDetails) {
     const sortedPubs = [...data.pubs].sort((a, b) => (b.year ?? -Infinity) - (a.year ?? -Infinity));
 
     function render(state: AppState): void {
@@ -22,7 +22,7 @@ export const pubsTab: TabModule = {
 
       renderList(container, sortedPubs, (pub) =>
         renderListItem({
-          label: nodeLabel(pub, state.lang),
+          label: nodeLabel(pub, state.lang, searchDetails),
           meta: pub.year === null ? t("field.yearUnknown", state.lang) : String(pub.year),
           selected: pub.key === selectedKey,
           onClick: () => {

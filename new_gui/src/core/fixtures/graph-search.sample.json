@@ -1,0 +1,50 @@
+[
+  {
+    "key": "P1",
+    "label": "Динамическая раскладка больших графов на основе ForceAtlas2",
+    "journal": "Вестник прикладных систем",
+    "doi": "10.1234/vas.2024.001",
+    "has_code": true,
+    "code_url": ["https://github.com/example-org/graph-toolkit"]
+  },
+  {
+    "key": "P2",
+    "label": "Совместный анализ распределённых данных",
+    "journal": "Журнал анализа данных",
+    "doi": "10.1234/jad.2023.014",
+    "has_code": false,
+    "code_url": []
+  },
+  {
+    "key": "P3",
+    "label": "Автоматическая кластеризация научных публикаций",
+    "journal": "Журнал анализа данных",
+    "doi": "10.1234/jad.2023.022",
+    "has_code": true,
+    "code_url": ["https://github.com/example-org/data-pipeline"]
+  },
+  {
+    "key": "P4",
+    "label": "Симуляция кинематики манипулятора в реальном времени",
+    "journal": "Робототехника и мехатроника",
+    "doi": "10.1234/rm.2022.007",
+    "has_code": true,
+    "code_url": ["https://github.com/example-org/robo-sim"]
+  },
+  {
+    "key": "P5",
+    "label": "Метод визуализации больших графов совместности",
+    "journal": "Вестник прикладных систем",
+    "doi": "10.1234/vas.2021.003",
+    "has_code": false,
+    "code_url": []
+  },
+  {
+    "key": "P6",
+    "label": "Совместное применение анализа данных и робототехники",
+    "journal": "Робототехника и мехатроника",
+    "doi": "10.1234/rm.2024.011",
+    "has_code": true,
+    "code_url": ["https://github.com/example-org/robo-sim", "https://github.com/example-org/stat-tools"]
+  }
+]

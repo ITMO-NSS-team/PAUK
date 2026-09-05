@@ -5,6 +5,7 @@
 // когда вообще ничего не выбрано) — отдельный будущий шаг.
 
 import type { GraphData } from "../contracts/graph";
+import type { SearchDetail } from "../contracts/search";
 import { indexByKey, nodeLabel } from "../core/data";
 import { requireElement } from "../core/dom";
 import { kindLabel, localize, t } from "../core/i18n";
@@ -17,7 +18,11 @@ import type { AppState, Store } from "../core/state";
  * без отдельной логики "что именно изменилось". Возвращает функцию
  * отписки (unmount).
  */
-export function mountPanel(store: Store<AppState>, data: GraphData): () => void {
+export function mountPanel(
+  store: Store<AppState>,
+  data: GraphData,
+  searchDetails: Map<string, SearchDetail>,
+): () => void {
   const container = requireElement("panel");
 
   // Строится один раз при монтировании, а не на каждый рендер — поиск по
@@ -63,7 +68,7 @@ export function mountPanel(store: Store<AppState>, data: GraphData): () => void 
         rows.push([t("field.year", lang), node.year === null ? t("field.yearUnknown", lang) : String(node.year)]);
       }
 
-      return show(nodeLabel(node, lang), rows);
+      return show(nodeLabel(node, lang, searchDetails), rows);
     }
 
     if (selection.kind === "edge") {
@@ -72,8 +77,8 @@ export function mountPanel(store: Store<AppState>, data: GraphData): () => void 
       if (!from || !to) return hide();
 
       const rows: [string, string][] = [
-        [t("field.edgeFrom", lang), nodeLabel(from, lang)],
-        [t("field.edgeTo", lang), nodeLabel(to, lang)],
+        [t("field.edgeFrom", lang), nodeLabel(from, lang, searchDetails)],
+        [t("field.edgeTo", lang), nodeLabel(to, lang, searchDetails)],
         [t("field.edgeWeight", lang), String(selection.w)],
       ];
       return show(t("kind.edge", lang), rows);

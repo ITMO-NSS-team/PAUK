@@ -13,6 +13,7 @@
 import type { Feature, FeatureCollection, LineString, Point } from "geojson";
 import type { ExpressionSpecification, GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import type { AuthorNode, Edge, GraphData, PubNode, RepoNode } from "../contracts/graph";
+import type { SearchDetail } from "../contracts/search";
 import { MAP_CONFIG } from "../core/config";
 import { nodeLabel } from "../core/data";
 import type { Lang } from "../core/i18n";
@@ -20,6 +21,7 @@ import type { AppState, Store, TabId } from "../core/state";
 
 type GraphNode = AuthorNode | RepoNode | PubNode;
 type Filters = AppState["filters"];
+type SearchDetailsByKey = Map<string, SearchDetail>;
 
 /** Свойства, которые кладутся в каждую GeoJSON-точку узла — доступны в paint-выражениях слоя через ["get", "имя"]. */
 interface NodeProps {
@@ -91,6 +93,7 @@ export function buildNodeFeatures(
   lang: Lang,
   tab: TabId,
   filters: Filters,
+  searchDetails: SearchDetailsByKey,
 ): FeatureCollection<Point, NodeProps> {
   // Map по id департамента, а не поиск в массиве на каждый узел —
   // департаментов немного, но узлов может быть тысячи.
@@ -107,7 +110,7 @@ export function buildNodeFeatures(
     properties: {
       key: node.key,
       kind: node.kind,
-      label: nodeLabel(node, lang),
+      label: nodeLabel(node, lang, searchDetails),
       color: deptById.get(node.dept)?.color ?? MAP_CONFIG.node.fallbackColor,
     },
   }));
@@ -210,7 +213,14 @@ function selectedNodeExpression(
 }
 
 /** Добавляет источники и слои узлов/рёбер текущей вкладки — вызывается один раз изнутри mountReactiveGraph(). */
-function addGraphLayers(map: MapLibreMap, data: GraphData, lang: Lang, tab: TabId, filters: Filters): void {
+function addGraphLayers(
+  map: MapLibreMap,
+  data: GraphData,
+  lang: Lang,
+  tab: TabId,
+  filters: Filters,
+  searchDetails: SearchDetailsByKey,
+): void {
   map.addSource(EDGE_SOURCE_ID, { type: "geojson", data: buildEdgeFeatures(data, tab, filters) });
   map.addLayer({
     id: EDGE_LAYER_ID,
@@ -234,7 +244,7 @@ function addGraphLayers(map: MapLibreMap, data: GraphData, lang: Lang, tab: TabI
     paint: { "line-width": MAP_CONFIG.edge.hitWidth, "line-opacity": 0 },
   });
 
-  map.addSource(NODE_SOURCE_ID, { type: "geojson", data: buildNodeFeatures(data, lang, tab, filters) });
+  map.addSource(NODE_SOURCE_ID, { type: "geojson", data: buildNodeFeatures(data, lang, tab, filters, searchDetails) });
   map.addLayer({
     id: NODE_LAYER_ID,
     type: "circle",
@@ -257,9 +267,16 @@ function addGraphLayers(map: MapLibreMap, data: GraphData, lang: Lang, tab: TabI
 }
 
 /** Пересобирает узлы и рёбра под новые вкладку/язык/фильтры — источники уже добавлены (addGraphLayers), здесь только setData(). */
-function refreshGraphLayers(map: MapLibreMap, data: GraphData, lang: Lang, tab: TabId, filters: Filters): void {
+function refreshGraphLayers(
+  map: MapLibreMap,
+  data: GraphData,
+  lang: Lang,
+  tab: TabId,
+  filters: Filters,
+  searchDetails: SearchDetailsByKey,
+): void {
   const nodeSource = map.getSource(NODE_SOURCE_ID) as GeoJSONSource | undefined;
-  nodeSource?.setData(buildNodeFeatures(data, lang, tab, filters));
+  nodeSource?.setData(buildNodeFeatures(data, lang, tab, filters, searchDetails));
 
   const edgeSource = map.getSource(EDGE_SOURCE_ID) as GeoJSONSource | undefined;
   edgeSource?.setData(buildEdgeFeatures(data, tab, filters));
@@ -292,9 +309,14 @@ export function setSelectedNode(map: MapLibreMap, key: string | null): void {
  * граф, а остальным фичам достаточно менять store.tab/lang/filters, не
  * заботясь о том, что ещё нужно перерисовать.
  */
-export function mountReactiveGraph(map: MapLibreMap, store: Store<AppState>, data: GraphData): () => void {
+export function mountReactiveGraph(
+  map: MapLibreMap,
+  store: Store<AppState>,
+  data: GraphData,
+  searchDetails: SearchDetailsByKey,
+): () => void {
   const initial = store.get();
-  addGraphLayers(map, data, initial.lang, initial.tab, initial.filters);
+  addGraphLayers(map, data, initial.lang, initial.tab, initial.filters, searchDetails);
 
   let prev = initial;
   const unsubscribe = store.subscribe((state) => {
@@ -303,7 +325,7 @@ export function mountReactiveGraph(map: MapLibreMap, store: Store<AppState>, dat
     // сравнение по ссылке здесь корректно и дешевле глубокого сравнения.
     if (state.tab === prev.tab && state.lang === prev.lang && state.filters === prev.filters) return;
     prev = state;
-    refreshGraphLayers(map, data, state.lang, state.tab, state.filters);
+    refreshGraphLayers(map, data, state.lang, state.tab, state.filters, searchDetails);
   });
 
   return unsubscribe;
