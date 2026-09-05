@@ -1,4 +1,4 @@
-import type { AuthorNode, GraphData, PubNode, RepoNode } from "../contracts/graph";
+import type { AuthorNode, GraphData, PubNode, RepoAuthorEdge, RepoNode } from "../contracts/graph";
 import type { SearchDetail } from "../contracts/search";
 import { localize, type Lang } from "./i18n";
 import sampleGraphData from "./fixtures/graph-data.sample.json";
@@ -211,6 +211,38 @@ export function buildAuthorRepoIndex(data: GraphData): Map<string, string[]> {
     const repos = index.get(edge.t) ?? [];
     repos.push(edge.s);
     index.set(edge.t, repos);
+  }
+  return index;
+}
+
+/**
+ * Репозиторий -> участники (с ролью), из GraphData.repo_author_edges —
+ * обратная сторона buildAuthorRepoIndex (там ключ — автор, здесь — сам
+ * репозиторий). Нужен карточке репозитория (features/panels.ts): "кто
+ * именно над ним работал", а не только владелец из RepoNode.owner.
+ */
+export function buildRepoAuthorIndex(data: GraphData): Map<string, RepoAuthorEdge[]> {
+  const index = new Map<string, RepoAuthorEdge[]>();
+  for (const edge of data.repo_author_edges) {
+    const members = index.get(edge.s) ?? [];
+    members.push(edge);
+    index.set(edge.s, members);
+  }
+  return index;
+}
+
+/**
+ * Репозиторий -> ключи публикаций, из GraphData.repo_pub_edges — последнее
+ * из четырёх "неиспользуемых" полей контракта (all_edges, repo_author_edges,
+ * dept_edges — уже задействованы). Нужен карточке репозитория: "какие
+ * публикации с ним связаны".
+ */
+export function buildRepoPubIndex(data: GraphData): Map<string, string[]> {
+  const index = new Map<string, string[]>();
+  for (const edge of data.repo_pub_edges) {
+    const pubs = index.get(edge.s) ?? [];
+    pubs.push(edge.t);
+    index.set(edge.s, pubs);
   }
   return index;
 }

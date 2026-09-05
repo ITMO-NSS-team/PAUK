@@ -92,6 +92,28 @@ describe("mountPanel", () => {
     expect(panel.textContent).not.toContain("Репозитории");
   });
 
+  it("карточка репозитория показывает участников с ролью и публикации репозитория", async () => {
+    const data = await loadSampleGraphData();
+    // R1 во фикстуре: A1 — maintainer (repo_author_edges), P1 — его публикация (repo_pub_edges).
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "R1" } });
+
+    mountPanel(store, data, NO_SEARCH_DETAILS);
+
+    expect(panel.textContent).toContain("Участники");
+    expect(panel.textContent).toContain("Иванов И.И. (maintainer)");
+    expect(panel.textContent).toContain("P1");
+  });
+
+  it("не показывает строки участников/публикаций у репозитория без единой связи", async () => {
+    const data = await loadSampleGraphData();
+    // R4 во фикстуре не встречается ни в одном repo_pub_edges.
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "R4" } });
+
+    mountPanel(store, data, NO_SEARCH_DETAILS);
+
+    expect(panel.textContent).not.toContain("Публикации");
+  });
+
   it("показывает настоящее название публикации из searchDetails, а не её ключ", async () => {
     const data = await loadSampleGraphData();
     const searchDetails = indexSearchDetailsByKey(await loadSampleSearchDetails());

@@ -12,6 +12,8 @@ import {
   buildAuthorRepoIndex,
   buildCoauthIndex,
   buildDeptEdgeIndex,
+  buildRepoAuthorIndex,
+  buildRepoPubIndex,
   indexByKey,
   nodeLabel,
 } from "../core/data";
@@ -81,6 +83,8 @@ export function mountPanel(
   const coauthIndex = buildCoauthIndex(data);
   const authorRepoIndex = buildAuthorRepoIndex(data);
   const deptEdgeIndex = buildDeptEdgeIndex(data);
+  const repoAuthorIndex = buildRepoAuthorIndex(data);
+  const repoPubIndex = buildRepoPubIndex(data);
 
   /** Подписи департаментов по списку id, через запятую — для строки "связанные департаменты" в карточке департамента. */
   function deptLabelsOf(ids: number[], lang: AppState["lang"]): string {
@@ -126,6 +130,28 @@ export function mountPanel(
       .map((key) => index.get(key))
       .filter((node): node is RepoNode => node?.kind === "repo")
       .sort((a, b) => b.stars - a.stars)
+      .slice(0, PANEL_CONFIG.listLimit)
+      .map((node) => node.key);
+  }
+
+  /** Участники репозитория с ролью ("Имя (роль)"), через запятую — своя функция, а не labelsOf: нужно дописать роль к подписи. */
+  function repoContributorsOf(repoKey: string, lang: AppState["lang"]): string {
+    return (repoAuthorIndex.get(repoKey) ?? [])
+      .slice(0, PANEL_CONFIG.listLimit)
+      .map((edge) => {
+        const author = index.get(edge.t);
+        const label = author ? nodeLabel(author, lang, searchDetails) : edge.t;
+        return `${label} (${edge.role})`;
+      })
+      .join(", ");
+  }
+
+  /** Публикации репозитория, недавние сверху, обрезано до PANEL_CONFIG.listLimit. */
+  function repoPubKeysOf(repoKey: string): string[] {
+    return (repoPubIndex.get(repoKey) ?? [])
+      .map((key) => index.get(key))
+      .filter((node): node is PubNode => node?.kind === "pub")
+      .sort((a, b) => (b.year ?? -Infinity) - (a.year ?? -Infinity))
       .slice(0, PANEL_CONFIG.listLimit)
       .map((node) => node.key);
   }
@@ -187,6 +213,12 @@ export function mountPanel(
       }
       if (node.kind === "repo") {
         rows.push([t("field.stars", lang), String(node.stars)], [t("field.owner", lang), node.owner]);
+
+        const contributors = repoContributorsOf(node.key, lang);
+        if (contributors.length > 0) rows.push([t("field.contributors", lang), contributors]);
+
+        const repoPubs = repoPubKeysOf(node.key);
+        if (repoPubs.length > 0) rows.push([t("tab.pubs", lang), labelsOf(repoPubs, lang)]);
       }
       if (node.kind === "pub") {
         rows.push([t("field.year", lang), node.year === null ? t("field.yearUnknown", lang) : String(node.year)]);
