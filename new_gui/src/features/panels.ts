@@ -4,9 +4,10 @@
 // самого Department) и карточку "Обзор" по умолчанию, когда вообще
 // ничего не выбрано (сводные числа по всему графу, а не по одному узлу).
 
-import type { GraphData } from "../contracts/graph";
+import type { GraphData, PubNode } from "../contracts/graph";
 import type { SearchDetail } from "../contracts/search";
-import { buildAuthorPubIndex, indexByKey, nodeLabel } from "../core/data";
+import { PANEL_CONFIG } from "../core/config";
+import { buildAuthorPubIndex, buildCoauthIndex, indexByKey, nodeLabel } from "../core/data";
 import { requireElement } from "../core/dom";
 import { kindLabel, localize, t } from "../core/i18n";
 import type { AppState, Store } from "../core/state";
@@ -70,8 +71,9 @@ export function mountPanel(
   const index = indexByKey(data);
   const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
   const { authorPubs, pubAuthors } = buildAuthorPubIndex(data);
+  const coauthIndex = buildCoauthIndex(data);
 
-  /** Подписи узлов по списку ключей, через запятую — для строк "общие публикации"/"общие авторы" в карточке ребра. */
+  /** Подписи узлов по списку ключей, через запятую — для строк "общие публикации"/"общие авторы" в карточке ребра и списков в карточке автора. */
   function labelsOf(keys: string[], lang: AppState["lang"]): string {
     return keys
       .map((key) => {
@@ -79,6 +81,24 @@ export function mountPanel(
         return node ? nodeLabel(node, lang, searchDetails) : key;
       })
       .join(", ");
+  }
+
+  /** Публикации автора, недавние сверху (год по убыванию), обрезано до PANEL_CONFIG.listLimit — как и topCoauthorKeys ниже, без этого список на реальных данных не поместился бы в карточку. */
+  function recentPubKeysOf(authorKey: string): string[] {
+    return (authorPubs.get(authorKey) ?? [])
+      .map((key) => index.get(key))
+      .filter((node): node is PubNode => node?.kind === "pub")
+      .sort((a, b) => (b.year ?? -Infinity) - (a.year ?? -Infinity))
+      .slice(0, PANEL_CONFIG.listLimit)
+      .map((node) => node.key);
+  }
+
+  /** Соавторы автора, по убыванию суммарного веса связи (числа совместных публикаций), обрезано до PANEL_CONFIG.listLimit. */
+  function topCoauthorKeys(authorKey: string): string[] {
+    return [...(coauthIndex.get(authorKey) ?? new Map<string, number>()).entries()]
+      .sort(([, weightA], [, weightB]) => weightB - weightA)
+      .slice(0, PANEL_CONFIG.listLimit)
+      .map(([key]) => key);
   }
 
   function hide(): void {
@@ -121,7 +141,18 @@ export function mountPanel(
         [t("field.kind", lang), kindLabel(node.kind, lang)],
         [t("field.dept", lang), dept ? localize(dept.name, dept.name_en, lang) : t("field.unknownDept", lang)],
       ];
-      if (node.kind === "author") rows.push([t("field.pubsCount", lang), String(node.pubs_count)]);
+      if (node.kind === "author") {
+        rows.push([t("field.pubsCount", lang), String(node.pubs_count)]);
+
+        // Сами счётчики выше не говорят, КАКИЕ именно публикации/соавторы —
+        // строки ниже показывают список, только когда он не пуст (как и у
+        // общих публикаций/авторов в карточке ребра).
+        const recentPubs = recentPubKeysOf(node.key);
+        if (recentPubs.length > 0) rows.push([t("tab.pubs", lang), labelsOf(recentPubs, lang)]);
+
+        const topCoauthors = topCoauthorKeys(node.key);
+        if (topCoauthors.length > 0) rows.push([t("field.topCoauthors", lang), labelsOf(topCoauthors, lang)]);
+      }
       if (node.kind === "repo") {
         rows.push([t("field.stars", lang), String(node.stars)], [t("field.owner", lang), node.owner]);
       }

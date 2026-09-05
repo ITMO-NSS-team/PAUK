@@ -51,6 +51,25 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain(String(author.pubs_count));
   });
 
+  it("карточка автора показывает его публикации и топ соавторов по убыванию веса", async () => {
+    const data = await loadSampleGraphData();
+    // A1 во фикстуре: публикации P1, P2, P5 (all_edges); соавторы A2 (w=2) и A3 (w=1).
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A1" } });
+
+    mountPanel(store, data, NO_SEARCH_DETAILS);
+
+    expect(panel.textContent).toContain("P1");
+    expect(panel.textContent).toContain("P2");
+    expect(panel.textContent).toContain("P5");
+
+    const text = panel.textContent ?? "";
+    const coauthorsRow = text.indexOf("Топ соавторов");
+    expect(coauthorsRow).toBeGreaterThan(-1);
+    // A2 (вес 2) должен идти раньше A3 (вес 1) — сортировка по убыванию веса.
+    expect(text.indexOf("Петрова А.С.")).toBeGreaterThan(coauthorsRow);
+    expect(text.indexOf("Петрова А.С.")).toBeLessThan(text.indexOf("Сидоров П."));
+  });
+
   it("показывает настоящее название публикации из searchDetails, а не её ключ", async () => {
     const data = await loadSampleGraphData();
     const searchDetails = indexSearchDetailsByKey(await loadSampleSearchDetails());

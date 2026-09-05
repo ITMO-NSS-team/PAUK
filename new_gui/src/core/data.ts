@@ -149,6 +149,31 @@ export function buildAuthorPubIndex(data: GraphData): {
 }
 
 /**
+ * Соавторство одного автора со всеми остальными: ключ соавтора -> суммарный
+ * вес (число совместных публикаций). coauth_edges неориентированы (нет
+ * отдельной записи в обе стороны), поэтому при обходе учитываем ребро с
+ * обоих концов. Нужен карточке автора (features/panels.ts) для топа
+ * соавторов — просто node.pubs_count этого не показывает, он только считает,
+ * не называет.
+ */
+export function buildCoauthIndex(data: GraphData): Map<string, Map<string, number>> {
+  const index = new Map<string, Map<string, number>>();
+
+  function addWeight(from: string, to: string, weight: number): void {
+    const neighbors = index.get(from) ?? new Map<string, number>();
+    neighbors.set(to, (neighbors.get(to) ?? 0) + weight);
+    index.set(from, neighbors);
+  }
+
+  for (const edge of data.coauth_edges) {
+    addWeight(edge.s, edge.t, edge.w);
+    addWeight(edge.t, edge.s, edge.w);
+  }
+
+  return index;
+}
+
+/**
  * Подпись узла для интерфейса, на нужном языке. У PubNode своего label
  * нет вообще — заголовок публикации приходит отдельно, из SearchDetail
  * (graph-search.js), а не из самого узла графа (см. contracts/graph.ts).
