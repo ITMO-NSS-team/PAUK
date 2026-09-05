@@ -60,6 +60,62 @@ describe("mountPanel", () => {
     expect(title).not.toBe(pub.key);
   });
 
+  it("показывает DOI и ссылку на код как кликабельные <a>, когда есть searchDetails", async () => {
+    const data = await loadSampleGraphData();
+    const searchDetails = indexSearchDetailsByKey(await loadSampleSearchDetails());
+    // P1 во фикстуре — has_code: true, один code_url.
+    const detail = searchDetails.get("P1");
+    if (!detail?.has_code || detail.code_url.length === 0) {
+      throw new Error("фикстура graph-search.sample.json должна содержать P1 с has_code и хотя бы одним code_url");
+    }
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "P1" } });
+
+    mountPanel(store, data, searchDetails);
+
+    const doiLink = panel.querySelector("a[href^='https://doi.org/']") as HTMLAnchorElement | null;
+    expect(doiLink?.textContent).toBe(detail.doi);
+    expect(doiLink?.target).toBe("_blank");
+    expect(doiLink?.rel).toContain("noopener");
+
+    const codeLink = panel.querySelector(`a[href="${detail.code_url[0]}"]`) as HTMLAnchorElement | null;
+    expect(codeLink?.textContent).toBe(detail.code_url[0]?.replace("https://github.com/", ""));
+  });
+
+  it("заменяет code_url с небезопасной схемой (javascript:) на about:blank вместо того, чтобы класть её в href", async () => {
+    const data = await loadSampleGraphData();
+    const pub = data.pubs[0];
+    if (!pub) throw new Error("фикстура должна содержать хотя бы одну публикацию");
+    const malicious: SearchDetail = {
+      key: pub.key,
+      label: "Тестовая публикация",
+      journal: "",
+      doi: "",
+      has_code: true,
+      code_url: ["javascript:alert(1)"],
+    };
+    const searchDetails = new Map([[pub.key, malicious]]);
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: pub.key } });
+
+    mountPanel(store, data, searchDetails);
+
+    const codeLink = panel.querySelector(`dd a`) as HTMLAnchorElement | null;
+    expect(codeLink?.getAttribute("href")).toBe("about:blank");
+  });
+
+  it("не показывает строку кода, когда has_code === false, но DOI всё равно показывает", async () => {
+    const data = await loadSampleGraphData();
+    const searchDetails = indexSearchDetailsByKey(await loadSampleSearchDetails());
+    // P2 во фикстуре — has_code: false, code_url пуст, но doi есть.
+    const detail = searchDetails.get("P2");
+    if (!detail || detail.has_code) throw new Error("фикстура должна содержать P2 с has_code: false");
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "P2" } });
+
+    mountPanel(store, data, searchDetails);
+
+    expect(panel.querySelector("a[href^='https://doi.org/']")).not.toBeNull();
+    expect(panel.textContent).not.toContain("Код");
+  });
+
   it("показывает карточку ребра с обоими концами и весом", async () => {
     const data = await loadSampleGraphData();
     const edge = data.coauth_edges[0];

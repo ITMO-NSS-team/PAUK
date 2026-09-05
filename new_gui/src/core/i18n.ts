@@ -52,6 +52,8 @@ export type LocaleKey =
   | "field.authorsCount"
   | "field.reposCount"
   | "field.total"
+  | "field.doi"
+  | "field.code"
   | "search.placeholder"
   | "search.pubsCountShort"
   | "lang.toggle"
@@ -85,6 +87,8 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.authorsCount": "Авторов",
     "field.reposCount": "Репозиториев",
     "field.total": "Всего",
+    "field.doi": "DOI",
+    "field.code": "Код",
     "search.placeholder": "Поиск по авторам, репозиториям, публикациям, департаментам…",
     "search.pubsCountShort": "публ.",
     "lang.toggle": "EN",
@@ -117,6 +121,8 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.authorsCount": "Authors",
     "field.reposCount": "Repositories",
     "field.total": "Total",
+    "field.doi": "DOI",
+    "field.code": "Code",
     "search.placeholder": "Search authors, repositories, publications, departments…",
     "search.pubsCountShort": "pubs",
     "lang.toggle": "RU",

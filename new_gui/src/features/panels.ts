@@ -11,6 +11,46 @@ import { requireElement } from "../core/dom";
 import { kindLabel, localize, t } from "../core/i18n";
 import type { AppState, Store } from "../core/state";
 
+/** Значение строки карточки — обычный текст либо один или несколько кликабельных ссылок (DOI, ссылка(и) на код). */
+type PanelRowValue = string | PanelLink[];
+interface PanelLink {
+  href: string;
+  text: string;
+}
+type PanelRow = [label: string, value: PanelRowValue];
+
+/**
+ * Ссылка на DOI — как и в старом GUI (search.js): если doi уже пришёл
+ * полным URL вида https://doi.org/..., не задваиваем префикс.
+ */
+function doiLink(doi: string): PanelLink {
+  return { href: `https://doi.org/${doi.replace(/^https?:\/\/doi\.org\//, "")}`, text: doi };
+}
+
+/**
+ * Подпись ссылки на код — путь без "https://github.com/", как в старом
+ * GUI, чтобы длинный URL не распирал панель. url в перспективе приходит
+ * из харвестинга GitHub (внешние данные, не только наша синтетическая
+ * fixture) — перед тем как класть его в href, проверяем схему: без этого
+ * "javascript:..." в поле code_url привело бы к выполнению кода по клику.
+ * DOI (doiLink выше) той же проверки не требует — там схема "https://doi.org/"
+ * всегда захардкожена нами, значение подставляется только в путь.
+ */
+function codeLink(url: string): PanelLink {
+  let href = "about:blank";
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      href = parsed.toString();
+    } else {
+      console.warn(`codeLink: недопустимая схема в code_url, ссылка заменена на "about:blank": ${url}`);
+    }
+  } catch {
+    console.warn(`codeLink: code_url не распознан как URL, ссылка заменена на "about:blank": ${url}`);
+  }
+  return { href, text: url.replace("https://github.com/", "") };
+}
+
 /**
  * Подключает панель информации: подписывается на Store и перерисовывает
  * содержимое каждый раз, когда меняется state.selection ИЛИ state.lang —
@@ -35,8 +75,7 @@ export function mountPanel(
     container.replaceChildren();
   }
 
-  /** Только textContent — никакого innerHTML, данные из графа не должны интерпретироваться как разметка. */
-  function show(title: string, rows: [string, string][]): void {
+  function show(title: string, rows: PanelRow[]): void {
     container.hidden = false;
     container.replaceChildren(buildCard(title, rows));
   }
@@ -55,7 +94,7 @@ export function mountPanel(
       if (!node) return hide();
 
       const dept = deptById.get(node.dept);
-      const rows: [string, string][] = [
+      const rows: PanelRow[] = [
         [t("field.key", lang), node.key],
         [t("field.kind", lang), kindLabel(node.kind, lang)],
         [t("field.dept", lang), dept ? localize(dept.name, dept.name_en, lang) : t("field.unknownDept", lang)],
@@ -66,6 +105,12 @@ export function mountPanel(
       }
       if (node.kind === "pub") {
         rows.push([t("field.year", lang), node.year === null ? t("field.yearUnknown", lang) : String(node.year)]);
+
+        const detail = searchDetails.get(node.key);
+        if (detail?.doi) rows.push([t("field.doi", lang), [doiLink(detail.doi)]]);
+        if (detail?.has_code && detail.code_url.length > 0) {
+          rows.push([t("field.code", lang), detail.code_url.map(codeLink)]);
+        }
       }
 
       return show(nodeLabel(node, lang, searchDetails), rows);
@@ -76,7 +121,7 @@ export function mountPanel(
       const to = index.get(selection.t);
       if (!from || !to) return hide();
 
-      const rows: [string, string][] = [
+      const rows: PanelRow[] = [
         [t("field.edgeFrom", lang), nodeLabel(from, lang, searchDetails)],
         [t("field.edgeTo", lang), nodeLabel(to, lang, searchDetails)],
         [t("field.edgeWeight", lang), String(selection.w)],
@@ -88,7 +133,7 @@ export function mountPanel(
     const dept = deptById.get(selection.id);
     if (!dept) return hide();
 
-    const rows: [string, string][] = [
+    const rows: PanelRow[] = [
       [t("field.authorsCount", lang), String(dept.n_authors)],
       [t("field.pubsCount", lang), String(dept.n_pubs)],
       [t("field.reposCount", lang), String(dept.n_repos)],
@@ -102,8 +147,13 @@ export function mountPanel(
   return unsubscribe;
 }
 
-/** Собирает DOM-карточку из заголовка и списка пар "подпись — значение", без единой строки innerHTML. */
-function buildCard(title: string, rows: [string, string][]): HTMLElement {
+/**
+ * Собирает DOM-карточку из заголовка и списка пар "подпись — значение".
+ * Только textContent для обычного текста и явные <a> с фиксированными
+ * href/text для ссылок — никакого innerHTML, данные из графа не должны
+ * интерпретироваться как разметка.
+ */
+function buildCard(title: string, rows: PanelRow[]): HTMLElement {
   const card = document.createElement("div");
   card.className = "panel-card";
 
@@ -115,8 +165,24 @@ function buildCard(title: string, rows: [string, string][]): HTMLElement {
   for (const [label, value] of rows) {
     const dt = document.createElement("dt");
     dt.textContent = label;
+
     const dd = document.createElement("dd");
-    dd.textContent = value;
+    if (typeof value === "string") {
+      dd.textContent = value;
+    } else {
+      // Несколько ссылок (например, несколько репозиториев с кодом) —
+      // разделяем запятой с пробелом, как и в старом GUI.
+      value.forEach((link, i) => {
+        if (i > 0) dd.append(", ");
+        const a = document.createElement("a");
+        a.href = link.href;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.textContent = link.text;
+        dd.appendChild(a);
+      });
+    }
+
     list.append(dt, dd);
   }
   card.appendChild(list);
