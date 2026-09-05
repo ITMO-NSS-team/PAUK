@@ -56,10 +56,25 @@ map/list-of-map как есть). Здесь они читаются обрат�
 строка, не распарсенный объект: разбор — забота потребителя снепшота,
 `load_db()` остаётся честным зеркалом того, что реально лежит на узле.
 
-Не включено даже сейчас: рекурсивная иерархия департаментов (`PART_OF`) и
-`GitHubProfile`/`MENTIONS_LINK`/`LinkCandidate` как отдельные таблицы —
-это не "ещё одно поле в RETURN", а структурно другая задача (обход дерева,
-новые сущности верхнего уровня), заявленная отдельным следующим шагом.
+Слайс 4 (эта версия): добавлены `GitHubProfile` (поля владельца — прямо в
+строку `repositories`, с префиксом `owner_`, т.к. связь 1:1 и отдельная
+таблица под неё не нужна), `MENTIONS_LINK`/`LinkCandidate` (`mentions_repos`
+и `mentions_candidates` — доказательная база кода-ссылок, отдельно от
+подтверждённого `IMPLEMENTS`/`repo_pubs`), и ОДИН шаг иерархии департаментов
+(`departments.parent_id`/`parent_kind` через `PART_OF`). Полная рекурсивная
+цепочка (кафедра -> факультет -> ... -> организация) сюда всё ещё не
+входит — обходить дерево внутри `load_db()` на каждый департамент не нужно:
+у потребителя снепшота уже будут все пары (ребёнок, родитель) в одной
+плоской таблице `departments`, и подняться по цепочке — это его работа в
+Python, а не ещё один рекурсивный Cypher здесь.
+
+`is_fresh()` (`freshness.py`) остаётся неподключённым сознательно: его
+единственный осмысленный вызывающий — не что-то внутри `new_cache`, а
+`pauk/gui/generate_data.py` на чтении снепшота ("предупредить, что данные
+устарели, перед генерацией сайта") — а трогать `pauk/gui/` сейчас
+осознанно не входит в объём этой работы (см. память проекта). Подключать
+эту функцию раньше самого переключения `pauk/cache/` -> `new_cache/`
+попросту некуда.
 """
 
 from __future__ import annotations
@@ -180,11 +195,14 @@ def load_db(driver) -> dict[str, list]:
         driver: Открытый драйвер Neo4j.
 
     Возвращает:
-        Плоский словарь из десяти ключей: `persons`/`publications`/
-        `repositories`/`departments`/`authorship`/`person_depts`/
-        `pub_depts`/`repo_pubs`/`repo_persons`/`repo_depts` — ровно то, что
-        ожидает на входе `pauk/gui/generate_data.py::build_graph_data()`
-        (сегодня — с поправкой на новые поля, которых там раньше не было).
+        Плоский словарь из тринадцати ключей: `persons`/`publications`/
+        `repositories`/`departments`/`organizations`/`authorship`/
+        `person_depts`/`pub_depts`/`repo_pubs`/`mentions_repos`/
+        `mentions_candidates`/`repo_persons`/`repo_depts`. Первые десять —
+        то, что ожидает на входе `pauk/gui/generate_data.py::build_graph_data()`
+        (сегодня — с поправкой на новые поля, которых там раньше не было);
+        `organizations`/`mentions_repos`/`mentions_candidates` — три новых
+        таблицы, у которых пока нет потребителя в существующем коде.
     """
     db: dict[str, list] = {}
 
@@ -265,9 +283,12 @@ def load_db(driver) -> dict[str, list]:
         "toString(pub.updated_at) AS updated_at",  # метка Neo4j. ОСТАВИТЬ
     )
 
-    # Все репозитории + владелец (GitHubProfile.login через OWNED_BY).
-    # Остальные поля самого GitHubProfile (name/company/location/...) - в
-    # отдельную таблицу, следующим шагом, не здесь.
+    # Все репозитории + полный профиль владельца (GitHubProfile через
+    # OWNED_BY). GitHubProfile больше нигде не нужен отдельной таблицей -
+    # единственная связь на него идёт именно отсюда (1:1 с репозиторием),
+    # так что его собственные поля включены прямо в эту строку, с
+    # префиксом owner_, чтобы не путать с полями самого репозитория
+    # (у него тоже есть description/name).
     db["repositories"] = cypher_dict(
         driver,
         "MATCH (r:Repository) "
@@ -287,23 +308,54 @@ def load_db(driver) -> dict[str, list]:
         "r.contributors AS contributors, "  # логины с самого GitHub API - ОСТОРОЖНО, это не то же самое, что repo_persons/CONTRIBUTED_TO
         "r.merged_ids AS merged_ids, "  # служебное, для дедупа
         "gh.login AS owner, "  # уже было. ОСТАВИТЬ
+        "gh.name AS owner_name, "  # отображаемое имя владельца на GitHub. ОСТАВИТЬ
+        "gh.html_url AS owner_html_url, "  # ссылка на профиль владельца. ОСТАВИТЬ
+        "gh.description AS owner_description, "  # bio владельца (если организация - описание организации). ОСТАВИТЬ
+        "gh.location AS owner_location, "  # локация из профиля GitHub. ОСТАВИТЬ
+        "gh.company AS owner_company, "  # компания из профиля GitHub. ОСТАВИТЬ
+        "gh.type AS owner_type, "  # "User" или "Organization" - тип аккаунта-владельца. ОСТАВИТЬ
         "toString(r.created_at) AS created_at, "  # метка Neo4j. ОСТАВИТЬ
         "toString(r.updated_at) AS updated_at",  # метка Neo4j. ОСТАВИТЬ
     )
 
-    # Департаменты: имена + поля-алиасы для полнотекстового сопоставления.
-    # Рекурсивная иерархия PART_OF (кафедра -> факультет -> организация)
-    # сюда не входит - это отдельный шаг (обход дерева, не колонка RETURN).
+    # Департаменты: имена + поля-алиасы для полнотекстового сопоставления,
+    # плюс ОДИН шаг иерархии PART_OF - id непосредственного родителя и его
+    # тип (parent_kind: "Department" либо "Organization", у корневых
+    # департаментов - null). Полная рекурсивная цепочка (кафедра -> ... ->
+    # организация) сюда всё ещё не входит: залезать в дерево на каждый
+    # департамент заново было бы дороже и сложнее, чем один раз пройти её
+    # на стороне потребителя снепшота, у которого уже есть все пары
+    # (ребёнок, родитель) для этого. labels(parent)[0] на бездетном
+    # OPTIONAL MATCH (родителя нет) корректно даёт null по правилам
+    # Cypher - null не проверялось на реальном Neo4j в этой сессии
+    # (см. модульный докстринг про testcontainers).
     db["departments"] = cypher_dict(
         driver,
         "MATCH (d:Department) "
+        "OPTIONAL MATCH (d)-[:PART_OF]->(parent) "
         "RETURN "
         "d.id AS id, "  # обязателен
         "d.name_ru AS name_ru, "  # уже было. ОСТАВИТЬ
         "d.name_en AS name_en, "  # уже было. ОСТАВИТЬ
         "d.name_variants AS name_variants, "  # варианты написания названия. ОСТАВИТЬ, полезно для поиска
         "d.context_aliases AS context_aliases, "  # алиасы для матчинга по тексту публикаций. ОСТАВИТЬ, если используется matching-логикой
-        "d.kind AS kind",  # тип юнита (кафедра/факультет/...). ОСТАВИТЬ, полезно для группировки в UI
+        "d.kind AS kind, "  # тип юнита (кафедра/факультет/...). ОСТАВИТЬ, полезно для группировки в UI
+        "parent.id AS parent_id, "  # id непосредственного родителя или null у корня. НОВОЕ - не проверено на реальном Neo4j
+        "labels(parent)[0] AS parent_kind",  # "Department" или "Organization". НОВОЕ - не проверено на реальном Neo4j
+    )
+
+    # Корневые организации (обычно одна - сам ИТМО), на которые в конце
+    # цепочки PART_OF ссылаются департаменты верхнего уровня.
+    db["organizations"] = cypher_dict(
+        driver,
+        "MATCH (o:Organization) "
+        "RETURN "
+        "o.id AS id, "  # обязателен
+        "o.name_ru AS name_ru, "  # ОСТАВИТЬ
+        "o.name_en AS name_en, "  # ОСТАВИТЬ
+        "o.ror_id AS ror_id, "  # Research Organization Registry id, внешний идентификатор. ОСТАВИТЬ
+        "o.country AS country, "  # ОСТАВИТЬ
+        "o.type AS type",  # тип организации. ОСТАВИТЬ
     )
 
     # Кто что написал (AUTHORED) - только ИТМО-персоны (см. докстринг
@@ -343,12 +395,50 @@ def load_db(driver) -> dict[str, list]:
     )
 
     # Какой репозиторий реализует какую публикацию (IMPLEMENTS) - это
-    # подтверждённая связь, не кандидат (кандидаты - MENTIONS_LINK, в
-    # граф пока не читаются, см. модульный докстринг). У связи нет
-    # собственных свойств - пара id, добавлять нечего.
+    # подтверждённая финальная связь, без деталей происхождения. У связи
+    # нет собственных свойств - пара id, добавлять нечего.
     db["repo_pubs"] = cypher_dict(
         driver,
         "MATCH (r:Repository)-[:IMPLEMENTS]->(pub:Publication) RETURN r.id AS rid, pub.id AS pid",
+    )
+
+    # Публикация -> репозиторий, который в её тексте УПОМЯНУТ (MENTIONS_LINK),
+    # с доказательной базой LLM/эвристики. Это НЕ то же самое, что repo_pubs
+    # (IMPLEMENTS): здесь может быть упоминание с is_relevant=false или
+    # низкой уверенностью - решение "это действительно код к статье"
+    # принимает repo_pubs, а здесь - сырой след, из которого оно вынесено.
+    db["mentions_repos"] = cypher_dict(
+        driver,
+        "MATCH (pub:Publication)-[rel:MENTIONS_LINK]->(r:Repository) "
+        "RETURN "
+        "pub.id AS pid, "  # обязателен
+        "r.id AS rid, "  # обязателен
+        "rel.context AS context, "  # список фрагментов текста, где встретилась ссылка. НОВОЕ - ОСТАВИТЬ
+        "rel.page_number AS page_number, "  # список номеров страниц (0 = абстракт, сентинел вместо null). НОВОЕ - ОСТАВИТЬ
+        "rel.is_relevant AS is_relevant, "  # признак LLM: ссылка реально относится к работе. НОВОЕ - ОСТАВИТЬ
+        "rel.llm_confidence AS llm_confidence, "  # уверенность LLM-оценки. НОВОЕ - ОСТАВИТЬ
+        "rel.llm_reason AS llm_reason",  # текстовое обоснование LLM. НОВОЕ - ОСТАВИТЬ
+    )
+
+    # Публикация -> ссылка-кандидат на код (MENTIONS_LINK на LinkCandidate),
+    # которая ещё не срезолвилась в существующий Repository (сравнение по
+    # normalize_repo_url, см. pauk/graph/jsonl_loader.py). Поля самого
+    # LinkCandidate (url/host) включены прямо в эту строку - у него нет
+    # других связей, заводить отдельную таблицу под два поля незачем
+    # (та же логика, что и с GitHubProfile у repositories выше).
+    db["mentions_candidates"] = cypher_dict(
+        driver,
+        "MATCH (pub:Publication)-[rel:MENTIONS_LINK]->(lc:LinkCandidate) "
+        "RETURN "
+        "pub.id AS pid, "  # обязателен
+        "lc.id AS candidate_id, "  # обязателен (id кандидата - это сам его URL, см. NODE_REGISTRY)
+        "lc.url AS url, "  # ссылка-кандидат. НОВОЕ - ОСТАВИТЬ
+        "lc.host AS host, "  # хост ссылки (github.com, gitlab.com, ...). НОВОЕ - ОСТАВИТЬ
+        "rel.context AS context, "  # см. mentions_repos. НОВОЕ - ОСТАВИТЬ
+        "rel.page_number AS page_number, "  # см. mentions_repos. НОВОЕ - ОСТАВИТЬ
+        "rel.is_relevant AS is_relevant, "  # см. mentions_repos. НОВОЕ - ОСТАВИТЬ
+        "rel.llm_confidence AS llm_confidence, "  # см. mentions_repos. НОВОЕ - ОСТАВИТЬ
+        "rel.llm_reason AS llm_reason",  # см. mentions_repos. НОВОЕ - ОСТАВИТЬ
     )
 
     # Кто из ИТМО-персон работал над репозиторием (CONTRIBUTED_TO), с
@@ -366,7 +456,7 @@ def load_db(driver) -> dict[str, list]:
     # нет собственных свойств - пара id, добавлять нечего.
     db["repo_depts"] = cypher_dict(
         driver,
-        "MATCH (r:Repository)-[:DEVELOPED_BY]->(d:Department)"
+        "MATCH (r:Repository)-[:DEVELOPED_BY]->(d:Department) "
         "RETURN "
         "r.id AS rid, "
         "d.id AS did "

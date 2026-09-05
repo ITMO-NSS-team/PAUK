@@ -37,7 +37,7 @@ class SequentialFakeDriver:
     """Драйвер-заглушка без сети: `execute_query()` по очереди отдаёт заранее
     заготовленные строки, по одному списку на вызов.
 
-    `load_db()` всегда выполняет свои десять запросов в одном и том же
+    `load_db()` всегда выполняет свои тринадцать запросов в одном и том же
     порядке (persons, publications, ...) — позиционная очередь ответов
     надёжнее, чем сопоставление по тексту запроса, и не ломается от
     косметических правок форматирования Cypher.
@@ -93,11 +93,12 @@ class ExecuteRetryingTest(unittest.TestCase):
 
 
 class LoadDbShapeTest(unittest.TestCase):
-    """Проверяет, что load_db() раскладывает десять запросов по нужным ключам
-    словаря — форма, которую дальше ожидает build_graph_data()."""
+    """Проверяет, что load_db() раскладывает тринадцать запросов по нужным
+    ключам словаря — форма, которую дальше ожидает build_graph_data() (плюс
+    три новых таблицы, которых в build_graph_data() пока нет)."""
 
     @staticmethod
-    def _empty_responses(count: int = 10) -> list[list[dict]]:
+    def _empty_responses(count: int = 13) -> list[list[dict]]:
         return [[] for _ in range(count)]
 
     def test_persons_row_shape(self):
@@ -107,18 +108,35 @@ class LoadDbShapeTest(unittest.TestCase):
         self.assertEqual(db["persons"], [{"id": "A1", "name_ru": "Иванов"}])
 
     def test_publications_repositories_and_authorship_are_dict_shaped(self):
-        """Слайс 2 переводит publications/repositories/authorship на
-        cypher_dict() — их форма стала расти (много новых полей), и по той
-        же логике, что уже применялась к persons, растущей форме нужны
-        именованные словари, а не хрупкая позиционная распаковка."""
+        """publications/repositories/authorship используют cypher_dict() —
+        их форма растёт (много полей), и растущей форме нужны именованные
+        словари, а не хрупкая позиционная распаковка."""
         responses = self._empty_responses()
         responses[1] = [{"id": "P1", "title": "Заголовок"}]
         responses[2] = [{"id": "R1", "name": "repo"}]
-        responses[4] = [{"pid": "P1", "per": "A1", "position": 1}]
+        responses[5] = [{"pid": "P1", "per": "A1", "position": 1}]
         db = load_db(SequentialFakeDriver(responses))
         self.assertEqual(db["publications"], [{"id": "P1", "title": "Заголовок"}])
         self.assertEqual(db["repositories"], [{"id": "R1", "name": "repo"}])
         self.assertEqual(db["authorship"], [{"pid": "P1", "per": "A1", "position": 1}])
+
+    def test_new_slice_4_tables_are_dict_shaped(self):
+        """organizations/mentions_repos/mentions_candidates и родительское
+        поле departments - новые таблицы этого шага (GitHubProfile,
+        MENTIONS_LINK/LinkCandidate, один шаг иерархии PART_OF)."""
+        responses = self._empty_responses()
+        responses[3] = [{"id": "D1", "parent_id": "O1", "parent_kind": "Organization"}]
+        responses[4] = [{"id": "O1", "name_ru": "ИТМО"}]
+        responses[9] = [{"pid": "P1", "rid": "R1", "is_relevant": True}]
+        responses[10] = [{"pid": "P1", "candidate_id": "https://x", "url": "https://x"}]
+        db = load_db(SequentialFakeDriver(responses))
+        self.assertEqual(db["departments"], [{"id": "D1", "parent_id": "O1", "parent_kind": "Organization"}])
+        self.assertEqual(db["organizations"], [{"id": "O1", "name_ru": "ИТМО"}])
+        self.assertEqual(db["mentions_repos"], [{"pid": "P1", "rid": "R1", "is_relevant": True}])
+        self.assertEqual(
+            db["mentions_candidates"],
+            [{"pid": "P1", "candidate_id": "https://x", "url": "https://x"}],
+        )
 
     def test_debatable_fields_are_present_pending_manual_review(self):
         """По прямой просьбе запросы включают буквально все свойства из
@@ -145,7 +163,7 @@ class LoadDbShapeTest(unittest.TestCase):
         ):
             self.assertIn(included, combined, f"поле {included!r} должно быть в запросе (удалите вручную, если не нужно)")
 
-    def test_result_has_all_ten_expected_keys(self):
+    def test_result_has_all_thirteen_expected_keys(self):
         db = load_db(SequentialFakeDriver(self._empty_responses()))
         self.assertEqual(
             set(db.keys()),
@@ -154,14 +172,31 @@ class LoadDbShapeTest(unittest.TestCase):
                 "publications",
                 "repositories",
                 "departments",
+                "organizations",
                 "authorship",
                 "person_depts",
                 "pub_depts",
                 "repo_pubs",
+                "mentions_repos",
+                "mentions_candidates",
                 "repo_persons",
                 "repo_depts",
             },
         )
+
+    def test_slice_4_capabilities_are_wired_into_the_actual_queries(self):
+        """Не только форма результата (test_new_slice_4_tables_are_dict_shaped),
+        но и то, что каждая новая возможность реально запрашивается через
+        правильную связь графа - GitHubProfile через OWNED_BY, MENTIONS_LINK
+        отдельно от IMPLEMENTS, PART_OF отдельно от BELONGS_TO."""
+        driver = SequentialFakeDriver(self._empty_responses())
+        load_db(driver)
+        combined = " ".join(driver.queries)
+        self.assertIn("gh.company AS owner_company", combined)
+        self.assertIn("OPTIONAL MATCH (d)-[:PART_OF]->(parent)", combined)
+        self.assertIn("labels(parent)[0] AS parent_kind", combined)
+        self.assertIn("[rel:MENTIONS_LINK]->(r:Repository)", combined)
+        self.assertIn("[rel:MENTIONS_LINK]->(lc:LinkCandidate)", combined)
 
     def test_person_related_queries_no_longer_filter_by_legacy_itmo_label(self):
         """Регрессионный тест на сам баг слайса 1: `:Person:Itmo` — снятая
