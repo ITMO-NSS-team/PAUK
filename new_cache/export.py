@@ -325,14 +325,21 @@ def load_db(driver) -> dict[str, list]:
     # собственных свойств - пара id, добавлять нечего.
     db["person_depts"] = cypher_dict(
         driver,
-        "MATCH (p:Person {is_itmo: true})-[:BELONGS_TO]->(d:Department) RETURN p.id AS per, d.id AS did",
+        "MATCH (p:Person {is_itmo: true})-[:BELONGS_TO]->(d:Department) "
+        "RETURN "
+        "p.id AS per, "
+        "d.id AS did",
     )
 
     # Департамент, "выпустивший" публикацию (PRODUCED_BY). У связи нет
     # собственных свойств - пара id, добавлять нечего.
     db["pub_depts"] = cypher_dict(
         driver,
-        "MATCH (pub:Publication)-[:PRODUCED_BY]->(d:Department) RETURN pub.id AS pid, d.id AS did ORDER BY d.id",
+        "MATCH (pub:Publication)-[:PRODUCED_BY]->(d:Department) "
+        "RETURN "
+        "pub.id AS pid, "
+        "d.id AS did "
+        "ORDER BY d.id",
     )
 
     # Какой репозиторий реализует какую публикацию (IMPLEMENTS) - это
@@ -349,14 +356,21 @@ def load_db(driver) -> dict[str, list]:
     db["repo_persons"] = cypher_dict(
         driver,
         "MATCH (p:Person {is_itmo: true})-[rel:CONTRIBUTED_TO]->(r:Repository) "
-        "RETURN r.id AS rid, p.id AS per, rel.role AS role",
+        "RETURN "
+        "r.id AS rid, "
+        "p.id AS per, "
+        "rel.role AS role",
     )
 
     # Департамент, "разработавший" репозиторий (DEVELOPED_BY). У связи
     # нет собственных свойств - пара id, добавлять нечего.
     db["repo_depts"] = cypher_dict(
         driver,
-        "MATCH (r:Repository)-[:DEVELOPED_BY]->(d:Department) RETURN r.id AS rid, d.id AS did ORDER BY d.id",
+        "MATCH (r:Repository)-[:DEVELOPED_BY]->(d:Department)"
+        "RETURN "
+        "r.id AS rid, "
+        "d.id AS did "
+        "ORDER BY d.id",
     )
 
     return db
