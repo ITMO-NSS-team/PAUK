@@ -38,6 +38,19 @@ function doiLink(doi: string): PanelLink {
 }
 
 /**
+ * Ссылки на GitHub-профиль и ORCID автора — та же схема, что и у doiLink:
+ * схема "https://..." захардкожена нами, значение (логин/id) подставляется
+ * только в путь, поэтому отдельной проверки схемы (как у codeLink) не
+ * требуется.
+ */
+function githubLink(username: string): PanelLink {
+  return { href: `https://github.com/${username}`, text: username };
+}
+function orcidLink(id: string): PanelLink {
+  return { href: `https://orcid.org/${id}`, text: id };
+}
+
+/**
  * Подпись ссылки на код — путь без "https://github.com/", как в старом
  * GUI, чтобы длинный URL не распирал панель. url в перспективе приходит
  * из харвестинга GitHub (внешние данные, не только наша синтетическая
@@ -198,6 +211,9 @@ export function mountPanel(
       ];
       if (node.kind === "author") {
         rows.push([t("field.pubsCount", lang), String(node.pubs_count)]);
+        if (node.degree) rows.push([t("field.degree", lang), node.degree]);
+        if (node.github) rows.push([t("field.github", lang), [githubLink(node.github)]]);
+        if (node.orcid) rows.push([t("field.orcid", lang), [orcidLink(node.orcid)]]);
 
         // Сами счётчики выше не говорят, КАКИЕ именно публикации/соавторы —
         // строки ниже показывают список, только когда он не пуст (как и у

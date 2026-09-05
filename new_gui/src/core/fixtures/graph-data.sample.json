@@ -37,7 +37,7 @@
     { "s": 0, "t": 2, "w": 1 }
   ],
   "authors": [
-    { "key": "A1", "kind": "author", "dept": 0, "label": "Иванов И.И.", "label_en": "Ivanov I.I.", "pubs_count": 4, "rank": 1, "gx": 0.1, "gy": 0.2 },
+    { "key": "A1", "kind": "author", "dept": 0, "label": "Иванов И.И.", "label_en": "Ivanov I.I.", "pubs_count": 4, "rank": 1, "gx": 0.1, "gy": 0.2, "degree": "к.т.н.", "github": "ivanov-ii", "orcid": "0000-0001-2345-6789" },
     { "key": "A2", "kind": "author", "dept": 0, "label": "Петрова А.С.", "label_en": "Petrova A.S.", "pubs_count": 2, "rank": 2, "gx": 0.3, "gy": 0.1 },
     { "key": "A3", "kind": "author", "dept": 1, "label": "Сидоров П.", "label_en": "Sidorov P.", "pubs_count": 3, "rank": 3, "gx": -0.2, "gy": 0.4 },
     { "key": "A4", "kind": "author", "dept": 1, "label": "Кузнецова Е.В.", "label_en": "Kuznetsova E.V.", "pubs_count": 1, "rank": 4, "gx": -0.35, "gy": 0.5 },

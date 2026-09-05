@@ -70,6 +70,33 @@ describe("mountPanel", () => {
     expect(text.indexOf("Петрова А.С.")).toBeLessThan(text.indexOf("Сидоров П."));
   });
 
+  it("карточка автора показывает GitHub, ORCID и учёную степень, когда они заполнены", async () => {
+    const data = await loadSampleGraphData();
+    // A1 во фикстуре — degree/github/orcid заполнены.
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A1" } });
+
+    mountPanel(store, data, NO_SEARCH_DETAILS);
+
+    expect(panel.textContent).toContain("к.т.н.");
+
+    const githubLink = panel.querySelector("a[href='https://github.com/ivanov-ii']") as HTMLAnchorElement | null;
+    expect(githubLink?.textContent).toBe("ivanov-ii");
+
+    const orcidLink = panel.querySelector("a[href='https://orcid.org/0000-0001-2345-6789']") as HTMLAnchorElement | null;
+    expect(orcidLink?.textContent).toBe("0000-0001-2345-6789");
+  });
+
+  it("не показывает строки GitHub/ORCID/степени у автора без этих полей", async () => {
+    const data = await loadSampleGraphData();
+    // A2 во фикстуре не имеет degree/github/orcid.
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A2" } });
+
+    mountPanel(store, data, NO_SEARCH_DETAILS);
+
+    expect(panel.querySelector("a[href^='https://github.com/']")).toBeNull();
+    expect(panel.querySelector("a[href^='https://orcid.org/']")).toBeNull();
+  });
+
   it("карточка автора показывает его репозитории (repo_author_edges)", async () => {
     const data = await loadSampleGraphData();
     // A1 во фикстуре — maintainer репозитория R1 (repo_author_edges).
