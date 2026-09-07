@@ -25,7 +25,9 @@ def snapshot() -> dict[str, list]:
         "persons": [
             {"id": "A1", "first_name_ru": "Иван", "second_name_ru": "Петрович",
              "surname_ru": "Петров", "name_ru": "Петров Иван Петрович",
-             "name_variants": ["И. П. Петров"], "name_en": "Ivan Petrov",
+             "name_variants": ["И. П. Петров"],
+             "first_name_en": "Ivan", "second_name_en": "Petrovich",
+             "surname_en": "Petrov",
              "degree": "к.т.н.", "github": "octocat",
              "orcid": "0000-0002-1825-0097"},
         ],
@@ -108,7 +110,7 @@ class WriteGraphFilesTest(unittest.TestCase):
     def test_a_public_build_drops_the_personal_fields(self):
         out, _ = self.build(public=True)
         text = (out / "graph-data.js").read_text(encoding="utf-8")
-        for personal in ("Петров", "Ivan Petrov", "0000-0002-1825-0097", "к.т.н."):
+        for personal in ("Петров", "Petrov", "0000-0002-1825-0097", "к.т.н."):
             with self.subTest(field=personal):
                 self.assertNotIn(personal, text)
 

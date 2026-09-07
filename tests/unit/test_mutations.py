@@ -103,9 +103,20 @@ class FakeGraph:
     # The rest of the loader's surface, so load_prepared_rows can run
     # against this fake end to end.
 
-    def upsert_person_nodes_batch(self, nodes, is_itmo):
+    def upsert_person_nodes_batch(self, nodes):
+        """Persons carry the sticky is_itmo rule of the real client.
+
+        A row arriving with is_itmo=False never downgrades a node that is
+        already ITMO, so the blind property merge cannot clobber a True.
+        """
         self.calls.append("upsert_person_nodes_batch")
+        nodes = list(nodes)
+        sticky = {node_id: bool(self.nodes.get(("Person", node_id), {}).get("is_itmo"))
+                  or bool(props.get("is_itmo"))
+                  for node_id, props in nodes}
         self.upsert_nodes_batch("Person", nodes)
+        for node_id, is_itmo in sticky.items():
+            self.nodes[("Person", node_id)]["is_itmo"] = is_itmo
 
     def merge_publication_nodes_batch(self, merges):
         self.calls.append("merge_publication_nodes_batch")
