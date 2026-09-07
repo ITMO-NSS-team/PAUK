@@ -84,6 +84,25 @@ class StaticStore:
         return organizations
 
     @cached_property
+    def itmo_github_orgs(self) -> frozenset[str]:
+        """Logins of ITMO's GitHub organizations, lowercased.
+
+        Only for the ones whose own profile gives nothing to recognise them by;
+        an organization that names ITMO or its city is matched without being
+        listed. Missing file means an empty list, not an error - the catalogue
+        is an aid, and the rules work without it.
+        """
+        path = self.root / "itmo_github_orgs.json"
+        if not path.exists():
+            return frozenset()
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+        return frozenset(
+            login.lower()
+            for entry in payload.get("organizations") or []
+            if (login := (entry.get("login") or "").strip())
+        )
+
+    @cached_property
     def _catalog_entries(self) -> list[dict]:
         # Parsed once per store: departments() and organizations() both read it in
         # the same run, and the file never changes over a store's lifetime.

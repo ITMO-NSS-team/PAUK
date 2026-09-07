@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +10,13 @@ from pauk.models import GitHubProfile, Person, Repository
 from pauk.pipeline.stages.social_graph import SocialGraphStage, is_itmo_organization
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
+from pauk.storage.static import StaticStore
+
+# The repository root, so the shipped-catalogue test reads the same file
+# wherever it is run from. A StaticStore pointed at a directory that is not
+# there answers with an empty catalogue rather than raising, so a relative
+# path would fail as "licaibeerlab is missing" instead of "wrong cwd".
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def person(pid, name, *, github=None, itmo=True):
@@ -27,32 +35,61 @@ def repository(owner, name, *, contributors=()):
 
 
 class IsItmoOrganizationTest(unittest.TestCase):
-    def test_an_organization_employing_a_confirmed_account(self):
-        self.assertTrue(is_itmo_organization(
-            profile("some-lab", account_type="organization"),
-            confirmed={"ipetrov"}, members={"ipetrov", "stranger"}))
+    CATALOG = frozenset({"licaibeerlab", "ctlab"})
+
+    def judge(self, login, catalog=CATALOG, **profile_kwargs):
+        given = profile(login, account_type="organization", **profile_kwargs) \
+            if profile_kwargs else None
+        return is_itmo_organization(login, given, catalog)
+
+    def test_a_catalogued_organization_is_followed(self):
+        # Its profile says nothing and its login gives nothing away; the
+        # curated list is the only thing that knows.
+        self.assertTrue(self.judge("LicAiBeerLab"))
+
+    def test_the_catalogue_is_matched_case_insensitively(self):
+        self.assertTrue(self.judge("CTLab"))
+
+    def test_itmo_in_the_login_is_enough(self):
+        self.assertTrue(self.judge("itmo-infocom"))
+
+    def test_itmo_glued_to_the_end_of_a_login_needs_the_catalogue(self):
+        # AlgoMathITMO is ITMO's, but no word boundary separates the name,
+        # and loosening the pattern would make RITMO ours. Catalogued instead.
+        self.assertFalse(self.judge("AlgoMathITMO", catalog=frozenset()))
+        self.assertTrue(self.judge("AlgoMathITMO", catalog=frozenset({"algomathitmo"})))
 
     def test_an_organization_naming_itmo_in_its_profile(self):
-        # aimclub is a real ITMO lab whose login says nothing.
-        self.assertTrue(is_itmo_organization(
-            profile("aimclub", account_type="organization", name="AIM.club, ITMO University"),
-            confirmed=set(), members=set()))
+        self.assertTrue(self.judge("aimclub", name="AIM.club, ITMO University"))
 
-    def test_an_unrelated_organization_is_not_followed(self):
-        # google owns a library a paper cited; its repositories hold
-        # hundreds of contributors and no ITMO staff.
-        self.assertFalse(is_itmo_organization(
-            profile("google", account_type="organization", name="Google",
-                    location="United States of America"),
-            confirmed={"ipetrov"}, members={"someone", "else"}))
+    def test_the_city_spelled_with_a_full_stop(self):
+        self.assertTrue(self.judge("ai-chem", name="Center for AI in Chemistry",
+                                   location="Russia, St. Petersburg"))
+
+    def test_the_city_spelled_with_a_hyphen(self):
+        self.assertTrue(self.judge("some-lab", location="St-Petersburg, Russia"))
+
+    def test_the_city_spelled_in_cyrillic(self):
+        self.assertTrue(self.judge("Digiratory", name="Digiratory",
+                                   location="Санкт-Петербург"))
+
+    def test_the_cyrillic_city_spelled_without_a_hyphen(self):
+        # A profile typed by hand, not copied from a form; the Latin
+        # spellings already allow the space.
+        self.assertTrue(self.judge("some-lab", location="Россия, Санкт Петербург"))
+
+    def test_an_employee_committing_there_does_not_make_it_ours(self):
+        # The rule this replaces followed any organization a confirmed
+        # account had committed to, which on real data meant google,
+        # microsoft, JetBrains and llvm-mirror.
+        self.assertFalse(self.judge("google", name="Google",
+                                    location="United States of America"))
 
     def test_ritmo_is_not_itmo(self):
-        self.assertFalse(is_itmo_organization(
-            profile("ritmo", account_type="organization", name="RITMO, University of Oslo"),
-            confirmed=set(), members=set()))
+        self.assertFalse(self.judge("ritmo", name="RITMO, University of Oslo"))
 
-    def test_an_organization_without_a_profile_needs_a_confirmed_member(self):
-        self.assertFalse(is_itmo_organization(None, confirmed={"ipetrov"}, members={"other"}))
+    def test_an_unlisted_organization_without_a_profile_is_not_followed(self):
+        self.assertFalse(is_itmo_organization("some-lab", None, self.CATALOG))
 
 
 class SocialGraphStageTest(unittest.TestCase):
@@ -84,10 +121,23 @@ class SocialGraphStageTest(unittest.TestCase):
             [person("A1", "Ivan Petrov", github="ipetrov")],
             [repository("some-lab", "tool", contributors=["ipetrov"]),
              repository("google", "lib", contributors=["stranger"])],
-            [profile("some-lab", account_type="organization"),
+            [profile("some-lab", account_type="organization",
+                     name="Some Lab, ITMO University"),
              profile("google", account_type="organization", name="Google")],
         )
         self.assertEqual(seeds, ["ipetrov", "some-lab"])
+
+    def test_an_organization_a_confirmed_account_committed_to_is_not_a_seed(self):
+        # ipetrov contributed to google's library; that is a fact about
+        # ipetrov, not about google, and following it would walk into
+        # hundreds of repositories full of strangers.
+        seeds = self.seeds_for(
+            [person("A1", "Ivan Petrov", github="ipetrov")],
+            [repository("google", "lib", contributors=["ipetrov", "stranger"])],
+            [profile("google", account_type="organization", name="Google",
+                     location="United States of America")],
+        )
+        self.assertEqual(seeds, ["ipetrov"])
 
     def test_a_personal_account_owning_a_repository_is_not_a_seed_by_itself(self):
         # Being cited does not make someone ITMO staff; only github_match
@@ -200,6 +250,38 @@ class SocialGraphStageTest(unittest.TestCase):
         client.return_value.user_repositories.side_effect = RuntimeError("404")
         result = SocialGraphStage(self.prepared, self.raw, self.config).run()
         self.assertEqual(result["social_repositories"], 0)
+
+
+class ItmoGithubOrgCatalogTest(unittest.TestCase):
+    """The curated list of ITMO organizations StaticStore hands the stage."""
+
+    def store(self, payload=None):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        if payload is not None:
+            (root / "itmo_github_orgs.json").write_text(
+                json.dumps(payload), encoding="utf-8")
+        return StaticStore(root)
+
+    def test_logins_are_lowercased_for_matching(self):
+        catalog = self.store({"organizations": [{"login": "AlgoMathITMO"}]}).itmo_github_orgs
+        self.assertEqual(catalog, frozenset({"algomathitmo"}))
+
+    def test_blank_and_missing_logins_are_skipped(self):
+        catalog = self.store({"organizations": [
+            {"login": "ctlab"}, {"login": "  "}, {"note": "no login at all"},
+        ]}).itmo_github_orgs
+        self.assertEqual(catalog, frozenset({"ctlab"}))
+
+    def test_a_missing_file_is_an_empty_catalogue_not_an_error(self):
+        # The rules work without it; only the labs it names go unrecognised.
+        self.assertEqual(self.store().itmo_github_orgs, frozenset())
+
+    def test_the_catalogue_shipped_with_the_repository_parses(self):
+        catalog = StaticStore(REPO_ROOT / "data" / "static").itmo_github_orgs
+        self.assertIn("licaibeerlab", catalog)
+        self.assertNotIn("google", catalog)
 
 
 if __name__ == "__main__":

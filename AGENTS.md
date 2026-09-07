@@ -16,7 +16,8 @@ One Python package, `pauk/`. Full architecture starts at
 ## Where to look
 
 - **`docs/architecture/`** - how the system works today, one file per
-  subpackage/stage. Start with `overview.md`.
+  subpackage/stage. Start with `overview.md`; `scripts.md` indexes everything
+  in `scripts/` and says which of them write to a database.
 - **`docs/diagrams/`** - schemas as markdown+Mermaid, not images. Don't
   create PNG/SVG for new diagrams - models can't read them, and text
   Mermaid renders natively on GitHub and reads like plain text.
@@ -27,6 +28,14 @@ Before an architectural change, check `docs/architecture/` first, don't
 start from scratch. If a decision contradicts what's written there - either
 you're wrong or the docs are stale; either way, sort that out before
 changing code.
+
+The same applies before running anything on the lab server, and before
+reasoning about which rows a stage can see: `deploy.md` names the host, the
+account and the shell the server needs, `storage.md` explains that every
+`PreparedStore` read is filtered by group - so a stage is blind to rows some
+other group wrote. Both are routinely guessed at from the environment and
+both are routinely guessed wrong, at the cost of a wasted run or a confident
+wrong conclusion. Read them.
 
 ## Repository rules
 

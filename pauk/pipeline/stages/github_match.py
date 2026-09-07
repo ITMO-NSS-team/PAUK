@@ -83,8 +83,20 @@ CORROBORATING = ("itmo_profile", "itmo_email", "login_surname", "owner", "org_it
 STRONG = ("email_exact", "login_surname", "owner")
 
 # ITMO in a profile, as a word: "RITMO, University of Oslo" is a Norwegian
-# centre whose name contains the same four letters.
-ITMO_IN_TEXT = re.compile(r"\bitmo\b|saint[- ]petersburg|sankt", re.I)
+# centre whose name contains the same four letters. The city appears in every
+# spelling its labs happen to use: "Saint Petersburg", "St. Petersburg",
+# "St-Petersburg", and the Cyrillic form with either a hyphen or a space.
+#
+# social_graph applies the same test to organizations, and imports this one
+# rather than keeping its own: two copies drifted apart once already, and the
+# stages then disagreed about whether an account is ITMO's.
+ITMO_IN_TEXT = re.compile(
+    r"\bitmo\b"
+    r"|\b(?:saint|st)\.?[-\s]?petersburg\b"
+    r"|\bsankt"
+    r"|санкт[-\s]?петербург",
+    re.I,
+)
 
 ITMO_EMAIL_DOMAIN = "@itmo.ru"
 

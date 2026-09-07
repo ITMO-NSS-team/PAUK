@@ -87,7 +87,8 @@ class RepositoriesStage(EnrichmentStage):
 
     def _enrich_repository(self, client: GitHubClient, repo: Repository, owner: str,
                            name: str, source_url: str, profiles: dict[str, GitHubProfile],
-                           state: ProcessingState | None) -> None:
+                           state: ProcessingState | None,
+                           fetched_orgs: set[str]) -> None:
         """One repository's metadata, its README status and its owner's
         profile stub. The people behind it are a separate stage — see
         repo_people.py for why.
@@ -95,6 +96,9 @@ class RepositoriesStage(EnrichmentStage):
         `source_url` is the URL this repository was reached by — the cited one
         when a publication led here, its own otherwise. It is what the raw
         store records, and the fallback when the payload carries no html_url.
+
+        `fetched_orgs` is the run's set of organizations already looked up; it
+        is what keeps the owner-profile call to one per organization.
         """
         try:
             payload = client.get_repository(owner, name)
@@ -134,6 +138,23 @@ class RepositoriesStage(EnrichmentStage):
                 # serves explicit nulls, which .get(key, "") passes on.
                 known.html_url = owner_data.get("html_url") or known.html_url
                 known.type = (owner_data.get("type") or "").lower() or known.type
+                # An organization is nobody's candidate, so the people stage
+                # skips it and the stub above is all its profile ever gets —
+                # leaving social_graph nothing to recognise an ITMO lab by.
+                # One call per organization per run fills the fields it reads.
+                if known.type == "organization" and profile_id not in fetched_orgs:
+                    fetched_orgs.add(profile_id)
+                    try:
+                        org = client.get_user(repo.owner_login)
+                    except Exception:
+                        org = {}
+                    self.raw.append("github_user", org, {"login": repo.owner_login})
+                    # Organizations carry `description`; users carry `bio`.
+                    known.name = org.get("name") or known.name
+                    known.description = (org.get("description") or org.get("bio")
+                                         or known.description)
+                    known.location = org.get("location") or known.location
+                    known.company = org.get("company") or known.company
             repo.processing[self.name] = ProcessingState(
                 status=ProcessingStatus.COMPLETED,
                 attempts=(state.attempts if state else 0) + 1,
@@ -237,6 +258,9 @@ class RepositoriesStage(EnrichmentStage):
         # link pass would key the same row under its new URL, miss it in
         # `attempted_repo_ids` and fetch it a second time.
         unlinked = self._unlinked_repositories(repositories)
+        # Organizations fetched this run, shared across both passes so the
+        # extra call happens once per organization and not once per repository.
+        fetched_orgs: set[str] = set()
         progress = self.progress_bar(
             total=len(self._pending_repository_ids(rows, repositories, unlinked)),
             unit="repository")
@@ -252,9 +276,11 @@ class RepositoriesStage(EnrichmentStage):
                 repo_id = f"github_{owner.lower()}_{name.lower()}"
                 if not self.in_scope("repositories", repo_id):
                     continue
+                # None is "not judged yet", not "no", and still implements.
+                implements = link.is_relevant is not False
                 repo = repositories.get(repo_id)
                 if repo is not None:
-                    if row.publication_id not in repo.publication_ids:
+                    if implements and row.publication_id not in repo.publication_ids:
                         repo.publication_ids.append(row.publication_id)
                     if url not in repo.cited_urls:
                         repo.cited_urls.append(url)
@@ -263,7 +289,8 @@ class RepositoriesStage(EnrichmentStage):
                         continue
                 else:
                     repo = Repository(id=repo_id, url=url, name=name,
-                                      publication_ids=[row.publication_id], cited_urls=[url])
+                                      publication_ids=[row.publication_id] if implements else [],
+                                      cited_urls=[url])
                     repositories[repo_id] = repo
                     state = None
                 # One repository can be mentioned by many publications. Its
@@ -277,7 +304,8 @@ class RepositoriesStage(EnrichmentStage):
                 # differs from the cited one; the second pass is keyed by
                 # that, so claim it here — before the fetch rewrites it.
                 attempted_repo_ids.add(_url_repo_id(repo.url) or repo_id)
-                self._enrich_repository(client, repo, owner, name, url, profiles, state)
+                self._enrich_repository(client, repo, owner, name, url, profiles,
+                                        state, fetched_orgs)
                 progress.update()
                 changed += 1
 
@@ -291,7 +319,8 @@ class RepositoriesStage(EnrichmentStage):
             attempted_repo_ids.add(url_id)
             owner, name = _github_owner_name(repo.url)
             self._enrich_repository(client, repo, owner, name, repo.url,
-                                    profiles, repo.processing.get(self.name))
+                                    profiles, repo.processing.get(self.name),
+                                    fetched_orgs)
             progress.update()
             changed += 1
         progress.close()
