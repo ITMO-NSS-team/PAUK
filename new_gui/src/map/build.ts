@@ -12,8 +12,7 @@
 
 import type { Feature, FeatureCollection, LineString, Point } from "geojson";
 import type { ExpressionSpecification, GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
-import type { AuthorNode, Edge, GraphData, PubNode, RepoNode } from "../contracts/graph";
-import type { SearchDetail } from "../contracts/search";
+import type { AuthorNode, Edge, GraphData, PubDetail, PubNode, RepoNode } from "../contracts/graph";
 import { MAP_CONFIG } from "../core/config";
 import { nodeLabel } from "../core/data";
 import type { Lang } from "../core/i18n";
@@ -21,7 +20,7 @@ import type { AppState, Store, TabId } from "../core/state";
 
 type GraphNode = AuthorNode | RepoNode | PubNode;
 type Filters = AppState["filters"];
-type SearchDetailsByKey = Map<string, SearchDetail>;
+type PubDetailsByKey = Map<string, PubDetail>;
 
 /** Свойства, которые кладутся в каждую GeoJSON-точку узла — доступны в paint-выражениях слоя через `["get", "имя"]`. */
 interface NodeProps {
@@ -124,7 +123,7 @@ function tabGraphEdges(data: GraphData, tab: TabId, filters: Filters): Edge[] {
  * @param lang - язык интерфейса (влияет на `properties.label`).
  * @param tab - активная вкладка.
  * @param filters - текущие пороги фильтров.
- * @param searchDetails - карта деталей публикаций (для настоящих названий публикаций в подписях).
+ * @param pubDetails - карта деталей публикаций (для настоящих названий публикаций в подписях).
  * @returns GeoJSON `FeatureCollection` точек с свойствами {@link NodeProps} на каждой.
  */
 export function buildNodeFeatures(
@@ -132,7 +131,7 @@ export function buildNodeFeatures(
   lang: Lang,
   tab: TabId,
   filters: Filters,
-  searchDetails: SearchDetailsByKey,
+  pubDetails: PubDetailsByKey,
 ): FeatureCollection<Point, NodeProps> {
   // Map по id департамента, а не поиск в массиве на каждый узел —
   // департаментов немного, но узлов может быть тысячи.
@@ -149,7 +148,7 @@ export function buildNodeFeatures(
     properties: {
       key: node.key,
       kind: node.kind,
-      label: nodeLabel(node, lang, searchDetails),
+      label: nodeLabel(node, lang, pubDetails),
       color: deptById.get(node.dept)?.color ?? MAP_CONFIG.node.fallbackColor,
     },
   }));
@@ -307,7 +306,7 @@ function selectedEdgeExpression(
  * @param lang - язык интерфейса.
  * @param tab - активная вкладка на момент монтирования.
  * @param filters - текущие пороги фильтров.
- * @param searchDetails - карта деталей публикаций.
+ * @param pubDetails - карта деталей публикаций.
  */
 function addGraphLayers(
   map: MapLibreMap,
@@ -315,7 +314,7 @@ function addGraphLayers(
   lang: Lang,
   tab: TabId,
   filters: Filters,
-  searchDetails: SearchDetailsByKey,
+  pubDetails: PubDetailsByKey,
 ): void {
   map.addSource(EDGE_SOURCE_ID, { type: "geojson", data: buildEdgeFeatures(data, tab, filters) });
   map.addLayer({
@@ -348,7 +347,7 @@ function addGraphLayers(
     paint: { "line-width": MAP_CONFIG.edge.hitWidth, "line-opacity": 0 },
   });
 
-  map.addSource(NODE_SOURCE_ID, { type: "geojson", data: buildNodeFeatures(data, lang, tab, filters, searchDetails) });
+  map.addSource(NODE_SOURCE_ID, { type: "geojson", data: buildNodeFeatures(data, lang, tab, filters, pubDetails) });
   map.addLayer({
     id: NODE_LAYER_ID,
     type: "circle",
@@ -380,7 +379,7 @@ function addGraphLayers(
  * @param lang - новый язык интерфейса.
  * @param tab - новая активная вкладка.
  * @param filters - новые пороги фильтров.
- * @param searchDetails - карта деталей публикаций.
+ * @param pubDetails - карта деталей публикаций.
  */
 function refreshGraphLayers(
   map: MapLibreMap,
@@ -388,10 +387,10 @@ function refreshGraphLayers(
   lang: Lang,
   tab: TabId,
   filters: Filters,
-  searchDetails: SearchDetailsByKey,
+  pubDetails: PubDetailsByKey,
 ): void {
   const nodeSource = map.getSource(NODE_SOURCE_ID) as GeoJSONSource | undefined;
-  nodeSource?.setData(buildNodeFeatures(data, lang, tab, filters, searchDetails));
+  nodeSource?.setData(buildNodeFeatures(data, lang, tab, filters, pubDetails));
 
   const edgeSource = map.getSource(EDGE_SOURCE_ID) as GeoJSONSource | undefined;
   edgeSource?.setData(buildEdgeFeatures(data, tab, filters));
@@ -471,17 +470,17 @@ export function setSelectedEdge(map: MapLibreMap, edge: { s: string; t: string }
  * @param map - экземпляр карты MapLibre.
  * @param store - Store приложения.
  * @param data - данные графа.
- * @param searchDetails - карта деталей публикаций.
+ * @param pubDetails - карта деталей публикаций.
  * @returns Функция отписки от store (unmount) — снимает подписку, добавленную этим вызовом.
  */
 export function mountReactiveGraph(
   map: MapLibreMap,
   store: Store<AppState>,
   data: GraphData,
-  searchDetails: SearchDetailsByKey,
+  pubDetails: PubDetailsByKey,
 ): () => void {
   const initial = store.get();
-  addGraphLayers(map, data, initial.lang, initial.tab, initial.filters, searchDetails);
+  addGraphLayers(map, data, initial.lang, initial.tab, initial.filters, pubDetails);
 
   let prev = initial;
   const unsubscribe = store.subscribe((state) => {
@@ -490,7 +489,7 @@ export function mountReactiveGraph(
     // сравнение по ссылке здесь корректно и дешевле глубокого сравнения.
     if (state.tab === prev.tab && state.lang === prev.lang && state.filters === prev.filters) return;
     prev = state;
-    refreshGraphLayers(map, data, state.lang, state.tab, state.filters, searchDetails);
+    refreshGraphLayers(map, data, state.lang, state.tab, state.filters, pubDetails);
   });
 
   return unsubscribe;

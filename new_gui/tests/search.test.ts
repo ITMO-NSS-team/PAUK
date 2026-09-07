@@ -1,13 +1,12 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { describe, expect, it, vi } from "vitest";
-import type { RepoDetail } from "../src/contracts/graph";
-import type { SearchDetail } from "../src/contracts/search";
-import { indexDetailsByKey, loadSampleGraphData, loadSampleRepoDetails, loadSampleSearchDetails } from "../src/core/data";
+import type { PubDetail, RepoDetail } from "../src/contracts/graph";
+import { indexDetailsByKey, loadSampleGraphData, loadSamplePubDetails, loadSampleRepoDetails } from "../src/core/data";
 import { Store, type AppState } from "../src/core/state";
 import { buildSearchIndex, deptHitKey, parseDeptHitKey, searchHits } from "../src/features/search";
 import { searchTab } from "../src/features/tabs/search";
 
-const NO_SEARCH_DETAILS = new Map<string, SearchDetail>();
+const NO_PUB_DETAILS = new Map<string, PubDetail>();
 const NO_REPO_DETAILS = new Map<string, RepoDetail>();
 
 function fakeMap(): MapLibreMap {
@@ -34,21 +33,21 @@ describe("deptHitKey / parseDeptHitKey", () => {
 describe("buildSearchIndex", () => {
   it("включает все виды сущностей: авторов, репозитории, публикации, департаменты", async () => {
     const data = await loadSampleGraphData();
-    const index = buildSearchIndex(data, "ru", NO_SEARCH_DETAILS, NO_REPO_DETAILS);
+    const index = buildSearchIndex(data, "ru", NO_PUB_DETAILS, NO_REPO_DETAILS);
 
     const total = data.authors.length + data.repos.length + data.pubs.length + data.departments.length;
     expect(index).toHaveLength(total);
     expect(index.some((hit) => hit.kind === "dept")).toBe(true);
   });
 
-  it("для публикаций использует настоящее название и добавляет журнал в sub, когда есть searchDetails", async () => {
+  it("для публикаций использует настоящее название и добавляет журнал в sub, когда есть pubDetails", async () => {
     const data = await loadSampleGraphData();
-    const searchDetails = indexDetailsByKey(await loadSampleSearchDetails());
-    const index = buildSearchIndex(data, "ru", searchDetails, NO_REPO_DETAILS);
+    const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
+    const index = buildSearchIndex(data, "ru", pubDetails, NO_REPO_DETAILS);
 
     for (const pub of data.pubs) {
       const hit = index.find((h) => h.kind === "pub" && h.key === pub.key);
-      const detail = searchDetails.get(pub.key);
+      const detail = pubDetails.get(pub.key);
       expect(hit?.label).toBe(detail?.label);
       expect(hit?.sub).toContain(detail?.journal);
     }
@@ -57,7 +56,7 @@ describe("buildSearchIndex", () => {
   it("для репозиториев берёт короткий путь на GitHub из repoDetails (url больше не на RepoNode)", async () => {
     const data = await loadSampleGraphData();
     const repoDetails = indexDetailsByKey(await loadSampleRepoDetails());
-    const index = buildSearchIndex(data, "ru", NO_SEARCH_DETAILS, repoDetails);
+    const index = buildSearchIndex(data, "ru", NO_PUB_DETAILS, repoDetails);
 
     for (const repo of data.repos) {
       const hit = index.find((h) => h.kind === "repo" && h.key === repo.key);
@@ -68,7 +67,7 @@ describe("buildSearchIndex", () => {
 
   it("для репозитория без записи в repoDetails sub — null, а не падение", async () => {
     const data = await loadSampleGraphData();
-    const index = buildSearchIndex(data, "ru", NO_SEARCH_DETAILS, NO_REPO_DETAILS);
+    const index = buildSearchIndex(data, "ru", NO_PUB_DETAILS, NO_REPO_DETAILS);
 
     const hit = index.find((h) => h.kind === "repo");
     expect(hit?.sub).toBeNull();
@@ -78,14 +77,14 @@ describe("buildSearchIndex", () => {
 describe("searchHits", () => {
   it("пустой запрос — пустой список результатов, а не всё подряд", async () => {
     const data = await loadSampleGraphData();
-    const index = buildSearchIndex(data, "ru", NO_SEARCH_DETAILS, NO_REPO_DETAILS);
+    const index = buildSearchIndex(data, "ru", NO_PUB_DETAILS, NO_REPO_DETAILS);
     expect(searchHits(index, "")).toEqual([]);
     expect(searchHits(index, "   ")).toEqual([]);
   });
 
   it("находит по подстроке в label без учёта регистра", async () => {
     const data = await loadSampleGraphData();
-    const index = buildSearchIndex(data, "ru", NO_SEARCH_DETAILS, NO_REPO_DETAILS);
+    const index = buildSearchIndex(data, "ru", NO_PUB_DETAILS, NO_REPO_DETAILS);
     const author = data.authors[0];
     if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
 
@@ -100,7 +99,7 @@ describe("searchTab", () => {
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
-    searchTab.mount(container, store, fakeMap(), data, NO_SEARCH_DETAILS, NO_REPO_DETAILS);
+    searchTab.mount(container, store, fakeMap(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
     const results = container.querySelector(".search-results") as HTMLElement;
     expect(results.children).toHaveLength(0);
 
@@ -119,7 +118,7 @@ describe("searchTab", () => {
     const container = document.createElement("div");
     const map = fakeMap();
 
-    searchTab.mount(container, store, map, data, NO_SEARCH_DETAILS, NO_REPO_DETAILS);
+    searchTab.mount(container, store, map, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
     const input = container.querySelector("input") as HTMLInputElement;
     const dept = data.departments[0];
     if (!dept) throw new Error("фикстура должна содержать хотя бы один департамент");
@@ -144,7 +143,7 @@ describe("searchTab", () => {
     const container = document.createElement("div");
     const map = fakeMap();
 
-    searchTab.mount(container, store, map, data, NO_SEARCH_DETAILS, NO_REPO_DETAILS);
+    searchTab.mount(container, store, map, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
     const input = container.querySelector("input") as HTMLInputElement;
     const author = data.authors[0];
     if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
@@ -166,7 +165,7 @@ describe("searchTab", () => {
     const container = document.createElement("div");
     const map = fakeMap();
 
-    searchTab.mount(container, store, map, data, NO_SEARCH_DETAILS, NO_REPO_DETAILS);
+    searchTab.mount(container, store, map, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
     const input = container.querySelector("input") as HTMLInputElement;
     const results = container.querySelector(".search-results") as HTMLElement;
 

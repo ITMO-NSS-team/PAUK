@@ -123,7 +123,7 @@ export class Store<S extends object> {
    *
    * @example
    * const authorDetails = new Map<string, AuthorDetail>();
-   * mountPanel(store, data, searchDetails, authorDetails, repoDetails); // authorDetails пока пуст
+   * mountPanel(store, data, pubDetails, authorDetails, repoDetails); // authorDetails пока пуст
    * // ...позже, когда пришёл authors-detail.json:
    * for (const detail of await loadDetails()) authorDetails.set(detail.key, detail);
    * store.notify(); // уже смонтированная панель перечитывает authorDetails и перерисовывается

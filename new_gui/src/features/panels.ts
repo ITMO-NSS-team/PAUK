@@ -4,8 +4,7 @@
 // самого Department) и карточку "Обзор" по умолчанию, когда вообще
 // ничего не выбрано (сводные числа по всему графу, а не по одному узлу).
 
-import type { AuthorDetail, GraphData, PubNode, RepoDetail, RepoNode } from "../contracts/graph";
-import type { SearchDetail } from "../contracts/search";
+import type { AuthorDetail, GraphData, PubDetail, PubNode, RepoDetail, RepoNode } from "../contracts/graph";
 import { PANEL_CONFIG } from "../core/config";
 import {
   buildAuthorPubIndex,
@@ -93,7 +92,7 @@ function orcidLink(id: string): PanelLink {
 }
 
 /**
- * Строит ссылку на код публикации из `SearchDetail.code_url`, проверяя
+ * Строит ссылку на код публикации из `PubDetail.code_url`, проверяя
  * схему получившегося URL перед тем, как класть его в `href`.
  *
  * `url` в перспективе приходит из харвестинга GitHub (внешние данные, не
@@ -110,7 +109,7 @@ function orcidLink(id: string): PanelLink {
  * подменить схему ссылки. Здесь же схему определяет сам `url` целиком, так
  * что она может быть чем угодно, включая опасное `javascript:`.
  *
- * @param url - произвольная ссылка на код из `SearchDetail.code_url`.
+ * @param url - произвольная ссылка на код из `PubDetail.code_url`.
  * @returns Ссылка с проверенной схемой в `href` (или `"about:blank"`, если
  *   схема небезопасна/не распознана) и коротким путём без
  *   `"https://github.com/"` в `text` (см. {@link githubShortPath}).
@@ -150,7 +149,7 @@ function codeLink(url: string): PanelLink {
  *
  * @param store - Store приложения.
  * @param data - данные графа.
- * @param searchDetails - карта деталей публикаций (настоящие названия/DOI/код публикаций).
+ * @param pubDetails - карта деталей публикаций (настоящие названия/DOI/код публикаций).
  * @param authorDetails - карта личных данных авторов (степень, GitHub, ORCID, варианты имени) — отдельно от `AuthorNode`, см. `contracts/graph.ts::AuthorDetail`.
  * @param repoDetails - карта описаний/владельцев/ссылок репозиториев — отдельно от `RepoNode`, см. `contracts/graph.ts::RepoDetail`.
  * @returns Функция отписки (unmount) от Store.
@@ -158,7 +157,7 @@ function codeLink(url: string): PanelLink {
 export function mountPanel(
   store: Store<AppState>,
   data: GraphData,
-  searchDetails: Map<string, SearchDetail>,
+  pubDetails: Map<string, PubDetail>,
   authorDetails: Map<string, AuthorDetail>,
   repoDetails: Map<string, RepoDetail>,
 ): () => void {
@@ -207,7 +206,7 @@ export function mountPanel(
     return keys
       .map((key) => {
         const node = index.get(key);
-        return node ? nodeLabel(node, lang, searchDetails) : key;
+        return node ? nodeLabel(node, lang, pubDetails) : key;
       })
       .join(", ");
   }
@@ -275,7 +274,7 @@ export function mountPanel(
       .slice(0, PANEL_CONFIG.listLimit)
       .map((edge) => {
         const author = index.get(edge.t);
-        const label = author ? nodeLabel(author, lang, searchDetails) : edge.t;
+        const label = author ? nodeLabel(author, lang, pubDetails) : edge.t;
         return `${label} (${edge.role})`;
       })
       .join(", ");
@@ -420,7 +419,7 @@ export function mountPanel(
       if (node.kind === "pub") {
         rows.push([t("field.year", lang), node.year === null ? t("field.yearUnknown", lang) : String(node.year)]);
 
-        const detail = searchDetails.get(node.key);
+        const detail = pubDetails.get(node.key);
         if (detail?.doi) rows.push([t("field.doi", lang), [doiLink(detail.doi)]]);
 
         // Как и в старом showPubCard(): если публикация связана с нашим
@@ -439,7 +438,7 @@ export function mountPanel(
         if (pubAuthorKeys.length > 0) rows.push([t("tab.authors", lang), labelsOf(pubAuthorKeys, lang)]);
       }
 
-      return show(nodeLabel(node, lang, searchDetails), rows);
+      return show(nodeLabel(node, lang, pubDetails), rows);
     }
 
     if (selection.kind === "edge") {
@@ -448,8 +447,8 @@ export function mountPanel(
       if (!from || !to) return hide();
 
       const rows: PanelRow[] = [
-        [t("field.edgeFrom", lang), nodeLabel(from, lang, searchDetails)],
-        [t("field.edgeTo", lang), nodeLabel(to, lang, searchDetails)],
+        [t("field.edgeFrom", lang), nodeLabel(from, lang, pubDetails)],
+        [t("field.edgeTo", lang), nodeLabel(to, lang, pubDetails)],
         [t("field.edgeWeight", lang), String(selection.w)],
       ];
 

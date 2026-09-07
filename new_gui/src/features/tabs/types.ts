@@ -1,6 +1,5 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
-import type { GraphData, RepoDetail } from "../../contracts/graph";
-import type { SearchDetail } from "../../contracts/search";
+import type { GraphData, PubDetail, RepoDetail } from "../../contracts/graph";
 import type { AppState, Store } from "../../core/state";
 
 /**
@@ -21,7 +20,7 @@ export interface TabModule {
    * @param store - Store приложения.
    * @param map - экземпляр карты MapLibre (нужен, чтобы подлетать к выбранному узлу).
    * @param data - данные графа.
-   * @param searchDetails - карта деталей публикаций (нужна не всем вкладкам —
+   * @param pubDetails - карта деталей публикаций (нужна не всем вкладкам —
    *   только там, где показывается настоящее название публикации, а не
    *   её ключ, — но передаётся в контракт всем, так же как и `data`, из
    *   которой каждая вкладка тоже использует только часть).
@@ -35,7 +34,7 @@ export interface TabModule {
     store: Store<AppState>,
     map: MapLibreMap,
     data: GraphData,
-    searchDetails: Map<string, SearchDetail>,
+    pubDetails: Map<string, PubDetail>,
     repoDetails: Map<string, RepoDetail>,
   ): () => void;
 }

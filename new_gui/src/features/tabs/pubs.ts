@@ -9,15 +9,15 @@ import type { TabModule } from "./types";
  * публикации без года (`year === null`) — в конце списка. Устройство то
  * же, что у `authorsTab`/`reposTab` (см. `features/tabs/authors.ts` за
  * подробным объяснением), с одной особенностью: у `PubNode` нет своего
- * `label` — настоящее название приходит из `searchDetails`
- * (`core/data.ts::loadSampleSearchDetails()`, синтетический аналог
+ * `label` — настоящее название приходит из `pubDetails`
+ * (`core/data.ts::loadSamplePubDetails()`, синтетический аналог
  * `graph-search.js`), {@link nodeLabel} откатится на ключ публикации,
- * только если для неё нет записи в `searchDetails`.
+ * только если для неё нет записи в `pubDetails`.
  *
  * Реализует {@link TabModule}.
  */
 export const pubsTab: TabModule = {
-  mount(container, store, map, data, searchDetails) {
+  mount(container, store, map, data, pubDetails) {
     const sortedPubs = [...data.pubs].sort((a, b) => (b.year ?? -Infinity) - (a.year ?? -Infinity));
 
     /**
@@ -31,7 +31,7 @@ export const pubsTab: TabModule = {
 
       renderList(container, sortedPubs, (pub) =>
         renderListItem({
-          label: nodeLabel(pub, state.lang, searchDetails),
+          label: nodeLabel(pub, state.lang, pubDetails),
           meta: pub.year === null ? t("field.yearUnknown", state.lang) : String(pub.year),
           selected: pub.key === selectedKey,
           onClick: () => {

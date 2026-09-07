@@ -3,8 +3,8 @@
 // индекс строится здесь же, в браузере, из уже загруженного GraphData
 // (ровно как и в старом search.js).
 
-import type { GraphData, RepoDetail } from "../../contracts/graph";
-import type { SearchDetail, SearchHit } from "../../contracts/search";
+import type { GraphData, PubDetail, RepoDetail } from "../../contracts/graph";
+import type { SearchHit } from "../../contracts/search";
 import { githubShortPath, nodeLabel } from "../../core/data";
 import { localize, t, type Lang } from "../../core/i18n";
 
@@ -55,7 +55,7 @@ export function parseDeptHitKey(key: string): number {
  *
  * @param data - данные графа.
  * @param lang - язык интерфейса (влияет на `label`/`sub` каждого результата).
- * @param searchDetails - карта деталей публикаций (см. `core/data.ts::indexDetailsByKey`) —
+ * @param pubDetails - карта деталей публикаций (см. `core/data.ts::indexDetailsByKey`) —
  *   нужна, чтобы у публикаций в поиске было настоящее название и журнал, а не голый ключ.
  * @param repoDetails - карта описаний/владельцев/ссылок репозиториев — `RepoNode` своего
  *   `url` больше не несёт (см. `contracts/graph.ts::RepoDetail`), а короткому пути на
@@ -63,14 +63,14 @@ export function parseDeptHitKey(key: string): number {
  * @returns Список результатов поиска всех видов, в порядке author → repo → pub → dept.
  *
  * @example
- * const index = buildSearchIndex(data, "ru", searchDetailsByKey, repoDetailsByKey);
+ * const index = buildSearchIndex(data, "ru", pubDetailsByKey, repoDetailsByKey);
  * index.find((hit) => hit.kind === "dept");
  * // { key: "dept:0", kind: "dept", label: "Институт прикладных систем", sub: null }
  */
 export function buildSearchIndex(
   data: GraphData,
   lang: Lang,
-  searchDetails: Map<string, SearchDetail>,
+  pubDetails: Map<string, PubDetail>,
   repoDetails: Map<string, RepoDetail>,
 ): SearchHit[] {
   const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
@@ -103,10 +103,10 @@ export function buildSearchIndex(
   const pubHits: SearchHit[] = data.pubs.map((pub) => ({
     key: pub.key,
     kind: "pub",
-    label: nodeLabel(pub, lang, searchDetails),
+    label: nodeLabel(pub, lang, pubDetails),
     // Журнал добавляется, только если для публикации нашлась запись в
-    // searchDetails — без неё (как и раньше) остаются год и департамент.
-    sub: [pub.year, deptName(pub.dept), searchDetails.get(pub.key)?.journal].filter(Boolean).join(" · ") || null,
+    // pubDetails — без неё (как и раньше) остаются год и департамент.
+    sub: [pub.year, deptName(pub.dept), pubDetails.get(pub.key)?.journal].filter(Boolean).join(" · ") || null,
   }));
 
   const deptHits: SearchHit[] = data.departments.map((dept) => ({

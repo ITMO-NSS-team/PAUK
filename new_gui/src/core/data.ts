@@ -1,10 +1,18 @@
-import type { AuthorDetail, AuthorNode, GraphData, PubNode, RepoAuthorEdge, RepoDetail, RepoNode } from "../contracts/graph";
-import type { SearchDetail } from "../contracts/search";
+import type {
+  AuthorDetail,
+  AuthorNode,
+  GraphData,
+  PubDetail,
+  PubNode,
+  RepoAuthorEdge,
+  RepoDetail,
+  RepoNode,
+} from "../contracts/graph";
 import { localize, type Lang } from "./i18n";
 import sampleGraphData from "./fixtures/graph-data.sample.json";
 import sampleAuthorDetails from "./fixtures/authors-detail.sample.json";
 import sampleRepoDetails from "./fixtures/repos-detail.sample.json";
-import sampleSearchDetails from "./fixtures/graph-search.sample.json";
+import samplePubDetails from "./fixtures/pubs-detail.sample.json";
 
 /** Любой из трёх видов узлов графа — авторы, репозитории, публикации. */
 type GraphNode = AuthorNode | RepoNode | PubNode;
@@ -62,8 +70,8 @@ export async function loadSampleGraphData(): Promise<GraphData> {
  *
  * @returns Промис со списком деталей публикаций.
  */
-export async function loadSampleSearchDetails(): Promise<SearchDetail[]> {
-  return sampleSearchDetails as SearchDetail[];
+export async function loadSamplePubDetails(): Promise<PubDetail[]> {
+  return samplePubDetails as PubDetail[];
 }
 
 /**
@@ -98,7 +106,7 @@ export async function loadSampleRepoDetails(): Promise<RepoDetail[]> {
  * смыслу копий, по одной на каждый вид `*Detail`. Тот же принцип, что и
  * {@link indexByKey} ниже, только для detail-объектов, а не узлов графа.
  *
- * @typeParam T - вид детали (в приложении — {@link AuthorDetail}, {@link RepoDetail} или `SearchDetail`).
+ * @typeParam T - вид детали (в приложении — {@link AuthorDetail}, {@link RepoDetail} или `PubDetail`).
  * @param details - список деталей (например, результат {@link loadSampleAuthorDetails}).
  * @returns Map от `T.key` к самому объекту `T`.
  *
@@ -125,7 +133,7 @@ export function indexDetailsByKey<T extends { key: string }>(details: T[]): Map<
  *
  * @example
  * const authorDetails = new Map<string, AuthorDetail>(); // пока пуст
- * mountPanel(store, data, searchDetails, authorDetails, repoDetails); // уже держит эту ссылку
+ * mountPanel(store, data, pubDetails, authorDetails, repoDetails); // уже держит эту ссылку
  * // ...позже:
  * mergeDetailsInto(authorDetails, await loadSampleAuthorDetails());
  * store.notify(); // mountPanel перечитывает ту же authorDetails и видит новые записи
@@ -409,7 +417,7 @@ export function buildRepoAuthorIndex(data: GraphData): Map<string, RepoAuthorEdg
  * Нужны карточке репозитория (features/panels.ts): "какие публикации с ним
  * связаны", и карточке публикации: "в каком репозитории её код" — в
  * старом GUI (`tab-pubs.js::showPubCard`) при наличии связанного репозитория
- * его ссылка показывалась ВМЕСТО голого `code_url` из `SearchDetail` —
+ * его ссылка показывалась ВМЕСТО голого `code_url` из `PubDetail` —
  * связь через собственные данные надёжнее, чем внешний харвестинг.
  *
  * @param data - данные графа.
@@ -489,23 +497,23 @@ export function githubProfileUrl(username: string): string {
  * Возвращает подпись узла для интерфейса на нужном языке.
  *
  * У `PubNode` своего `label` нет вообще — заголовок публикации приходит
- * отдельно, из `SearchDetail` (`graph-search.js`), а не из самого узла
- * графа (см. contracts/graph.ts). `searchDetails` — необязательный
+ * отдельно, из `PubDetail` (`graph-search.js`), а не из самого узла
+ * графа (см. contracts/graph.ts). `pubDetails` — необязательный
  * параметр: если для публикации нашлось название, используется оно; если
  * карта не передана или в ней нет такого ключа, функция откатывается на
  * `node.key` — так вызывающему коду, у которого ещё нет доступа к
- * `SearchDetail`, не обязательно ничего менять.
+ * `PubDetail`, не обязательно ничего менять.
  *
  * У `AuthorNode` есть пара `label`/`label_en` — язык переключается через
  * {@link localize}. У `RepoNode` своего `_en`-варианта нет (имя
  * репозитория не переводится), поэтому для него `localize()` просто
- * вернёт `repo.label` на любом языке. У `SearchDetail` тоже нет
+ * вернёт `repo.label` на любом языке. У `PubDetail` тоже нет
  * `_en`-варианта (реальный `graph-search.js` его не содержит) — название
  * публикации всегда на одном языке, независимо от `lang`.
  *
  * @param node - любой из трёх видов узлов графа.
  * @param lang - язык интерфейса.
- * @param searchDetails - опциональная карта деталей публикаций (см.
+ * @param pubDetails - опциональная карта деталей публикаций (см.
  *   {@link indexDetailsByKey}) — нужна только для публикаций.
  * @returns Подпись узла на нужном языке (или его ключ, если подписи взять неоткуда).
  *
@@ -513,11 +521,11 @@ export function githubProfileUrl(username: string): string {
  * nodeLabel(author, "ru"); // "Иванов И.И." (из author.label)
  * nodeLabel(author, "en"); // "Ivanov I.I." (из author.label_en)
  * nodeLabel(repo, "en");   // "graph-toolkit" (у RepoNode нет _en, localize вернёт как есть)
- * nodeLabel(pub, "ru");                        // "P1" — searchDetails не передали, откат на ключ
- * nodeLabel(pub, "ru", searchDetailsByKey);     // "Название публикации" — нашли по ключу
+ * nodeLabel(pub, "ru");                        // "P1" — pubDetails не передали, откат на ключ
+ * nodeLabel(pub, "ru", pubDetailsByKey);     // "Название публикации" — нашли по ключу
  */
-export function nodeLabel(node: GraphNode, lang: Lang, searchDetails?: Map<string, SearchDetail>): string {
-  if (!("label" in node)) return searchDetails?.get(node.key)?.label ?? node.key;
+export function nodeLabel(node: GraphNode, lang: Lang, pubDetails?: Map<string, PubDetail>): string {
+  if (!("label" in node)) return pubDetails?.get(node.key)?.label ?? node.key;
   const labelEn = "label_en" in node ? node.label_en : undefined;
   return localize(node.label, labelEn, lang);
 }

@@ -34,13 +34,13 @@ const HIT_KIND_TAB: Record<"author" | "repo" | "pub", TabId> = { author: 1, repo
  * Реализует {@link TabModule}.
  */
 export const searchTab: TabModule = {
-  mount(container, store, map, data, searchDetails, repoDetails) {
+  mount(container, store, map, data, pubDetails, repoDetails) {
     const nodeByKey = indexByKey(data);
 
     let query = "";
     // Индекс поиска зависит от языка (label/sub переведены) — пересобирается
     // заново только когда lang реально поменялся, не на каждое изменение store.
-    let index: SearchHit[] = buildSearchIndex(data, store.get().lang, searchDetails, repoDetails);
+    let index: SearchHit[] = buildSearchIndex(data, store.get().lang, pubDetails, repoDetails);
 
     const input = document.createElement("input");
     input.type = "search";
@@ -108,7 +108,7 @@ export const searchTab: TabModule = {
     const unsubscribe = store.subscribe((state) => {
       if (state.lang === currentLang) return;
       currentLang = state.lang;
-      index = buildSearchIndex(data, currentLang, searchDetails, repoDetails);
+      index = buildSearchIndex(data, currentLang, pubDetails, repoDetails);
       applyLang(currentLang);
     });
 

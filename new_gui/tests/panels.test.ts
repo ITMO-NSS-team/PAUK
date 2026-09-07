@@ -1,18 +1,17 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import type { AuthorDetail, RepoDetail } from "../src/contracts/graph";
-import type { SearchDetail } from "../src/contracts/search";
+import type { AuthorDetail, PubDetail, RepoDetail } from "../src/contracts/graph";
 import {
   indexDetailsByKey,
   loadSampleAuthorDetails,
   loadSampleGraphData,
+  loadSamplePubDetails,
   loadSampleRepoDetails,
-  loadSampleSearchDetails,
   mergeDetailsInto,
 } from "../src/core/data";
 import { Store, type AppState } from "../src/core/state";
 import { mountPanel } from "../src/features/panels";
 
-const NO_SEARCH_DETAILS = new Map<string, SearchDetail>();
+const NO_PUB_DETAILS = new Map<string, PubDetail>();
 const NO_AUTHOR_DETAILS = new Map<string, AuthorDetail>();
 const NO_REPO_DETAILS = new Map<string, RepoDetail>();
 
@@ -38,7 +37,7 @@ describe("mountPanel", () => {
   it("показывает карточку «Обзор» со сводными числами, пока ничего не выбрано", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
-    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     expect(panel.hidden).toBe(false);
     expect(panel.querySelector("h3")?.textContent).toBe("Обзор");
@@ -54,7 +53,7 @@ describe("mountPanel", () => {
     if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: author.key } });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     expect(panel.hidden).toBe(false);
     expect(panel.querySelector("h3")?.textContent).toBe(author.label);
@@ -66,7 +65,7 @@ describe("mountPanel", () => {
     // A1 во фикстуре: публикации P1, P2, P5 (all_edges); соавторы A2 (w=2) и A3 (w=1).
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A1" } });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     expect(panel.textContent).toContain("P1");
     expect(panel.textContent).toContain("P2");
@@ -86,7 +85,7 @@ describe("mountPanel", () => {
     // A1 в authors-detail.sample.json — degree/github/orcid заполнены.
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A1" } });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, authorDetails, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
 
     expect(panel.textContent).toContain("к.т.н.");
 
@@ -106,7 +105,7 @@ describe("mountPanel", () => {
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A2" } });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, authorDetails, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
 
     expect(panel.querySelector("a[href^='https://github.com/']")).toBeNull();
     expect(panel.querySelector("a[href^='https://orcid.org/']")).toBeNull();
@@ -118,7 +117,7 @@ describe("mountPanel", () => {
     // A1 во фикстуре — maintainer репозитория R1 (repo_author_edges).
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A1" } });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     const r1 = data.repos.find((repo) => repo.key === "R1");
     if (!r1) throw new Error("фикстура должна содержать репозиторий R1");
@@ -130,7 +129,7 @@ describe("mountPanel", () => {
     // A2 во фикстуре ни в одном repo_author_edges не участвует.
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A2" } });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     expect(panel.textContent).not.toContain("Репозитории");
   });
@@ -141,7 +140,7 @@ describe("mountPanel", () => {
     // A1 в authors-detail.sample.json — name_variants: ["Ivanov Ivan", "I. Ivanov"].
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A1" } });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, authorDetails, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
 
     expect(panel.textContent).toContain("Варианты имени");
     expect(panel.textContent).toContain("Ivanov Ivan");
@@ -153,7 +152,7 @@ describe("mountPanel", () => {
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A2" } });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, authorDetails, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
 
     expect(panel.textContent).not.toContain("Варианты имени");
   });
@@ -163,7 +162,7 @@ describe("mountPanel", () => {
     // R1 во фикстуре: A1 — maintainer (repo_author_edges), P1 — его публикация (repo_pub_edges).
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "R1" } });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     expect(panel.textContent).toContain("Участники");
     expect(panel.textContent).toContain("Иванов И.И. (maintainer)");
@@ -177,7 +176,7 @@ describe("mountPanel", () => {
     if (!repoDetail) throw new Error("repos-detail.sample.json должен содержать репозиторий R1");
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "R1" } });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, repoDetails);
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, repoDetails);
 
     expect(panel.textContent).toContain(repoDetail.description);
   });
@@ -187,7 +186,7 @@ describe("mountPanel", () => {
     // R4 во фикстуре не встречается ни в одном repo_pub_edges.
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "R4" } });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     expect(panel.textContent).not.toContain("Публикации");
   });
@@ -197,38 +196,38 @@ describe("mountPanel", () => {
     // P1 во фикстуре: авторы A1 и A2 (all_edges).
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "P1" } });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     expect(panel.textContent).toContain("Иванов И.И.");
     expect(panel.textContent).toContain("Петрова А.С.");
   });
 
-  it("показывает настоящее название публикации из searchDetails, а не её ключ", async () => {
+  it("показывает настоящее название публикации из pubDetails, а не её ключ", async () => {
     const data = await loadSampleGraphData();
-    const searchDetails = indexDetailsByKey(await loadSampleSearchDetails());
+    const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
     const pub = data.pubs[0];
     if (!pub) throw new Error("фикстура должна содержать хотя бы одну публикацию");
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: pub.key } });
 
-    mountPanel(store, data, searchDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, pubDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     const title = panel.querySelector("h3")?.textContent;
-    expect(title).toBe(searchDetails.get(pub.key)?.label);
+    expect(title).toBe(pubDetails.get(pub.key)?.label);
     expect(title).not.toBe(pub.key);
   });
 
-  it("показывает DOI и ссылку на код как кликабельные <a>, когда есть searchDetails и нет связанного репозитория", async () => {
+  it("показывает DOI и ссылку на код как кликабельные <a>, когда есть pubDetails и нет связанного репозитория", async () => {
     const data = await loadSampleGraphData();
-    const searchDetails = indexDetailsByKey(await loadSampleSearchDetails());
+    const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
     // P4 во фикстуре — has_code: true, один code_url, и НЕ участвует ни в
     // одном repo_pub_edges (в отличие от P1) — код показываем как ссылку.
-    const detail = searchDetails.get("P4");
+    const detail = pubDetails.get("P4");
     if (!detail?.has_code || detail.code_url.length === 0) {
-      throw new Error("фикстура graph-search.sample.json должна содержать P4 с has_code и хотя бы одним code_url");
+      throw new Error("фикстура pubs-detail.sample.json должна содержать P4 с has_code и хотя бы одним code_url");
     }
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "P4" } });
 
-    mountPanel(store, data, searchDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, pubDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     const doiLink = panel.querySelector("a[href^='https://doi.org/']") as HTMLAnchorElement | null;
     expect(doiLink?.textContent).toBe(detail.doi);
@@ -241,18 +240,18 @@ describe("mountPanel", () => {
 
   it("показывает ссылку на связанный репозиторий ВМЕСТО code_url, когда публикация связана с репозиторием (repo_pub_edges)", async () => {
     const data = await loadSampleGraphData();
-    const searchDetails = indexDetailsByKey(await loadSampleSearchDetails());
+    const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
     // P1 во фикстуре связана с R1 (repo_pub_edges) и одновременно имеет
-    // свой code_url в searchDetails — репозиторий должен победить.
-    const detail = searchDetails.get("P1");
+    // свой code_url в pubDetails — репозиторий должен победить.
+    const detail = pubDetails.get("P1");
     if (!detail?.has_code || detail.code_url.length === 0) {
-      throw new Error("фикстура graph-search.sample.json должна содержать P1 с has_code и code_url");
+      throw new Error("фикстура pubs-detail.sample.json должна содержать P1 с has_code и code_url");
     }
     const repo = data.repos.find((r) => r.key === "R1");
     if (!repo) throw new Error("фикстура должна содержать репозиторий R1");
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "P1" } });
 
-    mountPanel(store, data, searchDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, pubDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     expect(panel.textContent).toContain(repo.label);
     expect(panel.querySelector(`a[href="${detail.code_url[0]}"]`)).toBeNull();
@@ -265,7 +264,7 @@ describe("mountPanel", () => {
     // а этому тесту нужно, чтобы код реально дошёл до ветки с codeLink().
     const pub = data.pubs.find((p) => p.key === "P2");
     if (!pub) throw new Error("фикстура должна содержать публикацию P2");
-    const malicious: SearchDetail = {
+    const malicious: PubDetail = {
       key: pub.key,
       label: "Тестовая публикация",
       journal: "",
@@ -273,10 +272,10 @@ describe("mountPanel", () => {
       has_code: true,
       code_url: ["javascript:alert(1)"],
     };
-    const searchDetails = new Map([[pub.key, malicious]]);
+    const pubDetails = new Map([[pub.key, malicious]]);
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: pub.key } });
 
-    mountPanel(store, data, searchDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, pubDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     const codeLink = panel.querySelector(`dd a`) as HTMLAnchorElement | null;
     expect(codeLink?.getAttribute("href")).toBe("about:blank");
@@ -284,13 +283,13 @@ describe("mountPanel", () => {
 
   it("не показывает строку кода, когда has_code === false, но DOI всё равно показывает", async () => {
     const data = await loadSampleGraphData();
-    const searchDetails = indexDetailsByKey(await loadSampleSearchDetails());
+    const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
     // P2 во фикстуре — has_code: false, code_url пуст, но doi есть.
-    const detail = searchDetails.get("P2");
+    const detail = pubDetails.get("P2");
     if (!detail || detail.has_code) throw new Error("фикстура должна содержать P2 с has_code: false");
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "P2" } });
 
-    mountPanel(store, data, searchDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, pubDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     expect(panel.querySelector("a[href^='https://doi.org/']")).not.toBeNull();
     expect(panel.textContent).not.toContain("Код");
@@ -305,7 +304,7 @@ describe("mountPanel", () => {
       selection: { kind: "edge", s: edge.s, t: edge.t, w: edge.w },
     });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     expect(panel.hidden).toBe(false);
     expect(panel.textContent).toContain(String(edge.w));
@@ -320,7 +319,7 @@ describe("mountPanel", () => {
       selection: { kind: "edge", s: "A1", t: "A2", w: 2 },
     });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     expect(panel.textContent).toContain("Общие публикации");
     expect(panel.textContent).toContain("P1");
@@ -335,7 +334,7 @@ describe("mountPanel", () => {
       selection: { kind: "edge", s: "P1", t: "P2", w: 1 },
     });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     expect(panel.textContent).toContain("Общие авторы");
     expect(panel.textContent).toContain("Иванов И.И.");
@@ -350,7 +349,7 @@ describe("mountPanel", () => {
       selection: { kind: "edge", s: "A3", t: "A4", w: 1 },
     });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     expect(panel.textContent).not.toContain("Общие публикации");
   });
@@ -361,7 +360,7 @@ describe("mountPanel", () => {
     if (!dept) throw new Error("фикстура должна содержать хотя бы один департамент");
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "dept", id: dept.id } });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     expect(panel.hidden).toBe(false);
     expect(panel.querySelector("h3")?.textContent).toBe(dept.name);
@@ -374,7 +373,7 @@ describe("mountPanel", () => {
     // Департамент 0 во фикстуре связан с 1 (w=2) и 2 (w=1) — 1 должен идти первым.
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "dept", id: 0 } });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     const dept1 = data.departments.find((d) => d.id === 1);
     const dept2 = data.departments.find((d) => d.id === 2);
@@ -392,7 +391,7 @@ describe("mountPanel", () => {
     if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: author.key } });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
     expect(panel.querySelector("h3")?.textContent).toBe(author.label);
 
     store.set({ selection: null });
@@ -408,7 +407,7 @@ describe("mountPanel", () => {
 
     // Пустая карта - ровно то состояние, в котором app/main.ts передаёт
     // authorDetails фичам ДО того, как пришёл authors-detail.json.
-    mountPanel(store, data, NO_SEARCH_DETAILS, new Map(), NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, new Map(), NO_REPO_DETAILS);
 
     expect(panel.querySelector(".loading-indicator")).not.toBeNull();
     expect(panel.textContent).toContain("Подробнее");
@@ -419,7 +418,7 @@ describe("mountPanel", () => {
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A1" } });
     const authorDetails = new Map<string, AuthorDetail>(); // пуст на момент монтирования
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, authorDetails, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
     expect(panel.querySelector(".loading-indicator")).not.toBeNull();
 
     // Имитация того, что делает app/main.ts, когда приходит authors-detail.json:
@@ -437,7 +436,7 @@ describe("mountPanel", () => {
     if (!repo) throw new Error("фикстура должна содержать хотя бы один репозиторий");
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: repo.key } });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, new Map());
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, new Map());
 
     expect(panel.querySelector(".loading-indicator")).not.toBeNull();
   });

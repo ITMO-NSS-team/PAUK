@@ -1,8 +1,8 @@
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import { describe, expect, it, vi } from "vitest";
-import type { SearchDetail } from "../src/contracts/search";
+import type { PubDetail } from "../src/contracts/graph";
 import { MAP_CONFIG } from "../src/core/config";
-import { loadSampleGraphData, loadSampleSearchDetails, indexDetailsByKey } from "../src/core/data";
+import { indexDetailsByKey, loadSampleGraphData, loadSamplePubDetails } from "../src/core/data";
 import { Store, type AppState } from "../src/core/state";
 import {
   buildEdgeFeatures,
@@ -19,7 +19,7 @@ import {
 const NO_FILTER = { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026 };
 // Большинство тестов здесь не про названия публикаций — пустая карта
 // оставляет nodeLabel() на старом поведении (заглушка — ключ публикации).
-const NO_SEARCH_DETAILS = new Map<string, SearchDetail>();
+const NO_PUB_DETAILS = new Map<string, PubDetail>();
 
 function initialState(overrides: Partial<AppState> = {}): AppState {
   return {
@@ -36,16 +36,16 @@ describe("map/build на фикстур-данных", () => {
     const data = await loadSampleGraphData();
 
     // Три разных графа — авторы/репозитории/публикации не смешиваются в одной вкладке.
-    expect(buildNodeFeatures(data, "ru", 1, NO_FILTER, NO_SEARCH_DETAILS).features).toHaveLength(data.authors.length);
-    expect(buildNodeFeatures(data, "ru", 2, NO_FILTER, NO_SEARCH_DETAILS).features).toHaveLength(data.repos.length);
-    expect(buildNodeFeatures(data, "ru", 3, NO_FILTER, NO_SEARCH_DETAILS).features).toHaveLength(data.pubs.length);
+    expect(buildNodeFeatures(data, "ru", 1, NO_FILTER, NO_PUB_DETAILS).features).toHaveLength(data.authors.length);
+    expect(buildNodeFeatures(data, "ru", 2, NO_FILTER, NO_PUB_DETAILS).features).toHaveLength(data.repos.length);
+    expect(buildNodeFeatures(data, "ru", 3, NO_FILTER, NO_PUB_DETAILS).features).toHaveLength(data.pubs.length);
     // Вкладка 4 (поиск) не привязана ни к одному из трёх графов — карта пуста.
-    expect(buildNodeFeatures(data, "ru", 4, NO_FILTER, NO_SEARCH_DETAILS).features).toHaveLength(0);
+    expect(buildNodeFeatures(data, "ru", 4, NO_FILTER, NO_PUB_DETAILS).features).toHaveLength(0);
   });
 
   it("buildNodeFeatures красит узлы цветом их департамента", async () => {
     const data = await loadSampleGraphData();
-    const fc = buildNodeFeatures(data, "ru", 1, NO_FILTER, NO_SEARCH_DETAILS);
+    const fc = buildNodeFeatures(data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
     const deptColor = new Map(data.departments.map((d) => [d.id, d.color]));
 
     for (const feature of fc.features) {
@@ -54,13 +54,13 @@ describe("map/build на фикстур-данных", () => {
     }
   });
 
-  it("buildNodeFeatures подставляет настоящее название публикации из searchDetails вместо ключа", async () => {
+  it("buildNodeFeatures подставляет настоящее название публикации из pubDetails вместо ключа", async () => {
     const data = await loadSampleGraphData();
-    const searchDetails = indexDetailsByKey(await loadSampleSearchDetails());
+    const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
 
-    const fc = buildNodeFeatures(data, "ru", 3, NO_FILTER, searchDetails);
+    const fc = buildNodeFeatures(data, "ru", 3, NO_FILTER, pubDetails);
     for (const feature of fc.features) {
-      const detail = searchDetails.get(feature.properties.key);
+      const detail = pubDetails.get(feature.properties.key);
       expect(feature.properties.label).toBe(detail?.label);
       expect(feature.properties.label).not.toBe(feature.properties.key);
     }
@@ -101,7 +101,7 @@ describe("map/build на фикстур-данных", () => {
     const filters = { ...NO_FILTER, yearMax: 2022 };
     const expectedPubs = data.pubs.filter((p) => p.year === null || p.year <= 2022);
 
-    const nodeKeys = buildNodeFeatures(data, "ru", 3, filters, NO_SEARCH_DETAILS).features.map(
+    const nodeKeys = buildNodeFeatures(data, "ru", 3, filters, NO_PUB_DETAILS).features.map(
       (f) => f.properties.key,
     );
     expect(nodeKeys.sort()).toEqual(expectedPubs.map((p) => p.key).sort());
@@ -218,7 +218,7 @@ describe("mountReactiveGraph", () => {
     const store = new Store<AppState>(initialState());
     const { map, setData } = fakeMapWithSource();
 
-    mountReactiveGraph(map, store, data, NO_SEARCH_DETAILS);
+    mountReactiveGraph(map, store, data, NO_PUB_DETAILS);
     expect(map.addSource).toHaveBeenCalledTimes(2); // узлы + рёбра
     expect(setData).not.toHaveBeenCalled();
 

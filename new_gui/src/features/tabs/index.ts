@@ -1,6 +1,5 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
-import type { GraphData, RepoDetail } from "../../contracts/graph";
-import type { SearchDetail } from "../../contracts/search";
+import type { GraphData, PubDetail, RepoDetail } from "../../contracts/graph";
 import { t, type Lang, type LocaleKey } from "../../core/i18n";
 import type { AppState, Store, TabId } from "../../core/state";
 import { authorsTab } from "./authors";
@@ -47,7 +46,7 @@ const TAB_LABEL_KEYS: Record<TabId, LocaleKey> = {
  * @param store - Store приложения.
  * @param map - экземпляр карты MapLibre (передаётся дальше в `TabModule.mount()`).
  * @param data - данные графа.
- * @param searchDetails - карта деталей публикаций.
+ * @param pubDetails - карта деталей публикаций.
  * @param repoDetails - карта описаний/владельцев/ссылок репозиториев (нужна только вкладке "Поиск").
  * @returns Функция размонтирования (unmount) — снимает обработчик кликов по
  *   кнопкам, размонтирует активную вкладку и отписывается от Store.
@@ -58,7 +57,7 @@ export function mountTabs(
   store: Store<AppState>,
   map: MapLibreMap,
   data: GraphData,
-  searchDetails: Map<string, SearchDetail>,
+  pubDetails: Map<string, PubDetail>,
   repoDetails: Map<string, RepoDetail>,
 ): () => void {
   const buttons = tabButtonsEl.querySelectorAll<HTMLButtonElement>("button[data-tab]");
@@ -84,7 +83,7 @@ export function mountTabs(
     activeUnmount?.();
     activeTab = tabId;
     const tabModule = TAB_MODULES[tabId];
-    activeUnmount = tabModule ? tabModule.mount(tabContentEl, store, map, data, searchDetails, repoDetails) : null;
+    activeUnmount = tabModule ? tabModule.mount(tabContentEl, store, map, data, pubDetails, repoDetails) : null;
 
     for (const button of buttons) {
       button.classList.toggle("tab-button--active", Number(button.dataset.tab) === tabId);

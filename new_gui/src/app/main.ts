@@ -8,14 +8,13 @@ import { Map as MapLibreMap, NavigationControl, setWorkerUrl } from "maplibre-gl
 // оптимизатор зависимостей — без этого Vite ищет файл воркера не там,
 // где он реально лежит, и карта падает в рантайме с "file does not exist".
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
-import type { AuthorDetail, RepoDetail } from "../contracts/graph";
-import type { SearchDetail } from "../contracts/search";
+import type { AuthorDetail, PubDetail, RepoDetail } from "../contracts/graph";
 import { FILTER_CONFIG, MAP_CONFIG } from "../core/config";
 import {
   loadSampleAuthorDetails,
   loadSampleGraphData,
+  loadSamplePubDetails,
   loadSampleRepoDetails,
-  loadSampleSearchDetails,
   mergeDetailsInto,
 } from "../core/data";
 import { requireElement } from "../core/dom";
@@ -83,7 +82,7 @@ map.on("load", () => {
       // ниже. Мутация видна всем, кто уже держит эту же ссылку, без
       // повторного монтирования — только store.notify(), чтобы разбудить
       // то, что уже подписано на Store (mountPanel, mountReactiveGraph).
-      const searchDetailsByKey = new Map<string, SearchDetail>();
+      const pubDetailsByKey = new Map<string, PubDetail>();
       const authorDetailsByKey = new Map<string, AuthorDetail>();
       const repoDetailsByKey = new Map<string, RepoDetail>();
 
@@ -96,7 +95,7 @@ map.on("load", () => {
       // mountReactiveGraph рисует граф под текущие tab/lang/filters и сама
       // следит за store дальше — остальным фичам достаточно менять
       // store.tab/lang/filters, не заботясь о том, что ещё перерисовать.
-      mountReactiveGraph(map, store, data, searchDetailsByKey);
+      mountReactiveGraph(map, store, data, pubDetailsByKey);
       map.fitBounds(nodeBounds(data), { padding: MAP_CONFIG.fitPadding, animate: false });
 
       // mountSelection слушает клики по карте и пишет выбор в store;
@@ -109,14 +108,14 @@ map.on("load", () => {
       // самих (внутри mountTabs свои unmount вызываются при смене вкладки —
       // это устройство самой этой фичи).
       mountSelection(map, store);
-      mountPanel(store, data, searchDetailsByKey, authorDetailsByKey, repoDetailsByKey);
+      mountPanel(store, data, pubDetailsByKey, authorDetailsByKey, repoDetailsByKey);
       mountTabs(
         requireElement("tab-buttons"),
         requireElement("tab-content"),
         store,
         map,
         data,
-        searchDetailsByKey,
+        pubDetailsByKey,
         repoDetailsByKey,
       );
       mountFilters(store);
@@ -136,9 +135,9 @@ map.on("load", () => {
       // detail, mountPanel сама покажет индикатор загрузки (LOADING в
       // features/panels.ts) — это единственное, что должно произойти, а не
       // пустая/сломанная карточка.
-      loadSampleSearchDetails()
+      loadSamplePubDetails()
         .then((details) => {
-          mergeDetailsInto(searchDetailsByKey, details);
+          mergeDetailsInto(pubDetailsByKey, details);
           store.notify();
         })
         .catch((error: unknown) => console.error("Не удалось догрузить детали публикаций:", error));
