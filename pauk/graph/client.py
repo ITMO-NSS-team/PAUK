@@ -98,13 +98,21 @@ class Neo4jClient:
     any data (see pauk/graph/schema.py).
     """
 
-    def __init__(self, uri: str, user: str, password: str):
+    def __init__(self, uri: str, user: str, password: str,
+                 connection_timeout: float | None = None,
+                 retry_time: float | None = None):
         """Open a Neo4j driver connection.
 
         Args:
             uri: Bolt connection URI, e.g. "bolt://localhost:7687".
             user: Neo4j username.
             password: Neo4j password.
+            connection_timeout: Seconds to wait for the connection. The
+                driver's own default is generous, and a page rendered for a
+                person cannot wait that long.
+            retry_time: How long a failed transaction keeps being retried.
+                Retries suit a batch job; an unreachable database should be
+                reported to a waiting person at once.
 
         Raises:
             ValueError: If password is empty. Settings.neo4j_password
@@ -114,7 +122,12 @@ class Neo4jClient:
         """
         if not password:
             raise ValueError("Neo4j password is empty - set NEO4J_PASSWORD in .env")
-        self.driver = GraphDatabase.driver(uri, auth=(user, password))
+        options = {}
+        if connection_timeout is not None:
+            options["connection_timeout"] = connection_timeout
+        if retry_time is not None:
+            options["max_transaction_retry_time"] = retry_time
+        self.driver = GraphDatabase.driver(uri, auth=(user, password), **options)
 
     def close(self):
         """Close the underlying driver connection."""
@@ -570,3 +583,181 @@ class Neo4jClient:
                 len(batch) - matched,
             )
         return matched
+
+    def fetch_node_properties(self, label: str, node_id: str) -> dict | None:
+        """Every property of one node, or None if there is no such node.
+
+        The dedup fetchers return the few fields they compare on; a manual
+        edit needs the whole node — to show it, and to read the
+        `updated_at` an optimistic check is made against.
+
+        Args:
+            label: Node label, interpolated into Cypher — whitelist only.
+            node_id: Value of the node's `id` property.
+        """
+        query = cast(
+            LiteralString,
+            f"MATCH (n:{label} {{id: $node_id}}) RETURN properties(n) AS props",
+        )
+        with self.driver.session() as session:
+            row = session.execute_read(lambda tx: tx.run(query, node_id=node_id).single())
+        return dict(row["props"]) if row else None
+
+    def count_nodes(self, label: str) -> int:
+        """How many nodes carry this label.
+
+        Args:
+            label: Node label, interpolated into Cypher — whitelist only.
+        """
+        query = cast(LiteralString, f"MATCH (n:{label}) RETURN count(n) AS total")
+        with self.driver.session() as session:
+            row = session.execute_read(lambda tx: tx.run(query).single())
+        return int(row["total"]) if row else 0
+
+    def list_nodes(self, label: str, fields: list[str], limit: int = 50) -> list[dict]:
+        """The first nodes of a label, in id order.
+
+        What the panel shows before anything is typed: on a small graph it
+        is the whole list, on a large one the beginning of it.
+
+        Args:
+            label: Node label, interpolated into Cypher — whitelist only.
+            fields: Property names to return, also interpolated.
+            limit: How many rows to bring back.
+        """
+        returned = ", ".join(f"n.{name} AS {name}" for name in fields)
+        text = f"MATCH (n:{label}) RETURN n.id AS id, {returned} ORDER BY id LIMIT $limit"
+        with self.driver.session() as session:
+            rows = session.execute_read(
+                lambda tx: list(tx.run(cast(LiteralString, text), limit=limit)))
+        return [dict(row) for row in rows]
+
+    def search_nodes(self, label: str, fields: list[str], query: str, limit: int = 50) -> list[dict]:
+        """Nodes of one label whose text matches, for the panel's search box.
+
+        Case-insensitive substring match across the fields the caller
+        names. An exact id always wins and comes first: the panel is
+        reached by a link carrying an id at least as often as by typing a
+        name, and that lookup must not be buried under fuzzy matches.
+
+        Args:
+            label: Node label, interpolated into Cypher — whitelist only.
+            fields: Property names to search, also interpolated —
+                whitelist only.
+            query: What the user typed.
+            limit: How many rows to bring back.
+
+        Returns:
+            One dict per node: its `id` plus the searched fields.
+        """
+        conditions = " OR ".join(f"toLower(toString(n.{name})) CONTAINS $needle" for name in fields)
+        returned = ", ".join(f"n.{name} AS {name}" for name in fields)
+        text = (
+            f"MATCH (n:{label}) WHERE n.id = $exact OR {conditions} "
+            f"RETURN n.id AS id, {returned}, (n.id = $exact) AS exact "
+            f"ORDER BY exact DESC, id LIMIT $limit"
+        )
+        with self.driver.session() as session:
+            rows = session.execute_read(
+                lambda tx: list(tx.run(cast(LiteralString, text), needle=query.lower(),
+                                       exact=query, limit=limit)))
+        return [dict(row) for row in rows]
+
+    def fetch_node_relationships(self, label: str, node_id: str) -> list[dict]:
+        """Every edge touching one node, in both directions.
+
+        Direction is reported rather than normalised: the panel has to say
+        whether this person authored a publication or a publication was
+        produced by this department, and those read differently.
+
+        The other end's properties come along because an id does not always
+        address it: two of the eleven relationships are matched by `url` or
+        `login`, and removing such an edge needs that value, not the id.
+        """
+        text = (
+            f"MATCH (n:{label} {{id: $node_id}})-[r]-(other) "
+            "RETURN type(r) AS type, labels(other) AS labels, other.id AS other_id, "
+            "properties(other) AS other_props, "
+            "startNode(r).id = n.id AS outgoing "
+            "ORDER BY type, other_id"
+        )
+        with self.driver.session() as session:
+            rows = session.execute_read(
+                lambda tx: list(tx.run(cast(LiteralString, text), node_id=node_id)))
+        return [dict(row) for row in rows]
+
+    def delete_nodes_batch(self, label: str, ids: list[str], detach: bool = True) -> int:
+        """Delete nodes by id, optionally taking their relationships with them.
+
+        Nothing in the pipeline deletes a node — the loader only ever
+        MERGEs, and dedup folds duplicates rather than removing them. This
+        exists for manual removal from the admin layer, which is why it
+        reports how many nodes actually went: a caller asking to delete an
+        id that is not there must be able to tell.
+
+        Args:
+            label: Node label. Interpolated into Cypher, so callers must
+                pass a label from a closed whitelist, never user input
+                (see pauk/graph/mutations.py).
+            ids: Node ids to delete.
+            detach: True deletes the node together with its relationships.
+                False leaves a node that still has any relationship
+                untouched — Neo4j refuses to delete a connected node, and
+                that refusal is the point: it stops a careless delete from
+                silently tearing edges out of the graph.
+
+        Returns:
+            Number of nodes deleted.
+        """
+        if not ids:
+            return 0
+        clause = "DETACH DELETE n" if detach else "DELETE n"
+        guard = "" if detach else "AND NOT (n)--() "
+        query = cast(
+            LiteralString,
+            f"""
+            MATCH (n:{label}) WHERE n.id IN $ids {guard}
+            WITH collect(n) AS doomed
+            FOREACH (n IN doomed | {clause})
+            RETURN size(doomed) AS removed
+            """,
+        )
+        with self.driver.session() as session:
+            return session.execute_write(lambda tx: tx.run(query, ids=ids).single()["removed"])
+
+    def delete_relationships_batch(
+        self,
+        src_label: str,
+        tgt_label: str,
+        rel_type: str,
+        pairs: list[tuple[str, str]],
+        tgt_match_prop: str = "id",
+    ) -> int:
+        """Delete relationships of one type between the given node pairs.
+
+        Args:
+            src_label: Label of the source node.
+            tgt_label: Label of the target node.
+            rel_type: Relationship type to delete, e.g. "AUTHORED".
+            pairs: (src_id, tgt_id) pairs whose relationship goes.
+            tgt_match_prop: Property the target is looked up by — not
+                always "id" (Repository by "url", GitHubProfile by "login").
+
+        Returns:
+            Number of relationships deleted.
+        """
+        if not pairs:
+            return 0
+        batch = [{"src_id": src_id, "tgt_id": tgt_id} for src_id, tgt_id in pairs]
+        query = cast(
+            LiteralString,
+            f"""
+            UNWIND $batch AS row
+            MATCH (src:{src_label} {{id: row.src_id}})-[r:{rel_type}]->(tgt:{tgt_label} {{{tgt_match_prop}: row.tgt_id}})
+            WITH collect(r) AS doomed
+            FOREACH (r IN doomed | DELETE r)
+            RETURN size(doomed) AS removed
+            """,
+        )
+        with self.driver.session() as session:
+            return session.execute_write(lambda tx: tx.run(query, batch=batch).single()["removed"])

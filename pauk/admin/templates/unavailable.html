@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>База графа не отвечает</h1>
+<div class="card">
+  <p>Панель работает, но подключиться к Neo4j не удалось:</p>
+  <p class="val" style="font-family:ui-monospace,Menlo,monospace">{{ detail }}</p>
+  <p class="muted">Правки и поиск станут доступны, как только база поднимется.</p>
+</div>
+{% endblock %}
