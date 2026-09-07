@@ -68,7 +68,7 @@ export function createLoadingIndicator(): HTMLElement {
  * @param message - текст, который увидит пользователь.
  *
  * @example
- * showLoadError("Не удалось загрузить данные графа (/data/graph-data.json).");
+ * showLoadError("Не удалось загрузить данные графа (/graph-data.json).");
  */
 export function showLoadError(message: string): void {
   const loadError = requireElement("load-error");

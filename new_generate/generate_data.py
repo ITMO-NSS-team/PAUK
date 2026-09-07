@@ -742,8 +742,7 @@ def dump_json(data, path: Path) -> None:
 
 def main() -> None:
     from new_cache.graph_snapshot import read_snapshot
-
-    data_dir = Path(__file__).resolve().parent / "data"
+    from pauk.settings import settings
 
     parser = argparse.ArgumentParser(description="Генерация статических данных для new_gui")
     parser.add_argument(
@@ -758,7 +757,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     if args.out_dir is None:
-        args.out_dir = data_dir / ("public" if args.public else "private")
+        args.out_dir = settings.gui_dir / ("public" if args.public else "private")
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
     args.out_dir.mkdir(parents=True, exist_ok=True)

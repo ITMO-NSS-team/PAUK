@@ -63,21 +63,22 @@ export const FILTER_CONFIG = {
   year: { min: 2020, max: new Date().getFullYear() },
 } as const;
 
-// Пути к настоящим данным (пишет `new_generate/generate_data.py --out-dir
-// new_gui/private/data`), которые Vite отдаёт как статику из своего
-// publicDir (см. vite.config.ts — переименован в "private", чтобы не
-// путать с ОТДЕЛЬНЫМ понятием "публичный вариант данных" из
-// generate_data.py) по тем же путям от корня сайта — что в dev-сервере,
-// что после npm run build. Файлов может не быть физически (снепшот ещё не
-// сгенерирован, или это --public вариант данных без authors-detail.json —
-// пока не подключаем, см. vite.config.ts) — тогда fetch() в core/data.ts
-// упадёт, а app/main.ts ловит это через loggedStep()/.catch() и не роняет
-// приложение, см. там же.
+// Пути к настоящим данным (пишет `new_generate/generate_data.py`, по
+// умолчанию — прямо в <repo_root>/data/gui/private, без вложенной "data/",
+// см. pauk.settings.Settings.gui_dir). Vite отдаёт содержимое publicDir
+// (см. vite.config.ts) от корня сайта, поэтому файл `graph-data.json`,
+// лежащий прямо в publicDir, доступен как `/graph-data.json` — без
+// префикса "/data/", он был бы нужен только если бы внутри publicDir была
+// ещё и своя вложенная папка "data/". Файлов может не быть физически
+// (снепшот ещё не сгенерирован, или это data/gui/public вариант без
+// authors-detail.json — пока не подключаем, см. vite.config.ts) — тогда
+// fetch() в core/data.ts упадёт, а app/main.ts ловит это через
+// loggedStep()/.catch() и не роняет приложение, см. там же.
 export const DATA_CONFIG = {
-  graphDataUrl: "/data/graph-data.json",
-  authorDetailsUrl: "/data/authors-detail.json",
-  repoDetailsUrl: "/data/repos-detail.json",
-  pubDetailsUrl: "/data/pubs-detail.json",
+  graphDataUrl: "/graph-data.json",
+  authorDetailsUrl: "/authors-detail.json",
+  repoDetailsUrl: "/repos-detail.json",
+  pubDetailsUrl: "/pubs-detail.json",
 } as const;
 
 // Сколько элементов показывать в списках карточки информации (features/panels.ts)
