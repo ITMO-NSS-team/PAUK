@@ -76,8 +76,20 @@ def _is_filled(profile: GitHubProfile | None) -> bool:
     An account reached from a second repository, or on a re-run, has nothing
     new to learn from the endpoint. In the August 2026 run all 5059 profiles
     already existed and all 5188 calls were spent re-fetching them.
+
+    Asking `html_url` instead would never fetch a repository owner at all: the
+    repositories stage writes that field into the owner stub itself, so the
+    gate would close on data this pipeline just made up.
     """
-    return profile is not None and bool(profile.html_url)
+    if profile is None:
+        return False
+    if profile.profile_fetched:
+        return True
+    # Profiles stored before the marker existed. The stage that wrote them
+    # always called the endpoint, and the owner stub they could be confused
+    # with carries none of these fields.
+    return any((profile.name, profile.description, profile.location,
+                profile.company, profile.emails, profile.commit_names))
 
 
 class RepoPeopleStage(EnrichmentStage):
@@ -129,9 +141,11 @@ class RepoPeopleStage(EnrichmentStage):
             emails, commit_names = identities.get(login, (set(), set()))
             known = profiles.get(profile_id)
             payload: dict = {}
+            fetched = known.profile_fetched if known else False
             if self.force or not _is_filled(known):
                 try:
                     payload = client.get_user(login)
+                    fetched = True
                 except Exception:
                     payload = {}
                 self.raw.append("github_user", payload, {"login": login})
@@ -150,6 +164,7 @@ class RepoPeopleStage(EnrichmentStage):
                 emails=sorted(set(known.emails if known else []) | emails),
                 commit_names=sorted(set(known.commit_names if known else []) | commit_names),
                 repos=sorted(set(known.repos if known else []) | {repo.url}),
+                profile_fetched=fetched,
             )
 
     def run(self) -> dict[str, int]:

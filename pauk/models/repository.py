@@ -26,6 +26,12 @@ class GitHubProfile(BaseModel):
     emails: list[str] = Field(default_factory=list)
     commit_names: list[str] = Field(default_factory=list)
     repos: list[str] = Field(default_factory=list)
+    # Whether GET /users/{login} has actually answered for this account. The
+    # repositories stage writes a stub profile from the nested owner object,
+    # which carries a login, a URL and a type and nothing else; without a
+    # marker of its own that stub is indistinguishable from a fetched profile
+    # whose optional fields GitHub happens to leave empty.
+    profile_fetched: bool = False
 
 
 class LinkCandidate(BaseModel):

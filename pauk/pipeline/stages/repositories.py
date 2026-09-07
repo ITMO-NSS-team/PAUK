@@ -149,6 +149,7 @@ class RepositoriesStage(EnrichmentStage):
                     except Exception:
                         org = {}
                     self.raw.append("github_user", org, {"login": repo.owner_login})
+                    known.profile_fetched = known.profile_fetched or bool(org)
                     # Organizations carry `description`; users carry `bio`.
                     known.name = org.get("name") or known.name
                     known.description = (org.get("description") or org.get("bio")
@@ -332,14 +333,23 @@ class RepositoriesStage(EnrichmentStage):
             canonical_id = _canonical_repo_id(repo)
             winner = canonical.get(canonical_id)
             if winner is None:
+                # Re-keying is a merge like any other: the id the row was
+                # stored under is what already-published edges point at, so it
+                # becomes an alias rather than being overwritten and lost.
+                winner, aliases = repo, [*repo.merged_ids, repo.id]
                 repo.id = canonical_id
-                # A row folded away earlier can have been keyed by the very id
-                # this row is about to take; nothing should list itself as
-                # merged away, least of all the graph loader's alias table.
-                repo.merged_ids = [m for m in repo.merged_ids if m != canonical_id]
                 canonical[canonical_id] = repo
             else:
+                # The loser leaves behind its own id and every id it had
+                # already absorbed — same bookkeeping as _fold_duplicates.
                 _fold_into(winner, repo)
+                aliases = [*winner.merged_ids, repo.id, *repo.merged_ids]
+            # A row folded away earlier can have been keyed by the very id the
+            # winner now holds; nothing should list itself as merged away,
+            # least of all the graph loader's alias table.
+            winner.merged_ids = [
+                alias for alias in dict.fromkeys(aliases) if alias != canonical_id
+            ]
         repositories = canonical
 
         for repo in repositories.values():

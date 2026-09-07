@@ -651,6 +651,163 @@ class OrganizationOwnerProfileTest(unittest.TestCase):
         self.assertEqual([call.args for call in client.get_user.call_args_list], [])
 
 
+class OwnerProfileIsFetchedTest(unittest.TestCase):
+    """The owner stub must not pass for a fetched profile.
+
+    `repositories` writes a GitHubProfile for the owner out of the nested
+    owner object, which carries a login, a URL and a type. `repo_people` then
+    decides whether GET /users/{login} is still worth a call. Deciding that on
+    `html_url` meant the stub answered for the real profile, and no repository
+    owner was ever fetched — the one person most likely to be an ITMO author.
+    """
+
+    PAYLOAD = {"html_url": "https://github.com/alice/tool", "name": "tool", "id": 1,
+               "owner": {"login": "alice", "type": "User",
+                         "html_url": "https://github.com/alice"}}
+    USER = {"login": "alice", "type": "User", "name": "Alice Ivanova",
+            "email": "alice@itmo.ru", "location": "Saint Petersburg"}
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.prepared = PreparedStore(self.db, "sample")
+        self.raw = RawStore(self.db, "sample")
+        self.prepared.write_models("repo_links", [
+            RepoLink(publication_id="W1",
+                     links=[CodeLink(url="https://github.com/alice/tool")])])
+
+    def _run_both_stages(self):
+        with patch("pauk.pipeline.stages.repositories.GitHubClient") as client:
+            client.return_value.get_repository.return_value = self.PAYLOAD
+            client.return_value.has_readme.return_value = True
+            client.return_value.get_user.return_value = self.USER
+            RepositoriesStage(self.prepared, self.raw).run()
+        with patch("pauk.pipeline.stages.repo_people.GitHubClient") as client:
+            client.return_value.contributors.return_value = [
+                {"login": "alice", "type": "User"}]
+            client.return_value.commits.return_value = []
+            client.return_value.get_user.return_value = self.USER
+            RepoPeopleStage(self.prepared, self.raw).run()
+            calls = client.return_value.get_user.call_count
+        return calls, {p.login: p
+                       for p in self.prepared.read_models("github_profiles", GitHubProfile)}
+
+    def test_the_owner_behind_a_stub_is_still_fetched(self):
+        calls, profiles = self._run_both_stages()
+        self.assertEqual(calls, 1)
+        self.assertEqual(profiles["alice"].name, "Alice Ivanova")
+        self.assertEqual(profiles["alice"].location, "Saint Petersburg")
+        self.assertIn("alice@itmo.ru", profiles["alice"].emails)
+
+    def test_a_fetched_profile_is_not_fetched_again(self):
+        self._run_both_stages()
+        # The marker is what the second run reads; the point of the gate is
+        # that a known account costs no call at all.
+        calls, profiles = self._run_both_stages()
+        self.assertEqual(calls, 0)
+        self.assertTrue(profiles["alice"].profile_fetched)
+
+    def test_a_profile_stored_before_the_marker_counts_as_fetched(self):
+        # Written by the pipeline that always called the endpoint. Re-fetching
+        # every such profile once would cost an hour of GitHub's quota.
+        self.prepared.write_models("github_profiles", [
+            GitHubProfile(id="github_alice", login="alice", name="Alice Ivanova",
+                          html_url="https://github.com/alice", type="user")])
+        calls, _ = self._run_both_stages()
+        self.assertEqual(calls, 0)
+
+    def test_a_failed_fetch_leaves_the_account_open_for_another_attempt(self):
+        # GitHub answering 502 is not evidence about the account, so the
+        # marker must stay down. Whether the repository is revisited at all is
+        # the stage's own `needs_attempt` question, which a completed row
+        # answers no — so the retry is observed on the next visit it does make.
+        with patch("pauk.pipeline.stages.repositories.GitHubClient") as client:
+            client.return_value.get_repository.return_value = self.PAYLOAD
+            client.return_value.has_readme.return_value = True
+            client.return_value.get_user.return_value = {}
+            RepositoriesStage(self.prepared, self.raw).run()
+        with patch("pauk.pipeline.stages.repo_people.GitHubClient") as client:
+            client.return_value.contributors.return_value = [
+                {"login": "alice", "type": "User"}]
+            client.return_value.commits.return_value = []
+            client.return_value.get_user.side_effect = RuntimeError("502")
+            RepoPeopleStage(self.prepared, self.raw).run()
+        profiles = {p.login: p
+                    for p in self.prepared.read_models("github_profiles", GitHubProfile)}
+        self.assertFalse(profiles["alice"].profile_fetched)
+
+        with patch("pauk.pipeline.stages.repo_people.GitHubClient") as client:
+            client.return_value.contributors.return_value = [
+                {"login": "alice", "type": "User"}]
+            client.return_value.commits.return_value = []
+            client.return_value.get_user.return_value = self.USER
+            RepoPeopleStage(self.prepared, self.raw, force=True).run()
+        profiles = {p.login: p
+                    for p in self.prepared.read_models("github_profiles", GitHubProfile)}
+        self.assertTrue(profiles["alice"].profile_fetched)
+        self.assertEqual(profiles["alice"].name, "Alice Ivanova")
+
+
+class CanonicalRekeyAliasTest(unittest.TestCase):
+    """Re-keying a row to its canonical id must leave the old id behind.
+
+    `merged_ids` is the alias table the graph loader re-folds edges through
+    (`graph/jsonl_loader.py`). An id dropped here is an edge that never
+    reaches the surviving node.
+    """
+
+    CANON = {"html_url": "https://github.com/alice/tool", "name": "tool", "id": 1,
+             "owner": {"login": "alice", "type": "User"}}
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.prepared = PreparedStore(self.db, "sample")
+        self.raw = RawStore(self.db, "sample")
+
+    def _run(self, rows):
+        self.prepared.write_models("repositories", rows)
+        with patch("pauk.pipeline.stages.repositories.GitHubClient") as client:
+            client.return_value.get_repository.return_value = self.CANON
+            client.return_value.has_readme.return_value = True
+            client.return_value.get_user.return_value = {}
+            RepositoriesStage(self.prepared, self.raw).run()
+        return list(self.prepared.read_models("repositories", Repository))
+
+    def test_a_renamed_row_keeps_its_old_id(self):
+        # No duplicate involved: GitHub redirects the old name, so the single
+        # stored row is re-keyed and its id would otherwise be overwritten.
+        rows = self._run([Repository(id="github_alice_oldname", name="oldname",
+                                     url="https://github.com/alice/oldname")])
+        self.assertEqual([row.id for row in rows], ["github_alice_tool"])
+        self.assertEqual(rows[0].merged_ids, ["github_alice_oldname"])
+
+    def test_a_row_folded_by_canonical_id_leaves_every_alias_behind(self):
+        rows = self._run([
+            Repository(id="github_alice_oldname", name="oldname",
+                       url="https://github.com/alice/oldname",
+                       merged_ids=["github_alice_ancient"], publication_ids=["W1"]),
+            Repository(id="github_alice_older", name="older",
+                       url="https://github.com/alice/older",
+                       merged_ids=["github_alice_prehistoric"], publication_ids=["W2"]),
+        ])
+        self.assertEqual([row.id for row in rows], ["github_alice_tool"])
+        self.assertEqual(sorted(rows[0].merged_ids), [
+            "github_alice_ancient", "github_alice_older",
+            "github_alice_oldname", "github_alice_prehistoric"])
+        self.assertEqual(sorted(rows[0].publication_ids), ["W1", "W2"])
+
+    def test_the_canonical_id_is_never_its_own_alias(self):
+        rows = self._run([
+            Repository(id="github_alice_tool", name="tool",
+                       url="https://github.com/alice/tool"),
+            Repository(id="github_alice_oldname", name="oldname",
+                       url="https://github.com/alice/oldname",
+                       merged_ids=["github_alice_tool"]),
+        ])
+        self.assertEqual([row.id for row in rows], ["github_alice_tool"])
+        self.assertNotIn("github_alice_tool", rows[0].merged_ids)
+        self.assertIn("github_alice_oldname", rows[0].merged_ids)
+
+
 class ImplementsFromRelevanceTest(unittest.TestCase):
     """publication_ids, and so the IMPLEMENTS edge, follows link_relevance."""
 
@@ -934,7 +1091,10 @@ class UnlinkedRepositoriesTest(unittest.TestCase):
         row = rows["github_org_curated"]
         self.assertEqual(row.processing["repositories"].status, ProcessingStatus.COMPLETED)
         self.assertEqual(sorted(row.publication_ids), ["W1", "W2"])
-        self.assertEqual(row.merged_ids, ["curated_2"])
+        # Both stored ids survive as aliases: curated_2 lost the fold, and
+        # curated_1 won it but was then re-keyed to the canonical id. Either
+        # one can still be what a published edge points at.
+        self.assertEqual(sorted(row.merged_ids), ["curated_1", "curated_2"])
         self.assertIn("https://github.com/org/Curated", row.cited_urls)
 
     @patch("pauk.pipeline.stages.repositories.GitHubClient")
