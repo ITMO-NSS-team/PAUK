@@ -11,7 +11,8 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import type { AuthorDetail, PubDetail, RepoDetail } from "../contracts/graph";
 import { DATA_CONFIG, FILTER_CONFIG, MAP_CONFIG } from "../core/config";
 import { loadDetails, loadGraphData, mergeDetailsInto } from "../core/data";
-import { requireElement } from "../core/dom";
+import { requireElement, showLoadError } from "../core/dom";
+import { loggedStep } from "../core/log";
 import { Store, type AppState } from "../core/state";
 import { parseUrlState } from "../core/url";
 import { mountFilters } from "../features/filters";
@@ -59,31 +60,52 @@ map.dragRotate.disable();
 map.touchZoomRotate.disableRotation();
 map.addControl(new NavigationControl({ showCompass: false }), "bottom-left");
 
+// Без этого обработчика сбой самой MapLibre (например, воркер не
+// загрузился — см. комментарий про workerUrl выше) проходит вообще без
+// единого следа: map.on("load", ...) ниже просто никогда не сработает, а
+// значит не сработает и вся логика логирования/баннера внутри него —
+// с виду "пустая страница без единой ошибки в консоли". showLoadError()
+// та же самая, что и на провал загрузки данных — пользователю неважно,
+// что именно сломалось, важно что сломалось и что дальше рисовать нечего.
+map.on("error", (e) => {
+  console.error("[maplibre] ошибка карты:", e.error);
+  showLoadError(`Карта не смогла инициализироваться: ${e.error.message}`);
+});
+
 // Источники/слои можно добавлять только после того, как стиль карты
 // загрузился — поэтому вся отрисовка живёт внутри map.on("load", ...).
 // Данные приходят из /data/*.json (см. DATA_CONFIG в core/config.ts) —
 // статика, которую пишет new_generate/generate_data.py в
-// new_gui/public/data. Файлов может не быть, пока никто не прогнал
-// генератор локально — тогда fetch ниже падает, .catch() это ловит и
-// логирует, приложение не рушится (см. комментарии там же).
+// new_gui/private/data (пока работаем только с приватным вариантом —
+// публичный, урезанный, вариант данных подключим отдельно, когда дойдём
+// до скрытия полей/усечения инициалов). Файлов может не быть, пока никто
+// не прогнал генератор локально — тогда fetch ниже падает, loggedStep()
+// логирует это в консоль, .catch() показывает баннер, приложение не рушится.
 /**
  * Догружает один `*-detail.json` фоном и домешивает результат в уже
  * переданную фичам карту `target` — общая часть трёх одинаковых по форме
  * загрузок (публикации/авторы/репозитории) внутри `map.on("load", ...)`
- * ниже, отличающихся только типом `T`, URL, картой-приёмником и словом в
- * сообщении об ошибке.
+ * ниже, отличающихся только типом `T`, именем шага, URL и картой-приёмником.
  *
+ * @param name - имя шага для логов (см. {@link loggedStep}), например "pubs-detail.json".
  * @param url - адрес `*-detail.json` (см. {@link DATA_CONFIG}).
  * @param target - карта, в которую нужно домешать результат (мутируется на месте, см. {@link mergeDetailsInto}).
- * @param noun - существительное в родительном падеже для сообщения об ошибке (например, "публикаций").
  */
-function loadDetailsInto<T extends { key: string }>(url: string, target: Map<string, T>, noun: string): void {
-  loadDetails<T>(url)
+function loadDetailsInto<T extends { key: string }>(name: string, url: string, target: Map<string, T>): void {
+  loggedStep(name, () => loadDetails<T>(url))
     .then((details) => {
       mergeDetailsInto(target, details);
       store.notify();
     })
-    .catch((error: unknown) => console.error(`Не удалось догрузить детали ${noun}:`, error));
+    .catch(() => {
+      // Ошибка уже залогирована внутри loggedStep — здесь только не даём
+      // ей всплыть дальше как необработанный rejection. Баннер не
+      // показываем: отсутствие ОДНОГО detail-файла (например, у --public
+      // сборки нет authors-detail.json) не должно ронять всю страницу —
+      // соответствующие поля карточки просто останутся в состоянии
+      // "загрузка" навсегда (LOADING в features/panels.ts), а не покажут
+      // ошибку поверх всего интерфейса.
+    });
 }
 
 map.on("load", () => {
@@ -92,7 +114,7 @@ map.on("load", () => {
   // видно сразу). Три *-detail.json грузятся уже ПОСЛЕ первой отрисовки,
   // фоном, не блокируя её — карта и списки не должны ждать самых тяжёлых
   // (потенциально) файлов ради полей, которые видны только по клику.
-  loadGraphData(DATA_CONFIG.graphDataUrl)
+  loggedStep("graph-data.json", () => loadGraphData(DATA_CONFIG.graphDataUrl))
     .then((data) => {
       // Пустые карты передаются во все фичи один раз — заполняются на месте
       // (mergeDetailsInto), когда придёт соответствующий *-detail.json, см.
@@ -152,18 +174,20 @@ map.on("load", () => {
       // detail, mountPanel сама покажет индикатор загрузки (LOADING в
       // features/panels.ts) — это единственное, что должно произойти, а не
       // пустая/сломанная карточка. У --public сборки authors-detail.json
-      // вовсе нет — тогда .catch() ниже просто залогирует 404, карточка
-      // автора так и останется в состоянии "загрузка", без падения.
-      loadDetailsInto<PubDetail>(DATA_CONFIG.pubDetailsUrl, pubDetailsByKey, "публикаций");
-      loadDetailsInto<AuthorDetail>(DATA_CONFIG.authorDetailsUrl, authorDetailsByKey, "авторов");
-      loadDetailsInto<RepoDetail>(DATA_CONFIG.repoDetailsUrl, repoDetailsByKey, "репозиториев");
+      // вовсе нет — тогда loggedStep() залогирует 404, карточка автора так
+      // и останется в состоянии "загрузка", без падения и без баннера.
+      loadDetailsInto<PubDetail>("pubs-detail.json", DATA_CONFIG.pubDetailsUrl, pubDetailsByKey);
+      loadDetailsInto<AuthorDetail>("authors-detail.json", DATA_CONFIG.authorDetailsUrl, authorDetailsByKey);
+      loadDetailsInto<RepoDetail>("repos-detail.json", DATA_CONFIG.repoDetailsUrl, repoDetailsByKey);
     })
-    .catch((error: unknown) => {
-      console.error("Не удалось загрузить или отрисовать данные графа:", error);
-      const loadError = requireElement("load-error");
-      loadError.textContent =
+    .catch(() => {
+      // Ошибка уже залогирована внутри loggedStep — здесь только решаем,
+      // что показать пользователю: без graph-data.json рисовать вообще
+      // нечего (в отличие от detail-файлов выше), поэтому баннер, а не
+      // тихий откат.
+      showLoadError(
         `Не удалось загрузить данные графа (${DATA_CONFIG.graphDataUrl}). ` +
-        "Проверьте, что new_generate/generate_data.py сгенерировал файлы в new_gui/public/data.";
-      loadError.hidden = false;
+          "Проверьте, что new_generate/generate_data.py сгенерировал файлы в new_gui/private/data.",
+      );
     });
 });

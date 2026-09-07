@@ -64,12 +64,15 @@ export const FILTER_CONFIG = {
 } as const;
 
 // Пути к настоящим данным (пишет `new_generate/generate_data.py --out-dir
-// new_gui/public/data`), которые Vite отдаёт как статику из public/ по
-// тем же путям от корня сайта — что в dev-сервере, что после npm run
-// build. Файлов может не быть физически (снепшот ещё не сгенерирован, или
-// это --public сборка без authors-detail.json) — тогда fetch() в
-// core/data.ts упадёт с 404, а app/main.ts уже ловит эту ошибку через
-// .catch() и не роняет приложение, см. там же.
+// new_gui/private/data`), которые Vite отдаёт как статику из своего
+// publicDir (см. vite.config.ts — переименован в "private", чтобы не
+// путать с ОТДЕЛЬНЫМ понятием "публичный вариант данных" из
+// generate_data.py) по тем же путям от корня сайта — что в dev-сервере,
+// что после npm run build. Файлов может не быть физически (снепшот ещё не
+// сгенерирован, или это --public вариант данных без authors-detail.json —
+// пока не подключаем, см. vite.config.ts) — тогда fetch() в core/data.ts
+// упадёт, а app/main.ts ловит это через loggedStep()/.catch() и не роняет
+// приложение, см. там же.
 export const DATA_CONFIG = {
   graphDataUrl: "/data/graph-data.json",
   authorDetailsUrl: "/data/authors-detail.json",

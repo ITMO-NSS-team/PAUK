@@ -56,3 +56,22 @@ export function createLoadingIndicator(): HTMLElement {
   span.setAttribute("aria-label", "загрузка");
   return span;
 }
+
+/**
+ * Показывает баннер `#load-error` (см. index.html) с текстом ошибки —
+ * единственное место в приложении, где что-то ломается настолько, что
+ * дальше рисовать нечего (не удалось загрузить сам `graph-data.json`, или
+ * упала сама карта — см. `app/main.ts`). Не путать с
+ * {@link createLoadingIndicator}: это "не загрузится вообще", а не "ещё
+ * грузится".
+ *
+ * @param message - текст, который увидит пользователь.
+ *
+ * @example
+ * showLoadError("Не удалось загрузить данные графа (/data/graph-data.json).");
+ */
+export function showLoadError(message: string): void {
+  const loadError = requireElement("load-error");
+  loadError.textContent = message;
+  loadError.hidden = false;
+}
