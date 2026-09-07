@@ -1,3 +1,7 @@
 node_modules/
 dist/
 *.local
+
+# Настоящий снепшот графа (пишет new_generate/generate_data.py) — не
+# исходники, и authors-detail.json несёт персональные данные.
+public/data/

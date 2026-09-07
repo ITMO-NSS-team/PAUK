@@ -63,6 +63,20 @@ export const FILTER_CONFIG = {
   year: { min: 2020, max: new Date().getFullYear() },
 } as const;
 
+// Пути к настоящим данным (пишет `new_generate/generate_data.py --out-dir
+// new_gui/public/data`), которые Vite отдаёт как статику из public/ по
+// тем же путям от корня сайта — что в dev-сервере, что после npm run
+// build. Файлов может не быть физически (снепшот ещё не сгенерирован, или
+// это --public сборка без authors-detail.json) — тогда fetch() в
+// core/data.ts упадёт с 404, а app/main.ts уже ловит эту ошибку через
+// .catch() и не роняет приложение, см. там же.
+export const DATA_CONFIG = {
+  graphDataUrl: "/data/graph-data.json",
+  authorDetailsUrl: "/data/authors-detail.json",
+  repoDetailsUrl: "/data/repos-detail.json",
+  pubDetailsUrl: "/data/pubs-detail.json",
+} as const;
+
 // Сколько элементов показывать в списках карточки информации (features/panels.ts)
 // — топ соавторов, публикации автора и т.п. На реальных данных у активного
 // автора публикаций и соавторов может быть сотни; без ограничения список

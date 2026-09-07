@@ -9,14 +9,8 @@ import { Map as MapLibreMap, NavigationControl, setWorkerUrl } from "maplibre-gl
 // где он реально лежит, и карта падает в рантайме с "file does not exist".
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import type { AuthorDetail, PubDetail, RepoDetail } from "../contracts/graph";
-import { FILTER_CONFIG, MAP_CONFIG } from "../core/config";
-import {
-  loadSampleAuthorDetails,
-  loadSampleGraphData,
-  loadSamplePubDetails,
-  loadSampleRepoDetails,
-  mergeDetailsInto,
-} from "../core/data";
+import { DATA_CONFIG, FILTER_CONFIG, MAP_CONFIG } from "../core/config";
+import { loadDetails, loadGraphData, mergeDetailsInto } from "../core/data";
 import { requireElement } from "../core/dom";
 import { Store, type AppState } from "../core/state";
 import { parseUrlState } from "../core/url";
@@ -67,15 +61,18 @@ map.addControl(new NavigationControl({ showCompass: false }), "bottom-left");
 
 // Источники/слои можно добавлять только после того, как стиль карты
 // загрузился — поэтому вся отрисовка живёт внутри map.on("load", ...).
-// Данные пока синтетические (v2-прототип), реальный pauk/gui/data не
-// трогаем.
+// Данные приходят из /data/*.json (см. DATA_CONFIG в core/config.ts) —
+// статика, которую пишет new_generate/generate_data.py в
+// new_gui/public/data. Файлов может не быть, пока никто не прогнал
+// генератор локально — тогда fetch ниже падает, .catch() это ловит и
+// логирует, приложение не рушится (см. комментарии там же).
 map.on("load", () => {
   // Приоритетная загрузка: сперва graph-data.json — этого одного достаточно,
   // чтобы нарисовать карту и все списки (summary-полей хватает на всё, что
   // видно сразу). Три *-detail.json грузятся уже ПОСЛЕ первой отрисовки,
   // фоном, не блокируя её — карта и списки не должны ждать самых тяжёлых
   // (потенциально) файлов ради полей, которые видны только по клику.
-  loadSampleGraphData()
+  loadGraphData(DATA_CONFIG.graphDataUrl)
     .then((data) => {
       // Пустые карты передаются во все фичи один раз — заполняются на месте
       // (mergeDetailsInto), когда придёт соответствующий *-detail.json, см.
@@ -134,22 +131,24 @@ map.on("load", () => {
       // остальных два. Если клик по узлу случится раньше, чем придёт его
       // detail, mountPanel сама покажет индикатор загрузки (LOADING в
       // features/panels.ts) — это единственное, что должно произойти, а не
-      // пустая/сломанная карточка.
-      loadSamplePubDetails()
+      // пустая/сломанная карточка. У --public сборки authors-detail.json
+      // вовсе нет — тогда .catch() ниже просто залогирует 404, карточка
+      // автора так и останется в состоянии "загрузка", без падения.
+      loadDetails<PubDetail>(DATA_CONFIG.pubDetailsUrl)
         .then((details) => {
           mergeDetailsInto(pubDetailsByKey, details);
           store.notify();
         })
         .catch((error: unknown) => console.error("Не удалось догрузить детали публикаций:", error));
 
-      loadSampleAuthorDetails()
+      loadDetails<AuthorDetail>(DATA_CONFIG.authorDetailsUrl)
         .then((details) => {
           mergeDetailsInto(authorDetailsByKey, details);
           store.notify();
         })
         .catch((error: unknown) => console.error("Не удалось догрузить детали авторов:", error));
 
-      loadSampleRepoDetails()
+      loadDetails<RepoDetail>(DATA_CONFIG.repoDetailsUrl)
         .then((details) => {
           mergeDetailsInto(repoDetailsByKey, details);
           store.notify();
@@ -157,6 +156,6 @@ map.on("load", () => {
         .catch((error: unknown) => console.error("Не удалось догрузить детали репозиториев:", error));
     })
     .catch((error: unknown) => {
-      console.error("Не удалось загрузить или отрисовать фикстур-данные:", error);
+      console.error("Не удалось загрузить или отрисовать данные графа:", error);
     });
 });

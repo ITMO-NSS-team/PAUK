@@ -45,6 +45,31 @@ export async function loadGraphData(url: string): Promise<GraphData> {
 }
 
 /**
+ * Загружает один из настоящих `*-detail.json` (авторов/репозиториев/
+ * публикаций) по сети — один и тот же fetch для всех трёх видов, различие
+ * только в `T` и URL (см. {@link DATA_CONFIG} в core/config.ts). Аналог
+ * {@link loadGraphData}, но без {@link assertGraphData}-проверки формы:
+ * это массив однотипных плоских объектов, а не структура с обязательными
+ * полями-массивами разной вложенности.
+ *
+ * Файла может не быть вовсе (`--public`-сборка `new_generate` не пишет
+ * `authors-detail.json`) — тогда `!response.ok` бросает Error, а
+ * app/main.ts уже ловит её через `.catch()` на каждую из трёх фоновых
+ * загрузок, не роняя приложение.
+ *
+ * @typeParam T - вид детали ({@link AuthorDetail}, {@link RepoDetail} или `PubDetail`).
+ * @param url - адрес `*-detail.json`.
+ * @returns Промис со списком деталей.
+ */
+export async function loadDetails<T>(url: string): Promise<T[]> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`не удалось загрузить ${url}: HTTP ${response.status}`);
+  }
+  return (await response.json()) as T[];
+}
+
+/**
  * Загружает синтетические данные для разработки v2-прототипа — небольшой,
  * но полный набор (департаменты, авторы, репозитории, публикации, все виды
  * рёбер), который сам соответствует контракту {@link GraphData}. Реальный
