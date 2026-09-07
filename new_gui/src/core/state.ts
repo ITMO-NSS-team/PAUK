@@ -108,8 +108,29 @@ export class Store<S extends object> {
    */
   set(patch: Partial<S>): void {
     this.state = { ...this.state, ...patch };
+    this.notify();
+  }
+
+  /**
+   * Оповещает подписчиков без изменения самого состояния — для данных,
+   * которые лежат НЕ в `S` (например, detail-карты авторов/репозиториев в
+   * `app/main.ts`: они мутируются на месте по той же ссылке, которую уже
+   * держат `mountPanel`/`mountReactiveGraph`, и notify() — единственное,
+   * что им нужно, чтобы перечитать эту ссылку и перерисоваться под новые
+   * данные). Обычный `set({})` дал бы тот же эффект (пустой патч тоже
+   * уведомляет слушателей), но `notify()` называет намерение прямо, а не
+   * маскирует его под "пустое изменение состояния".
+   *
+   * @example
+   * const authorDetails = new Map<string, AuthorDetail>();
+   * mountPanel(store, data, searchDetails, authorDetails, repoDetails); // authorDetails пока пуст
+   * // ...позже, когда пришёл authors-detail.json:
+   * for (const detail of await loadDetails()) authorDetails.set(detail.key, detail);
+   * store.notify(); // уже смонтированная панель перечитывает authorDetails и перерисовывается
+   */
+  notify(): void {
     // Копия state на момент вызова каждого колбэка — если слушатель внутри
-    // себя снова вызовет store.set(), это не должно сломать текущую рассылку.
+    // себя снова вызовет store.set()/notify(), это не должно сломать текущую рассылку.
     const snapshot = this.state;
     this.listeners.forEach((listener) => listener(snapshot));
   }

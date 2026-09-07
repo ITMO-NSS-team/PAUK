@@ -35,3 +35,24 @@ export function requireElement(id: string): HTMLElement {
   if (!element) throw new Error(`не найден элемент #${id} в index.html`);
   return element;
 }
+
+/**
+ * Создаёт маленький анимированный индикатор загрузки (пульсирующий
+ * квадрат) — для мест интерфейса, которые показывают что-то, пока
+ * реальные данные ещё не пришли (например, detail-поля автора/репозитория
+ * в карточке панели, см. `features/panels.ts`, пока не домержился
+ * соответствующий `*-detail.json`). Сама анимация — в `index.html`
+ * (`.loading-indicator`), здесь только создание разметки.
+ *
+ * @returns `<span class="loading-indicator">`, ещё не вставленный в DOM.
+ *
+ * @example
+ * dd.appendChild(createLoadingIndicator());
+ */
+export function createLoadingIndicator(): HTMLElement {
+  const span = document.createElement("span");
+  span.className = "loading-indicator";
+  span.setAttribute("role", "status");
+  span.setAttribute("aria-label", "загрузка");
+  return span;
+}

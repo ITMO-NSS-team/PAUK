@@ -52,4 +52,16 @@ describe("Store", () => {
     expect(first).toHaveBeenCalledTimes(1);
     expect(second).toHaveBeenCalledTimes(1);
   });
+
+  it("notify() зовёт подписчиков с текущим состоянием, не меняя его", () => {
+    const store = new Store<Counter>({ a: 1, b: 2 });
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    store.notify();
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith({ a: 1, b: 2 });
+    expect(store.get()).toEqual({ a: 1, b: 2 });
+  });
 });

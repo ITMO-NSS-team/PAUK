@@ -8,13 +8,15 @@ import { Map as MapLibreMap, NavigationControl, setWorkerUrl } from "maplibre-gl
 // оптимизатор зависимостей — без этого Vite ищет файл воркера не там,
 // где он реально лежит, и карта падает в рантайме с "file does not exist".
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+import type { AuthorDetail, RepoDetail } from "../contracts/graph";
+import type { SearchDetail } from "../contracts/search";
 import { FILTER_CONFIG, MAP_CONFIG } from "../core/config";
 import {
-  indexDetailsByKey,
   loadSampleAuthorDetails,
   loadSampleGraphData,
   loadSampleRepoDetails,
   loadSampleSearchDetails,
+  mergeDetailsInto,
 } from "../core/data";
 import { requireElement } from "../core/dom";
 import { Store, type AppState } from "../core/state";
@@ -69,17 +71,21 @@ map.addControl(new NavigationControl({ showCompass: false }), "bottom-left");
 // Данные пока синтетические (v2-прототип), реальный pauk/gui/data не
 // трогаем.
 map.on("load", () => {
-  // graph-data и все три *-detail — независимые источники (в реальном
-  // пайплайне это graph-data.json, authors-detail.json, repos-detail.json,
-  // pubs-detail.json), поэтому грузим их параллельно, не один после
-  // другого. Сейчас всё ещё блокирующе (Promise.all ждёт всех четырёх до
-  // первой отрисовки) — по-настоящему ленивую, приоритетную загрузку
-  // добавим отдельным шагом поверх этой структуры.
-  Promise.all([loadSampleGraphData(), loadSampleSearchDetails(), loadSampleAuthorDetails(), loadSampleRepoDetails()])
-    .then(([data, searchDetails, authorDetails, repoDetails]) => {
-      const searchDetailsByKey = indexDetailsByKey(searchDetails);
-      const authorDetailsByKey = indexDetailsByKey(authorDetails);
-      const repoDetailsByKey = indexDetailsByKey(repoDetails);
+  // Приоритетная загрузка: сперва graph-data.json — этого одного достаточно,
+  // чтобы нарисовать карту и все списки (summary-полей хватает на всё, что
+  // видно сразу). Три *-detail.json грузятся уже ПОСЛЕ первой отрисовки,
+  // фоном, не блокируя её — карта и списки не должны ждать самых тяжёлых
+  // (потенциально) файлов ради полей, которые видны только по клику.
+  loadSampleGraphData()
+    .then((data) => {
+      // Пустые карты передаются во все фичи один раз — заполняются на месте
+      // (mergeDetailsInto), когда придёт соответствующий *-detail.json, см.
+      // ниже. Мутация видна всем, кто уже держит эту же ссылку, без
+      // повторного монтирования — только store.notify(), чтобы разбудить
+      // то, что уже подписано на Store (mountPanel, mountReactiveGraph).
+      const searchDetailsByKey = new Map<string, SearchDetail>();
+      const authorDetailsByKey = new Map<string, AuthorDetail>();
+      const repoDetailsByKey = new Map<string, RepoDetail>();
 
       // URL при первой загрузке может задавать другую вкладку/выбор, чем
       // дефолт Store (например, открыли сохранённую ссылку) — применяем это
@@ -117,13 +123,39 @@ map.on("load", () => {
       mountLangToggle(store);
       mountUrlSync(store, data);
 
-      console.info("Граф отрисован:", {
+      console.info("Граф отрисован (карта и списки видны сразу, detail-файлы догружаются):", {
         департаменты: data.departments.length,
         авторы: data.authors.length,
         репозитории: data.repos.length,
         публикации: data.pubs.length,
-        деталиПубликаций: searchDetails.length,
       });
+
+      // Дальше — три detail-файла фоном, каждый независимо от других: тот,
+      // что придёт первым, сразу домешивается и будит подписчиков, не ждёт
+      // остальных два. Если клик по узлу случится раньше, чем придёт его
+      // detail, mountPanel сама покажет индикатор загрузки (LOADING в
+      // features/panels.ts) — это единственное, что должно произойти, а не
+      // пустая/сломанная карточка.
+      loadSampleSearchDetails()
+        .then((details) => {
+          mergeDetailsInto(searchDetailsByKey, details);
+          store.notify();
+        })
+        .catch((error: unknown) => console.error("Не удалось догрузить детали публикаций:", error));
+
+      loadSampleAuthorDetails()
+        .then((details) => {
+          mergeDetailsInto(authorDetailsByKey, details);
+          store.notify();
+        })
+        .catch((error: unknown) => console.error("Не удалось догрузить детали авторов:", error));
+
+      loadSampleRepoDetails()
+        .then((details) => {
+          mergeDetailsInto(repoDetailsByKey, details);
+          store.notify();
+        })
+        .catch((error: unknown) => console.error("Не удалось догрузить детали репозиториев:", error));
     })
     .catch((error: unknown) => {
       console.error("Не удалось загрузить или отрисовать фикстур-данные:", error);

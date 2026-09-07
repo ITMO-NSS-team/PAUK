@@ -112,6 +112,29 @@ export function indexDetailsByKey<T extends { key: string }>(details: T[]): Map<
 }
 
 /**
+ * Домешивает список деталей в УЖЕ СУЩЕСТВУЮЩУЮ карту, по той же ссылке —
+ * не создаёт новую `Map`, в отличие от {@link indexDetailsByKey}. Ровно то,
+ * что нужно для приоритетной загрузки в `app/main.ts`: карта передаётся во
+ * все фичи один раз, ещё пустой, а detail-файл домешивается в неё позже,
+ * когда придёт по сети — фичам не нужно ничего пересоздавать или получать
+ * заново, они уже держат ссылку на этот же объект.
+ *
+ * @typeParam T - вид детали (см. {@link indexDetailsByKey}).
+ * @param target - карта, в которую нужно добавить записи (мутируется на месте).
+ * @param details - список деталей, которые нужно добавить/перезаписать.
+ *
+ * @example
+ * const authorDetails = new Map<string, AuthorDetail>(); // пока пуст
+ * mountPanel(store, data, searchDetails, authorDetails, repoDetails); // уже держит эту ссылку
+ * // ...позже:
+ * mergeDetailsInto(authorDetails, await loadSampleAuthorDetails());
+ * store.notify(); // mountPanel перечитывает ту же authorDetails и видит новые записи
+ */
+export function mergeDetailsInto<T extends { key: string }>(target: Map<string, T>, details: T[]): void {
+  for (const detail of details) target.set(detail.key, detail);
+}
+
+/**
  * Лёгкая проверка формы данных, которая падает только в dev-режиме
  * (`import.meta.env.DEV`) — источник данных доверенный (свой генератор, не
  * пользовательский ввод), поэтому вместо полноценной рантайм-схемы

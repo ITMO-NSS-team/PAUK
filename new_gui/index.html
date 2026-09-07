@@ -120,6 +120,23 @@
       #panel dt { color: #616161; }
       #panel dd { margin: 0; }
 
+      /* Индикатор "ещё грузится" (core/dom.ts::createLoadingIndicator) —
+         показывается в строке карточки вместо значения, пока detail-файл
+         автора/репозитория не домержился (features/panels.ts). Пульсация,
+         не вращение — квадрат, а не спиннер, специально попроще. */
+      .loading-indicator {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        background: #9aa0ac;
+        border-radius: 2px;
+        animation: loading-pulse 1s ease-in-out infinite;
+      }
+      @keyframes loading-pulse {
+        0%, 100% { opacity: 0.35; transform: scale(0.8); }
+        50% { opacity: 1; transform: scale(1); }
+      }
+
       /* Переключатель языка (app/main.ts) — сам текст ("EN"/"RU") ставит
          JS через core/i18n.ts::t("lang.toggle", lang), тут только позиция. */
       #lang-toggle {

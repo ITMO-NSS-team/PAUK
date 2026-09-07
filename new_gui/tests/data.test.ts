@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { RepoDetail } from "../src/contracts/graph";
 import {
   assertGraphData,
   indexByKey,
@@ -6,6 +7,7 @@ import {
   loadSampleAuthorDetails,
   loadSampleGraphData,
   loadSampleRepoDetails,
+  mergeDetailsInto,
   nodeLabel,
 } from "../src/core/data";
 
@@ -65,5 +67,29 @@ describe("loadSampleAuthorDetails / loadSampleRepoDetails / indexDetailsByKey", 
     const repoDetails = indexDetailsByKey(await loadSampleRepoDetails());
     expect(repoDetails.get("R1")?.owner).toBe("example-org");
     expect(repoDetails.get("такого-ключа-точно-нет")).toBeUndefined();
+  });
+});
+
+describe("mergeDetailsInto", () => {
+  it("добавляет записи в УЖЕ СУЩЕСТВУЮЩУЮ карту по той же ссылке, не создаёт новую", async () => {
+    const target = new Map<string, RepoDetail>();
+    expect(target.has("R1")).toBe(false);
+
+    const before = target; // та же ссылка, что и target — проверяем, что mergeDetailsInto её не подменяет
+    mergeDetailsInto(target, await loadSampleRepoDetails());
+
+    expect(target).toBe(before);
+    expect(target.get("R1")?.owner).toBe("example-org");
+  });
+
+  it("не трогает записи, которых нет во входном списке (мержит, а не заменяет карту целиком)", () => {
+    const target = new Map<string, RepoDetail>([
+      ["custom", { key: "custom", description: "", owner: "уже был до мержа", url: "" }],
+    ]);
+
+    mergeDetailsInto(target, [{ key: "R1", description: "", owner: "новый", url: "" }]);
+
+    expect(target.get("custom")?.owner).toBe("уже был до мержа");
+    expect(target.get("R1")?.owner).toBe("новый");
   });
 });

@@ -19,12 +19,21 @@ import {
   indexByKey,
   nodeLabel,
 } from "../core/data";
-import { requireElement } from "../core/dom";
+import { createLoadingIndicator, requireElement } from "../core/dom";
 import { kindLabel, localize, t } from "../core/i18n";
 import type { AppState, Store } from "../core/state";
 
-/** Значение строки карточки — обычный текст либо один или несколько кликабельных ссылок (DOI, GitHub/ORCID, ссылка(и) на код). */
-type PanelRowValue = string | PanelLink[];
+/** Строка карточки ещё не может показать значение — соответствующий
+ * `*Detail`-файл (см. {@link AuthorDetail}/{@link RepoDetail}) не домержился
+ * в карту, переданную {@link mountPanel}. Отдельный маркер, а не пустая
+ * строка — пустая строка означала бы "поле реально пустое", а это "мы пока
+ * не знаем, что там". */
+const LOADING: unique symbol = Symbol("panel-row-loading");
+
+/** Значение строки карточки — обычный текст, один или несколько кликабельных
+ * ссылок (DOI, GitHub/ORCID, ссылка(и) на код), либо {@link LOADING}, пока
+ * detail ещё не пришёл. */
+type PanelRowValue = string | PanelLink[] | typeof LOADING;
 /** Одна кликабельная ссылка в строке карточки — всегда открывается в новой вкладке ({@link buildCard}). */
 interface PanelLink {
   href: string;
@@ -361,16 +370,21 @@ export function mountPanel(
       ];
       if (node.kind === "author") {
         rows.push([t("field.pubsCount", lang), String(node.pubs_count)]);
-        // authorDetails может ещё не содержать эту запись только в теории
-        // (в этом слайсе загрузка всё ещё синхронная, всё уже пришло к
-        // моменту первого рендера) — на будущее, когда detail станет
-        // по-настоящему ленивым, здесь появится состояние "загружается".
-        const authorDetail = authorDetails.get(node.key);
-        if (authorDetail?.degree) rows.push([t("field.degree", lang), authorDetail.degree]);
-        if (authorDetail?.github) rows.push([t("field.github", lang), [githubLink(authorDetail.github)]]);
-        if (authorDetail?.orcid) rows.push([t("field.orcid", lang), [orcidLink(authorDetail.orcid)]]);
-        if (authorDetail?.name_variants && authorDetail.name_variants.length > 0) {
-          rows.push([t("field.nameVariants", lang), authorDetail.name_variants.join(", ")]);
+        // authorDetails.has(), не просто .get() — new_generate строит
+        // authors-detail.json так, что запись есть у КАЖДОГО автора, даже
+        // если все поля в ней пустые (см. new_generate/generate_data.py).
+        // Значит "записи нет" означает ровно одно: файл ещё не домержился
+        // (см. app/main.ts) — а не то, что у автора реально нет данных.
+        if (authorDetails.has(node.key)) {
+          const authorDetail = authorDetails.get(node.key);
+          if (authorDetail?.degree) rows.push([t("field.degree", lang), authorDetail.degree]);
+          if (authorDetail?.github) rows.push([t("field.github", lang), [githubLink(authorDetail.github)]]);
+          if (authorDetail?.orcid) rows.push([t("field.orcid", lang), [orcidLink(authorDetail.orcid)]]);
+          if (authorDetail?.name_variants && authorDetail.name_variants.length > 0) {
+            rows.push([t("field.nameVariants", lang), authorDetail.name_variants.join(", ")]);
+          }
+        } else {
+          rows.push([t("field.loadingDetails", lang), LOADING]);
         }
 
         // Сами счётчики выше не говорят, КАКИЕ именно публикации/соавторы —
@@ -386,9 +400,16 @@ export function mountPanel(
         if (authorRepos.length > 0) rows.push([t("tab.repos", lang), labelsOf(authorRepos, lang)]);
       }
       if (node.kind === "repo") {
-        const repoDetail = repoDetails.get(node.key);
-        rows.push([t("field.stars", lang), String(node.stars)], [t("field.owner", lang), repoDetail?.owner ?? ""]);
-        if (repoDetail?.description) rows.push([t("field.description", lang), repoDetail.description]);
+        rows.push([t("field.stars", lang), String(node.stars)]);
+        // Тот же приём, что и у автора выше: .has(), потому что запись в
+        // repos-detail.json есть у каждого репозитория без исключений.
+        if (repoDetails.has(node.key)) {
+          const repoDetail = repoDetails.get(node.key);
+          rows.push([t("field.owner", lang), repoDetail?.owner ?? ""]);
+          if (repoDetail?.description) rows.push([t("field.description", lang), repoDetail.description]);
+        } else {
+          rows.push([t("field.loadingDetails", lang), LOADING]);
+        }
 
         const contributors = repoContributorsOf(node.key, lang);
         if (contributors.length > 0) rows.push([t("field.contributors", lang), contributors]);
@@ -505,6 +526,8 @@ function buildCard(title: string, rows: PanelRow[]): HTMLElement {
     const dd = document.createElement("dd");
     if (typeof value === "string") {
       dd.textContent = value;
+    } else if (value === LOADING) {
+      dd.appendChild(createLoadingIndicator());
     } else {
       // Несколько ссылок (например, несколько репозиториев с кодом) —
       // разделяем запятой с пробелом, как и в старом GUI.

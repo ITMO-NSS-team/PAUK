@@ -7,6 +7,7 @@ import {
   loadSampleGraphData,
   loadSampleRepoDetails,
   loadSampleSearchDetails,
+  mergeDetailsInto,
 } from "../src/core/data";
 import { Store, type AppState } from "../src/core/state";
 import { mountPanel } from "../src/features/panels";
@@ -98,13 +99,18 @@ describe("mountPanel", () => {
 
   it("не показывает строки GitHub/ORCID/степени у автора без этих полей", async () => {
     const data = await loadSampleGraphData();
-    // A2 во фикстуре не имеет degree/github/orcid.
+    // A2 в authors-detail.sample.json - запись ЕСТЬ (detail пришёл), но
+    // degree/github/orcid в ней пустые строки. Специально не NO_AUTHOR_DETAILS
+    // (пустая карта) - та проверяла бы другой сценарий, "detail ещё не
+    // пришёл" (индикатор загрузки), а не "поля реально пустые".
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A2" } });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_SEARCH_DETAILS, authorDetails, NO_REPO_DETAILS);
 
     expect(panel.querySelector("a[href^='https://github.com/']")).toBeNull();
     expect(panel.querySelector("a[href^='https://orcid.org/']")).toBeNull();
+    expect(panel.querySelector(".loading-indicator")).toBeNull();
   });
 
   it("карточка автора показывает его репозитории (repo_author_edges)", async () => {
@@ -143,9 +149,11 @@ describe("mountPanel", () => {
 
   it("не показывает строку вариантов имени у автора без name_variants", async () => {
     const data = await loadSampleGraphData();
+    // A2 в authors-detail.sample.json - detail пришёл, name_variants: [].
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A2" } });
 
-    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    mountPanel(store, data, NO_SEARCH_DETAILS, authorDetails, NO_REPO_DETAILS);
 
     expect(panel.textContent).not.toContain("Варианты имени");
   });
@@ -390,5 +398,47 @@ describe("mountPanel", () => {
     store.set({ selection: null });
     expect(panel.hidden).toBe(false);
     expect(panel.querySelector("h3")?.textContent).toBe("Обзор");
+  });
+
+  it("показывает индикатор загрузки, пока authorDetails ещё пуст (файл не домержился)", async () => {
+    const data = await loadSampleGraphData();
+    const author = data.authors[0];
+    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: author.key } });
+
+    // Пустая карта - ровно то состояние, в котором app/main.ts передаёт
+    // authorDetails фичам ДО того, как пришёл authors-detail.json.
+    mountPanel(store, data, NO_SEARCH_DETAILS, new Map(), NO_REPO_DETAILS);
+
+    expect(panel.querySelector(".loading-indicator")).not.toBeNull();
+    expect(panel.textContent).toContain("Подробнее");
+  });
+
+  it("после того как authorDetails домержился и пришёл store.notify(), индикатор сменяется реальными полями", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A1" } });
+    const authorDetails = new Map<string, AuthorDetail>(); // пуст на момент монтирования
+
+    mountPanel(store, data, NO_SEARCH_DETAILS, authorDetails, NO_REPO_DETAILS);
+    expect(panel.querySelector(".loading-indicator")).not.toBeNull();
+
+    // Имитация того, что делает app/main.ts, когда приходит authors-detail.json:
+    // мержим в ТУ ЖЕ карту (не создаём новую) и зовём notify().
+    mergeDetailsInto(authorDetails, await loadSampleAuthorDetails());
+    store.notify();
+
+    expect(panel.querySelector(".loading-indicator")).toBeNull();
+    expect(panel.textContent).toContain("к.т.н."); // A1.degree из authors-detail.sample.json
+  });
+
+  it("показывает индикатор загрузки для репозитория, пока repoDetails ещё пуст", async () => {
+    const data = await loadSampleGraphData();
+    const repo = data.repos[0];
+    if (!repo) throw new Error("фикстура должна содержать хотя бы один репозиторий");
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: repo.key } });
+
+    mountPanel(store, data, NO_SEARCH_DETAILS, NO_AUTHOR_DETAILS, new Map());
+
+    expect(panel.querySelector(".loading-indicator")).not.toBeNull();
   });
 });
