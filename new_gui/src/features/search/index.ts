@@ -3,7 +3,7 @@
 // индекс строится здесь же, в браузере, из уже загруженного GraphData
 // (ровно как и в старом search.js).
 
-import type { GraphData } from "../../contracts/graph";
+import type { GraphData, RepoDetail } from "../../contracts/graph";
 import type { SearchDetail, SearchHit } from "../../contracts/search";
 import { githubShortPath, nodeLabel } from "../../core/data";
 import { localize, t, type Lang } from "../../core/i18n";
@@ -55,16 +55,24 @@ export function parseDeptHitKey(key: string): number {
  *
  * @param data - данные графа.
  * @param lang - язык интерфейса (влияет на `label`/`sub` каждого результата).
- * @param searchDetails - карта деталей публикаций (см. `core/data.ts::indexSearchDetailsByKey`) —
+ * @param searchDetails - карта деталей публикаций (см. `core/data.ts::indexDetailsByKey`) —
  *   нужна, чтобы у публикаций в поиске было настоящее название и журнал, а не голый ключ.
+ * @param repoDetails - карта описаний/владельцев/ссылок репозиториев — `RepoNode` своего
+ *   `url` больше не несёт (см. `contracts/graph.ts::RepoDetail`), а короткому пути на
+ *   GitHub в `sub` результата взять его больше неоткуда.
  * @returns Список результатов поиска всех видов, в порядке author → repo → pub → dept.
  *
  * @example
- * const index = buildSearchIndex(data, "ru", searchDetailsByKey);
+ * const index = buildSearchIndex(data, "ru", searchDetailsByKey, repoDetailsByKey);
  * index.find((hit) => hit.kind === "dept");
  * // { key: "dept:0", kind: "dept", label: "Институт прикладных систем", sub: null }
  */
-export function buildSearchIndex(data: GraphData, lang: Lang, searchDetails: Map<string, SearchDetail>): SearchHit[] {
+export function buildSearchIndex(
+  data: GraphData,
+  lang: Lang,
+  searchDetails: Map<string, SearchDetail>,
+  repoDetails: Map<string, RepoDetail>,
+): SearchHit[] {
   const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
   const deptName = (id: number): string => {
     const dept = deptById.get(id);
@@ -78,14 +86,19 @@ export function buildSearchIndex(data: GraphData, lang: Lang, searchDetails: Map
     sub: `${deptName(author.dept)} · ${author.pubs_count} ${t("search.pubsCountShort", lang)}`,
   }));
 
-  const repoHits: SearchHit[] = data.repos.map((repo) => ({
-    key: repo.key,
-    kind: "repo",
-    label: repo.label,
-    // Ссылка на GitHub обычно длиннее видимого места в списке — оставляем
-    // только "owner/repo", без протокола и домена.
-    sub: githubShortPath(repo.url),
-  }));
+  const repoHits: SearchHit[] = data.repos.map((repo) => {
+    const url = repoDetails.get(repo.key)?.url;
+    return {
+      key: repo.key,
+      kind: "repo",
+      label: repo.label,
+      // Ссылка на GitHub обычно длиннее видимого места в списке — оставляем
+      // только "owner/repo", без протокола и домена. Пусто, если detail
+      // ещё не пришёл (repoDetails может быть пустой картой) — не должно
+      // случаться на согласованных данных, но не повод падать.
+      sub: url ? githubShortPath(url) : null,
+    };
+  });
 
   const pubHits: SearchHit[] = data.pubs.map((pub) => ({
     key: pub.key,

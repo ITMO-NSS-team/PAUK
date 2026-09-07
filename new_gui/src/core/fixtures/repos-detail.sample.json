@@ -1,0 +1,7 @@
+[
+  { "key": "R1", "description": "Инструменты для построения раскладки графа", "owner": "example-org", "url": "https://github.com/example-org/graph-toolkit" },
+  { "key": "R2", "description": "Пайплайн подготовки данных", "owner": "example-org", "url": "https://github.com/example-org/data-pipeline" },
+  { "key": "R3", "description": "Симулятор роботов", "owner": "example-org", "url": "https://github.com/example-org/robo-sim" },
+  { "key": "R4", "description": "Библиотека компьютерного зрения", "owner": "example-org", "url": "https://github.com/example-org/vision-lib" },
+  { "key": "R5", "description": "Статистические утилиты", "owner": "example-org", "url": "https://github.com/example-org/stat-tools" }
+]

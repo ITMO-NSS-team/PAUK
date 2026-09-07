@@ -1,62 +1,29 @@
-import type { AuthorNode, GraphData, PubNode, RepoAuthorEdge, RepoNode } from "../contracts/graph";
+import type { AuthorDetail, AuthorNode, GraphData, PubNode, RepoAuthorEdge, RepoDetail, RepoNode } from "../contracts/graph";
 import type { SearchDetail } from "../contracts/search";
 import { localize, type Lang } from "./i18n";
 import sampleGraphData from "./fixtures/graph-data.sample.json";
+import sampleAuthorDetails from "./fixtures/authors-detail.sample.json";
+import sampleRepoDetails from "./fixtures/repos-detail.sample.json";
 import sampleSearchDetails from "./fixtures/graph-search.sample.json";
 
 /** Любой из трёх видов узлов графа — авторы, репозитории, публикации. */
 type GraphNode = AuthorNode | RepoNode | PubNode;
 
 /**
- * Разбирает "обёрнутый" JSON-файл легаси-формата вида `window.GRAPH={...};`
- * (так генератор `pauk/gui/generate_data.py` пишет данные для подключения
- * через `<script>`, а не как обычный `.json`). Отрезает известные строки
- * `prefix`/`suffix` по краям и парсит то, что осталось, как обычный JSON.
- *
- * Старый и новый GUI работают с одними и теми же файлами, которые
- * генерирует Python — трогать генератор нам сейчас нельзя, поэтому new_gui
- * сам разбирает существующий формат на клиенте.
- *
- * Вынесена в отдельную чистую функцию (без сети, без побочных эффектов),
- * чтобы её можно было проверить тестом прямо на содержимом реального файла,
- * не поднимая fetch/сервер.
- *
- * @typeParam T - ожидаемая форма распарсенных данных (в приложении — {@link GraphData} или `SearchDetail[]`).
- * @param text - полное содержимое файла как строка.
- * @param prefix - строка в самом начале файла, которую нужно отрезать (например, `"window.GRAPH="`).
- * @param suffix - строка в самом конце файла, которую нужно отрезать (например, `";"`, либо `""`, если её нет).
- * @returns Распарсенный JSON, приведённый к типу `T`.
- * @throws Error, если текст не начинается с `prefix` или не заканчивается на `suffix`.
- *
- * @example
- * parseWrappedJson<{ a: number }>('window.X={"a":1};', "window.X=", ";");
- * // { a: 1 }
- */
-export function parseWrappedJson<T>(text: string, prefix: string, suffix: string): T {
-  if (!text.startsWith(prefix) || !text.endsWith(suffix)) {
-    throw new Error(`неожиданный формат файла данных: не начинается с "${prefix}" или не кончается на "${suffix}"`);
-  }
-
-  const json = suffix.length > 0 ? text.slice(prefix.length, -suffix.length) : text.slice(prefix.length);
-  return JSON.parse(json) as T;
-}
-
-/**
- * Загружает настоящий `graph-data.js` по сети (легаси-формат
- * `window.GRAPH=...;`, см. {@link parseWrappedJson}) и проверяет его форму
- * в dev-режиме через {@link assertGraphData}.
+ * Загружает `graph-data.json` по сети и проверяет его форму в dev-режиме
+ * через {@link assertGraphData}. Голый JSON, без обёртки `window.GRAPH=...;`
+ * — та обёртка была нужна только старому `pauk/gui/web/` (подключение через
+ * `<script>` без сборщика), `new_generate/generate_data.py` пишет обычный
+ * `.json`, поэтому здесь просто `response.json()`.
  *
  * Пока не используется нигде в приложении: v2-прототип временно работает
  * на синтетическом фикстур-наборе (см. {@link loadSampleGraphData} ниже) —
  * реальные данные подключим отдельным шагом, когда дойдём до интеграции с
- * генератором. Функция уже написана и протестирована (`parseWrappedJson`
- * покрыт тестом на реальном формате файла) заранее, чтобы этот следующий
- * шаг был не "написать загрузку", а просто "начать её вызывать".
+ * генератором.
  *
- * @param url - адрес файла `graph-data.js` (например, из Vite dev-сервера прокси или статики).
+ * @param url - адрес файла `graph-data.json` (например, из Vite dev-сервера прокси или статики).
  * @returns Промис с данными графа.
- * @throws Error, если HTTP-запрос не удался (`!response.ok`) или содержимое
- *   не в ожидаемом формате `window.GRAPH=...;` (см. {@link parseWrappedJson}).
+ * @throws Error, если HTTP-запрос не удался (`!response.ok`).
  */
 export async function loadGraphData(url: string): Promise<GraphData> {
   const response = await fetch(url);
@@ -64,7 +31,7 @@ export async function loadGraphData(url: string): Promise<GraphData> {
     throw new Error(`не удалось загрузить ${url}: HTTP ${response.status}`);
   }
 
-  const data = parseWrappedJson<GraphData>(await response.text(), "window.GRAPH=", "");
+  const data = (await response.json()) as GraphData;
   if (import.meta.env.DEV) assertGraphData(data);
   return data;
 }
@@ -86,11 +53,11 @@ export async function loadSampleGraphData(): Promise<GraphData> {
 }
 
 /**
- * Загружает синтетический аналог `graph-search.js` — детали публикаций
+ * Загружает синтетический аналог `pubs-detail.json` — детали публикаций
  * (настоящее название, журнал, DOI, ссылка на код), которых нет в самом
  * `GraphData`. Соответствует по ключам публикациям из
- * {@link loadSampleGraphData} (P1-P6) — реальный `graph-search.js`
- * подключим тем же следующим шагом, что и `graph-data.js` (см.
+ * {@link loadSampleGraphData} (P1-P6) — реальный `pubs-detail.json`
+ * подключим тем же следующим шагом, что и `graph-data.json` (см.
  * {@link loadGraphData}).
  *
  * @returns Промис со списком деталей публикаций.
@@ -100,19 +67,47 @@ export async function loadSampleSearchDetails(): Promise<SearchDetail[]> {
 }
 
 /**
- * Строит индекс "ключ публикации -> её SearchDetail" для мгновенного
- * поиска по ключу — тот же принцип, что и {@link indexByKey} ниже, только
- * для деталей публикаций, а не узлов графа.
+ * Загружает синтетический аналог `authors-detail.json` — личные данные
+ * авторов (ФИО целиком, варианты имени, степень, GitHub, ORCID), которых
+ * больше нет в самом `AuthorNode` (см. {@link AuthorDetail} в
+ * contracts/graph.ts). Каждый автор из {@link loadSampleGraphData} имеет
+ * запись здесь (даже если все поля пустые) — `new_generate` строит этот
+ * файл на каждого автора без исключения, за вычетом самой `--public`
+ * сборки, у которой этого файла нет вовсе.
  *
- * @param details - список деталей публикаций (например, результат {@link loadSampleSearchDetails}).
- * @returns Map от `SearchDetail.key` к самому объекту `SearchDetail`.
+ * @returns Промис со списком деталей авторов.
+ */
+export async function loadSampleAuthorDetails(): Promise<AuthorDetail[]> {
+  return sampleAuthorDetails as AuthorDetail[];
+}
+
+/**
+ * Загружает синтетический аналог `repos-detail.json` — описание, владелец
+ * и ссылка репозитория, которых больше нет в самом `RepoNode` (см.
+ * {@link RepoDetail} в contracts/graph.ts).
+ *
+ * @returns Промис со списком деталей репозиториев.
+ */
+export async function loadSampleRepoDetails(): Promise<RepoDetail[]> {
+  return sampleRepoDetails as RepoDetail[];
+}
+
+/**
+ * Строит индекс "ключ -> сам объект" по списку любых деталей (авторов,
+ * репозиториев или публикаций) — единая функция вместо трёх одинаковых по
+ * смыслу копий, по одной на каждый вид `*Detail`. Тот же принцип, что и
+ * {@link indexByKey} ниже, только для detail-объектов, а не узлов графа.
+ *
+ * @typeParam T - вид детали (в приложении — {@link AuthorDetail}, {@link RepoDetail} или `SearchDetail`).
+ * @param details - список деталей (например, результат {@link loadSampleAuthorDetails}).
+ * @returns Map от `T.key` к самому объекту `T`.
  *
  * @example
- * const byKey = indexSearchDetailsByKey([{ key: "P1", label: "...", ... }]);
+ * const byKey = indexDetailsByKey([{ key: "P1", label: "...", ... }]);
  * byKey.get("P1"); // { key: "P1", label: "...", ... }
  * byKey.get("P2"); // undefined — такого ключа не было в списке
  */
-export function indexSearchDetailsByKey(details: SearchDetail[]): Map<string, SearchDetail> {
+export function indexDetailsByKey<T extends { key: string }>(details: T[]): Map<string, T> {
   return new Map(details.map((detail) => [detail.key, detail]));
 }
 
@@ -364,7 +359,7 @@ export function buildAuthorRepoIndex(data: GraphData): Map<string, string[]> {
  * {@link buildAuthorRepoIndex} (там ключ — автор, здесь — сам репозиторий).
  *
  * Нужен карточке репозитория (features/panels.ts): "кто именно над ним
- * работал", а не только владелец из `RepoNode.owner`.
+ * работал", а не только владелец из `RepoDetail.owner`.
  *
  * @param data - данные графа.
  * @returns Map от ключа репозитория к списку рёбер `RepoAuthorEdge`
@@ -440,7 +435,7 @@ const GITHUB_URL_PREFIX = "https://github.com/";
  * Если строка не начинается с `"https://github.com/"` (например, это уже
  * короткий путь или ссылка на другой хостинг), возвращается без изменений.
  *
- * @param url - полная ссылка (например, `RepoNode.url`) или уже короткий путь.
+ * @param url - полная ссылка (например, `RepoDetail.url`) или уже короткий путь.
  * @returns Ссылка без префикса `"https://github.com/"`.
  *
  * @example
@@ -457,7 +452,7 @@ export function githubShortPath(url: string): string {
  * {@link GITHUB_URL_PREFIX}, так что "собрать ссылку" и "укоротить ссылку"
  * не могут разойтись между собой.
  *
- * @param username - логин пользователя на GitHub (`AuthorNode.github`), без протокола и домена.
+ * @param username - логин пользователя на GitHub (`AuthorDetail.github`), без протокола и домена.
  * @returns Полная ссылка вида `"https://github.com/<username>"`.
  *
  * @example
@@ -488,7 +483,7 @@ export function githubProfileUrl(username: string): string {
  * @param node - любой из трёх видов узлов графа.
  * @param lang - язык интерфейса.
  * @param searchDetails - опциональная карта деталей публикаций (см.
- *   {@link indexSearchDetailsByKey}) — нужна только для публикаций.
+ *   {@link indexDetailsByKey}) — нужна только для публикаций.
  * @returns Подпись узла на нужном языке (или его ключ, если подписи взять неоткуда).
  *
  * @example

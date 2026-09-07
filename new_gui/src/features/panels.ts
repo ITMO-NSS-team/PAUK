@@ -4,7 +4,7 @@
 // самого Department) и карточку "Обзор" по умолчанию, когда вообще
 // ничего не выбрано (сводные числа по всему графу, а не по одному узлу).
 
-import type { GraphData, PubNode, RepoNode } from "../contracts/graph";
+import type { AuthorDetail, GraphData, PubNode, RepoDetail, RepoNode } from "../contracts/graph";
 import type { SearchDetail } from "../contracts/search";
 import { PANEL_CONFIG } from "../core/config";
 import {
@@ -59,7 +59,7 @@ function doiLink(doi: string): PanelLink {
  * `"https://github.com/"` — так сборка ссылки (здесь) и укорачивание уже
  * готовой ссылки (см. {@link codeLink}) не могут разойтись между собой.
  *
- * @param username - логин автора на GitHub (`AuthorNode.github`).
+ * @param username - логин автора на GitHub (`AuthorDetail.github`).
  * @returns Ссылка на профиль с логином в `text`.
  *
  * @example
@@ -73,7 +73,7 @@ function githubLink(username: string): PanelLink {
  * Строит ссылку на ORCID автора по его id. Схема `"https://orcid.org/"`
  * захардкожена нами — та же логика безопасности, что и у {@link doiLink}.
  *
- * @param id - ORCID id автора (`AuthorNode.orcid`), формата `"0000-0001-2345-6789"`.
+ * @param id - ORCID id автора (`AuthorDetail.orcid`), формата `"0000-0001-2345-6789"`.
  * @returns Ссылка на страницу ORCID с id в `text`.
  *
  * @example
@@ -142,12 +142,16 @@ function codeLink(url: string): PanelLink {
  * @param store - Store приложения.
  * @param data - данные графа.
  * @param searchDetails - карта деталей публикаций (настоящие названия/DOI/код публикаций).
+ * @param authorDetails - карта личных данных авторов (степень, GitHub, ORCID, варианты имени) — отдельно от `AuthorNode`, см. `contracts/graph.ts::AuthorDetail`.
+ * @param repoDetails - карта описаний/владельцев/ссылок репозиториев — отдельно от `RepoNode`, см. `contracts/graph.ts::RepoDetail`.
  * @returns Функция отписки (unmount) от Store.
  */
 export function mountPanel(
   store: Store<AppState>,
   data: GraphData,
   searchDetails: Map<string, SearchDetail>,
+  authorDetails: Map<string, AuthorDetail>,
+  repoDetails: Map<string, RepoDetail>,
 ): () => void {
   const container = requireElement("panel");
 
@@ -357,11 +361,16 @@ export function mountPanel(
       ];
       if (node.kind === "author") {
         rows.push([t("field.pubsCount", lang), String(node.pubs_count)]);
-        if (node.degree) rows.push([t("field.degree", lang), node.degree]);
-        if (node.github) rows.push([t("field.github", lang), [githubLink(node.github)]]);
-        if (node.orcid) rows.push([t("field.orcid", lang), [orcidLink(node.orcid)]]);
-        if (node.name_variants && node.name_variants.length > 0) {
-          rows.push([t("field.nameVariants", lang), node.name_variants.join(", ")]);
+        // authorDetails может ещё не содержать эту запись только в теории
+        // (в этом слайсе загрузка всё ещё синхронная, всё уже пришло к
+        // моменту первого рендера) — на будущее, когда detail станет
+        // по-настоящему ленивым, здесь появится состояние "загружается".
+        const authorDetail = authorDetails.get(node.key);
+        if (authorDetail?.degree) rows.push([t("field.degree", lang), authorDetail.degree]);
+        if (authorDetail?.github) rows.push([t("field.github", lang), [githubLink(authorDetail.github)]]);
+        if (authorDetail?.orcid) rows.push([t("field.orcid", lang), [orcidLink(authorDetail.orcid)]]);
+        if (authorDetail?.name_variants && authorDetail.name_variants.length > 0) {
+          rows.push([t("field.nameVariants", lang), authorDetail.name_variants.join(", ")]);
         }
 
         // Сами счётчики выше не говорят, КАКИЕ именно публикации/соавторы —
@@ -377,8 +386,9 @@ export function mountPanel(
         if (authorRepos.length > 0) rows.push([t("tab.repos", lang), labelsOf(authorRepos, lang)]);
       }
       if (node.kind === "repo") {
-        rows.push([t("field.stars", lang), String(node.stars)], [t("field.owner", lang), node.owner]);
-        if (node.description) rows.push([t("field.description", lang), node.description]);
+        const repoDetail = repoDetails.get(node.key);
+        rows.push([t("field.stars", lang), String(node.stars)], [t("field.owner", lang), repoDetail?.owner ?? ""]);
+        if (repoDetail?.description) rows.push([t("field.description", lang), repoDetail.description]);
 
         const contributors = repoContributorsOf(node.key, lang);
         if (contributors.length > 0) rows.push([t("field.contributors", lang), contributors]);

@@ -2,7 +2,7 @@ import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import { describe, expect, it, vi } from "vitest";
 import type { SearchDetail } from "../src/contracts/search";
 import { MAP_CONFIG } from "../src/core/config";
-import { loadSampleGraphData, loadSampleSearchDetails, indexSearchDetailsByKey } from "../src/core/data";
+import { loadSampleGraphData, loadSampleSearchDetails, indexDetailsByKey } from "../src/core/data";
 import { Store, type AppState } from "../src/core/state";
 import {
   buildEdgeFeatures,
@@ -56,7 +56,7 @@ describe("map/build на фикстур-данных", () => {
 
   it("buildNodeFeatures подставляет настоящее название публикации из searchDetails вместо ключа", async () => {
     const data = await loadSampleGraphData();
-    const searchDetails = indexSearchDetailsByKey(await loadSampleSearchDetails());
+    const searchDetails = indexDetailsByKey(await loadSampleSearchDetails());
 
     const fc = buildNodeFeatures(data, "ru", 3, NO_FILTER, searchDetails);
     for (const feature of fc.features) {

@@ -1,5 +1,5 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
-import type { GraphData } from "../../contracts/graph";
+import type { GraphData, RepoDetail } from "../../contracts/graph";
 import type { SearchDetail } from "../../contracts/search";
 import type { AppState, Store } from "../../core/state";
 
@@ -25,6 +25,9 @@ export interface TabModule {
    *   только там, где показывается настоящее название публикации, а не
    *   её ключ, — но передаётся в контракт всем, так же как и `data`, из
    *   которой каждая вкладка тоже использует только часть).
+   * @param repoDetails - карта описаний/владельцев/ссылок репозиториев (см.
+   *   `contracts/graph.ts::RepoDetail`) — нужна только вкладке "Поиск"
+   *   (короткий путь на GitHub в `sub` результата), остальные её не используют.
    * @returns Функция размонтирования (unmount) — отписывается от Store и снимает обработчики.
    */
   mount(
@@ -33,5 +36,6 @@ export interface TabModule {
     map: MapLibreMap,
     data: GraphData,
     searchDetails: Map<string, SearchDetail>,
+    repoDetails: Map<string, RepoDetail>,
   ): () => void;
 }

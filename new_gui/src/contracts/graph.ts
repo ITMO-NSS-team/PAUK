@@ -1,6 +1,14 @@
-// Формы данных, которые реально отдаёт pauk/gui/generate_data.py (build_graph_data()).
+// Формы данных, которые реально отдаёт new_generate/generate_data.py (build_graph_data()).
 // Это зеркало Python-кода, а не желаемая форма — если генератор поменяет
 // вывод, сначала правится этот файл, а уже потом код, который на него ссылается.
+//
+// AuthorNode/RepoNode — это только "summary": то, что нужно нарисовать точку
+// на карте и мгновенно переключать вкладки (graph-data.json). Расширенные
+// поля (личные данные автора, описание/владелец репозитория) вынесены в
+// отдельные AuthorDetail/RepoDetail — их new_generate пишет в отдельные
+// *-detail.json, которые new_gui подгружает лениво, после карты (тот же
+// принцип, что уже был у публикаций — SearchDetail в contracts/search.ts,
+// здесь просто распространён на авторов и репозитории).
 
 export type NodeKind = "author" | "repo" | "pub";
 
@@ -27,15 +35,21 @@ export interface AuthorNode {
   rank: number;
   gx: number;
   gy: number;
-  // Отсутствуют целиком в --public сборке. name_en среди них НЕТ —
-  // англоязычное имя всегда видно через label_en выше.
-  name_ru?: string;
+}
+
+// Личные данные автора — отдельным файлом (authors-detail.json), которого
+// вообще не существует в --public сборке (не отдельные поля вырезаны из
+// объекта, как раньше, а целиком нет файла — надёжнее: новое личное поле
+// физически не может утечь туда, где детали не публикуются).
+export interface AuthorDetail {
+  key: string;
+  name_ru: string;
   // Варианты имени за вычетом того, что уже показано в label/label_en —
   // не сырой список из OpenAlex.
-  name_variants?: string[];
-  degree?: string;
-  github?: string;
-  orcid?: string;
+  name_variants: string[];
+  degree: string;
+  github: string;
+  orcid: string;
 }
 
 export interface RepoNode {
@@ -43,13 +57,17 @@ export interface RepoNode {
   kind: "repo";
   dept: number;
   label: string;
-  description: string;
   stars: number;
-  owner: string;
-  url: string;
   rank: number;
   gx: number;
   gy: number;
+}
+
+export interface RepoDetail {
+  key: string;
+  description: string;
+  owner: string;
+  url: string;
 }
 
 export interface PubNode {

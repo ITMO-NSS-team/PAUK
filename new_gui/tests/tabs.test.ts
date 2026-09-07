@@ -1,7 +1,8 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { describe, expect, it, vi } from "vitest";
+import type { RepoDetail } from "../src/contracts/graph";
 import type { SearchDetail } from "../src/contracts/search";
-import { indexSearchDetailsByKey, loadSampleGraphData, loadSampleSearchDetails } from "../src/core/data";
+import { indexDetailsByKey, loadSampleGraphData, loadSampleSearchDetails } from "../src/core/data";
 import { Store, type AppState } from "../src/core/state";
 import { mountTabs } from "../src/features/tabs";
 import { authorsTab } from "../src/features/tabs/authors";
@@ -9,6 +10,7 @@ import { pubsTab } from "../src/features/tabs/pubs";
 import { reposTab } from "../src/features/tabs/repos";
 
 const NO_SEARCH_DETAILS = new Map<string, SearchDetail>();
+const NO_REPO_DETAILS = new Map<string, RepoDetail>();
 
 /**
  * Вкладкам от карты нужен только flyTo() (вызывается по клику на элемент
@@ -34,7 +36,7 @@ describe("authorsTab", () => {
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
-    authorsTab.mount(container, store, fakeMap(), data, NO_SEARCH_DETAILS);
+    authorsTab.mount(container, store, fakeMap(), data, NO_SEARCH_DETAILS, NO_REPO_DETAILS);
 
     const sorted = [...data.authors].sort((a, b) => b.pubs_count - a.pubs_count);
     expect(Array.from(container.children).map((el) => el.textContent)).toEqual(
@@ -53,7 +55,7 @@ describe("authorsTab", () => {
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
-    authorsTab.mount(container, store, fakeMap(), data, NO_SEARCH_DETAILS);
+    authorsTab.mount(container, store, fakeMap(), data, NO_SEARCH_DETAILS, NO_REPO_DETAILS);
     store.set({ lang: "en" });
 
     const sorted = [...data.authors].sort((a, b) => b.pubs_count - a.pubs_count);
@@ -68,7 +70,7 @@ describe("authorsTab", () => {
     const container = document.createElement("div");
     const map = fakeMap();
 
-    authorsTab.mount(container, store, map, data, NO_SEARCH_DETAILS);
+    authorsTab.mount(container, store, map, data, NO_SEARCH_DETAILS, NO_REPO_DETAILS);
     const firstItem = container.firstElementChild as HTMLButtonElement;
     firstItem.click();
 
@@ -84,7 +86,7 @@ describe("reposTab", () => {
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
-    reposTab.mount(container, store, fakeMap(), data, NO_SEARCH_DETAILS);
+    reposTab.mount(container, store, fakeMap(), data, NO_SEARCH_DETAILS, NO_REPO_DETAILS);
 
     const stars = Array.from(container.children).map((el) => Number(el.textContent?.match(/\d+/)?.[0]));
     expect(stars).toEqual([...stars].sort((a, b) => b - a));
@@ -108,7 +110,7 @@ describe("mountTabs — переключение вкладок", () => {
     const buttons = buttonsMarkup();
     const content = document.createElement("div");
 
-    mountTabs(buttons, content, store, fakeMap(), data, NO_SEARCH_DETAILS);
+    mountTabs(buttons, content, store, fakeMap(), data, NO_SEARCH_DETAILS, NO_REPO_DETAILS);
 
     expect(content.children.length).toBe(data.authors.length);
     expect(buttons.querySelector('[data-tab="1"]')?.classList.contains("tab-button--active")).toBe(true);
@@ -120,7 +122,7 @@ describe("mountTabs — переключение вкладок", () => {
     const buttons = buttonsMarkup();
     const content = document.createElement("div");
 
-    mountTabs(buttons, content, store, fakeMap(), data, NO_SEARCH_DETAILS);
+    mountTabs(buttons, content, store, fakeMap(), data, NO_SEARCH_DETAILS, NO_REPO_DETAILS);
     (buttons.querySelector('[data-tab="2"]') as HTMLButtonElement).click();
 
     expect(store.get().tab).toBe(2);
@@ -136,7 +138,7 @@ describe("pubsTab", () => {
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
-    pubsTab.mount(container, store, fakeMap(), data, NO_SEARCH_DETAILS);
+    pubsTab.mount(container, store, fakeMap(), data, NO_SEARCH_DETAILS, NO_REPO_DETAILS);
 
     const years = Array.from(container.children).map((el) => el.textContent?.includes("неизвестен"));
     // Как только встретили "год неизвестен", все последующие тоже должны быть без года.
@@ -148,11 +150,11 @@ describe("pubsTab", () => {
 
   it("показывает настоящее название публикации из searchDetails вместо ключа", async () => {
     const data = await loadSampleGraphData();
-    const searchDetails = indexSearchDetailsByKey(await loadSampleSearchDetails());
+    const searchDetails = indexDetailsByKey(await loadSampleSearchDetails());
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
-    pubsTab.mount(container, store, fakeMap(), data, searchDetails);
+    pubsTab.mount(container, store, fakeMap(), data, searchDetails, NO_REPO_DETAILS);
 
     const labels = Array.from(container.querySelectorAll(".tab-list-item__label")).map((el) => el.textContent);
     for (const pub of data.pubs) {

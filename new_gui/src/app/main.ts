@@ -9,7 +9,13 @@ import { Map as MapLibreMap, NavigationControl, setWorkerUrl } from "maplibre-gl
 // где он реально лежит, и карта падает в рантайме с "file does not exist".
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { FILTER_CONFIG, MAP_CONFIG } from "../core/config";
-import { indexSearchDetailsByKey, loadSampleGraphData, loadSampleSearchDetails } from "../core/data";
+import {
+  indexDetailsByKey,
+  loadSampleAuthorDetails,
+  loadSampleGraphData,
+  loadSampleRepoDetails,
+  loadSampleSearchDetails,
+} from "../core/data";
 import { requireElement } from "../core/dom";
 import { Store, type AppState } from "../core/state";
 import { parseUrlState } from "../core/url";
@@ -63,12 +69,17 @@ map.addControl(new NavigationControl({ showCompass: false }), "bottom-left");
 // Данные пока синтетические (v2-прототип), реальный pauk/gui/data не
 // трогаем.
 map.on("load", () => {
-  // graph-data и graph-search — два независимых источника (в реальном
-  // пайплайне это graph-data.js и graph-search.js), поэтому грузим их
-  // параллельно, не один после другого.
-  Promise.all([loadSampleGraphData(), loadSampleSearchDetails()])
-    .then(([data, searchDetails]) => {
-      const searchDetailsByKey = indexSearchDetailsByKey(searchDetails);
+  // graph-data и все три *-detail — независимые источники (в реальном
+  // пайплайне это graph-data.json, authors-detail.json, repos-detail.json,
+  // pubs-detail.json), поэтому грузим их параллельно, не один после
+  // другого. Сейчас всё ещё блокирующе (Promise.all ждёт всех четырёх до
+  // первой отрисовки) — по-настоящему ленивую, приоритетную загрузку
+  // добавим отдельным шагом поверх этой структуры.
+  Promise.all([loadSampleGraphData(), loadSampleSearchDetails(), loadSampleAuthorDetails(), loadSampleRepoDetails()])
+    .then(([data, searchDetails, authorDetails, repoDetails]) => {
+      const searchDetailsByKey = indexDetailsByKey(searchDetails);
+      const authorDetailsByKey = indexDetailsByKey(authorDetails);
+      const repoDetailsByKey = indexDetailsByKey(repoDetails);
 
       // URL при первой загрузке может задавать другую вкладку/выбор, чем
       // дефолт Store (например, открыли сохранённую ссылку) — применяем это
@@ -92,8 +103,16 @@ map.on("load", () => {
       // самих (внутри mountTabs свои unmount вызываются при смене вкладки —
       // это устройство самой этой фичи).
       mountSelection(map, store);
-      mountPanel(store, data, searchDetailsByKey);
-      mountTabs(requireElement("tab-buttons"), requireElement("tab-content"), store, map, data, searchDetailsByKey);
+      mountPanel(store, data, searchDetailsByKey, authorDetailsByKey, repoDetailsByKey);
+      mountTabs(
+        requireElement("tab-buttons"),
+        requireElement("tab-content"),
+        store,
+        map,
+        data,
+        searchDetailsByKey,
+        repoDetailsByKey,
+      );
       mountFilters(store);
       mountLangToggle(store);
       mountUrlSync(store, data);

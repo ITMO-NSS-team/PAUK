@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { assertGraphData, indexByKey, loadSampleGraphData, nodeLabel, parseWrappedJson } from "../src/core/data";
+import {
+  assertGraphData,
+  indexByKey,
+  indexDetailsByKey,
+  loadSampleAuthorDetails,
+  loadSampleGraphData,
+  loadSampleRepoDetails,
+  nodeLabel,
+} from "../src/core/data";
 
 describe("loadSampleGraphData", () => {
   it("загружает фикстуру и проходит проверку формы", async () => {
@@ -34,13 +42,28 @@ describe("indexByKey и nodeLabel", () => {
   });
 });
 
-describe("parseWrappedJson", () => {
-  it("разбирает легаси-формат window.X=... без хвоста", () => {
-    const result = parseWrappedJson<{ a: number }>('window.GRAPH={"a":1}', "window.GRAPH=", "");
-    expect(result.a).toBe(1);
+describe("loadSampleAuthorDetails / loadSampleRepoDetails / indexDetailsByKey", () => {
+  it("у каждого автора из graph-data есть запись в authors-detail (даже с пустыми полями)", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+
+    for (const author of data.authors) {
+      expect(authorDetails.get(author.key)).toBeDefined();
+    }
   });
 
-  it("бросает понятную ошибку на неожиданном формате", () => {
-    expect(() => parseWrappedJson("нет такого префикса", "window.GRAPH=", "")).toThrow(/неожиданный формат/);
+  it("у каждого репозитория из graph-data есть запись в repos-detail", async () => {
+    const data = await loadSampleGraphData();
+    const repoDetails = indexDetailsByKey(await loadSampleRepoDetails());
+
+    for (const repo of data.repos) {
+      expect(repoDetails.get(repo.key)).toBeDefined();
+    }
+  });
+
+  it("indexDetailsByKey работает с любым видом *Detail — не только с публикациями", async () => {
+    const repoDetails = indexDetailsByKey(await loadSampleRepoDetails());
+    expect(repoDetails.get("R1")?.owner).toBe("example-org");
+    expect(repoDetails.get("такого-ключа-точно-нет")).toBeUndefined();
   });
 });
