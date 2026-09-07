@@ -66,6 +66,26 @@ map.addControl(new NavigationControl({ showCompass: false }), "bottom-left");
 // new_gui/public/data. Файлов может не быть, пока никто не прогнал
 // генератор локально — тогда fetch ниже падает, .catch() это ловит и
 // логирует, приложение не рушится (см. комментарии там же).
+/**
+ * Догружает один `*-detail.json` фоном и домешивает результат в уже
+ * переданную фичам карту `target` — общая часть трёх одинаковых по форме
+ * загрузок (публикации/авторы/репозитории) внутри `map.on("load", ...)`
+ * ниже, отличающихся только типом `T`, URL, картой-приёмником и словом в
+ * сообщении об ошибке.
+ *
+ * @param url - адрес `*-detail.json` (см. {@link DATA_CONFIG}).
+ * @param target - карта, в которую нужно домешать результат (мутируется на месте, см. {@link mergeDetailsInto}).
+ * @param noun - существительное в родительном падеже для сообщения об ошибке (например, "публикаций").
+ */
+function loadDetailsInto<T extends { key: string }>(url: string, target: Map<string, T>, noun: string): void {
+  loadDetails<T>(url)
+    .then((details) => {
+      mergeDetailsInto(target, details);
+      store.notify();
+    })
+    .catch((error: unknown) => console.error(`Не удалось догрузить детали ${noun}:`, error));
+}
+
 map.on("load", () => {
   // Приоритетная загрузка: сперва graph-data.json — этого одного достаточно,
   // чтобы нарисовать карту и все списки (summary-полей хватает на всё, что
@@ -134,28 +154,16 @@ map.on("load", () => {
       // пустая/сломанная карточка. У --public сборки authors-detail.json
       // вовсе нет — тогда .catch() ниже просто залогирует 404, карточка
       // автора так и останется в состоянии "загрузка", без падения.
-      loadDetails<PubDetail>(DATA_CONFIG.pubDetailsUrl)
-        .then((details) => {
-          mergeDetailsInto(pubDetailsByKey, details);
-          store.notify();
-        })
-        .catch((error: unknown) => console.error("Не удалось догрузить детали публикаций:", error));
-
-      loadDetails<AuthorDetail>(DATA_CONFIG.authorDetailsUrl)
-        .then((details) => {
-          mergeDetailsInto(authorDetailsByKey, details);
-          store.notify();
-        })
-        .catch((error: unknown) => console.error("Не удалось догрузить детали авторов:", error));
-
-      loadDetails<RepoDetail>(DATA_CONFIG.repoDetailsUrl)
-        .then((details) => {
-          mergeDetailsInto(repoDetailsByKey, details);
-          store.notify();
-        })
-        .catch((error: unknown) => console.error("Не удалось догрузить детали репозиториев:", error));
+      loadDetailsInto<PubDetail>(DATA_CONFIG.pubDetailsUrl, pubDetailsByKey, "публикаций");
+      loadDetailsInto<AuthorDetail>(DATA_CONFIG.authorDetailsUrl, authorDetailsByKey, "авторов");
+      loadDetailsInto<RepoDetail>(DATA_CONFIG.repoDetailsUrl, repoDetailsByKey, "репозиториев");
     })
     .catch((error: unknown) => {
       console.error("Не удалось загрузить или отрисовать данные графа:", error);
+      const loadError = requireElement("load-error");
+      loadError.textContent =
+        `Не удалось загрузить данные графа (${DATA_CONFIG.graphDataUrl}). ` +
+        "Проверьте, что new_generate/generate_data.py сгенерировал файлы в new_gui/public/data.";
+      loadError.hidden = false;
     });
 });

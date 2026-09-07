@@ -212,21 +212,35 @@ export function mountPanel(
   }
 
   /**
-   * Возвращает ключи публикаций автора, недавние сверху (год по
-   * убыванию), обрезано до {@link PANEL_CONFIG.listLimit} — без этого
-   * список на реальных данных (у активного автора может быть сотни
-   * публикаций) не поместился бы в небольшую карточку.
+   * Отбирает из списка ключей только те, что резолвятся в публикацию, и
+   * возвращает их недавние сверху (год по убыванию), обрезано до
+   * {@link PANEL_CONFIG.listLimit} — без этого список на реальных данных
+   * (у активного автора/репозитория может быть сотни публикаций) не
+   * поместился бы в небольшую карточку. Общая часть {@link recentPubKeysOf}
+   * и {@link repoPubKeysOf} — отличаются только тем, откуда берут исходный
+   * список ключей (публикации автора vs публикации репозитория).
    *
-   * @param authorKey - ключ автора.
-   * @returns До `PANEL_CONFIG.listLimit` ключей публикаций, от новых к старым.
+   * @param pubKeys - произвольный список ключей (не обязательно только публикаций).
+   * @returns До `PANEL_CONFIG.listLimit` ключей публикаций из `pubKeys`, от новых к старым.
    */
-  function recentPubKeysOf(authorKey: string): string[] {
-    return (authorPubs.get(authorKey) ?? [])
+  function recentPubKeysFrom(pubKeys: string[]): string[] {
+    return pubKeys
       .map((key) => index.get(key))
       .filter((node): node is PubNode => node?.kind === "pub")
       .sort((a, b) => (b.year ?? -Infinity) - (a.year ?? -Infinity))
       .slice(0, PANEL_CONFIG.listLimit)
       .map((node) => node.key);
+  }
+
+  /**
+   * Возвращает ключи публикаций автора, недавние сверху, обрезано до
+   * {@link PANEL_CONFIG.listLimit}.
+   *
+   * @param authorKey - ключ автора.
+   * @returns До `PANEL_CONFIG.listLimit` ключей публикаций, от новых к старым.
+   */
+  function recentPubKeysOf(authorKey: string): string[] {
+    return recentPubKeysFrom(authorPubs.get(authorKey) ?? []);
   }
 
   /**
@@ -288,12 +302,7 @@ export function mountPanel(
    * @returns До `PANEL_CONFIG.listLimit` ключей публикаций, от новых к старым.
    */
   function repoPubKeysOf(repoKey: string): string[] {
-    return (repoPubIndex.get(repoKey) ?? [])
-      .map((key) => index.get(key))
-      .filter((node): node is PubNode => node?.kind === "pub")
-      .sort((a, b) => (b.year ?? -Infinity) - (a.year ?? -Infinity))
-      .slice(0, PANEL_CONFIG.listLimit)
-      .map((node) => node.key);
+    return recentPubKeysFrom(repoPubIndex.get(repoKey) ?? []);
   }
 
   /** Скрывает панель и очищает её содержимое — для случая рассинхрона данных (см. `render()`) или отсутствующего selection. */

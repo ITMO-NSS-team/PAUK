@@ -178,7 +178,7 @@ def _index_authorship(db: dict[str, list[dict]]) -> Authorship:
 
     pubs_rows = [r for r in db["publications"] if r["id"] in pub_authors]
     pub_ids = {r["id"] for r in pubs_rows}
-    logger.info("Publications with ITMO authors: %d of %d", len(pubs_rows), len(db["publications"]))
+    logger.info("Публикаций с ИТМО-авторами: %d из %d", len(pubs_rows), len(db["publications"]))
     return Authorship(dict(pub_authors), dict(author_pubs), pubs_rows, pub_ids)
 
 
@@ -261,7 +261,9 @@ def _assign_departments(db: dict[str, list[dict]], dept_name: dict[str, str], au
     repo_dept: dict[str, str | None] = {}
     for row in db["repositories"]:
         rid = row["id"]
-        primary = majority_dept([pub_primary[p]] for p in repo_pub_map.get(rid, []) if pub_primary.get(p))
+        primary = majority_dept(
+            [dept] for p in repo_pub_map.get(rid, []) if (dept := pub_primary.get(p))
+        )
         if primary is None and repo_dept_rows.get(rid):
             primary = repo_dept_rows[rid][0]
         repo_dept[rid] = primary
@@ -321,6 +323,11 @@ def _build_department_table(
     for d in assignment.repo_dept.values():
         if d:
             usage[d] += 1
+    # += 0, а не просто "запомнить множество id": департамент, который
+    # встречается только как вторичный (PRODUCED_BY/DEVELOPED_BY), а ничьим
+    # основным не бывает, всё равно обязан попасть ключом в usage — иначе
+    # его не будет в gid ниже, и table.g() упадёт с KeyError при первом же
+    # обращении к нему как к неосновному департаменту публикации/репозитория.
     for rows in (assignment.pub_dept_rows, assignment.repo_dept_rows):
         for depts in rows.values():
             for d in depts:
@@ -362,7 +369,7 @@ def _build_department_table(
             "n_repos": n_repo[no_dept_gid],
         }
     )
-    logger.info('Departments: %d (+ "%s")', len(ordered), NO_DEPT_NAME)
+    logger.info('Департаментов: %d (+ "%s")', len(ordered), NO_DEPT_NAME)
     return DepartmentTable(departments=departments, g=g, no_dept_gid=no_dept_gid)
 
 
@@ -410,15 +417,18 @@ def _layout_graph(db: dict[str, list[dict]], authorship: Authorship, assignment:
         for a, b in combinations(sorted(set(pers)), 2):
             coauth[(a, b)] += 1
 
-    author_layout_w = Counter(coauth)
+    # Обычный dict, а не Counter: дальше в него подмешиваются дробные веса
+    # dept-рёбер (sparse_dept_edges), а Counter в typeshed типизирован
+    # только под int — тот же приём, что и у pub_layout_w ниже.
+    author_layout_w: dict[tuple[str, str], float] = dict(coauth)
     repo_contributors: dict[str, set[str]] = defaultdict(set)
     for row in db["repo_persons"]:
         repo_contributors[row["rid"]].add(row["per"])
     for pers in repo_contributors.values():
         for a, b in combinations(sorted(pers), 2):
-            author_layout_w[(a, b)] += 1
+            author_layout_w[(a, b)] = author_layout_w.get((a, b), 0) + 1
     for pair, w in sparse_dept_edges(set(assignment.static_depts), assignment.author_dept, rng).items():
-        author_layout_w[pair] += w
+        author_layout_w[pair] = author_layout_w.get(pair, 0) + w
 
     t0 = time.time()
     pos_authors, (n_giant, e_giant, n_small, n_single) = fa2_blended_layout(
@@ -426,7 +436,8 @@ def _layout_graph(db: dict[str, list[dict]], authorship: Authorship, assignment:
     )
     pos_authors = spread_min_distance(pos_authors, MIN_SEP_AUTHORS, seed)
     logger.info(
-        "FA2 over authors: giant %d nodes / %d edges, blended: %d small comps + %d singles, min-sep %.1f, %.1f s",
+        "FA2 по авторам: гигант %d узлов / %d рёбер, подмешано: %d маленьких компонент + %d синглтонов, "
+        "min-sep %.1f, %.1f с",
         n_giant, e_giant, n_small, n_single, MIN_SEP_AUTHORS, time.time() - t0,
     )
 
@@ -458,7 +469,8 @@ def _layout_graph(db: dict[str, list[dict]], authorship: Authorship, assignment:
     )
     pos_pubs = spread_min_distance(pos_pubs, MIN_SEP_PUBS, seed)
     logger.info(
-        "FA2 over publications: giant %d nodes / %d edges, blended: %d small comps + %d singles, min-sep %.1f, %.1f s",
+        "FA2 по публикациям: гигант %d узлов / %d рёбер, подмешано: %d маленьких компонент + %d синглтонов, "
+        "min-sep %.1f, %.1f с",
         n_giant_p, e_giant_p, n_small_p, n_single_p, MIN_SEP_PUBS, time.time() - t0,
     )
 
@@ -571,6 +583,12 @@ def _build_repo_nodes(
     return summary, detail
 
 
+# Единственное место использования (усечение заголовка публикации в
+# detail) — локальная константа рядом с функцией, а не в config.py, по
+# тому же принципу, что и STRANDED_JITTER в layout.py.
+PUB_TITLE_MAX_LEN = 200
+
+
 def _build_pub_nodes(
     authorship: Authorship, assignment: DepartmentAssignment, table: DepartmentTable, layout: Layout
 ) -> tuple[list[dict], list[dict]]:
@@ -610,8 +628,8 @@ def _build_pub_nodes(
     detail: list[dict] = []
     for row in authorship.pubs_rows:
         title = row["title"] or ""
-        if len(title) > 200:
-            title = title[:199] + "…"
+        if len(title) > PUB_TITLE_MAX_LEN:
+            title = title[: PUB_TITLE_MAX_LEN - 1] + "…"
         code_url = row["code_url"]
         try:
             urls = json.loads(code_url) if code_url else []
@@ -661,7 +679,7 @@ def _build_edges(
     all_edges = [{"s": row["per"], "t": row["pid"]} for row in db["authorship"]]
 
     logger.info(
-        "Edges: coauth %d, pub %d, repo %d, dept %d, repo-author %d, repo-pub %d, authorship %d",
+        "Рёбра: coauth %d, pub %d, repo %d, dept %d, repo-author %d, repo-pub %d, authorship %d",
         len(coauth_edges), len(pub_edges), len(repo_edges), len(dept_edges), len(repo_author_edges), len(repo_pub_edges), len(all_edges),
     )
     return {
@@ -719,7 +737,7 @@ def dump_json(data, path: Path) -> None:
     """Пишет данные голым JSON (не `window.X=...;` — эта обёртка была нужна
     только `pauk/gui/web/`, `new_gui` читает JSON напрямую через `fetch`)."""
     path.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    logger.info("Wrote %s (%.1f MB)", path, path.stat().st_size / 1e6)
+    logger.info("Записан %s (%.1f МБ)", path, path.stat().st_size / 1e6)
 
 
 def main() -> None:
@@ -727,7 +745,7 @@ def main() -> None:
 
     data_dir = Path(__file__).resolve().parent / "data"
 
-    parser = argparse.ArgumentParser(description="Static data generation for new_gui")
+    parser = argparse.ArgumentParser(description="Генерация статических данных для new_gui")
     parser.add_argument(
         "--public",
         action="store_true",
@@ -754,7 +772,7 @@ def main() -> None:
         if rows:
             dump_json(rows, args.out_dir / f"{kind}-detail.json")
 
-    logger.info("Done in %.1f s", time.time() - t0)
+    logger.info("Готово за %.1f с", time.time() - t0)
 
 
 if __name__ == "__main__":

@@ -116,7 +116,7 @@ def spread_min_distance(
         push = ((d_min - dist) * 0.45)[:, None] * dirv
         np.add.at(P, pairs[:, 0], push)
         np.subtract.at(P, pairs[:, 1], push)
-        np.clip(P, 30.0, 970.0, out=P)
+        np.clip(P, COORD_MIN, COORD_MAX, out=P)
     return {k: (round(float(x), 1), round(float(y), 1)) for k, (x, y) in zip(keys, P, strict=True)}
 
 
@@ -235,8 +235,8 @@ def fa2_blended_layout(
     cell = STRANDED_MIN_SEP
 
     def place(x: float, y: float) -> tuple[float, float]:
-        x = min(970.0, max(30.0, x))
-        y = min(970.0, max(30.0, y))
+        x = min(COORD_MAX, max(COORD_MIN, x))
+        y = min(COORD_MAX, max(COORD_MIN, y))
         occupied.add((int(x // cell), int(y // cell)))
         return round(x, 1), round(y, 1)
 
@@ -247,8 +247,8 @@ def fa2_blended_layout(
         x, y = 0.0, 0.0
         for _attempt in range(60):
             x, y = gen()
-            x = min(970.0, max(30.0, x))
-            y = min(970.0, max(30.0, y))
+            x = min(COORD_MAX, max(COORD_MIN, x))
+            y = min(COORD_MAX, max(COORD_MIN, y))
             if (int(x // cell), int(y // cell)) not in occupied:
                 break
         return place(x, y)

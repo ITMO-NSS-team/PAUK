@@ -94,13 +94,13 @@ class SpreadMinDistanceTest(unittest.TestCase):
 
 class SparseDeptEdgesTest(unittest.TestCase):
     def test_only_connects_nodes_within_the_same_department(self):
-        dept_of = {"a1": "d1", "a2": "d1", "a3": "d1", "b1": "d2", "b2": "d2"}
+        dept_of: dict[str, str | None] = {"a1": "d1", "a2": "d1", "a3": "d1", "b1": "d2", "b2": "d2"}
         edges = sparse_dept_edges(set(dept_of), dept_of, random.Random(1), k=2)
         for a, b in edges:
             self.assertEqual(dept_of[a], dept_of[b])
 
     def test_department_with_one_member_gets_no_edges(self):
-        dept_of = {"a1": "d1", "solo": "d2"}
+        dept_of: dict[str, str | None] = {"a1": "d1", "solo": "d2"}
         edges = sparse_dept_edges(set(dept_of), dept_of, random.Random(1), k=2)
         self.assertEqual(edges, {})
 

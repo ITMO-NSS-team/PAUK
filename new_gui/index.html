@@ -137,6 +137,28 @@
         50% { opacity: 1; transform: scale(1); }
       }
 
+      /* Сообщение о неудачной загрузке graph-data.json (app/main.ts) — если
+         его нет вовсе, пока никто не прогнал new_generate/generate_data.py,
+         страница иначе выглядела бы просто пустой (кнопки вкладок есть,
+         карта белая, ни списков, ни ошибки) без единой подсказки, что не
+         так. В отличие от .loading-indicator в карточке — это не "ещё
+         грузится", а "не загрузится вообще, пока данных нет на диске". */
+      #load-error {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        max-width: 420px;
+        padding: 16px 20px;
+        background: #fff5f5;
+        border: 1px solid #e03131;
+        border-radius: 8px;
+        color: #7d1a1a;
+        font-size: 13px;
+        text-align: center;
+      }
+      #load-error[hidden] { display: none; }
+
       /* Переключатель языка (app/main.ts) — сам текст ("EN"/"RU") ставит
          JS через core/i18n.ts::t("lang.toggle", lang), тут только позиция. */
       #lang-toggle {
@@ -179,6 +201,9 @@
          при монтировании, до этого момента (загрузка фикстур) не показываем
          пустую рамку. -->
     <div id="panel" hidden></div>
+    <!-- Показывается только если graph-data.json вообще не загрузился
+         (см. комментарий в <style> выше) — app/main.ts снимает hidden. -->
+    <div id="load-error" hidden></div>
     <script type="module" src="/src/app/main.ts"></script>
   </body>
 </html>

@@ -107,6 +107,12 @@ CYPHER_RETRIES = 5
 """Сколько раз повторить запрос при временном сбое связи с Neo4j, прежде чем
 сдаться и пробросить исключение дальше."""
 
+CYPHER_RETRY_BACKOFF_STEP_SECONDS = 5
+"""Шаг линейного роста паузы между попытками (5, 10, 15, ... секунд)."""
+
+CYPHER_RETRY_MAX_WAIT_SECONDS = 60
+"""Верхний предел паузы между попытками — не ждать без толку минутами."""
+
 
 def _execute_retrying(driver, query, **params):
     """Выполняет один Cypher-запрос с повторами при временных сбоях сети.
@@ -148,7 +154,7 @@ def _execute_retrying(driver, query, **params):
         except (ServiceUnavailable, SessionExpired, TransientError, OSError) as exc:
             if attempt == CYPHER_RETRIES:
                 raise
-            wait = min(60, 5 * attempt)
+            wait = min(CYPHER_RETRY_MAX_WAIT_SECONDS, CYPHER_RETRY_BACKOFF_STEP_SECONDS * attempt)
             logger.warning(
                 "  (%s: %s),  %d/%d,  %d c",
                 type(exc).__name__,
