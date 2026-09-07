@@ -112,6 +112,9 @@ class LinkRelevanceStage(EnrichmentStage):
                 page_number = occurrence.page_number if occurrence else None
                 prompt = _build_prompt(pub.title, link.url, context, page_number)
                 result = client.chat_json(prompt)
+                llm_error = None
+                if result is None:
+                    llm_error = client.last_error if isinstance(client.last_error, str) else "no response"
                 llm_log.record(
                     group=self.prepared.group,
                     model=self.config.llm_model,
@@ -119,13 +122,17 @@ class LinkRelevanceStage(EnrichmentStage):
                     raw_response=client.last_response,
                     parsed=result,
                     usage=client.last_usage,
-                    error=None if result is not None else "no response",
+                    error=llm_error,
                     context={"publication_id": pub.id, "url": link.url},
                 )
                 if result is None:
                     error = "llm request failed"
                     logger.warning(
-                        "link_relevance: %s -> %s: no response from %s", pub.id, link.url, self.config.llm_model
+                        "link_relevance: %s -> %s: %s (%s)",
+                        pub.id,
+                        link.url,
+                        llm_error,
+                        self.config.llm_model,
                     )
                     continue
                 link.is_relevant = bool(result.get("is_authors_artifact"))

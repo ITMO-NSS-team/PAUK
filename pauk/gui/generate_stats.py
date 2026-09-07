@@ -60,6 +60,7 @@ def _jsonable(v):
 
 # --- node / relationship inventory --------------------------------------
 
+# is_itmo:Itmo/External label migration - #150.
 NODE_COUNTS = [
     ("Публикации", "Publications", "MATCH (p:Publication) RETURN count(p)"),
     ("Персоны всего", "People total", "MATCH (p:Person) RETURN count(p)"),

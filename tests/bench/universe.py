@@ -239,7 +239,7 @@ FEDOROVA_ORCIDS = {58: "0000-0007-0000-0058", 59: "0000-0007-0000-0059"}
 ITMO_ROR = "https://ror.org/04txgxn49"
 ITMO_INSTITUTION = {"ror": ITMO_ROR, "display_name": "ITMO University"}
 
-# Official staff records for the russian_names stage: A06 ("Oleg Ivanov")
+# Official staff records for the author_names stage: A06 ("Oleg Ivanov")
 # matches, the two records behind one name must never match anyone, and
 # every other author falls back to transliteration.
 RUSSIAN_NAMES_CATALOG = [

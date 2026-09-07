@@ -60,9 +60,9 @@ work попал в другую, пересекающуюся группу: су
 группы из MongoDB в Neo4j через `MERGE`. Для всех типов узлов уникален
 `id`; у `GitHubProfile` также уникален `login`.
 
-`id` персоны — голый OpenAlex ID автора (один человек — один узел). Метка
-`Itmo` присваивается, если хотя бы в одной работе встретилась аффилиация
-ИТМО, и не понижается обратно до `External` данными других групп.
+`id` персоны — голый OpenAlex ID автора (один человек — один узел). Свойство
+`is_itmo` выставляется в `true`, если хотя бы в одной работе встретилась
+аффилиация ИТМО, и не понижается обратно до `false` данными других групп.
 Репозитории, чей этап `repositories` завершился со статусом `failed`
 (например, 404), в граф не загружаются до успешного ретрая — их ссылки
 остаются узлами `LinkCandidate`.
@@ -70,8 +70,8 @@ work попал в другую, пересекающуюся группу: су
 | Узел | Метка Neo4j | Основные свойства |
 |---|---|---|
 | Подразделение | `Department` | `id`, `name_en`, `name_ru`, `name_variants` |
-| Сотрудник ИТМО | `Person:Itmo` | `id`, `openalex_id`, `orcid`, ФИО, контакты, профили |
-| Внешний автор | `Person:External` | `id`, `openalex_id`, `orcid`, `name_en`, `name_variants`, `email` |
+| Сотрудник ИТМО | `Person {is_itmo: true}` | `id`, `openalex_id`, `orcid`, ФИО, контакты, профили |
+| Внешний автор | `Person {is_itmo: false}` | `id`, `openalex_id`, `orcid`, `name_raw`, `name_variants`, `email` |
 | Публикация | `Publication` | `id`, `title`, `doi`, дата, журнал, код, funding, OpenAlex/PDF URL, abstract |
 | Репозиторий | `Repository` | `id`, `name`, `url`, описание, звёзды, лицензия, даты |
 | GitHub-профиль | `GitHubProfile` | `id`, `login`, `name`, URL, описание, location, type |
@@ -80,10 +80,10 @@ work попал в другую, пересекающуюся группу: су
 Связи:
 
 ```text
-(:Person:Itmo)     -[:BELONGS_TO]->  (:Department)
-(:Person:Itmo)     -[:AUTHORED]->    (:Publication)
-(:Person:External) -[:AUTHORED]->    (:Publication)
-(:Person:Itmo)     -[:CONTRIBUTED_TO]-> (:Repository)
+(:Person {is_itmo: true})  -[:BELONGS_TO]->  (:Department)
+(:Person {is_itmo: true})  -[:AUTHORED]->    (:Publication)
+(:Person {is_itmo: false}) -[:AUTHORED]->    (:Publication)
+(:Person {is_itmo: true})  -[:CONTRIBUTED_TO]-> (:Repository)
 
 (:Publication) -[:PRODUCED_BY]-> (:Department)
 (:Publication) -[:MENTIONS_LINK]-> (:Repository | :LinkCandidate)

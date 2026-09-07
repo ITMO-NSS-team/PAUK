@@ -63,9 +63,9 @@ class NormalizeTest(unittest.TestCase):
         }, {"work_id": "W3"})
         prepared = PreparedStore(self.db, "sample")
         prepared.write_models("persons", [
-            Person(id="itmo_A1", openalex_id="A1", is_itmo=True, name_en="Same Person",
+            Person(id="itmo_A1", openalex_id="A1", is_itmo=True, name_raw="Same Person",
                    orcid="0000-0001", authored=[Authorship(publication_id="W1", position=1)]),
-            Person(id="external_A1", openalex_id="A1", is_itmo=False, name_en="Same Person",
+            Person(id="external_A1", openalex_id="A1", is_itmo=False, name_raw="Same Person",
                    email="p@example.org", authored=[Authorship(publication_id="W2", position=2)]),
         ])
         OpenAlexNormalizer(raw, prepared).run()
@@ -88,7 +88,7 @@ class NormalizeTest(unittest.TestCase):
         }, {"work_id": "W5"})
         prepared = PreparedStore(self.db, "sample")
         prepared.write_models("persons", [
-            Person(id="A1", openalex_id="A1", is_itmo=True, name_en="Nikolay O. Nikitin",
+            Person(id="A1", openalex_id="A1", is_itmo=True, name_raw="Nikolay O. Nikitin",
                    merged_ids=["A9"], authored=[Authorship(publication_id="W1", position=1)]),
         ])
         result = OpenAlexNormalizer(raw, prepared).run()
@@ -142,11 +142,11 @@ class NormalizeTest(unittest.TestCase):
         self.assertEqual(result["persons"], 2)
         people = {p.id: p for p in prepared.read_models("persons", Person)}
         by_orcid = people["orcid_0000-0002-1624-2659"]
-        self.assertEqual(by_orcid.name_en, "Ianina D. Moor")
+        self.assertEqual(by_orcid.name_raw, "Ianina D. Moor")
         self.assertEqual(by_orcid.orcid, "0000-0002-1624-2659")
         self.assertIsNone(by_orcid.openalex_id)
         self.assertTrue(by_orcid.is_itmo)
-        by_name = next(p for p in people.values() if p.name_en == "D. V. Karlovets")
+        by_name = next(p for p in people.values() if p.name_raw == "D. V. Karlovets")
         self.assertTrue(by_name.id.startswith("name_"))
         self.assertIsNone(by_name.openalex_id)
 
@@ -234,7 +234,7 @@ class NormalizeTest(unittest.TestCase):
         result = OpenAlexNormalizer(raw, prepared).run()
         self.assertEqual(result["persons"], 1)
         (person,) = prepared.read_models("persons", Person)
-        self.assertEqual(person.name_en, "Real Person")
+        self.assertEqual(person.name_raw, "Real Person")
         # The human keeps the position the work listed them under.
         self.assertEqual(person.authored[0].position, 2)
 
@@ -258,7 +258,7 @@ class NormalizeTest(unittest.TestCase):
         result = OpenAlexNormalizer(raw, prepared).run()
         self.assertEqual(result["persons"], 1)
         (person,) = prepared.read_models("persons", Person)
-        self.assertEqual(person.name_en, "Real Person")
+        self.assertEqual(person.name_raw, "Real Person")
 
     def test_renormalization_drops_a_non_person_row_admitted_earlier(self):
         # The row an older filter let through: it knew organizations, not
@@ -276,9 +276,9 @@ class NormalizeTest(unittest.TestCase):
         prepared = PreparedStore(self.db, "sample")
         prepared.write_models("persons", [
             Person(id="A9", openalex_id="A9", is_itmo=False,
-                   name_en="vasilinetc.ira@gmail.com",
+                   name_raw="vasilinetc.ira@gmail.com",
                    authored=[{"publication_id": "W1", "position": 1}]),
-            Person(id="A1", openalex_id="A1", is_itmo=False, name_en="Real Person",
+            Person(id="A1", openalex_id="A1", is_itmo=False, name_raw="Real Person",
                    authored=[{"publication_id": "W1", "position": 2}]),
         ])
         result = OpenAlexNormalizer(raw, prepared).run()

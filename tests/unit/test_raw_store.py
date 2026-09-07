@@ -42,6 +42,6 @@ class RawStoreTest(unittest.TestCase):
         first = Person(id="A1", is_itmo=False)
         second = Person(id="A2", is_itmo=False)
         prepared.write_models("persons", [first, second])
-        first.name_en = "Saved immediately"
+        first.name_raw = "Saved immediately"
         prepared.upsert_models("persons", [first])
         self.assertEqual({row.id for row in prepared.read_models("persons", Person)}, {"A1", "A2"})

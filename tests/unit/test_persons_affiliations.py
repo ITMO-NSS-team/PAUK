@@ -62,7 +62,7 @@ class AffiliationBackfillTest(unittest.TestCase):
         return next(prepared.read_models("persons", Person))
 
     def test_affiliation_of_the_works_own_year_fills_the_gap(self):
-        person = Person(id="A1", openalex_id="A1", is_itmo=False, name_en="Anonymous Depositor",
+        person = Person(id="A1", openalex_id="A1", is_itmo=False, name_raw="Anonymous Depositor",
                         authored=[Authorship(publication_id="W1", position=1),
                                   Authorship(publication_id="W2", position=1)])
         result = self.run_stage(

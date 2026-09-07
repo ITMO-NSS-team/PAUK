@@ -48,7 +48,7 @@ class PersonsResumeTest(unittest.TestCase):
             data_dir=self.config.data_dir, openreview_username="user", openreview_password="password",
         )
         self.prepared.write_models("persons", [
-            Person(id="P1", is_itmo=True, name_en="Ada Lovelace", email="ada@itmo.ru"),
+            Person(id="P1", is_itmo=True, name_raw="Ada Lovelace", email="ada@itmo.ru"),
         ])
         openreview.return_value.search_emails.return_value = {
             "profiles": [{"id": "~Ada_Lovelace1", "email": "ada@itmo.ru", "content": {"github": "ada"}}],

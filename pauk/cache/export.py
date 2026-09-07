@@ -60,17 +60,20 @@ def cypher_dict(driver, query, **params) -> list[dict]:
 def load_db(driver) -> dict[str, list]:
     """Read everything into the same flat structures build_graph_data() expects.
     Author departments and repo owners aren't plain columns in the graph model —
-    they're relationships: (:Person:Itmo)-[:BELONGS_TO]->(:Department),
+    they're relationships: (:Person {is_itmo: true})-[:BELONGS_TO]->(:Department),
     (:Repository)-[:OWNED_BY]->(:GitHubProfile)."""
     db: dict[str, list] = {}
 
+    # is_itmo:Itmo/External label migration - #150. Missing external persons - #151.
     db["persons"] = cypher_dict(
         driver,
         "MATCH (p:Person:Itmo) "
         "RETURN p.id AS id, p.first_name_ru AS first_name_ru, "
         "       p.second_name_ru AS second_name_ru, p.surname_ru AS surname_ru, "
+        "       p.first_name_en AS first_name_en, p.second_name_en AS second_name_en, "
+        "       p.surname_en AS surname_en, "
         "       p.name_ru AS name_ru, p.name_variants AS name_variants, "
-        "       p.name_en AS name_en, p.degree AS degree, p.github AS github, "
+        "       p.degree AS degree, p.github AS github, "
         "       p.orcid AS orcid",
     )
 

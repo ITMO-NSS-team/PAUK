@@ -60,30 +60,32 @@ class NodeSpec:
     """Describes how to turn one prepared-JSONL row into a Neo4j node.
 
     Attributes:
-        labels: Cypher label(s) for the node, e.g. "Person:Itmo".
+        labels: Cypher label(s) for the node, e.g. "Person".
         id_field: Key on the row holding the node's id.
         prop_fields: Whitelist of keys copied as plain node properties.
             Any other key on the row (e.g. `_processing`) is ignored.
         relationships: Relationships embedded in the row, extracted
             separately from prop_fields.
-        rel_src_label: Label(s) used to MATCH this node as a relationship
-            source. Defaults to `labels`; persons override it with the base
-            "Person" because a person's extra label (Itmo/External) can be
-            upgraded by a later group while their relationships must still
-            resolve.
     """
 
     labels: str
     id_field: str = "id"
     prop_fields: tuple[str, ...] = ()
     relationships: tuple[RelSpec, ...] = field(default_factory=tuple)
-    rel_src_label: str | None = None
 
 
 NODE_REGISTRY: dict[str, NodeSpec] = {
     "department": NodeSpec(
         labels="Department",
-        prop_fields=("name_en", "name_ru", "name_variants", "kind", "parent_id", "organization_id"),
+        prop_fields=(
+            "name_en",
+            "name_ru",
+            "name_variants",
+            "context_aliases",
+            "kind",
+            "parent_id",
+            "organization_id",
+        ),
         # A unit is PART_OF exactly one parent: a sub-unit points at its parent
         # Department (recursive hierarchy), a top-level unit at its Organization.
         relationships=(
@@ -96,17 +98,21 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
         prop_fields=("name_en", "name_ru", "ror_id", "country", "type"),
     ),
     "itmo_person": NodeSpec(
-        labels="Person:Itmo",
-        rel_src_label="Person",
+        labels="Person",
         prop_fields=(
+            "is_itmo",
             "openalex_id",
             "orcid",
-            "name_en",
+            "name_raw",
             "name_variants",
-            "email",
+            "email",  # one address for the card
+            "emails",  # every known address - github_match identity, not a duplicate
             "first_name_ru",
             "second_name_ru",
             "surname_ru",
+            "first_name_en",
+            "second_name_en",
+            "surname_en",
             "degree",
             "github",
             "google_scholar",
@@ -116,6 +122,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "researcher_id",
             "dblp_id",
             "name_ru",
+            "name_en",
             "other_names",
             "biography",
             "country",
@@ -154,18 +161,30 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
         ),
     ),
     "external_person": NodeSpec(
-        labels="Person:External",
-        rel_src_label="Person",
+        labels="Person",
         prop_fields=(
+            "is_itmo",
             "openalex_id",
             "orcid",
-            "name_en",
+            "name_raw",
             "name_variants",
-            "email",
+            "email",  # one address for the card
+            "emails",  # every known address - github_match identity
+            "first_name_ru",
+            "second_name_ru",
+            "surname_ru",
+            "first_name_en",
+            "second_name_en",
+            "surname_en",
+            "degree",
+            "github",
+            "google_scholar",
+            "openreview",
             "scopus_id",
             "researcher_id",
             "dblp_id",
             "name_ru",
+            "name_en",
             "other_names",
             "biography",
             "country",
@@ -295,7 +314,9 @@ def extract_node(row: dict, spec: NodeSpec) -> tuple[str, tuple[str, dict]]:
     return spec.labels, (node_id, props)
 
 
-def extract_relationships(row: dict, spec: NodeSpec) -> dict[tuple[str, str, str, str], list[tuple[str, str, dict]]]:
+def extract_relationships(
+    row: dict, spec: NodeSpec
+) -> dict[tuple[str, str, str, str], list[tuple[str, str, dict]]]:
     """Extract every relationship embedded in a prepared-JSONL row.
 
     Args:
@@ -311,7 +332,7 @@ def extract_relationships(row: dict, spec: NodeSpec) -> dict[tuple[str, str, str
         LinkCandidate) — those can't share one batch.
     """
     src_id = row[spec.id_field]
-    src_label = spec.rel_src_label or spec.labels
+    src_label = spec.labels
     out: dict[tuple[str, str, str, str], list[tuple[str, str, dict]]] = {}
 
     for rel in spec.relationships:

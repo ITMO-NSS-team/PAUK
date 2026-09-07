@@ -85,7 +85,7 @@ function deptDisplayName(d) {
 
 function authorDisplayName(n) {
   if (!n) return "";
-  return (LANG === "en" && n.name_en) ? n.name_en : n.label;
+  return (LANG === "en" && n.label_en) ? n.label_en : n.label;
 }
 
 // ---------- adjacency indices ----------

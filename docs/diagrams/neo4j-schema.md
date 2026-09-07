@@ -3,8 +3,8 @@
 ```mermaid
 classDiagram
     class Person {
-        <<Person:Itmo | Person:External>>
         +id : OpenAlex author ID
+        +is_itmo : bool
         +openalex_id
         +orcid
         +name_en
