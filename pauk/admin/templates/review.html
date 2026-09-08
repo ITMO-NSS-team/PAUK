@@ -1,25 +1,22 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Разбор дублей</h1>
-<p class="muted" style="margin:-8px 0 18px; max-width:72ch">
-  Пары, которые дедупликация не смогла решить сама. Ответ записывается и
-  применяется на следующем прогоне. Слияние необратимо, поэтому решение
-  доходит до правил заранее, а не правит результат задним числом.
-</p>
 
 {% set done = request.query_params.get("done") %}
 {% if done == "merged" %}
-<p class="note">Записи слиты. Дубль ушёл, связи перешли на оставшуюся запись.
-   Отменить это нельзя.</p>
+<p class="note">Записи слиты. Дубль удалён, связи перешли на оставшуюся запись.
+   Отменить решение нельзя.</p>
+{% elif done == "split" %}
+<p class="note">Группа разобрана. Отмеченные записи сольются на следующем
+   прогоне дедупликации, остальные останутся отдельно.</p>
 {% elif done == "waiting" %}
-<p class="note">Решение записано. Слить прямо сейчас нечего: этих людей ещё
-   нет в графе или он не отвечает. Слияние произойдёт на следующем прогоне
+<p class="note">Решение записано. Слияние произойдёт на следующем прогоне
    дедупликации.</p>
 {% endif %}
 
 <div class="tabs">
   <a href="/review?tab=pressing" {% if tab == "pressing" %}class="on"{% endif %}>
-    Стоит посмотреть {{ counts.pressing }}</a>
+    Приоритетные {{ counts.pressing }}</a>
   <a href="/review?tab=open" {% if tab == "open" %}class="on"{% endif %}>
     Все нерешённые {{ counts.open }}</a>
   <a href="/review?tab=disputed" {% if tab == "disputed" %}class="on"{% endif %}>
@@ -49,7 +46,7 @@
   <p class="muted">
   {% if tab == "pressing" %}Разбирать нечего. Правила решили всё сами.
   {% elif tab == "answered" %}Пока никто ничего не решил.
-  {% elif tab == "disputed" %}Расхождений нет. Правила не спорят ни с одним ответом.
+  {% elif tab == "disputed" %}Расхождений нет. Правила не конфликтуют ни с одним ответом.
   {% elif tab == "skipped" %}Отложенных нет.
   {% else %}Вопросов нет. Очередь наполняется дедупликацией.{% endif %}</p>
 {% else %}
@@ -69,7 +66,17 @@
         {% endif %}
         {% for person_id, name in row.people %}
         <div style="margin-bottom:4px">
+          {% if row.is_group and user.can_write and not row.verdict %}
+          <label style="display:inline; font-size:inherit; color:inherit">
+            {# Галочки стоят в другой ячейке таблицы, внутрь формы их не
+               положить. Атрибут form связывает их с ней по идентификатору. #}
+            <input type="checkbox" form="answer-{{ row.id }}"
+                   name="same" value="{{ person_id }}">
+            <a href="/nodes/Person/{{ person_id | urlencode }}">{{ name or person_id }}</a>
+          </label>
+          {% else %}
           <a href="/nodes/Person/{{ person_id | urlencode }}">{{ name or person_id }}</a>
+          {% endif %}
           <br><span class="muted val">{{ person_id }}</span></div>
         {% endfor %}
       </td>
@@ -81,7 +88,10 @@
         {% if row.shared_fields %}
         <div class="muted">{{ row.shared_fields|join(", ") }}</div>
         {% endif %}
-        {% if row.is_group %}<span class="muted">общего ничего не считали</span>{% endif %}
+        {% if row.is_group and not row.verdict %}
+        <span class="muted">Внутри группы больше одного человека. Отметьте слева
+          тех, кто один и тот же.</span>
+        {% endif %}
         {% if row.verdict %}
         <div style="margin-top:6px">
           <span class="kind {% if row.verdict == 'same' %}kind-created{% else %}kind-deleted{% endif %}">
@@ -132,7 +142,8 @@
           <button type="submit" class="ghost">передумать</button>
         </form>
         {% else %}
-        <form method="post" action="/review/answer" class="verdicts">
+        <form method="post" action="/review/answer" class="verdicts"
+              id="answer-{{ row.id }}">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="kind" value="{{ row.kind }}">
           <input type="hidden" name="members" value="{{ row.members|join(',') }}">
@@ -141,7 +152,9 @@
           <div class="row" style="margin:0">
             {# Группу нельзя назвать одним человеком: её отклонили именно
                потому, что внутри два разных ORCID или адреса. #}
-            {% if not row.is_group %}
+            {% if row.is_group %}
+            <button type="submit" name="verdict" value="split">отмеченные это один человек</button>
+            {% else %}
             <button type="submit" name="verdict" value="same">один человек</button>
             {% endif %}
             <button type="submit" name="verdict" value="different" class="ghost">

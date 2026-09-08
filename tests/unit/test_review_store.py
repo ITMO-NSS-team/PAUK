@@ -305,3 +305,62 @@ class NameAlignmentTest(unittest.TestCase):
         (stored,) = review.questions(self.db)
         self.assertEqual(stored["members"], ["B1", "B2"])
         self.assertEqual(stored["evidence"]["names"], ["First", "Second"])
+
+
+class SplitGroupTest(unittest.TestCase):
+    """A refused group is answered by naming who inside it is one person.
+
+    It cannot be answered as a whole: it was refused precisely because its
+    members disagree about an identity field. The split is written as
+    ordinary pair answers, because that is what the rules read.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        review.record_held(self.db, [held_group(("A1", "A2", "A3"))])
+
+    def test_the_chosen_records_become_one_person(self):
+        review.record_split(self.db, ["A1", "A2", "A3"], ["A1", "A2"],
+                            actor="user:roman")
+        self.assertEqual(review.decisions(self.db)[frozenset({"A1", "A2"})], review.SAME)
+
+    def test_the_rest_are_told_apart_from_them(self):
+        # Without this the rules rebuild the same group through the members
+        # left over and refuse it again for the same reason.
+        review.record_split(self.db, ["A1", "A2", "A3"], ["A1", "A2"])
+        found = review.decisions(self.db)
+        self.assertEqual(found[frozenset({"A1", "A3"})], review.DIFFERENT)
+        self.assertEqual(found[frozenset({"A2", "A3"})], review.DIFFERENT)
+
+    def test_the_group_question_is_closed(self):
+        # "Not all of you are one person" is now plainly true of it, and an
+        # answered question stops coming back.
+        review.record_split(self.db, ["A1", "A2", "A3"], ["A1", "A2"])
+        (group,) = review.questions(self.db, kind=review.GROUP)
+        self.assertEqual(group["verdict"], review.DIFFERENT)
+
+    def test_who_split_it_is_recorded_on_every_answer(self):
+        review.record_split(self.db, ["A1", "A2", "A3"], ["A1", "A2"],
+                            actor="user:roman", note="разные кафедры")
+        for row in review.questions(self.db, answered=True):
+            self.assertEqual(row["actor"], "user:roman")
+            self.assertEqual(row["note"], "разные кафедры")
+
+    def test_calling_the_whole_group_one_person_is_refused(self):
+        with self.assertRaises(review.ReviewError):
+            review.record_split(self.db, ["A1", "A2", "A3"], ["A1", "A2", "A3"])
+
+    def test_one_record_is_not_a_split(self):
+        with self.assertRaises(review.ReviewError):
+            review.record_split(self.db, ["A1", "A2", "A3"], ["A1"])
+
+    def test_somebody_outside_the_group_is_refused(self):
+        with self.assertRaises(review.ReviewError):
+            review.record_split(self.db, ["A1", "A2", "A3"], ["A1", "B9"])
+
+    def test_a_bigger_group_splits_the_same_way(self):
+        review.record_held(self.db, [held_group(("B1", "B2", "B3", "B4", "B5"))])
+        written = review.record_split(self.db, ["B1", "B2", "B3", "B4", "B5"],
+                                      ["B1", "B2", "B3"])
+        # Three pairs inside the subset, six across the split.
+        self.assertEqual(written, 9)

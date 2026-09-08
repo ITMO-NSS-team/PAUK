@@ -296,6 +296,65 @@ class DisputedTabTest(unittest.TestCase):
         self.assertEqual(review.count(self.db, disputed=True), 0)
         self.assertEqual(review.count(self.db, answered=False), 1)
 
-    def test_an_empty_tab_says_so(self):
+    def test_an_empty_tab_holds_nothing(self):
+        # Checked by what the page offers, not by its wording: the sentence
+        # is somebody's to reword, the absence of a row is not.
         review.withdraw(self.db, review.PAIR, ["A1", "A2"])
-        self.assertIn("Правила не спорят", self.body())
+        self.assertNotIn("/review/withdraw", self.body())
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+
+
+class SplitFromThePageTest(unittest.TestCase):
+    """The buttons a refused group actually offers."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        review.record_held(self.db, [held_group(("A1", "A2", "A3"))])
+        self.client = TestClient(build(Settings(), self.db), follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def csrf(self):
+        return self.client.get("/review").text.split('name="csrf" value="')[1].split('"')[0]
+
+    def split(self, same):
+        # Repeated fields go as a list in the value: httpx encodes a list of
+        # pairs as something the form parser does not read back.
+        return self.client.post("/review/answer", data={
+            "csrf": self.csrf(), "kind": review.GROUP, "members": "A1,A2,A3",
+            "verdict": "split", "same": list(same)})
+
+    def test_the_checkboxes_reach_the_form(self):
+        # They sit in a different cell, so they are tied to the form by id
+        # rather than by nesting. A wrong id submits nothing and the page
+        # looks like it silently ignored the choice.
+        body = self.client.get("/review").text
+        form_id = body.split('id="answer-')[1].split('"')[0]
+        self.assertEqual(body.count(f'form="answer-{form_id}"'), 3)
+
+    def test_splitting_records_every_pair(self):
+        self.assertEqual(self.split(["A1", "A2"]).status_code, 303)
+        found = review.decisions(self.db)
+        self.assertEqual(found[frozenset({"A1", "A2"})], review.SAME)
+        self.assertEqual(found[frozenset({"A1", "A3"})], review.DIFFERENT)
+        self.assertEqual(found[frozenset({"A2", "A3"})], review.DIFFERENT)
+
+    def test_splitting_closes_the_group_question(self):
+        self.split(["A1", "A2"])
+        self.assertEqual(review.count(self.db, kind=review.GROUP, answered=False), 0)
+
+    def test_the_page_says_what_will_happen(self):
+        self.assertIn("done=split", self.split(["A1", "A2"]).headers["location"])
+
+    def test_marking_everybody_is_refused(self):
+        self.assertEqual(self.split(["A1", "A2", "A3"]).status_code, 400)
+        self.assertEqual(review.decisions(self.db), {})
+
+    def test_marking_nobody_is_refused(self):
+        self.assertEqual(self.split([]).status_code, 400)
+        self.assertEqual(review.decisions(self.db), {})
+
+    def test_a_group_offers_no_plain_merge(self):
+        body = self.client.get("/review").text
+        self.assertNotIn('value="same"', body)
+        self.assertIn('value="split"', body)

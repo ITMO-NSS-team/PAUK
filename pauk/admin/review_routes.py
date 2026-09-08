@@ -178,13 +178,24 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
     members = [part for part in str(form.get("members", "")).split(",") if part]
     verdict = str(form.get("verdict", ""))
     tab = str(form.get("tab", "pressing"))
+    note = str(form.get("note", "")).strip()
     try:
         if verdict == "skip":
             if not review.skip(db, kind, members, actor=user.actor):
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "такого вопроса нет")
+        elif verdict == "split":
+            # A refused group is answered by naming who inside it is one
+            # person; the store turns that into the pair answers the rules
+            # read. Nothing is folded here even when the nodes exist: a
+            # split is several decisions at once, and folding them in
+            # sequence would leave the later ones pointing at a node the
+            # earlier ones had already swallowed.
+            review.record_split(db, members, form.getlist("same"),
+                                actor=user.actor, note=note)
+            return RedirectResponse(f"/review?tab={tab}&done=split",
+                                    status_code=status.HTTP_303_SEE_OTHER)
         else:
-            review.record_verdict(db, kind, members, verdict, actor=user.actor,
-                                  note=str(form.get("note", "")).strip())
+            review.record_verdict(db, kind, members, verdict, actor=user.actor, note=note)
     except review.ReviewError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     logger.info("%s answered %s %s: %s", user.actor, kind, members, verdict)

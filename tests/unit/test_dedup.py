@@ -1206,3 +1206,61 @@ class DisputedAnswerTest(unittest.TestCase):
                               actor="user:roman")
         result = self.run_stage(people)
         self.assertEqual(result["dedup_merged"], 1)
+
+
+class SplitGroupEndToEndTest(unittest.TestCase):
+    """A group refused by the rules, resolved by a person, applied by the rules.
+
+    The case the panel was a dead end for: three records under one name,
+    two addresses between them, and a bridge record carrying no address at
+    all — which is how the group forms in the first place.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.config = Settings(data_dir=Path(tmp.name))
+        self.prepared = PreparedStore(self.db, "sample")
+        self.raw = RawStore(self.db, "sample")
+
+    def trio(self):
+        return [person("A1", "Andrey Bogdanov", ["W1"], email="ab@itmo.ru"),
+                person("A2", "Andrey Bogdanov", ["W2"]),
+                person("A3", "Andrey Bogdanov", ["W3"], email="other@itmo.ru"),
+                person("A9", "Petr Volkov", ["W1", "W2", "W3"])]
+
+    def run_stage(self):
+        self.prepared.write_models("persons", self.trio())
+        result = DedupStage(self.prepared, self.raw, self.config).run()
+        return result, {p.id for p in self.prepared.read_models("persons", Person)}
+
+    def test_the_group_is_refused_and_asked_about(self):
+        result, people = self.run_stage()
+        self.assertEqual(result["dedup_merged"], 0)
+        self.assertEqual(people, {"A1", "A2", "A3", "A9"})
+        (question,) = review.questions(self.db, kind=review.GROUP)
+        self.assertEqual(question["members"], ["A1", "A2", "A3"])
+
+    def test_naming_one_pair_alone_changes_nothing(self):
+        # The rules rebuild the same group through A3 and refuse it again.
+        # This is why a split has to record the pairs across it as well.
+        self.run_stage()
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)
+        result, people = self.run_stage()
+        self.assertEqual(result["dedup_merged"], 0)
+        self.assertEqual(people, {"A1", "A2", "A3", "A9"})
+
+    def test_a_split_is_carried_out_on_the_next_run(self):
+        self.run_stage()
+        review.record_split(self.db, ["A1", "A2", "A3"], ["A1", "A2"],
+                            actor="user:roman")
+        result, people = self.run_stage()
+        self.assertEqual(result["dedup_merged"], 1)
+        self.assertEqual(people, {"A1", "A3", "A9"})
+
+    def test_the_group_stops_being_asked_about(self):
+        self.run_stage()
+        review.record_split(self.db, ["A1", "A2", "A3"], ["A1", "A2"])
+        self.run_stage()
+        self.assertEqual(review.count(self.db, kind=review.GROUP, answered=False), 0)

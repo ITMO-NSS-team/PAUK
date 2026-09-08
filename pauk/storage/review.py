@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from itertools import combinations
 
 from pymongo.database import Database
 
@@ -236,6 +237,58 @@ def skip(db: Database, kind: str, members: list[str], actor: str = "unknown") ->
         {"_id": question_id(kind, members)},
         {"$set": {"skipped_at": _now(), "skipped_by": actor}})
     return result.matched_count > 0
+
+
+def record_split(db: Database, members: list[str], same: list[str],
+                 actor: str = "unknown", note: str = "") -> int:
+    """Resolve a refused group by naming which of its records are one person.
+
+    A group is refused because its members disagree about an identity field,
+    so it describes more than one person and cannot be answered as a whole.
+    What it can be answered with is a split: these of you are one person,
+    the rest are somebody else.
+
+    Written as ordinary pair answers, because that is what the rules read.
+    Saying only "these two are one person" is not enough on its own — the
+    rules would rebuild the same group through the members left over, and
+    refuse it again for the same reason. So the pairs across the split are
+    recorded as "different" too, and the group's own question is answered
+    "different", which is now plainly true of it.
+
+    Args:
+        members: Everyone the group holds.
+        same: The subset that is one person.
+
+    Returns:
+        How many pair answers were written.
+
+    Raises:
+        ReviewError: The subset is not part of the group, is smaller than a
+            pair, or is the whole group — which is the answer the conflict
+            rules out.
+    """
+    members = sorted(set(members))
+    same = sorted(set(same))
+    if not set(same) <= set(members):
+        raise ReviewError("отмечены записи не из этой группы")
+    if len(same) < 2:
+        raise ReviewError("отметьте хотя бы две записи, которые считаете одним человеком")
+    if len(same) == len(members):
+        raise ReviewError("группу отклонили как раз потому, что все её записи "
+                          "не могут быть одним человеком")
+    rest = [member for member in members if member not in same]
+    written = 0
+    for first, second in combinations(same, 2):
+        record_verdict(db, PAIR, [first, second], SAME, actor=actor, note=note)
+        written += 1
+    for first in same:
+        for second in rest:
+            record_verdict(db, PAIR, [first, second], DIFFERENT, actor=actor, note=note)
+            written += 1
+    record_verdict(db, GROUP, members, DIFFERENT, actor=actor, note=note)
+    logger.info("review: group %s split by %s, %d pair(s) written",
+                members, actor, written)
+    return written
 
 
 def withdraw(db: Database, kind: str, members: list[str]) -> bool:
