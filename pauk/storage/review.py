@@ -16,9 +16,9 @@ Two shapes of question, because the rules refuse in two ways:
 - a **pair** the rules would not merge, answered "same" or "different";
 - a **group** the rules refused whole, because it spans two ORCIDs or two
   addresses. Seven "Andrey Bogdanov" under two addresses are not seven
-  people and not one, and the only honest answer here today is "leave them
-  apart", which stops the question coming back. Splitting a group properly
-  needs its own screen and is not in this module yet.
+  people and not one, so the group cannot be answered as a whole. It is
+  answered by naming which of its records are one person, and `record_split`
+  turns that into the pair answers the rules actually read.
 
 Storage sits beside the prepared rows rather than in `pauk/graph/`, unlike
 `graph_overrides`: the dedup stage writes these long before anything is
@@ -81,6 +81,14 @@ def question_id(kind: str, members: list[str]) -> str:
     unique = sorted(set(members))
     if len(unique) < 2:
         raise ReviewError("a question needs at least two distinct members")
+    # The key joins on ":" and the form that answers it joins on ",", so an
+    # id carrying either would build a key that splits back into something
+    # else. Person ids are OpenAlex ids, an "orcid_" or a "name_" hash, and
+    # none of those can — but a LinkCandidate id turned out to be a URL once
+    # already, and that cost a day. Fail loudly rather than collide quietly.
+    bad = [member for member in unique if ":" in member or "," in member]
+    if bad:
+        raise ReviewError(f"an id cannot contain ':' or ',': {', '.join(bad)}")
     return ":".join([kind, *unique])
 
 
@@ -181,8 +189,7 @@ def record_disputed(db: Database, report: list[dict]) -> int:
         members = members_of(row)
         result = db[COLLECTION].update_one(
             {"_id": question_id(kind_of(row), members)},
-            {"$set": {"disputed_at": moment, "disputed_rule": row.get("rule"),
-                      "disputed_names": names_of(row, members)}})
+            {"$set": {"disputed_at": moment, "disputed_rule": row.get("rule")}})
         noted += result.matched_count
     if noted:
         logger.warning("review: %d answered pair(s) the rules would now merge", noted)
@@ -217,7 +224,7 @@ def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
          # Answering settles what a skip only postponed, and answers the
          # disagreement the rules raised, whichever way it is answered.
          "$unset": {"skipped_at": "", "skipped_by": "",
-                    "disputed_at": "", "disputed_rule": "", "disputed_names": ""},
+                    "disputed_at": "", "disputed_rule": ""},
          "$setOnInsert": {"kind": kind, "members": sorted(set(members)),
                           "evidence": {}, "seen_at": moment, "source": STAGE}},
         upsert=True)
@@ -277,6 +284,11 @@ def record_split(db: Database, members: list[str], same: list[str],
         raise ReviewError("группу отклонили как раз потому, что все её записи "
                           "не могут быть одним человеком")
     rest = [member for member in members if member not in same]
+    # The pairs inside the subset go first on purpose. Written halfway, what
+    # is on record says "these are one person" and nothing about the rest —
+    # the rules rebuild the whole group, refuse it again and merge nothing.
+    # The other order would leave the rules free to fold a subset the person
+    # never finished describing.
     written = 0
     for first, second in combinations(same, 2):
         record_verdict(db, PAIR, [first, second], SAME, actor=actor, note=note)
@@ -302,7 +314,7 @@ def withdraw(db: Database, kind: str, members: list[str]) -> bool:
         {"$unset": {"verdict": "", "actor": "", "note": "",
                     "decided_at": "", "applied_at": "",
                     # Nothing left to disagree with once the answer is gone.
-                    "disputed_at": "", "disputed_rule": "", "disputed_names": ""}})
+                    "disputed_at": "", "disputed_rule": ""}})
     return result.matched_count > 0
 
 

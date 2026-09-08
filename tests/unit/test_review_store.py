@@ -364,3 +364,26 @@ class SplitGroupTest(unittest.TestCase):
                                       ["B1", "B2", "B3"])
         # Three pairs inside the subset, six across the split.
         self.assertEqual(written, 9)
+
+
+class SeparatorsInIdsTest(unittest.TestCase):
+    """An id that carries the characters the key is built from.
+
+    The key joins on ":" and the form that answers it joins on ",". Person
+    ids cannot hold either today, but a LinkCandidate id turned out to be a
+    URL once already, and the failure there was silent.
+    """
+
+    def test_a_colon_in_an_id_is_refused(self):
+        with self.assertRaises(review.ReviewError):
+            review.question_id(review.PAIR, ["A1", "https://x/y"])
+
+    def test_a_comma_in_an_id_is_refused(self):
+        with self.assertRaises(review.ReviewError):
+            review.question_id(review.PAIR, ["A1", "Smith, John"])
+
+    def test_the_ids_the_pipeline_makes_are_accepted(self):
+        # OpenAlex ids, and the two local forms _fallback_person_id builds.
+        for member in ("A5012742131", "orcid_0000-0002-1825-0097", "name_9f86d081884c"):
+            with self.subTest(member=member):
+                review.question_id(review.PAIR, ["A1", member])

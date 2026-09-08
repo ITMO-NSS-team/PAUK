@@ -93,11 +93,27 @@ class FakeGraph:
         return removed
 
     def merge_person_nodes_batch(self, merges):
+        """Fold duplicates, moving their edges the way the real client does.
+
+        A double that only deleted the node left the duplicate's edges
+        pointing at nothing, which is a graph the real client never produces.
+        """
         self.calls.append("merge_person_nodes_batch")
         removed = 0
-        for duplicate_id, _canonical_id in merges:
-            if self.nodes.pop(("Person", duplicate_id), None) is not None:
-                removed += 1
+        for duplicate_id, canonical_id in merges:
+            if self.nodes.pop(("Person", duplicate_id), None) is None:
+                continue
+            removed += 1
+            for key in list(self.relationships):
+                src_label, rel_type, tgt_label, src_id, tgt_id = key
+                if src_label == "Person" and src_id == duplicate_id:
+                    props = self.relationships.pop(key)
+                    self.relationships.setdefault(
+                        (src_label, rel_type, tgt_label, canonical_id, tgt_id), props)
+                elif tgt_label == "Person" and tgt_id == duplicate_id:
+                    props = self.relationships.pop(key)
+                    self.relationships.setdefault(
+                        (src_label, rel_type, tgt_label, src_id, canonical_id), props)
         return removed
 
     # The rest of the loader's surface, so load_prepared_rows can run

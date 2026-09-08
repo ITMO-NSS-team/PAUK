@@ -211,6 +211,19 @@ class FoldNowTest(unittest.TestCase):
         (row,) = review.questions(self.db, answered=True)
         self.assertIsNotNone(row["applied_at"])
 
+    def test_the_work_of_the_folded_record_comes_along(self):
+        # The real client moves the duplicate's edges onto the survivor.
+        # A fold that only deleted the node would leave the publication with
+        # no author, and nothing on the page would show it.
+        self.graph.add("Person", "A1", name_raw="Ivan Smirnov")
+        self.graph.add("Person", "A2", name_raw="Ivan Smirnov")
+        self.graph.add("Publication", "W1")
+        self.graph.relationships[("Person", "AUTHORED", "Publication", "A1", "W1")] = {}
+        self.graph.relationships[("Person", "AUTHORED", "Publication", "A2", "W2")] = {}
+        self.answer()
+        moved = {key[3] for key in self.graph.relationships if key[1] == "AUTHORED"}
+        self.assertEqual(moved, {"A1"})
+
     def test_the_survivor_is_the_one_with_more_work(self):
         # The same rule the dedup uses. Two rules would fold the same pair
         # the other way round depending on who did it.
