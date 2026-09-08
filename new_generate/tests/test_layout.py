@@ -1,8 +1,8 @@
-"""Юнит-тесты для `layout.py` — чистая математика, без сети и без Neo4j.
-
-Раньше в `pauk/gui/layout.py` не было ни одного теста, хотя все функции
-здесь чистые (нет побочных эффектов) — идеальные кандидаты для юнит-тестов,
-просто этим никто не занимался.
+"""Юнит-тесты для `layout.py` — чистая математика раскладки, без сети и без
+Neo4j. golden_color/majority_dept протестированы в `test_departments.py`,
+dense_rank — в `test_nodes.py` (переехали туда вместе с функциями: ни у
+одной не оказалось больше одного реального потребителя, отдельный
+`ranking.py` был чистой индирекцией).
 """
 
 from __future__ import annotations
@@ -11,36 +11,12 @@ import random
 import unittest
 
 from new_generate.layout import (
-    dense_rank,
+    ForceAtlasLayouter,
     fa2_blended_layout,
     fit_coords,
-    golden_color,
-    majority_dept,
     sparse_dept_edges,
     spread_min_distance,
 )
-
-
-class GoldenColorTest(unittest.TestCase):
-    def test_returns_hex_color_format(self):
-        self.assertRegex(golden_color(0), r"^#[0-9a-f]{6}$")
-
-    def test_deterministic_and_distinct_for_different_indices(self):
-        """Один и тот же индекс — всегда один и тот же цвет; соседние
-        департаменты не должны случайно совпасть по цвету."""
-        self.assertEqual(golden_color(5), golden_color(5))
-        self.assertNotEqual(golden_color(0), golden_color(1))
-
-
-class DenseRankTest(unittest.TestCase):
-    def test_ties_get_equal_top_rank(self):
-        self.assertEqual(dense_rank({"a": 1, "b": 5, "c": 5}), {"a": 0.5, "b": 1.0, "c": 1.0})
-
-    def test_all_equal_values_all_rank_one(self):
-        self.assertEqual(dense_rank({"a": 3, "b": 3}), {"a": 1.0, "b": 1.0})
-
-    def test_single_value(self):
-        self.assertEqual(dense_rank({"a": 10}), {"a": 1.0})
 
 
 class FitCoordsTest(unittest.TestCase):
@@ -135,16 +111,23 @@ class Fa2BlendedLayoutTest(unittest.TestCase):
         self.assertEqual(n_single, 3)
 
 
-class MajorityDeptTest(unittest.TestCase):
-    def test_majority_wins(self):
-        self.assertEqual(majority_dept([["d1"], ["d1", "d2"], ["d2"]]), "d1")
+class ForceAtlasLayouterTest(unittest.TestCase):
+    """`ForceAtlasLayouter` — тонкая обёртка вокруг fa2_blended_layout/
+    spread_min_distance/fit_coords с seed как состоянием - проверяем, что
+    обёртка реально прокидывает вызовы, а не тестируем саму математику
+    ещё раз (та уже покрыта тестами выше)."""
 
-    def test_tie_broken_by_id_not_by_global_popularity(self):
-        """Именно поэтому нельзя сортировать по глобальной популярности
-        департамента — только по id, иначе крупные департаменты подтягивали
-        бы к себе все спорные случаи."""
-        self.assertEqual(majority_dept([["dz"], ["da"]]), "da")
+    def test_blended_positions_every_node_and_is_deterministic(self):
+        layouter = ForceAtlasLayouter(seed=1)
+        all_ids = {"a", "b", "c"}
+        pos, stats = layouter.blended({("a", "b"): 2.0}, all_ids, max_iter=10, min_sep=1.0)
+        self.assertEqual(set(pos), all_ids)
+        self.assertEqual(len(stats), 4)
 
-    def test_no_votes_returns_none(self):
-        self.assertIsNone(majority_dept([]))
-        self.assertIsNone(majority_dept([[], []]))
+    def test_simple_positions_every_node(self):
+        import networkx as nx
+
+        graph = nx.Graph()
+        graph.add_weighted_edges_from([("a", "b", 1.0)])
+        pos = ForceAtlasLayouter(seed=1).simple(graph, max_iter=10)
+        self.assertEqual(set(pos), {"a", "b"})

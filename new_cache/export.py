@@ -37,7 +37,7 @@
 `pauk/pipeline/`/`pauk/sources/`). У каждого оставшегося (не закомментированного)
 поля — комментарий "оба"/"public"/"private" с кратким обоснованием: значит
 это поле дойдёт до веба, вопрос только в том, в какой из двух сборок
-(`new_generate/generate_data.py --public`/`--private`) оно должно попасть.
+(`new_generate/graph_builder.py --public`/`--private`) оно должно попасть.
 
 `created_at`/`updated_at` — это НЕ одноимённые (и не заполняемые) поля
 Pydantic-моделей, а служебные метки времени, которые сам `Neo4jClient`

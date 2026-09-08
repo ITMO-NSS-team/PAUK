@@ -1,60 +1,30 @@
-"""Чистая математика раскладки: позиционирование FA2, подгонка координат,
-раздвижение коллизий. Не знает про авторов/публикации/репозитории как
-понятия предметной области — только id узлов (везде `str`) и веса рёбер.
-Как это вызывается для каждого типа сущности — см. `generate_data.py`.
+"""Раскладка графа: FA2-позиционирование, подгонка координат, раздвижение
+коллизий — плюс сама сборка трёх раскладок (авторы/публикации/репозитории)
+из снепшота. Не знает про личные поля авторов/публикаций/репозиториев —
+только id узлов (везде `str`) и веса рёбер. Как результат используется для
+сборки узлов/рёбер — см. `nodes.py`/`edges.py`.
 """
 
 from __future__ import annotations
 
-import colorsys
+import logging
 import math
 import random
-from collections import Counter, defaultdict
+import time
+from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from itertools import combinations
 
 import networkx as nx
 import numpy as np
 from scipy.spatial import cKDTree  # type: ignore
 
-from .config import DEPT_EDGE_K, DEPT_EDGE_WEIGHT
+from .authorship import Authorship
+from .config import EDGE_THRESHOLDS, FA2_ITERATIONS, MIN_SEPARATION, SYNTHETIC_DEPT_EDGES
+from .departments import DepartmentAssignment
 
-
-def golden_color(i: int) -> str:
-    """Цвет департамента: шаг по золотому сечению для оттенка, HLS l=0.6 s=0.4.
-
-    Аргументы:
-        i: Порядковый номер департамента (после реиндексации по размеру).
-
-    Возвращает:
-        Цвет в формате `#rrggbb`.
-
-    Пример:
-        >>> golden_color(0)
-        '#c27070'
-    """
-    hue = (i * 0.618033988749895) % 1.0
-    r, g, b = colorsys.hls_to_rgb(hue, 0.6, 0.4)
-    return f"#{round(r * 255):02x}{round(g * 255):02x}{round(b * 255):02x}"
-
-
-def dense_rank(values: dict[str, int]) -> dict[str, float]:
-    """rank = плотный ранг метрики / число уникальных значений, округлено до 3.
-
-    Аргументы:
-        values: Метрика по id узла (например, число публикаций автора).
-
-    Возвращает:
-        Тот же набор ключей, значение — доля от 0 до 1 (чем больше метрика,
-        тем ближе к 1).
-
-    Пример:
-        >>> dense_rank({"a": 1, "b": 5, "c": 5})
-        {'a': 0.5, 'b': 1.0, 'c': 1.0}
-    """
-    uniq = sorted(set(values.values()))
-    pos = {v: (i + 1) / len(uniq) for i, v in enumerate(uniq)}
-    return {k: round(pos[v], 3) for k, v in values.items()}
-
+logger = logging.getLogger(__name__)
 
 # Координатное пространство фронтенда: 0..1000 (core.js: S = 1000)
 COORD_MIN, COORD_MAX = 30.0, 970.0
@@ -124,8 +94,8 @@ def sparse_dept_edges(
     all_ids: Iterable[str],
     dept_of: dict[str, str | None],
     rng: random.Random,
-    k: int = DEPT_EDGE_K,
-    weight: float = DEPT_EDGE_WEIGHT,
+    k: int = SYNTHETIC_DEPT_EDGES.dept_edge_k,
+    weight: float = SYNTHETIC_DEPT_EDGES.dept_edge_weight,
     taper_size: int | None = None,
 ) -> dict[tuple[str, str], float]:
     """Слабые рёбра "тот же департамент": каждый узел связывается с k
@@ -289,26 +259,165 @@ def fa2_blended_layout(
     return pos, stats
 
 
-def majority_dept(dept_lists: Iterable[Iterable[str]]) -> str | None:
-    """Департамент по большинству голосов; ничьи разрешаются по id (не по
-    глобальной популярности — это создало бы петлю обратной связи
-    "богатый богатеет" в пользу и без того крупных департаментов).
-
-    Аргументы:
-        dept_lists: Список департаментов на каждого "избирателя" (например,
-            список департаментов каждого соавтора публикации).
-
-    Возвращает:
-        Id департамента-победителя, или `None`, если голосов не было вовсе.
-
-    Пример:
-        >>> majority_dept([["d1"], ["d1", "d2"], ["d2"]])
-        'd1'
+class ForceAtlasLayouter:
+    """Раскладка ForceAtlas2 — держит `seed` как состояние вместо параметра
+    в каждом отдельном вызове (иначе он протаскивается через всю цепочку
+    вызовов в `GraphLayoutBuilder` без изменений). Два метода — ровно два
+    паттерна использования, которые реально есть в этом проекте:
+    `blended()` для авторов/публикаций (смешивание маленьких компонент +
+    раздвижение коллизий), `simple()` для репозиториев (голый FA2, без
+    того и другого — граф репозиториев обычно достаточно разрежен, чтобы
+    в этом не нуждаться).
     """
-    cnt: Counter[str] = Counter()
-    for depts in dept_lists:
-        for d in depts:
-            cnt[d] += 1
-    if not cnt:
-        return None
-    return sorted(cnt.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+
+    def __init__(self, seed: int) -> None:
+        self.seed = seed
+
+    def blended(
+        self, edge_weights: dict[tuple[str, str], float], all_ids: Iterable[str], max_iter: int, min_sep: float
+    ) -> tuple[dict[str, tuple[float, float]], tuple[int, int, int, int]]:
+        """FA2 с подмешиванием несвязанных компонент + раздвижение коллизий."""
+        pos, stats = fa2_blended_layout(edge_weights, all_ids, max_iter, self.seed)
+        return spread_min_distance(pos, min_sep, self.seed), stats
+
+    def simple(self, graph: nx.Graph, max_iter: int) -> dict[str, tuple[float, float]]:
+        """Голый FA2 без подмешивания/раздвижения — граф уже связный или
+        разрежен настолько, что это не нужно."""
+        return fit_coords(nx.forceatlas2_layout(graph, max_iter=max_iter, weight="weight", seed=self.seed))  # type: ignore[arg-type]
+
+
+@dataclass(frozen=True)
+class Layout:
+    """Позиции узлов после раскладки + веса рёбер, которые реально идут на
+    экспорт (не путать с весами, которые использовались только чтобы
+    ПОСЧИТАТЬ раскладку — те шире: `coauth`/`pub_pair_w` здесь ýже, чем то,
+    что видит FA2, потому что раскладка дополнительно учитывает общие
+    репозитории и синтетические "тот же департамент"-рёбра, а на карточку
+    "общие публикации"/"общие авторы" в интерфейсе должны попадать только
+    настоящие связи)."""
+
+    pos_authors: dict[str, tuple[float, float]]
+    pos_pubs: dict[str, tuple[float, float]]
+    pos_repos: dict[str, tuple[float, float]]
+    coauth: dict[tuple[str, str], int]
+    """Пары авторов -> число совместных публикаций (настоящее, для coauth_edges)."""
+    pub_pair_w: dict[tuple[str, str], int]
+    """Пары публикаций -> число общих ИТМО-авторов (настоящее, для pub_edges)."""
+    repo_edge_w: dict[tuple[str, str], int]
+    """Пары репозиториев -> число общих публикаций (используется и для раскладки, и для repo_edges — здесь раздвоения нет)."""
+
+
+class GraphLayoutBuilder:
+    """Считает три раскладки ForceAtlas2 (авторы/публикации/репозитории) —
+    у каждой своя мера близости, см. `docs/architecture/gui.md`. Держит
+    `db`/`authorship`/`assignment` как состояние, чтобы `build()` не тащил
+    их параметрами — они одни и те же на все три раскладки внутри одного вызова.
+    """
+
+    def __init__(self, db: dict[str, list[dict]], authorship: Authorship, assignment: DepartmentAssignment) -> None:
+        self.db = db
+        self.authorship = authorship
+        self.assignment = assignment
+
+    def build(self, seed: int) -> Layout:
+        """Аргументы:
+            seed: Сид ForceAtlas2 и подмешивания несвязанных компонент.
+
+        Возвращает:
+            `Layout` с позициями и весами рёбер для экспорта.
+        """
+        rng = random.Random(seed)
+        layouter = ForceAtlasLayouter(seed)
+
+        # --- авторы: совместные публикации + общие репозитории + разреженные
+        # "тот же департамент"-рёбра. Первое (coauth) уходит и в раскладку, и
+        # в экспорт как есть; репозитории и dept-рёбра — только в раскладку.
+        coauth: dict[tuple[str, str], int] = defaultdict(int)
+        for _pid, pers in self.authorship.pub_authors.items():
+            for a, b in combinations(sorted(set(pers)), 2):
+                coauth[(a, b)] += 1
+
+        # Обычный dict, а не Counter: дальше в него подмешиваются дробные веса
+        # dept-рёбер (sparse_dept_edges), а Counter в typeshed типизирован
+        # только под int.
+        author_layout_w: dict[tuple[str, str], float] = dict(coauth)
+        repo_contributors: dict[str, set[str]] = defaultdict(set)
+        for row in self.db["repo_persons"]:
+            repo_contributors[row["rid"]].add(row["per"])
+        for pers in repo_contributors.values():
+            for a, b in combinations(sorted(pers), 2):
+                author_layout_w[(a, b)] = author_layout_w.get((a, b), 0) + 1
+        for pair, w in sparse_dept_edges(set(self.assignment.static_depts), self.assignment.author_dept, rng).items():
+            author_layout_w[pair] = author_layout_w.get(pair, 0) + w
+
+        t0 = time.time()
+        pos_authors, (n_giant, e_giant, n_small, n_single) = layouter.blended(
+            author_layout_w, set(self.assignment.static_depts), FA2_ITERATIONS.authors, MIN_SEPARATION.authors
+        )
+        logger.info(
+            "FA2 по авторам: гигант %d узлов / %d рёбер, подмешано: %d маленьких компонент + %d синглтонов, "
+            "min-sep %.1f, %.1f с",
+            n_giant, e_giant, n_small, n_single, MIN_SEPARATION.authors, time.time() - t0,
+        )
+
+        # --- публикации: общие ИТМО-авторы. Полный граф w>=1 — тысячи рёбер,
+        # поэтому для раскладки берётся top-K сильнейших связей на публикацию;
+        # на экспорт (pub_edges) идёт полный pub_pair_w, не урезанный.
+        pub_pair_w: dict[tuple[str, str], int] = defaultdict(int)
+        for _per, plist in self.authorship.author_pubs.items():
+            for a, b in combinations(sorted(set(plist)), 2):
+                pub_pair_w[(a, b)] += 1
+
+        t0 = time.time()
+        strongest: dict[str, list[tuple[int, str]]] = defaultdict(list)
+        for (a, b), w in pub_pair_w.items():
+            strongest[a].append((w, b))
+            strongest[b].append((w, a))
+        pub_layout_w: dict[tuple[str, str], float] = {}
+        for n, lst in strongest.items():
+            lst.sort(key=lambda t: (-t[0], t[1]))
+            for w, o in lst[: EDGE_THRESHOLDS.pub_layout_top_k]:
+                pub_layout_w[(n, o) if n < o else (o, n)] = w
+        for pair, w in sparse_dept_edges(
+            self.authorship.pub_ids,
+            self.assignment.pub_primary,
+            rng,
+            k=SYNTHETIC_DEPT_EDGES.pub_dept_edge_k,
+            weight=SYNTHETIC_DEPT_EDGES.pub_dept_edge_weight,
+            taper_size=150,
+        ).items():
+            pub_layout_w[pair] = pub_layout_w.get(pair, 0) + w
+
+        pos_pubs, (n_giant_p, e_giant_p, n_small_p, n_single_p) = layouter.blended(
+            pub_layout_w, self.authorship.pub_ids, FA2_ITERATIONS.pubs, MIN_SEPARATION.pubs
+        )
+        logger.info(
+            "FA2 по публикациям: гигант %d узлов / %d рёбер, подмешано: %d маленьких компонент + %d синглтонов, "
+            "min-sep %.1f, %.1f с",
+            n_giant_p, e_giant_p, n_small_p, n_single_p, MIN_SEPARATION.pubs, time.time() - t0,
+        )
+
+        # --- репозитории: общие публикации (включая публикации вне графа, у
+        # которых нет ни одного ИТМО-автора — репозиторий их всё равно реализует).
+        repo_all_pubs: dict[str, set[str]] = defaultdict(set)
+        for row in self.db["repo_pubs"]:
+            repo_all_pubs[row["rid"]].add(row["pid"])
+        repo_edge_w: dict[tuple[str, str], int] = {}
+        for a, b in combinations(sorted(repo_all_pubs), 2):
+            shared = len(repo_all_pubs[a] & repo_all_pubs[b])
+            if shared:
+                repo_edge_w[(a, b)] = shared
+
+        R = nx.Graph()
+        R.add_nodes_from(r["id"] for r in self.db["repositories"])
+        R.add_weighted_edges_from((a, b, w) for (a, b), w in repo_edge_w.items())
+        pos_repos = layouter.simple(R, FA2_ITERATIONS.repos)
+
+        return Layout(
+            pos_authors=pos_authors,
+            pos_pubs=pos_pubs,
+            pos_repos=pos_repos,
+            coauth=dict(coauth),
+            pub_pair_w=dict(pub_pair_w),
+            repo_edge_w=repo_edge_w,
+        )
