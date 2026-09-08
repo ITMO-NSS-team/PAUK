@@ -68,15 +68,32 @@ class AuthorVariantsTest(unittest.TestCase):
     def test_excludes_already_shown_labels(self):
         row = {"name_ru": "Иванов И.И.", "name_variants": ["Ivanov I.I.", "И. Иванов"]}
         variants = author_variants(row, label_ru="Иванов И.И.", label_en="Ivanov I.I.")
-        self.assertEqual(variants, ["И. Иванов"])
+        self.assertEqual(variants, {"openalex": ["И. Иванов"], "orcid": []})
 
-    def test_deduplicates_case_insensitively(self):
+    def test_excludes_full_name_ru_and_en_too(self):
+        """name_ru/name_en теперь сами становятся заголовком карточки (см.
+        docstring author_variants) - не должны повторно всплывать в списке."""
+        row = {
+            "name_ru": "Иванов Иван Иванович",
+            "name_en": "Ivan Ivanov",
+            "name_variants": ["Ivan Ivanov", "И. Иванов"],
+        }
+        variants = author_variants(row, label_ru="Иванов И.И.", label_en="Ivanov I.I.")
+        self.assertEqual(variants, {"openalex": ["И. Иванов"], "orcid": []})
+
+    def test_deduplicates_case_insensitively_within_one_source(self):
         row = {"name_ru": "", "name_variants": ["A B", "a b", "C D"]}
         variants = author_variants(row, label_ru="x", label_en="y")
-        self.assertEqual(variants, ["A B", "C D"])
+        self.assertEqual(variants, {"openalex": ["A B", "C D"], "orcid": []})
 
-    def test_no_variants_returns_empty_list(self):
-        self.assertEqual(author_variants({"name_ru": "", "name_variants": []}, "x", "y"), [])
+    def test_other_names_go_to_orcid_group_separately_from_name_variants(self):
+        row = {"name_ru": "", "name_variants": ["Ivan Ivanov"], "other_names": ["I. Ivanov", "Ivan I."]}
+        variants = author_variants(row, label_ru="x", label_en="y")
+        self.assertEqual(variants, {"openalex": ["Ivan Ivanov"], "orcid": ["I. Ivanov", "Ivan I."]})
+
+    def test_no_variants_returns_empty_groups(self):
+        row = {"name_ru": "", "name_variants": [], "other_names": []}
+        self.assertEqual(author_variants(row, "x", "y"), {"openalex": [], "orcid": []})
 
 
 class IndexAuthorshipTest(unittest.TestCase):

@@ -371,6 +371,10 @@ export function mountPanel(
       if (!node) return hide();
 
       const dept = deptById.get(node.dept);
+      // Для автора заголовок карточки могут поменять ниже (полное имя
+      // вместо сокращённой подписи) — для остальных видов узлов остаётся
+      // как есть.
+      let title = nodeLabel(node, lang, pubDetails);
       const rows: PanelRow[] = [
         [t("field.key", lang), node.key],
         [t("field.kind", lang), kindLabel(node.kind, lang)],
@@ -385,11 +389,23 @@ export function mountPanel(
         // (см. app/main.ts) — а не то, что у автора реально нет данных.
         if (authorDetails.has(node.key)) {
           const authorDetail = authorDetails.get(node.key);
+          // Заголовок — полное имя на нужном языке, если оно вообще
+          // известно ("Фамилия Имя Отчество", не "Фамилия И.О."); если
+          // пусто (редкий случай) — остаётся сокращённая подпись узла.
+          const fullName = authorDetail ? localize(authorDetail.name_ru, authorDetail.name_en, lang) : "";
+          if (fullName) title = fullName;
           if (authorDetail?.degree) rows.push([t("field.degree", lang), authorDetail.degree]);
           if (authorDetail?.github) rows.push([t("field.github", lang), [githubLink(authorDetail.github)]]);
           if (authorDetail?.orcid) rows.push([t("field.orcid", lang), [orcidLink(authorDetail.orcid)]]);
-          if (authorDetail?.name_variants && authorDetail.name_variants.length > 0) {
-            rows.push([t("field.nameVariants", lang), authorDetail.name_variants.join(", ")]);
+          // Раздельно по источнику — OpenAlex (варианты по публикациям) и
+          // ORCID (имя, под которым автор сам просит его указывать) — это
+          // разные по происхождению вещи, см. author_variants() в
+          // new_generate/generate_data.py.
+          if (authorDetail && authorDetail.name_variants.openalex.length > 0) {
+            rows.push([t("field.nameVariantsOpenalex", lang), authorDetail.name_variants.openalex.join(", ")]);
+          }
+          if (authorDetail && authorDetail.name_variants.orcid.length > 0) {
+            rows.push([t("field.nameVariantsOrcid", lang), authorDetail.name_variants.orcid.join(", ")]);
           }
         } else {
           rows.push([t("field.loadingDetails", lang), LOADING]);
@@ -447,7 +463,7 @@ export function mountPanel(
         if (pubAuthorKeys.length > 0) rows.push([t("tab.authors", lang), labelsOf(pubAuthorKeys, lang)]);
       }
 
-      return show(nodeLabel(node, lang, pubDetails), rows);
+      return show(title, rows);
     }
 
     if (selection.kind === "edge") {

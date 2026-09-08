@@ -230,18 +230,18 @@ def load_db(driver) -> dict[str, list]:
         driver,
         "MATCH (p:Person {is_itmo: true}) "
         "RETURN "
-        "p.id AS id, "  # обязателен, без него нет строки
-        "p.openalex_id AS openalex_id, "  # внешний ключ на OpenAlex, дёшево, полезен для сверки. ОСТАВИТЬ
-        "p.first_name_ru AS first_name_ru, "  # уже было в pauk/cache/. ОСТАВИТЬ
-        "p.second_name_ru AS second_name_ru, "  # уже было. ОСТАВИТЬ
-        "p.surname_ru AS surname_ru, "  # уже было. ОСТАВИТЬ
-        "p.first_name_en AS first_name_en, "  # уже было. ОСТАВИТЬ
-        "p.second_name_en AS second_name_en, "  # уже было. ОСТАВИТЬ
-        "p.surname_en AS surname_en, "  # уже было. ОСТАВИТЬ
-        "p.name_ru AS name_ru, "  # готовое полное имя (LLM-разбор), уже было. ОСТАВИТЬ
-        "p.name_en AS name_en, "  # то же на английском. ОСТАВИТЬ
-        "p.name_variants AS name_variants, "  # уже использовалось в new_gui. ОСТАВИТЬ
-        "p.other_names AS other_names, "  # из ORCID, реальный источник. ОСТАВИТЬ - но пересекается по смыслу с name_variants, решить на выходе
+        "p.id AS id, "
+        "p.openalex_id AS openalex_id, "
+        "p.name_ru AS name_ru, "
+        "p.name_en AS name_en, "
+        "p.surname_ru AS surname_ru, "
+        "p.first_name_ru AS first_name_ru, "
+        "p.second_name_ru AS second_name_ru, "
+        "p.surname_en AS surname_en, "
+        "p.first_name_en AS first_name_en, "
+        "p.second_name_en AS second_name_en, "
+        "p.name_variants AS name_variants, "
+        "p.other_names AS other_names, "
         "p.degree AS degree, "  # уже было. ОСТАВИТЬ
         "p.github AS github, "  # уже было. ОСТАВИТЬ
         "p.orcid AS orcid, "  # уже было. ОСТАВИТЬ
@@ -390,8 +390,6 @@ def load_db(driver) -> dict[str, list]:
         "rel.is_corresponding AS is_corresponding",  # признак корреспондирующего автора. ОСТАВИТЬ
     )
 
-    # Департамент каждой ИТМО-персоны (BELONGS_TO). У связи нет
-    # собственных свойств - пара id, добавлять нечего.
     db["person_depts"] = cypher_dict(
         driver,
         "MATCH (p:Person {is_itmo: true})-[:BELONGS_TO]->(d:Department) "
@@ -400,8 +398,6 @@ def load_db(driver) -> dict[str, list]:
         "d.id AS did",
     )
 
-    # Департамент, "выпустивший" публикацию (PRODUCED_BY). У связи нет
-    # собственных свойств - пара id, добавлять нечего.
     db["pub_depts"] = cypher_dict(
         driver,
         "MATCH (pub:Publication)-[:PRODUCED_BY]->(d:Department) "
@@ -411,55 +407,32 @@ def load_db(driver) -> dict[str, list]:
         "ORDER BY d.id",
     )
 
-    # Какой репозиторий реализует какую публикацию (IMPLEMENTS) - это
-    # подтверждённая финальная связь, без деталей происхождения. У связи
-    # нет собственных свойств - пара id, добавлять нечего.
     db["repo_pubs"] = cypher_dict(
         driver,
-        "MATCH (r:Repository)-[:IMPLEMENTS]->(pub:Publication) RETURN r.id AS rid, pub.id AS pid",
+        "MATCH (r:Repository)-[:IMPLEMENTS]->(pub:Publication) "
+        "RETURN r.id AS rid, "
+        "pub.id AS pid, "
     )
 
-    # Публикация -> репозиторий, который в её тексте УПОМЯНУТ (MENTIONS_LINK),
-    # с доказательной базой LLM/эвристики. Это НЕ то же самое, что repo_pubs
-    # (IMPLEMENTS): здесь может быть упоминание с is_relevant=false или
-    # низкой уверенностью - решение "это действительно код к статье"
-    # принимает repo_pubs, а здесь - сырой след, из которого оно вынесено.
     db["mentions_repos"] = cypher_dict(
         driver,
         "MATCH (pub:Publication)-[rel:MENTIONS_LINK]->(r:Repository) "
         "RETURN "
-        "pub.id AS pid, "  # обязателен
-        "r.id AS rid, "  # обязателен
-        "rel.context AS context, "  # список фрагментов текста, где встретилась ссылка. НОВОЕ - ОСТАВИТЬ
-        "rel.page_number AS page_number, "  # список номеров страниц (0 = абстракт, сентинел вместо null). НОВОЕ - ОСТАВИТЬ
-        "rel.is_relevant AS is_relevant, "  # признак LLM: ссылка реально относится к работе. НОВОЕ - ОСТАВИТЬ
-        "rel.llm_confidence AS llm_confidence, "  # уверенность LLM-оценки. НОВОЕ - ОСТАВИТЬ
-        "rel.llm_reason AS llm_reason",  # текстовое обоснование LLM. НОВОЕ - ОСТАВИТЬ
+        "pub.id AS pid, "
+        "r.id AS rid, "
+        "rel.is_relevant AS is_relevant, "
     )
 
-    # Публикация -> ссылка-кандидат на код (MENTIONS_LINK на LinkCandidate),
-    # которая ещё не срезолвилась в существующий Repository (сравнение по
-    # normalize_repo_url, см. pauk/graph/jsonl_loader.py). Поля самого
-    # LinkCandidate (url/host) включены прямо в эту строку - у него нет
-    # других связей, заводить отдельную таблицу под два поля незачем
-    # (та же логика, что и с GitHubProfile у repositories выше).
     db["mentions_candidates"] = cypher_dict(
         driver,
         "MATCH (pub:Publication)-[rel:MENTIONS_LINK]->(lc:LinkCandidate) "
         "RETURN "
-        "pub.id AS pid, "  # обязателен
-        "lc.id AS candidate_id, "  # обязателен (id кандидата - это сам его URL, см. NODE_REGISTRY)
-        "lc.url AS url, "  # ссылка-кандидат. НОВОЕ - ОСТАВИТЬ
-        "lc.host AS host, "  # хост ссылки (github.com, gitlab.com, ...). НОВОЕ - ОСТАВИТЬ
-        "rel.context AS context, "  # см. mentions_repos. НОВОЕ - ОСТАВИТЬ
-        "rel.page_number AS page_number, "  # см. mentions_repos. НОВОЕ - ОСТАВИТЬ
-        "rel.is_relevant AS is_relevant, "  # см. mentions_repos. НОВОЕ - ОСТАВИТЬ
-        "rel.llm_confidence AS llm_confidence, "  # см. mentions_repos. НОВОЕ - ОСТАВИТЬ
-        "rel.llm_reason AS llm_reason",  # см. mentions_repos. НОВОЕ - ОСТАВИТЬ
+        "pub.id AS pid, "
+        "lc.url AS url, "  # TODO: process raw url with LLM
+        "lc.host AS host, "
+        "rel.is_relevant AS is_relevant, ",
     )
 
-    # Кто из ИТМО-персон работал над репозиторием (CONTRIBUTED_TO), с
-    # ролью (owner/contributor) - единственное собственное свойство связи.
     db["repo_persons"] = cypher_dict(
         driver,
         "MATCH (p:Person {is_itmo: true})-[rel:CONTRIBUTED_TO]->(r:Repository) "
@@ -469,8 +442,6 @@ def load_db(driver) -> dict[str, list]:
         "rel.role AS role",
     )
 
-    # Департамент, "разработавший" репозиторий (DEVELOPED_BY). У связи
-    # нет собственных свойств - пара id, добавлять нечего.
     db["repo_depts"] = cypher_dict(
         driver,
         "MATCH (r:Repository)-[:DEVELOPED_BY]->(d:Department) "

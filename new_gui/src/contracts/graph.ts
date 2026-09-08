@@ -9,7 +9,7 @@
 // отдельные AuthorDetail/RepoDetail/PubDetail — их new_generate пишет в
 // отдельные *-detail.json, которые new_gui подгружает лениво, после карты.
 // У публикаций это разделение было и раньше (PubDetail раньше назывался
-// PubDetail и жил в contracts/search.ts — имя тянулось из старого
+// SearchDetail и жил в contracts/search.ts — имя тянулось из старого
 // graph-search.js/old_gui, хотя используется далеко не только поиском;
 // переименовано, когда авторы/репозитории получили тот же принцип и старое
 // имя стало явно вводить в заблуждение). contracts/search.ts остаётся
@@ -48,10 +48,17 @@ export interface AuthorNode {
 // физически не может утечь туда, где детали не публикуются).
 export interface AuthorDetail {
   key: string;
+  // Полное имя на каждом языке — заголовок приватной карточки автора
+  // (features/panels.ts), как только этот detail домержился; до этого
+  // момента заголовок — сокращённая AuthorNode.label/label_en.
   name_ru: string;
-  // Варианты имени за вычетом того, что уже показано в label/label_en —
-  // не сырой список из OpenAlex.
-  name_variants: string[];
+  name_en: string;
+  // Варианты написания имени за вычетом того, что уже показано как
+  // заголовок (ни сокращённой подписи, ни name_ru/name_en) — раздельно по
+  // источнику: openalex — то, что OpenAlex видел по разным публикациям
+  // автора; orcid — имя, под которым автор сам просит его указывать, плюс
+  // варианты, которые он сам зарегистрировал в своём профиле ORCID.
+  name_variants: { openalex: string[]; orcid: string[] };
   degree: string;
   github: string;
   orcid: string;

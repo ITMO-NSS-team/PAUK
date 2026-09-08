@@ -127,22 +127,43 @@ def author_label(
     return surname
 
 
-def author_variants(row: dict, label_ru: str, label_en: str) -> list[str]:
-    """Другие варианты написания имени этого человека, без тех, что уже показаны.
+def author_variants(row: dict, label_ru: str, label_en: str) -> dict[str, list[str]]:
+    """Другие варианты написания имени этого человека, без тех, что уже
+    показаны как заголовок карточки — раздельно по источнику.
 
-    Карточка уже показывает RU- и EN-подписи и полное русское имя; всё
-    остальное, что OpenAlex знает об этом авторе (и полное русское имя,
-    когда подпись — только фамилия с инициалами), идёт в свёрнутый список.
+    Заголовок приватной карточки (`new_gui/src/features/panels.ts`) — это
+    сокращённая подпись (`label`/`label_en`) ПОКА detail не домержился, а
+    как только домержился — `name_ru`/`name_en` целиком (полное имя вместо
+    "Фамилия И.О."). Раз `name_ru`/`name_en` сами становятся заголовком,
+    здесь они исключены из кандидатов в свёрнутый список — иначе то же имя
+    показывалось бы дважды. Источники, которые в этот список всё же идут:
+    `name_variants` — то, что OpenAlex видел по разным публикациям автора;
+    `other_names` — имя, под которым автор сам просит его указывать
+    (ORCID credit-name), плюс варианты, которые он сам зарегистрировал в
+    своём профиле. Разные по происхождению вещи, поэтому не сливаются в
+    один список — это решает карточка (см. `field.nameVariantsOpenAlex`/
+    `field.nameVariantsOrcid` в `new_gui/src/core/i18n.ts`).
     """
-    shown = {label_ru.casefold(), label_en.casefold()}
-    candidates = [row.get("name_ru") or "", *(row.get("name_variants") or [])]
-    variants = []
-    for value in candidates:
-        cleaned = " ".join((value or "").split())
-        if cleaned and cleaned.casefold() not in shown:
-            shown.add(cleaned.casefold())
-            variants.append(cleaned)
-    return variants
+    shown = {
+        label_ru.casefold(),
+        label_en.casefold(),
+        (row.get("name_ru") or "").casefold(),
+        (row.get("name_en") or "").casefold(),
+    }
+
+    def dedup(values: list[str]) -> list[str]:
+        result = []
+        for value in values:
+            cleaned = " ".join((value or "").split())
+            if cleaned and cleaned.casefold() not in shown:
+                shown.add(cleaned.casefold())
+                result.append(cleaned)
+        return result
+
+    return {
+        "openalex": dedup(row.get("name_variants") or []),
+        "orcid": dedup(row.get("other_names") or []),
+    }
 
 
 @dataclass(frozen=True)
@@ -535,6 +556,7 @@ def _build_author_nodes(
                 {
                     "key": pid_,
                     "name_ru": row.get("name_ru") or "",
+                    "name_en": row.get("name_en") or "",
                     "name_variants": author_variants(row, label_ru, label_en),
                     "degree": row["degree"] or "",
                     "github": row["github"] or "",

@@ -134,27 +134,66 @@ describe("mountPanel", () => {
     expect(panel.textContent).not.toContain("Репозитории");
   });
 
-  it("карточка автора показывает варианты имени (name_variants), когда они есть", async () => {
+  it("карточка автора показывает варианты имени раздельно по источнику (OpenAlex/ORCID), когда они есть", async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
-    // A1 в authors-detail.sample.json — name_variants: ["Ivanov Ivan", "I. Ivanov"].
+    // A1 в authors-detail.sample.json — openalex: ["Ivanov Ivan"], orcid: ["I. Ivanov"].
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A1" } });
 
     mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
 
-    expect(panel.textContent).toContain("Варианты имени");
+    expect(panel.textContent).toContain("Варианты написания (OpenAlex)");
     expect(panel.textContent).toContain("Ivanov Ivan");
+    expect(panel.textContent).toContain("Варианты написания (ORCID)");
+    expect(panel.textContent).toContain("I. Ivanov");
   });
 
-  it("не показывает строку вариантов имени у автора без name_variants", async () => {
+  it("не показывает строки вариантов имени у автора без name_variants ни по одному источнику", async () => {
     const data = await loadSampleGraphData();
-    // A2 в authors-detail.sample.json - detail пришёл, name_variants: [].
+    // A2 в authors-detail.sample.json - detail пришёл, openalex/orcid пустые.
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A2" } });
 
     mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
 
-    expect(panel.textContent).not.toContain("Варианты имени");
+    expect(panel.textContent).not.toContain("Варианты написания");
+  });
+
+  it("заголовок карточки автора — полное имя (name_ru/name_en) на текущем языке, как только detail пришёл", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    // A1 в authors-detail.sample.json — name_ru: "Иванов Иван Иванович", name_en: "Ivan Ivanov".
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A1" } });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+    expect(panel.querySelector("h3")?.textContent).toBe("Иванов Иван Иванович");
+
+    store.set({ lang: "en" });
+    expect(panel.querySelector("h3")?.textContent).toBe("Ivan Ivanov");
+  });
+
+  it("заголовок карточки автора остаётся сокращённой подписью, пока detail не пришёл", async () => {
+    const data = await loadSampleGraphData();
+    const author = data.authors.find((a) => a.key === "A1");
+    if (!author) throw new Error("фикстура должна содержать автора A1");
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A1" } });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.querySelector("h3")?.textContent).toBe(author.label);
+  });
+
+  it("заголовок карточки автора остаётся сокращённой подписью, если полное имя пустое, даже когда detail уже пришёл", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    // A2 в authors-detail.sample.json — detail пришёл, но name_ru/name_en пустые.
+    const author2 = data.authors.find((a) => a.key === "A2");
+    if (!author2) throw new Error("фикстура должна содержать автора A2");
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A2" } });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    expect(panel.querySelector("h3")?.textContent).toBe(author2.label);
   });
 
   it("карточка репозитория показывает участников с ролью и публикации репозитория", async () => {

@@ -128,15 +128,12 @@ class LoadDbShapeTest(unittest.TestCase):
         responses[3] = [{"id": "D1", "parent_id": "O1", "parent_kind": "Organization"}]
         responses[4] = [{"id": "O1", "name_ru": "ИТМО"}]
         responses[9] = [{"pid": "P1", "rid": "R1", "is_relevant": True}]
-        responses[10] = [{"pid": "P1", "candidate_id": "https://x", "url": "https://x"}]
+        responses[10] = [{"pid": "P1", "url": "https://x", "is_relevant": True}]
         db = load_db(SequentialFakeDriver(responses))
         self.assertEqual(db["departments"], [{"id": "D1", "parent_id": "O1", "parent_kind": "Organization"}])
         self.assertEqual(db["organizations"], [{"id": "O1", "name_ru": "ИТМО"}])
         self.assertEqual(db["mentions_repos"], [{"pid": "P1", "rid": "R1", "is_relevant": True}])
-        self.assertEqual(
-            db["mentions_candidates"],
-            [{"pid": "P1", "candidate_id": "https://x", "url": "https://x"}],
-        )
+        self.assertEqual(db["mentions_candidates"], [{"pid": "P1", "url": "https://x", "is_relevant": True}])
 
     def test_result_has_all_thirteen_expected_keys(self):
         db = load_db(SequentialFakeDriver(self._empty_responses()))
