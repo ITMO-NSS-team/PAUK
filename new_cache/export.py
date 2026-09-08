@@ -142,14 +142,12 @@ def _execute_retrying(driver, query, **params):
         attempt += 1
         try:
             t0 = time.time()
-            # execute_query() возвращает тройку (записи, summary, ключи колонок) —
-            # summary/ключи здесь не нужны, весь интерес в самих записях.
             records, _, _ = driver.execute_query(query, **params)
             logger.info(
                 "  %d   %.1f c: %s…",
                 len(records),
                 time.time() - t0,
-                query.lstrip()[:60],  # только начало запроса, чтобы не заливать лог полным текстом RETURN
+                query.lstrip()[:60],
             )
             return records
         except (ServiceUnavailable, SessionExpired, TransientError, OSError) as exc:
@@ -477,10 +475,16 @@ class GraphSnapshotExporter:
                 понятную ошибку сразу, а не позднюю ошибку аутентификации от
                 самого драйвера при первом запросе.
         """
-        if not self.config.neo4j_password:  # проверка до открытия драйвера, см. докстринг про причину
+        if (
+            not self.config.neo4j_password
+        ):  # проверка до открытия драйвера, см. докстринг про причину
             raise ValueError("Neo4j password is empty - set NEO4J_PASSWORD in .env")
 
-        target = path or self.config.cache_dir / "graph_snapshot.json"
+        # .resolve() — если path задан относительным путём (например, из
+        # --output), итоговый путь не должен зависеть от того, откуда
+        # именно запущена команда: без этого "--output data/cache/x.json"
+        # тихо уезжает в другое место при другой рабочей директории.
+        target = (path or self.config.cache_dir / "graph_snapshot.json").resolve()
         driver = GraphDatabase.driver(
             self.config.neo4j_uri,
             auth=(self.config.neo4j_user, self.config.neo4j_password),
@@ -491,3 +495,49 @@ class GraphSnapshotExporter:
         finally:
             driver.close()
         return target
+
+
+def main() -> None:
+    """CLI: `python -m new_cache --output ...` (см. `new_cache/__main__.py` про
+    то, почему именно так, а не `python -m new_cache.export`).
+
+    У `new_cache`, в отличие от `pauk cache export`, пока нет своей
+    подкоманды в `pauk/cli.py` (та обёртка ходит в старый `pauk/cache/`) —
+    этот `main()` даёт равноценный способ запустить экспорт без обращения
+    к `pauk.cli`, но с той же настройкой логов, что и там: без неё вызов
+    `GraphSnapshotExporter.export()` "в лоб" (например, из `python -c`)
+    остаётся полностью тихим для `logger.info(...)` из `_execute_retrying()`
+    (Python отдаёт под запись только WARNING+, если `logging.basicConfig()`
+    ни разу не вызывался), а сырые предупреждения neo4j о несуществующих
+    свойствах (`neo4j.notifications`, отдельный логгер самого драйвера) при
+    этом всё равно проходят, потому что они как раз WARNING — снаружи это
+    выглядит как "нет прогресса, зато экран забит непонятным мусором",
+    хотя причина одна: не позвана настройка логирования.
+    """
+    import argparse
+
+    from pauk.logging import configure_logging
+    from pauk.settings import settings
+
+    parser = argparse.ArgumentParser(description="Снятие снепшота графа Neo4j (new_cache)")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="куда писать снепшот (по умолчанию <cache_dir>/graph_snapshot.json)",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="DEBUG для pauk.*, и не глушить neo4j.notifications (см. pauk/logging.py)",
+    )
+    args = parser.parse_args()
+
+    # configure_logging() — та же функция, что и у `pauk cache export`: ставит
+    # root на INFO (значит, прогресс из _execute_retrying() наконец виден) и
+    # явно опускает neo4j.notifications до ERROR (значит, спам про
+    # несуществующие свойства пропадает) — обе жалобы лечатся одним вызовом,
+    # без своей копии этой настройки здесь.
+    configure_logging(args.verbose)
+    path = GraphSnapshotExporter(settings).export(args.output)
+    logger.info("cache export: %s", path)
