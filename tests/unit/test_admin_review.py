@@ -3,10 +3,12 @@ import unittest
 import mongomock
 from fastapi.testclient import TestClient
 
+from pauk.admin import deps
 from pauk.admin.app import build
 from pauk.admin.auth import create_user
 from pauk.settings import Settings
 from pauk.storage import review
+from tests.unit.test_admin_nodes import FakePanelGraph
 from tests.unit.test_review_store import held_group, held_pair
 
 
@@ -170,3 +172,76 @@ class AnsweredTabTest(unittest.TestCase):
         # merging the pair later.
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.DIFFERENT)
         self.assertNotIn("сольётся", self.body())
+
+
+class FoldNowTest(unittest.TestCase):
+    """A confirmed pair is folded at once when both people are in the graph.
+
+    The queue is fed by two passes. One runs inside a collection, before
+    anything is published, and names people who have no nodes yet; the
+    other runs over the graph itself. Only the second can be acted on
+    immediately, and the page has to say which happened.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        review.record_held(self.db, [held_pair("A1", "A2")])
+        self.graph = FakePanelGraph()
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_if_up] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def csrf(self):
+        return self.client.get("/review").text.split('name="csrf" value="')[1].split('"')[0]
+
+    def answer(self, verdict="same", members=("A1", "A2")):
+        return self.client.post("/review/answer", data={
+            "csrf": self.csrf(), "kind": review.PAIR,
+            "members": ",".join(members), "verdict": verdict})
+
+    def test_two_nodes_are_folded_at_once(self):
+        self.graph.add("Person", "A1", name_raw="Ivan Smirnov")
+        self.graph.add("Person", "A2", name_raw="Ivan Smirnov")
+        response = self.answer()
+        self.assertIn("done=merged", response.headers["location"])
+        self.assertEqual(set(self.graph.nodes), {("Person", "A1")})
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["merged_ids"], ["A2"])
+        (row,) = review.questions(self.db, answered=True)
+        self.assertIsNotNone(row["applied_at"])
+
+    def test_the_survivor_is_the_one_with_more_work(self):
+        # The same rule the dedup uses. Two rules would fold the same pair
+        # the other way round depending on who did it.
+        self.graph.add("Person", "A1", name_raw="Ivan Smirnov")
+        self.graph.add("Person", "A2", name_raw="Ivan Smirnov")
+        self.graph.add("Publication", "W1")
+        self.graph.relationships[("Person", "AUTHORED", "Publication", "A2", "W1")] = {}
+        self.answer()
+        self.assertEqual(set(self.graph.nodes) & {("Person", "A1"), ("Person", "A2")},
+                         {("Person", "A2")})
+
+    def test_a_pair_with_no_nodes_only_waits(self):
+        response = self.answer()
+        self.assertIn("done=waiting", response.headers["location"])
+        (row,) = review.questions(self.db, answered=True)
+        self.assertNotIn("applied_at", row)
+
+    def test_the_decision_stands_even_with_the_graph_down(self):
+        # Recording is the valuable half: the rules apply it themselves.
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_if_up] = lambda: None
+        client = TestClient(app, follow_redirects=False)
+        client.post("/login", data={"login": "roman", "password": "hunter2"})
+        token = client.get("/review").text.split('name="csrf" value="')[1].split('"')[0]
+        response = client.post("/review/answer", data={
+            "csrf": token, "kind": review.PAIR, "members": "A1,A2", "verdict": "same"})
+        self.assertIn("done=waiting", response.headers["location"])
+        self.assertEqual(review.decisions(self.db), {frozenset({"A1", "A2"}): review.SAME})
+
+    def test_keeping_two_people_apart_folds_nothing(self):
+        self.graph.add("Person", "A1")
+        self.graph.add("Person", "A2")
+        self.answer(verdict="different")
+        self.assertEqual(set(self.graph.nodes), {("Person", "A1"), ("Person", "A2")})

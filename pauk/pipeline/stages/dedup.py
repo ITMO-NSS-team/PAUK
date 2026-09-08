@@ -259,6 +259,18 @@ def _is_initials_name(name: str) -> bool:
     return bool(INITIALS_NAME.match(name.strip()))
 
 
+def merge_rank(authored: int, orcid: str | None, node_id: str) -> tuple:
+    """Sort key deciding which record for one person survives a fold.
+
+    The one that carries the most work, then the one with an ORCID, then
+    the lower id so two runs over the same data agree. Shared with the
+    panel, which folds a pair the moment somebody confirms it: two rules
+    for picking a survivor would fold the same pair the other way round
+    depending on who did it.
+    """
+    return (-authored, orcid is None, node_id)
+
+
 def plan_person_merges(
     people: list[Person],
     trusted_orcid: dict[str, str | None],
@@ -479,7 +491,7 @@ def plan_person_merges(
             continue
         ranked = sorted(
             (by_id[member] for member in members),
-            key=lambda p: (-len(p.authored), p.orcid is None, p.id),
+            key=lambda p: merge_rank(len(p.authored), p.orcid, p.id),
         )
         canonical, duplicates = ranked[0], ranked[1:]
         groups.append((canonical, duplicates))

@@ -7,6 +7,16 @@
   доходит до правил заранее, а не правит результат задним числом.
 </p>
 
+{% set done = request.query_params.get("done") %}
+{% if done == "merged" %}
+<p class="note">Записи слиты. Дубль ушёл, связи перешли на оставшуюся запись.
+   Отменить это нельзя.</p>
+{% elif done == "waiting" %}
+<p class="note">Решение записано. Слить прямо сейчас нечего: этих людей ещё
+   нет в графе или он не отвечает. Слияние произойдёт на следующем прогоне
+   дедупликации.</p>
+{% endif %}
+
 <div class="tabs">
   <a href="/review?tab=pressing" {% if tab == "pressing" %}class="on"{% endif %}>
     Стоит посмотреть {{ counts.pressing }}</a>

@@ -13,7 +13,18 @@ import logging
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from pauk.admin.deps import CsrfChecked, CurrentUser, Db, Editor, Session, StoresReady, templates
+from pauk.admin.deps import (
+    CsrfChecked,
+    CurrentUser,
+    Db,
+    Editor,
+    MaybeGraph,
+    Session,
+    StoresReady,
+    templates,
+)
+from pauk.graph.mutations import MutationError, NotFound, merge_nodes, read_node
+from pauk.pipeline.stages.dedup import merge_rank
 from pauk.storage import review
 
 logger = logging.getLogger("pauk.admin")
@@ -103,13 +114,51 @@ def queue(request: Request, user: CurrentUser, session: Session, db: Db,
     })
 
 
+def _fold_now(graph, db, members: list[str], actor: str) -> str:
+    """Fold a confirmed pair straight away, when there is anything to fold.
+
+    A pair held by the collection stage names people who are prepared rows
+    and nothing else: their group has not been published, so no node exists
+    and the answer simply waits for one. A pair held by the graph-wide pass
+    names two live nodes, and making somebody wait for the next run to see
+    their own decision take effect would be for nothing.
+
+    Returns:
+        "merged", or "waiting" when the graph cannot do it now. Either way
+        the decision is already stored and the next run applies it.
+    """
+    if graph is None:
+        return "waiting"
+    try:
+        rows = {node_id: read_node(graph, "Person", node_id) for node_id in members}
+    except NotFound:
+        return "waiting"
+    ranked = sorted(members, key=lambda node_id: merge_rank(
+        len([edge for edge in graph.fetch_node_relationships("Person", node_id)
+             if edge["type"] == "AUTHORED" and edge["outgoing"]]),
+        rows[node_id].get("orcid"), node_id))
+    canonical, duplicate = ranked[0], ranked[1]
+    try:
+        merge_nodes(graph, "Person", duplicate, canonical)
+    except MutationError as error:
+        # Not the caller's problem: the answer stands and the next dedup
+        # will fold the pair with the rest.
+        logger.warning("could not fold %s into %s now: %s", duplicate, canonical, error)
+        return "waiting"
+    review.mark_applied(db, review.PAIR, members)
+    logger.info("%s folded %s into %s from the review queue", actor, duplicate, canonical)
+    return "merged"
+
+
 @router.post("/review/answer")
-async def answer(request: Request, user: Editor, db: Db, _: CsrfChecked, __: StoresReady):
+async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
+                 _: CsrfChecked, __: StoresReady):
     """Write down what somebody decided about one question.
 
-    The graph is not touched here. A pair held by the collection stage has
-    no nodes yet — the group it came from is not published — so there would
-    be nothing to merge even when the answer is "one person".
+    The decision is stored first and folded second, never the other way
+    round: stored, it survives anything that happens next and the rules
+    apply it themselves. A fold that ran before the decision was written
+    would be a merge nobody could explain and nobody could repeat.
     """
     form = await request.form()
     kind = str(form.get("kind", review.PAIR))
@@ -126,7 +175,11 @@ async def answer(request: Request, user: Editor, db: Db, _: CsrfChecked, __: Sto
     except review.ReviewError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     logger.info("%s answered %s %s: %s", user.actor, kind, members, verdict)
-    return RedirectResponse(f"/review?tab={tab}", status_code=status.HTTP_303_SEE_OTHER)
+    done = ""
+    if verdict == review.SAME and kind == review.PAIR:
+        done = _fold_now(graph, db, members, user.actor)
+    return RedirectResponse(f"/review?tab={tab}&done={done}" if done else f"/review?tab={tab}",
+                            status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/review/withdraw")

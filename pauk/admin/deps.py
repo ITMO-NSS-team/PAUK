@@ -148,6 +148,26 @@ def graph_for(request: Request, user: Annotated[User, Depends(require_user)]) ->
         client.close()
 
 
+def graph_if_up(request: Request, user: Annotated[User, Depends(require_user)]) -> Iterator:
+    """The audited client, or None when the graph is not answering.
+
+    For a route that has something worth doing either way. Answering a
+    review question is one: the answer is written to Mongo and the rules
+    read it on their next run, so an unreachable Neo4j costs the merge that
+    could have happened now, not the decision itself.
+    """
+    try:
+        client = request.app.state.graph.audited(actor=user.actor, source="admin-ui")
+    except (ValueError, ServiceUnavailable, AuthError) as error:
+        logger.warning("graph unavailable, carrying on without it: %s", error)
+        yield None
+        return
+    try:
+        yield client
+    finally:
+        client.close()
+
+
 # Named aliases so routes read as `db: Db` instead of repeating the
 # Annotated form in every signature.
 logger = logging.getLogger("pauk.admin")
@@ -225,3 +245,4 @@ Admin = Annotated[User, Depends(require_admin)]
 CsrfChecked = Annotated[None, Depends(require_csrf)]
 StoresReady = Annotated[None, Depends(require_stores)]
 Graph = Annotated[object, Depends(graph_for)]
+MaybeGraph = Annotated[object | None, Depends(graph_if_up)]
