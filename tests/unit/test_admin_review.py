@@ -245,3 +245,57 @@ class FoldNowTest(unittest.TestCase):
         self.graph.add("Person", "A2")
         self.answer(verdict="different")
         self.assertEqual(set(self.graph.nodes), {("Person", "A1"), ("Person", "A2")})
+
+
+class DisputedTabTest(unittest.TestCase):
+    """Where the rules have changed their mind about a settled pair."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        review.record_held(self.db, [held_pair("A1", "A2")])
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.DIFFERENT,
+                              actor="user:andrey", note="two physicists")
+        review.record_disputed(self.db, [{
+            "status": "disputed", "person_a": "A1", "name_a": "Ivan Smirnov",
+            "person_b": "A2", "name_b": "Ivan Smirnov", "rule": "same_name"}])
+        self.client = TestClient(build(Settings(), self.db), follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def body(self, tab="disputed"):
+        return self.client.get("/review", params={"tab": tab}).text
+
+    def csrf(self):
+        return self.body().split('name="csrf" value="')[1].split('"')[0]
+
+    def test_the_tab_shows_what_the_rules_now_say(self):
+        body = self.body()
+        self.assertIn("одинаковое имя, и есть чем подтвердить", body)
+        self.assertIn("разные люди", body)
+
+    def test_the_answer_is_shown_as_still_in_force(self):
+        # Nothing was merged. Saying otherwise would send somebody looking
+        # for a merge that never happened.
+        self.assertIn("user:andrey", self.body())
+        self.assertNotIn("сольётся", self.body())
+
+    def test_confirming_it_again_clears_the_disagreement(self):
+        response = self.client.post("/review/answer", data={
+            "csrf": self.csrf(), "kind": review.PAIR, "members": "A1,A2",
+            "verdict": "different", "note": "two physicists", "tab": "disputed"})
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+        self.assertEqual(review.decisions(self.db),
+                         {frozenset({"A1", "A2"}): review.DIFFERENT})
+
+    def test_changing_your_mind_puts_the_question_back(self):
+        response = self.client.post("/review/withdraw", data={
+            "csrf": self.csrf(), "kind": review.PAIR, "members": "A1,A2",
+            "tab": "disputed"})
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+        self.assertEqual(review.count(self.db, answered=False), 1)
+
+    def test_an_empty_tab_says_so(self):
+        review.withdraw(self.db, review.PAIR, ["A1", "A2"])
+        self.assertIn("Правила не спорят", self.body())

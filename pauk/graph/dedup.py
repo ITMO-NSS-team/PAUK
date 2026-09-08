@@ -436,6 +436,7 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         # a DOI or a url and never hold anything back, so there is nothing
         # to ask about and no pair of people to key a question on.
         review.record_held(mongo_db, person_report, source=review.GRAPH)
+        review.record_disputed(mongo_db, person_report)
         journal_path = config.cache_dir / CANDIDATES_FILENAME
         with AtomicWriter(journal_path) as fh:
             for row in report:

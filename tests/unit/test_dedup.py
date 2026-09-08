@@ -1134,3 +1134,75 @@ class GraphPassReviewTest(unittest.TestCase):
             result = graph_dedup.run_graph_dedup(self.config, self.db)
         self.assertEqual(result["graph_persons_merged"], 1)
         self.assertEqual(set(self.client.nodes["Person"]), {"A1"})
+
+
+class DisputedAnswerTest(unittest.TestCase):
+    """A refusal is not forever. The evidence can move under it.
+
+    Somebody says two records are two people; a later run finds them a
+    shared coauthor, and a rule that had nothing to stand on now fires.
+    The answer still wins, but the disagreement has to surface.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.config = Settings(data_dir=Path(tmp.name))
+        self.prepared = PreparedStore(self.db, "sample")
+        self.raw = RawStore(self.db, "sample")
+
+    def run_stage(self, people):
+        self.prepared.write_models("persons", people)
+        return DedupStage(self.prepared, self.raw, self.config).run()
+
+    def apart(self):
+        """Two namesakes with nothing in common, and a person saying so."""
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.DIFFERENT,
+                              actor="user:roman", note="two physicists")
+        return [person("A1", "Ivan Smirnov", ["W1"]),
+                person("A2", "Ivan Smirnov", ["W2"])]
+
+    def test_evidence_that_has_not_moved_raises_nothing(self):
+        self.run_stage(self.apart())
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+
+    def test_a_rule_that_now_fires_is_reported(self):
+        people = self.apart()
+        # A coauthor they now share outside the works they wrote together,
+        # which is what rule 3 was missing.
+        people.append(person("A3", "Petr Volkov", ["W1", "W2"]))
+        self.run_stage(people)
+        (row,) = review.questions(self.db, disputed=True)
+        self.assertEqual(row["members"], ["A1", "A2"])
+        self.assertEqual(row["disputed_rule"], "same_name")
+        self.assertEqual(row["verdict"], review.DIFFERENT)
+
+    def test_the_answer_still_wins(self):
+        people = self.apart()
+        people.append(person("A3", "Petr Volkov", ["W1", "W2"]))
+        result = self.run_stage(people)
+        self.assertEqual(result["dedup_merged"], 0)
+        remaining = {p.id for p in self.prepared.read_models("persons", Person)}
+        self.assertEqual(remaining, {"A1", "A2", "A3"})
+
+    def test_an_answered_pair_is_not_asked_again(self):
+        self.run_stage(self.apart())
+        self.assertEqual(review.count(self.db, answered=False), 0)
+
+    def test_confirming_the_answer_clears_the_disagreement(self):
+        people = self.apart()
+        people.append(person("A3", "Petr Volkov", ["W1", "W2"]))
+        self.run_stage(people)
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.DIFFERENT,
+                              actor="user:roman", note="still two people")
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+
+    def test_changing_your_mind_merges_them_next_run(self):
+        people = self.apart()
+        people.append(person("A3", "Petr Volkov", ["W1", "W2"]))
+        self.run_stage(people)
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME,
+                              actor="user:roman")
+        result = self.run_stage(people)
+        self.assertEqual(result["dedup_merged"], 1)

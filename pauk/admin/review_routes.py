@@ -39,8 +39,19 @@ PAGE = 50
 TABS = {
     "pressing": {"pressing": True, "answered": False, "skipped": False},
     "open": {"answered": False, "skipped": False},
+    "disputed": {"disputed": True},
     "skipped": {"skipped": True, "answered": False},
     "answered": {"answered": True},
+}
+
+#: Rules in the words the page uses. A rule name is written for the code
+#: that applies it, not for the person reading why it fired.
+RULES = {
+    "orcid": "совпал ORCID",
+    "staff_catalog": "одна запись в каталоге сотрудников",
+    "name_variant": "имя одного значится вариантом имени другого",
+    "same_name": "одинаковое имя, и есть чем подтвердить",
+    "manual": "решение человека",
 }
 
 WORDS = {
@@ -90,6 +101,8 @@ def _shown(row: dict) -> dict:
         "note": row.get("note"),
         "skipped_by": row.get("skipped_by"),
         "applied_at": row.get("applied_at"),
+        "disputed_at": row.get("disputed_at"),
+        "disputed_rule": RULES.get(row.get("disputed_rule"), row.get("disputed_rule")),
     }
 
 

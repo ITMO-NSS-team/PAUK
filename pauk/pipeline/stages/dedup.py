@@ -361,6 +361,22 @@ def plan_person_merges(
     report: list[dict] = []
 
     def plan_pair(first: Person, second: Person, rule: str) -> None:
+        """Put a pair up for merging, unless somebody said they are two people.
+
+        A refusal is not forever: the pair may have gained a shared coauthor
+        since, and a rule that had nothing to stand on now does. That is
+        worth showing rather than acting on — the person who answered knew
+        something the rules do not, and quietly merging over them is the one
+        thing this whole mechanism exists to prevent.
+        """
+        if decisions.get(frozenset((first.id, second.id))) == DIFFERENT:
+            report.append({
+                "status": "disputed",
+                "person_a": first.id, "name_a": first.name_raw,
+                "person_b": second.id, "name_b": second.name_raw,
+                "rule": rule,
+            })
+            return
         merge_pairs.append((first.id, second.id))
         pair_rules[frozenset((first.id, second.id))] = rule
 
@@ -372,13 +388,11 @@ def plan_person_merges(
         # such a pair never reaches the queue to be asked about.
         if _is_pooled_record(first) or _is_pooled_record(second):
             continue
-        # What a person decided outranks every rule that follows. "Different"
-        # also keeps the pair out of the report: it was asked once and
-        # answered, and asking again every run is how the queue dies.
-        decided = decisions.get(frozenset((first.id, second.id)))
-        if decided == DIFFERENT:
-            continue
-        if decided == SAME:
+        # A confirmed merge skips the rules entirely; there is nothing left
+        # to weigh. A refusal does not skip them — see plan_pair — because
+        # the evidence may have changed since it was given, and that is
+        # worth noticing.
+        if decisions.get(frozenset((first.id, second.id))) == SAME:
             plan_pair(first, second, "manual")
             continue
         # Two names that disagree on a part both spell out are two people,
@@ -432,7 +446,10 @@ def plan_person_merges(
             plan_pair(first, second, "name_variant")
         elif same_name and both_itmo and multi_token and not initials_only and corroboration:
             plan_pair(first, second, "same_name")
-        elif first.is_itmo or second.is_itmo:
+        elif (first.is_itmo or second.is_itmo) and frozenset(
+                (first.id, second.id)) not in decisions:
+            # Asked once and answered. Asking again every run is how a queue
+            # dies, and nothing here is new to ask about.
             reasons = []
             if not both_itmo:
                 reasons.append("only one person is ITMO-affiliated")
@@ -937,6 +954,7 @@ class DedupStage(EnrichmentStage):
         # The queue the panel reads. The file below stays: it is the whole
         # run in one place, merges included, and people read it by eye.
         review.record_held(self.prepared.db, report, source=review.STAGE)
+        review.record_disputed(self.prepared.db, report)
         report_path = self.config.audit_dir / self.prepared.group / CANDIDATES_FILENAME
         with AtomicWriter(report_path) as fh:
             for row in report:

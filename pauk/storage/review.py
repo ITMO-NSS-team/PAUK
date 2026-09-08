@@ -160,6 +160,34 @@ def record_held(db: Database, report: list[dict], source: str = STAGE) -> int:
     return written
 
 
+def record_disputed(db: Database, report: list[dict]) -> int:
+    """Note where the rules have changed their mind about a settled pair.
+
+    Somebody said two records are two people; the evidence has moved since,
+    and a rule that had nothing to stand on now fires. The answer stays in
+    force — that is the point of storing it — but the disagreement is worth
+    a person's eye, exactly like a source that starts contradicting a hand
+    edit (see `pauk.graph.overrides`).
+
+    Returns:
+        How many disagreements were noted.
+    """
+    moment = _now()
+    noted = 0
+    for row in report:
+        if row.get("status") != "disputed":
+            continue
+        members = members_of(row)
+        result = db[COLLECTION].update_one(
+            {"_id": question_id(kind_of(row), members)},
+            {"$set": {"disputed_at": moment, "disputed_rule": row.get("rule"),
+                      "disputed_names": names_of(row, members)}})
+        noted += result.matched_count
+    if noted:
+        logger.warning("review: %d answered pair(s) the rules would now merge", noted)
+    return noted
+
+
 def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
                    actor: str = "unknown", note: str = "") -> dict:
     """Write down what a person decided about one question.
@@ -185,8 +213,10 @@ def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
         {"_id": key},
         {"$set": {"verdict": verdict, "actor": actor, "note": note,
                   "decided_at": moment},
-         # Answering settles what a skip only postponed.
-         "$unset": {"skipped_at": "", "skipped_by": ""},
+         # Answering settles what a skip only postponed, and answers the
+         # disagreement the rules raised, whichever way it is answered.
+         "$unset": {"skipped_at": "", "skipped_by": "",
+                    "disputed_at": "", "disputed_rule": "", "disputed_names": ""},
          "$setOnInsert": {"kind": kind, "members": sorted(set(members)),
                           "evidence": {}, "seen_at": moment, "source": STAGE}},
         upsert=True)
@@ -217,7 +247,9 @@ def withdraw(db: Database, kind: str, members: list[str]) -> bool:
     result = db[COLLECTION].update_one(
         {"_id": question_id(kind, members)},
         {"$unset": {"verdict": "", "actor": "", "note": "",
-                    "decided_at": "", "applied_at": ""}})
+                    "decided_at": "", "applied_at": "",
+                    # Nothing left to disagree with once the answer is gone.
+                    "disputed_at": "", "disputed_rule": "", "disputed_names": ""}})
     return result.matched_count > 0
 
 
@@ -273,7 +305,8 @@ PRESSING_REASONS = ("identical name with nothing corroborating it",)
 
 
 def _query(*, pressing: bool = False, answered: bool | None = None,
-           skipped: bool | None = None, kind: str = "", reason: str = "") -> dict:
+           skipped: bool | None = None, disputed: bool | None = None,
+           kind: str = "", reason: str = "") -> dict:
     """The filter behind both the queue and its counter.
 
     Built in one place so a tab and the number on it can never disagree.
@@ -286,6 +319,8 @@ def _query(*, pressing: bool = False, answered: bool | None = None,
         query["verdict"] = {"$exists": answered}
     if skipped is not None:
         query["skipped_at"] = {"$exists": skipped}
+    if disputed is not None:
+        query["disputed_at"] = {"$exists": disputed}
     if kind:
         query["kind"] = kind
     if reason:

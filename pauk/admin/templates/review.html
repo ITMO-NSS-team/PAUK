@@ -22,11 +22,21 @@
     Стоит посмотреть {{ counts.pressing }}</a>
   <a href="/review?tab=open" {% if tab == "open" %}class="on"{% endif %}>
     Все нерешённые {{ counts.open }}</a>
+  <a href="/review?tab=disputed" {% if tab == "disputed" %}class="on"{% endif %}>
+    Расхождения{% if counts.disputed %} {{ counts.disputed }}{% endif %}</a>
   <a href="/review?tab=skipped" {% if tab == "skipped" %}class="on"{% endif %}>
     Отложенные{% if counts.skipped %} {{ counts.skipped }}{% endif %}</a>
   <a href="/review?tab=answered" {% if tab == "answered" %}class="on"{% endif %}>
     Отвеченные{% if counts.answered %} {{ counts.answered }}{% endif %}</a>
 </div>
+
+{% if tab == "disputed" and rows %}
+<p class="muted" style="margin:-8px 0 14px; max-width:72ch">
+  Здесь пары, которые кто-то развёл, а правила с тех пор нашли чем их
+  связать. Решение остаётся в силе, ничего не слито. Подтвердите его заново
+  или передумайте.
+</p>
+{% endif %}
 
 {% if tab == "pressing" and counts.open > counts.pressing %}
 <p class="muted" style="margin:-8px 0 14px">
@@ -39,6 +49,7 @@
   <p class="muted">
   {% if tab == "pressing" %}Разбирать нечего. Правила решили всё сами.
   {% elif tab == "answered" %}Пока никто ничего не решил.
+  {% elif tab == "disputed" %}Расхождений нет. Правила не спорят ни с одним ответом.
   {% elif tab == "skipped" %}Отложенных нет.
   {% else %}Вопросов нет. Очередь наполняется дедупликацией.{% endif %}</p>
 {% else %}
@@ -86,11 +97,33 @@
         {% elif row.skipped_by %}
         <div class="muted" style="margin-top:6px">отложил {{ row.skipped_by }}</div>
         {% endif %}
+        {% if row.disputed_at %}
+        <div class="change" style="margin-top:6px">
+          <span class="now">правила теперь связывают: {{ row.disputed_rule }}</span>
+        </div>
+        {% endif %}
       </td>
       <td>{% for reason in row.reasons %}<div>{{ reason }}</div>{% endfor %}</td>
       {% if user.can_write %}
       <td>
-        {% if row.verdict %}
+        {% if row.verdict and row.disputed_at %}
+        <form method="post" action="/review/answer" class="verdicts">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="kind" value="{{ row.kind }}">
+          <input type="hidden" name="members" value="{{ row.members|join(',') }}">
+          <input type="hidden" name="tab" value="{{ tab }}">
+          <input type="hidden" name="verdict" value="{{ row.verdict }}">
+          <input type="hidden" name="note" value="{{ row.note }}">
+          <button type="submit" class="ghost">оставить как есть</button>
+        </form>
+        <form method="post" action="/review/withdraw" style="margin-top:6px">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="kind" value="{{ row.kind }}">
+          <input type="hidden" name="members" value="{{ row.members|join(',') }}">
+          <input type="hidden" name="tab" value="{{ tab }}">
+          <button type="submit" class="ghost">изменить</button>
+        </form>
+        {% elif row.verdict %}
         <form method="post" action="/review/withdraw">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="kind" value="{{ row.kind }}">
