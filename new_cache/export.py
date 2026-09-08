@@ -31,14 +31,13 @@
 этого файла сознательно исключала (`email`/`emails`, полтора десятка
 заглушечных полей `Person` из #152, `Publication.full_text`).
 
-У каждого поля ниже, прямо в `load_db()`, — комментарий с аргументом
-"оставить"/"не оставлять": это не решение автора кода, а материал для
-вашего собственного решения — уберите или закомментируйте строку с полем,
-которое не нужно. Часть аргументов повторяется дословно для целой группы
-полей (все заглушки #152 — один и тот же аргумент: проверено грепом по
-`pauk/pipeline/`/`pauk/sources/`, нигде не присваивается, значит на графе
-это всегда `null`) — это не лень, а честное отражение того, что у всей
-группы одна и та же причина.
+Отбор полей под нужды веба (2026-09-08) уже сделан вручную, по одному —
+закомментированные строки ниже это то, что решили не тащить на сайт вообще
+(в основном заглушки #152, всегда `null` на графе — проверено грепом по
+`pauk/pipeline/`/`pauk/sources/`). У каждого оставшегося (не закомментированного)
+поля — комментарий "оба"/"public"/"private" с кратким обоснованием: значит
+это поле дойдёт до веба, вопрос только в том, в какой из двух сборок
+(`new_generate/generate_data.py --public`/`--private`) оно должно попасть.
 
 `created_at`/`updated_at` — это НЕ одноимённые (и не заполняемые) поля
 Pydantic-моделей, а служебные метки времени, которые сам `Neo4jClient`
@@ -223,177 +222,160 @@ def load_db(driver) -> dict[str, list]:
     """
     db: dict[str, list] = {}
 
-    # Все ИТМО-персоны: ФИО во всех вариантах, внешние профили, JSON-поля,
-    # служебные метки Neo4j. Включает email/emails и все заглушки #152 -
-    # решение по каждому полю ниже, отдельным комментарием.
     db["persons"] = cypher_dict(
         driver,
         "MATCH (p:Person {is_itmo: true}) "
         "RETURN "
+        # required
         "p.id AS id, "
+        # public
         "p.openalex_id AS openalex_id, "
+        # private
         "p.name_ru AS name_ru, "
         "p.name_en AS name_en, "
+        "p.name_variants AS name_variants, "
+        "p.other_names AS other_names, "
+        "p.degree AS degree, "
+        "p.github AS github, "
+        "p.orcid AS orcid, "
+        "p.google_scholar AS google_scholar, "
+        "p.openreview AS openreview, "
+        "p.email AS email, "
+        "p.emails AS emails, "
+        "p.affiliations AS affiliations, "
+        # both (split into public/private)
         "p.surname_ru AS surname_ru, "
         "p.first_name_ru AS first_name_ru, "
         "p.second_name_ru AS second_name_ru, "
         "p.surname_en AS surname_en, "
         "p.first_name_en AS first_name_en, "
         "p.second_name_en AS second_name_en, "
-        "p.name_variants AS name_variants, "
-        "p.other_names AS other_names, "
-        "p.degree AS degree, "  # уже было. ОСТАВИТЬ
-        "p.github AS github, "  # уже было. ОСТАВИТЬ
-        "p.orcid AS orcid, "  # уже было. ОСТАВИТЬ
-        "p.google_scholar AS google_scholar, "  # живой профиль, дёшево. ОСТАВИТЬ на будущее - в new_gui пока некуда показать
-        "p.openreview AS openreview, "  # аналогично google_scholar. ОСТАВИТЬ на будущее
-        "p.email AS email, "  # ЛИЧНЫЕ ДАННЫЕ. ПРОТИВОРЕЧИЕ: neo4j-graph.md - "не публикуется", extract.py - пишет. РЕШИТЬ ОТДЕЛЬНО
-        "p.emails AS emails, "  # ЛИЧНЫЕ ДАННЫЕ, рабочие данные github_match, не факт профиля. То же противоречие, что и email. РЕШИТЬ ОТДЕЛЬНО
-        "p.thesis AS thesis, "  # ПРОВЕРЕНО: нигде не присваивается в pauk/pipeline или pauk/sources - на графе всегда null
-        "p.scopus_id AS scopus_id, "  # СТАБ #152: источник не подключён, всегда null сегодня
-        "p.researcher_id AS researcher_id, "  # СТАБ #152: источник не подключён, всегда null
-        "p.dblp_id AS dblp_id, "  # СТАБ #152: источник не подключён, всегда null
-        "p.biography AS biography, "  # СТАБ #152: источник не подключён, всегда null
-        "p.country AS country, "  # СТАБ #152: источник не подключён, всегда null
-        "p.homepage AS homepage, "  # СТАБ #152: источник не подключён, всегда null
-        "p.gitlab_username AS gitlab_username, "  # СТАБ #152: источник не подключён, всегда null
-        "p.linkedin AS linkedin, "  # СТАБ #152: источник не подключён, всегда null
-        "p.twitter AS twitter, "  # СТАБ #152: источник не подключён, всегда null
-        "p.wikipedia AS wikipedia, "  # СТАБ #152: источник не подключён, всегда null
-        "p.works_count AS works_count, "  # СТАБ #152: источник не подключён, всегда null
-        "p.cited_by_count AS cited_by_count, "  # СТАБ #152: источник не подключён, всегда null
-        "p.h_index AS h_index, "  # СТАБ #152: источник не подключён, всегда null
-        "p.i10_index AS i10_index, "  # СТАБ #152: источник не подключён, всегда null
-        "p.counts_by_year AS counts_by_year, "  # СТАБ #152 (JSON-строка, если появится): источник не подключён
-        "p.status AS status, "  # СТАБ #152: источник не подключён, всегда null
-        "p.enriched_at AS enriched_at, "  # СТАБ #152 (поле модели, не путать с Neo4j updated_at ниже): всегда null
-        "p.affiliations AS affiliations, "  # JSON-строка (места работы), реальный источник. ОСТАВИТЬ как есть
-        "p.merged_ids AS merged_ids, "  # служебное, для дедупа/аудита, не для отображения. ОСТАВИТЬ если полезно внутренним инструментам
-        "toString(p.created_at) AS created_at, "  # метка Neo4j (не модели): когда узел впервые записан. ОСТАВИТЬ
-        "toString(p.updated_at) AS updated_at",  # метка Neo4j: когда узел последний раз тронут записью. ОСТАВИТЬ
+        # stubs
+        # "p.thesis AS thesis, "  # STUB
+        # "p.scopus_id AS scopus_id, "  # STUB
+        # "p.researcher_id AS researcher_id, "  # STUB
+        # "p.dblp_id AS dblp_id, "  # STUB
+        # "p.biography AS biography, "  # STUB
+        # "p.country AS country, "  # STUB
+        # "p.homepage AS homepage, "  # STUB
+        # "p.gitlab_username AS gitlab_username, "  # STUB
+        # "p.linkedin AS linkedin, "  # STUB
+        # "p.twitter AS twitter, "  # STUB
+        # "p.wikipedia AS wikipedia, "  # STUB
+        # "p.works_count AS works_count, "  # STUB
+        # "p.cited_by_count AS cited_by_count, "  # STUB
+        # "p.h_index AS h_index, "  # STUB
+        # "p.i10_index AS i10_index, "  # STUB
+        # "p.counts_by_year AS counts_by_year, "  # STUB
+        # "p.status AS status, "  # STUB
+        # "p.enriched_at AS enriched_at, "  # STUB
+        # service
+        "toString(p.created_at) AS created_at, "
+        "toString(p.updated_at) AS updated_at",
     )
 
-    # Все публикации: базовые метаданные + расширенные поля (funding,
-    # abstract, versions, ...) и служебные метки Neo4j.
     db["publications"] = cypher_dict(
         driver,
         "MATCH (pub:Publication) "
         "RETURN "
-        "pub.id AS id, "  # обязателен
-        "pub.title AS title, "  # уже было. ОСТАВИТЬ
-        "pub.type AS type, "  # тип работы (article/preprint/software/dataset,...), влияет на old_gui. ОСТАВИТЬ
-        "pub.fields AS fields, "  # предметные области (список строк), полезно для группировки/similarity. ОСТАВИТЬ
-        "pub.journal AS journal, "  # уже было. ОСТАВИТЬ
-        "pub.doi AS doi, "  # уже было. ОСТАВИТЬ
-        "toString(pub.publication_date) AS publication_date, "  # уже было (toString - Neo4j Date не JSON-сериализуем). ОСТАВИТЬ
-        "pub.year AS year, "  # уже было. ОСТАВИТЬ
-        "pub.has_code AS has_code, "  # уже было. ОСТАВИТЬ
-        "pub.code_url AS code_url, "  # уже было. ОСТАВИТЬ
-        "pub.funding AS funding, "  # JSON-строка (список грантов), реальный источник. ОСТАВИТЬ как есть
-        "pub.openalex_url AS openalex_url, "  # прямая ссылка на источник, дёшево. ОСТАВИТЬ
-        "pub.pdf_url AS pdf_url, "  # ссылка на PDF. ОСТАВИТЬ
-        "pub.abstract AS abstract, "  # короткий текст, пригодится для будущего similarity-алгоритма. ОСТАВИТЬ
-        "pub.full_text AS full_text, "  # ВНИМАНИЕ: весь текст статьи целиком, на порядки больше любого другого поля - раздует снепшот
-        "pub.versions AS versions, "  # JSON-строка, история слияния дублей при дедупе. Техническое, редко нужно в UI
-        "pub.merged_ids AS merged_ids, "  # служебное, для дедупа
-        "toString(pub.created_at) AS created_at, "  # метка Neo4j. ОСТАВИТЬ
-        "toString(pub.updated_at) AS updated_at",  # метка Neo4j. ОСТАВИТЬ
+        # required
+        "pub.id AS id, "
+        # public
+        "pub.title AS title, "
+        "pub.type AS type, "
+        "pub.fields AS fields, "
+        "pub.journal AS journal, "
+        "pub.doi AS doi, "
+        "pub.has_code AS has_code, "
+        "pub.code_url AS code_url, "
+        "pub.funding AS funding, "
+        "pub.openalex_url AS openalex_url, "
+        "pub.abstract AS abstract, "
+        "pub.versions AS versions, "
+        "pub.year AS year, "
+        "toString(pub.publication_date) AS publication_date, "
+        # service
+        "toString(pub.created_at) AS created_at, "
+        "toString(pub.updated_at) AS updated_at",
     )
 
-    # Все репозитории + полный профиль владельца (GitHubProfile через
-    # OWNED_BY). GitHubProfile больше нигде не нужен отдельной таблицей -
-    # единственная связь на него идёт именно отсюда (1:1 с репозиторием),
-    # так что его собственные поля включены прямо в эту строку, с
-    # префиксом owner_, чтобы не путать с полями самого репозитория
-    # (у него тоже есть description/name).
     db["repositories"] = cypher_dict(
         driver,
         "MATCH (r:Repository) "
         "OPTIONAL MATCH (r)-[:OWNED_BY]->(gh:GitHubProfile) "
         "RETURN "
-        "r.id AS id, "  # обязателен
-        "r.name AS name, "  # уже было. ОСТАВИТЬ
-        "r.url AS url, "  # уже было. ОСТАВИТЬ
-        "r.github_id AS github_id, "  # стабильный числовой id, переживает переименования - полезен для дедупа. ОСТАВИТЬ
-        "r.description AS description, "  # уже было. ОСТАВИТЬ
-        "r.cited_urls AS cited_urls, "  # URL, которыми на репо ссылались до канонизации - техническое, редко нужно в UI
-        "r.stars_num AS stars_num, "  # уже было. ОСТАВИТЬ
-        "toString(r.access_date) AS access_date, "  # когда данные о репо последний раз забирались с GitHub. ОСТАВИТЬ
-        "r.has_readme AS has_readme, "  # дёшево, может влиять на отображение (например бейдж). ОСТАВИТЬ
-        "toString(r.last_updated) AS last_updated, "  # дата последнего изменения на GitHub, полезно для сортировки. ОСТАВИТЬ
-        "r.license AS license, "  # полезно для отображения. ОСТАВИТЬ
-        "r.contributors AS contributors, "  # логины с самого GitHub API - ОСТОРОЖНО, это не то же самое, что repo_persons/CONTRIBUTED_TO
-        "r.merged_ids AS merged_ids, "  # служебное, для дедупа
-        "gh.login AS owner, "  # уже было. ОСТАВИТЬ
-        "gh.name AS owner_name, "  # отображаемое имя владельца на GitHub. ОСТАВИТЬ
-        "gh.html_url AS owner_html_url, "  # ссылка на профиль владельца. ОСТАВИТЬ
-        "gh.description AS owner_description, "  # bio владельца (если организация - описание организации). ОСТАВИТЬ
-        "gh.location AS owner_location, "  # локация из профиля GitHub. ОСТАВИТЬ
-        "gh.company AS owner_company, "  # компания из профиля GitHub. ОСТАВИТЬ
-        "gh.type AS owner_type, "  # "User" или "Organization" - тип аккаунта-владельца. ОСТАВИТЬ
-        "toString(r.created_at) AS created_at, "  # метка Neo4j. ОСТАВИТЬ
-        "toString(r.updated_at) AS updated_at",  # метка Neo4j. ОСТАВИТЬ
+        # required
+        "r.id AS id, "
+        # public
+        "r.name AS name, "
+        "r.url AS url, "
+        "r.description AS description, "
+        "r.stars_num AS stars_num, "
+        "r.has_readme AS has_readme, "
+        "r.license AS license, "
+        "r.contributors AS contributors, "
+        # "gh.login AS owner, "
+        # "gh.name AS owner_name, "  # TODO: decide is it necessary + why not nameS + classification by type
+        # "gh.html_url AS owner_html_url, "
+        # "gh.description AS owner_description, "
+        # "gh.location AS owner_location, "
+        # "gh.company AS owner_company, "
+        "gh.type AS owner_type, "
+        # service
+        "toString(r.access_date) AS access_date, "
+        # "toString(r.last_updated) AS last_updated, "  # STUB
+        "toString(r.created_at) AS created_at, "
+        "toString(r.updated_at) AS updated_at",
     )
 
-    # Департаменты: имена + поля-алиасы для полнотекстового сопоставления,
-    # плюс ОДИН шаг иерархии PART_OF - id непосредственного родителя и его
-    # тип (parent_kind: "Department" либо "Organization", у корневых
-    # департаментов - null). Полная рекурсивная цепочка (кафедра -> ... ->
-    # организация) сюда всё ещё не входит: залезать в дерево на каждый
-    # департамент заново было бы дороже и сложнее, чем один раз пройти её
-    # на стороне потребителя снепшота, у которого уже есть все пары
-    # (ребёнок, родитель) для этого. labels(parent)[0] на бездетном
-    # OPTIONAL MATCH (родителя нет) корректно даёт null по правилам
-    # Cypher - null не проверялось на реальном Neo4j в этой сессии
-    # (см. модульный докстринг про testcontainers).
     db["departments"] = cypher_dict(
         driver,
         "MATCH (d:Department) "
         "OPTIONAL MATCH (d)-[:PART_OF]->(parent) "
         "RETURN "
-        "d.id AS id, "  # обязателен
-        "d.name_ru AS name_ru, "  # уже было. ОСТАВИТЬ
-        "d.name_en AS name_en, "  # уже было. ОСТАВИТЬ
-        "d.name_variants AS name_variants, "  # варианты написания названия. ОСТАВИТЬ, полезно для поиска
-        "d.context_aliases AS context_aliases, "  # алиасы для матчинга по тексту публикаций. ОСТАВИТЬ, если используется matching-логикой
-        "d.kind AS kind, "  # тип юнита (кафедра/факультет/...). ОСТАВИТЬ, полезно для группировки в UI
-        "parent.id AS parent_id, "  # id непосредственного родителя или null у корня. НОВОЕ - не проверено на реальном Neo4j
-        "labels(parent)[0] AS parent_kind",  # "Department" или "Organization". НОВОЕ - не проверено на реальном Neo4j
+        # required
+        "d.id AS id, "
+        # public
+        "d.name_ru AS name_ru, "
+        "d.name_en AS name_en, "
+        "d.name_variants AS name_variants, "
+        "d.context_aliases AS context_aliases, "
+        "d.kind AS kind, ",
+        # "parent.id AS parent_id, "
+        # "labels(parent)[0] AS parent_kind"
     )
 
-    # Корневые организации (обычно одна - сам ИТМО), на которые в конце
-    # цепочки PART_OF ссылаются департаменты верхнего уровня.
     db["organizations"] = cypher_dict(
         driver,
         "MATCH (o:Organization) "
         "RETURN "
-        "o.id AS id, "  # обязателен
-        "o.name_ru AS name_ru, "  # ОСТАВИТЬ
-        "o.name_en AS name_en, "  # ОСТАВИТЬ
-        "o.ror_id AS ror_id, "  # Research Organization Registry id, внешний идентификатор. ОСТАВИТЬ
-        "o.country AS country, "  # ОСТАВИТЬ
-        "o.type AS type",  # тип организации. ОСТАВИТЬ
+        # required
+        "o.id AS id, "
+        # public
+        "o.name_ru AS name_ru, "
+        "o.name_en AS name_en, "
+        "o.ror_id AS ror_id, "
+        "o.country AS country, "
+        "o.type AS type",
     )
 
-    # Кто что написал (AUTHORED) - только ИТМО-персоны (см. докстринг
-    # выше), со свойствами самой связи: позиция в списке авторов,
-    # аффилиация на момент публикации, признак корреспондирующего автора.
     db["authorship"] = cypher_dict(
         driver,
         "MATCH (p:Person {is_itmo: true})-[rel:AUTHORED]->(pub:Publication) "
         "RETURN "
-        "pub.id AS pid, "  # обязателен
-        "p.id AS per, "  # обязателен
-        "rel.position AS position, "  # порядковый номер автора в списке. ОСТАВИТЬ
-        "rel.affiliation AS affiliation, "  # аффилиация на момент публикации (не текущая!). ОСТАВИТЬ
-        "rel.affiliation_source AS affiliation_source, "  # откуда взята аффилиация (OpenAlex/ORCID/...). ОСТАВИТЬ
-        "rel.is_corresponding AS is_corresponding",  # признак корреспондирующего автора. ОСТАВИТЬ
+        # required
+        "pub.id AS pid, "
+        "p.id AS per, "
+        # public
+        "rel.position AS position, "
+        "rel.is_corresponding AS is_corresponding",
     )
 
     db["person_depts"] = cypher_dict(
         driver,
         "MATCH (p:Person {is_itmo: true})-[:BELONGS_TO]->(d:Department) "
         "RETURN "
+        # required
         "p.id AS per, "
         "d.id AS did",
     )
@@ -402,6 +384,7 @@ def load_db(driver) -> dict[str, list]:
         driver,
         "MATCH (pub:Publication)-[:PRODUCED_BY]->(d:Department) "
         "RETURN "
+        # required
         "pub.id AS pid, "
         "d.id AS did "
         "ORDER BY d.id",
@@ -410,25 +393,31 @@ def load_db(driver) -> dict[str, list]:
     db["repo_pubs"] = cypher_dict(
         driver,
         "MATCH (r:Repository)-[:IMPLEMENTS]->(pub:Publication) "
-        "RETURN r.id AS rid, "
-        "pub.id AS pid, "
+        "RETURN "
+        # required
+        "r.id AS rid, "
+        "pub.id AS pid, ",
     )
 
     db["mentions_repos"] = cypher_dict(
         driver,
         "MATCH (pub:Publication)-[rel:MENTIONS_LINK]->(r:Repository) "
         "RETURN "
+        # required
         "pub.id AS pid, "
         "r.id AS rid, "
-        "rel.is_relevant AS is_relevant, "
+        # public
+        "rel.is_relevant AS is_relevant, ",
     )
 
     db["mentions_candidates"] = cypher_dict(
         driver,
         "MATCH (pub:Publication)-[rel:MENTIONS_LINK]->(lc:LinkCandidate) "
         "RETURN "
+        # required
         "pub.id AS pid, "
-        "lc.url AS url, "  # TODO: process raw url with LLM
+        # public
+        "lc.url AS url, "
         "lc.host AS host, "
         "rel.is_relevant AS is_relevant, ",
     )
@@ -437,8 +426,10 @@ def load_db(driver) -> dict[str, list]:
         driver,
         "MATCH (p:Person {is_itmo: true})-[rel:CONTRIBUTED_TO]->(r:Repository) "
         "RETURN "
+        # required
         "r.id AS rid, "
         "p.id AS per, "
+        # public
         "rel.role AS role",
     )
 
@@ -446,6 +437,7 @@ def load_db(driver) -> dict[str, list]:
         driver,
         "MATCH (r:Repository)-[:DEVELOPED_BY]->(d:Department) "
         "RETURN "
+        # required
         "r.id AS rid, "
         "d.id AS did "
         "ORDER BY d.id",

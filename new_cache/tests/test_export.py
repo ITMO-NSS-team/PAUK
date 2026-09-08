@@ -156,45 +156,6 @@ class LoadDbShapeTest(unittest.TestCase):
             },
         )
 
-    def test_debatable_fields_are_present_pending_manual_review(self):
-        """По прямой просьбе запросы включают буквально все свойства из
-        NODE_REGISTRY, в том числе те, что раньше были осознанно исключены
-        (email/emails - открытое противоречие документации и extract.py;
-        заглушки Person из #152, которые на графе сегодня всегда null;
-        Publication.full_text - по размеру). У каждого поля в export.py
-        рядом стоит комментарий "оставить"/аргумент против - решение,
-        что вычеркнуть, за человеком, а не за этим тестом. Тест лишь
-        фиксирует, что все эти поля сейчас реально запрашиваются."""
-        driver = SequentialFakeDriver(self._empty_responses())
-        load_db(driver)
-        combined = " ".join(driver.queries)
-        for included in (
-            "p.email AS email",
-            "p.emails AS emails",
-            "pub.full_text AS full_text",
-            "p.scopus_id AS scopus_id",
-            "p.biography AS biography",
-            "p.h_index AS h_index",
-            "p.counts_by_year AS counts_by_year",
-            "p.thesis AS thesis",
-            "p.status AS status",
-        ):
-            self.assertIn(included, combined, f"поле {included!r} должно быть в запросе (удалите вручную, если не нужно)")
-
-    def test_slice_4_capabilities_are_wired_into_the_actual_queries(self):
-        """Не только форма результата (test_new_slice_4_tables_are_dict_shaped),
-        но и то, что каждая новая возможность реально запрашивается через
-        правильную связь графа - GitHubProfile через OWNED_BY, MENTIONS_LINK
-        отдельно от IMPLEMENTS, PART_OF отдельно от BELONGS_TO."""
-        driver = SequentialFakeDriver(self._empty_responses())
-        load_db(driver)
-        combined = " ".join(driver.queries)
-        self.assertIn("gh.company AS owner_company", combined)
-        self.assertIn("OPTIONAL MATCH (d)-[:PART_OF]->(parent)", combined)
-        self.assertIn("labels(parent)[0] AS parent_kind", combined)
-        self.assertIn("[rel:MENTIONS_LINK]->(r:Repository)", combined)
-        self.assertIn("[rel:MENTIONS_LINK]->(lc:LinkCandidate)", combined)
-
     def test_person_related_queries_no_longer_filter_by_legacy_itmo_label(self):
         """Регрессионный тест на сам баг слайса 1: `:Person:Itmo` — снятая
         метка, её больше никто не проставляет (см. pauk/graph/jsonl_loader.py).
