@@ -138,21 +138,25 @@ def _execute_retrying(driver, query, **params):
             успешной попытки.
     """
     attempt = 0
-    while True:
+    while True:  # выходим только через return (успех) или raise (попытки кончились)
         attempt += 1
         try:
             t0 = time.time()
+            # execute_query() возвращает тройку (записи, summary, ключи колонок) —
+            # summary/ключи здесь не нужны, весь интерес в самих записях.
             records, _, _ = driver.execute_query(query, **params)
             logger.info(
                 "  %d   %.1f c: %s…",
                 len(records),
                 time.time() - t0,
-                query.lstrip()[:60],
+                query.lstrip()[:60],  # только начало запроса, чтобы не заливать лог полным текстом RETURN
             )
             return records
         except (ServiceUnavailable, SessionExpired, TransientError, OSError) as exc:
             if attempt == CYPHER_RETRIES:
-                raise
+                raise  # попытки кончились — пробрасываем дальше, а не глотаем ошибку молча
+            # линейный рост паузы (5, 10, 15, ...), но не больше потолка —
+            # см. докстринг выше про то, зачем вообще ждать, а не падать сразу.
             wait = min(CYPHER_RETRY_MAX_WAIT_SECONDS, CYPHER_RETRY_BACKOFF_STEP_SECONDS * attempt)
             logger.warning(
                 "  (%s: %s),  %d/%d,  %d c",
@@ -340,7 +344,7 @@ def load_db(driver) -> dict[str, list]:
         "d.name_en AS name_en, "
         "d.name_variants AS name_variants, "
         "d.context_aliases AS context_aliases, "
-        "d.kind AS kind, ",
+        "d.kind AS kind",
         # "parent.id AS parent_id, "
         # "labels(parent)[0] AS parent_kind"
     )
@@ -396,7 +400,7 @@ def load_db(driver) -> dict[str, list]:
         "RETURN "
         # required
         "r.id AS rid, "
-        "pub.id AS pid, ",
+        "pub.id AS pid",
     )
 
     db["mentions_repos"] = cypher_dict(
@@ -407,7 +411,7 @@ def load_db(driver) -> dict[str, list]:
         "pub.id AS pid, "
         "r.id AS rid, "
         # public
-        "rel.is_relevant AS is_relevant, ",
+        "rel.is_relevant AS is_relevant",
     )
 
     db["mentions_candidates"] = cypher_dict(
@@ -419,7 +423,7 @@ def load_db(driver) -> dict[str, list]:
         # public
         "lc.url AS url, "
         "lc.host AS host, "
-        "rel.is_relevant AS is_relevant, ",
+        "rel.is_relevant AS is_relevant",
     )
 
     db["repo_persons"] = cypher_dict(
@@ -473,7 +477,7 @@ class GraphSnapshotExporter:
                 понятную ошибку сразу, а не позднюю ошибку аутентификации от
                 самого драйвера при первом запросе.
         """
-        if not self.config.neo4j_password:
+        if not self.config.neo4j_password:  # проверка до открытия драйвера, см. докстринг про причину
             raise ValueError("Neo4j password is empty - set NEO4J_PASSWORD in .env")
 
         target = path or self.config.cache_dir / "graph_snapshot.json"
@@ -482,7 +486,7 @@ class GraphSnapshotExporter:
             auth=(self.config.neo4j_user, self.config.neo4j_password),
         )
         try:
-            driver.verify_connectivity()
+            driver.verify_connectivity()  # падает сразу понятной ошибкой, если Neo4j недоступна, не на первом реальном запросе
             write_snapshot(target, load_db(driver))
         finally:
             driver.close()

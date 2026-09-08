@@ -148,19 +148,28 @@ class AuthorNodeBuilder:
         self.public = public
 
     def build(self) -> tuple[list[dict], list[dict]]:
-        """Возвращает:
+        """Строит записи авторов сразу в двух формах.
+
+        Возвращает:
             `(summary, detail)` — `summary` идёт в `graph-data.json["authors"]`,
             `detail` (пустой список при `public=True`) — в `authors-detail.json`,
             личные поля не существуют вне detail-файла.
         """
+        # set() — публикация могла быть учтена дважды при какой-то нестыковке
+        # данных, считаем уникальные id, а не длину списка как есть.
         pubs_count = {per: len(set(self.authorship.author_pubs.get(per, []))) for per in self.assignment.static_depts}
         rank_a = dense_rank(pubs_count)
         summary: list[dict] = []
         detail: list[dict] = []
         for row in self.db["persons"]:
-            pid_ = row["id"]
+            pid_ = row["id"]  # "id", не "key" — так называется колонка в снепшоте (см. new_cache/export.py)
             x, y = self.pos[pid_]
+            # label_ru: собранная подпись ("Фамилия И.О.", возможно усечённая
+            # для public) — если author_label() вернула пусто (нет фамилии
+            # вообще), откат на name_ru целиком, лишь бы карточка не была без подписи.
             label_ru = author_label(row["surname_ru"], row["first_name_ru"], row["second_name_ru"], public=self.public) or row.get("name_ru") or ""
+            # Английский вариант — та же логика, но откат уже на label_ru
+            # (не на пустую строку), если своей английской формы вообще нет.
             label_en = author_label(row["surname_en"], row["first_name_en"], row["second_name_en"], public=self.public) or label_ru
             summary.append(
                 {
@@ -175,6 +184,8 @@ class AuthorNodeBuilder:
                     "gy": y,
                 }
             )
+            # Для public-сборки detail-запись вообще не создаётся (не просто
+            # с пустыми полями) — см. докстринг build() про то, почему так надёжнее.
             if not self.public:
                 detail.append(
                     {
@@ -206,10 +217,14 @@ class RepoNodeBuilder:
         self.pos = pos
 
     def build(self) -> tuple[list[dict], list[dict]]:
-        """Возвращает:
+        """Строит записи репозиториев сразу в двух формах.
+
+        Возвращает:
             `(summary, detail)` — `summary` в `graph-data.json["repos"]`,
             `detail` в `repos-detail.json`.
         """
+        # rank — та же плотная шкала 0..1, что и у авторов (dense_rank), но
+        # ранжируем по звёздам, а не по числу публикаций.
         stars = {r["id"]: (r["stars_num"] or 0) for r in self.db["repositories"]}
         rank_r = dense_rank(stars)
         summary: list[dict] = []
@@ -229,6 +244,8 @@ class RepoNodeBuilder:
                     "gy": y,
                 }
             )
+            # В отличие от авторов, у репозиториев нет --public-ограничения —
+            # detail пишется для каждого репозитория безусловно.
             detail.append(
                 {
                     "key": rid,
@@ -262,16 +279,24 @@ class PubNodeBuilder:
         self.pos = pos
 
     def build(self) -> tuple[list[dict], list[dict]]:
-        """Возвращает:
+        """Строит записи публикаций сразу в двух формах.
+
+        Возвращает:
             `(summary, detail)` — `summary` в `graph-data.json["pubs"]`,
             `detail` в `pubs-detail.json`.
         """
+        # rank — по числу авторов (n_authors), не по году и не по департаментам.
         n_authors_of = {pid: len(set(self.authorship.pub_authors[pid])) for pid in self.authorship.pub_ids}
         rank_p = dense_rank(n_authors_of)
         summary: list[dict] = []
         for row in self.authorship.pubs_rows:
             pid, year = row["id"], row["year"]
             x, y = self.pos[pid]
+            # depts_all — ВСЕ департаменты публикации (полный PRODUCED_BY-
+            # список + обязательно основной, объединение множеств на случай,
+            # если основной почему-то не попал в pub_dept_rows) — используется
+            # фронтендом, чтобы подсветить публикацию во всех её департаментах
+            # сразу, а не только в основном ("dept" ниже).
             depts_all = sorted(
                 {self.table.g(d) for d in self.assignment.pub_dept_rows.get(pid, [])}
                 | {self.table.g(self.assignment.pub_primary[pid])}
@@ -294,7 +319,11 @@ class PubNodeBuilder:
         for row in self.authorship.pubs_rows:
             title = row["title"] or ""
             if len(title) > PUB_TITLE_MAX_LEN:
-                title = title[: PUB_TITLE_MAX_LEN - 1] + "…"
+                title = title[: PUB_TITLE_MAX_LEN - 1] + "…"  # -1, чтобы многоточие не выталкивало итог за лимит
+            # code_url в снепшоте — сырая JSON-строка (new_cache отдаёт поле
+            # как есть, не распарсенным, см. new_cache/export.py про
+            # funding/versions/affiliations по той же причине). Битый JSON
+            # или пусто — молча откатываемся на пустой список ссылок, а не падаем.
             code_url = row["code_url"]
             try:
                 urls = json.loads(code_url) if code_url else []

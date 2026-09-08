@@ -49,7 +49,9 @@ class GraphDataBuilder:
     """
 
     def __init__(self, db: dict[str, list[dict]], seed: int, *, public: bool = False) -> None:
-        """Аргументы:
+        """Сохраняет входные данные — сама сборка происходит только в `build()`.
+
+        Аргументы:
             db: Снепшот графа в форме `new_cache::load_db()`.
             seed: Сид ForceAtlas2 (для воспроизводимости раскладки).
             public: Собирать ли публичную (GitHub Pages) сборку — при
@@ -60,7 +62,9 @@ class GraphDataBuilder:
         self.public = public
 
     def build(self) -> tuple[dict, dict[str, list[dict]]]:
-        """Возвращает:
+        """Собирает граф целиком: раскладка + узлы + рёбра, из снепшота `new_cache`.
+
+        Возвращает:
             `(summary, detail)`:
             - `summary` — то, что пишется в `graph-data.json` (department
               table, все рёбра, summary-записи узлов);
@@ -68,15 +72,26 @@ class GraphDataBuilder:
               каждый список пишется в свой `*-detail.json`.
         """
         db = self.db
+        # dept_name — русское имя ИЛИ английское как запасной вариант (нужно,
+        # только чтобы department точно "существовал" — фильтр в
+        # DepartmentAssigner.assign(), не для отображения); dept_name_en —
+        # отдельно, чисто английское, идёт напрямую в итоговую таблицу.
         dept_name = {row["id"]: (row["name_ru"] or row["name_en"] or "") for row in db["departments"]}
         dept_name_en = {row["id"]: (row["name_en"] or "") for row in db["departments"]}
 
+        # Порядок стадий важен: authorship нужен для assign() (кто чей автор),
+        # assignment — и для build_table() (кто в каком департаменте), и для
+        # раскладки (dept-рёбра), и для сборки узлов/рёбер ниже.
         authorship = build_authorship_index(db)
         assigner = DepartmentAssigner(db, authorship)
         assignment = assigner.assign(dept_name)
         table = assigner.build_table(dept_name, dept_name_en, assignment)
         layout = GraphLayoutBuilder(db, authorship, assignment).build(self.seed)
 
+        # Три вида узлов собираются независимо друг от друга (свой Builder на
+        # каждый), но всем нужны table (для dept/цвета) и своя часть layout
+        # (позиции). authors — единственный, кому нужен ещё и public (детали
+        # авторов приватные).
         authors_summary, authors_detail = AuthorNodeBuilder(
             db, authorship, assignment, table, layout.pos_authors, public=self.public
         ).build()
@@ -84,6 +99,9 @@ class GraphDataBuilder:
         pubs_summary, pubs_detail = PubNodeBuilder(authorship, assignment, table, layout.pos_pubs).build()
         edges = EdgeBuilder(db, authorship, assignment, table, layout).build()
 
+        # **edges разворачивает все семь ключей рёбер (coauth_edges/pub_edges/...)
+        # прямо на верхний уровень summary — так их видит new_gui, без
+        # вложенного объекта "edges" в JSON.
         summary = {
             "departments": table.departments,
             "authors": authors_summary,
@@ -103,6 +121,10 @@ def dump_json(data, path: Path) -> None:
 
 
 def main() -> None:
+    # Импорты внутри функции, а не на уровне модуля: new_cache — соседний
+    # пакет этого же репозитория, а pauk.settings — часть основного пакета
+    # pauk. Оба нужны только для CLI (main()), а не для build() — который
+    # можно вызвать и с уже готовым db в памяти, без похода за настройками.
     from new_cache.graph_snapshot import read_snapshot
     from pauk.settings import settings
 
@@ -118,17 +140,24 @@ def main() -> None:
         "--cache", type=Path, required=True, help="путь к снепшоту графа, снятому 'new_cache' (не 'pauk cache export')"
     )
     args = parser.parse_args()
+    # Дефолт вычисляется только если --out-dir не передан явно — так
+    # пользователь всегда может перезаписать путь вручную, но по умолчанию
+    # данные лягут туда, откуда их заберёт new_gui (см. pauk.settings.gui_dir).
     if args.out_dir is None:
         args.out_dir = settings.gui_dir / ("public" if args.public else "private")
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-    args.out_dir.mkdir(parents=True, exist_ok=True)
+    args.out_dir.mkdir(parents=True, exist_ok=True)  # exist_ok — второй прогон в ту же папку не должен падать
 
     t0 = time.time()
     db = read_snapshot(args.cache)
     summary, detail = GraphDataBuilder(db, seed=args.seed, public=args.public).build()
 
     dump_json(summary, args.out_dir / "graph-data.json")
+    # detail-файл кроме authors/repos/pubs пишется только если в нём реально
+    # есть строки — для --public сборки authors_detail пуст (см.
+    # AuthorNodeBuilder.build()), и authors-detail.json тогда не появится
+    # на диске вовсе, а не будет лежать пустым списком.
     for kind, rows in detail.items():
         if rows:
             dump_json(rows, args.out_dir / f"{kind}-detail.json")

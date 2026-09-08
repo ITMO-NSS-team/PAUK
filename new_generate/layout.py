@@ -297,8 +297,11 @@ class Layout:
     настоящие связи)."""
 
     pos_authors: dict[str, tuple[float, float]]
+    """Ключ автора -> координаты (x, y) в пространстве фронтенда."""
     pos_pubs: dict[str, tuple[float, float]]
+    """Ключ публикации -> координаты (x, y)."""
     pos_repos: dict[str, tuple[float, float]]
+    """Ключ репозитория -> координаты (x, y)."""
     coauth: dict[tuple[str, str], int]
     """Пары авторов -> число совместных публикаций (настоящее, для coauth_edges)."""
     pub_pair_w: dict[tuple[str, str], int]
@@ -320,18 +323,23 @@ class GraphLayoutBuilder:
         self.assignment = assignment
 
     def build(self, seed: int) -> Layout:
-        """Аргументы:
+        """Считает три раскладки ForceAtlas2 (авторы/публикации/репозитории) —
+        у каждой своя мера близости, см. `docs/architecture/gui.md`.
+
+        Аргументы:
             seed: Сид ForceAtlas2 и подмешивания несвязанных компонент.
 
         Возвращает:
             `Layout` с позициями и весами рёбер для экспорта.
         """
-        rng = random.Random(seed)
+        rng = random.Random(seed)  # один общий генератор на sparse_dept_edges — авторов и публикаций, см. докстринг про seed+1
         layouter = ForceAtlasLayouter(seed)
 
         # --- авторы: совместные публикации + общие репозитории + разреженные
         # "тот же департамент"-рёбра. Первое (coauth) уходит и в раскладку, и
         # в экспорт как есть; репозитории и dept-рёбра — только в раскладку.
+        # Каждая пара соавторов одной публикации — реальное ребро, вес =
+        # число публикаций, написанных вместе.
         coauth: dict[tuple[str, str], int] = defaultdict(int)
         for _pid, pers in self.authorship.pub_authors.items():
             for a, b in combinations(sorted(set(pers)), 2):
@@ -339,14 +347,20 @@ class GraphLayoutBuilder:
 
         # Обычный dict, а не Counter: дальше в него подмешиваются дробные веса
         # dept-рёбер (sparse_dept_edges), а Counter в typeshed типизирован
-        # только под int.
+        # только под int. dict(coauth) копирует реальные веса как стартовые —
+        # дальше только ДОБАВЛЯЕМ синтетику поверх, не заменяем.
         author_layout_w: dict[tuple[str, str], float] = dict(coauth)
+        # Кто с кем участвовал в одном репозитории (CONTRIBUTED_TO) — тоже
+        # повод сблизить узлы на карте, хотя в coauth_edges (экспорт) это
+        # никогда не попадёт, только влияет на раскладку.
         repo_contributors: dict[str, set[str]] = defaultdict(set)
         for row in self.db["repo_persons"]:
             repo_contributors[row["rid"]].add(row["per"])
         for pers in repo_contributors.values():
             for a, b in combinations(sorted(pers), 2):
                 author_layout_w[(a, b)] = author_layout_w.get((a, b), 0) + 1
+        # Синтетические слабые рёбра "тот же департамент" — см. sparse_dept_edges,
+        # только чтобы коллеги без единой реальной связи не разлетались по карте.
         for pair, w in sparse_dept_edges(set(self.assignment.static_depts), self.assignment.author_dept, rng).items():
             author_layout_w[pair] = author_layout_w.get(pair, 0) + w
 
@@ -363,21 +377,29 @@ class GraphLayoutBuilder:
         # --- публикации: общие ИТМО-авторы. Полный граф w>=1 — тысячи рёбер,
         # поэтому для раскладки берётся top-K сильнейших связей на публикацию;
         # на экспорт (pub_edges) идёт полный pub_pair_w, не урезанный.
+        # Пара публикаций одного автора — ребро, вес = число общих авторов.
         pub_pair_w: dict[tuple[str, str], int] = defaultdict(int)
         for _per, plist in self.authorship.author_pubs.items():
             for a, b in combinations(sorted(set(plist)), 2):
                 pub_pair_w[(a, b)] += 1
 
         t0 = time.time()
+        # Для каждой публикации собираем список её соседей с весами связи —
+        # с ОБЕИХ сторон ребра (a видит b, b видит a), чтобы можно было
+        # честно отобрать top-K сильнейших для КАЖДОЙ публикации отдельно,
+        # а не просто топ по всему графу разом.
         strongest: dict[str, list[tuple[int, str]]] = defaultdict(list)
         for (a, b), w in pub_pair_w.items():
             strongest[a].append((w, b))
             strongest[b].append((w, a))
         pub_layout_w: dict[tuple[str, str], float] = {}
         for n, lst in strongest.items():
-            lst.sort(key=lambda t: (-t[0], t[1]))
+            lst.sort(key=lambda t: (-t[0], t[1]))  # сильнейшие сначала, ничьи — по id соседа для детерминизма
             for w, o in lst[: EDGE_THRESHOLDS.pub_layout_top_k]:
-                pub_layout_w[(n, o) if n < o else (o, n)] = w
+                pub_layout_w[(n, o) if n < o else (o, n)] = w  # ключ всегда (меньший, больший) — не дублировать ребро дважды
+        # Та же синтетика "тот же департамент", что и у авторов выше, только
+        # с более слабыми параметрами (см. PUB_DEPT_EDGE_K/WEIGHT) и taper_size —
+        # у публикаций департаментов может быть намного больше сущностей на один.
         for pair, w in sparse_dept_edges(
             self.authorship.pub_ids,
             self.assignment.pub_primary,
@@ -398,21 +420,29 @@ class GraphLayoutBuilder:
         )
 
         # --- репозитории: общие публикации (включая публикации вне графа, у
-        # которых нет ни одного ИТМО-автора — репозиторий их всё равно реализует).
+        # которых нет ни одного ИТМО-автора — репозиторий их всё равно реализует,
+        # поэтому здесь db["repo_pubs"] целиком, а не authorship.pub_ids).
         repo_all_pubs: dict[str, set[str]] = defaultdict(set)
         for row in self.db["repo_pubs"]:
             repo_all_pubs[row["rid"]].add(row["pid"])
+        # Вес ребра — просто число публикаций, общих у пары репозиториев
+        # (пересечение множеств); ноль общих публикаций — ребра вообще нет.
         repo_edge_w: dict[tuple[str, str], int] = {}
         for a, b in combinations(sorted(repo_all_pubs), 2):
             shared = len(repo_all_pubs[a] & repo_all_pubs[b])
             if shared:
                 repo_edge_w[(a, b)] = shared
 
+        # Простой граф без blended/spread (см. докстринг ForceAtlasLayouter.simple) —
+        # репозиториев на порядок меньше, чем авторов/публикаций, граф разрежен.
         R = nx.Graph()
         R.add_nodes_from(r["id"] for r in self.db["repositories"])
         R.add_weighted_edges_from((a, b, w) for (a, b), w in repo_edge_w.items())
         pos_repos = layouter.simple(R, FA2_ITERATIONS.repos)
 
+        # coauth/pub_pair_w/repo_edge_w — РЕАЛЬНЫЕ веса, идут и в раскладку
+        # (через author_layout_w/pub_layout_w выше), и на экспорт как есть
+        # (см. докстринг Layout про то, почему это разные вещи).
         return Layout(
             pos_authors=pos_authors,
             pos_pubs=pos_pubs,
