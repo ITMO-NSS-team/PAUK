@@ -68,7 +68,8 @@ class RecordHeldTest(unittest.TestCase):
         review.record_held(self.db, [held_pair()])
         (row,) = review.questions(self.db)
         self.assertEqual(row["evidence"]["shared_coauthors"], 0)
-        self.assertEqual(row["evidence"]["name_a"], "A. V. Yulin")
+        # Names come out in the order of `members`, not of the report.
+        self.assertEqual(row["evidence"]["names"], ["A. V. Yulin", "A. V. Yulin"])
 
     def test_a_later_run_refreshes_the_evidence(self):
         # A pair can gain a shared coauthor between runs. The conflict
@@ -218,3 +219,89 @@ class QueueTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PressingTest(unittest.TestCase):
+    """The default view. 278 questions in one run, and most of them are
+    piles where the refusal is right and a reviewer would only be reading."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        review.record_held(self.db, [
+            held_pair("A1", "A2"),
+            held_pair("A3", "A4", because="only one person is ITMO-affiliated"),
+            held_pair("A5", "A6", because="name is given as initials"),
+            held_group(),
+        ])
+
+    def test_the_default_view_is_the_short_pile(self):
+        found = review.questions(self.db, pressing=True)
+        self.assertEqual(sorted(row["_id"] for row in found),
+                         ["person_group:A1:A2:A3", "person_pair:A1:A2"])
+
+    def test_a_refused_group_is_always_pressing(self):
+        # Its wording changes with the field that split it, so it cannot be
+        # picked out by reason.
+        review.record_held(self.db, [held_group(("B1", "B2"),
+                                                because="group spans 3 distinct email values")])
+        self.assertEqual(review.count(self.db, pressing=True, kind=review.GROUP), 2)
+
+    def test_the_counter_and_the_page_agree(self):
+        self.assertEqual(review.count(self.db, pressing=True),
+                         len(review.questions(self.db, pressing=True)))
+
+    def test_nothing_is_hidden_from_the_full_queue(self):
+        self.assertEqual(review.count(self.db), 4)
+
+
+class SkipTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        review.record_held(self.db, [held_pair("A1", "A2"), held_pair("A3", "A4")])
+
+    def test_skipping_separates_read_from_unread(self):
+        review.skip(self.db, review.PAIR, ["A1", "A2"], actor="user:roman")
+        self.assertEqual(review.count(self.db, skipped=True), 1)
+        self.assertEqual(review.count(self.db, skipped=False), 1)
+
+    def test_a_skip_is_not_a_decision(self):
+        # The rules must never see it: nobody decided anything.
+        review.skip(self.db, review.PAIR, ["A1", "A2"])
+        self.assertEqual(review.decisions(self.db), {})
+
+    def test_answering_later_clears_the_skip(self):
+        review.skip(self.db, review.PAIR, ["A1", "A2"])
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.DIFFERENT)
+        self.assertEqual(review.count(self.db, skipped=True), 0)
+
+    def test_skipping_a_question_nobody_asked_does_nothing(self):
+        self.assertFalse(review.skip(self.db, review.PAIR, ["Z1", "Z2"]))
+
+
+class NameAlignmentTest(unittest.TestCase):
+    """Names have to follow the ids, not the order the report was written.
+
+    Members are sorted; a pair is reported in whatever order the blocking
+    emitted it. Lining the two up wrongly puts one person's name against
+    the other's id, and nothing on the page would show it.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+
+    def test_a_pair_reported_the_other_way_round_keeps_its_names(self):
+        row = held_pair()
+        row["person_a"], row["name_a"] = "A9", "Zinaida Orlova"
+        row["person_b"], row["name_b"] = "A1", "Ivan Smirnov"
+        review.record_held(self.db, [row])
+        (stored,) = review.questions(self.db)
+        self.assertEqual(stored["members"], ["A1", "A9"])
+        self.assertEqual(stored["evidence"]["names"], ["Ivan Smirnov", "Zinaida Orlova"])
+
+    def test_a_group_keeps_its_names_against_its_members(self):
+        row = held_group(("B2", "B1"))
+        row["persons"], row["names"] = ["B2", "B1"], ["Second", "First"]
+        review.record_held(self.db, [row])
+        (stored,) = review.questions(self.db)
+        self.assertEqual(stored["members"], ["B1", "B2"])
+        self.assertEqual(stored["evidence"]["names"], ["First", "Second"])

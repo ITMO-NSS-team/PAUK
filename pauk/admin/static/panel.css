@@ -314,3 +314,8 @@ select {
 }
 .steps > summary:hover { color: var(--text); }
 .steps[open] > summary { margin-bottom: 10px; }
+
+/* Ответ на вопрос очереди: поле «почему» и три кнопки под ним. */
+.verdicts input[type=text] { margin-bottom: 8px; }
+.verdicts .row { flex-wrap: wrap; gap: 6px; }
+.verdicts button { padding: 6px 11px; font-size: 13px; }

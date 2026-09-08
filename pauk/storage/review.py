@@ -99,6 +99,22 @@ def kind_of(row: dict) -> str:
     return GROUP if "persons" in row else PAIR
 
 
+def names_of(row: dict, members: list[str]) -> list[str | None]:
+    """The names, in the order `members` are in.
+
+    A pair arrives as person_a/name_a and person_b/name_b, in whatever
+    order the blocking happened to emit it, while members are sorted. Lined
+    up here rather than in the page: the page has only the members and the
+    names, and pairing the wrong name with the wrong id is not a mistake a
+    reader can spot.
+    """
+    if "persons" in row:
+        by_id = dict(zip(row["persons"], row.get("names") or [], strict=False))
+    else:
+        by_id = {row["person_a"]: row.get("name_a"), row["person_b"]: row.get("name_b")}
+    return [by_id.get(member) for member in members]
+
+
 def record_held(db: Database, report: list[dict], source: str = STAGE) -> int:
     """Store what a run refused to decide, as questions.
 
@@ -130,7 +146,9 @@ def record_held(db: Database, report: list[dict], source: str = STAGE) -> int:
         kind = kind_of(row)
         members = members_of(row)
         evidence = {name: value for name, value in row.items()
-                    if name not in ("status", "person_a", "person_b", "persons")}
+                    if name not in ("status", "person_a", "person_b", "persons",
+                                    "name_a", "name_b")}
+        evidence["names"] = names_of(row, members)
         db[COLLECTION].update_one(
             {"_id": question_id(kind, members)},
             {"$set": {"evidence": evidence, "seen_at": moment, "source": source},
@@ -167,11 +185,27 @@ def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
         {"_id": key},
         {"$set": {"verdict": verdict, "actor": actor, "note": note,
                   "decided_at": moment},
+         # Answering settles what a skip only postponed.
+         "$unset": {"skipped_at": "", "skipped_by": ""},
          "$setOnInsert": {"kind": kind, "members": sorted(set(members)),
                           "evidence": {}, "seen_at": moment, "source": STAGE}},
         upsert=True)
     logger.info("review: %s answered %s by %s", key, verdict, actor)
     return db[COLLECTION].find_one({"_id": key})
+
+
+def skip(db: Database, kind: str, members: list[str], actor: str = "unknown") -> bool:
+    """Mark a question as looked at and not settled.
+
+    Not a verdict, so `decisions` never returns it and the rules never see
+    it. It only separates "nobody has read this" from "somebody read it and
+    could not tell", which is the difference between a queue that can be
+    worked through and one that cannot.
+    """
+    result = db[COLLECTION].update_one(
+        {"_id": question_id(kind, members)},
+        {"$set": {"skipped_at": _now(), "skipped_by": actor}})
+    return result.matched_count > 0
 
 
 def withdraw(db: Database, kind: str, members: list[str]) -> bool:
@@ -227,38 +261,55 @@ def decisions(db: Database, aliases: dict[str, str] | None = None
     return found
 
 
-def questions(db: Database, *, answered: bool | None = None, kind: str = "",
-              reason: str = "", limit: int = 50, skip: int = 0) -> list[dict]:
-    """One page of the queue, the longest-waiting first.
+#: Reasons where a person can actually settle something. Two ITMO authors
+#: with the same full name and nothing else in common is a question; the
+#: rules genuinely cannot go further, and somebody who knows the university
+#: can. One real run produced 18 of these beside 104 "only one person is
+#: ITMO-affiliated", 92 "no shared coauthors" and 60 "name is given as
+#: initials" — piles where the refusal is usually right and a reviewer would
+#: be reading, not deciding. Refused groups are pressing whatever their
+#: wording, which varies with the field that split them.
+PRESSING_REASONS = ("identical name with nothing corroborating it",)
 
-    Args:
-        answered: True for answered questions, False for open ones, None
-            for both.
-        kind: `PAIR` or `GROUP`, empty for both.
-        reason: One of the strings in `held_because`, matched exactly.
+
+def _query(*, pressing: bool = False, answered: bool | None = None,
+           skipped: bool | None = None, kind: str = "", reason: str = "") -> dict:
+    """The filter behind both the queue and its counter.
+
+    Built in one place so a tab and the number on it can never disagree.
     """
     query: dict = {}
+    if pressing:
+        query["$or"] = [{"kind": GROUP},
+                        {"evidence.held_because": {"$in": list(PRESSING_REASONS)}}]
     if answered is not None:
         query["verdict"] = {"$exists": answered}
+    if skipped is not None:
+        query["skipped_at"] = {"$exists": skipped}
     if kind:
         query["kind"] = kind
     if reason:
         query["evidence.held_because"] = reason
-    rows = db[COLLECTION].find(query).sort(
+    return query
+
+
+def questions(db: Database, *, limit: int = 50, skip: int = 0, **filters) -> list[dict]:
+    """One page of the queue, the longest-waiting first.
+
+    Args:
+        limit: How many to return.
+        skip: How many to pass over, for paging.
+        **filters: See `_query`. `pressing` narrows to the reasons worth a
+            person's time, `answered` and `skipped` take True, False or
+            None for both, `kind` and `reason` match exactly.
+    """
+    rows = db[COLLECTION].find(_query(**filters)).sort(
         [("seen_at", 1), ("_id", 1)]).skip(skip).limit(limit)
     return list(rows)
 
 
-def count(db: Database, *, answered: bool | None = None, kind: str = "",
-          reason: str = "") -> int:
-    query: dict = {}
-    if answered is not None:
-        query["verdict"] = {"$exists": answered}
-    if kind:
-        query["kind"] = kind
-    if reason:
-        query["evidence.held_because"] = reason
-    return db[COLLECTION].count_documents(query)
+def count(db: Database, **filters) -> int:
+    return db[COLLECTION].count_documents(_query(**filters))
 
 
 def reasons(db: Database) -> list[str]:

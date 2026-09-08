@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Разбор дублей</h1>
+<p class="muted" style="margin:-8px 0 18px; max-width:72ch">
+  Пары, которые дедупликация не смогла решить сама. Ответ записывается и
+  применяется на следующем прогоне. Слияние необратимо, поэтому решение
+  доходит до правил заранее, а не правит результат задним числом.
+</p>
+
+<div class="tabs">
+  <a href="/review?tab=pressing" {% if tab == "pressing" %}class="on"{% endif %}>
+    Стоит посмотреть {{ counts.pressing }}</a>
+  <a href="/review?tab=open" {% if tab == "open" %}class="on"{% endif %}>
+    Все нерешённые {{ counts.open }}</a>
+  <a href="/review?tab=skipped" {% if tab == "skipped" %}class="on"{% endif %}>
+    Отложенные{% if counts.skipped %} {{ counts.skipped }}{% endif %}</a>
+  <a href="/review?tab=answered" {% if tab == "answered" %}class="on"{% endif %}>
+    Отвеченные{% if counts.answered %} {{ counts.answered }}{% endif %}</a>
+</div>
+
+{% if tab == "pressing" and counts.open > counts.pressing %}
+<p class="muted" style="margin:-8px 0 14px">
+  Здесь только то, где человек может что-то добавить. Остальные
+  {{ counts.open - counts.pressing }} на вкладке «Все нерешённые».
+</p>
+{% endif %}
+
+{% if not rows %}
+  <p class="muted">
+  {% if tab == "pressing" %}Разбирать нечего. Правила решили всё сами.
+  {% elif tab == "answered" %}Пока никто ничего не решил.
+  {% elif tab == "skipped" %}Отложенных нет.
+  {% else %}Вопросов нет. Очередь наполняется дедупликацией.{% endif %}</p>
+{% else %}
+<div class="card scroll">
+  <table class="fixed">
+    <colgroup>
+      <col style="width:15rem"><col><col style="width:13rem">
+      {% if user.can_write %}<col style="width:15rem">{% endif %}
+    </colgroup>
+    <tr><th>кто и кто</th><th>что известно</th><th>почему отложено</th>
+      {% if user.can_write %}<th>решение</th>{% endif %}</tr>
+    {% for row in rows %}
+    <tr>
+      <td>
+        {% if row.is_group %}
+        <div class="kind kind-bulk" style="margin-bottom:4px">группа из {{ row.members|length }}</div>
+        {% endif %}
+        {% for person_id, name in row.people %}
+        <div style="margin-bottom:4px">
+          <a href="/nodes/Person/{{ person_id | urlencode }}">{{ name or person_id }}</a>
+          <br><span class="muted val">{{ person_id }}</span></div>
+        {% endfor %}
+      </td>
+      <td>
+        {% if row.shared_coauthors is not none %}
+        <div>соавторов <b>{{ row.shared_coauthors }}</b>,
+          подразделений <b>{{ row.shared_departments }}</b></div>
+        {% endif %}
+        {% if row.shared_fields %}
+        <div class="muted">{{ row.shared_fields|join(", ") }}</div>
+        {% endif %}
+        {% if row.is_group %}<span class="muted">общего ничего не считали</span>{% endif %}
+        {% if row.verdict %}
+        <div style="margin-top:6px">
+          <span class="kind {% if row.verdict == 'same' %}kind-created{% else %}kind-deleted{% endif %}">
+            {% if row.verdict == "same" %}один человек{% else %}разные люди{% endif %}</span>
+          <br><span class="muted">{{ row.actor }}{% if row.note %} · {{ row.note }}{% endif %}</span>
+          {# Только у слияния есть что применять. «Разные» ничего не меняет,
+             оно лишь не даёт правилам слить пару потом. #}
+          {% if row.verdict == "same" %}
+            {% if row.applied_at %}<br><span class="muted">слито {{ row.applied_at|moment }}</span>
+            {% else %}<br><span class="muted">сольётся на следующем прогоне</span>{% endif %}
+          {% endif %}
+        </div>
+        {% elif row.skipped_by %}
+        <div class="muted" style="margin-top:6px">отложил {{ row.skipped_by }}</div>
+        {% endif %}
+      </td>
+      <td>{% for reason in row.reasons %}<div>{{ reason }}</div>{% endfor %}</td>
+      {% if user.can_write %}
+      <td>
+        {% if row.verdict %}
+        <form method="post" action="/review/withdraw">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="kind" value="{{ row.kind }}">
+          <input type="hidden" name="members" value="{{ row.members|join(',') }}">
+          <input type="hidden" name="tab" value="{{ tab }}">
+          <button type="submit" class="ghost">передумать</button>
+        </form>
+        {% else %}
+        <form method="post" action="/review/answer" class="verdicts">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="kind" value="{{ row.kind }}">
+          <input type="hidden" name="members" value="{{ row.members|join(',') }}">
+          <input type="hidden" name="tab" value="{{ tab }}">
+          <input type="text" name="note" placeholder="почему" aria-label="почему">
+          <div class="row" style="margin:0">
+            {# Группу нельзя назвать одним человеком: её отклонили именно
+               потому, что внутри два разных ORCID или адреса. #}
+            {% if not row.is_group %}
+            <button type="submit" name="verdict" value="same">один человек</button>
+            {% endif %}
+            <button type="submit" name="verdict" value="different" class="ghost">
+              {% if row.is_group %}оставить раздельно{% else %}разные{% endif %}</button>
+            <button type="submit" name="verdict" value="skip" class="ghost">не знаю</button>
+          </div>
+        </form>
+        {% endif %}
+      </td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if pages > 1 %}
+<p style="margin-top:14px">
+  {% if page > 1 %}<a href="/review?tab={{ tab }}&page={{ page - 1 }}"><- новее</a>{% endif %}
+  <span class="muted" style="margin:0 12px">страница {{ page }} из {{ pages }}</span>
+  {% if page < pages %}<a href="/review?tab={{ tab }}&page={{ page + 1 }}">старее -></a>{% endif %}
+</p>
+{% endif %}
+{% endif %}
+{% endblock %}
