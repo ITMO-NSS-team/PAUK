@@ -36,3 +36,7 @@ def ensure_indexes(db: Database) -> None:
     # the panel warns an editor whenever a run is under way.
     db.jobs.create_index([("state", 1), ("created_at", 1)])
     db.jobs.create_index([("created_at", -1)])
+    # The review queue is opened on the unanswered questions, oldest first,
+    # and every dedup run reads back every answer given so far.
+    db.review_pairs.create_index([("verdict", 1), ("seen_at", 1)])
+    db.review_pairs.create_index([("members", 1)])
