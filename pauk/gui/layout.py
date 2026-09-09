@@ -50,6 +50,11 @@ def spread_min_distance(pos, d_min, seed, iters=800):
     """Push apart any pair of nodes closer than d_min — converged FA2 clusters
     are dense enough to render as solid filled discs otherwise."""
     keys = list(pos)
+    if not keys:
+        # cKDTree refuses an empty array. A graph with no authors is not an
+        # error, only an empty map: a fresh database, or a group that has
+        # not been published yet.
+        return {}
     P = np.array([pos[k] for k in keys], dtype=float)
     rng = np.random.RandomState(seed)
     for _ in range(iters):

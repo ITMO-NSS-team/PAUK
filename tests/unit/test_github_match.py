@@ -6,7 +6,9 @@ from pathlib import Path
 import mongomock
 
 from pauk.models import GitHubProfile, Person, Repository
+from pauk.pipeline.stages import social_graph
 from pauk.pipeline.stages.github_match import (
+    ITMO_IN_TEXT,
     MATCHES_FILENAME,
     GitHubMatchStage,
     confidence,
@@ -387,6 +389,29 @@ class GitHubMatchStageTest(unittest.TestCase):
         self.assertEqual(rows["ipetrov"]["person"], "A1")
         # Nothing but the name behind this one, and the login says nothing.
         self.assertEqual(rows["coder42"]["decision"], "review")
+
+
+class ItmoInTextTest(unittest.TestCase):
+    """One pattern for both stages that ask whether a profile says ITMO.
+
+    There used to be two, byte-identical, and only one of them grew the
+    spellings the labs actually use. The stages then disagreed: social_graph
+    followed an organization located in "Санкт Петербург", github_match did
+    not credit the same account with itmo_profile.
+    """
+
+    def test_the_two_stages_share_one_pattern(self):
+        self.assertIs(ITMO_IN_TEXT, social_graph.ITMO_IN_TEXT)
+
+    def test_the_spellings_social_graph_added_are_recognised_here(self):
+        for text in ("Россия, Санкт Петербург", "Санкт-Петербург",
+                     "Russia, St. Petersburg", "St-Petersburg", "Sankt-Peterburg"):
+            with self.subTest(text=text):
+                self.assertTrue(ITMO_IN_TEXT.search(text))
+
+    def test_itmo_as_a_word_still_wins_and_ritmo_still_does_not(self):
+        self.assertTrue(ITMO_IN_TEXT.search("ITMO University"))
+        self.assertFalse(ITMO_IN_TEXT.search("RITMO, University of Oslo"))
 
 
 if __name__ == "__main__":

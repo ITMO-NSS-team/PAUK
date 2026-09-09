@@ -42,6 +42,20 @@ class PreparedStore:
     def _key_field(self, entity: str) -> str:
         return self.KEY_FIELDS.get(entity, "id")
 
+    @classmethod
+    def known_groups(cls, db: Database) -> list[str]:
+        """Every group that has prepared rows, oldest name first.
+
+        Rows carry the groups that claim them rather than belonging to one,
+        so there is no collection of groups to read — the names are gathered
+        from the rows themselves. Used by the panel, which must offer a
+        group that exists instead of a box to mistype one into.
+        """
+        found: set[str] = set()
+        for name in cls.COLLECTIONS.values():
+            found.update(db[name].distinct("groups"))
+        return sorted(found)
+
     def read_rows(self, entity: str) -> Iterator[dict]:
         cursor = self._collection(entity).find(
             {"groups": self.group},
