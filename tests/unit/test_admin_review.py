@@ -1,3 +1,4 @@
+import re
 import unittest
 
 import mongomock
@@ -619,3 +620,53 @@ class QuestionKindIsVisibleTest(unittest.TestCase):
         body = self.client.get("/review").text
         self.assertIn("Спорные случаи", body)
         self.assertNotIn("Разбор дублей", body)
+
+
+class ColumnsSayWhoSpeaksTest(unittest.TestCase):
+    """Three different voices used to sit in one cell.
+
+    What the rules collected, what a person decided, and what the rules say
+    now read as one list, and nothing told them apart.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        create_user(self.db, "guest", "hunter2", role="viewer")
+        review.record_held(self.db, [held_pair("A1", "A2")])
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.DIFFERENT,
+                              actor="user:andrey", note="разные кафедры")
+        review.record_disputed(self.db, [{
+            "status": "disputed", "person_a": "A1", "name_a": "A", "person_b": "A2",
+            "name_b": "B", "rule": "same_name"}])
+        self.client = TestClient(build(Settings(), self.db), follow_redirects=False)
+
+    def cells(self, login="roman"):
+        self.client.post("/login", data={"login": login, "password": "hunter2"})
+        body = self.client.get("/review", params={"tab": "answered"}).text
+        row = body.split("<tr>")[2]
+        return re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+
+    def test_what_the_rules_collected_stands_alone(self):
+        known = self.cells()[1]
+        self.assertIn("соавторов", known)
+        self.assertNotIn("user:andrey", known)
+        self.assertNotIn("разные люди", known)
+
+    def test_what_a_person_decided_stands_alone(self):
+        decided = self.cells()[3]
+        self.assertIn("разные люди", decided)
+        self.assertIn("user:andrey", decided)
+        self.assertNotIn("соавторов", decided)
+
+    def test_what_the_rules_say_now_sits_by_the_old_reason(self):
+        # It is the rules changing their mind, not part of the answer.
+        why = self.cells()[2]
+        self.assertIn("теперь связывают", why)
+
+    def test_a_viewer_sees_the_answer_without_the_buttons(self):
+        # The column used to appear only for an editor, so a viewer could
+        # not see what had been decided at all.
+        decided = self.cells(login="guest")[3]
+        self.assertIn("разные люди", decided)
+        self.assertNotIn("/review/withdraw", decided)

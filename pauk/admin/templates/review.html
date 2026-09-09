@@ -40,11 +40,10 @@
 <div class="card scroll">
   <table class="fixed">
     <colgroup>
-      <col style="width:15rem"><col><col style="width:13rem">
-      {% if user.can_write %}<col style="width:15rem">{% endif %}
+      <col style="width:14rem"><col><col style="width:13rem"><col style="width:15rem">
     </colgroup>
     <tr><th>о чём вопрос</th><th>что известно</th><th>почему отложено</th>
-      {% if user.can_write %}<th>решение</th>{% endif %}</tr>
+      <th>решение</th></tr>
     {% for row in rows %}
     <tr>
       <td>
@@ -92,8 +91,22 @@
         <div class="muted val"><a href="{{ repo }}" target="_blank" rel="noopener">{{ repo }}</a></div>
         {% endfor %}
         {% endif %}
+      </td>
+      <td>
+        {% for reason in row.reasons %}<div>{{ reason }}</div>{% endfor %}
+        {# Правила передумали уже после ответа, поэтому стоит здесь, рядом с
+           прежней причиной, а не среди того, что человек решил. #}
+        {% if row.disputed_at %}
+        <div class="change" style="margin-top:6px">
+          <span class="now">теперь связывают: {{ row.disputed_rule }}</span>
+        </div>
+        {% endif %}
+      </td>
+      <td>
+        {# Что решил человек — здесь, а не среди доказательств: в одной
+           клетке они читались как один список, хотя это разные голоса. #}
         {% if row.verdict %}
-        <div style="margin-top:6px">
+        <div style="margin-bottom:8px">
           <span class="kind {% if row.verdict == 'same' %}kind-created{% else %}kind-deleted{% endif %}">
             {% if row.is_staff %}{% if row.chosen %}запись выбрана{% else %}никто из каталога{% endif %}
             {% elif row.is_github %}{% if row.verdict == "same" %}его аккаунт{% else %}не его аккаунт{% endif %}
@@ -111,17 +124,9 @@
           {% endif %}
         </div>
         {% elif row.skipped_by %}
-        <div class="muted" style="margin-top:6px">отложил {{ row.skipped_by }}</div>
+        <div class="muted" style="margin-bottom:8px">отложил {{ row.skipped_by }}</div>
         {% endif %}
-        {% if row.disputed_at %}
-        <div class="change" style="margin-top:6px">
-          <span class="now">правила теперь связывают: {{ row.disputed_rule }}</span>
-        </div>
-        {% endif %}
-      </td>
-      <td>{% for reason in row.reasons %}<div>{{ reason }}</div>{% endfor %}</td>
-      {% if user.can_write %}
-      <td>
+        {% if user.can_write %}
         {% if row.verdict and row.disputed_at %}
         <form method="post" action="/review/answer" class="verdicts">
           <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -177,8 +182,8 @@
           </div>
         </form>
         {% endif %}
+        {% endif %}
       </td>
-      {% endif %}
     </tr>
     {% endfor %}
   </table>
