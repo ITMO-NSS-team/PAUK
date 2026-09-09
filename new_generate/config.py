@@ -1,13 +1,13 @@
-"""Настроечные константы для new_generate — сгруппированы по тому, какую
-часть раскладки/сборки данных они настраивают, а не свалены в один плоский
-список: имя группы сразу говорит, к чему относится значение внутри.
+"""Tuning constants for new_generate, grouped by which part of the
+layout/build they configure - the group name says what a value is for
+without needing to read further.
 
-Простые датаклассы без переопределения через переменные окружения — никто
-не крутит число итераций ForceAtlas2 через env, проще поправить число тут.
+Plain frozen dataclasses, no env var overrides - nobody tunes ForceAtlas2
+iteration counts through the environment, easier to just edit the number here.
 
-Константы, нужные ровно одной функции без вариации между вызовами
-(например, координатное пространство фронтенда, сигма разброса при
-подмешивании) — локальные, рядом с этой функцией в layout.py, а не здесь.
+Constants needed by exactly one function, with no variation between calls
+(e.g. the frontend coordinate space, jitter sigma when blending stranded
+nodes) live locally next to that function in layout.py instead.
 """
 
 from __future__ import annotations
@@ -17,14 +17,14 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class EdgeThresholds:
-    """Минимальные веса, ниже которых ребро вообще не идёт в экспорт."""
+    """Minimum weights below which an edge is dropped from the export entirely."""
 
     coauth_min_w: int = 2
-    """Мин. число совместных публикаций для ребра автор-автор."""
+    """Min. shared publications for an author-author edge."""
     pub_edge_min_w: int = 3
-    """Мин. число общих ИТМО-авторов для ребра публикация-публикация."""
+    """Min. shared ITMO authors for a publication-publication edge."""
     pub_layout_top_k: int = 6
-    """Сколько сильнейших "общий автор"-рёбер оставлять на публикацию для раскладки (не для экспорта)."""
+    """How many of a publication's strongest "shared author" edges to keep for layout (not for export)."""
 
 
 EDGE_THRESHOLDS = EdgeThresholds()
@@ -32,14 +32,14 @@ EDGE_THRESHOLDS = EdgeThresholds()
 
 @dataclass(frozen=True)
 class Fa2Iterations:
-    """Число итераций ForceAtlas2, по одному прогону на тип сущности."""
+    """ForceAtlas2 iteration count, one run per entity type."""
 
     authors: int = 300
-    """Авторов обычно больше всего и граф гуще (соавторство + общие репозитории) — нужно больше итераций, чтобы сойтись."""
+    """Authors are usually the most numerous with the densest graph (coauthorship + shared repos) - needs more iterations to converge."""
     pubs: int = 250
-    """Публикаций тоже много, но раскладка использует только top-K сильнейших связей на публикацию — сходится чуть быстрее."""
+    """Also many publications, but layout only uses the top-K strongest links per publication - converges a bit faster."""
     repos: int = 100
-    """Репозиториев на порядок меньше, граф разрежен — быстро сходится и без большого числа итераций."""
+    """An order of magnitude fewer repositories, sparse graph - converges quickly without many iterations."""
 
 
 FA2_ITERATIONS = Fa2Iterations()
@@ -47,16 +47,18 @@ FA2_ITERATIONS = Fa2Iterations()
 
 @dataclass(frozen=True)
 class SyntheticDeptEdges:
-    """Синтетические слабые рёбра "тот же департамент" — не настоящие связи,
-    а подсказка для раскладки, чтобы департамент не расползался бесформенным
-    облаком (см. `layout.py::sparse_dept_edges`)."""
+    """Weak synthetic "same department" edges - not real connections, a hint
+    for layout so a department doesn't sprawl into a shapeless cloud (see
+    `layout.py::sparse_dept_edges`)."""
 
     dept_edge_k: int = 3
-    """Со сколькими случайными коллегами по департаменту связан каждый узел (авторы)."""
+    """How many random department colleagues each node (author) connects to."""
     dept_edge_weight: float = 1.0
-    """Сопоставимо с реальными рёбрами (совместные публикации начинаются с 1.0)."""
+    """Comparable to real edges (shared publications start at 1.0)."""
     pub_dept_edge_k: int = 1
+    """Same idea as `dept_edge_k`, for publications."""
     pub_dept_edge_weight: float = 0.5
+    """Weaker than `dept_edge_weight` - publications already have plenty of real edges."""
 
 
 SYNTHETIC_DEPT_EDGES = SyntheticDeptEdges()
@@ -64,23 +66,24 @@ SYNTHETIC_DEPT_EDGES = SyntheticDeptEdges()
 
 @dataclass(frozen=True)
 class MinSeparation:
-    """Минимальное расстояние между узлами — проход после самой раскладки
-    (`layout.py::spread_min_distance`), чтобы совпавшие точки не слипались
-    в закрашенную кляксу."""
+    """Minimum distance between nodes - a pass after layout itself
+    (`layout.py::spread_min_distance`), so coincident points don't clump
+    into a solid blob."""
 
     authors: float = 4.5
-    """Авторов на карте обычно намного больше, чем публикаций — точкам нужно больше свободного места, чтобы не слипаться визуально."""
+    """Authors are usually far more numerous than publications on the map - points need more breathing room to stay visually distinct."""
     pubs: float = 3.5
+    """Fewer publications than authors, so less separation is needed."""
 
 
 MIN_SEPARATION = MinSeparation()
 
 
-# --- Заглушки для отображения ------------------------------------------------------
-# Тройка для одной и той же синтетической корзины "публикация/автор/репозиторий
-# без известного департамента" (см. departments.py::DepartmentAssigner) — не
-# настоящий департамент, поэтому не участвует в golden_color() (departments.py)
-# и получает отдельный нейтрально-серый цвет, который не спутать с реальными.
+# --- Display placeholders ------------------------------------------------------
+# A trio for the same synthetic bucket "publication/author/repository with no
+# known department" (see departments.py::DepartmentAssigner) - not a real
+# department, so it doesn't go through golden_color() (departments.py) and
+# gets its own neutral gray, unmistakable for a real one.
 NO_DEPT_NAME = "Без департамента"
 NO_DEPT_NAME_EN = "No department"
 NO_DEPT_COLOR = "#8a8f98"

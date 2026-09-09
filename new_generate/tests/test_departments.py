@@ -1,7 +1,4 @@
-"""Юнит-тесты для `departments.py`. GoldenColorTest/MajorityDeptTest
-перенесены из бывшего `test_ranking.py` вместе с самими функциями (растащены
-по departments.py/nodes.py — ни у одной из трёх не оказалось больше одного
-реального потребителя, отдельный модуль `ranking.py` был чистой индирекцией)."""
+"""Unit tests for departments.py."""
 
 from __future__ import annotations
 
@@ -16,8 +13,8 @@ class GoldenColorTest(unittest.TestCase):
         self.assertRegex(golden_color(0), r"^#[0-9a-f]{6}$")
 
     def test_deterministic_and_distinct_for_different_indices(self):
-        """Один и тот же индекс — всегда один и тот же цвет; соседние
-        департаменты не должны случайно совпасть по цвету."""
+        """The same index always gives the same color; neighboring
+        departments shouldn't accidentally collide on color."""
         self.assertEqual(golden_color(5), golden_color(5))
         self.assertNotEqual(golden_color(0), golden_color(1))
 
@@ -27,9 +24,9 @@ class MajorityDeptTest(unittest.TestCase):
         self.assertEqual(majority_dept([["d1"], ["d1", "d2"], ["d2"]]), "d1")
 
     def test_tie_broken_by_id_not_by_global_popularity(self):
-        """Именно поэтому нельзя сортировать по глобальной популярности
-        департамента — только по id, иначе крупные департаменты подтягивали
-        бы к себе все спорные случаи."""
+        """This is exactly why department sorting can't use global
+        popularity - only id, or large departments would pull every close
+        call toward themselves."""
         self.assertEqual(majority_dept([["dz"], ["da"]]), "da")
 
     def test_no_votes_returns_none(self):
@@ -59,7 +56,7 @@ class AssignDepartmentsTest(unittest.TestCase):
     def test_publication_falls_back_to_produced_by_when_authors_have_no_department(self):
         db = {
             "persons": [{"id": "A1"}],
-            "person_depts": [],  # у автора вообще нет BELONGS_TO
+            "person_depts": [],  # the author has no BELONGS_TO at all
             "pub_depts": [{"pid": "P1", "did": "d1"}],
             "repo_pubs": [],
             "repo_depts": [],
@@ -92,18 +89,18 @@ class AssignDepartmentsTest(unittest.TestCase):
             ],
             pub_ids={"P_old", "P_new"},
         )
-        # P_old относится к d1, P_new - к d2 (эмулируем через прямое присвоение,
-        # majority_dept сам это не выведет без реальных co-author пересечений -
-        # поэтому здесь просто проверяем сортировку по дате).
+        # P_old belongs to d1, P_new to d2 (emulated via direct assignment -
+        # majority_dept won't derive this on its own without real coauthor
+        # overlap, so this just checks the date sort here).
         assignment = DepartmentAssigner(db, authorship).assign({"d1": "К1", "d2": "К2"})
-        # Оба голосуют за d1/d2 поровну (один автор на публикацию) - реальная
-        # проверка "самой свежей" делается ниже, отдельным сценарием.
+        # Both vote for d1/d2 equally (one author per publication) - the real
+        # "most recent" check is done below, in a separate scenario.
         self.assertIn(assignment.author_dept["A1"], ("d1", "d2"))
 
 
 def _assignment_stub(*, author_dept, pub_primary, repo_dept) -> DepartmentAssignment:
-    """Собирает DepartmentAssignment напрямую, без похода через assign() -
-    для тестов build_table(), которым не нужна вся цепочка целиком."""
+    """Builds a DepartmentAssignment directly, without going through
+    assign() - for build_table() tests, which don't need the whole chain."""
     return DepartmentAssignment(
         static_depts={},
         pub_dept_rows={},
@@ -121,7 +118,7 @@ class BuildDepartmentTableTest(unittest.TestCase):
         authorship = Authorship(pub_authors={}, author_pubs={}, pubs_rows=[], pub_ids=set())
         db = {"repositories": []}
         table = DepartmentAssigner(db, authorship).build_table({"d1": "Крупная", "d2": "Малая"}, {"d1": "Big", "d2": "Small"}, assignment)
-        # d1 использован дважды, d2 - один раз -> d1 должен получить id=0 (первый по размеру)
+        # d1 used twice, d2 once -> d1 should get id=0 (first, by size)
         self.assertEqual(table.departments[0]["name"], "Крупная")
         self.assertEqual(table.g("d1"), 0)
         self.assertEqual(table.g("d2"), 1)

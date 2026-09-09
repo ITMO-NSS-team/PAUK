@@ -1,9 +1,9 @@
-"""Юнит-тест для `graph_builder.py` — сквозная проверка `GraphDataBuilder`
-на маленьком синтетическом db в форме `new_cache`. Логика по стадиям
-(индексация авторства, назначение департаментов, раскладка, сборка узлов/
-рёбер) протестирована по отдельности в `test_authorship.py`/
-`test_departments.py`/`test_layout.py`/`test_nodes.py` — здесь только форма
-(summary/detail-разделение), не конкретные числа раскладки.
+"""Unit test for graph_builder.py - an end-to-end check of
+`GraphDataBuilder` on a small synthetic db in `pauk.cache`'s shape. Stage
+logic (authorship indexing, department assignment, layout, node/edge
+building) is tested separately in `test_authorship.py`/
+`test_departments.py`/`test_layout.py`/`test_nodes.py` - this only checks
+the shape (summary/detail split), not specific layout numbers.
 """
 
 from __future__ import annotations
@@ -31,9 +31,9 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
                  "openalex_url": "https://openalex.org/W1", "abstract": "Абстракт"},
             ],
             "repositories": [
-                # "owner" тут больше нет намеренно: new_cache/export.py его
-                # больше не отдаёт (см. RepoNodeBuilder) - фикстура должна
-                # отражать реальную форму снепшота, а не старую.
+                # "owner" is deliberately absent here: pauk/cache/export.py
+                # no longer returns it (see RepoNodeBuilder) - the fixture
+                # should reflect the real snapshot shape, not the old one.
                 {"id": "R1", "name": "repo", "url": "https://x", "description": "Описание", "stars_num": 5,
                  "has_readme": True, "license": "MIT", "contributors": ["ivanov"], "owner_type": "user"},
             ],
@@ -58,18 +58,18 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
         self.assertEqual(author_detail["degree"], "к.т.н.")
         self.assertEqual(author_detail["openalex_id"], "A123")
         self.assertEqual(author_detail["email"], "ivanov@itmo.ru")
-        self.assertEqual(author_detail["emails"], [])  # None в снепшоте -> [], не падает
-        self.assertEqual(author_detail["affiliations"], [{"name": "ITMO"}])  # JSON-текст разобран
+        self.assertEqual(author_detail["emails"], [])  # None in the snapshot -> [], doesn't raise
+        self.assertEqual(author_detail["affiliations"], [{"name": "ITMO"}])  # JSON-text parsed
 
     def test_summary_label_is_always_the_truncated_public_form(self):
-        # graph-data.json — один файл на обе сборки (см. graph_builder.py про
-        # public/private только по расположению файла, не по содержимому),
-        # поэтому подпись на карте всегда усечена, а не только для --public.
+        # graph-data.json is one shared file across build variants (see
+        # graph_builder.py on public/private being decided by file location,
+        # not content), so the map label is always truncated, not just for --public.
         summary, _detail = GraphDataBuilder(self._sample_db(), seed=1).build()
         self.assertEqual(summary["authors"][0]["label"], "Ива.. И.")
 
     def test_author_detail_is_the_same_regardless_of_output_folder(self):
-        # Полное имя по-прежнему доступно - через detail, не через summary.
+        # The full name is still available - via detail, not summary.
         _summary, detail = GraphDataBuilder(self._sample_db(), seed=1).build()
         self.assertEqual(detail["authors"][0]["name_ru"], "Иванов Иван")
 
@@ -81,7 +81,7 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
         self.assertEqual(pub_detail["code_url"], ["https://x"])
         self.assertEqual(pub_detail["type"], "article")
         self.assertEqual(pub_detail["fields"], ["Computer Science"])
-        self.assertEqual(pub_detail["funding"], [])  # "[]" -> [], не строка
+        self.assertEqual(pub_detail["funding"], [])  # "[]" -> [], not a string
         self.assertEqual(pub_detail["abstract"], "Абстракт")
 
     def test_repo_pub_and_author_edges_are_present(self):
@@ -90,9 +90,9 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
         self.assertEqual(summary["repo_author_edges"], [{"s": "R1", "t": "A1", "role": "maintainer"}])
 
     def test_repo_detail_no_longer_has_an_owner_field(self):
-        """Регрессионный тест на баг слайса ООП-переезда: RepoNodeBuilder
-        раньше читал row["owner"], которого export.py уже не отдаёт -
-        падало с KeyError на первом же реальном прогоне."""
+        """Regression test for a bug from the OOP-restructure slice:
+        RepoNodeBuilder used to read row["owner"], which export.py no longer
+        returns - raised KeyError on the first real run."""
         _summary, detail = GraphDataBuilder(self._sample_db(), seed=1).build()
         repo_detail = detail["repos"][0]
         self.assertEqual(

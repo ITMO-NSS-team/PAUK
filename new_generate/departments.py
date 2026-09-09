@@ -1,9 +1,9 @@
-"""Назначение департамента каждому автору/публикации/репозиторию — правила
-см. `docs/architecture/gui.md`: публикация — большинство голосов среди её
-ИТМО-авторов; автор — департамент его самой свежей публикации; репозиторий —
-большинство по департаментам публикаций, которые он реализует. Ничьи — по
-id, не по глобальной популярности (иначе крупные департаменты только росли
-бы сами от себя).
+"""Assigns a department to every author/publication/repository - rules in
+`docs/architecture/gui.md`: a publication gets the majority vote among its
+ITMO authors; an author gets their most recent publication's department; a
+repository gets the majority among the departments of the publications it
+implements. Ties break by id, not by global popularity (otherwise large
+departments would only keep growing themselves).
 """
 
 from __future__ import annotations
@@ -21,15 +21,15 @@ logger = logging.getLogger(__name__)
 
 
 def golden_color(i: int) -> str:
-    """Цвет департамента: шаг по золотому сечению для оттенка, HLS l=0.6 s=0.4.
+    """Department color: step by the golden ratio for hue, HLS l=0.6 s=0.4.
 
-    Аргументы:
-        i: Порядковый номер департамента (после реиндексации по размеру).
+    Args:
+        i: Department's ordinal (after reindexing by size).
 
-    Возвращает:
-        Цвет в формате `#rrggbb`.
+    Returns:
+        Color as `#rrggbb`.
 
-    Пример:
+    Example:
         >>> golden_color(0)
         '#c27070'
     """
@@ -39,18 +39,18 @@ def golden_color(i: int) -> str:
 
 
 def majority_dept(dept_lists: Iterable[Iterable[str]]) -> str | None:
-    """Департамент по большинству голосов; ничьи разрешаются по id (не по
-    глобальной популярности — это создало бы петлю обратной связи
-    "богатый богатеет" в пользу и без того крупных департаментов).
+    """Department by majority vote; ties break by id, not by global
+    popularity - that would create a "rich get richer" feedback loop
+    favoring already-large departments.
 
-    Аргументы:
-        dept_lists: Список департаментов на каждого "избирателя" (например,
-            список департаментов каждого соавтора публикации).
+    Args:
+        dept_lists: A list of departments per "voter" (e.g. each coauthor's
+            department list for one publication).
 
-    Возвращает:
-        Id департамента-победителя, или `None`, если голосов не было вовсе.
+    Returns:
+        The winning department id, or `None` if there were no votes at all.
 
-    Пример:
+    Example:
         >>> majority_dept([["d1"], ["d1", "d2"], ["d2"]])
         'd1'
     """
@@ -65,41 +65,41 @@ def majority_dept(dept_lists: Iterable[Iterable[str]]) -> str | None:
 
 @dataclass(frozen=True)
 class DepartmentAssignment:
-    """Департамент каждого автора/публикации/репозитория."""
+    """Each author/publication/repository's department."""
 
     static_depts: dict[str, list[str]]
-    """Автор -> список департаментов, которым он реально принадлежит (BELONGS_TO)."""
+    """Author -> the departments they actually belong to (BELONGS_TO)."""
     pub_dept_rows: dict[str, list[str]]
-    """Публикация -> полный список департаментов (PRODUCED_BY), не только основной."""
+    """Publication -> its full department list (PRODUCED_BY), not just the primary one."""
     pub_primary: dict[str, str | None]
-    """Публикация -> основной департамент (большинство голосов авторов, откат на PRODUCED_BY)."""
+    """Publication -> its primary department (majority vote among authors, falls back to PRODUCED_BY)."""
     author_dept: dict[str, str | None]
-    """Автор -> департамент его самой свежей публикации."""
+    """Author -> the department of their most recent publication."""
     repo_pub_map: dict[str, list[str]]
-    """Репозиторий -> публикации, которые он реализует (в пределах pub_ids)."""
+    """Repository -> the publications it implements (within pub_ids)."""
     repo_dept_rows: dict[str, list[str]]
-    """Репозиторий -> полный список департаментов (DEVELOPED_BY)."""
+    """Repository -> its full department list (DEVELOPED_BY)."""
     repo_dept: dict[str, str | None]
-    """Репозиторий -> основной департамент."""
+    """Repository -> its primary department."""
 
 
 @dataclass(frozen=True)
 class DepartmentTable:
-    """Итоговая таблица департаментов для карты плюс функция сжатия id."""
+    """The final department table for the map, plus the id-compaction function."""
 
     departments: list[dict]
-    """Записи для `graph-data.json["departments"]`, отсортированы по размеру, плюс "без департамента" последней."""
+    """Rows for `graph-data.json["departments"]`, sorted by size, "no department" last."""
     g: Callable[[str | None], int]
-    """id департамента графа -> плотный id для фронтенда (или id "без департамента", если department is falsy)."""
+    """Graph department id -> dense frontend id (or the "no department" bucket id, if department is falsy)."""
     no_dept_gid: int
-    """Плотный id корзины "без департамента"."""
+    """Dense id of the "no department" bucket."""
 
 
 class DepartmentAssigner:
-    """Назначает департамент каждой сущности и строит итоговую таблицу для
-    фронтенда — два метода вместо двух свободных функций, потому что оба
-    делят один и тот же контекст (`db`/`authorship`) и в graph_builder.py
-    вызываются друг за другом ровно один раз за прогон.
+    """Assigns a department to every entity and builds the final table for
+    the frontend - two methods instead of two free functions, because both
+    share the same context (`db`/`authorship`) and graph_builder.py calls
+    them back to back exactly once per run.
     """
 
     def __init__(self, db: dict[str, list[dict]], authorship: Authorship) -> None:
@@ -107,39 +107,39 @@ class DepartmentAssigner:
         self.authorship = authorship
 
     def assign(self, dept_name: dict[str, str]) -> DepartmentAssignment:
-        """Назначает департамент каждому автору/публикации/репозиторию.
+        """Assigns a department to every author/publication/repository.
 
-        Аргументы:
-            dept_name: id департамента -> отображаемое имя (используется
-                только как фильтр "департамент существует", не для самого имени).
+        Args:
+            dept_name: Department id -> display name (used only as a "this
+                department exists" filter, not for the name itself).
 
-        Возвращает:
-            `DepartmentAssignment` со всеми промежуточными и итоговыми назначениями.
+        Returns:
+            `DepartmentAssignment` with every intermediate and final assignment.
         """
         db, authorship = self.db, self.authorship
 
-        # Шаг 1: BELONGS_TO как есть — все реальные департаменты каждого
-        # автора (может быть несколько, может не быть вовсе). Ключ заводится
-        # для КАЖДОГО автора из persons (даже без единой связи) — иначе
-        # KeyError ниже, в цикле author_dept, у автора без BELONGS_TO вообще.
+        # Step 1: BELONGS_TO as-is - every real department of every author
+        # (can be several, can be none). A key is created for EVERY author in
+        # persons (even with zero edges) - otherwise a KeyError below, in the
+        # author_dept loop, for an author with no BELONGS_TO at all.
         static_depts: dict[str, list[str]] = {row["id"]: [] for row in db["persons"]}
         for row in db["person_depts"]:
             per, did = row["per"], row["did"]
-            if did in dept_name:  # молча пропускаем связь на несуществующий/удалённый департамент
+            if did in dept_name:  # silently drop an edge to a nonexistent/deleted department
                 static_depts[per].append(did)
 
-        # Шаг 2: PRODUCED_BY как есть — полный список департаментов публикации,
-        # не только основной (тот считается ниже, в pub_primary). Фильтр по
-        # pub_ids — публикации без ИТМО-авторов сюда вообще не попадают.
+        # Step 2: PRODUCED_BY as-is - a publication's full department list,
+        # not just the primary one (computed below, in pub_primary). Filtered
+        # by pub_ids - publications with no ITMO author never reach here at all.
         pub_dept_rows: dict[str, list[str]] = defaultdict(list)
         for row in db["pub_depts"]:
             pid, did = row["pid"], row["did"]
             if pid in authorship.pub_ids and did in dept_name and did not in pub_dept_rows[pid]:
                 pub_dept_rows[pid].append(did)
 
-        # Шаг 3: основной департамент публикации — большинство голосов среди
-        # её ИТМО-авторов (по их static_depts), а если голосов вообще не было
-        # (авторы без единого BELONGS_TO) — откат на первый PRODUCED_BY.
+        # Step 3: a publication's primary department - majority vote among
+        # its ITMO authors (by their static_depts), falling back to the first
+        # PRODUCED_BY if there were no votes at all (authors with zero BELONGS_TO).
         pub_primary: dict[str, str | None] = {}
         for pid in authorship.pub_ids:
             primary = majority_dept(static_depts.get(per, []) for per in authorship.pub_authors[pid])
@@ -147,10 +147,10 @@ class DepartmentAssigner:
                 primary = pub_dept_rows[pid][0]
             pub_primary[pid] = primary
 
-        # Шаг 4: департамент автора — основной департамент его САМОЙ СВЕЖЕЙ
-        # публикации (сортировка по дате по убыванию, берём первую, у которой
-        # вообще нашёлся pub_primary — старые публикации без департамента
-        # пропускаются, а не останавливают поиск).
+        # Step 4: an author's department - the primary department of their
+        # MOST RECENT publication (sorted by date descending, take the first
+        # one that actually has a pub_primary - older publications with no
+        # department are skipped, not treated as a dead end).
         pub_date = {r["id"]: (r["publication_date"] or "") for r in authorship.pubs_rows}
         author_dept: dict[str, str | None] = {}
         for per in static_depts:
@@ -161,25 +161,25 @@ class DepartmentAssigner:
                     break
             author_dept[per] = dept
 
-        # Шаг 5: репозиторий -> публикации, которые он реализует (IMPLEMENTS,
-        # см. edges.py), в пределах pub_ids — нужно ниже, чтобы посчитать
-        # департамент репозитория через департаменты ЭТИХ публикаций.
+        # Step 5: repository -> the publications it implements (IMPLEMENTS,
+        # see edges.py), within pub_ids - needed below to compute a
+        # repository's department from THOSE publications' departments.
         repo_pub_map: dict[str, list[str]] = defaultdict(list)
         for row in db["repo_pubs"]:
             rid, pid = row["rid"], row["pid"]
             if pid in authorship.pub_ids:
                 repo_pub_map[rid].append(pid)
-        # DEVELOPED_BY как есть — та же роль для репозитория, что PRODUCED_BY
-        # для публикации (полный список, не только основной).
+        # DEVELOPED_BY as-is - the same role for a repository that
+        # PRODUCED_BY plays for a publication (full list, not just primary).
         repo_dept_rows: dict[str, list[str]] = defaultdict(list)
         for row in db["repo_depts"]:
             rid, did = row["rid"], row["did"]
             if did in dept_name and did not in repo_dept_rows[rid]:
                 repo_dept_rows[rid].append(did)
 
-        # Шаг 6: основной департамент репозитория — большинство голосов среди
-        # департаментов публикаций, которые он реализует (через repo_pub_map
-        # + pub_primary), откат на DEVELOPED_BY по той же логике, что и у публикаций.
+        # Step 6: a repository's primary department - majority vote among the
+        # departments of the publications it implements (via repo_pub_map +
+        # pub_primary), falling back to DEVELOPED_BY the same way publications do.
         repo_dept: dict[str, str | None] = {}
         for row in db["repositories"]:
             rid = row["id"]
@@ -203,28 +203,27 @@ class DepartmentAssigner:
     def build_table(
         self, dept_name: dict[str, str], dept_name_en: dict[str, str], assignment: DepartmentAssignment
     ) -> DepartmentTable:
-        """Считает, сколько сущностей у каждого департамента, сортирует по
-        размеру и переиндексирует в плотные id 0..N (плюс отдельная корзина
-        "без департамента" последней) — так фронтенду не нужно знать реальные
-        (произвольные) id департаментов графа.
+        """Counts how many entities each department has, sorts by size, and
+        reindexes into dense ids 0..N (plus a separate "no department"
+        bucket last) - so the frontend never needs to know the graph's real
+        (arbitrary) department ids.
 
-        Аргументы:
-            dept_name: id департамента -> русское имя.
-            dept_name_en: id департамента -> английское имя.
-            assignment: Результат `assign()`.
+        Args:
+            dept_name: Department id -> Russian name.
+            dept_name_en: Department id -> English name.
+            assignment: Result of `assign()`.
 
-        Возвращает:
+        Returns:
             `DepartmentTable`.
         """
         db, authorship = self.db, self.authorship
 
-        # Считаем, сколько раз каждый департамент оказался ЧЬИМ-ТО основным
-        # (author_dept/pub_primary/repo_dept) — от этой суммы зависит порядок
-        # сортировки ниже: крупные департаменты получают меньший (более
-        # заметный) плотный id.
+        # Count how many times each department was SOMEONE's primary
+        # (author_dept/pub_primary/repo_dept) - this sum drives the sort
+        # order below: larger departments get a smaller (more prominent) dense id.
         usage: Counter[str] = Counter()
         for d in assignment.author_dept.values():
-            if d:  # None — "у сущности нет департамента", не считаем как голос
+            if d:  # None means "this entity has no department", not a vote
                 usage[d] += 1
         for d in assignment.pub_primary.values():
             if d:
@@ -232,37 +231,37 @@ class DepartmentAssigner:
         for d in assignment.repo_dept.values():
             if d:
                 usage[d] += 1
-        # += 0, а не просто "запомнить множество id": департамент, который
-        # встречается только как вторичный (PRODUCED_BY/DEVELOPED_BY), а ничьим
-        # основным не бывает, всё равно обязан попасть ключом в usage — иначе
-        # его не будет в gid ниже, и table.g() упадёт с KeyError при первом же
-        # обращении к нему как к неосновному департаменту публикации/репозитория.
+        # += 0, not just "remember the id set": a department that only ever
+        # shows up as secondary (PRODUCED_BY/DEVELOPED_BY), never as anyone's
+        # primary, must still get a key in usage - otherwise it's missing from
+        # gid below, and table.g() raises KeyError the first time it's
+        # referenced as a non-primary department of a publication/repository.
         for rows in (assignment.pub_dept_rows, assignment.repo_dept_rows):
             for depts in rows.values():
                 for d in depts:
                     usage[d] += 0
 
-        # Сортировка по убыванию usage, ничьи — по имени (детерминированно,
-        # не по случайному порядку словаря). gid — плотные id 0..N-1 в этом
-        # порядке; no_dept_gid — следующий id сразу за последним настоящим
-        # департаментом, под корзину "без департамента".
+        # Sorted by usage descending, ties broken by name (deterministic, not
+        # dict iteration order). gid - dense ids 0..N-1 in this order;
+        # no_dept_gid - the id right after the last real department, for the
+        # "no department" bucket.
         ordered = sorted(usage, key=lambda d: (-usage[d], dept_name[d]))
         gid = {d: i for i, d in enumerate(ordered)}
         no_dept_gid = len(ordered)
 
         def g(dept_db_id: str | None) -> int:
-            # Falsy (None или "") -> корзина "без департамента", а не KeyError.
+            # Falsy (None or "") -> the "no department" bucket, not a KeyError.
             return gid[dept_db_id] if dept_db_id else no_dept_gid
 
-        # Считаем количество авторов/публикаций/репозиториев на КАЖДЫЙ плотный
-        # id разом (через Counter), а не по одному через отдельные циклы —
-        # эти три числа идут прямо в поля n_authors/n_pubs/n_repos ниже.
+        # Counts authors/publications/repositories for EVERY dense id at once
+        # (via Counter), rather than one loop per count - these three numbers
+        # go straight into the n_authors/n_pubs/n_repos fields below.
         n_auth = Counter(g(d) for d in assignment.author_dept.values())
         n_pub = Counter(g(assignment.pub_primary[p]) for p in authorship.pub_ids)
         n_repo = Counter(g(assignment.repo_dept[r["id"]]) for r in db["repositories"])
 
-        # Одна запись на каждый настоящий департамент, в отсортированном
-        # порядке (ordered), с плотным id/цветом/тремя видами счётчиков.
+        # One row per real department, in sorted order (ordered), with dense
+        # id/color/the three counts.
         departments = [
             {
                 "id": gid[d],
@@ -276,9 +275,8 @@ class DepartmentAssigner:
             }
             for d in ordered
         ]
-        # И одна дополнительная запись — синтетическая корзина "без
-        # департамента" (id/имя/цвет — из config.py, не из реальных
-        # департаментов графа), всегда последней в списке.
+        # Plus one extra row - the synthetic "no department" bucket (id/name/
+        # color from config.py, not from any real graph department), always last.
         departments.append(
             {
                 "id": no_dept_gid,
@@ -291,5 +289,5 @@ class DepartmentAssigner:
                 "n_repos": n_repo[no_dept_gid],
             }
         )
-        logger.info('Департаментов: %d (+ "%s")', len(ordered), NO_DEPT_NAME)
+        logger.info('Departments: %d (+ "%s")', len(ordered), NO_DEPT_NAME)
         return DepartmentTable(departments=departments, g=g, no_dept_gid=no_dept_gid)

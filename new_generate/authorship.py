@@ -1,8 +1,7 @@
-"""Индекс авторства: кто с кем, какие публикации вообще попадают в граф.
+"""Authorship index: who wrote what, which publications even make it into the graph.
 
-Один вызов на весь прогон, без повторного использования с разной
-конфигурацией — простая функция, а не класс, ей нечего держать как
-состояние между вызовами.
+Called once per run, never reused with a different config - a plain
+function rather than a class, nothing to hold as state between calls.
 """
 
 from __future__ import annotations
@@ -16,27 +15,27 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Authorship:
-    """Кто с кем: индекс авторства и публикации, отфильтрованные до тех,
-    у кого есть хотя бы один ИТМО-автор."""
+    """Who wrote what: the authorship index and publications, filtered down
+    to those with at least one ITMO author."""
 
     pub_authors: dict[str, list[str]]
-    """Публикация -> список её ИТМО-авторов."""
+    """Publication -> list of its ITMO authors."""
     author_pubs: dict[str, list[str]]
-    """Автор -> список его публикаций (тех, что попали в pub_authors)."""
+    """Author -> list of their publications (the ones in pub_authors)."""
     pubs_rows: list[dict]
-    """Строки db["publications"], отфильтрованные до pub_ids."""
+    """Rows from db["publications"], filtered down to pub_ids."""
     pub_ids: set[str]
-    """id публикаций с хотя бы одним ИТМО-автором."""
+    """ids of publications with at least one ITMO author."""
 
 
 def build_authorship_index(db: dict[str, list[dict]]) -> Authorship:
-    """Строит индекс авторства и отсеивает публикации без ИТМО-авторов.
+    """Builds the authorship index and drops publications with no ITMO author.
 
-    Аргументы:
-        db: Снепшот графа в форме `new_cache::load_db()`.
+    Args:
+        db: Graph snapshot in the shape `pauk.cache.export::load_db()` returns.
 
-    Возвращает:
-        `Authorship` с индексами в обе стороны и отфильтрованным списком публикаций.
+    Returns:
+        `Authorship` with indexes both ways and the filtered publication list.
     """
     pub_authors: dict[str, list[str]] = defaultdict(list)
     author_pubs: dict[str, list[str]] = defaultdict(list)
@@ -47,5 +46,5 @@ def build_authorship_index(db: dict[str, list[dict]]) -> Authorship:
 
     pubs_rows = [r for r in db["publications"] if r["id"] in pub_authors]
     pub_ids = {r["id"] for r in pubs_rows}
-    logger.info("Публикаций с ИТМО-авторами: %d из %d", len(pubs_rows), len(db["publications"]))
+    logger.info("Publications with ITMO authors: %d of %d", len(pubs_rows), len(db["publications"]))
     return Authorship(dict(pub_authors), dict(author_pubs), pubs_rows, pub_ids)

@@ -1,1 +1,1 @@
-"""Тесты пакета new_generate."""
+"""Tests for the new_generate package."""

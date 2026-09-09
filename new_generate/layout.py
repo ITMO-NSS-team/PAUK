@@ -1,8 +1,8 @@
-"""Раскладка графа: FA2-позиционирование, подгонка координат, раздвижение
-коллизий — плюс сама сборка трёх раскладок (авторы/публикации/репозитории)
-из снепшота. Не знает про личные поля авторов/публикаций/репозиториев —
-только id узлов (везде `str`) и веса рёбер. Как результат используется для
-сборки узлов/рёбер — см. `nodes.py`/`edges.py`.
+"""Graph layout: FA2 positioning, coordinate fitting, collision spreading -
+plus assembling all three layouts (authors/publications/repositories) from
+the snapshot. Knows nothing about personal author/publication/repository
+fields - only node ids (always `str`) and edge weights. Used as input for
+building nodes/edges - see `nodes.py`/`edges.py`.
 """
 
 from __future__ import annotations
@@ -26,20 +26,22 @@ from .departments import DepartmentAssignment
 
 logger = logging.getLogger(__name__)
 
-# Координатное пространство фронтенда: 0..1000 (core.js: S = 1000)
+# Frontend coordinate space: a 0..1000 canvas, translated to [longitude,
+# latitude] by new_gui/src/map/build.ts::toLngLat() for MapLibre. 30/970
+# leave a margin from the 0/1000 edges.
 COORD_MIN, COORD_MAX = 30.0, 970.0
 
 
 def fit_coords(pos: Mapping[str, Sequence[float]]) -> dict[str, tuple[float, float]]:
-    """Вписывает координаты FA2 в [COORD_MIN, COORD_MAX], сохраняя пропорции.
+    """Fits FA2 coordinates into [COORD_MIN, COORD_MAX], preserving proportions.
 
-    Аргументы:
-        pos: Позиции узлов из `networkx.forceatlas2_layout` (numpy-массивы
-            `[x, y]`) или уже готовые кортежи `(x, y)` — сюда годится и то,
-            и другое, функция сразу приводит оба конца пары к `float`.
+    Args:
+        pos: Node positions from `networkx.forceatlas2_layout` (numpy arrays
+            `[x, y]`) or plain tuples `(x, y)` - either works, the function
+            converts both ends of the pair to `float` up front.
 
-    Возвращает:
-        Те же id, координаты пересчитаны и округлены до 0.1.
+    Returns:
+        The same ids, coordinates rescaled and rounded to 0.1.
     """
     if not pos:
         return {}
@@ -55,25 +57,25 @@ def fit_coords(pos: Mapping[str, Sequence[float]]) -> dict[str, tuple[float, flo
 def spread_min_distance(
     pos: dict[str, tuple[float, float]], d_min: float, seed: int, iters: int = 800
 ) -> dict[str, tuple[float, float]]:
-    """Раздвигает любую пару узлов ближе d_min друг к другу — сошедшиеся
-    кластеры FA2 иначе достаточно плотные, чтобы отрисоваться сплошной
-    закрашенной кляксой вместо облака точек.
+    """Pushes apart any pair of nodes closer than d_min - a converged FA2
+    cluster is otherwise dense enough to render as a solid blob instead of a
+    cloud of points.
 
-    Аргументы:
-        pos: Позиции узлов после раскладки.
-        d_min: Минимально допустимое расстояние между двумя узлами.
-        seed: Сид генератора случайных чисел (для воспроизводимости).
-        iters: Максимум итераций раздвижения.
+    Args:
+        pos: Node positions after layout.
+        d_min: Minimum allowed distance between two nodes.
+        seed: Random number generator seed (for reproducibility).
+        iters: Maximum spreading iterations.
 
-    Возвращает:
-        Те же id, координаты раздвинуты и округлены до 0.1.
+    Returns:
+        The same ids, coordinates spread apart and rounded to 0.1.
     """
     keys = list(pos)
     P = np.array([pos[k] for k in keys], dtype=float)
     rng = np.random.RandomState(seed)
     for _ in range(iters):
         pairs = cKDTree(P).query_pairs(d_min, output_type="ndarray")
-        # горстка отставших (узлы, прижатые к границе карты) — это нормально
+        # A handful of stragglers (nodes pinned to the canvas edge) is normal.
         if len(pairs) <= max(2, len(keys) // 2000):
             break
         delta = P[pairs[:, 0]] - P[pairs[:, 1]]
@@ -98,29 +100,28 @@ def sparse_dept_edges(
     weight: float = SYNTHETIC_DEPT_EDGES.dept_edge_weight,
     taper_size: int | None = None,
 ) -> dict[tuple[str, str], float]:
-    """Слабые рёбра "тот же департамент": каждый узел связывается с k
-    случайными коллегами по своему департаменту. Разреженный случайный граф
-    -> органичное облако под FA2; хаб-узел на департамент вместо этого
-    расставил бы свои листья идеальным кругом (кольца — ровно тот
-    артефакт, который это заменяет).
+    """Weak "same department" edges: each node connects to k random
+    colleagues in its department. A sparse random graph gives FA2 an organic
+    cloud; a hub node per department would instead arrange its leaves in a
+    perfect circle (a ring artifact this replaces).
 
-    Аргументы:
-        all_ids: Все id узлов (обычно множество — сортируется ниже, см. дальше).
-        dept_of: Департамент узла по его id, `None`/отсутствие — без департамента.
-        rng: Генератор случайных чисел (один на весь прогон раскладки).
-        k: Сколько случайных коллег по департаменту берёт каждый узел.
-        weight: Вес одного такого ребра.
-        taper_size: Департаменты крупнее этого получают пропорционально более
-            слабые рёбра, чтобы уже большие департаменты не схлопывались в
-            бесформенный диск.
+    Args:
+        all_ids: All node ids (usually a set - sorted below, see further down).
+        dept_of: A node's department by id, `None`/missing means no department.
+        rng: Random number generator (one shared across the whole layout run).
+        k: How many random department colleagues each node picks.
+        weight: Weight of one such edge.
+        taper_size: Departments larger than this get proportionally weaker
+            edges, so already-large departments don't collapse into a
+            shapeless disk.
 
-    Возвращает:
-        Вес по каждой паре узлов `(a, b)` с `a < b`.
+    Returns:
+        Weight for each node pair `(a, b)` with `a < b`.
     """
-    # all_ids обычно — множество; сортируем, чтобы группировка по департаментам
-    # (и то, сколько общего состояния rng съедает каждый департамент) была
-    # одинаковой при каждом прогоне с одним seed, а не перемешивалась
-    # рандомизацией хеша строк между процессами.
+    # all_ids is usually a set; sorted so that department grouping (and how
+    # much shared rng state each department consumes) is identical across
+    # runs with the same seed, rather than shuffled by string hash
+    # randomization between processes.
     by_dept: dict[str, list[str]] = defaultdict(list)
     for i in sorted(all_ids):
         d = dept_of.get(i)
@@ -141,9 +142,9 @@ def sparse_dept_edges(
     return edges
 
 
-# Сигма разброса при подмешивании (в финальных 0..1000 единицах) и
-# минимальный интервал между отставшими узлами (размер ячейки сетки)
-# для прохода подмешивания в fa2_blended_layout.
+# Jitter sigma when blending stranded nodes in (in final 0..1000 units), and
+# the minimum spacing between stragglers (occupancy grid cell size) for the
+# blending pass in fa2_blended_layout.
 STRANDED_JITTER = 55.0
 STRANDED_MIN_SEP = 7.0
 
@@ -151,33 +152,33 @@ STRANDED_MIN_SEP = 7.0
 def fa2_blended_layout(
     edge_weights: dict[tuple[str, str], float], all_ids: Iterable[str], max_iter: int, seed: int
 ) -> tuple[dict[str, tuple[float, float]], tuple[int, int, int, int]]:
-    """FA2 только над ГИГАНТСКОЙ связной компонентой, всё остальное
-    подмешивается после. Это не оптимизация, а необходимость: несвязанные
-    компоненты только отталкиваются друг от друга и расходятся без предела
-    с ростом итераций, поэтому реальное содержимое схлопывается в точку при
-    масштабировании ("всё свалено в центр"), если FA2 запустить на полном графе.
+    """Runs FA2 only on the GIANT connected component; everything else is
+    blended in afterward. Not an optimization but a necessity: disconnected
+    components only push away from each other and drift apart without bound
+    as iterations grow, so the real content collapses to a point once
+    rescaled ("everything dumped in the center") if FA2 runs on the full graph.
 
-    Маленькие компоненты (>=2 узлов) садятся вместе одним плотным пятном,
-    чтобы соавторы оставались рядом; настоящие синглтоны разбрасываются по
-    отдельности с джиттером на грубой сетке занятости, чтобы не собираться
-    комком или кольцом.
+    Small components (>=2 nodes) settle together as one dense patch, so
+    coauthors stay near each other; true singletons are scattered
+    individually with jitter on a coarse occupancy grid, so they don't
+    clump or form a ring.
 
-    Аргументы:
-        edge_weights: Вес по каждой паре узлов `(a, b)`.
-        all_ids: Все id узлов, включая те, что не участвуют ни в одном ребре.
-        max_iter: Число итераций ForceAtlas2 для гигантской компоненты.
-        seed: Сид (используется и для FA2, и для подмешивания — второе
-            берёт `seed + 1`, чтобы не повторять в точности случайности FA2).
+    Args:
+        edge_weights: Weight for each node pair `(a, b)`.
+        all_ids: All node ids, including ones in no edge at all.
+        max_iter: ForceAtlas2 iteration count for the giant component.
+        seed: Seed (used for both FA2 and blending - the latter uses
+            `seed + 1`, so it doesn't exactly repeat FA2's randomness).
 
-    Возвращает:
-        Кортеж `(pos, stats)`, где `pos` — позиции всех узлов из `all_ids`,
-        а `stats` — `(число узлов гиганта, число рёбер гиганта, число
-        маленьких компонент, число синглтонов)` для логирования.
+    Returns:
+        A `(pos, stats)` tuple, where `pos` is positions for every node in
+        `all_ids`, and `stats` is `(giant node count, giant edge count,
+        small component count, singleton count)` for logging.
     """
-    # all_ids обычно — множество; сортируем, чтобы порядок добавления узлов
-    # (от которого зависят начальные позиции FA2 при заданном seed, через
-    # enumerate(G)) был одинаковым при каждом прогоне с одним seed, а не
-    # перемешивался рандомизацией хеша строк между процессами.
+    # all_ids is usually a set; sorted so that node insertion order (which
+    # FA2's initial positions depend on for a given seed, via enumerate(G))
+    # is identical across runs with the same seed, rather than shuffled by
+    # string hash randomization between processes.
     G = nx.Graph()
     G.add_nodes_from(sorted(all_ids))
     G.add_weighted_edges_from((a, b, w) for (a, b), w in edge_weights.items())
@@ -190,10 +191,9 @@ def fa2_blended_layout(
 
     pos: dict[str, tuple[float, float]] = {}
     if giant:
-        # G.subgraph() строит свой вид на основе множества внутри, поэтому
-        # порядок узлов там всё ещё зависит от рандомизации хеша, даже если
-        # giant заранее отсортирован — копируем в свежий граф с явным
-        # порядком вместо этого.
+        # G.subgraph() builds its view based on the set inside, so node order
+        # there still depends on hash randomization even if giant is
+        # pre-sorted - copy into a fresh graph with explicit order instead.
         sub = nx.Graph()
         sub.add_nodes_from(sorted(giant))
         sub.add_weighted_edges_from((a, b, d["weight"]) for a, b, d in G.edges(data=True) if a in giant and b in giant)
@@ -211,9 +211,9 @@ def fa2_blended_layout(
         return round(x, 1), round(y, 1)
 
     def free_spot(gen: Callable[[], tuple[float, float]]) -> tuple[float, float]:
-        # range(60) никогда не пуст, x/y всегда будут переприсвоены — но
-        # статический анализ этого не знает, поэтому нужна начальная
-        # заглушка, которая ни разу не попадёт в place() по-настоящему.
+        # range(60) is never empty, x/y always get reassigned - but static
+        # analysis doesn't know that, hence the placeholder initial value,
+        # which never actually reaches place().
         x, y = 0.0, 0.0
         for _attempt in range(60):
             x, y = gen()
@@ -228,7 +228,7 @@ def fa2_blended_layout(
         ccx = min(940.0, max(60.0, rng.gauss(ax, STRANDED_JITTER)))
         ccy = min(940.0, max(60.0, rng.gauss(ay, STRANDED_JITTER)))
         radius = 6.0 + 2.2 * math.sqrt(len(comp))
-        sx, sy = rng.uniform(0.55, 1.6), rng.uniform(0.55, 1.6)  # растяжение/поворот, чтобы пятна не были ровными кругами
+        sx, sy = rng.uniform(0.55, 1.6), rng.uniform(0.55, 1.6)  # stretch/rotation, so patches aren't perfect circles
         ang = rng.uniform(0.0, math.pi)
         cos_a, sin_a = math.cos(ang), math.sin(ang)
 
@@ -260,14 +260,13 @@ def fa2_blended_layout(
 
 
 class ForceAtlasLayouter:
-    """Раскладка ForceAtlas2 — держит `seed` как состояние вместо параметра
-    в каждом отдельном вызове (иначе он протаскивается через всю цепочку
-    вызовов в `GraphLayoutBuilder` без изменений). Два метода — ровно два
-    паттерна использования, которые реально есть в этом проекте:
-    `blended()` для авторов/публикаций (смешивание маленьких компонент +
-    раздвижение коллизий), `simple()` для репозиториев (голый FA2, без
-    того и другого — граф репозиториев обычно достаточно разрежен, чтобы
-    в этом не нуждаться).
+    """ForceAtlas2 layout - holds `seed` as state instead of a parameter on
+    every individual call (otherwise it threads unchanged through the whole
+    call chain in `GraphLayoutBuilder`). Two methods, matching the two usage
+    patterns that actually exist in this project: `blended()` for
+    authors/publications (blending small components + spreading
+    collisions), `simple()` for repositories (plain FA2, neither of those -
+    the repository graph is usually sparse enough not to need them).
     """
 
     def __init__(self, seed: int) -> None:
@@ -276,45 +275,46 @@ class ForceAtlasLayouter:
     def blended(
         self, edge_weights: dict[tuple[str, str], float], all_ids: Iterable[str], max_iter: int, min_sep: float
     ) -> tuple[dict[str, tuple[float, float]], tuple[int, int, int, int]]:
-        """FA2 с подмешиванием несвязанных компонент + раздвижение коллизий."""
+        """FA2 with disconnected components blended in, plus collision spreading."""
         pos, stats = fa2_blended_layout(edge_weights, all_ids, max_iter, self.seed)
         return spread_min_distance(pos, min_sep, self.seed), stats
 
     def simple(self, graph: nx.Graph, max_iter: int) -> dict[str, tuple[float, float]]:
-        """Голый FA2 без подмешивания/раздвижения — граф уже связный или
-        разрежен настолько, что это не нужно."""
+        """Plain FA2, no blending/spreading - the graph is already connected
+        or sparse enough not to need either."""
         return fit_coords(nx.forceatlas2_layout(graph, max_iter=max_iter, weight="weight", seed=self.seed))  # type: ignore[arg-type]
 
 
 @dataclass(frozen=True)
 class Layout:
-    """Позиции узлов после раскладки + веса рёбер, которые реально идут на
-    экспорт (не путать с весами, которые использовались только чтобы
-    ПОСЧИТАТЬ раскладку — те шире: `coauth`/`pub_pair_w` здесь ýже, чем то,
-    что видит FA2, потому что раскладка дополнительно учитывает общие
-    репозитории и синтетические "тот же департамент"-рёбра, а на карточку
-    "общие публикации"/"общие авторы" в интерфейсе должны попадать только
-    настоящие связи)."""
+    """Node positions after layout, plus the edge weights that actually go
+    to export (not to be confused with the weights used only to COMPUTE the
+    layout - those are wider: `coauth`/`pub_pair_w` here are narrower than
+    what FA2 sees, because layout additionally accounts for shared
+    repositories and synthetic "same department" edges, while the "shared
+    publications"/"shared authors" card in the UI must only show real
+    connections)."""
 
     pos_authors: dict[str, tuple[float, float]]
-    """Ключ автора -> координаты (x, y) в пространстве фронтенда."""
+    """Author key -> (x, y) coordinates in frontend space."""
     pos_pubs: dict[str, tuple[float, float]]
-    """Ключ публикации -> координаты (x, y)."""
+    """Publication key -> (x, y) coordinates."""
     pos_repos: dict[str, tuple[float, float]]
-    """Ключ репозитория -> координаты (x, y)."""
+    """Repository key -> (x, y) coordinates."""
     coauth: dict[tuple[str, str], int]
-    """Пары авторов -> число совместных публикаций (настоящее, для coauth_edges)."""
+    """Author pairs -> number of shared publications (real, for coauth_edges)."""
     pub_pair_w: dict[tuple[str, str], int]
-    """Пары публикаций -> число общих ИТМО-авторов (настоящее, для pub_edges)."""
+    """Publication pairs -> number of shared ITMO authors (real, for pub_edges)."""
     repo_edge_w: dict[tuple[str, str], int]
-    """Пары репозиториев -> число общих публикаций (используется и для раскладки, и для repo_edges — здесь раздвоения нет)."""
+    """Repository pairs -> number of shared publications (used for both layout and repo_edges - no split here)."""
 
 
 class GraphLayoutBuilder:
-    """Считает три раскладки ForceAtlas2 (авторы/публикации/репозитории) —
-    у каждой своя мера близости, см. `docs/architecture/gui.md`. Держит
-    `db`/`authorship`/`assignment` как состояние, чтобы `build()` не тащил
-    их параметрами — они одни и те же на все три раскладки внутри одного вызова.
+    """Computes the three ForceAtlas2 layouts (authors/publications/
+    repositories) - each with its own closeness measure, see
+    `docs/architecture/gui.md`. Holds `db`/`authorship`/`assignment` as
+    state so `build()` doesn't thread them as parameters - they're the same
+    across all three layouts within one call.
     """
 
     def __init__(self, db: dict[str, list[dict]], authorship: Authorship, assignment: DepartmentAssignment) -> None:
@@ -323,44 +323,45 @@ class GraphLayoutBuilder:
         self.assignment = assignment
 
     def build(self, seed: int) -> Layout:
-        """Считает три раскладки ForceAtlas2 (авторы/публикации/репозитории) —
-        у каждой своя мера близости, см. `docs/architecture/gui.md`.
+        """Computes the three ForceAtlas2 layouts (authors/publications/
+        repositories) - each with its own closeness measure, see
+        `docs/architecture/gui.md`.
 
-        Аргументы:
-            seed: Сид ForceAtlas2 и подмешивания несвязанных компонент.
+        Args:
+            seed: ForceAtlas2 seed and seed for blending disconnected components.
 
-        Возвращает:
-            `Layout` с позициями и весами рёбер для экспорта.
+        Returns:
+            `Layout` with positions and export edge weights.
         """
-        rng = random.Random(seed)  # один общий генератор на sparse_dept_edges — авторов и публикаций, см. докстринг про seed+1
+        rng = random.Random(seed)  # one shared generator for sparse_dept_edges (authors and publications), see the seed+1 note above
         layouter = ForceAtlasLayouter(seed)
 
-        # --- авторы: совместные публикации + общие репозитории + разреженные
-        # "тот же департамент"-рёбра. Первое (coauth) уходит и в раскладку, и
-        # в экспорт как есть; репозитории и dept-рёбра — только в раскладку.
-        # Каждая пара соавторов одной публикации — реальное ребро, вес =
-        # число публикаций, написанных вместе.
+        # --- authors: shared publications + shared repositories + sparse
+        # "same department" edges. The first (coauth) goes both to layout and
+        # to export as-is; repositories and department edges only affect layout.
+        # Each pair of coauthors on one publication is a real edge, weighted
+        # by how many publications they wrote together.
         coauth: dict[tuple[str, str], int] = defaultdict(int)
         for _pid, pers in self.authorship.pub_authors.items():
             for a, b in combinations(sorted(set(pers)), 2):
                 coauth[(a, b)] += 1
 
-        # Обычный dict, а не Counter: дальше в него подмешиваются дробные веса
-        # dept-рёбер (sparse_dept_edges), а Counter в typeshed типизирован
-        # только под int. dict(coauth) копирует реальные веса как стартовые —
-        # дальше только ДОБАВЛЯЕМ синтетику поверх, не заменяем.
+        # A plain dict, not a Counter: fractional department-edge weights
+        # (sparse_dept_edges) get blended into it below, and Counter is typed
+        # as int-only in typeshed. dict(coauth) copies the real weights as a
+        # starting point - everything after this only ADDS synthetic weight on top.
         author_layout_w: dict[tuple[str, str], float] = dict(coauth)
-        # Кто с кем участвовал в одном репозитории (CONTRIBUTED_TO) — тоже
-        # повод сблизить узлы на карте, хотя в coauth_edges (экспорт) это
-        # никогда не попадёт, только влияет на раскладку.
+        # Who worked together on the same repository (CONTRIBUTED_TO) is also
+        # reason to pull nodes closer on the map, even though it never
+        # reaches coauth_edges (export) - only affects layout.
         repo_contributors: dict[str, set[str]] = defaultdict(set)
         for row in self.db["repo_persons"]:
             repo_contributors[row["rid"]].add(row["per"])
         for pers in repo_contributors.values():
             for a, b in combinations(sorted(pers), 2):
                 author_layout_w[(a, b)] = author_layout_w.get((a, b), 0) + 1
-        # Синтетические слабые рёбра "тот же департамент" — см. sparse_dept_edges,
-        # только чтобы коллеги без единой реальной связи не разлетались по карте.
+        # Synthetic weak "same department" edges - see sparse_dept_edges,
+        # only so colleagues with zero real connections don't scatter across the map.
         for pair, w in sparse_dept_edges(set(self.assignment.static_depts), self.assignment.author_dept, rng).items():
             author_layout_w[pair] = author_layout_w.get(pair, 0) + w
 
@@ -369,37 +370,38 @@ class GraphLayoutBuilder:
             author_layout_w, set(self.assignment.static_depts), FA2_ITERATIONS.authors, MIN_SEPARATION.authors
         )
         logger.info(
-            "FA2 по авторам: гигант %d узлов / %d рёбер, подмешано: %d маленьких компонент + %d синглтонов, "
-            "min-sep %.1f, %.1f с",
+            "FA2 authors: giant %d nodes / %d edges, blended in: %d small components + %d singletons, "
+            "min-sep %.1f, %.1f s",
             n_giant, e_giant, n_small, n_single, MIN_SEPARATION.authors, time.time() - t0,
         )
 
-        # --- публикации: общие ИТМО-авторы. Полный граф w>=1 — тысячи рёбер,
-        # поэтому для раскладки берётся top-K сильнейших связей на публикацию;
-        # на экспорт (pub_edges) идёт полный pub_pair_w, не урезанный.
-        # Пара публикаций одного автора — ребро, вес = число общих авторов.
+        # --- publications: shared ITMO authors. The full w>=1 graph is
+        # thousands of edges, so layout uses only the top-K strongest links
+        # per publication; export (pub_edges) gets the full pub_pair_w, unclipped.
+        # A pair of publications by the same author is an edge, weighted by
+        # how many authors they share.
         pub_pair_w: dict[tuple[str, str], int] = defaultdict(int)
         for _per, plist in self.authorship.author_pubs.items():
             for a, b in combinations(sorted(set(plist)), 2):
                 pub_pair_w[(a, b)] += 1
 
         t0 = time.time()
-        # Для каждой публикации собираем список её соседей с весами связи —
-        # с ОБЕИХ сторон ребра (a видит b, b видит a), чтобы можно было
-        # честно отобрать top-K сильнейших для КАЖДОЙ публикации отдельно,
-        # а не просто топ по всему графу разом.
+        # For each publication, collect its neighbors with edge weights -
+        # from BOTH ends of the edge (a sees b, b sees a), so the top-K
+        # strongest can be picked fairly for EACH publication separately,
+        # not just a single top-K over the whole graph at once.
         strongest: dict[str, list[tuple[int, str]]] = defaultdict(list)
         for (a, b), w in pub_pair_w.items():
             strongest[a].append((w, b))
             strongest[b].append((w, a))
         pub_layout_w: dict[tuple[str, str], float] = {}
         for n, lst in strongest.items():
-            lst.sort(key=lambda t: (-t[0], t[1]))  # сильнейшие сначала, ничьи — по id соседа для детерминизма
+            lst.sort(key=lambda t: (-t[0], t[1]))  # strongest first, ties by neighbor id for determinism
             for w, o in lst[: EDGE_THRESHOLDS.pub_layout_top_k]:
-                pub_layout_w[(n, o) if n < o else (o, n)] = w  # ключ всегда (меньший, больший) — не дублировать ребро дважды
-        # Та же синтетика "тот же департамент", что и у авторов выше, только
-        # с более слабыми параметрами (см. PUB_DEPT_EDGE_K/WEIGHT) и taper_size —
-        # у публикаций департаментов может быть намного больше сущностей на один.
+                pub_layout_w[(n, o) if n < o else (o, n)] = w  # key always (smaller, larger) - never duplicate an edge
+        # The same "same department" synthetic edges as for authors above,
+        # just with weaker parameters (see pub_dept_edge_k/weight) and a
+        # taper_size - publications can have far more entities per department.
         for pair, w in sparse_dept_edges(
             self.authorship.pub_ids,
             self.assignment.pub_primary,
@@ -414,35 +416,38 @@ class GraphLayoutBuilder:
             pub_layout_w, self.authorship.pub_ids, FA2_ITERATIONS.pubs, MIN_SEPARATION.pubs
         )
         logger.info(
-            "FA2 по публикациям: гигант %d узлов / %d рёбер, подмешано: %d маленьких компонент + %d синглтонов, "
-            "min-sep %.1f, %.1f с",
+            "FA2 publications: giant %d nodes / %d edges, blended in: %d small components + %d singletons, "
+            "min-sep %.1f, %.1f s",
             n_giant_p, e_giant_p, n_small_p, n_single_p, MIN_SEPARATION.pubs, time.time() - t0,
         )
 
-        # --- репозитории: общие публикации (включая публикации вне графа, у
-        # которых нет ни одного ИТМО-автора — репозиторий их всё равно реализует,
-        # поэтому здесь db["repo_pubs"] целиком, а не authorship.pub_ids).
+        # --- repositories: shared publications (including publications
+        # outside the graph, with zero ITMO authors - a repository still
+        # implements them regardless, hence db["repo_pubs"] as a whole here,
+        # not authorship.pub_ids).
         repo_all_pubs: dict[str, set[str]] = defaultdict(set)
         for row in self.db["repo_pubs"]:
             repo_all_pubs[row["rid"]].add(row["pid"])
-        # Вес ребра — просто число публикаций, общих у пары репозиториев
-        # (пересечение множеств); ноль общих публикаций — ребра вообще нет.
+        # Edge weight is simply the number of publications a pair of
+        # repositories share (set intersection); zero shared publications
+        # means no edge at all.
         repo_edge_w: dict[tuple[str, str], int] = {}
         for a, b in combinations(sorted(repo_all_pubs), 2):
             shared = len(repo_all_pubs[a] & repo_all_pubs[b])
             if shared:
                 repo_edge_w[(a, b)] = shared
 
-        # Простой граф без blended/spread (см. докстринг ForceAtlasLayouter.simple) —
-        # репозиториев на порядок меньше, чем авторов/публикаций, граф разрежен.
+        # A plain graph, no blending/spreading (see ForceAtlasLayouter.simple
+        # docstring) - an order of magnitude fewer repositories than
+        # authors/publications, sparse graph.
         R = nx.Graph()
         R.add_nodes_from(r["id"] for r in self.db["repositories"])
         R.add_weighted_edges_from((a, b, w) for (a, b), w in repo_edge_w.items())
         pos_repos = layouter.simple(R, FA2_ITERATIONS.repos)
 
-        # coauth/pub_pair_w/repo_edge_w — РЕАЛЬНЫЕ веса, идут и в раскладку
-        # (через author_layout_w/pub_layout_w выше), и на экспорт как есть
-        # (см. докстринг Layout про то, почему это разные вещи).
+        # coauth/pub_pair_w/repo_edge_w are the REAL weights - go both to
+        # layout (via author_layout_w/pub_layout_w above) and to export as-is
+        # (see the Layout docstring for why these are different things).
         return Layout(
             pos_authors=pos_authors,
             pos_pubs=pos_pubs,

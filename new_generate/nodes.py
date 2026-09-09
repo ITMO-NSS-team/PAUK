@@ -1,6 +1,6 @@
-"""Сборка узлов трёх видов (авторы/репозитории/публикации) сразу в двух
-формах — "summary" (то, что нужно нарисовать точку на карте) и "detail"
-(расширенные поля, которые new_gui подгружает лениво после карты).
+"""Builds all three kinds of nodes (authors/repositories/publications) in
+two forms at once - "summary" (what's needed to draw a point on the map)
+and "detail" (extended fields new_gui lazily loads after the map).
 """
 
 from __future__ import annotations
@@ -12,16 +12,15 @@ from .departments import DepartmentAssignment, DepartmentTable
 
 
 def dense_rank(values: dict[str, int]) -> dict[str, float]:
-    """rank = плотный ранг метрики / число уникальных значений, округлено до 3.
+    """rank = dense rank of the metric / number of unique values, rounded to 3.
 
-    Аргументы:
-        values: Метрика по id узла (например, число публикаций автора).
+    Args:
+        values: A metric by node id (e.g. an author's publication count).
 
-    Возвращает:
-        Тот же набор ключей, значение — доля от 0 до 1 (чем больше метрика,
-        тем ближе к 1).
+    Returns:
+        The same keys, value is a share from 0 to 1 (higher metric = closer to 1).
 
-    Пример:
+    Example:
         >>> dense_rank({"a": 1, "b": 5, "c": 5})
         {'a': 0.5, 'b': 1.0, 'c': 1.0}
     """
@@ -30,18 +29,18 @@ def dense_rank(values: dict[str, int]) -> dict[str, float]:
     return {k: round(pos[v], 3) for k, v in values.items()}
 
 
-# Единственное место использования (усечение заголовка публикации в
-# detail) — локальная константа рядом с классом, а не в config.py, по
-# тому же принципу, что и STRANDED_JITTER в layout.py.
+# Only used in one place (truncating a publication title in detail) - a
+# local constant next to the class it's for, not in config.py, the same
+# principle as STRANDED_JITTER in layout.py.
 PUB_TITLE_MAX_LEN = 200
 
 
 def _parse_json_list(text: str | None) -> list:
-    """Разбирает JSON-текст (`funding`/`versions`/`affiliations`/`code_url` —
-    всё, что `new_cache` пишет как сериализованный список, см.
-    `new_cache/export.py` про `JSON_TEXT_FIELDS`) в список, молча
-    откатываясь на пустой список при отсутствии/битых данных — это поле
-    снепшота, не то, на чём стоит падать всей генерации.
+    """Parses JSON-text (`funding`/`versions`/`affiliations`/`code_url` -
+    everything `pauk.cache.export` writes as a serialized list, see
+    `JSON_TEXT_FIELDS` in `pauk/graph/extract.py`) into a list, silently
+    falling back to an empty list on missing/broken data - this is a
+    snapshot field, not something worth failing the whole generation over.
     """
     if not text:
         return []
@@ -53,20 +52,20 @@ def _parse_json_list(text: str | None) -> list:
 
 
 def _initial(value: str) -> str:
-    """Первая буква, заглавная, с точкой на конце."""
+    """First letter, capitalized, with a trailing period."""
     return f"{value[0].upper()}."
 
 
 def _fmt_part(value: str, *, force_initial: bool) -> str:
-    """Часть имени-или-отчества, отформатированная для подписи.
+    """Formats one part of a name (given name or patronymic) for the label.
 
-    Схлопывается до инициала для публичного показа или всякий раз, когда
-    часть стоит рядом с другой частью (заполнены surname_ru/first_name_ru/
-    second_name_ru все разом). В остальных случаях оставляется как есть у
-    автора — кроме части, которая УЖЕ голый инициал (одна буква, с точкой
-    или без — так иногда приходят LLM/каталожные данные): точка ставится
-    всегда, это не усечение, а просто верная пунктуация того, что уже
-    сказано в данных.
+    Collapses to an initial for the public display, or whenever the part
+    sits next to another part (surname_ru/first_name_ru/second_name_ru all
+    filled at once). Otherwise left as the author gave it - except a part
+    that's ALREADY a bare initial (a single letter, with or without a
+    period - that's how some LLM/catalog data arrives): a period is always
+    added, which isn't truncation, just correct punctuation for what the
+    data already says.
     """
     stripped = value.rstrip(".")
     if force_initial or len(stripped) == 1:
@@ -77,16 +76,16 @@ def _fmt_part(value: str, *, force_initial: bool) -> str:
 def author_label(
     surname: str | None, first: str | None, second: str | None, *, public: bool = False
 ) -> str:
-    """Один формат на любого автора: сначала фамилия, потом инициалы.
+    """One format for any author: surname first, then initials.
 
-    Берёт три части имени одного языка за раз — собирать подпись на каждом
-    языке нужно отдельно из surname_ru/first_name_ru/second_name_ru и
-    surname_en/first_name_en/second_name_en. Без отката на сборную сырую
-    строку: угадывать фамилию/имя/отчество по порядку слов — ровно тот
-    режим отказа, который заменил LLM-шаг в author_names.py, повторять его
-    здесь для отображения означало бы вернуть его обратно. Пустая фамилия
-    возвращает "" — откат (например, подпись на другом языке или
-    свободный текст name_ru) выбирает вызывающий код.
+    Takes three name parts of one language at a time - a label per language
+    has to be assembled separately from surname_ru/first_name_ru/
+    second_name_ru and surname_en/first_name_en/second_name_en. No fallback
+    to a raw combined string: guessing surname/given-name/patronymic by word
+    order is exactly the failure mode an LLM step in author_names.py already
+    replaced - repeating it here for display would bring it back. An empty
+    surname returns "" - the caller picks the fallback (e.g. the other
+    language's label, or the free-text name_ru).
     """
     surname, first, second = surname or "", first or "", second or ""
     if not surname:
@@ -95,7 +94,7 @@ def author_label(
         surname = surname[:3] + ".."
     if first and second:
         return f"{surname} {_fmt_part(first, force_initial=True)}{_fmt_part(second, force_initial=True)}"
-    if second:  # уцелело только отчество — считаем его инициалом
+    if second:  # only the patronymic survived - treat it as the initial
         return f"{surname} {_fmt_part(second, force_initial=True)}"
     if first:
         return f"{surname} {_fmt_part(first, force_initial=public)}"
@@ -103,21 +102,21 @@ def author_label(
 
 
 def author_variants(row: dict, label_ru: str, label_en: str) -> dict[str, list[str]]:
-    """Другие варианты написания имени этого человека, без тех, что уже
-    показаны как заголовок карточки — раздельно по источнику.
+    """Other spellings of this person's name, minus whatever's already shown
+    as the card title - kept separate by source.
 
-    Заголовок приватной карточки (`new_gui/src/features/panels.ts`) — это
-    сокращённая подпись (`label`/`label_en`) ПОКА detail не домержился, а
-    как только домержился — `name_ru`/`name_en` целиком (полное имя вместо
-    "Фамилия И.О."). Раз `name_ru`/`name_en` сами становятся заголовком,
-    здесь они исключены из кандидатов в свёрнутый список — иначе то же имя
-    показывалось бы дважды. Источники, которые в этот список всё же идут:
-    `name_variants` — то, что OpenAlex видел по разным публикациям автора;
-    `other_names` — имя, под которым автор сам просит его указывать
-    (ORCID credit-name), плюс варианты, которые он сам зарегистрировал в
-    своём профиле. Разные по происхождению вещи, поэтому не сливаются в
-    один список — это решает карточка (см. `field.nameVariantsOpenAlex`/
-    `field.nameVariantsOrcid` в `new_gui/src/core/i18n.ts`).
+    The private card's title (`new_gui/src/features/panels.ts`) is the
+    truncated label (`label`/`label_en`) UNTIL detail has merged in, and
+    once it has - the full `name_ru`/`name_en` (the full name instead of
+    "Surname I.O."). Since `name_ru`/`name_en` become the title themselves,
+    they're excluded from candidates for the collapsed list here - otherwise
+    the same name would show twice. Sources that do go into the list:
+    `name_variants` - what OpenAlex saw across the author's different
+    publications; `other_names` - the name the author asks to be credited
+    under (ORCID credit name), plus variants they registered on their own
+    profile. Different in origin, so not merged into one list - that's the
+    card's job (see `field.nameVariantsOpenAlex`/`field.nameVariantsOrcid`
+    in `new_gui/src/core/i18n.ts`).
     """
     shown = {
         label_ru.casefold(),
@@ -142,9 +141,9 @@ def author_variants(row: dict, label_ru: str, label_en: str) -> dict[str, list[s
 
 
 class AuthorNodeBuilder:
-    """Строит записи авторов сразу в двух формах — держит контекст, общий
-    для каждой строки (assignment/table/positions), вместо того чтобы
-    протаскивать его параметром в свободную функцию."""
+    """Builds author rows in two forms at once - holds the context shared
+    by every row (assignment/table/positions) instead of threading it as a
+    parameter to a free function."""
 
     def __init__(
         self,
@@ -161,32 +160,33 @@ class AuthorNodeBuilder:
         self.pos = pos
 
     def build(self) -> tuple[list[dict], list[dict]]:
-        """Строит записи авторов сразу в двух формах.
+        """Builds author rows in two forms at once.
 
-        Возвращает:
-            `(summary, detail)` — `summary` идёт в `graph-data.json`, `detail`
-            в `authors-detail.json`. Оба содержат ОДИНАКОВЫЕ данные для всех
-            сборок — приватность больше не решается здесь урезанием полей, а
-            решается снаружи, тем, в какую папку `main()` кладёт итоговый
-            файл (`authors-detail.json` — только в `private/`, см.
-            `graph_builder.py`). Подпись на карте (`label`/`label_en`)
-            всегда в усечённой форме (`author_label(..., public=True)`) —
-            это единственный вариант с тех пор, как `graph-data.json` стал
-            одним общим файлом на обе сборки; полное имя видно только через
-            `name_ru`/`name_en` в detail, а он приватный по расположению.
+        Returns:
+            `(summary, detail)` - `summary` goes into `graph-data.json`,
+            `detail` into `authors-detail.json`. Both hold the SAME data
+            regardless of build variant - privacy is no longer decided here
+            by trimming fields, it's decided outside, by which folder
+            `main()` writes the final file into (`authors-detail.json` only
+            ever goes into `private/`, see `graph_builder.py`). The map
+            label (`label`/`label_en`) is always the truncated form
+            (`author_label(..., public=True)`) - the only option now that
+            `graph-data.json` is one shared file for every variant; the full
+            name is only visible via `name_ru`/`name_en` in detail, which is
+            private by location.
         """
-        # set() — публикация могла быть учтена дважды при какой-то нестыковке
-        # данных, считаем уникальные id, а не длину списка как есть.
+        # set() - a publication could have been counted twice from some data
+        # mismatch, so count unique ids, not the raw list length.
         pubs_count = {per: len(set(self.authorship.author_pubs.get(per, []))) for per in self.assignment.static_depts}
         rank_a = dense_rank(pubs_count)
         summary: list[dict] = []
         detail: list[dict] = []
         for row in self.db["persons"]:
-            pid_ = row["id"]  # "id", не "key" — так называется колонка в снепшоте (см. new_cache/export.py)
+            pid_ = row["id"]  # "id", not "key" - that's the column name in the snapshot
             x, y = self.pos[pid_]
-            # label_ru/label_en — всегда усечённая форма (public=True): карта
-            # рисуется из одного файла на все сборки, поэтому полного имени
-            # тут быть не может ни при каких условиях, см. докстринг build().
+            # label_ru/label_en are always the truncated form (public=True):
+            # the map is drawn from one shared file across every build
+            # variant, so the full name can never live here, see build()'s docstring.
             label_ru = author_label(row["surname_ru"], row["first_name_ru"], row["second_name_ru"], public=True) or row.get("name_ru") or ""
             label_en = author_label(row["surname_en"], row["first_name_en"], row["second_name_en"], public=True) or label_ru
             summary.append(
@@ -215,8 +215,8 @@ class AuthorNodeBuilder:
                     "google_scholar": row.get("google_scholar") or "",
                     "openreview": row.get("openreview") or "",
                     "email": row.get("email") or "",
-                    # emails — как name_variants/other_names, нативный список
-                    # свойства графа, не JSON-текст (см. _parse_json_list).
+                    # emails - a native graph property list, like
+                    # name_variants/other_names, not JSON-text (see _parse_json_list).
                     "emails": row.get("emails") or [],
                     "affiliations": _parse_json_list(row.get("affiliations")),
                 }
@@ -225,7 +225,7 @@ class AuthorNodeBuilder:
 
 
 class RepoNodeBuilder:
-    """Строит записи репозиториев сразу в двух формах (summary/detail)."""
+    """Builds repository rows in two forms at once (summary/detail)."""
 
     def __init__(
         self,
@@ -240,14 +240,13 @@ class RepoNodeBuilder:
         self.pos = pos
 
     def build(self) -> tuple[list[dict], list[dict]]:
-        """Строит записи репозиториев сразу в двух формах.
+        """Builds repository rows in two forms at once.
 
-        Возвращает:
-            `(summary, detail)` — `summary` в `graph-data.json["repos"]`,
-            `detail` в `repos-detail.json`.
+        Returns:
+            `(summary, detail)` - `summary` in `graph-data.json["repos"]`,
+            `detail` in `repos-detail.json`.
         """
-        # rank — та же плотная шкала 0..1, что и у авторов (dense_rank), но
-        # ранжируем по звёздам, а не по числу публикаций.
+        # rank - the same dense 0..1 scale as authors (dense_rank), but ranked by stars.
         stars = {r["id"]: (r["stars_num"] or 0) for r in self.db["repositories"]}
         rank_r = dense_rank(stars)
         summary: list[dict] = []
@@ -267,8 +266,8 @@ class RepoNodeBuilder:
                     "gy": y,
                 }
             )
-            # В отличие от авторов, у репозиториев нет --public-ограничения —
-            # detail пишется для каждого репозитория безусловно.
+            # Unlike authors, repositories have no --public restriction -
+            # detail is written for every repository unconditionally.
             detail.append(
                 {
                     "key": rid,
@@ -276,7 +275,7 @@ class RepoNodeBuilder:
                     "url": row["url"] or "",
                     "has_readme": bool(row["has_readme"]),
                     "license": row.get("license") or "",
-                    # contributors — список логинов GitHub, не число.
+                    # contributors is a list of GitHub logins, not a count.
                     "contributors": row.get("contributors") or [],
                     "owner_type": row.get("owner_type") or "",
                 }
@@ -285,13 +284,13 @@ class RepoNodeBuilder:
 
 
 class PubNodeBuilder:
-    """Строит записи публикаций сразу в двух формах (summary/detail).
+    """Builds publication rows in two forms at once (summary/detail).
 
-    Detail-часть — то, что раньше строил отдельный `build_search_detail()`
-    под `graph-search.js`: заголовок, журнал, DOI, код. Отличие от
-    оригинала — код возвращает список ссылок как есть (уже список в
-    `new_cache`), разбор `code_url` из JSON-строки — забота этого класса,
-    не потребителя снепшота уровнем выше.
+    The detail part is what a separate `build_search_detail()` used to
+    build for `graph-search.js`: title, journal, DOI, code. Different from
+    the original in one way - code returns the link list as-is (already a
+    list from `pauk.cache`), parsing `code_url` out of a JSON string is this
+    class's job now, not the snapshot consumer's a layer up.
     """
 
     def __init__(
@@ -307,24 +306,24 @@ class PubNodeBuilder:
         self.pos = pos
 
     def build(self) -> tuple[list[dict], list[dict]]:
-        """Строит записи публикаций сразу в двух формах.
+        """Builds publication rows in two forms at once.
 
-        Возвращает:
-            `(summary, detail)` — `summary` в `graph-data.json["pubs"]`,
-            `detail` в `pubs-detail.json`.
+        Returns:
+            `(summary, detail)` - `summary` in `graph-data.json["pubs"]`,
+            `detail` in `pubs-detail.json`.
         """
-        # rank — по числу авторов (n_authors), не по году и не по департаментам.
+        # rank - by author count (n_authors), not by year or department.
         n_authors_of = {pid: len(set(self.authorship.pub_authors[pid])) for pid in self.authorship.pub_ids}
         rank_p = dense_rank(n_authors_of)
         summary: list[dict] = []
         for row in self.authorship.pubs_rows:
             pid, year = row["id"], row["year"]
             x, y = self.pos[pid]
-            # depts_all — ВСЕ департаменты публикации (полный PRODUCED_BY-
-            # список + обязательно основной, объединение множеств на случай,
-            # если основной почему-то не попал в pub_dept_rows) — используется
-            # фронтендом, чтобы подсветить публикацию во всех её департаментах
-            # сразу, а не только в основном ("dept" ниже).
+            # depts_all - ALL of a publication's departments (the full
+            # PRODUCED_BY list plus the primary one, unioned in case the
+            # primary somehow wasn't in pub_dept_rows) - used by the frontend
+            # to highlight a publication in every one of its departments at
+            # once, not just the primary one ("dept" below).
             depts_all = sorted(
                 {self.table.g(d) for d in self.assignment.pub_dept_rows.get(pid, [])}
                 | {self.table.g(self.assignment.pub_primary[pid])}
@@ -347,7 +346,7 @@ class PubNodeBuilder:
         for row in self.authorship.pubs_rows:
             title = row["title"] or ""
             if len(title) > PUB_TITLE_MAX_LEN:
-                title = title[: PUB_TITLE_MAX_LEN - 1] + "…"  # -1, чтобы многоточие не выталкивало итог за лимит
+                title = title[: PUB_TITLE_MAX_LEN - 1] + "…"  # -1 so the ellipsis doesn't push the total past the limit
             detail.append(
                 {
                     "key": row["id"],
@@ -357,7 +356,7 @@ class PubNodeBuilder:
                     "has_code": bool(row["has_code"]),
                     "code_url": _parse_json_list(row["code_url"]),
                     "type": row.get("type") or "",
-                    # fields — нативный список тем OpenAlex, не JSON-текст.
+                    # fields is a native OpenAlex topic list, not JSON-text.
                     "fields": row.get("fields") or [],
                     "funding": _parse_json_list(row.get("funding")),
                     "versions": _parse_json_list(row.get("versions")),

@@ -1,4 +1,4 @@
-"""Юнит-тесты для `authorship.py`."""
+"""Unit tests for authorship.py."""
 
 from __future__ import annotations
 

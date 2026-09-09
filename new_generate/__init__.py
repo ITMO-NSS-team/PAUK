@@ -1,23 +1,8 @@
-"""new_generate — переписанный слой генерации данных для сайта: снепшот -> раскладка -> JSON.
-
-Рабочая директория для переписки `pauk/gui/{generate_data,layout,config}.py`
-"набело" под новую пару `new_cache`/`new_gui`: тот же язык (Python), но `db`
-теперь в форме `new_cache` (словари, не кортежи), а на выходе — голый JSON
-(не `window.GRAPH=...;`), разделённый на лёгкий summary для карты и
-detail-файлы по каждому типу сущности (см. докстринг `graph_builder.py`).
-`serve.py` сознательно не переносится этим шагом — у него нет одного
-назначения (статика + динамические `/api/*` через `checks.py`/
-`generate_stats.py`, которые здесь не переписываются), и он не входит в
-объём этой работы.
-
-Имена файлов оригинала (2026-09-08, осознанный отказ от более раннего
-требования "те же файлы, что у pauk/gui") намеренно НЕ сохранены —
-бывший `generate_data.py` был одним файлом на всё (индексация авторства,
-назначение департаментов, раскладка, сборка узлов/рёбер, CLI), логика
-разложена по модулям (`authorship.py`/`departments.py`/`layout.py`/
-`nodes.py`/`edges.py`), сам он переименован в `graph_builder.py` и остался
-тонким оркестратором (класс `GraphDataBuilder`) + точкой входа CLI. По завершении переписки этот
-пакет должен физически занять место `pauk/gui/{generate_data,layout,config}.py`
-как единое целое, а не остаться вечным дублем рядом с ними — но уже не
-файл-в-файл.
+"""new_generate - generates static data for the site: cache snapshot ->
+layout -> JSON. Consumes `pauk.cache`'s dict-shaped `db` (not the old
+positional-tuple shape) and outputs plain JSON split into a lightweight
+summary for the map and per-entity-type detail files (see
+`graph_builder.py`'s docstring). `serve.py` was deliberately not ported -
+it mixes static-file serving with dynamic `/api/*` routes
+(`checks.py`/`generate_stats.py`, not part of this rewrite), out of scope here.
 """
