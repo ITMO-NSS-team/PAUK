@@ -2,6 +2,9 @@
 {% block content %}
 <h1>Спорные случаи</h1>
 
+{% set problem = request.query_params.get("problem") %}
+{% if problem %}<p class="note bad">{{ problem }}</p>{% endif %}
+
 {% set done = request.query_params.get("done") %}
 {% if done == "merged" %}
 <p class="note">Записи слиты. Связи перешли на оставшуюся, отменить нельзя.</p>

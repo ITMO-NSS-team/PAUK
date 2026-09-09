@@ -253,6 +253,21 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
     verdict = str(form.get("verdict", ""))
     tab = str(form.get("tab", "pressing"))
     note = str(form.get("note", "")).strip()
+
+    def back(problem: str = "", done: str = ""):
+        """To the queue, with a word about what happened.
+
+        A form somebody filled in wrongly sends them back to it, not to an
+        error page: the checkboxes are three clicks to redo, and a dead end
+        with a status code on it explains nothing.
+        """
+        query = f"?tab={tab}"
+        if problem:
+            query += f"&problem={quote(problem)}"
+        if done:
+            query += f"&done={done}"
+        return RedirectResponse(f"/review{query}", status_code=status.HTTP_303_SEE_OTHER)
+
     try:
         if verdict == "skip":
             if not review.skip(db, kind, members, actor=user.actor):
@@ -271,16 +286,21 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
             review.record_choice(db, person,
                                  [member for member in members if member != person],
                                  chosen or None, actor=user.actor, note=note)
-            return RedirectResponse(f"/review?tab={tab}&done=chosen",
-                                    status_code=status.HTTP_303_SEE_OTHER)
+            return back(done="chosen")
         elif verdict == "split":
+            # Checked here and not only in the store: the store's guards are
+            # the contract, these are what a person reads after mis-clicking.
+            same = form.getlist("same")
+            if len(same) < 2:
+                return back("Отметьте хотя бы двоих, кого считаете одним человеком.")
+            if len(same) >= len(members):
+                return back("Вся группа не может быть одним человеком — её отклонили "
+                            "как раз потому, что внутри разные люди.")
             # Nothing is folded here even when the nodes exist: a split is
             # several merges, and the later ones would point at a node the
             # earlier ones had already swallowed.
-            review.record_split(db, members, form.getlist("same"),
-                                actor=user.actor, note=note)
-            return RedirectResponse(f"/review?tab={tab}&done=split",
-                                    status_code=status.HTTP_303_SEE_OTHER)
+            review.record_split(db, members, same, actor=user.actor, note=note)
+            return back(done="split")
         else:
             review.record_verdict(db, kind, members, verdict, actor=user.actor, note=note)
     except review.ReviewError as error:

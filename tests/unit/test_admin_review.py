@@ -359,13 +359,39 @@ class SplitFromThePageTest(unittest.TestCase):
     def test_the_page_says_what_will_happen(self):
         self.assertIn("done=split", self.split(["A1", "A2"]).headers["location"])
 
-    def test_marking_everybody_is_refused(self):
-        self.assertEqual(self.split(["A1", "A2", "A3"]).status_code, 400)
+    def test_marking_everybody_comes_back_with_a_word(self):
+        # Back to the queue, not to an error page: the checkboxes are three
+        # clicks to redo and a status code explains nothing.
+        response = self.split(["A1", "A2", "A3"])
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("problem=", response.headers["location"])
         self.assertEqual(review.decisions(self.db), {})
 
-    def test_marking_nobody_is_refused(self):
-        self.assertEqual(self.split([]).status_code, 400)
+    def test_marking_one_comes_back_with_a_word(self):
+        response = self.split(["A1"])
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("problem=", response.headers["location"])
         self.assertEqual(review.decisions(self.db), {})
+
+    def test_marking_nobody_comes_back_with_a_word(self):
+        response = self.split([])
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("problem=", response.headers["location"])
+        self.assertEqual(review.decisions(self.db), {})
+
+    def test_the_word_is_shown_on_the_page(self):
+        location = self.split(["A1"]).headers["location"]
+        self.assertIn("Отметьте хотя бы двоих", self.client.get(location).text)
+
+    def test_leaving_the_group_apart_still_works_with_a_box_ticked(self):
+        # The checkbox travels with the form whatever button was pressed;
+        # "leave them apart" has no business reading it.
+        response = self.client.post("/review/answer", data={
+            "csrf": self.csrf(), "kind": review.GROUP, "members": "A1,A2,A3",
+            "verdict": "different", "same": ["A1"]})
+        self.assertEqual(response.status_code, 303)
+        self.assertNotIn("problem=", response.headers["location"])
+        self.assertEqual(review.count(self.db, answered=True), 1)
 
     def test_a_group_offers_no_plain_merge(self):
         body = self.client.get("/review").text
