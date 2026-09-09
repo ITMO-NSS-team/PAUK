@@ -161,6 +161,7 @@ def collect_raw_orcids(mongo_db: Database) -> dict[str, str | None]:
 def dedup_graph_persons(client, raw_orcids: dict[str, str | None],
                         catalog: RussianNamesCatalog | None = None,
                         decisions: dict[frozenset[str], str] | None = None,
+                        chosen: dict[str, str] | None = None,
                         ) -> tuple[int, list[dict]]:
     """Fold duplicate Person nodes across all published groups.
 
@@ -175,6 +176,8 @@ def dedup_graph_persons(client, raw_orcids: dict[str, str | None],
         decisions: Answers people gave about pairs the rules held back, read
             by the caller because this function is given a graph client and
             no database.
+        chosen: Catalog records people picked for the names the catalog
+            cannot tell apart, read by the caller for the same reason.
 
     Returns:
         (removed, report): the number of folded nodes and the review
@@ -207,7 +210,7 @@ def dedup_graph_persons(client, raw_orcids: dict[str, str | None],
     }
     groups, report = plan_person_merges(
         people, trusted_orcid, fields_of=client.fetch_publication_fields(),
-        staff_ids=staff_identities(catalog, people), decisions=decisions)
+        staff_ids=staff_identities(catalog, people, chosen), decisions=decisions)
 
     merges: list[tuple[str, str]] = []
     canonical_nodes: list[tuple[str, dict]] = []
@@ -423,7 +426,8 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         answers = review.decisions(mongo_db, client.fetch_merged_id_map("Person"))
         with actor_context("etl-pipeline", source="dedup-graph"):
             persons_removed, person_report = dedup_graph_persons(
-                client, collect_raw_orcids(mongo_db), catalog, decisions=answers)
+                client, collect_raw_orcids(mongo_db), catalog, decisions=answers,
+                chosen=review.staff_choices(mongo_db))
             publications_removed, publication_report = dedup_graph_publications(client)
             repositories_removed, repository_report = dedup_graph_repositories(client)
 

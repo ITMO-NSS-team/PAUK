@@ -103,7 +103,13 @@ from pauk.storage.atomic import AtomicWriter
 from pauk.storage.review import DIFFERENT, SAME
 from pauk.urls import normalize_repo_url
 
-from .author_names import RussianNamesCatalog, _fold, _unmix_alphabets, catalog_path
+from .author_names import (
+    RussianNamesCatalog,
+    _fold,
+    _record_id,
+    _unmix_alphabets,
+    catalog_path,
+)
 from .base import EnrichmentStage
 
 logger = logging.getLogger(__name__)
@@ -571,16 +577,58 @@ def _grouped(pairs: Iterable[tuple[str, str]]) -> Iterator[list[str]]:
 
 
 def staff_identities(catalog: RussianNamesCatalog | None,
-                     people: Iterable[Person]) -> dict[str, str]:
+                     people: Iterable[Person],
+                     chosen: dict[str, str] | None = None) -> dict[str, str]:
     """Staff-record identity per person id, for the ones the catalog knows.
 
     An empty mapping — no catalog on this deployment, or nobody matched —
     simply leaves rule 4 out of the merge decision.
+
+    Args:
+        chosen: Records people picked for the names the catalog cannot tell
+            apart (see `RussianNamesCatalog.namesakes`). The catalog refuses
+            to guess between two Andrei Kuznetsovs and is right to; somebody
+            at the university knows which one this is, and their answer is
+            what rule 4 was missing.
     """
     if catalog is None:
         return {}
-    return {person.id: staff_id for person in people
-            if (staff_id := catalog.staff_id(person))}
+    chosen = chosen or {}
+    found = {}
+    for person in people:
+        staff_id = catalog.staff_id(person) or chosen.get(person.id)
+        if staff_id:
+            found[person.id] = staff_id
+    return found
+
+
+def staff_questions(catalog: RussianNamesCatalog | None, people: Iterable[Person],
+                    chosen: dict[str, str] | None = None) -> list[dict]:
+    """People whose name the catalog holds twice, for somebody to sort out.
+
+    Only asked where it would change something: a person the catalog
+    already places needs no question, and neither does one already answered.
+    """
+    if catalog is None:
+        return []
+    chosen = chosen or {}
+    questions = []
+    for person in people:
+        if catalog.staff_id(person) or person.id in chosen:
+            continue
+        rows = catalog.namesakes(person)
+        if not rows:
+            continue
+        questions.append({
+            "status": "held",
+            "person": person.id,
+            "name_raw": person.name_raw,
+            "records": [_record_id(row) for row in rows],
+            "record_names": [row.get("name_ru") or _record_id(row) for row in rows],
+            "record_degrees": [row.get("degree") for row in rows],
+            "held_because": ["каталог знает несколько человек с таким именем"],
+        })
+    return questions
 
 
 def _union(*lists: Iterable[str]) -> list[str]:
@@ -985,7 +1033,14 @@ class DedupStage(EnrichmentStage):
         catalog = RussianNamesCatalog.load_if_present(path)
         if catalog is None:
             logger.info("dedup: no staff catalog at %s — merging on names and profiles alone", path)
-        return staff_identities(catalog, people)
+            return {}
+        chosen = review.staff_choices(self.prepared.db)
+        # Asked here rather than in the naming stage: this is the rule the
+        # answer unblocks, and the ambiguity is a property of the catalog
+        # and the name, so noticing it costs no model call.
+        review.record_held(self.prepared.db, staff_questions(catalog, people, chosen),
+                           source=review.STAGE)
+        return staff_identities(catalog, people, chosen)
 
     def _trusted_orcids(self, people: list[Person]) -> dict[str, str | None]:
         """ORCID per person id, preferring the raw OpenAlex author record.

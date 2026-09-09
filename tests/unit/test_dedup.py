@@ -1264,3 +1264,118 @@ class SplitGroupEndToEndTest(unittest.TestCase):
         review.record_split(self.db, ["A1", "A2", "A3"], ["A1", "A2"])
         self.run_stage()
         self.assertEqual(review.count(self.db, kind=review.GROUP, answered=False), 0)
+
+
+class StaffCatalogQuestionTest(unittest.TestCase):
+    """Names the catalog holds twice, and the person who can tell them apart.
+
+    The catalog refuses to guess between two Andrei Kuznetsovs and is right
+    to: handing one of them the other's official record is the namesake bug
+    the whole module is built to avoid. Somebody at the university knows,
+    and their answer is what rule 4 was missing.
+    """
+
+    CATALOG = ["Кузнецов Андрей Геннадьевич,Кузнецов,Андрей,Геннадьевич,",
+               "Кузнецов Андрей Дмитриевич,Кузнецов,Андрей,Дмитриевич,"]
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.config = Settings(data_dir=Path(tmp.name))
+        self.config.static_dir.mkdir(parents=True, exist_ok=True)
+        (self.config.static_dir / "russian_names.csv").write_text(
+            CATALOG_HEADER + "".join(f"{row}\n" for row in self.CATALOG), encoding="utf-8")
+        self.prepared = PreparedStore(self.db, "sample")
+        self.raw = RawStore(self.db, "sample")
+
+    def run_stage(self, people):
+        self.prepared.write_models("persons", people)
+        result = DedupStage(self.prepared, self.raw, self.config).run()
+        return result, {p.id for p in self.prepared.read_models("persons", Person)}
+
+    def split_records(self):
+        """One researcher, two OpenAlex records, nothing tying them together."""
+        return [person("A1", "Andrei Kuznetsov", ["W1"]),
+                person("A2", "Kuznetsov Andrei", ["W2"])]
+
+    def test_a_name_the_catalog_holds_twice_becomes_a_question(self):
+        self.run_stage(self.split_records())
+        staff = review.questions(self.db, kind=review.STAFF)
+        self.assertEqual(len(staff), 2)
+        asked = {row["evidence"]["person"] for row in staff}
+        self.assertEqual(asked, {"A1", "A2"})
+        (one,) = [row for row in staff if row["evidence"]["person"] == "A1"]
+        self.assertEqual(sorted(one["evidence"]["records"]),
+                         ["kuznetsov|andrei|dmitrievich", "kuznetsov|andrei|gennadevich"])
+
+    def test_a_name_the_catalog_places_is_not_asked_about(self):
+        self.run_stage([person("A1", "Nikolay Nikitin", ["W1"])])
+        self.assertEqual(review.count(self.db, kind=review.STAFF), 0)
+
+    def test_a_name_given_as_initials_is_not_asked_about(self):
+        # "A. Kuznetsov" stands for every Kuznetsov whose given name starts
+        # with an A, including ones this catalog does not list. There is no
+        # closed set of records to choose between.
+        self.run_stage([person("A1", "A. Kuznetsov", ["W1"])])
+        self.assertEqual(review.count(self.db, kind=review.STAFF), 0)
+
+    def test_the_records_are_shown_as_a_person_reads_them(self):
+        self.run_stage(self.split_records())
+        (one,) = [row for row in review.questions(self.db, kind=review.STAFF)
+                  if row["evidence"]["person"] == "A1"]
+        self.assertEqual(sorted(one["evidence"]["record_names"]),
+                         ["Кузнецов Андрей Геннадьевич", "Кузнецов Андрей Дмитриевич"])
+
+    def test_the_records_stay_split_while_nobody_answers(self):
+        result, people = self.run_stage(self.split_records())
+        self.assertEqual(result["dedup_merged"], 0)
+        self.assertEqual(people, {"A1", "A2"})
+
+    def test_choosing_one_record_for_both_folds_them(self):
+        # Rule 4: two people resolving to the same staff record are one
+        # employee, whatever their spellings look like.
+        self.run_stage(self.split_records())
+        for person_id in ("A1", "A2"):
+            review.record_choice(self.db, person_id,
+                                 ["kuznetsov|andrei|gennadevich",
+                                  "kuznetsov|andrei|dmitrievich"],
+                                 "kuznetsov|andrei|gennadevich", actor="user:roman")
+        result, people = self.run_stage(self.split_records())
+        self.assertEqual(result["dedup_merged"], 1)
+        self.assertEqual(people, {"A1"})
+
+    def test_choosing_different_records_keeps_them_apart(self):
+        self.run_stage(self.split_records())
+        review.record_choice(self.db, "A1", ["kuznetsov|andrei|gennadevich",
+                                             "kuznetsov|andrei|dmitrievich"],
+                             "kuznetsov|andrei|gennadevich")
+        review.record_choice(self.db, "A2", ["kuznetsov|andrei|gennadevich",
+                                             "kuznetsov|andrei|dmitrievich"],
+                             "kuznetsov|andrei|dmitrievich")
+        result, people = self.run_stage(self.split_records())
+        self.assertEqual(result["dedup_merged"], 0)
+        self.assertEqual(people, {"A1", "A2"})
+
+    def test_an_answered_person_is_not_asked_again(self):
+        self.run_stage(self.split_records())
+        review.record_choice(self.db, "A1", ["kuznetsov|andrei|gennadevich",
+                                             "kuznetsov|andrei|dmitrievich"], None)
+        self.run_stage(self.split_records())
+        asked = {row["evidence"].get("person") for row
+                 in review.questions(self.db, kind=review.STAFF, answered=False)}
+        self.assertEqual(asked, {"A2"})
+
+    def test_a_record_outside_the_question_is_refused(self):
+        with self.assertRaises(review.ReviewError):
+            review.record_choice(self.db, "A1", ["kuznetsov|andrei|gennadevich"],
+                                 "someone|else|entirely")
+
+    def test_a_person_the_catalog_already_places_is_not_asked(self):
+        # One spelling names the patronymic and resolves to a single record;
+        # another is ambiguous. The catalog knows who this is, so there is
+        # nothing to ask — and asking anyway would put a settled person in
+        # the queue for somebody to puzzle over.
+        self.run_stage([person("A1", "Andrei Gennadevich Kuznetsov", ["W1"],
+                               variants=["Andrei Kuznetsov"])])
+        self.assertEqual(review.count(self.db, kind=review.STAFF), 0)
