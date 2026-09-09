@@ -28,7 +28,7 @@ class WorkerTest(unittest.TestCase):
 
     def step(self, result=None, raises=None):
         """A stand-in for the work, recording what it was handed."""
-        def run(config, db, payload, stop):
+        def run(config, db, payload, stop, report):
             self.seen.append(payload)
             if raises is not None:
                 raise raises
@@ -117,7 +117,7 @@ class WorkerTest(unittest.TestCase):
         """
         job = self.queue()
 
-        def cancel_then_wait(config, db, payload, stop):
+        def cancel_then_wait(config, db, payload, stop, report):
             store.request_cancel(db, job.id)
             raise locks.Busy("graph is busy")
 
@@ -182,7 +182,7 @@ class HeartbeatTest(unittest.TestCase):
     def run_with_beat(self, body):
         beaten = threading.Event()
 
-        def step(config, db, payload, stop):
+        def step(config, db, payload, stop, report):
             beaten.wait(timeout=2)
             return {}
 
@@ -220,7 +220,7 @@ class HeartbeatTest(unittest.TestCase):
         beaten = threading.Event()
         first = []
 
-        def step(config, db, payload, stop):
+        def step(config, db, payload, stop, report):
             locks.acquire(db, GRAPH, "worker-1")
             first.append(self.db[locks.COLLECTION].find_one({"_id": GRAPH})["expires_at"])
             beaten.wait(timeout=2)
@@ -275,7 +275,7 @@ class StopTest(unittest.TestCase):
     def test_the_job_in_hand_is_finished_first(self):
         job = store.enqueue(self.db, JobKind.PUBLISH, {"group": "2024"})
 
-        def step(config, db, payload, stop):
+        def step(config, db, payload, stop, report):
             self.worker.stop()
             return {"rows_persons": 3}
 
@@ -303,7 +303,7 @@ class PipelineJobTest(unittest.TestCase):
                              actor="user:chief")
 
     def phase(self, name, result=None, cancels=None, raises=None):
-        def step(config, db, payload, stop):
+        def step(config, db, payload, stop, report):
             self.done.append(name)
             if cancels is not None:
                 store.request_cancel(db, cancels)
@@ -455,7 +455,7 @@ class SeveralRunsAtOnceTest(unittest.TestCase):
         self.done = []
 
     def records(self, name):
-        def step(config, db, payload, stop):
+        def step(config, db, payload, stop, report):
             self.done.append(name)
             return {}
         return step
@@ -530,3 +530,56 @@ class SeveralRunsAtOnceTest(unittest.TestCase):
             {"$set": {"heartbeat_at": now() - timedelta(minutes=locks.LEASE_MINUTES + 1)}})
         self.assertEqual(store.reap_stale(self.db), 1)
         self.assertEqual(store.read(self.db, job.id).state, JobState.FAILED)
+
+
+class ProgressTest(unittest.TestCase):
+    """Where inside a run it is, not only that it is alive.
+
+    A collection run takes hours across ten enrichment stages. Until now the
+    only thing it said about itself was a heartbeat.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.worker = worker.Worker(Settings(), self.db, name="w")
+
+    def run_step(self, kind, step):
+        job = store.enqueue(self.db, kind, {"group": "2024"} if kind is not JobKind.DEDUP else {})
+        with patch.dict(worker.STEPS, {kind: step}):
+            self.worker.run_once()
+        return store.read(self.db, job.id)
+
+    def test_a_step_says_which_part_is_under_way(self):
+        def step(config, db, payload, stop, report):
+            report("repositories", 6, 10)
+            return {}
+        self.assertEqual(store.read(self.db, self.run_step(JobKind.PUBLISH, step).id).progress["step"],
+                         "repositories")
+
+    def test_the_place_in_the_run_is_kept(self):
+        def step(config, db, payload, stop, report):
+            report("repositories", 6, 10)
+            return {}
+        progress = self.run_step(JobKind.PUBLISH, step).progress
+        self.assertEqual((progress["done"], progress["total"]), (6, 10))
+
+    def test_the_last_word_wins(self):
+        def step(config, db, payload, stop, report):
+            report("pdf", 0, 10)
+            report("dedup", 7, 10)
+            return {}
+        self.assertEqual(self.run_step(JobKind.PUBLISH, step).progress["step"], "dedup")
+
+    def test_a_step_that_says_nothing_leaves_it_empty(self):
+        def step(config, db, payload, stop, report):
+            return {}
+        self.assertIsNone(self.run_step(JobKind.PUBLISH, step).progress)
+
+    def test_a_finished_run_is_not_asked_where_it_is(self):
+        # Reporting into a settled job would say a finished run is still
+        # somewhere inside itself.
+        job = store.enqueue(self.db, JobKind.DEDUP, {})
+        store.claim(self.db, "w")
+        store.start(self.db, job.id)
+        store.finish(self.db, job.id, {})
+        self.assertFalse(store.progress(self.db, job.id, "поздно"))

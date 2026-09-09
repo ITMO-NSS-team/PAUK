@@ -142,7 +142,7 @@
 <div class="card live">
   <b><span class="pulse"></span>Сейчас идёт</b>
   <table style="margin-top:12px">
-    <tr><th>что</th><th>кто запросил</th><th>начата</th><th>отклик</th>
+    <tr><th>что</th><th>кто запросил</th><th>начата</th><th>отклик</th><th>где сейчас</th>
       {% if user.can_run %}<th></th>{% endif %}</tr>
     {% for job in under_way %}
     <tr>
@@ -154,6 +154,13 @@
       <td class="val" style="white-space:nowrap">{{ job.heartbeat_at|moment or "—" }}
         {% if job.stale %}<br><span class="kind kind-deleted">не отвечает</span>
         {% elif job.cancel_requested %}<br><span class="muted">просили остановить</span>{% endif %}
+      </td>
+      <td>
+        {% if job.progress %}
+          {{ job.progress.step }}
+          {% if job.progress.total %}<br><span class="muted">этап
+            {{ job.progress.done + 1 }} из {{ job.progress.total }}</span>{% endif %}
+        {% else %}<span class="muted">—</span>{% endif %}
       </td>
       {% if user.can_run %}
       <td style="width:1%">
