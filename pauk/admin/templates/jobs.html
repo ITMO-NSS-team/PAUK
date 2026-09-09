@@ -156,6 +156,11 @@
         {% elif job.cancel_requested %}<br><span class="muted">просили остановить</span>{% endif %}
       </td>
       <td>
+        {% if job.phases %}
+        <div class="phases" aria-hidden="true">
+          {% for state in job.phases %}<span class="{{ state }}"></span>{% endfor %}
+        </div>
+        {% endif %}
         {% if job.progress %}
           {{ job.progress.step }}
           {% if job.progress.total %}<br><span class="muted">этап

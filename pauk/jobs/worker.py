@@ -80,6 +80,11 @@ def _rebuild_map(config: Settings, db: Database, payload, stop: Stop,
     return rebuild_map(config, db, public=payload.public, seed=payload.seed)
 
 
+#: The three phases a pipeline run is made of, in order. Named here because
+#: the page draws one segment per phase and has to know how many there are.
+PHASES = ("сбор", "публикация", "карта")
+
+
 class Cancelled(Exception):
     """A job that was asked to stop, and did, between two of its phases."""
 
@@ -101,13 +106,24 @@ def _pipeline(config: Settings, db: Database, payload, stop: Stop,
         Cancelled: Somebody pressed cancel. Checked between phases only —
             a phase is never abandoned half-written.
     """
-    counts = _collect(config, db, payload, stop, report)
+    def during(phase: int) -> Report:
+        """The worker's reporter, with the phase this run is in attached.
+
+        The parts inside a phase report their own step and know nothing
+        about the phase they sit in, so it is added here rather than
+        threaded through every one of them.
+        """
+        def inner(step: str, done: int = 0, total: int = 0) -> None:
+            report(step, done, total, phase=phase)
+        return inner
+
+    counts = _collect(config, db, payload, stop, during(0))
     if stop():
         raise Cancelled("остановлено после сбора")
-    counts |= _publish(config, db, payload, stop, report)
+    counts |= _publish(config, db, payload, stop, during(1))
     if stop():
         raise Cancelled("остановлено после публикации")
-    return counts | _rebuild_map(config, db, payload, stop, report)
+    return counts | _rebuild_map(config, db, payload, stop, during(2))
 
 
 #: What each kind of job does. A closed table looked up by an enum, so no
@@ -235,8 +251,9 @@ class Worker:
             current = store.read(self.db, job.id)
             return bool(current and current.cancel_requested)
 
-        def report(step: str, done: int = 0, total: int = 0) -> None:
-            store.progress(self.db, job.id, step, done, total)
+        def report(step: str, done: int = 0, total: int = 0,
+                   phase: int | None = None) -> None:
+            store.progress(self.db, job.id, step, done, total, phase)
             # Between two parts of the work nothing is half written, so this
             # is where a cancel can be honoured. Before, the only such seam
             # was between the three phases of a pipeline, and a run stopped

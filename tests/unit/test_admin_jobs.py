@@ -822,3 +822,49 @@ class RepeatTest(unittest.TestCase):
         offered = CancelTest.offered(self, "/jobs/repeat")
         self.assertIn(done.id, offered)
         self.assertNotIn(waiting.id, offered)
+
+
+class PhaseBarTest(unittest.TestCase):
+    """Three segments for the three phases a pipeline run is made of."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "chief", "hunter2", role="admin")
+        self.app = build(Settings(), self.db)
+        self.app.dependency_overrides[deps.graph_for] = lambda: FakePanelGraph()
+        self.client, self.csrf = CancelTest.sign_in(self, "chief")
+
+    def under_way(self, kind, step, phase=None):
+        job = store.enqueue(self.db, kind, {"group": "2024"} if kind is not JobKind.DEDUP else {},
+                            actor="user:chief")
+        store.claim(self.db, "w")
+        store.start(self.db, job.id)
+        store.progress(self.db, job.id, step, phase=phase)
+        return job
+
+    def segments(self):
+        body = self.client.get("/jobs").text
+        block = re.search(r'<div class="phases".*?</div>', body, re.S)
+        return re.findall(r'<span class="([^"]*)">', block.group()) if block else []
+
+    def test_the_phases_behind_it_are_filled(self):
+        self.under_way(JobKind.PIPELINE, "выкладка в граф", phase=1)
+        self.assertEqual(self.segments(), ["done", "now", ""])
+
+    def test_the_first_phase_fills_nothing_yet(self):
+        self.under_way(JobKind.PIPELINE, "persons", phase=0)
+        self.assertEqual(self.segments(), ["now", "", ""])
+
+    def test_the_last_one_leaves_none_empty(self):
+        self.under_way(JobKind.PIPELINE, "пересборка карты", phase=2)
+        self.assertEqual(self.segments(), ["done", "done", "now"])
+
+    def test_a_single_step_gets_no_bar(self):
+        # There is nothing to divide: it is one thing, not three.
+        self.under_way(JobKind.MAP, "пересборка карты")
+        self.assertEqual(self.segments(), [])
+
+    def test_the_step_is_still_named_beside_it(self):
+        # The bar answers "how much is left", the words answer "what now".
+        self.under_way(JobKind.PIPELINE, "repositories", phase=0)
+        self.assertIn("repositories", self.client.get("/jobs").text)

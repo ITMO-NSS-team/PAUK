@@ -321,3 +321,14 @@ select {
 .verdicts input[type=text] { margin-bottom: 8px; }
 .verdicts .row { flex-wrap: wrap; gap: 6px; }
 .verdicts button { padding: 6px 11px; font-size: 13px; }
+
+/* Фазы конвейера: пройденные закрашены, идущая отмечена бледнее, до
+   которых не дошли — пустые. Полоска рядом с названием шага отвечает на
+   вопрос «сколько ещё», на который текст сам по себе не отвечает. */
+.phases { display: flex; gap: 3px; margin-bottom: 6px; min-width: 96px; }
+.phases span {
+  flex: 1; height: 5px; border-radius: 3px;
+  background: var(--g2);
+}
+.phases .done { background: var(--ok); }
+.phases .now { background: var(--ok); opacity: 0.45; }

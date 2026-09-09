@@ -231,8 +231,8 @@ def reap_stale(db: Database, minutes: int = LEASE_MINUTES) -> int:
     return settled
 
 
-def progress(db: Database, job_id: str, step: str,
-             done: int = 0, total: int = 0) -> bool:
+def progress(db: Database, job_id: str, step: str, done: int = 0, total: int = 0,
+             phase: int | None = None) -> bool:
     """Say which part of a run is under way.
 
     A run takes hours, and until now the only thing it said about itself was
@@ -242,7 +242,7 @@ def progress(db: Database, job_id: str, step: str,
     result = db[COLLECTION].update_one(
         {"_id": job_id, "state": {"$nin": [str(name) for name in FINAL]}},
         {"$set": {"progress": {"step": step, "done": done, "total": total,
-                               "at": now()}}})
+                               "phase": phase, "at": now()}}})
     return result.matched_count > 0
 
 

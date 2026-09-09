@@ -20,6 +20,7 @@ from pydantic import ValidationError
 from pauk.admin.deps import Admin, CsrfChecked, CurrentUser, Db, Session, templates
 from pauk.jobs import locks, store
 from pauk.jobs.models import FINAL, JobKind, JobState
+from pauk.jobs.worker import PHASES
 from pauk.pipeline.selectors import PeriodSelector
 from pauk.pipeline.stages import ALL_STAGES
 from pauk.storage import PreparedStore
@@ -69,10 +70,23 @@ def _shown(job) -> dict:
         # такая задача так и висела бы «идёт» без всяких оговорок.
         "stale": store.is_quiet(job),
         "progress": job.progress,
+        # Одна полоска на фазу конвейера: пройденные закрашены, идущая
+        # отмечена, остальные пусты. Только у конвейера — у одиночной
+        # задачи делить нечего.
+        "phases": _phases(job),
         # Sorted so two renders list the counts the same way.
         "result": sorted((job.result or {}).items()),
         "payload": sorted((job.payload or {}).items()),
     }
+
+
+def _phases(job) -> list[str] | None:
+    """State of each pipeline phase: "done", "now" or "" for not yet."""
+    at = (job.progress or {}).get("phase")
+    if at is None:
+        return None
+    return ["done" if index < at else "now" if index == at else ""
+            for index in range(len(PHASES))]
 
 
 def _last_done(db) -> dict[str, object]:
