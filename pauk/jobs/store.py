@@ -231,6 +231,46 @@ def reap_stale(db: Database, minutes: int = LEASE_MINUTES) -> int:
     return settled
 
 
+def give_up(db: Database, job_id: str, busy: set[str] | None = None) -> bool:
+    """Settle a job whose worker is gone, without waiting for another one.
+
+    `reap_stale` waits out the whole lock lease because a silent job may
+    still hold one and still be writing. That reasoning does not apply when
+    the resource is free: a live worker beats every minute and holds what it
+    touches, so silence plus an unheld resource means nothing is in flight.
+
+    Args:
+        busy: Resources somebody holds, from `locks.taken`. A job waiting on
+            one of them is left alone whatever its state.
+
+    Returns:
+        Whether the job was settled. False for a job that is running fine,
+        has already ended, or whose resource is taken.
+    """
+    job = read(db, job_id)
+    if job is None or job.is_final or job.resource in (busy or set()):
+        return False
+    if not is_quiet(job):
+        return False
+    if job.cancel_requested:
+        return cancelled(db, job_id)
+    return fail(db, job_id, "воркер перестал отвечать")
+
+
+def repeat(db: Database, job_id: str, actor: str = "unknown") -> Job | None:
+    """Queue the same run again, from what the old one recorded.
+
+    The payload is on the job, so a rerun needs nothing typed in twice —
+    which is where a period gets mistyped and the run collects the wrong
+    months. A new document rather than a reset: the failure stays in the
+    history, and two attempts read as two attempts.
+    """
+    job = read(db, job_id)
+    if job is None or not job.is_final:
+        return None
+    return enqueue(db, job.kind, dict(job.payload), actor=actor)
+
+
 def read(db: Database, job_id: str) -> Job | None:
     document = db[COLLECTION].find_one({"_id": job_id})
     return _as_job(document) if document else None

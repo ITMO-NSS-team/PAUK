@@ -1,5 +1,6 @@
 import re
 import unittest
+from datetime import timedelta
 
 import mongomock
 from fastapi.testclient import TestClient
@@ -7,8 +8,8 @@ from fastapi.testclient import TestClient
 from pauk.admin import deps
 from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key
-from pauk.jobs import store
-from pauk.jobs.models import GRAPH, JobKind, JobState
+from pauk.jobs import locks, store
+from pauk.jobs.models import GRAPH, JobKind, JobState, now
 from pauk.settings import Settings
 from pauk.storage.naming import group_name
 from tests.unit.test_admin_nodes import FakePanelGraph
@@ -404,17 +405,27 @@ class CancelTest(unittest.TestCase):
         job = self.queued()
         self.assertEqual(self.cancel(job.id, csrf="not-the-token").status_code, 403)
 
+    def offered(self, action):
+        """Job ids the page offers a given button for.
+
+        Read per form, not off the whole page: several buttons carry a
+        job_id now, and looking for the id alone finds any of them.
+        """
+        body = self.client.get("/jobs").text
+        return re.findall(
+            r'action="' + action + r'".*?name="job_id" value="([^"]+)"',
+            body, re.S)
+
     def test_the_button_is_offered_while_a_job_can_still_be_stopped(self):
         waiting, live = self.queued(), self.running()
-        offered = re.findall(r'name="job_id" value="([^"]+)"', self.client.get("/jobs").text)
+        offered = self.offered("/jobs/cancel")
         self.assertIn(waiting.id, offered)
         self.assertIn(live.id, offered)
 
-    def test_no_button_once_the_job_is_over(self):
+    def test_no_cancel_button_once_the_job_is_over(self):
         job = self.queued()
         store.finish(self.db, job.id, {})
-        offered = re.findall(r'name="job_id" value="([^"]+)"', self.client.get("/jobs").text)
-        self.assertNotIn(job.id, offered)
+        self.assertNotIn(job.id, self.offered("/jobs/cancel"))
 
     def test_no_button_once_it_has_been_asked(self):
         job = self.running()
@@ -664,3 +675,150 @@ class SilentJobOnThePageTest(unittest.TestCase):
         self.assertEqual(store.read(self.db, self.job.id).state, JobState.CANCELLED)
         self.assertNotIn("Сейчас идёт", self.page())
 
+
+
+class GiveUpTest(unittest.TestCase):
+    """Closing a run nothing is performing any more.
+
+    The worker settles abandoned jobs on its own, but only a running worker
+    does, and only after the lock lease has run out. A job cancelled before
+    it ever started holds nothing and is doing nothing; leaving it in "under
+    way" for a quarter of an hour tells everybody a lie.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "chief", "hunter2", role="admin")
+        create_user(self.db, "petrov", "hunter2", role="editor")
+        self.app = build(Settings(), self.db)
+        self.app.dependency_overrides[deps.graph_for] = lambda: FakePanelGraph()
+        self.client, self.csrf = CancelTest.sign_in(self, "chief")
+
+    def abandoned(self, *, quiet_minutes=20, cancelled=True):
+        """A job a worker took and never came back from."""
+        job = store.enqueue(self.db, JobKind.PIPELINE, {"group": "2024"}, actor="user:chief")
+        store.claim(self.db, "worker-that-died")
+        if cancelled:
+            store.request_cancel(self.db, job.id)
+        self.db[store.COLLECTION].update_one(
+            {"_id": job.id},
+            {"$set": {"heartbeat_at": now() - timedelta(minutes=quiet_minutes)}})
+        return job
+
+    def give_up(self, job_id, client=None, csrf=None):
+        client = client or self.client
+        return client.post("/jobs/give-up",
+                           data={"csrf": csrf or self.csrf, "job_id": job_id})
+
+    def test_a_cancelled_job_nobody_runs_is_closed_at_once(self):
+        job = self.abandoned()
+        self.assertEqual(self.give_up(job.id).status_code, 303)
+        self.assertEqual(store.read(self.db, job.id).state, JobState.CANCELLED)
+
+    def test_one_that_simply_died_is_recorded_as_failed(self):
+        job = self.abandoned(cancelled=False)
+        self.give_up(job.id)
+        settled = store.read(self.db, job.id)
+        self.assertEqual(settled.state, JobState.FAILED)
+        self.assertIn("воркер", settled.error)
+
+    def test_a_job_still_reporting_in_is_left_alone(self):
+        # Two minutes of silence is a slow step, not a dead worker.
+        job = self.abandoned(quiet_minutes=2)
+        self.assertEqual(self.give_up(job.id).status_code, 409)
+        self.assertEqual(store.read(self.db, job.id).state, JobState.CLAIMED)
+
+    def test_a_job_whose_resource_is_held_is_left_alone(self):
+        # Somebody is writing the graph. Silence there means a busy run, not
+        # an absent one, and closing it would free a resource still in use.
+        job = self.abandoned()
+        with locks.held(self.db, job.resource, "somebody-else"):
+            self.assertEqual(self.give_up(job.id).status_code, 409)
+        self.assertEqual(store.read(self.db, job.id).state, JobState.CLAIMED)
+
+    def test_a_finished_job_cannot_be_closed_again(self):
+        job = self.abandoned()
+        self.give_up(job.id)
+        self.assertEqual(self.give_up(job.id).status_code, 409)
+
+    def test_an_editor_may_not_close_one(self):
+        job = self.abandoned()
+        client, csrf = CancelTest.sign_in(self, "petrov")
+        self.assertEqual(self.give_up(job.id, client, csrf).status_code, 403)
+        self.assertEqual(store.read(self.db, job.id).state, JobState.CLAIMED)
+
+    def test_the_button_shows_up_only_on_a_silent_job(self):
+        live = store.enqueue(self.db, JobKind.MAP, {}, actor="user:chief")
+        store.claim(self.db, "worker-1")
+        store.start(self.db, live.id)
+        dead = self.abandoned()
+        offered = CancelTest.offered(self, "/jobs/give-up")
+        self.assertIn(dead.id, offered)
+        self.assertNotIn(live.id, offered)
+
+
+class RepeatTest(unittest.TestCase):
+    """Putting a finished run back in the queue from what it recorded."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "chief", "hunter2", role="admin")
+        create_user(self.db, "petrov", "hunter2", role="editor")
+        self.app = build(Settings(), self.db)
+        self.app.dependency_overrides[deps.graph_for] = lambda: FakePanelGraph()
+        self.client, self.csrf = CancelTest.sign_in(self, "chief")
+
+    def failed(self):
+        job = store.enqueue(self.db, JobKind.COLLECT,
+                            {"group": "2026-03-01__to__2026-08-29",
+                             "date_from": "2026-03-01", "date_to": "2026-08-29"},
+                            actor="user:chief")
+        store.claim(self.db, "worker-1")
+        store.start(self.db, job.id)
+        store.fail(self.db, job.id, "OpenAlex timed out")
+        return job
+
+    def repeat(self, job_id, client=None, csrf=None):
+        client = client or self.client
+        return client.post("/jobs/repeat",
+                           data={"csrf": csrf or self.csrf, "job_id": job_id})
+
+    def test_the_dates_come_back_without_being_typed_again(self):
+        # Which is where a period gets mistyped and the run collects the
+        # wrong months.
+        job = self.failed()
+        self.assertEqual(self.repeat(job.id).status_code, 303)
+        again = store.recent(self.db)[0]
+        self.assertEqual(again.payload, job.payload)
+        self.assertEqual(again.kind, job.kind)
+        self.assertEqual(again.state, JobState.QUEUED)
+
+    def test_the_failure_stays_in_the_history(self):
+        # Two attempts should read as two attempts.
+        job = self.failed()
+        self.repeat(job.id)
+        self.assertEqual(store.count(self.db), 2)
+        self.assertEqual(store.read(self.db, job.id).state, JobState.FAILED)
+
+    def test_who_asked_for_the_rerun_is_recorded(self):
+        job = self.failed()
+        self.repeat(job.id)
+        self.assertEqual(store.recent(self.db)[0].actor, "user:chief")
+
+    def test_a_run_still_going_cannot_be_repeated(self):
+        job = store.enqueue(self.db, JobKind.DEDUP, {}, actor="user:chief")
+        self.assertEqual(self.repeat(job.id).status_code, 404)
+        self.assertEqual(store.count(self.db), 1)
+
+    def test_an_editor_may_not_repeat_one(self):
+        job = self.failed()
+        client, csrf = CancelTest.sign_in(self, "petrov")
+        self.assertEqual(self.repeat(job.id, client, csrf).status_code, 403)
+        self.assertEqual(store.count(self.db), 1)
+
+    def test_the_button_shows_up_on_what_has_ended(self):
+        done = self.failed()
+        waiting = store.enqueue(self.db, JobKind.DEDUP, {}, actor="user:chief")
+        offered = CancelTest.offered(self, "/jobs/repeat")
+        self.assertIn(done.id, offered)
+        self.assertNotIn(waiting.id, offered)

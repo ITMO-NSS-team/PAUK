@@ -164,6 +164,15 @@
           <button type="submit" class="ghost">отменить</button>
         </form>
         {% endif %}
+        {# Молчащую задачу можно закрыть, не дожидаясь воркера: если её
+           ресурс свободен, выполнять её некому. #}
+        {% if job.stale %}
+        <form method="post" action="/jobs/give-up" style="margin-top:6px">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="job_id" value="{{ job.id }}">
+          <button type="submit" class="ghost">закрыть</button>
+        </form>
+        {% endif %}
       </td>
       {% endif %}
     </tr>
@@ -239,6 +248,15 @@
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="job_id" value="{{ job.id }}">
           <button type="submit" class="ghost">отменить</button>
+        </form>
+        {% endif %}
+        {# Нагрузка лежит в самой задаче, поэтому повтор ничего не просит
+           вписывать заново — а именно там ошибаются в датах. #}
+        {% if user.can_run and job.state in final %}
+        <form method="post" action="/jobs/repeat" style="margin-top:6px">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="job_id" value="{{ job.id }}">
+          <button type="submit" class="ghost">повторить</button>
         </form>
         {% endif %}
       </td>

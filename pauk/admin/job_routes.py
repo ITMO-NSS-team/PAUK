@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 
 from pauk.admin.deps import Admin, CsrfChecked, CurrentUser, Db, Session, templates
-from pauk.jobs import store
+from pauk.jobs import locks, store
 from pauk.jobs.models import FINAL, JobKind, JobState
 from pauk.pipeline.selectors import PeriodSelector
 from pauk.pipeline.stages import ALL_STAGES
@@ -218,6 +218,37 @@ async def cancel(request: Request, user: Admin, db: Db, _: CsrfChecked):
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             "задача уже закончилась или её нет")
     logger.info("%s cancelled job %s", user.actor, job_id)
+    return RedirectResponse("/jobs", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/jobs/give-up")
+async def give_up(request: Request, user: Admin, db: Db, _: CsrfChecked):
+    """Close a run nothing is performing any more.
+
+    The worker settles abandoned jobs on its own, but only a running worker
+    does, and only after the lock lease has run out. A job cancelled before
+    it ever started holds nothing and is doing nothing; leaving it in "under
+    way" for a quarter of an hour tells everybody a lie.
+    """
+    form = await request.form()
+    job_id = str(form.get("job_id", "")).strip()
+    if not store.give_up(db, job_id, busy=locks.taken(db)):
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "задача ещё жива или уже закончилась")
+    logger.info("%s gave up on job %s", user.actor, job_id)
+    return RedirectResponse("/jobs", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/jobs/repeat")
+async def repeat(request: Request, user: Admin, db: Db, _: CsrfChecked):
+    """Queue the same run again after it failed."""
+    form = await request.form()
+    job_id = str(form.get("job_id", "")).strip()
+    job = store.repeat(db, job_id, actor=user.actor)
+    if job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            "повторить можно только законченную задачу")
+    logger.info("%s queued %s again as %s", user.actor, job_id, job.id)
     return RedirectResponse("/jobs", status_code=status.HTTP_303_SEE_OTHER)
 
 
