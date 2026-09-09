@@ -35,9 +35,32 @@ def get_config(request: Request) -> Settings:
     return request.app.state.config
 
 
+#: How long the panel waits for Mongo before saying it is not there. The
+#: driver's own default is thirty seconds, which is a command being patient
+#: and a web request hanging.
+MONGO_TIMEOUT_MS = 2000
+
+#: Said whenever the panel cannot reach Mongo at all. Accounts, sessions,
+#: decisions and the queue all live there, so this is the whole panel being
+#: down rather than one page failing.
+MONGO_SILENT = "MongoDB не отвечает. Панель без неё работать не может."
+
+
 def get_session(request: Request, db: Annotated[Database, Depends(get_db)]) -> dict | None:
-    """The caller's session, or None. Never raises — used by the login page too."""
-    return read_session(db, request.cookies.get(COOKIE))
+    """The caller's session, or None when there is not one.
+
+    Raises:
+        HTTPException: 503 when Mongo cannot be reached. Sessions live
+            there, so an unreachable Mongo is not an anonymous visitor —
+            answering None would bounce somebody to a login page that
+            cannot work either, and every page would meanwhile have shown
+            a stack trace.
+    """
+    try:
+        return read_session(db, request.cookies.get(COOKIE))
+    except PyMongoError as error:
+        logger.warning("mongo is not answering, no session to read: %s", error)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, MONGO_SILENT) from None
 
 
 def require_user(session: Annotated[dict | None, Depends(get_session)]) -> User:
@@ -237,11 +260,8 @@ def job_words(kind) -> str:
 templates.env.filters["job_words"] = job_words
 
 
-# Length past which a value is rendered already folded. Deliberately low:
-# the narrowest column that holds one fits about fifty characters to a line,
-# so four lines run out around two hundred. Marking a value that turns out
-# to fit costs a button the script then takes away; missing one that does
-# not would cut the text with nothing saying so.
+# Length past which a value is rendered already folded. Low on purpose: a
+# needless button the script removes beats text cut with nothing saying so.
 LONG_VALUE = 160
 
 

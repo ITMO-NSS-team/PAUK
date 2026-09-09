@@ -6,13 +6,21 @@ from pymongo.database import Database
 from pauk.settings import Settings
 
 
-def get_mongo_client(config: Settings) -> MongoClient:
+def get_mongo_client(config: Settings, timeout_ms: int | None = None) -> MongoClient:
     """Open a MongoDB client for the raw/prepared intermediate storage.
 
     Callers own the returned client and must close() it when done, same as
     Neo4jClient (see pauk/graph/client.py).
+
+    Args:
+        timeout_ms: How long to wait for a reachable server before giving
+            up. The driver's own default is thirty seconds, which suits a
+            command that would rather wait than fail; a caller answering a
+            web request passes something short.
     """
-    return MongoClient(config.mongo_uri)
+    if timeout_ms is None:
+        return MongoClient(config.mongo_uri)
+    return MongoClient(config.mongo_uri, serverSelectionTimeoutMS=timeout_ms)
 
 
 def ensure_indexes(db: Database) -> None:

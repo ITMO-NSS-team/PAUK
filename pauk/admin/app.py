@@ -27,19 +27,29 @@ from fastapi import FastAPI, Form, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pymongo.database import Database
+from pymongo.errors import PyMongoError
 
 from pauk.admin import audit_routes, decision_routes, job_routes, nodes, review_routes
 from pauk.admin.auth import (
     COOKIE,
     SESSION_HOURS,
     AuthError,
+    TooManyAttempts,
     User,
     authenticate,
     close_session,
     open_session,
     read_session,
 )
-from pauk.admin.deps import CsrfChecked, CurrentUser, Db, Session, templates
+from pauk.admin.deps import (
+    MONGO_SILENT,
+    MONGO_TIMEOUT_MS,
+    CsrfChecked,
+    CurrentUser,
+    Db,
+    Session,
+    templates,
+)
 from pauk.graph.audit import SharedGraph
 from pauk.graph.mutations import NODE_FIELDS, RELATIONSHIPS, count_nodes
 from pauk.settings import Settings
@@ -135,7 +145,13 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
     config = config or Settings()
     app = FastAPI(title="PAUK admin", docs_url=None, redoc_url=None, lifespan=_lifespan)
     app.state.config = config
-    app.state.db = db if db is not None else get_mongo_client(config)[config.mongo_db]
+    # A short server-selection timeout, unlike the pipeline's: a command
+    # that waits half a minute for a database to appear is being patient,
+    # a web request doing it is hanging. The panel would rather say Mongo
+    # is not answering while somebody is still looking at the page.
+    app.state.db = (db if db is not None
+                    else get_mongo_client(config, timeout_ms=MONGO_TIMEOUT_MS)
+                    [config.mongo_db])
     # One driver for the whole service, opened lazily: the panel has to
     # start without a graph, since signing in and the accounts live in
     # Mongo. `_lifespan` closes it when the service stops.
@@ -163,7 +179,13 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
         """Show a person what is broken instead of a stack trace."""
         if "text/html" not in request.headers.get("accept", ""):
             return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
-        session = read_session(request.app.state.db, request.cookies.get(COOKIE))
+        # Guarded: an unreachable Mongo is one of the things this page is
+        # here to report, and reading the session to draw the header would
+        # raise again and turn the answer back into a stack trace.
+        try:
+            session = read_session(request.app.state.db, request.cookies.get(COOKIE))
+        except PyMongoError:
+            session = None
         return templates.TemplateResponse(
             request, "unavailable.html",
             {"user": User(login=session["login"], role=session["role"]) if session else None,
@@ -184,15 +206,33 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
         # No CSRF check here on purpose: there is no session yet to carry a
         # token, and a forged login only ever logs the victim in as the
         # attacker — the thing to prevent is a forged *edit*.
-        try:
-            user = authenticate(db, login, password)
-        except AuthError as error:
-            logger.info("failed login for %r", login)
+        def refused(message: str, *, denied: bool, code: int):
             return templates.TemplateResponse(
                 request, "login.html",
-                {"user": None, "error": str(error), "next": _safe_next(next)},
-                status_code=status.HTTP_401_UNAUTHORIZED)
-        token = open_session(db, user)
+                {"user": None, "error": message, "denied": denied,
+                 "next": _safe_next(next)},
+                status_code=code)
+
+        try:
+            user = authenticate(db, login, password)
+            token = open_session(db, user)
+        except TooManyAttempts as error:
+            # Told plainly, unlike a wrong password: which half was wrong is
+            # free information for an attacker, but how long the lock lasts
+            # is not, and somebody who mistyped needs to know to wait.
+            logger.info("locked-out login attempt for %r", login)
+            return refused(f"Слишком много попыток. Попробуйте через {error.minutes} мин.",
+                           denied=False, code=status.HTTP_429_TOO_MANY_REQUESTS)
+        except AuthError:
+            logger.info("failed login for %r", login)
+            return refused("", denied=True, code=status.HTTP_401_UNAUTHORIZED)
+        except PyMongoError as error:
+            # Accounts and sessions live in Mongo, so there is no signing in
+            # without it. Said plainly, in the form, rather than as a stack
+            # trace: this is a service that is down, not a wrong password.
+            logger.warning("mongo is not answering, cannot sign anybody in: %s", error)
+            return refused(MONGO_SILENT, denied=False,
+                           code=status.HTTP_503_SERVICE_UNAVAILABLE)
         response = RedirectResponse(_safe_next(next), status_code=status.HTTP_303_SEE_OTHER)
         response.set_cookie(
             COOKIE, token,
