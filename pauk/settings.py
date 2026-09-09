@@ -77,6 +77,10 @@ class Settings:
         return self.data_dir / "audit"
 
     @property
+    def gui_dir(self) -> Path:
+        return self.data_dir / "gui"
+
+    @property
     def openreview_priority_field_set(self) -> frozenset[str]:
         return frozenset(field.strip().casefold() for field in self.openreview_priority_fields.split(",") if field.strip())
 

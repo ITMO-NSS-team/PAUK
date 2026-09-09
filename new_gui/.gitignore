@@ -1,0 +1,6 @@
+node_modules/
+dist/
+*.local
+
+# Настоящий снепшот графа теперь живёт вне new_gui/ — см. data/gui/ и
+# publicDir в vite.config.ts, игнор для него в корневом .gitignore.

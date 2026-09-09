@@ -21,6 +21,14 @@ data/audit/*
 pauk/gui/data/private/*
 !pauk/gui/data/private/.gitkeep
 
+# new_generate/generate_data.py --out-dir (по умолчанию — pauk.settings.Settings.gui_dir):
+# снепшот графа для new_gui, private — полный, personal-поля включены;
+# public — урезанный вариант для сборки вне корпоративной сети (пока не подключён к new_gui).
+data/gui/private/*
+data/gui/public/*
+!data/gui/private/.gitkeep
+!data/gui/public/.gitkeep
+
 *.egg-info/
 dist/
 build/
