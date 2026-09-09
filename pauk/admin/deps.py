@@ -236,6 +236,27 @@ def job_words(kind) -> str:
 
 templates.env.filters["job_words"] = job_words
 
+
+# Length past which a value is rendered already folded. Deliberately low:
+# the narrowest column that holds one fits about fifty characters to a line,
+# so four lines run out around two hundred. Marking a value that turns out
+# to fit costs a button the script then takes away; missing one that does
+# not would cut the text with nothing saying so.
+LONG_VALUE = 160
+
+
+def is_long(value) -> bool:
+    """Whether a value should arrive folded rather than be folded on sight.
+
+    Decided here and not in the browser. The script used to measure every
+    value after the page had already been painted, so a screenful of article
+    text appeared in full and then collapsed under the reader.
+    """
+    return value is not None and len(str(value)) > LONG_VALUE
+
+
+templates.env.filters["is_long"] = is_long
+
 Db = Annotated[Database, Depends(get_db)]
 Config = Annotated[Settings, Depends(get_config)]
 Session = Annotated[dict | None, Depends(get_session)]

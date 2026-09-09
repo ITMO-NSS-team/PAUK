@@ -44,11 +44,13 @@
 {% block content %}{% endblock %}</main>
 <script>
   {
-    const values = [...document.querySelectorAll(".was, .now, .clip")];
-    values.forEach((value) => value.classList.add("clipped"));
+    // Свёрнутые значения приходят такими с сервера, поэтому мерить нужно
+    // только их, а не всё подряд, и страница не прыгает при загрузке.
+    const values = [...document.querySelectorAll(".clipped")];
     const cut = values.map((value) => value.scrollHeight > value.clientHeight);
     values.forEach((value, index) => {
       if (!cut[index]) {
+        // Уместилось целиком: разворачивать нечего, и кнопка соврала бы.
         value.classList.remove("clipped");
         return;
       }
