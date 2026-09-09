@@ -185,8 +185,8 @@ function openreviewLink(id: string): PanelLink {
 }
 
 /**
- * Строит ссылку `mailto:` из `AuthorDetail.email`/одного значения из
- * `AuthorDetail.emails` — схема захардкожена нами, проверка не нужна.
+ * Строит ссылку `mailto:` из `AuthorDetail.email` — схема захардкожена
+ * нами, проверка не нужна.
  *
  * @param email - адрес почты.
  */
@@ -460,13 +460,7 @@ export function mountPanel(
             rows.push([t("field.googleScholar", lang), [googleScholarLink(authorDetail.google_scholar)]]);
           }
           if (authorDetail?.openreview) rows.push([t("field.openreview", lang), [openreviewLink(authorDetail.openreview)]]);
-          // email/emails — одна строка на оба, mailto-ссылками, без
-          // дублирования: emails может содержать email ещё раз, поэтому
-          // объединяем через Set по значению, а не просто конкатенируем.
-          if (authorDetail) {
-            const allEmails = [...new Set([authorDetail.email, ...authorDetail.emails].filter(Boolean))];
-            if (allEmails.length > 0) rows.push([t("field.email", lang), allEmails.map(emailLink)]);
-          }
+          if (authorDetail?.email) rows.push([t("field.email", lang), [emailLink(authorDetail.email)]]);
           if (authorDetail && authorDetail.affiliations.length > 0) {
             const names = [...new Set(authorDetail.affiliations.map((a) => a.name))];
             rows.push([t("field.affiliations", lang), names.join(", ")]);

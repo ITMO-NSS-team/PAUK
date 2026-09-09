@@ -22,7 +22,7 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
                  "first_name_en": "Ivan", "second_name_en": None, "surname_en": "Ivanov",
                  "name_ru": "Иванов Иван", "name_variants": [], "degree": "к.т.н.", "github": "ivanov", "orcid": None,
                  "openalex_id": "A123", "google_scholar": None, "openreview": None, "email": "ivanov@itmo.ru",
-                 "emails": None, "affiliations": '[{"name": "ITMO"}]'},
+                 "affiliations": '[{"name": "ITMO"}]'},
             ],
             "publications": [
                 {"id": "P1", "title": "Т" * 250, "journal": "Ж", "doi": "10.1/x",
@@ -58,7 +58,6 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
         self.assertEqual(author_detail["degree"], "к.т.н.")
         self.assertEqual(author_detail["openalex_id"], "A123")
         self.assertEqual(author_detail["email"], "ivanov@itmo.ru")
-        self.assertEqual(author_detail["emails"], [])  # None in the snapshot -> [], doesn't raise
         self.assertEqual(author_detail["affiliations"], [{"name": "ITMO"}])  # JSON-text parsed
 
     def test_summary_label_is_always_the_truncated_public_form(self):

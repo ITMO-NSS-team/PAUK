@@ -111,9 +111,8 @@ describe("mountPanel", () => {
     ) as HTMLAnchorElement | null;
     expect(openreviewLink?.textContent).toBe("~Ivan_Ivanov1");
 
-    // email и emails объединены без дублей (email тоже входит в emails во фикстуре).
     const mailLinks = [...panel.querySelectorAll("a[href^='mailto:']")] as HTMLAnchorElement[];
-    expect(mailLinks.map((a) => a.textContent)).toEqual(["ivanov@example.edu", "i.ivanov@corp.example"]);
+    expect(mailLinks.map((a) => a.textContent)).toEqual(["ivanov@example.edu"]);
 
     expect(panel.textContent).toContain("Sample University");
   });

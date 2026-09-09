@@ -80,7 +80,6 @@ export interface AuthorDetail {
   google_scholar: string;
   openreview: string;
   email: string;
-  emails: string[];
   affiliations: Affiliation[];
 }
 

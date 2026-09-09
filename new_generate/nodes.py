@@ -215,9 +215,6 @@ class AuthorNodeBuilder:
                     "google_scholar": row.get("google_scholar") or "",
                     "openreview": row.get("openreview") or "",
                     "email": row.get("email") or "",
-                    # emails - a native graph property list, like
-                    # name_variants/other_names, not JSON-text (see _parse_json_list).
-                    "emails": row.get("emails") or [],
                     "affiliations": _parse_json_list(row.get("affiliations")),
                 }
             )
