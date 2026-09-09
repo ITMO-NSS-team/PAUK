@@ -18,11 +18,24 @@
 - Вывод — голый JSON (не `window.GRAPH=...;`): `new_gui` уже умеет читать
   голый JSON (`core/data.ts::loadGraphData()`), обёртка была нужна только
   старому `pauk/gui/web/`, который сюда не относится.
-- `--public`-сборка (для GitHub Pages) не вырезает отдельные поля из
-  объекта автора, а просто не пишет `authors-detail.json` вовсе — надёжнее,
-  чем список полей на вырезание: забыть добавить в него новое личное поле
-  сейчас невозможно в принципе, потому что личные поля физически не
-  существуют вне detail-файла.
+- Один прогон, без `--public`/`--private`-режима: раньше нужно было запускать
+  генерацию дважды (по разу на каждую сборку), с почти одинаковым
+  `graph-data.json`, отличавшимся только усечением подписи автора. Теперь
+  `GraphDataBuilder` считает ровно одну версию всего — подпись на карте
+  всегда усечённая (`author_label(..., public=True)`, см. `nodes.py`), а
+  `authors-detail.json` всегда содержит все поля персоны (включая приватные)
+  без урезания. "Публичность"/"приватность" решается не содержимым, а
+  местом на диске: `main()` кладёт `graph-data.json`/`repos-detail.json`/
+  `pubs-detail.json` в `public/` (там нет ни одного личного поля), а
+  `authors-detail.json` — только в `private/`. Для локальной разработки
+  (единственный сегодняшний потребитель, `new_gui`, раздаёт статику из
+  ОДНОЙ папки — `vite.config.ts::publicDir`) `graph-data.json`/
+  `repos-detail.json`/`pubs-detail.json` пишутся ДОПОЛНИТЕЛЬНО и в `private/`
+  тоже — так там оказываются все четыре файла разом, как и раньше, без
+  правок в `new_gui`. Настоящее разделение "что покидает корпоративную сеть"
+  происходит на этапе деплоя (аналогично `.github/workflows/pages.yml` для
+  старого `pauk/gui/`) — оттуда берётся только `public/`, `private/` в
+  публичный артефакт вообще не попадает.
 """
 
 from __future__ import annotations
@@ -44,22 +57,19 @@ logger = logging.getLogger(__name__)
 
 class GraphDataBuilder:
     """Собирает граф целиком: раскладка + узлы + рёбра, из снепшота
-    `new_cache` — держит `db`/`seed`/`public` как состояние, `build()`
-    вызывается ровно один раз за прогон.
+    `new_cache` — держит `db`/`seed` как состояние, `build()` вызывается
+    ровно один раз за прогон.
     """
 
-    def __init__(self, db: dict[str, list[dict]], seed: int, *, public: bool = False) -> None:
+    def __init__(self, db: dict[str, list[dict]], seed: int) -> None:
         """Сохраняет входные данные — сама сборка происходит только в `build()`.
 
         Аргументы:
             db: Снепшот графа в форме `new_cache::load_db()`.
             seed: Сид ForceAtlas2 (для воспроизводимости раскладки).
-            public: Собирать ли публичную (GitHub Pages) сборку — при
-                `True` detail-файл авторов не строится вовсе.
         """
         self.db = db
         self.seed = seed
-        self.public = public
 
     def build(self) -> tuple[dict, dict[str, list[dict]]]:
         """Собирает граф целиком: раскладка + узлы + рёбра, из снепшота `new_cache`.
@@ -90,10 +100,9 @@ class GraphDataBuilder:
 
         # Три вида узлов собираются независимо друг от друга (свой Builder на
         # каждый), но всем нужны table (для dept/цвета) и своя часть layout
-        # (позиции). authors — единственный, кому нужен ещё и public (детали
-        # авторов приватные).
+        # (позиции).
         authors_summary, authors_detail = AuthorNodeBuilder(
-            db, authorship, assignment, table, layout.pos_authors, public=self.public
+            db, authorship, assignment, table, layout.pos_authors
         ).build()
         repos_summary, repos_detail = RepoNodeBuilder(db, assignment, table, layout.pos_repos).build()
         pubs_summary, pubs_detail = PubNodeBuilder(authorship, assignment, table, layout.pos_pubs).build()
@@ -130,11 +139,11 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="Генерация статических данных для new_gui")
     parser.add_argument(
-        "--public",
-        action="store_true",
-        help="не строить authors-detail.json - для сборки, покидающей корпоративную сеть (например, GitHub Pages)",
+        "--out-dir",
+        type=Path,
+        default=None,
+        help="базовая папка - внутри неё public/ и private/ (по умолчанию pauk.settings.Settings.gui_dir)",
     )
-    parser.add_argument("--out-dir", type=Path, default=None, help="куда писать graph-data.json и *-detail.json")
     parser.add_argument("--seed", type=int, default=42, help="сид раскладки FA2")
     parser.add_argument(
         "--cache", type=Path, required=True, help="путь к снепшоту графа, снятому 'new_cache' (не 'pauk cache export')"
@@ -144,23 +153,32 @@ def main() -> None:
     # пользователь всегда может перезаписать путь вручную, но по умолчанию
     # данные лягут туда, откуда их заберёт new_gui (см. pauk.settings.gui_dir).
     if args.out_dir is None:
-        args.out_dir = settings.gui_dir / ("public" if args.public else "private")
+        args.out_dir = settings.gui_dir
+    public_dir = args.out_dir / "public"
+    private_dir = args.out_dir / "private"
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-    args.out_dir.mkdir(parents=True, exist_ok=True)  # exist_ok — второй прогон в ту же папку не должен падать
+    public_dir.mkdir(parents=True, exist_ok=True)  # exist_ok — второй прогон в ту же папку не должен падать
+    private_dir.mkdir(parents=True, exist_ok=True)
 
     t0 = time.time()
     db = read_snapshot(args.cache)
-    summary, detail = GraphDataBuilder(db, seed=args.seed, public=args.public).build()
+    summary, detail = GraphDataBuilder(db, seed=args.seed).build()
 
-    dump_json(summary, args.out_dir / "graph-data.json")
-    # detail-файл кроме authors/repos/pubs пишется только если в нём реально
-    # есть строки — для --public сборки authors_detail пуст (см.
-    # AuthorNodeBuilder.build()), и authors-detail.json тогда не появится
-    # на диске вовсе, а не будет лежать пустым списком.
+    # graph-data.json и detail без личных полей идут в public (можно смело
+    # деплоить наружу), и ДОПОЛНИТЕЛЬНО дублируются в private — единственная
+    # причина: new_gui сегодня раздаёт статику из ОДНОЙ папки
+    # (vite.config.ts::publicDir), а Vite не умеет сразу два publicDir.
+    # authors-detail.json — только в private, больше нигде: там единственные
+    # по-настоящему личные поля (email/google_scholar/affiliations/...).
+    dump_json(summary, public_dir / "graph-data.json")
+    dump_json(summary, private_dir / "graph-data.json")
     for kind, rows in detail.items():
-        if rows:
-            dump_json(rows, args.out_dir / f"{kind}-detail.json")
+        if not rows:
+            continue
+        dump_json(rows, private_dir / f"{kind}-detail.json")
+        if kind != "authors":
+            dump_json(rows, public_dir / f"{kind}-detail.json")
 
     logger.info("Готово за %.1f с", time.time() - t0)
 

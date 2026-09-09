@@ -92,48 +92,106 @@ function orcidLink(id: string): PanelLink {
 }
 
 /**
- * Строит ссылку на код публикации из `PubDetail.code_url`, проверяя
- * схему получившегося URL перед тем, как класть его в `href`.
+ * Проверяет схему произвольного URL, пришедшего из данных (не построенного
+ * нами самими), и возвращает его как есть, если схема безопасна.
  *
- * `url` в перспективе приходит из харвестинга GitHub (внешние данные, не
- * только наша синтетическая fixture) — без проверки схемы значение вроде
- * `"javascript:alert(1)"` в поле `code_url` привело бы к выполнению
- * произвольного кода по клику на ссылку (XSS). Если схема не `http:`/`https:`,
- * или `url` вообще не парсится как URL, ссылка заменяется на безопасный
- * `"about:blank"`, а в консоль пишется предупреждение — не тихо, чтобы
- * проблема с данными была заметна разработчику.
+ * Общая часть {@link codeLink} и {@link googleScholarLink}/{@link
+ * openalexUrlLink} — все три поля (`code_url`, `google_scholar`,
+ * `openalex_url`) приходят из внешнего харвестинга (GitHub/Google
+ * Scholar/OpenAlex), а не собираются нами из проверенных частей, как
+ * {@link doiLink}/{@link githubLink}/{@link orcidLink} — без проверки
+ * схемы значение вроде `"javascript:alert(1)"` привело бы к выполнению
+ * произвольного кода по клику (XSS). Если схема не `http:`/`https:`, или
+ * `url` вообще не парсится как URL, возвращается безопасный `"about:blank"`,
+ * а в консоль пишется предупреждение — не тихо, чтобы проблема с данными
+ * была заметна разработчику.
  *
- * DOI ({@link doiLink}) и GitHub/ORCID ({@link githubLink}, {@link orcidLink})
- * такой проверки не требуют — там схема `"https://..."` всегда захардкожена
- * нами, а значение из данных подставляется только в путь, поэтому не может
- * подменить схему ссылки. Здесь же схему определяет сам `url` целиком, так
- * что она может быть чем угодно, включая опасное `javascript:`.
+ * @param url - произвольная ссылка из внешних данных.
+ * @param context - имя вызывающей функции, для текста предупреждения в консоли.
+ * @returns `url` как есть, если схема `http:`/`https:`, иначе `"about:blank"`.
+ */
+function safeHref(url: string, context: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.toString();
+    console.warn(`${context}: недопустимая схема, ссылка заменена на "about:blank": ${url}`);
+  } catch {
+    console.warn(`${context}: значение не распознано как URL, ссылка заменена на "about:blank": ${url}`);
+  }
+  return "about:blank";
+}
+
+/**
+ * Строит ссылку на код публикации из `PubDetail.code_url`, с проверкой
+ * схемы (см. {@link safeHref}).
  *
  * @param url - произвольная ссылка на код из `PubDetail.code_url`.
- * @returns Ссылка с проверенной схемой в `href` (или `"about:blank"`, если
- *   схема небезопасна/не распознана) и коротким путём без
+ * @returns Ссылка с проверенной схемой в `href` и коротким путём без
  *   `"https://github.com/"` в `text` (см. {@link githubShortPath}).
  *
  * @example
  * codeLink("https://github.com/example-org/graph-toolkit");
  * // { href: "https://github.com/example-org/graph-toolkit", text: "example-org/graph-toolkit" }
- *
- * codeLink("javascript:alert(1)");
- * // { href: "about:blank", text: "javascript:alert(1)" } — плюс предупреждение в консоли
  */
 function codeLink(url: string): PanelLink {
-  let href = "about:blank";
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-      href = parsed.toString();
-    } else {
-      console.warn(`codeLink: недопустимая схема в code_url, ссылка заменена на "about:blank": ${url}`);
-    }
-  } catch {
-    console.warn(`codeLink: code_url не распознан как URL, ссылка заменена на "about:blank": ${url}`);
-  }
-  return { href, text: githubShortPath(url) };
+  return { href: safeHref(url, "codeLink"), text: githubShortPath(url) };
+}
+
+/**
+ * Строит ссылку на профиль Google Scholar из `AuthorDetail.google_scholar`
+ * (уже полный URL, в отличие от `orcid`/`openreview`/`openalex_id`, которые
+ * приходят голыми id) — с проверкой схемы (см. {@link safeHref}). Текст
+ * ссылки — фиксированное "Google Scholar", а не сам URL: он длинный и с
+ * query-параметрами, нечитаем в узкой карточке.
+ *
+ * @param url - `AuthorDetail.google_scholar`.
+ */
+function googleScholarLink(url: string): PanelLink {
+  return { href: safeHref(url, "googleScholarLink"), text: "Google Scholar" };
+}
+
+/**
+ * Строит ссылку на страницу публикации на OpenAlex из `PubDetail.openalex_url`
+ * (уже полный URL) — та же схема-проверка, что и у {@link googleScholarLink},
+ * той же причине (внешний харвестинг, не наша сборка ссылки).
+ *
+ * @param url - `PubDetail.openalex_url`.
+ */
+function openalexUrlLink(url: string): PanelLink {
+  return { href: safeHref(url, "openalexUrlLink"), text: "OpenAlex" };
+}
+
+/**
+ * Строит ссылку на профиль автора на OpenAlex по его id
+ * (`AuthorDetail.openalex_id`, например `"A5120308655"`) — схема
+ * `"https://openalex.org/"` захардкожена нами, как и у {@link orcidLink},
+ * проверка не нужна.
+ *
+ * @param id - `AuthorDetail.openalex_id`.
+ */
+function openalexIdLink(id: string): PanelLink {
+  return { href: `https://openalex.org/${id}`, text: id };
+}
+
+/**
+ * Строит ссылку на профиль автора на OpenReview по его id
+ * (`AuthorDetail.openreview`, например `"~Ivan_Ivanov1"`) — схема
+ * захардкожена нами, как и у {@link orcidLink}, проверка не нужна.
+ *
+ * @param id - `AuthorDetail.openreview`.
+ */
+function openreviewLink(id: string): PanelLink {
+  return { href: `https://openreview.net/profile?id=${id}`, text: id };
+}
+
+/**
+ * Строит ссылку `mailto:` из `AuthorDetail.email`/одного значения из
+ * `AuthorDetail.emails` — схема захардкожена нами, проверка не нужна.
+ *
+ * @param email - адрес почты.
+ */
+function emailLink(email: string): PanelLink {
+  return { href: `mailto:${email}`, text: email };
 }
 
 /**
@@ -151,7 +209,7 @@ function codeLink(url: string): PanelLink {
  * @param data - данные графа.
  * @param pubDetails - карта деталей публикаций (настоящие названия/DOI/код публикаций).
  * @param authorDetails - карта личных данных авторов (степень, GitHub, ORCID, варианты имени) — отдельно от `AuthorNode`, см. `contracts/graph.ts::AuthorDetail`.
- * @param repoDetails - карта описаний/владельцев/ссылок репозиториев — отдельно от `RepoNode`, см. `contracts/graph.ts::RepoDetail`.
+ * @param repoDetails - карта описаний/лицензий/типа владельца репозиториев — отдельно от `RepoNode`, см. `contracts/graph.ts::RepoDetail`.
  * @returns Функция отписки (unmount) от Store.
  */
 export function mountPanel(
@@ -397,6 +455,22 @@ export function mountPanel(
           if (authorDetail?.degree) rows.push([t("field.degree", lang), authorDetail.degree]);
           if (authorDetail?.github) rows.push([t("field.github", lang), [githubLink(authorDetail.github)]]);
           if (authorDetail?.orcid) rows.push([t("field.orcid", lang), [orcidLink(authorDetail.orcid)]]);
+          if (authorDetail?.openalex_id) rows.push([t("field.openalexId", lang), [openalexIdLink(authorDetail.openalex_id)]]);
+          if (authorDetail?.google_scholar) {
+            rows.push([t("field.googleScholar", lang), [googleScholarLink(authorDetail.google_scholar)]]);
+          }
+          if (authorDetail?.openreview) rows.push([t("field.openreview", lang), [openreviewLink(authorDetail.openreview)]]);
+          // email/emails — одна строка на оба, mailto-ссылками, без
+          // дублирования: emails может содержать email ещё раз, поэтому
+          // объединяем через Set по значению, а не просто конкатенируем.
+          if (authorDetail) {
+            const allEmails = [...new Set([authorDetail.email, ...authorDetail.emails].filter(Boolean))];
+            if (allEmails.length > 0) rows.push([t("field.email", lang), allEmails.map(emailLink)]);
+          }
+          if (authorDetail && authorDetail.affiliations.length > 0) {
+            const names = [...new Set(authorDetail.affiliations.map((a) => a.name))];
+            rows.push([t("field.affiliations", lang), names.join(", ")]);
+          }
           // Раздельно по источнику — OpenAlex (варианты по публикациям) и
           // ORCID (имя, под которым автор сам просит его указывать) — это
           // разные по происхождению вещи, см. author_variants() в
@@ -429,8 +503,10 @@ export function mountPanel(
         // repos-detail.json есть у каждого репозитория без исключений.
         if (repoDetails.has(node.key)) {
           const repoDetail = repoDetails.get(node.key);
-          rows.push([t("field.owner", lang), repoDetail?.owner ?? ""]);
           if (repoDetail?.description) rows.push([t("field.description", lang), repoDetail.description]);
+          if (repoDetail?.owner_type) rows.push([t("field.ownerType", lang), repoDetail.owner_type]);
+          if (repoDetail?.license) rows.push([t("field.license", lang), repoDetail.license]);
+          if (repoDetail?.has_readme) rows.push([t("field.hasReadme", lang), "✓"]);
         } else {
           rows.push([t("field.loadingDetails", lang), LOADING]);
         }
@@ -446,6 +522,10 @@ export function mountPanel(
 
         const detail = pubDetails.get(node.key);
         if (detail?.doi) rows.push([t("field.doi", lang), [doiLink(detail.doi)]]);
+        if (detail?.type) rows.push([t("field.pubType", lang), detail.type]);
+        if (detail && detail.fields.length > 0) rows.push([t("field.pubFields", lang), detail.fields.join(", ")]);
+        if (detail?.abstract) rows.push([t("field.abstract", lang), detail.abstract]);
+        if (detail?.openalex_url) rows.push([t("field.openalexUrl", lang), [openalexUrlLink(detail.openalex_url)]]);
 
         // Как и в старом showPubCard(): если публикация связана с нашим
         // собственным репозиторием (repo_pub_edges), показываем ссылку на

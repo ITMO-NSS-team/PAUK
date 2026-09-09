@@ -36,6 +36,22 @@ def dense_rank(values: dict[str, int]) -> dict[str, float]:
 PUB_TITLE_MAX_LEN = 200
 
 
+def _parse_json_list(text: str | None) -> list:
+    """Разбирает JSON-текст (`funding`/`versions`/`affiliations`/`code_url` —
+    всё, что `new_cache` пишет как сериализованный список, см.
+    `new_cache/export.py` про `JSON_TEXT_FIELDS`) в список, молча
+    откатываясь на пустой список при отсутствии/битых данных — это поле
+    снепшота, не то, на чём стоит падать всей генерации.
+    """
+    if not text:
+        return []
+    try:
+        parsed = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    return parsed if isinstance(parsed, list) else [parsed]
+
+
 def _initial(value: str) -> str:
     """Первая буква, заглавная, с точкой на конце."""
     return f"{value[0].upper()}."
@@ -127,8 +143,8 @@ def author_variants(row: dict, label_ru: str, label_en: str) -> dict[str, list[s
 
 class AuthorNodeBuilder:
     """Строит записи авторов сразу в двух формах — держит контекст, общий
-    для каждой строки (assignment/table/positions/public), вместо того
-    чтобы протаскивать его параметром в свободную функцию."""
+    для каждой строки (assignment/table/positions), вместо того чтобы
+    протаскивать его параметром в свободную функцию."""
 
     def __init__(
         self,
@@ -137,23 +153,27 @@ class AuthorNodeBuilder:
         assignment: DepartmentAssignment,
         table: DepartmentTable,
         pos: dict[str, tuple[float, float]],
-        *,
-        public: bool,
     ) -> None:
         self.db = db
         self.authorship = authorship
         self.assignment = assignment
         self.table = table
         self.pos = pos
-        self.public = public
 
     def build(self) -> tuple[list[dict], list[dict]]:
         """Строит записи авторов сразу в двух формах.
 
         Возвращает:
-            `(summary, detail)` — `summary` идёт в `graph-data.json["authors"]`,
-            `detail` (пустой список при `public=True`) — в `authors-detail.json`,
-            личные поля не существуют вне detail-файла.
+            `(summary, detail)` — `summary` идёт в `graph-data.json`, `detail`
+            в `authors-detail.json`. Оба содержат ОДИНАКОВЫЕ данные для всех
+            сборок — приватность больше не решается здесь урезанием полей, а
+            решается снаружи, тем, в какую папку `main()` кладёт итоговый
+            файл (`authors-detail.json` — только в `private/`, см.
+            `graph_builder.py`). Подпись на карте (`label`/`label_en`)
+            всегда в усечённой форме (`author_label(..., public=True)`) —
+            это единственный вариант с тех пор, как `graph-data.json` стал
+            одним общим файлом на обе сборки; полное имя видно только через
+            `name_ru`/`name_en` в detail, а он приватный по расположению.
         """
         # set() — публикация могла быть учтена дважды при какой-то нестыковке
         # данных, считаем уникальные id, а не длину списка как есть.
@@ -164,13 +184,11 @@ class AuthorNodeBuilder:
         for row in self.db["persons"]:
             pid_ = row["id"]  # "id", не "key" — так называется колонка в снепшоте (см. new_cache/export.py)
             x, y = self.pos[pid_]
-            # label_ru: собранная подпись ("Фамилия И.О.", возможно усечённая
-            # для public) — если author_label() вернула пусто (нет фамилии
-            # вообще), откат на name_ru целиком, лишь бы карточка не была без подписи.
-            label_ru = author_label(row["surname_ru"], row["first_name_ru"], row["second_name_ru"], public=self.public) or row.get("name_ru") or ""
-            # Английский вариант — та же логика, но откат уже на label_ru
-            # (не на пустую строку), если своей английской формы вообще нет.
-            label_en = author_label(row["surname_en"], row["first_name_en"], row["second_name_en"], public=self.public) or label_ru
+            # label_ru/label_en — всегда усечённая форма (public=True): карта
+            # рисуется из одного файла на все сборки, поэтому полного имени
+            # тут быть не может ни при каких условиях, см. докстринг build().
+            label_ru = author_label(row["surname_ru"], row["first_name_ru"], row["second_name_ru"], public=True) or row.get("name_ru") or ""
+            label_en = author_label(row["surname_en"], row["first_name_en"], row["second_name_en"], public=True) or label_ru
             summary.append(
                 {
                     "key": pid_,
@@ -184,20 +202,25 @@ class AuthorNodeBuilder:
                     "gy": y,
                 }
             )
-            # Для public-сборки detail-запись вообще не создаётся (не просто
-            # с пустыми полями) — см. докстринг build() про то, почему так надёжнее.
-            if not self.public:
-                detail.append(
-                    {
-                        "key": pid_,
-                        "name_ru": row.get("name_ru") or "",
-                        "name_en": row.get("name_en") or "",
-                        "name_variants": author_variants(row, label_ru, label_en),
-                        "degree": row["degree"] or "",
-                        "github": row["github"] or "",
-                        "orcid": row.get("orcid") or "",
-                    }
-                )
+            detail.append(
+                {
+                    "key": pid_,
+                    "openalex_id": row.get("openalex_id") or "",
+                    "name_ru": row.get("name_ru") or "",
+                    "name_en": row.get("name_en") or "",
+                    "name_variants": author_variants(row, label_ru, label_en),
+                    "degree": row["degree"] or "",
+                    "github": row["github"] or "",
+                    "orcid": row.get("orcid") or "",
+                    "google_scholar": row.get("google_scholar") or "",
+                    "openreview": row.get("openreview") or "",
+                    "email": row.get("email") or "",
+                    # emails — как name_variants/other_names, нативный список
+                    # свойства графа, не JSON-текст (см. _parse_json_list).
+                    "emails": row.get("emails") or [],
+                    "affiliations": _parse_json_list(row.get("affiliations")),
+                }
+            )
         return summary, detail
 
 
@@ -251,6 +274,11 @@ class RepoNodeBuilder:
                     "key": rid,
                     "description": row["description"] or "",
                     "url": row["url"] or "",
+                    "has_readme": bool(row["has_readme"]),
+                    "license": row.get("license") or "",
+                    # contributors — список логинов GitHub, не число.
+                    "contributors": row.get("contributors") or [],
+                    "owner_type": row.get("owner_type") or "",
                 }
             )
         return summary, detail
@@ -320,15 +348,6 @@ class PubNodeBuilder:
             title = row["title"] or ""
             if len(title) > PUB_TITLE_MAX_LEN:
                 title = title[: PUB_TITLE_MAX_LEN - 1] + "…"  # -1, чтобы многоточие не выталкивало итог за лимит
-            # code_url в снепшоте — сырая JSON-строка (new_cache отдаёт поле
-            # как есть, не распарсенным, см. new_cache/export.py про
-            # funding/versions/affiliations по той же причине). Битый JSON
-            # или пусто — молча откатываемся на пустой список ссылок, а не падаем.
-            code_url = row["code_url"]
-            try:
-                urls = json.loads(code_url) if code_url else []
-            except (json.JSONDecodeError, TypeError):
-                urls = []
             detail.append(
                 {
                     "key": row["id"],
@@ -336,7 +355,14 @@ class PubNodeBuilder:
                     "journal": row["journal"] or "",
                     "doi": row["doi"] or "",
                     "has_code": bool(row["has_code"]),
-                    "code_url": urls if isinstance(urls, list) else [urls],
+                    "code_url": _parse_json_list(row["code_url"]),
+                    "type": row.get("type") or "",
+                    # fields — нативный список тем OpenAlex, не JSON-текст.
+                    "fields": row.get("fields") or [],
+                    "funding": _parse_json_list(row.get("funding")),
+                    "versions": _parse_json_list(row.get("versions")),
+                    "openalex_url": row.get("openalex_url") or "",
+                    "abstract": row.get("abstract") or "",
                 }
             )
         return summary, detail

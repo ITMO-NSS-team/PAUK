@@ -2,8 +2,9 @@ import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import { describe, expect, it, vi } from "vitest";
 import type { PubDetail } from "../src/contracts/graph";
 import { MAP_CONFIG } from "../src/core/config";
-import { indexDetailsByKey, loadSampleGraphData, loadSamplePubDetails } from "../src/core/data";
+import { indexDetailsByKey } from "../src/core/data";
 import { Store, type AppState } from "../src/core/state";
+import { loadSampleGraphData, loadSamplePubDetails } from "./fixtures";
 import {
   buildEdgeFeatures,
   buildNodeFeatures,

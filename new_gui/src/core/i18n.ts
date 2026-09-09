@@ -64,7 +64,18 @@ export type LocaleKey =
   | "field.orcid"
   | "field.stars"
   | "field.description"
-  | "field.owner"
+  | "field.ownerType"
+  | "field.license"
+  | "field.hasReadme"
+  | "field.openalexId"
+  | "field.googleScholar"
+  | "field.openreview"
+  | "field.email"
+  | "field.affiliations"
+  | "field.pubType"
+  | "field.pubFields"
+  | "field.abstract"
+  | "field.openalexUrl"
   | "field.year"
   | "field.yearUnknown"
   | "field.unknownDept"
@@ -113,7 +124,18 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.orcid": "ORCID",
     "field.stars": "Звёзд",
     "field.description": "Описание",
-    "field.owner": "Владелец",
+    "field.ownerType": "Тип владельца",
+    "field.license": "Лицензия",
+    "field.hasReadme": "Есть README",
+    "field.openalexId": "OpenAlex",
+    "field.googleScholar": "Google Scholar",
+    "field.openreview": "OpenReview",
+    "field.email": "Email",
+    "field.affiliations": "Аффилиации",
+    "field.pubType": "Тип публикации",
+    "field.pubFields": "Направления",
+    "field.abstract": "Аннотация",
+    "field.openalexUrl": "OpenAlex",
     "field.year": "Год",
     "field.yearUnknown": "неизвестен",
     "field.unknownDept": "—",
@@ -161,7 +183,18 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.orcid": "ORCID",
     "field.stars": "Stars",
     "field.description": "Description",
-    "field.owner": "Owner",
+    "field.ownerType": "Owner type",
+    "field.license": "License",
+    "field.hasReadme": "Has README",
+    "field.openalexId": "OpenAlex",
+    "field.googleScholar": "Google Scholar",
+    "field.openreview": "OpenReview",
+    "field.email": "Email",
+    "field.affiliations": "Affiliations",
+    "field.pubType": "Publication type",
+    "field.pubFields": "Fields",
+    "field.abstract": "Abstract",
+    "field.openalexUrl": "OpenAlex",
     "field.year": "Year",
     "field.yearUnknown": "unknown",
     "field.unknownDept": "—",

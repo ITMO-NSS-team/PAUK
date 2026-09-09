@@ -1,18 +1,5 @@
-import type {
-  AuthorDetail,
-  AuthorNode,
-  GraphData,
-  PubDetail,
-  PubNode,
-  RepoAuthorEdge,
-  RepoDetail,
-  RepoNode,
-} from "../contracts/graph";
+import type { AuthorNode, GraphData, PubDetail, PubNode, RepoAuthorEdge, RepoNode } from "../contracts/graph";
 import { localize, type Lang } from "./i18n";
-import sampleGraphData from "./fixtures/graph-data.sample.json";
-import sampleAuthorDetails from "./fixtures/authors-detail.sample.json";
-import sampleRepoDetails from "./fixtures/repos-detail.sample.json";
-import samplePubDetails from "./fixtures/pubs-detail.sample.json";
 
 /** Любой из трёх видов узлов графа — авторы, репозитории, публикации. */
 type GraphNode = AuthorNode | RepoNode | PubNode;
@@ -23,11 +10,6 @@ type GraphNode = AuthorNode | RepoNode | PubNode;
  * — та обёртка была нужна только старому `pauk/gui/web/` (подключение через
  * `<script>` без сборщика), `new_generate/generate_data.py` пишет обычный
  * `.json`, поэтому здесь просто `response.json()`.
- *
- * Пока не используется нигде в приложении: v2-прототип временно работает
- * на синтетическом фикстур-наборе (см. {@link loadSampleGraphData} ниже) —
- * реальные данные подключим отдельным шагом, когда дойдём до интеграции с
- * генератором.
  *
  * @param url - адрес файла `graph-data.json` (например, из Vite dev-сервера прокси или статики).
  * @returns Промис с данными графа.
@@ -52,10 +34,11 @@ export async function loadGraphData(url: string): Promise<GraphData> {
  * это массив однотипных плоских объектов, а не структура с обязательными
  * полями-массивами разной вложенности.
  *
- * Файла может не быть вовсе (`--public`-сборка `new_generate` не пишет
- * `authors-detail.json`) — тогда `!response.ok` бросает Error, а
- * app/main.ts уже ловит её через `.catch()` на каждую из трёх фоновых
- * загрузок, не роняя приложение.
+ * Файла может не быть вовсе (например, `authors-detail.json` в публичной,
+ * покинувшей корпоративную сеть сборке — см. `new_generate/graph_builder.py`
+ * про то, что этот файл пишется только в `private/`) — тогда `!response.ok`
+ * бросает Error, а app/main.ts уже ловит её через `.catch()` на каждую из
+ * трёх фоновых загрузок, не роняя приложение.
  *
  * @typeParam T - вид детали ({@link AuthorDetail}, {@link RepoDetail} или `PubDetail`).
  * @param url - адрес `*-detail.json`.
@@ -70,69 +53,13 @@ export async function loadDetails<T>(url: string): Promise<T[]> {
 }
 
 /**
- * Загружает синтетические данные для разработки v2-прототипа — небольшой,
- * но полный набор (департаменты, авторы, репозитории, публикации, все виды
- * рёбер), который сам соответствует контракту {@link GraphData}. Реальный
- * `pauk/gui/data` сейчас не трогаем и на него не полагаемся — см.
- * `src/core/fixtures/graph-data.sample.json`.
- *
- * @returns Промис с фикстур-данными (асинхронность — только ради единого
- *   интерфейса с {@link loadGraphData}, сам импорт JSON синхронный).
- */
-export async function loadSampleGraphData(): Promise<GraphData> {
-  const data = sampleGraphData as GraphData;
-  if (import.meta.env.DEV) assertGraphData(data);
-  return data;
-}
-
-/**
- * Загружает синтетический аналог `pubs-detail.json` — детали публикаций
- * (настоящее название, журнал, DOI, ссылка на код), которых нет в самом
- * `GraphData`. Соответствует по ключам публикациям из
- * {@link loadSampleGraphData} (P1-P6) — реальный `pubs-detail.json`
- * подключим тем же следующим шагом, что и `graph-data.json` (см.
- * {@link loadGraphData}).
- *
- * @returns Промис со списком деталей публикаций.
- */
-export async function loadSamplePubDetails(): Promise<PubDetail[]> {
-  return samplePubDetails as PubDetail[];
-}
-
-/**
- * Загружает синтетический аналог `authors-detail.json` — личные данные
- * авторов (ФИО целиком, варианты имени, степень, GitHub, ORCID), которых
- * больше нет в самом `AuthorNode` (см. {@link AuthorDetail} в
- * contracts/graph.ts). Каждый автор из {@link loadSampleGraphData} имеет
- * запись здесь (даже если все поля пустые) — `new_generate` строит этот
- * файл на каждого автора без исключения, за вычетом самой `--public`
- * сборки, у которой этого файла нет вовсе.
- *
- * @returns Промис со списком деталей авторов.
- */
-export async function loadSampleAuthorDetails(): Promise<AuthorDetail[]> {
-  return sampleAuthorDetails as AuthorDetail[];
-}
-
-/**
- * Загружает синтетический аналог `repos-detail.json` — описание, владелец
- * и ссылка репозитория, которых больше нет в самом `RepoNode` (см.
- * {@link RepoDetail} в contracts/graph.ts).
- *
- * @returns Промис со списком деталей репозиториев.
- */
-export async function loadSampleRepoDetails(): Promise<RepoDetail[]> {
-  return sampleRepoDetails as RepoDetail[];
-}
-
-/**
  * Строит индекс "ключ -> сам объект" по списку любых деталей (авторов,
  * репозиториев или публикаций) — единая функция вместо трёх одинаковых по
  * смыслу копий, по одной на каждый вид `*Detail`. Тот же принцип, что и
  * {@link indexByKey} ниже, только для detail-объектов, а не узлов графа.
  *
  * @typeParam T - вид детали (в приложении — {@link AuthorDetail}, {@link RepoDetail} или `PubDetail`).
- * @param details - список деталей (например, результат {@link loadSampleAuthorDetails}).
+ * @param details - список деталей (например, результат {@link loadDetails}).
  * @returns Map от `T.key` к самому объекту `T`.
  *
  * @example
@@ -160,7 +87,7 @@ export function indexDetailsByKey<T extends { key: string }>(details: T[]): Map<
  * const authorDetails = new Map<string, AuthorDetail>(); // пока пуст
  * mountPanel(store, data, pubDetails, authorDetails, repoDetails); // уже держит эту ссылку
  * // ...позже:
- * mergeDetailsInto(authorDetails, await loadSampleAuthorDetails());
+ * mergeDetailsInto(authorDetails, await loadDetails<AuthorDetail>(url));
  * store.notify(); // mountPanel перечитывает ту же authorDetails и видит новые записи
  */
 export function mergeDetailsInto<T extends { key: string }>(target: Map<string, T>, details: T[]): void {

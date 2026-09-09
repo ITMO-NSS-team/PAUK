@@ -1,12 +1,13 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { describe, expect, it, vi } from "vitest";
 import type { PubDetail, RepoDetail } from "../src/contracts/graph";
-import { indexDetailsByKey, loadSampleGraphData, loadSamplePubDetails } from "../src/core/data";
+import { indexDetailsByKey } from "../src/core/data";
 import { Store, type AppState } from "../src/core/state";
 import { mountTabs } from "../src/features/tabs";
 import { authorsTab } from "../src/features/tabs/authors";
 import { pubsTab } from "../src/features/tabs/pubs";
 import { reposTab } from "../src/features/tabs/repos";
+import { loadSampleGraphData, loadSamplePubDetails } from "./fixtures";
 
 const NO_PUB_DETAILS = new Map<string, PubDetail>();
 const NO_REPO_DETAILS = new Map<string, RepoDetail>();

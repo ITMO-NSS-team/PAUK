@@ -10,7 +10,22 @@ from __future__ import annotations
 
 import unittest
 
-from new_generate.nodes import author_label, author_variants, dense_rank
+from new_generate.nodes import _parse_json_list, author_label, author_variants, dense_rank
+
+
+class ParseJsonListTest(unittest.TestCase):
+    def test_valid_json_list_passes_through(self):
+        self.assertEqual(_parse_json_list('["a", "b"]'), ["a", "b"])
+
+    def test_none_or_empty_returns_empty_list(self):
+        self.assertEqual(_parse_json_list(None), [])
+        self.assertEqual(_parse_json_list(""), [])
+
+    def test_malformed_json_returns_empty_list_not_raise(self):
+        self.assertEqual(_parse_json_list("{not json"), [])
+
+    def test_a_lone_json_object_is_wrapped_in_a_list(self):
+        self.assertEqual(_parse_json_list('{"name": "ITMO"}'), [{"name": "ITMO"}])
 
 
 class DenseRankTest(unittest.TestCase):

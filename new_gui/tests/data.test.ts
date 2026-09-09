@@ -1,15 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RepoDetail } from "../src/contracts/graph";
-import {
-  assertGraphData,
-  indexByKey,
-  indexDetailsByKey,
-  loadSampleAuthorDetails,
-  loadSampleGraphData,
-  loadSampleRepoDetails,
-  mergeDetailsInto,
-  nodeLabel,
-} from "../src/core/data";
+import { assertGraphData, indexByKey, indexDetailsByKey, mergeDetailsInto, nodeLabel } from "../src/core/data";
+import { loadSampleAuthorDetails, loadSampleGraphData, loadSampleRepoDetails } from "./fixtures";
 
 describe("loadSampleGraphData", () => {
   it("загружает фикстуру и проходит проверку формы", async () => {
@@ -65,10 +57,15 @@ describe("loadSampleAuthorDetails / loadSampleRepoDetails / indexDetailsByKey", 
 
   it("indexDetailsByKey работает с любым видом *Detail — не только с публикациями", async () => {
     const repoDetails = indexDetailsByKey(await loadSampleRepoDetails());
-    expect(repoDetails.get("R1")?.owner).toBe("example-org");
+    expect(repoDetails.get("R1")?.description).toBe("Инструменты для построения раскладки графа");
     expect(repoDetails.get("такого-ключа-точно-нет")).toBeUndefined();
   });
 });
+
+/** Минимальный валидный RepoDetail для тестов ниже — важно только поле `description`, остальные нужны лишь для типа. */
+function repoDetailStub(key: string, description: string): RepoDetail {
+  return { key, description, url: "", has_readme: false, license: "", contributors: [], owner_type: "" };
+}
 
 describe("mergeDetailsInto", () => {
   it("добавляет записи в УЖЕ СУЩЕСТВУЮЩУЮ карту по той же ссылке, не создаёт новую", async () => {
@@ -79,17 +76,15 @@ describe("mergeDetailsInto", () => {
     mergeDetailsInto(target, await loadSampleRepoDetails());
 
     expect(target).toBe(before);
-    expect(target.get("R1")?.owner).toBe("example-org");
+    expect(target.get("R1")?.description).toBe("Инструменты для построения раскладки графа");
   });
 
   it("не трогает записи, которых нет во входном списке (мержит, а не заменяет карту целиком)", () => {
-    const target = new Map<string, RepoDetail>([
-      ["custom", { key: "custom", description: "", owner: "уже был до мержа", url: "" }],
-    ]);
+    const target = new Map<string, RepoDetail>([["custom", repoDetailStub("custom", "уже был до мержа")]]);
 
-    mergeDetailsInto(target, [{ key: "R1", description: "", owner: "новый", url: "" }]);
+    mergeDetailsInto(target, [repoDetailStub("R1", "новый")]);
 
-    expect(target.get("custom")?.owner).toBe("уже был до мержа");
-    expect(target.get("R1")?.owner).toBe("новый");
+    expect(target.get("custom")?.description).toBe("уже был до мержа");
+    expect(target.get("R1")?.description).toBe("новый");
   });
 });

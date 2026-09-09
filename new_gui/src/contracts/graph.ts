@@ -42,12 +42,27 @@ export interface AuthorNode {
   gy: number;
 }
 
-// Личные данные автора — отдельным файлом (authors-detail.json), которого
-// вообще не существует в --public сборке (не отдельные поля вырезаны из
-// объекта, как раньше, а целиком нет файла — надёжнее: новое личное поле
-// физически не может утечь туда, где детали не публикуются).
+// Один пункт из OpenAlex/ORCID affiliation-истории автора (new_cache
+// хранит это как JSON-текст на узле Person, new_generate его разбирает —
+// см. new_generate/nodes.py::_parse_json_list). years — годы, за которые
+// известна эта аффилиация; source — "openalex" или "orcid".
+export interface Affiliation {
+  name: string;
+  ror: string;
+  years: number[];
+  source: string;
+}
+
+// Личные данные автора — отдельным файлом (authors-detail.json). Файл
+// больше не режется по полям в зависимости от сборки (--public/--private
+// новый_generate не знает, см. graph_builder.py) — приватность решается
+// тем, в какую папку (public/private) этот файл физически попадает при
+// деплое, не содержимым самого файла.
 export interface AuthorDetail {
   key: string;
+  // Единственное поле здесь с тегом "public" в new_cache/export.py — id
+  // автора в OpenAlex, ссылка на его публичный профиль.
+  openalex_id: string;
   // Полное имя на каждом языке — заголовок приватной карточки автора
   // (features/panels.ts), как только этот detail домержился; до этого
   // момента заголовок — сокращённая AuthorNode.label/label_en.
@@ -62,6 +77,11 @@ export interface AuthorDetail {
   degree: string;
   github: string;
   orcid: string;
+  google_scholar: string;
+  openreview: string;
+  email: string;
+  emails: string[];
+  affiliations: Affiliation[];
 }
 
 export interface RepoNode {
@@ -78,8 +98,14 @@ export interface RepoNode {
 export interface RepoDetail {
   key: string;
   description: string;
-  owner: string;
   url: string;
+  has_readme: boolean;
+  license: string;
+  // Логины GitHub контрибьюторов репозитория (не путать с
+  // features/panels.ts::repoContributorsOf() — та строит список ИЗ НАШЕГО
+  // графа, по repo_author_edges, этот же список — сырой, с самого GitHub).
+  contributors: string[];
+  owner_type: string;
 }
 
 export interface PubNode {
@@ -105,6 +131,15 @@ export interface PubDetail {
   doi: string;
   has_code: boolean;
   code_url: string[];
+  type: string;
+  fields: string[];
+  // Почти всегда пустые массивы на реальных данных сегодня (OpenAlex редко
+  // отдаёт что-то непустое) — тип оставлен нестрогим (не описываем форму
+  // элемента), пока не появится реальный непустой пример.
+  funding: unknown[];
+  versions: unknown[];
+  openalex_url: string;
+  abstract: string;
 }
 
 export interface Edge {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { loadSampleGraphData } from "../src/core/data";
 import { parseUrlState, serializeUrlState } from "../src/core/url";
+import { loadSampleGraphData } from "./fixtures";
 
 describe("serializeUrlState", () => {
   it("без selection кладёт только tab", () => {

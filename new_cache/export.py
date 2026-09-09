@@ -232,6 +232,13 @@ def load_db(driver) -> dict[str, list]:
         "p.id AS id, "
         # public
         "p.openalex_id AS openalex_id, "
+        # both (split into public/private)
+        "p.surname_ru AS surname_ru, "
+        "p.first_name_ru AS first_name_ru, "
+        "p.second_name_ru AS second_name_ru, "
+        "p.surname_en AS surname_en, "
+        "p.first_name_en AS first_name_en, "
+        "p.second_name_en AS second_name_en, "
         # private
         "p.name_ru AS name_ru, "
         "p.name_en AS name_en, "
@@ -245,13 +252,6 @@ def load_db(driver) -> dict[str, list]:
         "p.email AS email, "
         "p.emails AS emails, "
         "p.affiliations AS affiliations, "
-        # both (split into public/private)
-        "p.surname_ru AS surname_ru, "
-        "p.first_name_ru AS first_name_ru, "
-        "p.second_name_ru AS second_name_ru, "
-        "p.surname_en AS surname_en, "
-        "p.first_name_en AS first_name_en, "
-        "p.second_name_en AS second_name_en, "
         # stubs
         # "p.thesis AS thesis, "  # STUB
         # "p.scopus_id AS scopus_id, "  # STUB

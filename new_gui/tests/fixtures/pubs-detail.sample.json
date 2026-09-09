@@ -5,7 +5,13 @@
     "journal": "Вестник прикладных систем",
     "doi": "10.1234/vas.2024.001",
     "has_code": true,
-    "code_url": ["https://github.com/example-org/graph-toolkit"]
+    "code_url": ["https://github.com/example-org/graph-toolkit"],
+    "type": "article",
+    "fields": ["Computer Science"],
+    "funding": [],
+    "versions": [],
+    "openalex_url": "https://openalex.org/W1000000001",
+    "abstract": "Краткое описание метода раскладки графов."
   },
   {
     "key": "P2",
@@ -13,7 +19,13 @@
     "journal": "Журнал анализа данных",
     "doi": "10.1234/jad.2023.014",
     "has_code": false,
-    "code_url": []
+    "code_url": [],
+    "type": "article",
+    "fields": ["Computer Science"],
+    "funding": [],
+    "versions": [],
+    "openalex_url": "https://openalex.org/W1000000002",
+    "abstract": ""
   },
   {
     "key": "P3",
@@ -21,7 +33,13 @@
     "journal": "Журнал анализа данных",
     "doi": "10.1234/jad.2023.022",
     "has_code": true,
-    "code_url": ["https://github.com/example-org/data-pipeline"]
+    "code_url": ["https://github.com/example-org/data-pipeline"],
+    "type": "article",
+    "fields": ["Computer Science"],
+    "funding": [],
+    "versions": [],
+    "openalex_url": "https://openalex.org/W1000000003",
+    "abstract": ""
   },
   {
     "key": "P4",
@@ -29,7 +47,13 @@
     "journal": "Робототехника и мехатроника",
     "doi": "10.1234/rm.2022.007",
     "has_code": true,
-    "code_url": ["https://github.com/example-org/robo-sim"]
+    "code_url": ["https://github.com/example-org/robo-sim"],
+    "type": "conference-paper",
+    "fields": ["Engineering"],
+    "funding": [],
+    "versions": [],
+    "openalex_url": "https://openalex.org/W1000000004",
+    "abstract": ""
   },
   {
     "key": "P5",
@@ -37,7 +61,13 @@
     "journal": "Вестник прикладных систем",
     "doi": "10.1234/vas.2021.003",
     "has_code": false,
-    "code_url": []
+    "code_url": [],
+    "type": "article",
+    "fields": ["Computer Science"],
+    "funding": [],
+    "versions": [],
+    "openalex_url": "https://openalex.org/W1000000005",
+    "abstract": ""
   },
   {
     "key": "P6",
@@ -45,6 +75,12 @@
     "journal": "Робототехника и мехатроника",
     "doi": "10.1234/rm.2024.011",
     "has_code": true,
-    "code_url": ["https://github.com/example-org/robo-sim", "https://github.com/example-org/stat-tools"]
+    "code_url": ["https://github.com/example-org/robo-sim", "https://github.com/example-org/stat-tools"],
+    "type": "conference-paper",
+    "fields": ["Computer Science", "Engineering"],
+    "funding": [],
+    "versions": [],
+    "openalex_url": "https://openalex.org/W1000000006",
+    "abstract": ""
   }
 ]

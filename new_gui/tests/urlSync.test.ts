@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { loadSampleGraphData } from "../src/core/data";
 import { Store, type AppState } from "../src/core/state";
 import { mountUrlSync } from "../src/features/urlSync";
+import { loadSampleGraphData } from "./fixtures";
 
 function initialState(overrides: Partial<AppState> = {}): AppState {
   return {

@@ -1,15 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { AuthorDetail, PubDetail, RepoDetail } from "../src/contracts/graph";
-import {
-  indexDetailsByKey,
-  loadSampleAuthorDetails,
-  loadSampleGraphData,
-  loadSamplePubDetails,
-  loadSampleRepoDetails,
-  mergeDetailsInto,
-} from "../src/core/data";
+import { indexDetailsByKey, mergeDetailsInto } from "../src/core/data";
 import { Store, type AppState } from "../src/core/state";
 import { mountPanel } from "../src/features/panels";
+import { loadSampleAuthorDetails, loadSampleGraphData, loadSamplePubDetails, loadSampleRepoDetails } from "./fixtures";
 
 const NO_PUB_DETAILS = new Map<string, PubDetail>();
 const NO_AUTHOR_DETAILS = new Map<string, AuthorDetail>();
@@ -94,6 +88,34 @@ describe("mountPanel", () => {
 
     const orcidLink = panel.querySelector("a[href='https://orcid.org/0000-0001-2345-6789']") as HTMLAnchorElement | null;
     expect(orcidLink?.textContent).toBe("0000-0001-2345-6789");
+  });
+
+  it("карточка автора показывает OpenAlex/Google Scholar/OpenReview/email/аффилиации, когда они заполнены", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    // A1 в authors-detail.sample.json — все эти поля заполнены.
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A1" } });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    const openalexLink = panel.querySelector("a[href='https://openalex.org/A5000000001']") as HTMLAnchorElement | null;
+    expect(openalexLink?.textContent).toBe("A5000000001");
+
+    const scholarLink = panel.querySelector(
+      "a[href='https://scholar.google.com/citations?user=sample1']",
+    ) as HTMLAnchorElement | null;
+    expect(scholarLink?.textContent).toBe("Google Scholar");
+
+    const openreviewLink = panel.querySelector(
+      "a[href='https://openreview.net/profile?id=~Ivan_Ivanov1']",
+    ) as HTMLAnchorElement | null;
+    expect(openreviewLink?.textContent).toBe("~Ivan_Ivanov1");
+
+    // email и emails объединены без дублей (email тоже входит в emails во фикстуре).
+    const mailLinks = [...panel.querySelectorAll("a[href^='mailto:']")] as HTMLAnchorElement[];
+    expect(mailLinks.map((a) => a.textContent)).toEqual(["ivanov@example.edu", "i.ivanov@corp.example"]);
+
+    expect(panel.textContent).toContain("Sample University");
   });
 
   it("не показывает строки GitHub/ORCID/степени у автора без этих полей", async () => {
@@ -220,6 +242,29 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain(repoDetail.description);
   });
 
+  it("карточка репозитория показывает тип владельца, лицензию и наличие README", async () => {
+    const data = await loadSampleGraphData();
+    // R1 во фикстуре: has_readme=true, license="MIT", owner_type="organization".
+    const repoDetails = indexDetailsByKey(await loadSampleRepoDetails());
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "R1" } });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, repoDetails);
+
+    expect(panel.textContent).toContain("organization");
+    expect(panel.textContent).toContain("MIT");
+    expect(panel.textContent).toContain("✓");
+  });
+
+  it("не показывает строку лицензии у репозитория без неё (R2 во фикстуре)", async () => {
+    const data = await loadSampleGraphData();
+    const repoDetails = indexDetailsByKey(await loadSampleRepoDetails());
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "R2" } });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, repoDetails);
+
+    expect(panel.textContent).not.toContain("Лицензия");
+  });
+
   it("не показывает строки участников/публикаций у репозитория без единой связи", async () => {
     const data = await loadSampleGraphData();
     // R4 во фикстуре не встречается ни в одном repo_pub_edges.
@@ -253,6 +298,24 @@ describe("mountPanel", () => {
     const title = panel.querySelector("h3")?.textContent;
     expect(title).toBe(pubDetails.get(pub.key)?.label);
     expect(title).not.toBe(pub.key);
+  });
+
+  it("карточка публикации показывает тип, направления, аннотацию и ссылку на OpenAlex", async () => {
+    const data = await loadSampleGraphData();
+    const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
+    // P1 во фикстуре: type="article", fields=["Computer Science"], abstract непустой.
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "P1" } });
+
+    mountPanel(store, data, pubDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.textContent).toContain("article");
+    expect(panel.textContent).toContain("Computer Science");
+    expect(panel.textContent).toContain("Краткое описание метода раскладки графов.");
+
+    const openalexLink = panel.querySelector(
+      "a[href='https://openalex.org/W1000000001']",
+    ) as HTMLAnchorElement | null;
+    expect(openalexLink?.textContent).toBe("OpenAlex");
   });
 
   it("показывает DOI и ссылку на код как кликабельные <a>, когда есть pubDetails и нет связанного репозитория", async () => {
@@ -310,6 +373,12 @@ describe("mountPanel", () => {
       doi: "",
       has_code: true,
       code_url: ["javascript:alert(1)"],
+      type: "",
+      fields: [],
+      funding: [],
+      versions: [],
+      openalex_url: "",
+      abstract: "",
     };
     const pubDetails = new Map([[pub.key, malicious]]);
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: pub.key } });
