@@ -401,6 +401,12 @@ class WithdrawingAChoiceTest(unittest.TestCase):
 
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
+        # Asked by a run first, the way it happens: a choice recorded out of
+        # nowhere is a question nobody put, and withdrawing one removes it.
+        review.record_held(self.db, [{
+            "status": "held", "person": "A1", "name_raw": "Andrei Kuznetsov",
+            "records": self.RECORDS, "record_names": ["Кузнецов А. Г.", "Кузнецов А. Д."],
+            "held_because": ["the catalog holds several people under this name"]}])
         review.record_choice(self.db, "A1", self.RECORDS, self.RECORDS[0],
                              actor="user:roman")
 
@@ -446,3 +452,32 @@ class StaffCannotBeAnsweredYesTest(unittest.TestCase):
                               review.DIFFERENT)
         self.assertEqual(review.count(self.db, answered=True), 1)
         self.assertEqual(review.staff_choices(self.db), {})
+
+
+class WithdrawingWhatNobodyAskedTest(unittest.TestCase):
+    """A split writes answers about pairs the rules never held.
+
+    Withdrawing one used to leave a row in the queue with no names, no
+    reason and nothing to decide on — a question that had never been put.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        review.record_held(self.db, [held_group(("A1", "A2", "A3"))])
+        review.record_split(self.db, ["A1", "A2", "A3"], ["A1", "A2"], actor="user:roman")
+
+    def test_the_by_products_carry_the_names_the_group_knew(self):
+        # Otherwise the answered tab is a list of bare OpenAlex ids.
+        (pair,) = [row for row in review.questions(self.db)
+                   if row["_id"] == "person_pair:A1:A3"]
+        self.assertEqual(pair["evidence"]["names"], ["Andrey Bogdanov", "Andrey Bogdanov"])
+
+    def test_withdrawing_one_removes_it_rather_than_blanking_it(self):
+        review.withdraw(self.db, review.PAIR, ["A1", "A3"])
+        self.assertEqual(review.count(self.db, answered=False), 0)
+        self.assertIsNone(self.db[review.COLLECTION].find_one({"_id": "person_pair:A1:A3"}))
+
+    def test_a_question_a_run_really_asked_is_kept(self):
+        review.withdraw(self.db, review.GROUP, ["A1", "A2", "A3"])
+        (left,) = review.questions(self.db, answered=False)
+        self.assertEqual(left["_id"], "person_group:A1:A2:A3")

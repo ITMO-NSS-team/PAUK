@@ -121,7 +121,11 @@ def _people(row: dict, evidence: dict) -> list[dict]:
     # only the person has a card to open.
     person = row.get("person") or evidence.get("person")
     shown = []
-    for member, name in zip(row["members"], names, strict=False):
+    for index, member in enumerate(row["members"]):
+        # An answer given before the question existed carries no evidence at
+        # all, so there are no names to pair with. Zipping the two dropped
+        # every subject and left the row about nobody.
+        name = names[index] if index < len(names) else None
         account = row["kind"] == review.GITHUB and member == login
         record = row["kind"] == review.STAFF and member != person
         shown.append({

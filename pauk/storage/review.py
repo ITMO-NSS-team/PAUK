@@ -237,7 +237,8 @@ def record_disputed(db: Database, report: list[dict]) -> int:
 
 
 def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
-                   actor: str = "unknown", note: str = "") -> dict:
+                   actor: str = "unknown", note: str = "",
+                   names: list[str | None] | None = None) -> dict:
     """Write down what a person decided about one question.
 
     The question need not exist yet. Somebody may answer from the CLI about
@@ -272,7 +273,11 @@ def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
          "$unset": {"skipped_at": "", "skipped_by": "",
                     "disputed_at": "", "disputed_rule": ""},
          "$setOnInsert": {"kind": kind, "members": sorted(set(members)),
-                          "evidence": {}, "seen_at": moment, "source": STAGE}},
+                          # Names when the caller has them: a pair answered
+                          # before any run held it has no evidence of its
+                          # own, and a row of bare ids asks nothing.
+                          "evidence": {"names": names} if names else {},
+                          "seen_at": moment, "source": STAGE}},
         upsert=True)
     logger.info("review: %s answered %s by %s", key, verdict, actor)
     return db[COLLECTION].find_one({"_id": key})
@@ -330,15 +335,26 @@ def record_split(db: Database, members: list[str], same: list[str],
         raise ReviewError("the group was refused precisely because all of it "
                           "cannot be one person")
     rest = [member for member in members if member not in same]
+    # The group knows what its members are called; the pairs it writes would
+    # otherwise be rows of bare ids.
+    asked = db[COLLECTION].find_one({"_id": question_id(GROUP, members)}) or {}
+    known = dict(zip(members, (asked.get("evidence") or {}).get("names") or [],
+                     strict=False))
+
+    def named(*people: str) -> list[str | None]:
+        return [known.get(person) for person in people]
+
     # Inside the subset first, so a write that stops halfway merges nothing:
     # the rules rebuild the whole group and refuse it again.
     written = 0
     for first, second in combinations(same, 2):
-        record_verdict(db, PAIR, [first, second], SAME, actor=actor, note=note)
+        record_verdict(db, PAIR, [first, second], SAME, actor=actor, note=note,
+                       names=named(first, second))
         written += 1
     for first in same:
         for second in rest:
-            record_verdict(db, PAIR, [first, second], DIFFERENT, actor=actor, note=note)
+            record_verdict(db, PAIR, [first, second], DIFFERENT, actor=actor,
+                           note=note, names=named(first, second))
             written += 1
     record_verdict(db, GROUP, members, DIFFERENT, actor=actor, note=note)
     logger.info("review: group %s split by %s, %d pair(s) written",
@@ -349,11 +365,20 @@ def record_split(db: Database, members: list[str], same: list[str],
 def withdraw(db: Database, kind: str, members: list[str]) -> bool:
     """Take an answer back, leaving the question in the queue.
 
-    The question itself is kept: it was asked by a real run, and deleting
-    it would only mean the next run asks it again from scratch.
+    The question itself is kept: it was asked by a real run, and deleting it
+    would only mean the next run asks it again from scratch.
+
+    Unless no run ever asked it. A split writes answers about pairs the
+    rules never held, and withdrawing one left a row in the queue with no
+    reason and nothing to decide on. A held question always says why it was
+    held; that is what tells the two apart.
     """
+    key = question_id(kind, members)
+    asked = db[COLLECTION].find_one({"_id": key})
+    if asked is not None and not (asked.get("evidence") or {}).get("held_because"):
+        return db[COLLECTION].delete_one({"_id": key}).deleted_count > 0
     result = db[COLLECTION].update_one(
-        {"_id": question_id(kind, members)},
+        {"_id": key},
         {"$unset": {"verdict": "", "actor": "", "note": "",
                     "decided_at": "", "applied_at": "",
                     # The catalog record chosen goes with the answer that

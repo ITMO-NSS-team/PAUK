@@ -670,3 +670,70 @@ class ColumnsSayWhoSpeaksTest(unittest.TestCase):
         decided = self.cells(login="guest")[3]
         self.assertIn("разные люди", decided)
         self.assertNotIn("/review/withdraw", decided)
+
+
+class QuestionWithNoEvidenceTest(unittest.TestCase):
+    """A question that came into being as an answer.
+
+    `record_split` writes verdicts about pairs the rules never held, so the
+    document has members and nothing else. The page has to stay readable.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.DIFFERENT,
+                              actor="user:roman")
+        self.client = TestClient(build(Settings(), self.db), follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def cells(self):
+        body = self.client.get("/review", params={"tab": "answered"}).text
+        return re.findall(r"<td[^>]*>(.*?)</td>", body.split("<tr>")[2], re.S)
+
+    def test_the_row_still_says_who_it_is_about(self):
+        # Pairing members with an empty name list used to drop every subject
+        # and leave the row about nobody.
+        about = self.cells()[0]
+        self.assertIn("A1", about)
+        self.assertIn("A2", about)
+
+    def test_a_missing_reason_is_a_dash_not_an_empty_cell(self):
+        # Otherwise the only thing in the cell is the green "the rules now
+        # say" chip, and it reads as the reason.
+        review.record_disputed(self.db, [{
+            "status": "disputed", "person_a": "A1", "name_a": "A", "person_b": "A2",
+            "name_b": "B", "rule": "same_name"}])
+        why = self.cells()[2]
+        self.assertIn("—", why)
+        self.assertIn("теперь связывают", why)
+
+
+class SkippedTabTest(unittest.TestCase):
+    """What is offered on a question somebody already put off."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        review.record_held(self.db, [held_pair("A1", "A2")])
+        review.skip(self.db, review.PAIR, ["A1", "A2"], actor="user:roman")
+        self.client = TestClient(build(Settings(), self.db), follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def body(self, tab):
+        return self.client.get("/review", params={"tab": tab}).text
+
+    def test_putting_it_off_again_is_not_offered(self):
+        skipped = self.body("skipped")
+        self.assertNotIn('value="skip"', skipped)
+        self.assertIn("отложил user:roman", skipped)
+
+    def test_answering_it_still_is(self):
+        # The point of the tab is to come back and decide.
+        skipped = self.body("skipped")
+        self.assertIn('value="same"', skipped)
+        self.assertIn('value="different"', skipped)
+
+    def test_an_untouched_question_still_offers_it(self):
+        review.record_held(self.db, [held_pair("B1", "B2")])
+        self.assertIn('value="skip"', self.body("pressing"))
