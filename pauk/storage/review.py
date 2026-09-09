@@ -1,28 +1,34 @@
-"""Questions the deduplicator could not answer, and the answers people give.
+"""Questions the pipeline could not answer, and the answers people give.
 
-`plan_person_merges` sorts every candidate into merged or held. A held pair
-is not a bug: two "A. V. Yulin" with no shared coauthor look identical to
-the rules and there is no evidence either way, so the rules refuse and say
-why. Until now the refusal went to a JSONL journal nobody reads back, and
-the next run refused the same pairs again.
+Three stages reach a point where the evidence runs out. Refusing there is
+not a bug: two "A. V. Yulin" with no shared coauthor look identical to the
+rules, and there is nothing to decide on. Until now every refusal went to a
+JSONL journal nobody read back, and the next run refused the same thing
+again.
 
 Kept here instead, a refusal becomes a question, and a person's answer
 outlives the run that asked. That is the whole point: the answer has to be
 consulted *before* the algorithm decides, not patched over the result
 afterwards, because a merge cannot be undone.
 
-Two shapes of question, because the rules refuse in two ways:
+Four shapes of question, because the three producers refuse in four ways:
 
-- a **pair** the rules would not merge, answered "same" or "different";
-- a **group** the rules refused whole, because it spans two ORCIDs or two
+- a **pair** the person merge rules would not fold, answered "same" or
+  "different";
+- a **group** those rules refused whole, because it spans two ORCIDs or two
   addresses. Seven "Andrey Bogdanov" under two addresses are not seven
   people and not one, so the group cannot be answered as a whole. It is
   answered by naming which of its records are one person, and `record_split`
-  turns that into the pair answers the rules actually read.
+  turns that into the pair answers the rules read;
+- a **github account** the matcher could not place, answered the same two
+  ways: this is them, or it is not;
+- a **catalog record**, where the staff directory holds several people under
+  one name. Not a yes or no — both namesakes are plausible and exactly one
+  is right — so `record_choice` names the record instead of taking a side.
 
 Storage sits beside the prepared rows rather than in `pauk/graph/`, unlike
-`graph_overrides`: the dedup stage writes these long before anything is
-published, and `pauk/pipeline/` imports nothing from the graph layer.
+`graph_overrides`: these are written long before anything is published, and
+`pauk/pipeline/` imports nothing from the graph layer.
 """
 
 from __future__ import annotations
@@ -48,8 +54,10 @@ STAFF = "staff_record"
 KINDS = (PAIR, GROUP, GITHUB, STAFF)
 
 #: The kinds that describe two records of one researcher, which is what the
-#: person merge rules read. Kept apart from GITHUB so an answer about an
-#: account never reaches a function looking for people to fold together.
+#: person merge rules read. GITHUB and STAFF are kept out: their members are
+#: an account or a directory row paired with a person, and such an answer
+#: reaching a function looking for people to fold would be looked up and
+#: never found — the kind of pollution that goes unnoticed until it does not.
 PERSON_KINDS = (PAIR, GROUP)
 
 SAME = "same"
@@ -94,9 +102,10 @@ def question_id(kind: str, members: list[str]) -> str:
         raise ReviewError("a question needs at least two distinct members")
     # The key joins on ":" and the form that answers it joins on ",", so an
     # id carrying either would build a key that splits back into something
-    # else. Person ids are OpenAlex ids, an "orcid_" or a "name_" hash, and
-    # none of those can — but a LinkCandidate id turned out to be a URL once
-    # already, and that cost a day. Fail loudly rather than collide quietly.
+    # else. Nothing that lands here can today — OpenAlex ids, "orcid_" and
+    # "name_" hashes, github logins, "surname|name|patronymic" catalog keys
+    # — but a LinkCandidate id turned out to be a URL once already, and that
+    # cost a day. Fail loudly rather than collide quietly.
     bad = [member for member in unique if ":" in member or "," in member]
     if bad:
         raise ReviewError(f"an id cannot contain ':' or ',': {', '.join(bad)}")
@@ -104,11 +113,13 @@ def question_id(kind: str, members: list[str]) -> str:
 
 
 def members_of(row: dict) -> list[str]:
-    """The people one held report row is about, whichever shape it has.
+    """What one held report row is about, whichever shape it has.
 
-    A pair carries `person_a`/`person_b`, a refused group carries `persons`.
-    Both come out of the same report list, so callers should not have to
-    know which they are looking at.
+    Not always people: a catalog question pairs a person with directory
+    rows, and a github question with an account. Callers should not have to
+    know which shape they are holding, so the four are read in one place —
+    together with `kind_of` and `names_of` just below, which split on the
+    same fields.
     """
     if "records" in row:
         return sorted({row["person"], *row["records"]})
@@ -122,9 +133,10 @@ def members_of(row: dict) -> list[str]:
 def kind_of(row: dict) -> str:
     """Which question a report row is, read off the fields it carries.
 
-    Three producers write into one queue and each names its subjects its
-    own way: the github matcher a `login` and a `person`, a refused group a
-    list of `persons`, a held pair a `person_a` and a `person_b`.
+    Each producer names its subjects its own way: the catalog check a
+    `person` and `records`, the github matcher a `login` and a `person`, a
+    refused group a list of `persons`, a held pair a `person_a` and a
+    `person_b`.
     """
     if "records" in row:
         return STAFF
@@ -170,7 +182,9 @@ def record_held(db: Database, report: list[dict], source: str = STAGE) -> int:
 
     Args:
         db: Mongo database.
-        report: The review journal rows from `plan_person_merges`.
+        report: Rows any of the producers held back — `plan_person_merges`,
+            the github matcher, or the catalog check. See `kind_of` for the
+            shapes.
         source: Which pass asked, `STAGE` or `GRAPH`.
 
     Returns:
@@ -205,11 +219,12 @@ def record_held(db: Database, report: list[dict], source: str = STAGE) -> int:
 def record_disputed(db: Database, report: list[dict]) -> int:
     """Note where the rules have changed their mind about a settled pair.
 
-    Somebody said two records are two people; the evidence has moved since,
-    and a rule that had nothing to stand on now fires. The answer stays in
-    force — that is the point of storing it — but the disagreement is worth
-    a person's eye, exactly like a source that starts contradicting a hand
-    edit (see `pauk.graph.overrides`).
+    Somebody said two records are two people, or that an account is not
+    theirs; the evidence has moved since, and a rule that had nothing to
+    stand on now fires. The answer stays in force — that is the point of
+    storing it — but the disagreement is worth a person's eye, exactly like
+    a source that starts contradicting a hand edit (see
+    `pauk.graph.overrides`).
 
     Returns:
         How many disagreements were noted.
@@ -248,6 +263,12 @@ def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
     if kind == GROUP and verdict == SAME:
         raise ReviewError("a refused group cannot be answered 'same'; "
                           "answer the pairs inside it instead")
+    if kind == STAFF and verdict == SAME:
+        # "Yes" to a question that asks which of two namesakes this is
+        # names nobody. Recorded, it would leave the queue looking answered
+        # and change nothing at all.
+        raise ReviewError("a catalog question is answered by choosing a record; "
+                          "see record_choice")
     key = question_id(kind, members)
     moment = _now()
     db[COLLECTION].update_one(
@@ -310,12 +331,12 @@ def record_split(db: Database, members: list[str], same: list[str],
     members = sorted(set(members))
     same = sorted(set(same))
     if not set(same) <= set(members):
-        raise ReviewError("отмечены записи не из этой группы")
+        raise ReviewError("those records are not in this group")
     if len(same) < 2:
-        raise ReviewError("отметьте хотя бы две записи, которые считаете одним человеком")
+        raise ReviewError("name at least two records as one person")
     if len(same) == len(members):
-        raise ReviewError("группу отклонили как раз потому, что все её записи "
-                          "не могут быть одним человеком")
+        raise ReviewError("the group was refused precisely because all of it "
+                          "cannot be one person")
     rest = [member for member in members if member not in same]
     # The pairs inside the subset go first on purpose. Written halfway, what
     # is on record says "these are one person" and nothing about the rest —
@@ -346,6 +367,10 @@ def withdraw(db: Database, kind: str, members: list[str]) -> bool:
         {"_id": question_id(kind, members)},
         {"$unset": {"verdict": "", "actor": "", "note": "",
                     "decided_at": "", "applied_at": "",
+                    # The catalog record chosen goes with the answer that
+                    # chose it. Left behind, it kept being applied by every
+                    # later run while the panel showed the question as open.
+                    "chosen": "",
                     # Nothing left to disagree with once the answer is gone.
                     "disputed_at": "", "disputed_rule": ""}})
     return result.matched_count > 0
@@ -377,7 +402,7 @@ def record_choice(db: Database, person: str, records: list[str], chosen: str | N
         ReviewError: The chosen record is not one of the ones asked about.
     """
     if chosen is not None and chosen not in records:
-        raise ReviewError("выбранной записи нет среди предложенных")
+        raise ReviewError("that record is not one of the ones asked about")
     members = [person, *records]
     key = question_id(STAFF, members)
     moment = _now()
@@ -406,7 +431,8 @@ def staff_choices(db: Database) -> dict[str, str]:
     question but gives the merge rules nothing to fold on.
     """
     return {row["person"]: row["chosen"]
-            for row in db[COLLECTION].find({"kind": STAFF, "chosen": {"$ne": None}})
+            for row in db[COLLECTION].find({"kind": STAFF, "verdict": SAME,
+                                            "chosen": {"$ne": None}})
             if row.get("chosen") and row.get("person")}
 
 

@@ -388,7 +388,7 @@ class GitHubQuestionTest(unittest.TestCase):
             "name_raw": "Stanislav Shtuka", "url": "https://github.com/XieN-N",
             "score": 0.6, "signals": ["name_exact"],
             "repos": ["https://github.com/screemix/Wikontic"],
-            "held_because": ["имя совпадает целиком, но больше ничего не подтверждает"],
+            "held_because": ["the name matches exactly and nothing else backs it"],
         }])
         self.client = TestClient(build(Settings(), self.db), follow_redirects=False)
         self.client.post("/login", data={"login": "roman", "password": "hunter2"})
@@ -458,7 +458,7 @@ class StaffChoiceTest(unittest.TestCase):
             "status": "held", "person": "A1", "name_raw": "Andrei Kuznetsov",
             "records": self.RECORDS,
             "record_names": ["Кузнецов Андрей Геннадьевич", "Кузнецов Андрей Дмитриевич"],
-            "held_because": ["каталог знает несколько человек с таким именем"],
+            "held_because": ["the catalog holds several people under this name"],
         }])
         self.client = TestClient(build(Settings(), self.db), follow_redirects=False)
         self.client.post("/login", data={"login": "roman", "password": "hunter2"})
@@ -514,3 +514,45 @@ class StaffChoiceTest(unittest.TestCase):
         body = self.body("answered")
         self.assertIn("запись выбрана", body)
         self.assertIn("сведёт записи на следующем прогоне", body)
+
+
+class ChoiceFormGuardTest(unittest.TestCase):
+    """The form has to say who the question is about."""
+
+    RECORDS = ["kuznetsov|andrei|gennadevich", "kuznetsov|andrei|dmitrievich"]
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        review.record_held(self.db, [{
+            "status": "held", "person": "A1", "name_raw": "Andrei Kuznetsov",
+            "records": self.RECORDS,
+            "record_names": ["Кузнецов Андрей Геннадьевич", "Кузнецов Андрей Дмитриевич"],
+            "record_degrees": ["к.т.н.", None],
+            "held_because": ["the catalog holds several people under this name"],
+        }])
+        self.client = TestClient(build(Settings(), self.db), follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def csrf(self):
+        return self.client.get("/review").text.split('name="csrf" value="')[1].split('"')[0]
+
+    def post(self, person):
+        return self.client.post("/review/answer", data={
+            "csrf": self.csrf(), "kind": review.STAFF, "verdict": "choose",
+            "members": ",".join(["A1", *self.RECORDS]), "person": person,
+            "chosen": self.RECORDS[0]})
+
+    def test_a_person_outside_the_question_is_refused(self):
+        self.assertEqual(self.post("A9").status_code, 400)
+        self.assertEqual(review.staff_choices(self.db), {})
+
+    def test_no_person_at_all_is_refused(self):
+        # Left through, it builds a key with a blank segment and an answer
+        # about nobody.
+        self.assertEqual(self.post("").status_code, 400)
+        self.assertEqual(review.staff_choices(self.db), {})
+
+    def test_the_degree_is_shown_where_the_catalog_has_one(self):
+        # It is often what tells two namesakes apart.
+        self.assertIn("к.т.н.", self.client.get("/review").text)

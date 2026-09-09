@@ -61,6 +61,12 @@ WORDS = {
     "single-token display name": "имя из одного слова",
     "name is given as initials": "имя дано инициалами",
     "identical name with nothing corroborating it": "одинаковое имя, ничем не подтверждено",
+    "the name matches exactly and nothing else backs it":
+        "имя совпадает целиком, больше ничего не подтверждает",
+    "a similar name and a shared publication, nothing more":
+        "похожее имя и общая публикация, больше ничего",
+    "the catalog holds several people under this name":
+        "каталог знает нескольких человек с таким именем",
 }
 
 
@@ -138,6 +144,10 @@ def _shown(row: dict) -> dict:
         "url": evidence.get("url"),
         "signals": [SIGNALS.get(name, name) for name in evidence.get("signals") or []],
         "repos": evidence.get("repos") or [],
+        # A degree is what tells two namesakes apart when the catalog has
+        # one; collected already, and useless sitting in the document.
+        "degrees": dict(zip(evidence.get("records") or [],
+                            evidence.get("record_degrees") or [], strict=False)),
         "reasons": [_reason_words(reason) for reason in evidence.get("held_because", [])],
         "shared_coauthors": evidence.get("shared_coauthors"),
         "shared_departments": evidence.get("shared_departments"),
@@ -236,6 +246,11 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
             # one is right, so the answer names a record instead of taking
             # a side. An empty choice means the catalog does not hold them.
             person = str(form.get("person", ""))
+            if person not in members:
+                # Without this an empty or stray person builds a key with a
+                # blank segment, and the answer describes nobody.
+                raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                    "не указано, о ком вопрос")
             chosen = str(form.get("chosen", "")).strip()
             review.record_choice(db, person,
                                  [member for member in members if member != person],

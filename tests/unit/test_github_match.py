@@ -459,7 +459,7 @@ class GitHubReviewTest(unittest.TestCase):
         self.run_stage(*self.unsure())
         (question,) = review.questions(self.db)
         self.assertEqual(question["evidence"]["held_because"],
-                         ["имя совпадает целиком, но больше ничего не подтверждает"])
+                         ["the name matches exactly and nothing else backs it"])
 
     def test_confirming_it_links_the_account(self):
         self.run_stage(*self.unsure())
@@ -505,3 +505,15 @@ class GitHubReviewTest(unittest.TestCase):
         self.assertEqual(review.decisions(self.db), {})
         self.assertEqual(review.github_decisions(self.db),
                          {frozenset({"XieN-N", "A1"}): review.SAME})
+
+    def test_the_journal_marks_what_a_person_decided(self):
+        # A row reading "rejected" beside signals that say otherwise needs
+        # to say who overruled whom.
+        self.run_stage(*self.unsure())
+        review.record_verdict(self.db, review.GITHUB, ["A1", "XieN-N"], review.DIFFERENT)
+        self.run_stage(*self.unsure())
+        path = self.config.audit_dir / self.prepared.group / MATCHES_FILENAME
+        rows = [json.loads(line) for line in
+                path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        (row,) = rows
+        self.assertEqual((row["decision"], row["rule"]), ("rejected", "manual"))

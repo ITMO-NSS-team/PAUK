@@ -85,6 +85,7 @@
           {% else %}
           {{ who.name }}{% if row.chosen == who.id %} <span class="kind kind-created">выбрана</span>{% endif %}
           {% endif %}
+          {% if row.degrees.get(who.id) %}<span class="muted"> · {{ row.degrees[who.id] }}</span>{% endif %}
           {% else %}
           <a href="{{ who.href }}"
              {% if who.account %}target="_blank" rel="noopener"{% endif %}>{{ who.name }}</a>

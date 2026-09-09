@@ -626,7 +626,7 @@ def staff_questions(catalog: RussianNamesCatalog | None, people: Iterable[Person
             "records": [_record_id(row) for row in rows],
             "record_names": [row.get("name_ru") or _record_id(row) for row in rows],
             "record_degrees": [row.get("degree") for row in rows],
-            "held_because": ["каталог знает несколько человек с таким именем"],
+            "held_because": ["the catalog holds several people under this name"],
         })
     return questions
 

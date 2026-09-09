@@ -195,15 +195,18 @@ def confidence(signals: list[str], in_bridge: bool) -> str:
     return "high" if in_bridge or any(signal in signals for signal in STRONG) else "probable"
 
 
-def hold_reason(signals: list[str], in_bridge: bool) -> str:
-    """Why a pair goes to a person, in the words the queue shows.
+def hold_reason(signals: list[str]) -> str:
+    """Why a pair goes to a person, in the words the queue files it under.
 
-    Only ever asked of a pair `decide` sent to review, so the two cases
-    below are the two it produces.
+    Only ever asked of a pair `decide` sent to review, and the two cases it
+    sends there are told apart by the name signal alone: an exact name with
+    nothing behind it, or a fuzzy one carried by a shared publication.
+    Left in English like the reasons the merge rules give — the panel is
+    where they are put into words for a reader.
     """
     if "name_exact" in signals:
-        return "имя совпадает целиком, но больше ничего не подтверждает"
-    return "похожее имя и общая публикация, но больше ничего"
+        return "the name matches exactly and nothing else backs it"
+    return "a similar name and a shared publication, nothing more"
 
 
 def decide(signals: list[str], in_bridge: bool) -> str:
@@ -289,9 +292,13 @@ class GitHubMatchStage(EnrichmentStage):
         questions: list[dict] = []
         for row in decisions:
             answered = answers.get(frozenset((row["login"], row["person"])))
+            if answered is not None:
+                # Marked in the journal as well as acted on: a row reading
+                # "rejected" beside signals that say otherwise is a person's
+                # decision, not the rules contradicting themselves.
+                row["rule"] = "manual"
             if answered == review.SAME:
                 row["decision"] = "matched"
-                row["rule"] = "manual"
             elif answered == review.DIFFERENT:
                 if row["decision"] == "matched":
                     # The signals have grown since somebody said no. Their
@@ -302,8 +309,7 @@ class GitHubMatchStage(EnrichmentStage):
             elif row["decision"] == "review":
                 questions.append({
                     **row, "status": "held",
-                    "held_because": [hold_reason(
-                        row["signals"], row["evidence"].get("in_bridge", False))],
+                    "held_because": [hold_reason(row["signals"])],
                 })
         return questions
 

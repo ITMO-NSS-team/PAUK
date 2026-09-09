@@ -387,3 +387,62 @@ class SeparatorsInIdsTest(unittest.TestCase):
         for member in ("A5012742131", "orcid_0000-0002-1825-0097", "name_9f86d081884c"):
             with self.subTest(member=member):
                 review.question_id(review.PAIR, ["A1", member])
+
+
+class WithdrawingAChoiceTest(unittest.TestCase):
+    """Taking back a catalog answer has to take back what it chose.
+
+    The record chosen is what the merge rules read. Left on the document
+    after the verdict was withdrawn, it kept being applied by every later
+    run while the panel showed the question as open again.
+    """
+
+    RECORDS = ["kuznetsov|andrei|gennadevich", "kuznetsov|andrei|dmitrievich"]
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        review.record_choice(self.db, "A1", self.RECORDS, self.RECORDS[0],
+                             actor="user:roman")
+
+    def test_the_choice_applies_while_the_answer_stands(self):
+        self.assertEqual(review.staff_choices(self.db), {"A1": self.RECORDS[0]})
+
+    def test_withdrawing_stops_it_applying(self):
+        review.withdraw(self.db, review.STAFF, ["A1", *self.RECORDS])
+        self.assertEqual(review.staff_choices(self.db), {})
+
+    def test_the_question_stays_in_the_queue(self):
+        review.withdraw(self.db, review.STAFF, ["A1", *self.RECORDS])
+        self.assertEqual(review.count(self.db, answered=False), 1)
+
+    def test_the_record_goes_off_the_document_too(self):
+        # Checked on the document, not through staff_choices: that reader
+        # also refuses a choice without a verdict, so it would keep passing
+        # while the stale value sat there for anything else to read.
+        review.withdraw(self.db, review.STAFF, ["A1", *self.RECORDS])
+        (row,) = review.questions(self.db)
+        self.assertNotIn("chosen", row)
+
+
+class StaffCannotBeAnsweredYesTest(unittest.TestCase):
+    """"Yes" to "which of these two is he" names nobody.
+
+    Recorded through the ordinary path it would set a verdict with no record
+    behind it: the question leaves the queue looking answered and nothing at
+    all changes.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+
+    def test_same_on_a_catalog_question_is_refused(self):
+        with self.assertRaises(review.ReviewError):
+            review.record_verdict(self.db, review.STAFF, ["A1", "a|b|c", "a|b|d"],
+                                  review.SAME)
+        self.assertEqual(review.count(self.db), 0)
+
+    def test_none_of_them_is_still_a_fair_answer(self):
+        review.record_verdict(self.db, review.STAFF, ["A1", "a|b|c", "a|b|d"],
+                              review.DIFFERENT)
+        self.assertEqual(review.count(self.db, answered=True), 1)
+        self.assertEqual(review.staff_choices(self.db), {})
