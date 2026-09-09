@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -151,9 +152,12 @@ def _collect_payload(form) -> dict:
     if work_id and (date_from or date_to):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "выберите либо одну работу, либо период — не оба сразу")
+    if not work_id and not date_from and not date_to:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "укажите период или одну работу по идентификатору")
     if not work_id and not (date_from and date_to):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "укажите работу или обе даты периода")
+                            "период задаётся двумя датами, вторая пустая")
     if date_from:
         # PeriodSelector raises ValueError both for a value that is not a
         # date and for a range the wrong way round, and one message for the
@@ -282,11 +286,19 @@ async def schedule(request: Request, user: Admin, db: Db, _: CsrfChecked):
                             f"неизвестный вид задачи: {form.get('kind')!r}") from None
     try:
         job = store.enqueue(db, kind, _payload_from(kind, db, form), actor=user.actor)
+    except HTTPException as error:
+        # A form filled in wrongly goes back to the form, not to a page with
+        # a status code on it: everything typed is still there to correct,
+        # and an error page loses it.
+        if error.status_code != status.HTTP_400_BAD_REQUEST:
+            raise
+        return RedirectResponse(f"/jobs?problem={quote(str(error.detail))}",
+                                status_code=status.HTTP_303_SEE_OTHER)
     except ValidationError as error:
         # The payload models refuse it before anything is stored.
         first = error.errors()[0]
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            f"{'.'.join(str(part) for part in first['loc'])}: "
-                            f"{first['msg']}") from None
+        detail = (f"{'.'.join(str(part) for part in first['loc'])}: {first['msg']}")
+        return RedirectResponse(f"/jobs?problem={quote(detail)}",
+                                status_code=status.HTTP_303_SEE_OTHER)
     logger.info("%s queued a %s job: %s", user.actor, kind, job.id)
     return RedirectResponse(f"/jobs?queued={job.id}", status_code=status.HTTP_303_SEE_OTHER)

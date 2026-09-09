@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Пайплайн</h1>
+
+{% set problem = request.query_params.get("problem") %}
+{% if problem %}<p class="note bad">{{ problem }}</p>{% endif %}
 <p class="muted" style="margin:-8px 0 22px">
   Выполняет процесс <code>pauk admin worker</code>
 </p>

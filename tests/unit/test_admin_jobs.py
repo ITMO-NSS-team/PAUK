@@ -1,6 +1,7 @@
 import re
 import unittest
 from datetime import timedelta
+from urllib.parse import unquote
 
 import mongomock
 from fastapi.testclient import TestClient
@@ -231,6 +232,19 @@ class SchedulingTest(unittest.TestCase):
         client = client or self.client
         return client.post("/jobs", data={"csrf": csrf or self.csrf, **data})
 
+    def refused(self, **data):
+        """The complaint a mis-filled form comes back with.
+
+        A wrong period sends somebody back to the form with everything they
+        typed still there, not to a page with a status code on it — so the
+        answer is a redirect carrying the reason, not a 400.
+        """
+        response = self.post(**data)
+        self.assertEqual(response.status_code, 303)
+        location = response.headers["location"]
+        self.assertIn("problem=", location)
+        return unquote(location.split("problem=")[1])
+
     def test_an_admin_can_publish(self):
         self.assertEqual(self.post(kind="publish", group="2024").status_code, 303)
         self.assertEqual(store.count(self.db), 1)
@@ -268,12 +282,13 @@ class SchedulingTest(unittest.TestCase):
         # The form offers a list; a request that never met the form has to
         # meet the same list. Publishing an empty group takes the graph
         # lock to load nothing.
-        response = self.post(kind="publish", group="2025")
-        self.assertEqual(response.status_code, 400)
+        self.assertIn("нет подготовленных строк",
+                      self.refused(kind="publish", group="2025"))
         self.assertEqual(store.count(self.db), 0)
 
     def test_a_group_name_that_could_not_exist_is_refused(self):
-        self.assertEqual(self.post(kind="publish", group="../etc").status_code, 400)
+        self.refused(kind="publish", group="../etc")
+        self.assertEqual(store.count(self.db), 0)
 
     def test_the_group_offered_is_one_that_has_rows(self):
         self.assertIn(">2024</option>", self.client.get("/jobs").text)
@@ -298,24 +313,33 @@ class SchedulingTest(unittest.TestCase):
         self.assertTrue(store.recent(self.db)[0].resource.startswith("group:"))
 
     def test_both_a_work_and_a_period_is_refused(self):
-        response = self.post(kind="collect", work_id="W1",
-                             date_from="2024-01-01", date_to="2024-02-01")
-        self.assertEqual(response.status_code, 400)
+        self.assertIn("не оба сразу", self.refused(
+            kind="collect", work_id="W1", date_from="2024-01-01", date_to="2024-02-01"))
 
-    def test_neither_a_work_nor_a_period_is_refused(self):
-        self.assertEqual(self.post(kind="collect").status_code, 400)
+    def test_an_empty_form_says_what_to_fill_in(self):
+        # The commonest mistake: press the button without touching the
+        # dates. It used to answer with raw JSON and lose the form.
+        self.assertIn("укажите период", self.refused(kind="collect"))
+
+    def test_the_complaint_is_shown_on_the_page_it_returns_to(self):
+        # Carrying it in the address is only half: the page has to render it.
+        location = self.post(kind="collect").headers["location"]
+        self.assertIn("укажите период", self.client.get(location).text)
+
+    def test_one_date_of_two_says_which_is_missing(self):
+        # Told apart from an empty form: "choose a period" is unhelpful when
+        # half of one is already typed.
+        self.assertIn("вторая пустая", self.refused(kind="collect", date_from="2024-01-01"))
 
     def test_a_period_the_wrong_way_round_is_refused(self):
-        response = self.post(kind="collect", date_from="2024-12-31", date_to="2024-01-01")
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("позже", response.json()["detail"])
+        self.assertIn("позже", self.refused(
+            kind="collect", date_from="2024-12-31", date_to="2024-01-01"))
 
     def test_something_that_is_not_a_date_says_so(self):
         # Told apart from the wrong order: one message for both would be
         # wrong half the time.
-        response = self.post(kind="collect", date_from="вчера", date_to="2024-01-01")
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("не дата", response.json()["detail"])
+        self.assertIn("не дата", self.refused(
+            kind="collect", date_from="вчера", date_to="2024-01-01"))
 
     def test_rebuilding_the_map(self):
         self.post(kind="map", seed="7", public="on")
@@ -597,14 +621,22 @@ class MapOptionsTest(unittest.TestCase):
     def post(self, **data):
         return self.client.post("/jobs", data={"csrf": self.csrf, **data})
 
+    def refused(self, **data):
+        """The complaint the form comes back with, rather than a 500."""
+        response = self.post(**data)
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("problem=", response.headers["location"])
+        return response
+
     def test_a_seed_that_is_not_a_number_is_refused_not_crashed(self):
         for value in ("null", "1e999", "NaN", "{}", "3.5", "0x10"):
             with self.subTest(seed=value):
-                self.assertEqual(self.post(kind="map", seed=value).status_code, 400)
+                self.refused(kind="map", seed=value)
+                self.assertEqual(store.count(self.db), 0)
 
     def test_the_same_holds_for_the_whole_pipeline(self):
-        self.assertEqual(
-            self.post(kind="pipeline", work_id="W1", seed="null").status_code, 400)
+        self.refused(kind="pipeline", work_id="W1", seed="null")
+        self.assertEqual(store.count(self.db), 0)
 
     def test_a_missing_seed_falls_back_to_the_default(self):
         self.assertEqual(self.post(kind="map").status_code, 303)
