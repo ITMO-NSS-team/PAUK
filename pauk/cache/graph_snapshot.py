@@ -49,9 +49,6 @@ def read_snapshot(path: Path) -> dict[str, list]:
 def dated_snapshot_path(cache_dir: Path) -> Path:
     """Builds today's snapshot path.
 
-    Each export run gets its own file - a second `pauk cache export` on the
-    same day overwrites that day's file, not yesterday's.
-
     Args:
         cache_dir: Snapshot directory (usually `Settings.cache_dir`).
 
@@ -67,8 +64,6 @@ def dated_snapshot_path(cache_dir: Path) -> Path:
 
 def latest_snapshot(cache_dir: Path) -> Path:
     """Finds the snapshot whose filename date is the latest.
-
-    Files that don't match `graph_snapshot_<dd-mm-yyyy>.json` are ignored.
 
     Args:
         cache_dir: Snapshot directory.

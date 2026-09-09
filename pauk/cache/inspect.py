@@ -1,15 +1,4 @@
-"""Read-only view of a graph snapshot (`graph_snapshot.py`), without parsing
-the raw JSON by hand: `write_snapshot()` writes one line, no indent, to keep
-the file small - not meant to be opened in a text editor. Fields in
-`pauk/graph/extract.py::JSON_TEXT_FIELDS` (`funding`/`versions`/
-`counts_by_year`/`affiliations`) are stored as an already-serialized JSON
-string (Neo4j can't hold nested map/list-of-map) - decoded back into an
-object here before printing.
-
-CLI: `pauk cache inspect` (`pauk/cli.py`). This module only exposes the
-display functions (`summarize`/`describe_table`/`sample_rows`), no argparse
-of its own.
-"""
+"""Read-only view of a graph snapshot."""
 
 from __future__ import annotations
 

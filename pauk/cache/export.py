@@ -1,40 +1,4 @@
-"""Snapshots the graph from Neo4j into flat structures on disk.
-
-The only place in the `pauk/gui/` chain that actually talks to Neo4j -
-everything else (`generate_data.py`, `generate_stats.py` except
-`/api/stats`) reads an already-taken snapshot from disk, not the database.
-
-Person queries filter on the `is_itmo` property, not the legacy `:Itmo`
-label - ingestion (`pauk/graph/client.py`, `pauk/graph/jsonl_loader.py`)
-stopped setting that label after the migration, so a label-based filter
-would silently miss any author added since, with no error. Scope stays
-ITMO-only on purpose: external co-authors (`Person {is_itmo: false}`) exist
-in the graph but aren't pulled in here yet - `generate_data.py` currently
-drops any publication with zero ITMO authors, so including them is a
-separate decision, not just another Cypher filter.
-
-`created_at`/`updated_at` are NOT the same-named (unpopulated) Pydantic
-model fields - they're timestamps `Neo4jClient` stamps on every node write
-(`ON CREATE`/`ON MATCH SET ... datetime()` in `pauk/graph/client.py`),
-present regardless of the domain model. Read back via `toString()`, like
-`publication_date`, since the driver's `neo4j.time.DateTime` isn't
-JSON-serializable directly.
-
-`funding`/`versions`/`affiliations` are stored as JSON-text
-(`pauk/graph/extract.py::JSON_TEXT_FIELDS` - Neo4j can't hold nested
-map/list-of-map). Returned here as-is, an unparsed JSON string - parsing is
-left to whoever consumes the snapshot.
-
-Known gap: `pauk/gui/generate_data.py::build_graph_data()` still expects
-the old positional-tuple `db` shape (`for pid, per in db["authorship"]`,
-`r[0]` on `publications`/`repositories` rows, etc.), while this module has
-returned dict rows via `cypher_dict()` since the switchover - feeding a
-synthetic dict-shaped `db` straight into `build_graph_data()` raises
-`ValueError: too many values to unpack`. `new_generate/graph_builder.py`
-already handles the dict shape and replaces `generate_data.py` for real
-site generation; fixing `generate_data.py` itself only matters if it still
-needs to work standalone.
-"""
+"""Snapshots the graph from Neo4j into flat structures on disk."""
 
 from __future__ import annotations
 
@@ -52,22 +16,13 @@ from .graph_snapshot import dated_snapshot_path, write_snapshot
 logger = logging.getLogger(__name__)
 
 CYPHER_RETRIES = 5
-"""How many times to retry a query on a transient Neo4j failure before
-giving up and propagating the exception."""
 
 CYPHER_RETRY_BACKOFF_STEP_SECONDS = 5
 """Linear backoff step between retries (5, 10, 15, ... seconds)."""
 
-CYPHER_RETRY_MAX_WAIT_SECONDS = 60
-"""Upper bound on the wait between retries."""
-
 
 def _execute_retrying(driver, query, **params):
     """Runs one Cypher query, retrying on transient network failures.
-
-    Transient Neo4j cluster errors (leader re-election, dropped session,
-    momentary unavailability) are normal over a long export of ten-plus
-    queries, not a reason to fail on the first hiccup.
 
     Args:
         driver: An open Neo4j driver (`neo4j.Driver`).
@@ -98,7 +53,7 @@ def _execute_retrying(driver, query, **params):
         except (ServiceUnavailable, SessionExpired, TransientError, OSError) as exc:
             if attempt == CYPHER_RETRIES:
                 raise
-            wait = min(CYPHER_RETRY_MAX_WAIT_SECONDS, CYPHER_RETRY_BACKOFF_STEP_SECONDS * attempt)
+            wait = CYPHER_RETRY_BACKOFF_STEP_SECONDS * attempt
             logger.warning(
                 "  (%s: %s),  %d/%d,  %d s",
                 type(exc).__name__,
@@ -112,10 +67,6 @@ def _execute_retrying(driver, query, **params):
 
 def cypher_dict(driver, query, **params) -> list[dict]:
     """Runs a query with retries, rows as dicts keyed by Cypher column name.
-
-    The only way to read rows in this module - a dict lookup by key
-    doesn't break when a `RETURN` clause's column order or count changes;
-    a positional tuple would break silently.
 
     Args:
         driver: An open Neo4j driver.
@@ -134,14 +85,6 @@ def cypher_dict(driver, query, **params) -> list[dict]:
 
 def load_db(driver) -> dict[str, list]:
     """Reads the whole graph into the flat structures `build_graph_data()` expects.
-
-    Author departments and repository owners are relationships in the
-    graph model (`BELONGS_TO`, `OWNED_BY`), not flat columns, so they're
-    fetched via separate `OPTIONAL MATCH` queries.
-
-    Full field list and the reasoning per field live as comments right next
-    to each `RETURN` line below, not here - so the decision sits next to
-    the field it's about.
 
     Args:
         driver: An open Neo4j driver.
@@ -404,9 +347,7 @@ class GraphSnapshotExporter:
             The final path the snapshot was written to.
 
         Raises:
-            ValueError: the Neo4j password is empty (`NEO4J_PASSWORD` unset)
-                - checked before opening the driver, for a clear error
-                instead of a late authentication failure on the first query.
+            ValueError: the Neo4j password is empty (`NEO4J_PASSWORD` unset).
         """
         if not self.config.neo4j_password:
             raise ValueError("Neo4j password is empty - set NEO4J_PASSWORD in .env")

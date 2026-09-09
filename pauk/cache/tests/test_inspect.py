@@ -12,12 +12,17 @@ from pauk.cache.inspect import _decode_json_text, describe_table, sample_rows, s
 
 class DecodeJsonTextTest(unittest.TestCase):
     def test_decodes_a_known_json_text_field(self):
-        self.assertEqual(_decode_json_text("affiliations", '[{"name": "ITMO"}]'), [{"name": "ITMO"}])
+        self.assertEqual(
+            _decode_json_text("affiliations", '[{"name": "ITMO"}]'), [{"name": "ITMO"}]
+        )
 
     def test_leaves_an_unknown_field_untouched_even_if_json_shaped(self):
         # Decision is made by field name, not content - e.g. a publication
         # title could legitimately start with "[".
-        self.assertEqual(_decode_json_text("title", '["not", "real", "json-text"]'), '["not", "real", "json-text"]')
+        self.assertEqual(
+            _decode_json_text("title", '["not", "real", "json-text"]'),
+            '["not", "real", "json-text"]',
+        )
 
     def test_leaves_null_untouched(self):
         self.assertIsNone(_decode_json_text("funding", None))
@@ -28,7 +33,11 @@ class DecodeJsonTextTest(unittest.TestCase):
 
 class DescribeTableTest(unittest.TestCase):
     def test_reports_null_count_per_field(self):
-        rows = [{"id": "p1", "email": "a@b.c"}, {"id": "p2", "email": None}, {"id": "p3", "email": None}]
+        rows = [
+            {"id": "p1", "email": "a@b.c"},
+            {"id": "p2", "email": None},
+            {"id": "p3", "email": None},
+        ]
         buf = io.StringIO()
         with redirect_stdout(buf):
             describe_table(rows, "persons")

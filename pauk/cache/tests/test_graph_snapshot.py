@@ -8,7 +8,12 @@ import unittest
 from datetime import date
 from pathlib import Path
 
-from pauk.cache.graph_snapshot import dated_snapshot_path, latest_snapshot, read_snapshot, write_snapshot
+from pauk.cache.graph_snapshot import (
+    dated_snapshot_path,
+    latest_snapshot,
+    read_snapshot,
+    write_snapshot,
+)
 
 
 class WriteReadSnapshotTest(unittest.TestCase):
