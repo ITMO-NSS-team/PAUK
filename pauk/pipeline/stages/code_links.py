@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import cast
 from urllib.parse import urlencode, urlparse
 
-import fitz
+import pymupdf as fitz
 
 from pauk.models import CodeLink, LinkOccurrence, Publication, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
