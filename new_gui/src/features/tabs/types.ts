@@ -1,4 +1,4 @@
-import type { Map as MapLibreMap } from "maplibre-gl";
+import type Sigma from "sigma";
 import type { GraphData, PubDetail, RepoDetail } from "../../contracts/graph";
 import type { AppState, Store } from "../../core/state";
 
@@ -18,7 +18,7 @@ export interface TabModule {
    *
    * @param container - DOM-элемент, куда вкладка рисует свою разметку (обычно `#tab-content`).
    * @param store - Store приложения.
-   * @param map - экземпляр карты MapLibre (нужен, чтобы подлетать к выбранному узлу).
+   * @param renderer - Sigma-рендерер (нужен, чтобы подлетать к выбранному узлу через камеру).
    * @param data - данные графа.
    * @param pubDetails - карта деталей публикаций (нужна не всем вкладкам —
    *   только там, где показывается настоящее название публикации, а не
@@ -32,7 +32,7 @@ export interface TabModule {
   mount(
     container: HTMLElement,
     store: Store<AppState>,
-    map: MapLibreMap,
+    renderer: Sigma,
     data: GraphData,
     pubDetails: Map<string, PubDetail>,
     repoDetails: Map<string, RepoDetail>,

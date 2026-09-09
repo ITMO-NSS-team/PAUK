@@ -6,43 +6,42 @@
 // отдельно от логики, которая их использует).
 
 export const MAP_CONFIG = {
-  // Камера. minZoom/maxZoom ограничивают, насколько можно отдалиться/
-  // приблизиться; initialZoom и fitPadding — только для самого первого
-  // кадра при загрузке (map.fitBounds в app/main.ts), дальше пользователь
-  // управляет зумом сам.
-  initialZoom: 5,
-  minZoom: 4.3,
-  maxZoom: 15,
+  // Фон холста — Sigma сама фон не красит (это голый WebGL-canvas, не
+  // MapLibre-стиль со слоем "background"), поэтому цвет ставится прямо на
+  // DOM-контейнер при монтировании (см. map/build.ts).
+  backgroundColor: "#202020",
+  // Отступ от края холста при автоматическом вписывании графа в область
+  // просмотра (Sigma settings.stagePadding, autoRescale/autoCenter — оба
+  // включены по умолчанию). minZoom/maxZoom/initialZoom старого MapLibre-
+  // конфига здесь не переносятся as-is: у Sigma зум — это camera.ratio,
+  // число совсем другой природы, чем дискретные тайловые уровни зума
+  // MapLibre, отдельно потребуется подобрать разумные minCameraRatio/
+  // maxCameraRatio на глаз, когда до этого дойдём.
   fitPadding: 40,
-  // Фон стиля карты (map/build.ts не трогает — это на уровне самого MapLibre.Map в app/main.ts).
-  backgroundColor: "#ffffff",
 
   node: {
     radius: 4,
     radiusSelected: 8,
-    strokeWidth: 1,
-    strokeWidthSelected: 2,
-    strokeColor: "#ffffff",
     // Цвет узла, у департамента которого почему-то нет своего color —
-    // не должно происходить на реальных данных, но лучше serый фолбэк,
+    // не должно происходить на реальных данных, но лучше серый фолбэк,
     // чем упавшее приложение.
     fallbackColor: "#9d9d9d",
+    // Разделительное кольцо вокруг узла (как в MapLibre-версии) здесь не
+    // перенесено: у Sigma NodeDisplayData нет отдельных stroke-полей у
+    // дефолтного circle-рендерера узла — понадобится свой NodeProgram,
+    // если эффект окажется реально нужен, не блокирует переезд.
   },
 
   edge: {
-    color: "#9d9d9d",
+    // rgba, не голый hex + отдельная "opacity": у Sigma EdgeDisplayData
+    // нет отдельного свойства прозрачности (только label/size/color/hidden/
+    // forceLabel/zIndex/type) — альфа-канал теперь часть самого цвета.
+    color: "rgba(157, 157, 157, 0.5)",
+    // Выбранное ребро — та же идея, что и node.radiusSelected: делаем
+    // толще и непрозрачным (не меняем цвет как таковой, только альфу).
+    colorSelected: "rgb(157, 157, 157)",
     width: 0.6,
-    opacity: 0.5,
-    // Выбранное ребро (клик по нему на карте или через панель) — та же
-    // идея, что и node.radiusSelected/strokeWidthSelected: делаем крупнее
-    // и заметнее, а не меняем цвет — тут он и так один нейтральный серый
-    // на все рёбра, менять его под выделение не имеет смысла.
     widthSelected: 2,
-    opacitySelected: 1,
-    // Невидимый слой-приёмник кликов (EDGE_HIT_LAYER_ID в map/build.ts) —
-    // шире видимой линии специально, чтобы по тонкому ребру было реально
-    // попасть курсором.
-    hitWidth: 14,
   },
 } as const;
 

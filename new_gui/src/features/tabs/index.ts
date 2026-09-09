@@ -1,4 +1,4 @@
-import type { Map as MapLibreMap } from "maplibre-gl";
+import type Sigma from "sigma";
 import type { GraphData, PubDetail, RepoDetail } from "../../contracts/graph";
 import { t, type Lang, type LocaleKey } from "../../core/i18n";
 import type { AppState, Store, TabId } from "../../core/state";
@@ -44,7 +44,7 @@ const TAB_LABEL_KEYS: Record<TabId, LocaleKey> = {
  * @param tabButtonsEl - контейнер с кнопками вкладок (`<nav id="tab-buttons">`), каждая с атрибутом `data-tab`.
  * @param tabContentEl - контейнер, куда монтируется содержимое активной вкладки (`#tab-content`).
  * @param store - Store приложения.
- * @param map - экземпляр карты MapLibre (передаётся дальше в `TabModule.mount()`).
+ * @param renderer - Sigma-рендерер (передаётся дальше в `TabModule.mount()`).
  * @param data - данные графа.
  * @param pubDetails - карта деталей публикаций.
  * @param repoDetails - карта описаний/владельцев/ссылок репозиториев (нужна только вкладке "Поиск").
@@ -55,7 +55,7 @@ export function mountTabs(
   tabButtonsEl: HTMLElement,
   tabContentEl: HTMLElement,
   store: Store<AppState>,
-  map: MapLibreMap,
+  renderer: Sigma,
   data: GraphData,
   pubDetails: Map<string, PubDetail>,
   repoDetails: Map<string, RepoDetail>,
@@ -83,7 +83,7 @@ export function mountTabs(
     activeUnmount?.();
     activeTab = tabId;
     const tabModule = TAB_MODULES[tabId];
-    activeUnmount = tabModule ? tabModule.mount(tabContentEl, store, map, data, pubDetails, repoDetails) : null;
+    activeUnmount = tabModule ? tabModule.mount(tabContentEl, store, renderer, data, pubDetails, repoDetails) : null;
 
     for (const button of buttons) {
       button.classList.toggle("tab-button--active", Number(button.dataset.tab) === tabId);

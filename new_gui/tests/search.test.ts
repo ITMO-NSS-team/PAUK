@@ -1,4 +1,4 @@
-import type { Map as MapLibreMap } from "maplibre-gl";
+import type Sigma from "sigma";
 import { describe, expect, it, vi } from "vitest";
 import type { PubDetail, RepoDetail } from "../src/contracts/graph";
 import { indexDetailsByKey } from "../src/core/data";
@@ -10,8 +10,10 @@ import { loadSampleGraphData, loadSamplePubDetails, loadSampleRepoDetails } from
 const NO_PUB_DETAILS = new Map<string, PubDetail>();
 const NO_REPO_DETAILS = new Map<string, RepoDetail>();
 
-function fakeMap(): MapLibreMap {
-  return { flyTo: vi.fn() } as unknown as MapLibreMap;
+function fakeRenderer(): { renderer: Sigma; animate: ReturnType<typeof vi.fn> } {
+  const animate = vi.fn();
+  const renderer = { getCamera: () => ({ animate }) } as unknown as Sigma;
+  return { renderer, animate };
 }
 
 function initialState(): AppState {
@@ -100,7 +102,7 @@ describe("searchTab", () => {
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
-    searchTab.mount(container, store, fakeMap(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    searchTab.mount(container, store, fakeRenderer().renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
     const results = container.querySelector(".search-results") as HTMLElement;
     expect(results.children).toHaveLength(0);
 
@@ -117,9 +119,9 @@ describe("searchTab", () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
-    const map = fakeMap();
+    const { renderer, animate } = fakeRenderer();
 
-    searchTab.mount(container, store, map, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    searchTab.mount(container, store, renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
     const input = container.querySelector("input") as HTMLInputElement;
     const dept = data.departments[0];
     if (!dept) throw new Error("фикстура должна содержать хотя бы один департамент");
@@ -134,7 +136,7 @@ describe("searchTab", () => {
     deptButton.click();
 
     expect(store.get().selection).toEqual({ kind: "dept", id: dept.id });
-    expect(map.flyTo).not.toHaveBeenCalled();
+    expect(animate).not.toHaveBeenCalled();
     expect(store.get().tab).toBe(4); // у департамента нет своей вкладки с графом — вкладку не трогаем
   });
 
@@ -142,9 +144,9 @@ describe("searchTab", () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
-    const map = fakeMap();
+    const { renderer, animate } = fakeRenderer();
 
-    searchTab.mount(container, store, map, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    searchTab.mount(container, store, renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
     const input = container.querySelector("input") as HTMLInputElement;
     const author = data.authors[0];
     if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
@@ -157,16 +159,16 @@ describe("searchTab", () => {
 
     expect(store.get().tab).toBe(1);
     expect(store.get().selection).toEqual({ kind: "node", key: author.key });
-    expect(map.flyTo).toHaveBeenCalledOnce();
+    expect(animate).toHaveBeenCalledOnce();
   });
 
   it("клик по результату-репозиторию переключает вкладку на 2, по результату-публикации — на 3", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
-    const map = fakeMap();
+    const { renderer } = fakeRenderer();
 
-    searchTab.mount(container, store, map, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    searchTab.mount(container, store, renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
     const input = container.querySelector("input") as HTMLInputElement;
     const results = container.querySelector(".search-results") as HTMLElement;
 

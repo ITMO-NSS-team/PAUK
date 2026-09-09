@@ -34,7 +34,7 @@ const HIT_KIND_TAB: Record<"author" | "repo" | "pub", TabId> = { author: 1, repo
  * Реализует {@link TabModule}.
  */
 export const searchTab: TabModule = {
-  mount(container, store, map, data, pubDetails, repoDetails) {
+  mount(container, store, renderer, data, pubDetails, repoDetails) {
     const nodeByKey = indexByKey(data);
 
     let query = "";
@@ -78,7 +78,7 @@ export const searchTab: TabModule = {
             // перерисовались бы дважды на один клик.
             store.set({ tab: HIT_KIND_TAB[hit.kind], selection: { kind: "node", key: hit.key } });
             const node = nodeByKey.get(hit.key);
-            if (node) map.flyTo({ center: [node.gx, node.gy] });
+            if (node) renderer.getCamera().animate({ x: node.gx, y: node.gy });
           },
         }),
       );

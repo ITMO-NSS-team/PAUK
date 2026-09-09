@@ -1,101 +1,78 @@
-// Слой "features" — реакция на клики пользователя по карте: превращает их
-// в изменения общего состояния (Store) и просит карту подсветить выбранный
-// узел/ребро. Сама отрисовка подсветки (как она выглядит) остаётся в
-// map/build.ts — этот файл только решает, ЧТО выбрано, а не КАК это нарисовать.
+// Слой "features" — реакция на клики пользователя по графу: превращает их
+// в изменения общего состояния (Store). Подсветка выбранного узла/ребра —
+// целиком в map/build.ts (единый nodeReducer/edgeReducer, см.
+// applySelectionHighlighting) — этот файл только решает, ЧТО выбрано, а не
+// КАК это нарисовать.
+//
+// В отличие от MapLibre-версии, здесь не нужно вручную решать приоритет
+// "сначала узел, потом ребро, иначе пусто": Sigma сама различает три
+// случая (clickNode/clickEdge/clickStage) через собственный picking-слой —
+// клик физически попадает ровно в одно из трёх событий.
 
-import type { Map as MapLibreMap, MapMouseEvent } from "maplibre-gl";
+import type Sigma from "sigma";
 import type { AppState, Store } from "../core/state";
-import { EDGE_HIT_LAYER_ID, NODE_LAYER_ID, setSelectedEdge, setSelectedNode } from "../map/build";
 
 /**
- * Подключает выбор узла/ребра кликом по карте: клик по точке — выбрать
- * узел, клик рядом с линией (в пределах невидимого широкого
- * `EDGE_HIT_LAYER_ID` из map/build.ts, а не видимой тонкой линии) —
- * выбрать ребро, клик по пустому месту — снять выбор. Узел проверяется
- * первым и безусловно приоритетнее ребра: даже там, где широкая область
- * клика ребра перекрывает узел, клик по самому узлу должен выбирать именно
- * узел. Курсор меняется на "руку" при наведении на узел ИЛИ на область
- * ребра — без этого непонятно, что тонкую линию вообще можно выбрать.
+ * Подключает выбор узла/ребра кликом по графу и курсор-подсказку на
+ * наведении. `enableEdgeEvents: true` (см. map/build.ts::mountReactiveGraph)
+ * обязателен, иначе `clickEdge`/`enterEdge`/`leaveEdge` не приходят вовсе —
+ * по умолчанию Sigma эти события не считает (дороже трассировать клики по
+ * тонким линиям, чем по кругам).
  *
- * Также подписывается на сам Store: как только `selection` меняется по
- * любой другой причине (например, клик по списку в сайдбаре или по
- * результату поиска), карта перерисовывает подсветку — источник правды
- * один (Store), а не два независимых состояния (что выбрано на карте и
- * что в Store).
- *
- * @param map - экземпляр карты MapLibre.
+ * @param renderer - Sigma-рендерер.
  * @param store - Store приложения.
- * @returns Функция отписки (unmount) — снимает все обработчики событий с
- *   карты и отписывается от Store, чтобы при пересборке фичи не
- *   накапливались дублирующиеся слушатели на одной и той же карте.
+ * @returns Функция отписки (unmount) — снимает все обработчики событий.
  */
-export function mountSelection(map: MapLibreMap, store: Store<AppState>): () => void {
+export function mountSelection(renderer: Sigma, store: Store<AppState>): () => void {
+  const graph = renderer.getGraph();
+
+  /** Клик по узлу — выбрать его. `node` — это же graphology node id, оно же node.key из данных. */
+  function onClickNode({ node }: { node: string }): void {
+    store.set({ selection: { kind: "node", key: node } });
+  }
+
   /**
-   * Обрабатывает клик по карте: сначала проверяет узел под курсором,
-   * затем ребро, иначе снимает выбор. Пишет результат прямо в Store —
-   * сама функция ничего не возвращает.
-   *
-   * @param event - событие клика мыши по карте.
+   * Клик по ребру — выбрать его. `edge` — внутренний graphology-ключ ребра
+   * (не то же самое, что `s`/`t` из данных), поэтому концы и вес достаются
+   * из графа: `graph.extremities()` — те самые `s`/`t`, `weight` — атрибут,
+   * записанный при наполнении графа (см. map/build.ts::populateGraph).
    */
-  function onClick(event: MapMouseEvent): void {
-    // queryRenderedFeatures смотрит, что реально нарисовано в точке клика
-    // на конкретном слое — так же работает и клик по "пустому месту": там
-    // ни в одном из слоёв ничего нет, features будет пустым массивом.
-    const nodeFeature = map.queryRenderedFeatures(event.point, { layers: [NODE_LAYER_ID] })[0];
-    const nodeKey = nodeFeature?.properties?.key as string | undefined;
-    if (nodeKey) {
-      store.set({ selection: { kind: "node", key: nodeKey } });
-      return;
-    }
+  function onClickEdge({ edge }: { edge: string }): void {
+    const [s, t] = graph.extremities(edge);
+    const w = graph.getEdgeAttribute(edge, "weight") as number;
+    store.set({ selection: { kind: "edge", s, t, w } });
+  }
 
-    const edgeFeature = map.queryRenderedFeatures(event.point, { layers: [EDGE_HIT_LAYER_ID] })[0];
-    const edgeProps = edgeFeature?.properties as { s?: string; t?: string; w?: number } | undefined;
-    if (edgeProps?.s && edgeProps.t && typeof edgeProps.w === "number") {
-      store.set({ selection: { kind: "edge", s: edgeProps.s, t: edgeProps.t, w: edgeProps.w } });
-      return;
-    }
-
+  /** Клик по пустому месту холста — снять выбор. */
+  function onClickStage(): void {
     store.set({ selection: null });
   }
 
-  /** Переключает курсор карты на "руку" — вызывается при наведении на узел или на область клика ребра. */
+  /** Переключает курсор на "руку" — вызывается при наведении на узел или на ребро. */
   function onEnterInteractive(): void {
-    map.getCanvas().style.cursor = "pointer";
+    renderer.getContainer().style.cursor = "pointer";
   }
 
-  /** Возвращает курсор карты в обычное состояние — вызывается, когда наведение уходит с узла/ребра. */
+  /** Возвращает курсор в обычное состояние — вызывается, когда наведение уходит с узла/ребра. */
   function onLeaveInteractive(): void {
-    map.getCanvas().style.cursor = "";
+    renderer.getContainer().style.cursor = "";
   }
 
-  // Обычный клик по карте (не по конкретному слою) — единая точка входа и
-  // для выбора узла/ребра, и для снятия выбора, поэтому не нужен отдельный
-  // обработчик "клик по пустому месту". Курсор — один и тот же обработчик
-  // на оба слоя, поведение при наведении одинаковое что на узел, что на ребро.
-  map.on("click", onClick);
-  map.on("mouseenter", NODE_LAYER_ID, onEnterInteractive);
-  map.on("mouseleave", NODE_LAYER_ID, onLeaveInteractive);
-  map.on("mouseenter", EDGE_HIT_LAYER_ID, onEnterInteractive);
-  map.on("mouseleave", EDGE_HIT_LAYER_ID, onLeaveInteractive);
-
-  // Подписка на Store: как только selection в состоянии меняется (в том
-  // числе не из-за клика по карте, а, например, из поиска), карта
-  // перерисовывает подсветку — источник правды один (Store), а не два
-  // рассинхронизированных состояния (что выбрано на карте и что в Store).
-  // Ровно один из двух вызовов ниже реально что-то меняет: Selection — это
-  // один из вариантов (node/edge/dept/null), поэтому выбор ребра сам собой
-  // снимает подсветку узла и наоборот — не нужно делать это отдельным шагом.
-  const unsubscribe = store.subscribe((state) => {
-    setSelectedNode(map, state.selection?.kind === "node" ? state.selection.key : null);
-    setSelectedEdge(map, state.selection?.kind === "edge" ? { s: state.selection.s, t: state.selection.t } : null);
-  });
+  renderer.on("clickNode", onClickNode);
+  renderer.on("clickEdge", onClickEdge);
+  renderer.on("clickStage", onClickStage);
+  renderer.on("enterNode", onEnterInteractive);
+  renderer.on("leaveNode", onLeaveInteractive);
+  renderer.on("enterEdge", onEnterInteractive);
+  renderer.on("leaveEdge", onLeaveInteractive);
 
   return () => {
-    map.off("click", onClick);
-    map.off("mouseenter", NODE_LAYER_ID, onEnterInteractive);
-    map.off("mouseleave", NODE_LAYER_ID, onLeaveInteractive);
-    map.off("mouseenter", EDGE_HIT_LAYER_ID, onEnterInteractive);
-    map.off("mouseleave", EDGE_HIT_LAYER_ID, onLeaveInteractive);
-    unsubscribe();
+    renderer.off("clickNode", onClickNode);
+    renderer.off("clickEdge", onClickEdge);
+    renderer.off("clickStage", onClickStage);
+    renderer.off("enterNode", onEnterInteractive);
+    renderer.off("leaveNode", onLeaveInteractive);
+    renderer.off("enterEdge", onEnterInteractive);
+    renderer.off("leaveEdge", onLeaveInteractive);
   };
 }

@@ -1,4 +1,4 @@
-import type { Map as MapLibreMap } from "maplibre-gl";
+import type Sigma from "sigma";
 import { describe, expect, it, vi } from "vitest";
 import type { PubDetail, RepoDetail } from "../src/contracts/graph";
 import { indexDetailsByKey } from "../src/core/data";
@@ -13,12 +13,14 @@ const NO_PUB_DETAILS = new Map<string, PubDetail>();
 const NO_REPO_DETAILS = new Map<string, RepoDetail>();
 
 /**
- * Вкладкам от карты нужен только flyTo() (вызывается по клику на элемент
- * списка) — настоящий MapLibre в jsdom не поднять (ему нужен WebGL-канвас),
- * поэтому подставляем минимальную заглушку вместо реальной карты.
+ * Вкладкам от рендерера нужна только camera.animate() (вызывается по клику
+ * на элемент списка) — настоящий Sigma в jsdom не поднять (нужен
+ * WebGL-канвас), поэтому подставляем минимальную заглушку.
  */
-function fakeMap(): MapLibreMap {
-  return { flyTo: vi.fn() } as unknown as MapLibreMap;
+function fakeRenderer(): { renderer: Sigma; animate: ReturnType<typeof vi.fn> } {
+  const animate = vi.fn();
+  const renderer = { getCamera: () => ({ animate }) } as unknown as Sigma;
+  return { renderer, animate };
 }
 
 function initialState(): AppState {
@@ -36,7 +38,7 @@ describe("authorsTab", () => {
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
-    authorsTab.mount(container, store, fakeMap(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    authorsTab.mount(container, store, fakeRenderer().renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
     const sorted = [...data.authors].sort((a, b) => b.pubs_count - a.pubs_count);
     expect(Array.from(container.children).map((el) => el.textContent)).toEqual(
@@ -55,7 +57,7 @@ describe("authorsTab", () => {
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
-    authorsTab.mount(container, store, fakeMap(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    authorsTab.mount(container, store, fakeRenderer().renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
     store.set({ lang: "en" });
 
     const sorted = [...data.authors].sort((a, b) => b.pubs_count - a.pubs_count);
@@ -68,15 +70,15 @@ describe("authorsTab", () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
-    const map = fakeMap();
+    const { renderer, animate } = fakeRenderer();
 
-    authorsTab.mount(container, store, map, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    authorsTab.mount(container, store, renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
     const firstItem = container.firstElementChild as HTMLButtonElement;
     firstItem.click();
 
     const author = [...data.authors].sort((a, b) => b.pubs_count - a.pubs_count)[0];
     expect(store.get().selection).toEqual({ kind: "node", key: author?.key });
-    expect(map.flyTo).toHaveBeenCalledOnce();
+    expect(animate).toHaveBeenCalledOnce();
   });
 });
 
@@ -86,7 +88,7 @@ describe("reposTab", () => {
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
-    reposTab.mount(container, store, fakeMap(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    reposTab.mount(container, store, fakeRenderer().renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
     const stars = Array.from(container.children).map((el) => Number(el.textContent?.match(/\d+/)?.[0]));
     expect(stars).toEqual([...stars].sort((a, b) => b - a));
@@ -110,7 +112,7 @@ describe("mountTabs — переключение вкладок", () => {
     const buttons = buttonsMarkup();
     const content = document.createElement("div");
 
-    mountTabs(buttons, content, store, fakeMap(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    mountTabs(buttons, content, store, fakeRenderer().renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
     expect(content.children.length).toBe(data.authors.length);
     expect(buttons.querySelector('[data-tab="1"]')?.classList.contains("tab-button--active")).toBe(true);
@@ -122,7 +124,7 @@ describe("mountTabs — переключение вкладок", () => {
     const buttons = buttonsMarkup();
     const content = document.createElement("div");
 
-    mountTabs(buttons, content, store, fakeMap(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    mountTabs(buttons, content, store, fakeRenderer().renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
     (buttons.querySelector('[data-tab="2"]') as HTMLButtonElement).click();
 
     expect(store.get().tab).toBe(2);
@@ -138,7 +140,7 @@ describe("pubsTab", () => {
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
-    pubsTab.mount(container, store, fakeMap(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    pubsTab.mount(container, store, fakeRenderer().renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
     const years = Array.from(container.children).map((el) => el.textContent?.includes("неизвестен"));
     // Как только встретили "год неизвестен", все последующие тоже должны быть без года.
@@ -154,7 +156,7 @@ describe("pubsTab", () => {
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
-    pubsTab.mount(container, store, fakeMap(), data, pubDetails, NO_REPO_DETAILS);
+    pubsTab.mount(container, store, fakeRenderer().renderer, data, pubDetails, NO_REPO_DETAILS);
 
     const labels = Array.from(container.querySelectorAll(".tab-list-item__label")).map((el) => el.textContent);
     for (const pub of data.pubs) {

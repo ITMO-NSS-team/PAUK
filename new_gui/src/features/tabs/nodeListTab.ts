@@ -43,7 +43,7 @@ interface NodeListTabConfig<T extends NodeLike> {
  */
 export function createNodeListTab<T extends NodeLike>(config: NodeListTabConfig<T>): TabModule {
   return {
-    mount(container, store, map, data, pubDetails) {
+    mount(container, store, renderer, data, pubDetails) {
       const sorted = [...config.items(data)].sort(config.compare);
 
       function render(state: AppState): void {
@@ -56,7 +56,7 @@ export function createNodeListTab<T extends NodeLike>(config: NodeListTabConfig<
             selected: item.key === selectedKey,
             onClick: () => {
               store.set({ selection: { kind: "node", key: item.key } });
-              map.flyTo({ center: [item.gx, item.gy] });
+              renderer.getCamera().animate({ x: item.gx, y: item.gy });
             },
           }),
         );

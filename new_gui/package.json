@@ -32,6 +32,7 @@
     "vitest": "^5.0.0"
   },
   "dependencies": {
-    "maplibre-gl": "^6.7.0"
+    "graphology": "^0.26.0",
+    "sigma": "^3.0.3"
   }
 }

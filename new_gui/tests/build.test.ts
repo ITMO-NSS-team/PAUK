@@ -1,21 +1,12 @@
-import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
+import Graph from "graphology";
+import type Sigma from "sigma";
 import { describe, expect, it, vi } from "vitest";
 import type { PubDetail } from "../src/contracts/graph";
 import { MAP_CONFIG } from "../src/core/config";
 import { indexDetailsByKey } from "../src/core/data";
 import { Store, type AppState } from "../src/core/state";
 import { loadSampleGraphData, loadSamplePubDetails } from "./fixtures";
-import {
-  buildEdgeFeatures,
-  buildNodeFeatures,
-  EDGE_LAYER_ID,
-  mountReactiveGraph,
-  NODE_LAYER_ID,
-  nodeBounds,
-  setSelectedEdge,
-  setSelectedNode,
-  toLngLat,
-} from "../src/map/build";
+import { mountReactiveGraph, populateGraph } from "../src/map/build";
 
 // Пороги, которые ничего не отсекают — для тестов, где фильтрация не в фокусе.
 const NO_FILTER = { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026 };
@@ -33,61 +24,81 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
   };
 }
 
-describe("map/build на фикстур-данных", () => {
-  it("buildNodeFeatures отдаёт только узлы вкладки, а не всех сущностей сразу", async () => {
+describe("populateGraph на фикстур-данных", () => {
+  it("отдаёт только узлы вкладки, а не всех сущностей сразу", async () => {
     const data = await loadSampleGraphData();
 
     // Три разных графа — авторы/репозитории/публикации не смешиваются в одной вкладке.
-    expect(buildNodeFeatures(data, "ru", 1, NO_FILTER, NO_PUB_DETAILS).features).toHaveLength(data.authors.length);
-    expect(buildNodeFeatures(data, "ru", 2, NO_FILTER, NO_PUB_DETAILS).features).toHaveLength(data.repos.length);
-    expect(buildNodeFeatures(data, "ru", 3, NO_FILTER, NO_PUB_DETAILS).features).toHaveLength(data.pubs.length);
-    // Вкладка 4 (поиск) не привязана ни к одному из трёх графов — карта пуста.
-    expect(buildNodeFeatures(data, "ru", 4, NO_FILTER, NO_PUB_DETAILS).features).toHaveLength(0);
+    const authorsGraph = new Graph();
+    populateGraph(authorsGraph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
+    expect(authorsGraph.order).toBe(data.authors.length);
+
+    const reposGraph = new Graph();
+    populateGraph(reposGraph, data, "ru", 2, NO_FILTER, NO_PUB_DETAILS);
+    expect(reposGraph.order).toBe(data.repos.length);
+
+    const pubsGraph = new Graph();
+    populateGraph(pubsGraph, data, "ru", 3, NO_FILTER, NO_PUB_DETAILS);
+    expect(pubsGraph.order).toBe(data.pubs.length);
+
+    // Вкладка 4 (поиск) не привязана ни к одному из трёх графов — граф пуст.
+    const searchGraph = new Graph();
+    populateGraph(searchGraph, data, "ru", 4, NO_FILTER, NO_PUB_DETAILS);
+    expect(searchGraph.order).toBe(0);
   });
 
-  it("buildNodeFeatures красит узлы цветом их департамента", async () => {
+  it("красит узлы цветом их департамента", async () => {
     const data = await loadSampleGraphData();
-    const fc = buildNodeFeatures(data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
+    const graph = new Graph();
+    populateGraph(graph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
     const deptColor = new Map(data.departments.map((d) => [d.id, d.color]));
 
-    for (const feature of fc.features) {
-      const author = data.authors.find((a) => a.key === feature.properties.key);
-      expect(feature.properties.color).toBe(deptColor.get(author?.dept ?? -1));
+    for (const key of graph.nodes()) {
+      const author = data.authors.find((a) => a.key === key);
+      expect(graph.getNodeAttribute(key, "color")).toBe(deptColor.get(author?.dept ?? -1));
     }
   });
 
-  it("buildNodeFeatures подставляет настоящее название публикации из pubDetails вместо ключа", async () => {
+  it("подставляет настоящее название публикации из pubDetails вместо ключа", async () => {
     const data = await loadSampleGraphData();
     const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
+    const graph = new Graph();
+    populateGraph(graph, data, "ru", 3, NO_FILTER, pubDetails);
 
-    const fc = buildNodeFeatures(data, "ru", 3, NO_FILTER, pubDetails);
-    for (const feature of fc.features) {
-      const detail = pubDetails.get(feature.properties.key);
-      expect(feature.properties.label).toBe(detail?.label);
-      expect(feature.properties.label).not.toBe(feature.properties.key);
+    for (const key of graph.nodes()) {
+      const detail = pubDetails.get(key);
+      expect(graph.getNodeAttribute(key, "label")).toBe(detail?.label);
+      expect(graph.getNodeAttribute(key, "label")).not.toBe(key);
     }
   });
 
-  it("buildEdgeFeatures отдаёт рёбра только своей вкладки", async () => {
+  it("отдаёт рёбра только своей вкладки", async () => {
     const data = await loadSampleGraphData();
 
-    expect(buildEdgeFeatures(data, 1, NO_FILTER).features).toHaveLength(data.coauth_edges.length);
-    expect(buildEdgeFeatures(data, 2, NO_FILTER).features).toHaveLength(data.repo_edges.length);
-    expect(buildEdgeFeatures(data, 3, NO_FILTER).features).toHaveLength(data.pub_edges.length);
-    expect(buildEdgeFeatures(data, 4, NO_FILTER).features).toHaveLength(0);
-  });
+    const authorsGraph = new Graph();
+    populateGraph(authorsGraph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
+    expect(authorsGraph.size).toBe(data.coauth_edges.length);
 
-  it("buildEdgeFeatures пропускает рёбра без резолвящихся позиций", async () => {
-    const data = await loadSampleGraphData();
-    // Во фикстуре все s/t у coauth-рёбер существуют как узлы — ничего не отфильтровано.
-    expect(buildEdgeFeatures(data, 1, NO_FILTER).features).toHaveLength(data.coauth_edges.length);
+    const reposGraph = new Graph();
+    populateGraph(reposGraph, data, "ru", 2, NO_FILTER, NO_PUB_DETAILS);
+    expect(reposGraph.size).toBe(data.repo_edges.length);
+
+    const pubsGraph = new Graph();
+    populateGraph(pubsGraph, data, "ru", 3, NO_FILTER, NO_PUB_DETAILS);
+    expect(pubsGraph.size).toBe(data.pub_edges.length);
+
+    const searchGraph = new Graph();
+    populateGraph(searchGraph, data, "ru", 4, NO_FILTER, NO_PUB_DETAILS);
+    expect(searchGraph.size).toBe(0);
   });
 
   it("filters.minCoauth скрывает слабые связи соавторства на вкладке 1", async () => {
     const data = await loadSampleGraphData();
     const strong = data.coauth_edges.filter((e) => e.w >= 2).length;
 
-    expect(buildEdgeFeatures(data, 1, { ...NO_FILTER, minCoauth: 2 }).features).toHaveLength(strong);
+    const graph = new Graph();
+    populateGraph(graph, data, "ru", 1, { ...NO_FILTER, minCoauth: 2 }, NO_PUB_DETAILS);
+    expect(graph.size).toBe(strong);
     expect(strong).toBeLessThan(data.coauth_edges.length); // проверка, что фикстура вообще даёт разброс весов
   });
 
@@ -95,7 +106,9 @@ describe("map/build на фикстур-данных", () => {
     const data = await loadSampleGraphData();
     const strong = data.pub_edges.filter((e) => e.w >= 2).length;
 
-    expect(buildEdgeFeatures(data, 3, { ...NO_FILTER, minSharedAuthors: 2 }).features).toHaveLength(strong);
+    const graph = new Graph();
+    populateGraph(graph, data, "ru", 3, { ...NO_FILTER, minSharedAuthors: 2 }, NO_PUB_DETAILS);
+    expect(graph.size).toBe(strong);
   });
 
   it("filters.yearMax скрывает публикации позже указанного года, но не публикации без известного года", async () => {
@@ -103,155 +116,121 @@ describe("map/build на фикстур-данных", () => {
     const filters = { ...NO_FILTER, yearMax: 2022 };
     const expectedPubs = data.pubs.filter((p) => p.year === null || p.year <= 2022);
 
-    const nodeKeys = buildNodeFeatures(data, "ru", 3, filters, NO_PUB_DETAILS).features.map(
-      (f) => f.properties.key,
-    );
-    expect(nodeKeys.sort()).toEqual(expectedPubs.map((p) => p.key).sort());
+    const graph = new Graph();
+    populateGraph(graph, data, "ru", 3, filters, NO_PUB_DETAILS);
+    expect(graph.nodes().sort()).toEqual(expectedPubs.map((p) => p.key).sort());
     expect(expectedPubs.some((p) => p.year === null)).toBe(true); // фикстура правда содержит пример без года
 
-    // Ребро между публикациями, у одной из которых год скрыт фильтром, тоже пропадает.
-    for (const feature of buildEdgeFeatures(data, 3, filters).features) {
-      expect(nodeKeys).toContain(feature.properties.s);
-      expect(nodeKeys).toContain(feature.properties.t);
+    // Ребро между публикациями, у одной из которых год скрыт фильтром, тоже пропадает —
+    // graph.hasNode() внутри populateGraph уже отражает фильтр узлов, отдельной
+    // проверки года на рёбрах не нужно (в отличие от MapLibre-версии).
+    for (const edgeKey of graph.edges()) {
+      const [s, t] = graph.extremities(edgeKey);
+      expect(graph.nodes()).toContain(s);
+      expect(graph.nodes()).toContain(t);
     }
   });
+});
 
-  it("nodeBounds охватывает координаты всех узлов, а не только текущей вкладки", async () => {
+describe("applySelectionHighlighting (через mountReactiveGraph)", () => {
+  /**
+   * Фейковый Sigma-рендерер: хранит реальный graphology.Graph (для
+   * extremities/getEdgeAttribute внутри reducer'ов) и перехватывает
+   * setSetting("nodeReducer"/"edgeReducer", ...), чтобы тест мог вызвать
+   * сохранённый reducer напрямую — настоящий Sigma в jsdom не поднять
+   * (нужен WebGL-канвас), поэтому мы никогда не конструируем его в тестах.
+   */
+  // any, не never[] — это фейк для перехвата колбэков в тесте, а не
+  // рабочий код, где важна строгая типизация аргументов.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type Reducer = (...args: any[]) => unknown;
+
+  function fakeRenderer(graph: Graph): { renderer: Sigma; getReducer: (key: "nodeReducer" | "edgeReducer") => Reducer } {
+    const reducers = new Map<string, Reducer>();
+    const renderer = {
+      getGraph: () => graph,
+      setSetting: (key: string, value: unknown) => reducers.set(key, value as Reducer),
+      refresh: vi.fn(),
+    } as unknown as Sigma;
+    return {
+      renderer,
+      getReducer: (key) => {
+        const reducer = reducers.get(key);
+        if (!reducer) throw new Error(`reducer "${key}" ещё не зарегистрирован`);
+        return reducer;
+      },
+    };
+  }
+
+  it("nodeReducer подсвечивает именно выбранный узел", async () => {
     const data = await loadSampleGraphData();
-    const [[minLon, minLat], [maxLon, maxLat]] = nodeBounds(data);
-    const nodes = [...data.authors, ...data.repos, ...data.pubs];
+    const graph = new Graph();
+    populateGraph(graph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
+    const store = new Store<AppState>(initialState({ selection: { kind: "node", key: "A1" } }));
+    const { renderer, getReducer } = fakeRenderer(graph);
 
-    for (const node of nodes) {
-      // nodeBounds() (как и buildNodeFeatures()) отдаёт координаты уже
-      // переведённые в lng/lat для MapLibre (см. map/build.ts::toLngLat) —
-      // холст 0..1000 напрямую сравнивать с этой рамкой нельзя.
-      const [lon, lat] = toLngLat(node.gx, node.gy);
-      expect(lon).toBeGreaterThanOrEqual(minLon);
-      expect(lon).toBeLessThanOrEqual(maxLon);
-      expect(lat).toBeGreaterThanOrEqual(minLat);
-      expect(lat).toBeLessThanOrEqual(maxLat);
-    }
+    mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
+    const nodeReducer = getReducer("nodeReducer");
+
+    const baseData = { x: 0, y: 0, size: MAP_CONFIG.node.radius, color: "#fff", label: "" };
+    expect(nodeReducer("A1", baseData)).toMatchObject({ highlighted: true, size: MAP_CONFIG.node.radiusSelected });
+    expect(nodeReducer("A2", baseData)).toBe(baseData); // не выбран — reducer возвращает данные как есть
   });
 
-  it("toLngLat держит холст 30..970 (new_generate/layout.py::COORD_MIN/COORD_MAX) внутри диапазона широт, который не роняет MapLibre", () => {
-    // Реальный прогон new_generate падал именно на этом: раскладка на 22 400
-    // узлах естественно расползается до самого края холста (gy=970), а
-    // MapLibre.LngLat выбрасывает исключение вне [-90, 90] — map.fitBounds()
-    // в app/main.ts валился с этой ошибкой ДО того, как успевали
-    // смонтироваться клики/вкладки/переключение языка, хотя точки на карте
-    // уже были нарисованы (см. коммит, добавивший toLngLat).
-    for (const canvasCoord of [30, 500, 970]) {
-      const [lon, lat] = toLngLat(canvasCoord, canvasCoord);
-      expect(Math.abs(lon)).toBeLessThan(90);
-      expect(Math.abs(lat)).toBeLessThan(90);
-    }
-  });
-});
+  it("edgeReducer подсвечивает ребро независимо от порядка s/t в selection", async () => {
+    const data = await loadSampleGraphData();
+    const graph = new Graph();
+    graph.addNode("A1", { x: 0, y: 0 });
+    graph.addNode("A2", { x: 1, y: 1 });
+    graph.addEdge("A1", "A2", { weight: 3 });
+    const store = new Store<AppState>(initialState({ selection: { kind: "edge", s: "A2", t: "A1", w: 3 } }));
+    const { renderer, getReducer } = fakeRenderer(graph);
 
-describe("setSelectedNode", () => {
-  function fakeMapWithPaint(): { map: MapLibreMap; setPaintProperty: ReturnType<typeof vi.fn> } {
-    const setPaintProperty = vi.fn();
-    return { map: { setPaintProperty } as unknown as MapLibreMap, setPaintProperty };
-  }
+    mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
+    const edgeReducer = getReducer("edgeReducer");
+    const [edgeKey] = graph.edges();
+    if (!edgeKey) throw new Error("граф должен содержать хотя бы одно ребро");
 
-  it("красит именно NODE_LAYER_ID (circle-radius и circle-stroke-width)", () => {
-    const { map, setPaintProperty } = fakeMapWithPaint();
-    setSelectedNode(map, "A1");
-
-    expect(setPaintProperty).toHaveBeenCalledWith(NODE_LAYER_ID, "circle-radius", [
-      "case",
-      ["==", ["get", "key"], "A1"],
-      MAP_CONFIG.node.radiusSelected,
-      MAP_CONFIG.node.radius,
-    ]);
-    expect(setPaintProperty).toHaveBeenCalledWith(NODE_LAYER_ID, "circle-stroke-width", [
-      "case",
-      ["==", ["get", "key"], "A1"],
-      MAP_CONFIG.node.strokeWidthSelected,
-      MAP_CONFIG.node.strokeWidth,
-    ]);
-  });
-
-  it("null снимает выделение — сравнение с пустой строкой не совпадёт ни с одним настоящим ключом", () => {
-    const { map, setPaintProperty } = fakeMapWithPaint();
-    setSelectedNode(map, null);
-
-    expect(setPaintProperty).toHaveBeenCalledWith(NODE_LAYER_ID, "circle-radius", [
-      "case",
-      ["==", ["get", "key"], ""],
-      MAP_CONFIG.node.radiusSelected,
-      MAP_CONFIG.node.radius,
-    ]);
-  });
-});
-
-describe("setSelectedEdge", () => {
-  function fakeMapWithPaint(): { map: MapLibreMap; setPaintProperty: ReturnType<typeof vi.fn> } {
-    const setPaintProperty = vi.fn();
-    return { map: { setPaintProperty } as unknown as MapLibreMap, setPaintProperty };
-  }
-
-  it("красит именно EDGE_LAYER_ID (line-width и line-opacity), а не слой узлов", () => {
-    const { map, setPaintProperty } = fakeMapWithPaint();
-    setSelectedEdge(map, { s: "A1", t: "A2" });
-
-    expect(setPaintProperty).toHaveBeenCalledWith(EDGE_LAYER_ID, "line-width", [
-      "case",
-      ["all", ["==", ["get", "s"], "A1"], ["==", ["get", "t"], "A2"]],
-      MAP_CONFIG.edge.widthSelected,
-      MAP_CONFIG.edge.width,
-    ]);
-    expect(setPaintProperty).toHaveBeenCalledWith(EDGE_LAYER_ID, "line-opacity", [
-      "case",
-      ["all", ["==", ["get", "s"], "A1"], ["==", ["get", "t"], "A2"]],
-      MAP_CONFIG.edge.opacitySelected,
-      MAP_CONFIG.edge.opacity,
-    ]);
-  });
-
-  it("null снимает выделение — сравнение с пустой строкой не совпадёт ни с одним настоящим s/t", () => {
-    const { map, setPaintProperty } = fakeMapWithPaint();
-    setSelectedEdge(map, null);
-
-    expect(setPaintProperty).toHaveBeenCalledWith(EDGE_LAYER_ID, "line-width", [
-      "case",
-      ["all", ["==", ["get", "s"], ""], ["==", ["get", "t"], ""]],
-      MAP_CONFIG.edge.widthSelected,
-      MAP_CONFIG.edge.width,
-    ]);
+    const baseData = { size: MAP_CONFIG.edge.width, color: MAP_CONFIG.edge.color, label: null, hidden: false, forceLabel: false, zIndex: 0, type: "line" };
+    expect(edgeReducer(edgeKey, baseData)).toMatchObject({
+      color: MAP_CONFIG.edge.colorSelected,
+      size: MAP_CONFIG.edge.widthSelected,
+    });
   });
 });
 
 describe("mountReactiveGraph", () => {
-  function fakeMapWithSource(): { map: MapLibreMap; setData: ReturnType<typeof vi.fn> } {
-    const setData = vi.fn();
-    const map = {
-      addSource: vi.fn(),
-      addLayer: vi.fn(),
-      getSource: () => ({ setData }) as unknown as GeoJSONSource,
-    } as unknown as MapLibreMap;
-    return { map, setData };
+  function fakeRenderer(graph: Graph): { renderer: Sigma; refresh: ReturnType<typeof vi.fn> } {
+    const refresh = vi.fn();
+    const renderer = {
+      getGraph: () => graph,
+      setSetting: vi.fn(),
+      refresh,
+    } as unknown as Sigma;
+    return { renderer, refresh };
   }
 
-  it("рисует граф один раз при монтировании и пересобирает его при смене tab/lang/filters, но не при смене selection", async () => {
+  it("не пересобирает граф при монтировании (он уже наполнен снаружи) и пересобирает при смене tab/lang/filters, но не при смене selection", async () => {
     const data = await loadSampleGraphData();
+    const graph = new Graph();
+    populateGraph(graph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
     const store = new Store<AppState>(initialState());
-    const { map, setData } = fakeMapWithSource();
+    const { renderer, refresh } = fakeRenderer(graph);
 
-    mountReactiveGraph(map, store, data, NO_PUB_DETAILS);
-    expect(map.addSource).toHaveBeenCalledTimes(2); // узлы + рёбра
-    expect(setData).not.toHaveBeenCalled();
+    mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
+    expect(graph.order).toBe(data.authors.length);
 
     store.set({ selection: { kind: "node", key: "A1" } });
-    expect(setData).not.toHaveBeenCalled(); // выбор — не повод пересобирать граф
+    expect(refresh).toHaveBeenCalledTimes(1); // выбор — лёгкий refresh(), не пересборка
+    expect(graph.order).toBe(data.authors.length); // граф не пересобирался
 
     store.set({ tab: 2 });
-    expect(setData).toHaveBeenCalledTimes(2); // узлы + рёбра пересобраны под новую вкладку
+    expect(graph.order).toBe(data.repos.length); // пересобран под новую вкладку
 
     store.set({ lang: "en" });
-    expect(setData).toHaveBeenCalledTimes(4);
+    expect(graph.order).toBe(data.repos.length); // та же вкладка, граф пересобран заново (не упал)
 
     store.set({ filters: { ...store.get().filters, minCoauth: 5 } });
-    expect(setData).toHaveBeenCalledTimes(6);
+    expect(refresh).toHaveBeenCalledTimes(1); // ни одно из трёх пересобраний refresh() не дёргало
   });
 });

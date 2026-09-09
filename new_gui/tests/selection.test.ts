@@ -1,8 +1,8 @@
-import type { GeoJSONFeature, Map as MapLibreMap, MapMouseEvent } from "maplibre-gl";
+import Graph from "graphology";
+import type Sigma from "sigma";
 import { describe, expect, it, vi } from "vitest";
 import { Store, type AppState } from "../src/core/state";
 import { mountSelection } from "../src/features/selection";
-import { EDGE_HIT_LAYER_ID, NODE_LAYER_ID } from "../src/map/build";
 
 function initialState(): AppState {
   return {
@@ -14,80 +14,56 @@ function initialState(): AppState {
 }
 
 /**
- * Фейковая карта: queryRenderedFeatures отдаёт то, что попросили через
- * withFeatures — по слою из opts.layers[0], как реально их запрашивает
- * features/selection.ts (по одному слою за раз). onClick сохраняется,
- * чтобы тест мог вызвать его напрямую вместо настоящего клика мышью.
+ * Фейковый Sigma-рендерер: хранит реальный graphology.Graph (нужен
+ * mountSelection для extremities()/getEdgeAttribute() при клике по ребру)
+ * и перехватывает on(event, cb) по имени события — тест вызывает
+ * сохранённый колбэк напрямую вместо настоящего клика мышью. Настоящий
+ * Sigma в jsdom не поднять (нужен WebGL-канвас).
  */
-function fakeMap(byLayer: Record<string, GeoJSONFeature | undefined>): { map: MapLibreMap; click: () => void } {
-  let onClick: ((event: MapMouseEvent) => void) | undefined;
-  const map = {
-    queryRenderedFeatures: (_point: unknown, opts: { layers: string[] }) => {
-      const feature = byLayer[opts.layers[0] ?? ""];
-      return feature ? [feature] : [];
-    },
-    getCanvas: () => ({ style: {} }) as unknown as HTMLCanvasElement,
-    on: (event: string, arg2: unknown, arg3?: unknown) => {
-      if (event !== "click") return;
-      onClick = (typeof arg3 === "function" ? arg3 : arg2) as (event: MapMouseEvent) => void;
-    },
+function fakeRenderer(graph: Graph): { renderer: Sigma; fire: (event: string, payload?: unknown) => void } {
+  const handlers = new Map<string, (payload?: unknown) => void>();
+  const renderer = {
+    getGraph: () => graph,
+    getContainer: () => ({ style: {} }) as unknown as HTMLElement,
+    on: (event: string, cb: (payload?: unknown) => void) => handlers.set(event, cb),
     off: vi.fn(),
-    // mountSelection тоже подписывается на store и красит выбранный узел —
-    // без этой заглушки клик падал бы на "setPaintProperty is not a function".
-    setPaintProperty: vi.fn(),
-  } as unknown as MapLibreMap;
-
-  return { map, click: () => onClick?.({} as MapMouseEvent) };
-}
-
-function nodeFeature(key: string): GeoJSONFeature {
-  return { properties: { key } } as unknown as GeoJSONFeature;
-}
-
-function edgeFeature(s: string, t: string, w: number): GeoJSONFeature {
-  return { properties: { s, t, w } } as unknown as GeoJSONFeature;
+  } as unknown as Sigma;
+  return { renderer, fire: (event, payload) => handlers.get(event)?.(payload) };
 }
 
 describe("mountSelection", () => {
   it("клик по узлу выбирает узел", () => {
+    const graph = new Graph();
     const store = new Store<AppState>(initialState());
-    const { map, click } = fakeMap({ [NODE_LAYER_ID]: nodeFeature("A1") });
+    const { renderer, fire } = fakeRenderer(graph);
 
-    mountSelection(map, store);
-    click();
+    mountSelection(renderer, store);
+    fire("clickNode", { node: "A1" });
 
     expect(store.get().selection).toEqual({ kind: "node", key: "A1" });
   });
 
-  it("клик по ребру (без узла под курсором) выбирает ребро", () => {
+  it("клик по ребру выбирает ребро — s/t/w читаются из графа по ключу ребра", () => {
+    const graph = new Graph();
+    graph.addNode("A1", { x: 0, y: 0 });
+    graph.addNode("A2", { x: 1, y: 1 });
+    graph.addEdge("A1", "A2", { weight: 3 });
     const store = new Store<AppState>(initialState());
-    const { map, click } = fakeMap({ [EDGE_HIT_LAYER_ID]: edgeFeature("A1", "A2", 3) });
+    const { renderer, fire } = fakeRenderer(graph);
 
-    mountSelection(map, store);
-    click();
+    mountSelection(renderer, store);
+    fire("clickEdge", { edge: graph.edges()[0] });
 
     expect(store.get().selection).toEqual({ kind: "edge", s: "A1", t: "A2", w: 3 });
   });
 
-  it("узел приоритетнее ребра, если под курсором оба", () => {
-    const store = new Store<AppState>(initialState());
-    const { map, click } = fakeMap({
-      [NODE_LAYER_ID]: nodeFeature("A1"),
-      [EDGE_HIT_LAYER_ID]: edgeFeature("A1", "A2", 3),
-    });
-
-    mountSelection(map, store);
-    click();
-
-    expect(store.get().selection).toEqual({ kind: "node", key: "A1" });
-  });
-
-  it("клик по пустому месту снимает выбор", () => {
+  it("клик по пустому месту (clickStage) снимает выбор", () => {
+    const graph = new Graph();
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A1" } });
-    const { map, click } = fakeMap({});
+    const { renderer, fire } = fakeRenderer(graph);
 
-    mountSelection(map, store);
-    click();
+    mountSelection(renderer, store);
+    fire("clickStage");
 
     expect(store.get().selection).toBeNull();
   });
