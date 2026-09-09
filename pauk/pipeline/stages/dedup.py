@@ -388,16 +388,12 @@ def plan_person_merges(
 
     for first, second in _paired_persons(people, in_scope, staff_ids):
         # A pooled record stands for everyone OpenAlex could not tell apart,
-        # so it is nobody in particular and merges with nothing. Checked
-        # before the answers below because it is not an answer about
-        # identity: nobody was ever asked whether a bucket is a person, and
-        # such a pair never reaches the queue to be asked about.
+        # so it is nobody in particular and merges with nothing. Ahead of the
+        # answers below: such a pair never reaches the queue to be asked about.
         if _is_pooled_record(first) or _is_pooled_record(second):
             continue
-        # A confirmed merge skips the rules entirely; there is nothing left
-        # to weigh. A refusal does not skip them — see plan_pair — because
-        # the evidence may have changed since it was given, and that is
-        # worth noticing.
+        # A confirmed merge skips the rules; a refusal does not, because the
+        # evidence may have moved since. See plan_pair.
         if decisions.get(frozenset((first.id, second.id))) == SAME:
             plan_pair(first, second, "manual")
             continue

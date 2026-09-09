@@ -385,14 +385,10 @@ class RussianNamesCatalog:
         # person the other's official record, so the key is unusable for
         # match()/staff_id() below - kept out of by_key entirely.
         self.by_key = {key: rows[0] for key, rows in keyed.items() if len(rows) == 1}
-        # The dropped keys, kept rather than forgotten. A name that folds
-        # onto two records is not a name the rules can act on, but it is a
-        # question somebody at the university can answer — and answering it
-        # is what lets dedup fold that person's split records (rule 4).
-        # Only the forms that spell the given name out: "A. Kuznetsov"
-        # stands for every Kuznetsov whose given name starts with an A,
-        # including the ones this catalog does not list, so there is no
-        # closed set of records to choose from.
+        # The same keys, kept for the panel to ask about: the rules cannot
+        # choose between two namesakes, somebody at the university can.
+        # Spelled-out forms only — "A. Kuznetsov" stands for every Kuznetsov
+        # on an A, including ones this catalog does not list.
         self.namesakes_by_key = {
             key: rows for key, rows in keyed.items()
             if len(rows) > 1 and key in spelled_out

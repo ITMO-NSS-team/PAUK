@@ -258,11 +258,8 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
             return RedirectResponse(f"/review?tab={tab}&done=chosen",
                                     status_code=status.HTTP_303_SEE_OTHER)
         elif verdict == "split":
-            # A refused group is answered by naming who inside it is one
-            # person; the store turns that into the pair answers the rules
-            # read. Nothing is folded here even when the nodes exist: a
-            # split is several decisions at once, and folding them in
-            # sequence would leave the later ones pointing at a node the
+            # Nothing is folded here even when the nodes exist: a split is
+            # several merges, and the later ones would point at a node the
             # earlier ones had already swallowed.
             review.record_split(db, members, form.getlist("same"),
                                 actor=user.actor, note=note)

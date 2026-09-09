@@ -53,11 +53,8 @@ GITHUB = "github_person"
 STAFF = "staff_record"
 KINDS = (PAIR, GROUP, GITHUB, STAFF)
 
-#: The kinds that describe two records of one researcher, which is what the
-#: person merge rules read. GITHUB and STAFF are kept out: their members are
-#: an account or a directory row paired with a person, and such an answer
-#: reaching a function looking for people to fold would be looked up and
-#: never found — the kind of pollution that goes unnoticed until it does not.
+#: What the person merge rules read. GITHUB and STAFF pair a person with an
+#: account or a directory row, which is not two records of one researcher.
 PERSON_KINDS = (PAIR, GROUP)
 
 SAME = "same"
@@ -100,12 +97,9 @@ def question_id(kind: str, members: list[str]) -> str:
     unique = sorted(set(members))
     if len(unique) < 2:
         raise ReviewError("a question needs at least two distinct members")
-    # The key joins on ":" and the form that answers it joins on ",", so an
-    # id carrying either would build a key that splits back into something
-    # else. Nothing that lands here can today — OpenAlex ids, "orcid_" and
-    # "name_" hashes, github logins, "surname|name|patronymic" catalog keys
-    # — but a LinkCandidate id turned out to be a URL once already, and that
-    # cost a day. Fail loudly rather than collide quietly.
+    # The key joins on ":" and the form that answers it on ",". Nothing that
+    # lands here carries either today, but a LinkCandidate id turned out to
+    # be a URL once already: fail loudly rather than collide quietly.
     bad = [member for member in unique if ":" in member or "," in member]
     if bad:
         raise ReviewError(f"an id cannot contain ':' or ',': {', '.join(bad)}")
@@ -191,10 +185,8 @@ def record_held(db: Database, report: list[dict], source: str = STAGE) -> int:
         How many questions were written or refreshed.
     """
     moment = _now()
-    # One upsert per question rather than a bulk write: a run holds a few
-    # hundred pairs at most and takes hours to produce them, so the round
-    # trips cost nothing, and the rest of the storage layer writes this way
-    # too (see PreparedStore.upsert_models).
+    # One upsert per question, like PreparedStore.upsert_models: a few
+    # hundred rows once per run, so a bulk write would buy nothing.
     written = 0
     for row in report:
         if row.get("status") != "held":
@@ -338,11 +330,8 @@ def record_split(db: Database, members: list[str], same: list[str],
         raise ReviewError("the group was refused precisely because all of it "
                           "cannot be one person")
     rest = [member for member in members if member not in same]
-    # The pairs inside the subset go first on purpose. Written halfway, what
-    # is on record says "these are one person" and nothing about the rest —
-    # the rules rebuild the whole group, refuse it again and merge nothing.
-    # The other order would leave the rules free to fold a subset the person
-    # never finished describing.
+    # Inside the subset first, so a write that stops halfway merges nothing:
+    # the rules rebuild the whole group and refuse it again.
     written = 0
     for first, second in combinations(same, 2):
         record_verdict(db, PAIR, [first, second], SAME, actor=actor, note=note)
@@ -408,10 +397,8 @@ def record_choice(db: Database, person: str, records: list[str], chosen: str | N
     moment = _now()
     db[COLLECTION].update_one(
         {"_id": key},
-        # `person` is written on the document, not left to the evidence: an
-        # answer can be given before the question exists, and such a
-        # document has no evidence at all — which is where the same shape
-        # of bug already cost the github answers their meaning.
+        # `person` on the document, not in the evidence: an answer given
+        # before the question exists has no evidence to read it from.
         {"$set": {"verdict": SAME if chosen else DIFFERENT, "chosen": chosen,
                   "person": person, "actor": actor, "note": note,
                   "decided_at": moment},
@@ -484,14 +471,8 @@ def decisions(db: Database, aliases: dict[str, str] | None = None,
     return found
 
 
-#: Reasons where a person can actually settle something. Two ITMO authors
-#: with the same full name and nothing else in common is a question; the
-#: rules genuinely cannot go further, and somebody who knows the university
-#: can. One real run produced 18 of these beside 104 "only one person is
-#: ITMO-affiliated", 92 "no shared coauthors" and 60 "name is given as
-#: initials" — piles where the refusal is usually right and a reviewer would
-#: be reading, not deciding. Refused groups are pressing whatever their
-#: wording, which varies with the field that split them.
+#: Reasons a person can actually settle. One real run held 278 pairs, and
+#: only these 18 were worth an eye. Groups count too, whatever their wording.
 PRESSING_REASONS = ("identical name with nothing corroborating it",)
 
 
