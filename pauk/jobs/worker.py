@@ -42,6 +42,10 @@ Stop = Callable[[], bool]
 #: Told which part of the run is under way, by name and by how many of how
 #: many are behind it. Passed alongside `stop` because both are hooks the
 #: worker holds and the work itself knows nothing about.
+#:
+#: May raise `Cancelled`. The work calls it between the parts it is made of,
+#: which is exactly where stopping is safe, so the worker answers a cancel
+#: from inside it rather than waiting for the whole part to finish.
 Report = Callable[..., None]
 
 
@@ -233,6 +237,13 @@ class Worker:
 
         def report(step: str, done: int = 0, total: int = 0) -> None:
             store.progress(self.db, job.id, step, done, total)
+            # Between two parts of the work nothing is half written, so this
+            # is where a cancel can be honoured. Before, the only such seam
+            # was between the three phases of a pipeline, and a run stopped
+            # during collection kept going through ten more stages — hours
+            # after somebody pressed the button.
+            if stop():
+                raise Cancelled(f"остановлено перед шагом «{step}»")
 
         try:
             with _Beat(self.db, job, self.name):

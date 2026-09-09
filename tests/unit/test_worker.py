@@ -583,3 +583,58 @@ class ProgressTest(unittest.TestCase):
         store.start(self.db, job.id)
         store.finish(self.db, job.id, {})
         self.assertFalse(store.progress(self.db, job.id, "поздно"))
+
+
+class CancelBetweenStepsTest(unittest.TestCase):
+    """A cancel is heard between the parts a run is made of.
+
+    The pipeline used to look at it only between its three phases, so a run
+    stopped during collection kept going through ten enrichment stages —
+    hours after somebody pressed the button.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.worker = worker.Worker(Settings(), self.db, name="w")
+
+    def run_with(self, step):
+        job = store.enqueue(self.db, JobKind.PUBLISH, {"group": "2024"})
+        with patch.dict(worker.STEPS, {JobKind.PUBLISH: step}):
+            self.worker.run_once()
+        return store.read(self.db, job.id)
+
+    def test_a_run_stops_at_the_next_step_it_reports(self):
+        seen = []
+
+        def step(config, db, payload, stop, report):
+            report("этап один", 0, 3)
+            seen.append("один")
+            store.request_cancel(db, store.recent(db)[0].id)
+            report("этап два", 1, 3)
+            seen.append("два")  # never reached
+            return {}
+
+        settled = self.run_with(step)
+        self.assertEqual(seen, ["один"])
+        self.assertEqual(settled.state, JobState.CANCELLED)
+
+    def test_a_run_nobody_stopped_goes_all_the_way(self):
+        def step(config, db, payload, stop, report):
+            for index, name in enumerate(("a", "b", "c")):
+                report(name, index, 3)
+            return {"rows": 1}
+
+        settled = self.run_with(step)
+        self.assertEqual(settled.state, JobState.DONE)
+        self.assertEqual(settled.result, {"rows": 1})
+
+    def test_where_it_stopped_is_recorded(self):
+        def step(config, db, payload, stop, report):
+            store.request_cancel(db, store.recent(db)[0].id)
+            report("выкладка в граф")
+            return {}
+
+        self.run_with(step)
+        # The progress of the step it refused to start, so the history says
+        # how far the run actually got.
+        self.assertEqual(store.recent(self.db)[0].progress["step"], "выкладка в граф")
