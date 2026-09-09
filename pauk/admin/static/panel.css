@@ -164,7 +164,9 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
 tr:last-child td { border-bottom: 0; }
 th { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
-td.val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; word-break: break-word; }
+/* Не только на ячейке: идентификаторы и адреса стоят и в span, а без
+   переноса длинная ссылка уезжает в соседний столбец. */
+.val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; word-break: break-word; }
 tr.ro td { color: var(--muted); }
 .fixed { table-layout: fixed; }
 .card.scroll { overflow-x: auto; }
