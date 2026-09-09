@@ -250,9 +250,9 @@ def load_db(driver) -> dict[str, list]:
         "p.google_scholar AS google_scholar, "
         "p.openreview AS openreview, "
         "p.email AS email, "
-        "p.emails AS emails, "
         "p.affiliations AS affiliations, "
         # stubs
+        # "p.emails AS emails, " # STUB
         # "p.thesis AS thesis, "  # STUB
         # "p.scopus_id AS scopus_id, "  # STUB
         # "p.researcher_id AS researcher_id, "  # STUB

@@ -181,11 +181,16 @@ map.on("load", () => {
       loadDetailsInto<AuthorDetail>("authors-detail.json", DATA_CONFIG.authorDetailsUrl, authorDetailsByKey);
       loadDetailsInto<RepoDetail>("repos-detail.json", DATA_CONFIG.repoDetailsUrl, repoDetailsByKey);
     })
-    .catch(() => {
-      // Ошибка уже залогирована внутри loggedStep — здесь только решаем,
-      // что показать пользователю: без graph-data.json рисовать вообще
-      // нечего (в отличие от detail-файлов выше), поэтому баннер, а не
-      // тихий откат.
+    .catch((error: unknown) => {
+      // loggedStep логирует только провал самого fetch/JSON.parse —
+      // ошибка, брошенная уже ПОСЛЕ успешной загрузки (где-то в
+      // mountReactiveGraph/fitBounds/mountSelection/... внутри .then()
+      // выше), в консоль сама по себе не попадает никак, потому что этот
+      // .catch() ловит её молча. Логируем явно — иначе баннер "не удалось
+      // загрузить данные графа" вводит в заблуждение (данные загрузились
+      // нормально, упало что-то другое), а разобраться, что именно, без
+      // единой строчки в консоли невозможно.
+      console.error("[graph-data.json] сбой после успешной загрузки:", error);
       showLoadError(
         `Не удалось загрузить данные графа (${DATA_CONFIG.graphDataUrl}). ` +
           "Проверьте, что new_generate/generate_data.py сгенерировал файлы в data/gui/private.",

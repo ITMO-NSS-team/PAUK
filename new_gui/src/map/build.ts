@@ -50,6 +50,39 @@ function allNodes(data: GraphData): GraphNode[] {
   return [...data.authors, ...data.repos, ...data.pubs];
 }
 
+// `node.gx`/`node.gy` — это холст ForceAtlas2 из new_generate/layout.py::fit_coords(),
+// центр 500, край до 970 (0..1000, с запасом от края — см. COORD_MIN/COORD_MAX
+// там же). Это НЕ географические координаты — но MapLibre интерпретирует
+// GeoJSON-точку как [longitude, latitude], а его LngLat строго проверяет
+// широту (throw вне [-90, 90]). На маленьких тестовых фикстурах (gx/gy в
+// пределах -1..1) это никогда не всплывало; на реальных данных, где раскладка
+// естественно расползается на весь холст (gy вплоть до 970), map.fitBounds()
+// в app/main.ts валится с "Invalid LngLat latitude value" ДО того, как
+// успевают смонтироваться остальные фичи (клики по узлам, вкладки, кнопка
+// языка) — сами узлы к этому моменту уже нарисованы (addSource/addLayer
+// координаты не проверяют), поэтому карта выглядит наполовину живой.
+// CANVAS_TO_LNGLAT переводит холст в диапазон с большим запасом от предела:
+// (970 - 500) * 0.08 = 37.6°, далеко и от ±90 (жёсткий предел LngLat), и от
+// ±85.05 (практический предел проекции Меркатора).
+const CANVAS_CENTER = 500;
+const CANVAS_TO_LNGLAT = 0.08;
+
+/**
+ * Переводит координату холста раскладки ({@link CANVAS_CENTER}-центрированный
+ * `gx`/`gy` из `new_generate`) в безопасные для MapLibre `[longitude,
+ * latitude]` — единственное место, где происходит этот перевод, чтобы узлы
+ * ({@link buildNodeFeatures}), рёбра ({@link buildEdgeFeatures}) и рамка
+ * камеры ({@link nodeBounds}) не могли разойтись в том, как именно они
+ * интерпретируют одни и те же `gx`/`gy`.
+ *
+ * @param gx - `AuthorNode.gx`/`RepoNode.gx`/`PubNode.gx` (или `gy` для второго параметра).
+ * @param gy - см. `gx`.
+ * @returns `[longitude, latitude]`, пригодные для GeoJSON `Point`/`LineString` и `map.fitBounds`.
+ */
+export function toLngLat(gx: number, gy: number): [number, number] {
+  return [(gx - CANVAS_CENTER) * CANVAS_TO_LNGLAT, (gy - CANVAS_CENTER) * CANVAS_TO_LNGLAT];
+}
+
 /**
  * Возвращает узлы, которые должна показывать активная вкладка. Вкладка 4
  * (поиск) — пустой список, карта на ней не привязана ни к одному из трёх
@@ -144,7 +177,7 @@ export function buildNodeFeatures(
     // properties — сейчас используется только properties.key, но id
     // задаём сразу, чтобы не переделывать источник данных позже.
     id: node.key,
-    geometry: { type: "Point", coordinates: [node.gx, node.gy] },
+    geometry: { type: "Point", coordinates: toLngLat(node.gx, node.gy) },
     properties: {
       key: node.key,
       kind: node.kind,
@@ -176,7 +209,7 @@ export function buildNodeFeatures(
  * @returns GeoJSON `FeatureCollection` линий с свойствами {@link EdgeProps} на каждой.
  */
 export function buildEdgeFeatures(data: GraphData, tab: TabId, filters: Filters): FeatureCollection<LineString, EdgeProps> {
-  const posByKey = new Map(allNodes(data).map((node) => [node.key, [node.gx, node.gy] as [number, number]]));
+  const posByKey = new Map(allNodes(data).map((node) => [node.key, toLngLat(node.gx, node.gy)]));
   const pubYearByKey = new Map(data.pubs.map((pub) => [pub.key, pub.year]));
 
   const features: Feature<LineString, EdgeProps>[] = [];
@@ -217,9 +250,9 @@ export function buildEdgeFeatures(data: GraphData, tab: TabId, filters: Filters)
  *   который MapLibre принимает напрямую в `map.fitBounds(...)`.
  */
 export function nodeBounds(data: GraphData): [[number, number], [number, number]] {
-  const nodes = allNodes(data);
-  const lons = nodes.map((node) => node.gx);
-  const lats = nodes.map((node) => node.gy);
+  const points = allNodes(data).map((node) => toLngLat(node.gx, node.gy));
+  const lons = points.map(([lon]) => lon);
+  const lats = points.map(([, lat]) => lat);
   return [
     [Math.min(...lons), Math.min(...lats)],
     [Math.max(...lons), Math.max(...lats)],

@@ -14,6 +14,7 @@ import {
   nodeBounds,
   setSelectedEdge,
   setSelectedNode,
+  toLngLat,
 } from "../src/map/build";
 
 // Пороги, которые ничего не отсекают — для тестов, где фильтрация не в фокусе.
@@ -121,10 +122,28 @@ describe("map/build на фикстур-данных", () => {
     const nodes = [...data.authors, ...data.repos, ...data.pubs];
 
     for (const node of nodes) {
-      expect(node.gx).toBeGreaterThanOrEqual(minLon);
-      expect(node.gx).toBeLessThanOrEqual(maxLon);
-      expect(node.gy).toBeGreaterThanOrEqual(minLat);
-      expect(node.gy).toBeLessThanOrEqual(maxLat);
+      // nodeBounds() (как и buildNodeFeatures()) отдаёт координаты уже
+      // переведённые в lng/lat для MapLibre (см. map/build.ts::toLngLat) —
+      // холст 0..1000 напрямую сравнивать с этой рамкой нельзя.
+      const [lon, lat] = toLngLat(node.gx, node.gy);
+      expect(lon).toBeGreaterThanOrEqual(minLon);
+      expect(lon).toBeLessThanOrEqual(maxLon);
+      expect(lat).toBeGreaterThanOrEqual(minLat);
+      expect(lat).toBeLessThanOrEqual(maxLat);
+    }
+  });
+
+  it("toLngLat держит холст 30..970 (new_generate/layout.py::COORD_MIN/COORD_MAX) внутри диапазона широт, который не роняет MapLibre", () => {
+    // Реальный прогон new_generate падал именно на этом: раскладка на 22 400
+    // узлах естественно расползается до самого края холста (gy=970), а
+    // MapLibre.LngLat выбрасывает исключение вне [-90, 90] — map.fitBounds()
+    // в app/main.ts валился с этой ошибкой ДО того, как успевали
+    // смонтироваться клики/вкладки/переключение языка, хотя точки на карте
+    // уже были нарисованы (см. коммит, добавивший toLngLat).
+    for (const canvasCoord of [30, 500, 970]) {
+      const [lon, lat] = toLngLat(canvasCoord, canvasCoord);
+      expect(Math.abs(lon)).toBeLessThan(90);
+      expect(Math.abs(lat)).toBeLessThan(90);
     }
   });
 });
