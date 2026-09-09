@@ -8,7 +8,15 @@ from urllib.parse import parse_qs, urlparse
 import fitz
 import mongomock
 
-from pauk.models import CodeLink, GitHubProfile, LinkOccurrence, Publication, RepoLink, Repository
+from pauk.models import (
+    ClassificationStatus,
+    CodeLink,
+    GitHubProfile,
+    LinkOccurrence,
+    Publication,
+    RepoLink,
+    Repository,
+)
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.stages.base import PreparedSelection
 from pauk.pipeline.stages.code_links import (
@@ -72,7 +80,9 @@ class StagesTest(unittest.TestCase):
         links = {r.publication_id: r for r in prepared.read_models("repo_links", RepoLink)}
         # code_links only records what was found; whether it's the
         # authors' own artifact is link_relevance's call, not this stage's.
-        self.assertIsNone(links["W1"].links[0].is_relevant)
+        link = links["W1"].links[0]
+        self.assertEqual(link.classification_status, ClassificationStatus.PENDING)
+        self.assertIsNone(link.is_relevant)
 
     def test_code_links_strips_sentence_ending_period_from_url(self):
         prepared = PreparedStore(self.db, "sample")
@@ -236,6 +246,10 @@ class StagesTest(unittest.TestCase):
         self.assertEqual(json.loads(rows["W1"].code_url), ["https://github.com/asl/BandageNG"])
         links = {r.publication_id: r for r in prepared.read_models("repo_links", RepoLink)}
         self.assertEqual(links["W1"].links[0].llm_reason, "repository_archived_by_this_deposit")
+        self.assertEqual(
+            links["W1"].links[0].classification_status,
+            ClassificationStatus.CLASSIFIED,
+        )
         # A title with a space before the colon is prose, not owner/name,
         # and a plain article is never read as an archive.
         self.assertIsNone(rows["W2"].code_url)
@@ -258,6 +272,18 @@ class StagesTest(unittest.TestCase):
         publication = next(prepared.read_models("publications", Publication))
         self.assertNotIn("link_relevance", publication.processing)
 
+    def test_legacy_link_with_an_explicit_uncertain_verdict_is_classified(self):
+        classified = CodeLink.model_validate({
+            "url": "https://github.com/org/repo",
+            "is_relevant": None,
+            "llm_confidence": 0.3,
+            "llm_reason": "insufficient context",
+        })
+        pending = CodeLink.model_validate({"url": "https://github.com/org/other"})
+
+        self.assertEqual(classified.classification_status, ClassificationStatus.CLASSIFIED)
+        self.assertEqual(pending.classification_status, ClassificationStatus.PENDING)
+
     @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
     def test_link_relevance_classifies_pending_links(self, openrouter_client):
         openrouter_client.return_value.chat_json.return_value = {
@@ -275,6 +301,7 @@ class StagesTest(unittest.TestCase):
         rows = {r.id: r for r in prepared.read_models("publications", Publication)}
         self.assertEqual(rows["W1"].processing["link_relevance"].status, ProcessingStatus.COMPLETED)
         link = next(prepared.read_models("repo_links", RepoLink)).links[0]
+        self.assertEqual(link.classification_status, ClassificationStatus.CLASSIFIED)
         self.assertTrue(link.is_relevant)
         self.assertEqual(link.llm_confidence, 0.9)
         self.assertEqual(link.llm_reason, "authors say so")
@@ -389,7 +416,9 @@ class StagesTest(unittest.TestCase):
 
         rows = {r.id: r for r in prepared.read_models("publications", Publication)}
         self.assertEqual(rows["W1"].processing["link_relevance"].status, ProcessingStatus.COMPLETED)
+        self.assertEqual(rows["W1"].processing["link_relevance"].result_count, 1)
         link = next(prepared.read_models("repo_links", RepoLink)).links[0]
+        self.assertEqual(link.classification_status, ClassificationStatus.CLASSIFIED)
         self.assertIsNone(link.is_relevant)
         self.assertEqual(link.llm_confidence, 0.3)
         self.assertEqual(link.llm_reason, "insufficient context")
@@ -413,6 +442,7 @@ class StagesTest(unittest.TestCase):
         rows = {r.id: r for r in prepared.read_models("publications", Publication)}
         self.assertEqual(rows["W1"].processing["link_relevance"].status, ProcessingStatus.FAILED)
         link = next(prepared.read_models("repo_links", RepoLink)).links[0]
+        self.assertEqual(link.classification_status, ClassificationStatus.FAILED)
         self.assertIsNone(link.is_relevant)
         [log] = list(self.db["llm_logs_link_relevance"].find({}))
         self.assertEqual(log["error"], "is_authors_artifact must be true, false, or null")
@@ -498,6 +528,7 @@ class StagesTest(unittest.TestCase):
         rows = {r.id: r for r in prepared.read_models("publications", Publication)}
         self.assertEqual(rows["W1"].processing["link_relevance"].status, ProcessingStatus.FAILED)
         link = next(prepared.read_models("repo_links", RepoLink)).links[0]
+        self.assertEqual(link.classification_status, ClassificationStatus.FAILED)
         self.assertIsNone(link.is_relevant)
 
     @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
@@ -526,6 +557,7 @@ class StagesTest(unittest.TestCase):
         LinkRelevanceStage(prepared, raw, force=True).run()
 
         link = next(prepared.read_models("repo_links", RepoLink)).links[0]
+        self.assertEqual(link.classification_status, ClassificationStatus.FAILED)
         self.assertIsNone(link.is_relevant)
         self.assertIsNone(link.llm_confidence)
         self.assertIsNone(link.llm_reason)
@@ -663,6 +695,43 @@ class StagesTest(unittest.TestCase):
         CodeLinksStage(prepared, raw, config=config).run()
         rows = {row.id: row for row in prepared.read_models("publications", Publication)}
         self.assertEqual(rows["W1"].processing["code_links"].status, ProcessingStatus.COMPLETED)
+
+    @patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_code_links_keeps_previous_pdf_evidence_when_a_retry_fails(self, http_client):
+        http_client.return_value.get_bytes.return_value = _make_pdf_bytes([
+            "Our code is available at https://github.com/org/repo",
+        ])
+        config = Settings(data_dir=self.root / "data")
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        prepared.write_models("publications", [
+            Publication(id="W1", title="t", pdf_url="https://example.org/w1.pdf"),
+        ])
+        CodeLinksStage(prepared, raw, config=config).run()
+
+        publications = list(prepared.read_models("publications", Publication))
+        publications[0].processing["link_relevance"] = ProcessingState(
+            status=ProcessingStatus.COMPLETED,
+        )
+        prepared.write_models("publications", publications)
+        (config.pdf_dir / "W1.pdf").unlink()
+        self.db.pdfs.delete_one({"_id": "W1"})
+        http_client.return_value.get_bytes.side_effect = RuntimeError("temporary PDF failure")
+
+        CodeLinksStage(prepared, raw, config=config, force=True).run()
+
+        publication = next(prepared.read_models("publications", Publication))
+        self.assertEqual(
+            publication.processing["code_links"].status,
+            ProcessingStatus.FAILED,
+        )
+        self.assertNotIn("link_relevance", publication.processing)
+        [link] = next(prepared.read_models("repo_links", RepoLink)).links
+        self.assertEqual(link.classification_status, ClassificationStatus.PENDING)
+        self.assertEqual([occ.page_number for occ in link.occurrences], [1])
+        context = link.occurrences[0].context
+        self.assertIsNotNone(context)
+        self.assertIn("Our code is available", context or "")
 
     @patch("pauk.pipeline.stages.code_links.HttpClient")
     def test_code_links_falls_back_to_crawler_when_no_pdf_url(self, http_client):

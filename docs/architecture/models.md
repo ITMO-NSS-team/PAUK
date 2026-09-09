@@ -100,6 +100,7 @@ Pydantic-модели того, что лежит в `data/prepared/<group>/*.js
   значение `context`/`page_number` на ссылку, что не давало отразить
   ссылку, встретившуюся и в абстракте, и на нескольких страницах.
 - **`CodeLink`** — url, host, `occurrences: list[LinkOccurrence]`,
+  `classification_status` (`pending`/`classified`/`failed`) и
   `is_relevant`/`llm_confidence`/`llm_reason` — заполняются
   `link_relevance.py` (кроме детерминированного Zenodo-архива), см.
   [pipeline/code-links.md](pipeline/code-links.md).

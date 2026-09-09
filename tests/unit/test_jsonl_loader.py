@@ -52,6 +52,7 @@ class ExtractRepoLinksTest(unittest.TestCase):
         known = {normalize_repo_url("https://github.com/org/repo"): "https://github.com/org/repo"}
         row = {"publication_id": "W1", "links": [{
             "url": "https://github.com/org/repo",
+            "classification_status": "classified",
             "is_relevant": None,
             "llm_confidence": 0.2,
             "llm_reason": "insufficient context",
@@ -67,10 +68,26 @@ class ExtractRepoLinksTest(unittest.TestCase):
             "W1",
             "https://github.com/org/repo",
             {
+                "classification_status": "classified",
                 "is_relevant": None,
                 "llm_confidence": 0.2,
                 "llm_reason": "insufficient context",
             },
+        )])
+
+    def test_pending_status_is_not_mixed_with_a_previous_graph_verdict(self):
+        known = {normalize_repo_url("https://github.com/org/repo"): "https://github.com/org/repo"}
+        row = {"publication_id": "W1", "links": [{
+            "url": "https://github.com/org/repo",
+            "classification_status": "pending",
+        }]}
+
+        _, repo_edges, _, _ = extract_repo_links(row, known)
+
+        self.assertEqual(repo_edges, [(
+            "W1",
+            "https://github.com/org/repo",
+            {},
         )])
 
 
@@ -146,6 +163,7 @@ class RelevancePropertySynchronizationTest(unittest.TestCase):
                 "publication_id": "W1",
                 "links": [{
                     "url": "https://github.com/org/repo",
+                    "classification_status": "classified" if status == "completed" else "failed",
                     "is_relevant": relevance,
                     "llm_confidence": confidence,
                     "llm_reason": reason,
@@ -187,6 +205,7 @@ class RelevancePropertySynchronizationTest(unittest.TestCase):
             "https://github.com/org/repo",
         )]
         self.assertNotIn("is_relevant", edge)
+        self.assertEqual(edge["classification_status"], "classified")
         self.assertEqual(edge["llm_confidence"], 0.2)
 
     def test_failed_reclassification_preserves_last_complete_graph_state(self):
@@ -222,6 +241,7 @@ class RelevancePropertySynchronizationTest(unittest.TestCase):
             "W1",
             "https://github.com/org/repo",
         )]
+        self.assertEqual(edge["classification_status"], "classified")
         self.assertTrue(edge["is_relevant"])
         self.assertEqual(edge["llm_confidence"], 0.9)
 

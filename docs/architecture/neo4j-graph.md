@@ -45,7 +45,7 @@
 (список), `page_number` (список, `0` = абстракт — Neo4j не хранит `null`
 внутри массива-свойства, поэтому сентинел не `None`, см.
 [pipeline/code-links.md](pipeline/code-links.md)), `is_relevant`,
-`llm_confidence`, `llm_reason`.
+`classification_status`, `llm_confidence`, `llm_reason`.
 
 `MENTIONS_LINK` фиксирует сам факт присутствия ссылки и создаётся при
 `is_relevant=true`, `false` и `null`. `IMPLEMENTS` имеет более сильную

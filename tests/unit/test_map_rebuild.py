@@ -8,7 +8,7 @@ import mongomock
 
 from pauk.cache.graph_snapshot import write_snapshot
 from pauk.gui import rebuild
-from pauk.gui.generate_data import write_graph_files
+from pauk.gui.generate_data import _code_urls, write_graph_files
 from pauk.jobs import locks
 from pauk.jobs.models import GRAPH
 from pauk.settings import Settings
@@ -63,6 +63,20 @@ class WriteGraphFilesTest(unittest.TestCase):
     def build(self, public=False, out=None):
         out = out or self.tmp / ("public" if public else "private")
         return out, write_graph_files(self.snapshot, out, seed=42, public=public)
+
+    def test_code_urls_accept_current_and_legacy_graph_values(self):
+        self.assertEqual(
+            _code_urls('["https://github.com/org/one", "https://github.com/org/two"]'),
+            ["https://github.com/org/one", "https://github.com/org/two"],
+        )
+        self.assertEqual(
+            _code_urls("https://github.com/org/legacy"),
+            ["https://github.com/org/legacy"],
+        )
+        self.assertEqual(
+            _code_urls(["https://github.com/org/native"]),
+            ["https://github.com/org/native"],
+        )
 
     def test_it_writes_both_files(self):
         out, _ = self.build()

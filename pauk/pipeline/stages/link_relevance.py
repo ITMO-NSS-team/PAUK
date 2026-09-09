@@ -4,7 +4,7 @@ import json
 import logging
 from datetime import UTC, datetime
 
-from pauk.models import CodeLink, LinkOccurrence, Publication, RepoLink
+from pauk.models import ClassificationStatus, CodeLink, LinkOccurrence, Publication, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.sources import OpenRouterClient
 from pauk.storage import LlmLogStore
@@ -146,7 +146,7 @@ class LinkRelevanceStage(EnrichmentStage):
             pending = [
                 link
                 for link in row.links
-                if (link.is_relevant is None and link.llm_confidence is None)
+                if link.classification_status != ClassificationStatus.CLASSIFIED
                 or (self.force and link.llm_reason != ARCHIVED_DEPOSIT_REASON)
             ]
             candidates.append((row, pub, pending))
@@ -176,6 +176,7 @@ class LinkRelevanceStage(EnrichmentStage):
                     context={"publication_id": pub.id, "url": link.url},
                 )
                 if llm_error is not None:
+                    link.classification_status = ClassificationStatus.FAILED
                     link.is_relevant = None
                     link.llm_confidence = None
                     link.llm_reason = None
@@ -188,6 +189,7 @@ class LinkRelevanceStage(EnrichmentStage):
                         self.config.llm_model,
                     )
                     continue
+                link.classification_status = ClassificationStatus.CLASSIFIED
                 link.is_relevant = verdict
                 link.llm_confidence = confidence
                 link.llm_reason = reason
@@ -208,7 +210,10 @@ class LinkRelevanceStage(EnrichmentStage):
             # publication-level state until every link has been classified.
             if error is None:
                 _update_publication_code(pub, row.links)
-            resolved = sum(link.is_relevant is not None for link in row.links)
+            resolved = sum(
+                link.classification_status == ClassificationStatus.CLASSIFIED
+                for link in row.links
+            )
             pub.processing[self.name] = ProcessingState(
                 status=ProcessingStatus.FAILED
                 if error

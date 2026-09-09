@@ -455,6 +455,23 @@ def build_graph_data(db, seed: int, public: bool = False):
     }
 
 
+def _code_urls(value: object) -> list[str]:
+    """Normalize the current JSON-text contract and legacy graph values."""
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [url for url in value if isinstance(url, str) and url]
+    if not isinstance(value, str):
+        return []
+    try:
+        decoded = json.loads(value)
+    except json.JSONDecodeError:
+        return [value]
+    if isinstance(decoded, list):
+        return [url for url in decoded if isinstance(url, str) and url]
+    return [decoded] if isinstance(decoded, str) and decoded else []
+
+
 def build_search_detail(db, graph):
     """Publication details for graph-search.js (loaded after the map)."""
     pub_ids = {p["key"] for p in graph["pubs"]}
@@ -462,10 +479,7 @@ def build_search_detail(db, graph):
     for pid, title, journal, doi, _, _, has_code, code_url in db["publications"]:
         if pid not in pub_ids:
             continue
-        try:
-            urls = json.loads(code_url) if code_url else []
-        except json.JSONDecodeError:
-            urls = []
+        urls = _code_urls(code_url)
         title = title or ""
         if len(title) > 200:
             title = title[:199] + "…"
@@ -476,7 +490,7 @@ def build_search_detail(db, graph):
                 "journal": journal or "",
                 "doi": doi or "",
                 "has_code": bool(has_code),
-                "code_url": urls if isinstance(urls, list) else [urls],
+                "code_url": urls,
             }
         )
     return detail

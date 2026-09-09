@@ -101,7 +101,12 @@ def extract_repo_links(
         url = link.get("url")
         if not url:
             continue
-        relevance_fields = ("is_relevant", "llm_confidence", "llm_reason")
+        relevance_fields = (
+            "classification_status",
+            "is_relevant",
+            "llm_confidence",
+            "llm_reason",
+        )
         if synchronize_relevance is True:
             # Scalar nulls in a SET += map remove old Neo4j properties. This is
             # required for a successful true -> uncertain reclassification;
@@ -111,6 +116,8 @@ def extract_repo_links(
             props = {}
         else:
             props = {key: link[key] for key in relevance_fields if link.get(key) is not None}
+            if props.get("classification_status") == "pending":
+                props.pop("classification_status")
         occurrences = link.get("occurrences") or []
         if occurrences:
             props["context"] = [o.get("context") or "" for o in occurrences]
