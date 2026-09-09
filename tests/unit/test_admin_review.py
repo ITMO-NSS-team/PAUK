@@ -371,3 +371,146 @@ class SplitFromThePageTest(unittest.TestCase):
         body = self.client.get("/review").text
         self.assertNotIn('value="same"', body)
         self.assertIn('value="split"', body)
+
+
+class GitHubQuestionTest(unittest.TestCase):
+    """An account against the author it may belong to.
+
+    A pair like the others, only its halves are different things: one is a
+    node the panel can open, the other lives on GitHub.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        review.record_held(self.db, [{
+            "status": "held", "login": "XieN-N", "person": "A5140754163",
+            "name_raw": "Stanislav Shtuka", "url": "https://github.com/XieN-N",
+            "score": 0.6, "signals": ["name_exact"],
+            "repos": ["https://github.com/screemix/Wikontic"],
+            "held_because": ["имя совпадает целиком, но больше ничего не подтверждает"],
+        }])
+        self.client = TestClient(build(Settings(), self.db), follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def body(self):
+        return self.client.get("/review").text
+
+    def csrf(self):
+        return self.body().split('name="csrf" value="')[1].split('"')[0]
+
+    def test_the_account_points_at_github_and_the_person_at_their_card(self):
+        # Sending a login to /nodes/Person would open a card for a node that
+        # does not exist, and the reviewer needs to look at the profile.
+        body = self.body()
+        self.assertIn('href="https://github.com/XieN-N"', body)
+        self.assertIn("/nodes/Person/A5140754163", body)
+        self.assertNotIn("/nodes/Person/XieN-N", body)
+
+    def test_what_the_match_rests_on_is_spelled_out(self):
+        body = self.body()
+        self.assertIn("имя совпадает целиком", body)
+        self.assertIn("https://github.com/screemix/Wikontic", body)
+
+    def test_the_buttons_ask_about_an_account_not_about_people(self):
+        body = self.body()
+        self.assertIn("это его аккаунт", body)
+        self.assertNotIn("один человек", body)
+
+    def test_answering_records_a_github_verdict(self):
+        response = self.client.post("/review/answer", data={
+            "csrf": self.csrf(), "kind": review.GITHUB,
+            "members": "A5140754163,XieN-N", "verdict": "same"})
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(review.github_decisions(self.db),
+                         {frozenset({"A5140754163", "XieN-N"}): review.SAME})
+
+    def test_nothing_is_folded_in_the_graph(self):
+        # An account is not a node to merge; the collection stage links it
+        # on its next run.
+        self.client.post("/review/answer", data={
+            "csrf": self.csrf(), "kind": review.GITHUB,
+            "members": "A5140754163,XieN-N", "verdict": "same"})
+        (row,) = review.questions(self.db, answered=True)
+        self.assertNotIn("applied_at", row)
+
+    def test_the_page_says_when_it_will_take_effect(self):
+        self.client.post("/review/answer", data={
+            "csrf": self.csrf(), "kind": review.GITHUB,
+            "members": "A5140754163,XieN-N", "verdict": "same"})
+        self.assertIn("привяжется на следующем сборе",
+                      self.client.get("/review", params={"tab": "answered"}).text)
+
+
+class StaffChoiceTest(unittest.TestCase):
+    """Choosing which catalog record a person is.
+
+    Not a yes or no. Two namesakes are both plausible and exactly one is
+    right, so the answer names a record instead of taking a side.
+    """
+
+    RECORDS = ["kuznetsov|andrei|gennadevich", "kuznetsov|andrei|dmitrievich"]
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        review.record_held(self.db, [{
+            "status": "held", "person": "A1", "name_raw": "Andrei Kuznetsov",
+            "records": self.RECORDS,
+            "record_names": ["Кузнецов Андрей Геннадьевич", "Кузнецов Андрей Дмитриевич"],
+            "held_because": ["каталог знает несколько человек с таким именем"],
+        }])
+        self.client = TestClient(build(Settings(), self.db), follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def body(self, tab="pressing"):
+        return self.client.get("/review", params={"tab": tab}).text
+
+    def csrf(self):
+        return self.body().split('name="csrf" value="')[1].split('"')[0]
+
+    def choose(self, chosen):
+        return self.client.post("/review/answer", data={
+            "csrf": self.csrf(), "kind": review.STAFF, "verdict": "choose",
+            "members": ",".join(["A1", *self.RECORDS]), "person": "A1",
+            "chosen": chosen})
+
+    def test_the_records_are_offered_as_a_choice(self):
+        body = self.body()
+        self.assertIn("Кузнецов Андрей Геннадьевич", body)
+        self.assertIn('type="radio"', body)
+        self.assertIn("это выбранная запись", body)
+        self.assertIn("никто из них", body)
+
+    def test_only_the_person_has_a_card_to_open(self):
+        # A catalog record is a row in a CSV, not a node.
+        body = self.body()
+        self.assertIn("/nodes/Person/A1", body)
+        self.assertNotIn("/nodes/Person/kuznetsov", body)
+
+    def test_choosing_records_the_record(self):
+        self.assertEqual(self.choose(self.RECORDS[0]).status_code, 303)
+        self.assertEqual(review.staff_choices(self.db), {"A1": self.RECORDS[0]})
+
+    def test_choosing_nobody_settles_the_question_without_a_record(self):
+        self.assertEqual(self.choose("").status_code, 303)
+        self.assertEqual(review.staff_choices(self.db), {})
+        self.assertEqual(review.count(self.db, answered=True), 1)
+
+    def test_a_record_outside_the_question_is_refused(self):
+        response = self.client.post("/review/answer", data={
+            "csrf": self.csrf(), "kind": review.STAFF, "verdict": "choose",
+            "members": ",".join(["A1", *self.RECORDS]), "person": "A1",
+            "chosen": "somebody|else|entirely"})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(review.staff_choices(self.db), {})
+
+    def test_an_answer_about_a_record_is_not_an_answer_about_people(self):
+        self.choose(self.RECORDS[0])
+        self.assertEqual(review.decisions(self.db), {})
+
+    def test_the_answered_tab_shows_which_record_won(self):
+        self.choose(self.RECORDS[0])
+        body = self.body("answered")
+        self.assertIn("запись выбрана", body)
+        self.assertIn("сведёт записи на следующем прогоне", body)

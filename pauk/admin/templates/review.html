@@ -6,6 +6,9 @@
 {% if done == "merged" %}
 <p class="note">Записи слиты. Дубль удалён, связи перешли на оставшуюся запись.
    Отменить решение нельзя.</p>
+{% elif done == "chosen" %}
+<p class="note">Записано. Дедупликация на следующем прогоне сможет свести
+   записи этого человека по каталогу.</p>
 {% elif done == "split" %}
 <p class="note">Группа разобрана. Отмеченные записи сольются на следующем
    прогоне дедупликации, остальные останутся отдельно.</p>
@@ -64,20 +67,29 @@
         {% if row.is_group %}
         <div class="kind kind-bulk" style="margin-bottom:4px">группа из {{ row.members|length }}</div>
         {% endif %}
-        {% for person_id, name in row.people %}
+        {% for who in row.people %}
         <div style="margin-bottom:4px">
           {% if row.is_group and user.can_write and not row.verdict %}
           <label style="display:inline; font-size:inherit; color:inherit">
             {# Галочки стоят в другой ячейке таблицы, внутрь формы их не
                положить. Атрибут form связывает их с ней по идентификатору. #}
             <input type="checkbox" form="answer-{{ row.id }}"
-                   name="same" value="{{ person_id }}">
-            <a href="/nodes/Person/{{ person_id | urlencode }}">{{ name or person_id }}</a>
+                   name="same" value="{{ who.id }}">
+            <a href="{{ who.href }}">{{ who.name }}</a>
           </label>
+          {% elif row.is_staff and who.record %}
+          {% if user.can_write and not row.verdict %}
+          <label style="display:inline; font-size:inherit; color:inherit">
+            <input type="radio" form="answer-{{ row.id }}" name="chosen" value="{{ who.id }}">
+            {{ who.name }}</label>
           {% else %}
-          <a href="/nodes/Person/{{ person_id | urlencode }}">{{ name or person_id }}</a>
+          {{ who.name }}{% if row.chosen == who.id %} <span class="kind kind-created">выбрана</span>{% endif %}
           {% endif %}
-          <br><span class="muted val">{{ person_id }}</span></div>
+          {% else %}
+          <a href="{{ who.href }}"
+             {% if who.account %}target="_blank" rel="noopener"{% endif %}>{{ who.name }}</a>
+          {% endif %}
+          <br><span class="muted val">{{ who.id }}{% if who.account %} на GitHub{% endif %}</span></div>
         {% endfor %}
       </td>
       <td>
@@ -92,14 +104,26 @@
         <span class="muted">Внутри группы больше одного человека. Отметьте слева
           тех, кто один и тот же.</span>
         {% endif %}
+        {% if row.is_github %}
+        <div>{{ row.signals|join(", ") }}</div>
+        {% for repo in row.repos %}
+        <div class="muted val"><a href="{{ repo }}" target="_blank" rel="noopener">{{ repo }}</a></div>
+        {% endfor %}
+        {% endif %}
         {% if row.verdict %}
         <div style="margin-top:6px">
           <span class="kind {% if row.verdict == 'same' %}kind-created{% else %}kind-deleted{% endif %}">
-            {% if row.verdict == "same" %}один человек{% else %}разные люди{% endif %}</span>
+            {% if row.is_staff %}{% if row.chosen %}запись выбрана{% else %}никто из каталога{% endif %}
+            {% elif row.is_github %}{% if row.verdict == "same" %}его аккаунт{% else %}не его аккаунт{% endif %}
+            {% elif row.verdict == "same" %}один человек{% else %}разные люди{% endif %}</span>
           <br><span class="muted">{{ row.actor }}{% if row.note %} · {{ row.note }}{% endif %}</span>
           {# Только у слияния есть что применять. «Разные» ничего не меняет,
              оно лишь не даёт правилам слить пару потом. #}
-          {% if row.verdict == "same" %}
+          {% if row.is_staff %}
+            {% if row.chosen %}<br><span class="muted">сведёт записи на следующем прогоне</span>{% endif %}
+          {% elif row.is_github and row.verdict == "same" %}
+            <br><span class="muted">привяжется на следующем сборе</span>
+          {% elif row.verdict == "same" %}
             {% if row.applied_at %}<br><span class="muted">слито {{ row.applied_at|moment }}</span>
             {% else %}<br><span class="muted">сольётся на следующем прогоне</span>{% endif %}
           {% endif %}
@@ -152,13 +176,21 @@
           <div class="row" style="margin:0">
             {# Группу нельзя назвать одним человеком: её отклонили именно
                потому, что внутри два разных ORCID или адреса. #}
-            {% if row.is_group %}
+            {% if row.is_staff %}
+            <input type="hidden" name="person" value="{{ row.person }}">
+            <button type="submit" name="verdict" value="choose">это выбранная запись</button>
+            {% elif row.is_group %}
             <button type="submit" name="verdict" value="split">отмеченные это один человек</button>
+            {% elif row.is_github %}
+            <button type="submit" name="verdict" value="same">это его аккаунт</button>
             {% else %}
             <button type="submit" name="verdict" value="same">один человек</button>
             {% endif %}
             <button type="submit" name="verdict" value="different" class="ghost">
-              {% if row.is_group %}оставить раздельно{% else %}разные{% endif %}</button>
+              {% if row.is_staff %}никто из них
+              {% elif row.is_group %}оставить раздельно
+              {% elif row.is_github %}не его
+              {% else %}разные{% endif %}</button>
             <button type="submit" name="verdict" value="skip" class="ghost">не знаю</button>
           </div>
         </form>

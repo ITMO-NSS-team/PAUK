@@ -9,6 +9,7 @@ algorithm before it decides, not patch the result afterwards.
 from __future__ import annotations
 
 import logging
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -77,6 +78,45 @@ def _reason_words(reason: str) -> str:
     return reason
 
 
+#: What each github signal says, for the column that explains a match.
+SIGNALS = {
+    "email_exact": "тот же адрес",
+    "name_exact": "имя совпадает целиком",
+    "name_fuzzy": "имя похоже",
+    "itmo_email": "адрес в домене ИТМО",
+    "login_surname": "фамилия в логине",
+    "owner": "владелец репозитория",
+    "org_itmo": "состоит в организации ИТМО",
+    "itmo_profile": "ИТМО указан в профиле",
+}
+
+
+def _people(row: dict, evidence: dict) -> list[dict]:
+    """The subjects of one question, each with somewhere to look.
+
+    A person is a node the panel can open. An account is not: it lives on
+    GitHub, and the only useful thing to do with it is go and look.
+    """
+    names = evidence.get("names") or []
+    login = evidence.get("login")
+    # A staff question is about one person and the records they might be;
+    # only the person has a card to open.
+    person = row.get("person") or evidence.get("person")
+    shown = []
+    for member, name in zip(row["members"], names, strict=False):
+        account = row["kind"] == review.GITHUB and member == login
+        record = row["kind"] == review.STAFF and member != person
+        shown.append({
+            "id": member,
+            "name": name or member,
+            "href": None if record else
+                    (evidence.get("url") if account else f"/nodes/Person/{quote(member)}"),
+            "account": account,
+            "record": record,
+        })
+    return shown
+
+
 def _shown(row: dict) -> dict:
     """One question as the page reads it."""
     evidence = row.get("evidence", {})
@@ -87,10 +127,17 @@ def _shown(row: dict) -> dict:
         # kind to a literal was already wrong once, and silently — it put
         # the "one person" button on a group, which the route then refused.
         "is_group": row["kind"] == review.GROUP,
+        "is_github": row["kind"] == review.GITHUB,
+        "is_staff": row["kind"] == review.STAFF,
+        "chosen": row.get("chosen"),
         "members": row["members"],
-        # Paired with their names, because a page listing bare OpenAlex ids
-        # asks a question nobody can answer.
-        "people": list(zip(row["members"], evidence.get("names") or [], strict=False)),
+        # Paired with their names and with somewhere to look, because a page
+        # listing bare OpenAlex ids asks a question nobody can answer. An
+        # account is not a node the panel can open, so it points at GitHub.
+        "people": _people(row, evidence),
+        "url": evidence.get("url"),
+        "signals": [SIGNALS.get(name, name) for name in evidence.get("signals") or []],
+        "repos": evidence.get("repos") or [],
         "reasons": [_reason_words(reason) for reason in evidence.get("held_because", [])],
         "shared_coauthors": evidence.get("shared_coauthors"),
         "shared_departments": evidence.get("shared_departments"),
@@ -99,6 +146,7 @@ def _shown(row: dict) -> dict:
         "verdict": row.get("verdict"),
         "actor": row.get("actor"),
         "note": row.get("note"),
+        "person": row.get("person") or row.get("evidence", {}).get("person"),
         "skipped_by": row.get("skipped_by"),
         "applied_at": row.get("applied_at"),
         "disputed_at": row.get("disputed_at"),
@@ -183,6 +231,17 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
         if verdict == "skip":
             if not review.skip(db, kind, members, actor=user.actor):
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "такого вопроса нет")
+        elif verdict == "choose":
+            # Not a yes or no: two namesakes are both plausible and exactly
+            # one is right, so the answer names a record instead of taking
+            # a side. An empty choice means the catalog does not hold them.
+            person = str(form.get("person", ""))
+            chosen = str(form.get("chosen", "")).strip()
+            review.record_choice(db, person,
+                                 [member for member in members if member != person],
+                                 chosen or None, actor=user.actor, note=note)
+            return RedirectResponse(f"/review?tab={tab}&done=chosen",
+                                    status_code=status.HTTP_303_SEE_OTHER)
         elif verdict == "split":
             # A refused group is answered by naming who inside it is one
             # person; the store turns that into the pair answers the rules

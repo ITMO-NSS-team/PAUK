@@ -39,7 +39,18 @@ COLLECTION = "review_pairs"
 
 PAIR = "person_pair"
 GROUP = "person_group"
-KINDS = (PAIR, GROUP)
+#: An account against the author it may belong to. A pair like the others,
+#: only its two halves are different things: a GitHub login and a person.
+GITHUB = "github_person"
+#: A person against the catalog records their name cannot be told apart
+#: from. Answered by choosing one, or by saying none of them fits.
+STAFF = "staff_record"
+KINDS = (PAIR, GROUP, GITHUB, STAFF)
+
+#: The kinds that describe two records of one researcher, which is what the
+#: person merge rules read. Kept apart from GITHUB so an answer about an
+#: account never reaches a function looking for people to fold together.
+PERSON_KINDS = (PAIR, GROUP)
 
 SAME = "same"
 DIFFERENT = "different"
@@ -99,13 +110,29 @@ def members_of(row: dict) -> list[str]:
     Both come out of the same report list, so callers should not have to
     know which they are looking at.
     """
+    if "records" in row:
+        return sorted({row["person"], *row["records"]})
+    if "login" in row:
+        return sorted({row["login"], row["person"]})
     if "persons" in row:
         return sorted(set(row["persons"]))
     return sorted({row["person_a"], row["person_b"]})
 
 
 def kind_of(row: dict) -> str:
-    return GROUP if "persons" in row else PAIR
+    """Which question a report row is, read off the fields it carries.
+
+    Three producers write into one queue and each names its subjects its
+    own way: the github matcher a `login` and a `person`, a refused group a
+    list of `persons`, a held pair a `person_a` and a `person_b`.
+    """
+    if "records" in row:
+        return STAFF
+    if "login" in row:
+        return GITHUB
+    if "persons" in row:
+        return GROUP
+    return PAIR
 
 
 def names_of(row: dict, members: list[str]) -> list[str | None]:
@@ -117,7 +144,13 @@ def names_of(row: dict, members: list[str]) -> list[str | None]:
     names, and pairing the wrong name with the wrong id is not a mistake a
     reader can spot.
     """
-    if "persons" in row:
+    if "records" in row:
+        by_id = {row["person"]: row.get("name_raw"),
+                 **dict(zip(row["records"], row.get("record_names") or [], strict=False))}
+    elif "login" in row:
+        # The account is named by its login; there is nothing else to call it.
+        by_id = {row["login"]: row["login"], row["person"]: row.get("name_raw")}
+    elif "persons" in row:
         by_id = dict(zip(row["persons"], row.get("names") or [], strict=False))
     else:
         by_id = {row["person_a"]: row.get("name_a"), row["person_b"]: row.get("name_b")}
@@ -331,8 +364,69 @@ def mark_applied(db: Database, kind: str, members: list[str]) -> bool:
     return result.matched_count > 0
 
 
-def decisions(db: Database, aliases: dict[str, str] | None = None
-              ) -> dict[frozenset[str], str]:
+def record_choice(db: Database, person: str, records: list[str], chosen: str | None,
+                  actor: str = "unknown", note: str = "") -> dict:
+    """Say which catalog record a person is, or that none of them is.
+
+    Not a verdict like the others, because the question is not yes or no:
+    two namesakes are both plausible and exactly one is right. The choice
+    rides along with the verdict — "same" plus the record chosen, or
+    "different" when the catalog does not hold this person at all.
+
+    Raises:
+        ReviewError: The chosen record is not one of the ones asked about.
+    """
+    if chosen is not None and chosen not in records:
+        raise ReviewError("выбранной записи нет среди предложенных")
+    members = [person, *records]
+    key = question_id(STAFF, members)
+    moment = _now()
+    db[COLLECTION].update_one(
+        {"_id": key},
+        # `person` is written on the document, not left to the evidence: an
+        # answer can be given before the question exists, and such a
+        # document has no evidence at all — which is where the same shape
+        # of bug already cost the github answers their meaning.
+        {"$set": {"verdict": SAME if chosen else DIFFERENT, "chosen": chosen,
+                  "person": person, "actor": actor, "note": note,
+                  "decided_at": moment},
+         "$unset": {"skipped_at": "", "skipped_by": "",
+                    "disputed_at": "", "disputed_rule": ""},
+         "$setOnInsert": {"kind": STAFF, "members": sorted(set(members)),
+                          "evidence": {}, "seen_at": moment, "source": STAGE}},
+        upsert=True)
+    logger.info("review: %s is %s, said %s", person, chosen or "nobody in the catalog", actor)
+    return db[COLLECTION].find_one({"_id": key})
+
+
+def staff_choices(db: Database) -> dict[str, str]:
+    """The catalog record each person was said to be, where somebody said.
+
+    Only the answers that name a record: "none of them" resolves the
+    question but gives the merge rules nothing to fold on.
+    """
+    return {row["person"]: row["chosen"]
+            for row in db[COLLECTION].find({"kind": STAFF, "chosen": {"$ne": None}})
+            if row.get("chosen") and row.get("person")}
+
+
+def github_decisions(db: Database) -> dict[frozenset[str], str]:
+    """Answers about accounts, keyed by the login and person they are about.
+
+    Read off `members`, not off the evidence. An answer can be given before
+    the question exists — from the CLI, or about an account this run has not
+    reached yet — and such a document carries no evidence at all, so keying
+    on it lost the answer exactly when it mattered.
+
+    The caller knows which half is the account, so the pair needs no order.
+    """
+    return {frozenset(row["members"]): row["verdict"]
+            for row in db[COLLECTION].find({"kind": GITHUB,
+                                            "verdict": {"$exists": True}})}
+
+
+def decisions(db: Database, aliases: dict[str, str] | None = None,
+              kinds: tuple[str, ...] = PERSON_KINDS) -> dict[frozenset[str], str]:
     """Every answer given, keyed by the people it is about.
 
     Args:
@@ -341,6 +435,11 @@ def decisions(db: Database, aliases: dict[str, str] | None = None
             prepared rows). A person folded into another keeps the answers
             made about them under an id that no longer exists, and without
             this they would quietly stop applying.
+        kinds: Which questions count as answers here. The default leaves
+            out GITHUB, whose members are an account and a person rather
+            than two records of one researcher — the merge rules would look
+            such a pair up and never find it, but the pollution is the kind
+            of thing that goes unnoticed until it does not.
 
     Returns:
         Members to verdict. Members are a frozenset, so the caller does not
@@ -348,7 +447,8 @@ def decisions(db: Database, aliases: dict[str, str] | None = None
     """
     aliases = aliases or {}
     found: dict[frozenset[str], str] = {}
-    for row in db[COLLECTION].find({"verdict": {"$exists": True}}):
+    for row in db[COLLECTION].find({"kind": {"$in": list(kinds)},
+                                    "verdict": {"$exists": True}}):
         members = frozenset(aliases.get(member, member) for member in row["members"])
         if len(members) < 2:
             # Both sides ended up the same person, so the question is moot:
@@ -378,7 +478,7 @@ def _query(*, pressing: bool = False, answered: bool | None = None,
     """
     query: dict = {}
     if pressing:
-        query["$or"] = [{"kind": GROUP},
+        query["$or"] = [{"kind": {"$in": [GROUP, GITHUB, STAFF]}},
                         {"evidence.held_because": {"$in": list(PRESSING_REASONS)}}]
     if answered is not None:
         query["verdict"] = {"$exists": answered}

@@ -42,6 +42,7 @@ from difflib import SequenceMatcher
 
 from pauk.models import Contribution, GitHubProfile, Person, Publication, Repository
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
 
 from .base import EnrichmentStage
@@ -194,6 +195,17 @@ def confidence(signals: list[str], in_bridge: bool) -> str:
     return "high" if in_bridge or any(signal in signals for signal in STRONG) else "probable"
 
 
+def hold_reason(signals: list[str], in_bridge: bool) -> str:
+    """Why a pair goes to a person, in the words the queue shows.
+
+    Only ever asked of a pair `decide` sent to review, so the two cases
+    below are the two it produces.
+    """
+    if "name_exact" in signals:
+        return "имя совпадает целиком, но больше ничего не подтверждает"
+    return "похожее имя и общая публикация, но больше ничего"
+
+
 def decide(signals: list[str], in_bridge: bool) -> str:
     """What to do with a pair: merge it, show it to a human, or drop it."""
     if "email_exact" in signals:
@@ -260,6 +272,40 @@ def match_account(account: dict, authors: dict[str, dict], email_index: dict[str
 
 class GitHubMatchStage(EnrichmentStage):
     name = "github_match"
+
+    def _answered(self, decisions: list[dict]) -> list[dict]:
+        """Let what people decided override the rules, and note the rest.
+
+        An answer outranks the signals both ways. "This is them" applies a
+        match the rules would only have shown; "this is not them" stops one
+        they would have made, which is the correction the queue exists for.
+
+        Returns:
+            Rows for the queue: pairs still unanswered that a person has to
+            settle, and pairs where the rules now match what somebody
+            rejected.
+        """
+        answers = review.github_decisions(self.prepared.db)
+        questions: list[dict] = []
+        for row in decisions:
+            answered = answers.get(frozenset((row["login"], row["person"])))
+            if answered == review.SAME:
+                row["decision"] = "matched"
+                row["rule"] = "manual"
+            elif answered == review.DIFFERENT:
+                if row["decision"] == "matched":
+                    # The signals have grown since somebody said no. Their
+                    # answer stands; the disagreement is worth an eye.
+                    questions.append({**row, "status": "disputed",
+                                      "rule": ", ".join(row["signals"])})
+                row["decision"] = "rejected"
+            elif row["decision"] == "review":
+                questions.append({
+                    **row, "status": "held",
+                    "held_because": [hold_reason(
+                        row["signals"], row["evidence"].get("in_bridge", False))],
+                })
+        return questions
 
     def _authors(self, people: list[Person]) -> tuple[dict, dict, dict]:
         """ITMO authors keyed by id, plus lookups by email and by full name."""
@@ -378,6 +424,8 @@ class GitHubMatchStage(EnrichmentStage):
                 "repos": sorted(accounts[login]["repos"]),
             })
 
+        questions = self._answered(decisions)
+
         stats = {"matched": 0, "review": 0}
         filled_emails = 0
         for row in decisions:
@@ -415,6 +463,8 @@ class GitHubMatchStage(EnrichmentStage):
             )
 
         self.prepared.write_models("persons", people)
+        review.record_held(self.prepared.db, questions, source=review.STAGE)
+        review.record_disputed(self.prepared.db, questions)
         # Same place dedup keeps its review journal: prepared data lives in
         # MongoDB since #102, and a journal a human reads is a file.
         journal_path = self.config.audit_dir / self.prepared.group / MATCHES_FILENAME
