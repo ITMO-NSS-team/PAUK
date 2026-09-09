@@ -1,20 +1,16 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Разбор дублей</h1>
+<h1>Спорные случаи</h1>
 
 {% set done = request.query_params.get("done") %}
 {% if done == "merged" %}
-<p class="note">Записи слиты. Дубль удалён, связи перешли на оставшуюся запись.
-   Отменить решение нельзя.</p>
+<p class="note">Записи слиты. Связи перешли на оставшуюся, отменить нельзя.</p>
 {% elif done == "chosen" %}
-<p class="note">Записано. Дедупликация на следующем прогоне сможет свести
-   записи этого человека по каталогу.</p>
+<p class="note">Запись выбрана. Сведёт на следующем прогоне дедупликации.</p>
 {% elif done == "split" %}
-<p class="note">Группа разобрана. Отмеченные записи сольются на следующем
-   прогоне дедупликации, остальные останутся отдельно.</p>
+<p class="note">Группа разобрана. Отмеченные сольются на следующем прогоне.</p>
 {% elif done == "waiting" %}
-<p class="note">Решение записано. Слияние произойдёт на следующем прогоне
-   дедупликации.</p>
+<p class="note">Решение записано. Слияние на следующем прогоне.</p>
 {% endif %}
 
 <div class="tabs">
@@ -30,21 +26,6 @@
     Отвеченные{% if counts.answered %} {{ counts.answered }}{% endif %}</a>
 </div>
 
-{% if tab == "disputed" and rows %}
-<p class="muted" style="margin:-8px 0 14px; max-width:72ch">
-  Здесь пары, которые кто-то развёл, а правила с тех пор нашли чем их
-  связать. Решение остаётся в силе, ничего не слито. Подтвердите его заново
-  или передумайте.
-</p>
-{% endif %}
-
-{% if tab == "pressing" and counts.open > counts.pressing %}
-<p class="muted" style="margin:-8px 0 14px">
-  Здесь только то, где человек может что-то добавить. Остальные
-  {{ counts.open - counts.pressing }} на вкладке «Все нерешённые».
-</p>
-{% endif %}
-
 {% if not rows %}
   <p class="muted">
   {% if tab == "pressing" %}Разбирать нечего. Правила решили всё сами.
@@ -59,14 +40,12 @@
       <col style="width:15rem"><col><col style="width:13rem">
       {% if user.can_write %}<col style="width:15rem">{% endif %}
     </colgroup>
-    <tr><th>кто и кто</th><th>что известно</th><th>почему отложено</th>
+    <tr><th>о чём вопрос</th><th>что известно</th><th>почему отложено</th>
       {% if user.can_write %}<th>решение</th>{% endif %}</tr>
     {% for row in rows %}
     <tr>
       <td>
-        {% if row.is_group %}
-        <div class="kind kind-bulk" style="margin-bottom:4px">группа из {{ row.members|length }}</div>
-        {% endif %}
+        <div class="kind kind-bulk" style="margin-bottom:4px">{{ row.asks }}</div>
         {% for who in row.people %}
         <div style="margin-bottom:4px">
           {% if row.is_group and user.can_write and not row.verdict %}
@@ -102,8 +81,7 @@
         <div class="muted">{{ row.shared_fields|join(", ") }}</div>
         {% endif %}
         {% if row.is_group and not row.verdict %}
-        <span class="muted">Внутри группы больше одного человека. Отметьте слева
-          тех, кто один и тот же.</span>
+        <span class="muted">Отметьте слева тех, кто один человек.</span>
         {% endif %}
         {% if row.is_github %}
         <div>{{ row.signals|join(", ") }}</div>

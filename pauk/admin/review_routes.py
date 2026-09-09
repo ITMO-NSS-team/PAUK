@@ -97,6 +97,18 @@ SIGNALS = {
 }
 
 
+def _asks(row: dict) -> str:
+    """What this row is a question about, in two or three words."""
+    kind = row["kind"]
+    if kind == review.GROUP:
+        return f"группа из {len(row['members'])}"
+    if kind == review.GITHUB:
+        return "аккаунт GitHub"
+    if kind == review.STAFF:
+        return "запись каталога"
+    return "две записи"
+
+
 def _people(row: dict, evidence: dict) -> list[dict]:
     """The subjects of one question, each with somewhere to look.
 
@@ -132,6 +144,10 @@ def _shown(row: dict) -> dict:
         # A flag rather than the constant in the template: a page comparing
         # kind to a literal was already wrong once, and silently — it put
         # the "one person" button on a group, which the route then refused.
+        # Названо в строке, а не выводится из набора кнопок: в таблице
+        # четыре разных вопроса подряд, и по подписям под именами не
+        # понять, про что этот.
+        "asks": _asks(row),
         "is_group": row["kind"] == review.GROUP,
         "is_github": row["kind"] == review.GITHUB,
         "is_staff": row["kind"] == review.STAFF,

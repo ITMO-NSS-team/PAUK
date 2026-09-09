@@ -556,3 +556,40 @@ class ChoiceFormGuardTest(unittest.TestCase):
     def test_the_degree_is_shown_where_the_catalog_has_one(self):
         # It is often what tells two namesakes apart.
         self.assertIn("к.т.н.", self.client.get("/review").text)
+
+
+class QuestionKindIsVisibleTest(unittest.TestCase):
+    """Four different questions sit in one table, one under another.
+
+    Which one a row is used to be readable only off the buttons beside it,
+    and only if you already knew what those meant.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        review.record_held(self.db, [
+            held_pair("A1", "A2"),
+            held_group(("B1", "B2", "B3")),
+            {"status": "held", "login": "XieN-N", "person": "A9",
+             "name_raw": "Stanislav Shtuka", "url": "https://github.com/XieN-N",
+             "signals": ["name_exact"], "repos": [],
+             "held_because": ["the name matches exactly and nothing else backs it"]},
+            {"status": "held", "person": "A8", "name_raw": "Andrei Kuznetsov",
+             "records": ["a|b|c", "a|b|d"], "record_names": ["Кузнецов А. Б.", "Кузнецов А. Д."],
+             "held_because": ["the catalog holds several people under this name"]},
+        ])
+        self.client = TestClient(build(Settings(), self.db), follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def test_every_row_says_what_it_asks_about(self):
+        body = self.client.get("/review", params={"tab": "open"}).text
+        for said in ("две записи", "группа из 3", "аккаунт GitHub", "запись каталога"):
+            with self.subTest(said=said):
+                self.assertIn(said, body)
+
+    def test_the_section_is_not_named_after_duplicates_alone(self):
+        # Three of the four questions are not about duplicates at all.
+        body = self.client.get("/review").text
+        self.assertIn("Спорные случаи", body)
+        self.assertNotIn("Разбор дублей", body)
