@@ -26,6 +26,7 @@ next. A ring that walks no new repository ends the walk.
 from __future__ import annotations
 
 import logging
+from collections.abc import Collection, Iterable
 
 from pauk.models import GitHubProfile, Person, Repository
 from pauk.sources.github import GitHubClient
@@ -48,19 +49,20 @@ MAX_RINGS = 5
 
 
 def itmo_organization_status(login: str, profile: GitHubProfile | None,
-                             catalog: frozenset[str]) -> tuple[str, str]:
+                             catalog: frozenset[str], *,
+                             repositories: Iterable[Repository] = (),
+                             confirmed: Collection[str] = ()) -> tuple[str, str]:
     """Classify the evidence that an organization belongs to ITMO.
 
     Only ``confirmed`` organizations are safe traversal seeds. ``possible``
-    is intentionally diagnostic: a city can guide a review, but cannot make
+    is intentionally diagnostic: a city or contributor can guide a review, but cannot make
     us walk every Saint Petersburg organization.
     """
     if login.lower() in catalog:
         return "confirmed", "catalog"
     if ITMO_IDENTITY_PATTERN.search(login):
         return "confirmed", "login"
-    if profile is None:
-        return "not_confirmed", ""
+    profile = profile or GitHubProfile(id="", login=login)
     identity_text = " ".join(filter(None, (
         profile.name, profile.description, profile.company,
     )))
@@ -71,28 +73,14 @@ def itmo_organization_status(login: str, profile: GitHubProfile | None,
     )))
     if PETERSBURG_PATTERN.search(weak_text):
         return "possible", "petersburg"
+    if any(
+        repository.owner_login == login
+        and any(contributor in confirmed for contributor in repository.contributors)
+        for repository in repositories
+    ):
+        # An employee may contribute to upstream projects outside ITMO.
+        return "possible", "itmo_contributor"
     return "not_confirmed", ""
-
-
-def is_itmo_organization(login: str, profile: GitHubProfile | None,
-                         catalog: frozenset[str]) -> bool:
-    """Whether an organization is ITMO's, and so worth walking into.
-
-    Three ways to tell, all of them about the organization itself: it is in
-    the curated catalogue, its login says ITMO, or its profile does.
-
-    Sharing a member with a confirmed account is deliberately *not* one of
-    them. That rule read as "an ITMO employee committed here", which is true
-    of google, microsoft, JetBrains and llvm-mirror — on real data it was the
-    only rule that ever fired, and it made seeds of all four. Walking into
-    them costs far more than API calls now: everyone credited on the
-    repositories they lead to becomes a GitHubProfile node.
-
-    A lab whose profile says nothing and whose login gives nothing away is
-    invisible here by design; that is what the catalogue is for.
-    """
-    status, _ = itmo_organization_status(login, profile, catalog)
-    return status == "confirmed"
 
 
 class SocialGraphStage(EnrichmentStage):
@@ -112,16 +100,9 @@ class SocialGraphStage(EnrichmentStage):
             profile = profiles.get(f"github_{login.lower()}")
             if (profile or GitHubProfile(id="", login=login)).type != "organization":
                 continue
-            status, reason = itmo_organization_status(login, profile, catalog)
-            if status == "not_confirmed" and any(
-                repository.owner_login == login
-                and bool(confirmed & set(repository.contributors))
-                for repository in repositories
-            ):
-                # A confirmed employee may contribute to any upstream project.
-                # Keep the lead visible for review, but never let it certify
-                # the organization that owns that project.
-                status, reason = "possible", "itmo_contributor"
+            status, reason = itmo_organization_status(
+                login, profile, catalog, repositories=repositories, confirmed=confirmed,
+            )
             if status == "confirmed":
                 logger.info("social_graph: confirmed ITMO organization %s (%s)", login, reason)
                 organizations.append(login)

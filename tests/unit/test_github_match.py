@@ -401,7 +401,8 @@ class ItmoInTextTest(unittest.TestCase):
 
     def test_the_spellings_social_graph_added_are_recognised_here(self):
         for text in ("Россия, Санкт Петербург", "Санкт-Петербург",
-                     "Russia, St. Petersburg", "St-Petersburg", "Sankt Petersburg"):
+                     "Russia, St. Petersburg", "St-Petersburg", "Sankt Petersburg",
+                     "St.Petersburg", "Sankt-Peterburg", "СанктПетербург"):
             with self.subTest(text=text):
                 self.assertTrue(ITMO_IN_TEXT.search(text))
 

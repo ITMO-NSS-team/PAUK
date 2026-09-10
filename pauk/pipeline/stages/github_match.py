@@ -85,12 +85,12 @@ STRONG = ("email_exact", "login_surname", "owner")
 # ITMO in a profile, as a word: "RITMO, University of Oslo" is a Norwegian
 # centre whose name contains the same four letters. This is strong enough to
 # make an organization a social_graph seed.
-ITMO_IDENTITY_PATTERN = re.compile(r"\bitmo\b|итмо", re.I)
+ITMO_IDENTITY_PATTERN = re.compile(r"\b(?:itmo|итмо)\b", re.I)
 
 # The city remains useful but is only a weak person-matching signal. Require
 # Petersburg too: a bare "Sankt" used to accept unrelated profile text.
 PETERSBURG_PATTERN = re.compile(
-    r"\b(?:saint|st\.?|sankt)[-\s]+petersburg\b|санкт[-\s]петербург",
+    r"\b(?:saint|st\.?|sankt)[-\s]*peters?burg\b|\bсанкт[-\s]?петербург\b",
     re.I,
 )
 

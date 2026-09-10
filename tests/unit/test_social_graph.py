@@ -9,7 +9,6 @@ import mongomock
 from pauk.models import GitHubProfile, Person, Repository
 from pauk.pipeline.stages.social_graph import (
     SocialGraphStage,
-    is_itmo_organization,
     itmo_organization_status,
 )
 from pauk.settings import Settings
@@ -38,60 +37,90 @@ def repository(owner, name, *, contributors=()):
                       owner_login=owner, contributors=list(contributors), cited_urls=[url])
 
 
-class IsItmoOrganizationTest(unittest.TestCase):
+class ItmoOrganizationStatusTest(unittest.TestCase):
     CATALOG = frozenset({"licaibeerlab", "ctlab"})
 
     def judge(self, login, catalog=CATALOG, **profile_kwargs):
         given = profile(login, account_type="organization", **profile_kwargs) \
             if profile_kwargs else None
-        return is_itmo_organization(login, given, catalog)
+        return itmo_organization_status(login, given, catalog)
 
     def test_a_catalogued_organization_is_followed(self):
         # Its profile says nothing and its login gives nothing away; the
         # curated list is the only thing that knows.
-        self.assertTrue(self.judge("LicAiBeerLab"))
+        self.assertEqual(self.judge("LicAiBeerLab"), ("confirmed", "catalog"))
 
     def test_the_catalogue_is_matched_case_insensitively(self):
-        self.assertTrue(self.judge("CTLab"))
+        self.assertEqual(self.judge("CTLab"), ("confirmed", "catalog"))
 
     def test_itmo_in_the_login_is_enough(self):
-        self.assertTrue(self.judge("itmo-infocom"))
+        self.assertEqual(self.judge("itmo-infocom"), ("confirmed", "login"))
 
     def test_itmo_glued_to_the_end_of_a_login_needs_the_catalogue(self):
         # AlgoMathITMO is ITMO's, but no word boundary separates the name,
         # and loosening the pattern would make RITMO ours. Catalogued instead.
-        self.assertFalse(self.judge("AlgoMathITMO", catalog=frozenset()))
-        self.assertTrue(self.judge("AlgoMathITMO", catalog=frozenset({"algomathitmo"})))
+        self.assertEqual(self.judge("AlgoMathITMO", catalog=frozenset()), ("not_confirmed", ""))
+        self.assertEqual(self.judge("AlgoMathITMO", catalog=frozenset({"algomathitmo"})),
+                         ("confirmed", "catalog"))
 
     def test_an_organization_naming_itmo_in_its_profile(self):
-        self.assertTrue(self.judge("aimclub", name="AIM.club, ITMO University"))
+        self.assertEqual(self.judge("aimclub", name="AIM.club, ITMO University"), ("confirmed", "profile"))
 
     def test_city_only_is_a_possible_organization_not_a_seed(self):
-        for location in ("Saint Petersburg", "Санкт-Петербург"):
+        for location in ("Saint Petersburg", "Санкт-Петербург", "St.Petersburg",
+                         "Sankt-Peterburg", "СанктПетербург"):
             with self.subTest(location=location):
                 given = profile("some-lab", account_type="organization", location=location)
-                self.assertFalse(is_itmo_organization("some-lab", given, self.CATALOG))
+                self.assertEqual(itmo_organization_status("some-lab", given, self.CATALOG),
+                                 ("possible", "petersburg"))
                 self.assertEqual(
                     itmo_organization_status("some-lab", given, self.CATALOG),
                     ("possible", "petersburg"),
                 )
 
     def test_description_and_company_are_strong_evidence(self):
-        self.assertTrue(self.judge("lab", bio="Laboratory at ITMO University"))
-        self.assertTrue(self.judge("lab", company="ИТМО"))
+        self.assertEqual(self.judge("lab", bio="Laboratory at ITMO University"), ("confirmed", "profile"))
+        self.assertEqual(self.judge("lab", company="ИТМО"), ("confirmed", "profile"))
 
     def test_an_employee_committing_there_does_not_make_it_ours(self):
         # The rule this replaces followed any organization a confirmed
         # account had committed to, which on real data meant google,
         # microsoft, JetBrains and llvm-mirror.
-        self.assertFalse(self.judge("google", name="Google",
-                                    location="United States of America"))
+        self.assertEqual(self.judge("google", name="Google",
+                                    location="United States of America"), ("not_confirmed", ""))
 
     def test_ritmo_is_not_itmo(self):
-        self.assertFalse(self.judge("ritmo", name="RITMO, University of Oslo"))
+        self.assertEqual(self.judge("ritmo", name="RITMO, University of Oslo"), ("not_confirmed", ""))
 
     def test_an_unlisted_organization_without_a_profile_is_not_followed(self):
-        self.assertFalse(is_itmo_organization("some-lab", None, self.CATALOG))
+        self.assertEqual(itmo_organization_status("some-lab", None, self.CATALOG),
+                         ("not_confirmed", ""))
+
+    def test_cyrillic_substrings_do_not_confirm_an_organization(self):
+        for text in ("алгоритмов", "ритмов", "ИТМОподобный"):
+            with self.subTest(text=text):
+                self.assertEqual(self.judge(text), ("not_confirmed", ""))
+                for field in ("name", "bio", "company"):
+                    self.assertEqual(self.judge("lab", **{field: text}), ("not_confirmed", ""))
+
+    def test_contributor_evidence_and_precedence(self):
+        repos = [repository("google", "lib", contributors=["ipetrov"])]
+        for given, catalog, expected in (
+            (None, self.CATALOG, ("possible", "itmo_contributor")),
+            (profile("google", name="Google"), self.CATALOG, ("possible", "itmo_contributor")),
+            (profile("google", location="St.Petersburg"), self.CATALOG, ("possible", "petersburg")),
+            (profile("google", company="ITMO"), self.CATALOG, ("confirmed", "profile")),
+            (None, frozenset({"google"}), ("confirmed", "catalog")),
+        ):
+            with self.subTest(expected=expected, profile=given):
+                self.assertEqual(itmo_organization_status(
+                    "google", given, catalog, repositories=repos, confirmed={"ipetrov"},
+                ), expected)
+        for login, confirmed in (("google", {"stranger"}), ("other", {"ipetrov"})):
+            with self.subTest(login=login, confirmed=confirmed):
+                self.assertEqual(itmo_organization_status(
+                    login, None, self.CATALOG, repositories=repos, confirmed=confirmed,
+                ), ("not_confirmed", ""))
 
 
 class SocialGraphStageTest(unittest.TestCase):
@@ -117,6 +146,12 @@ class SocialGraphStageTest(unittest.TestCase):
             [person("A1", "Ivan Petrov", github="ipetrov"), person("A2", "Maria S.")],
             [], [])
         self.assertEqual(seeds, ["ipetrov"])
+
+    def test_cyrillic_substring_is_not_a_seed(self):
+        self.assertEqual(self.seeds_for(
+            [], [repository("lab", "tool")],
+            [profile("lab", account_type="organization", bio="Разработка алгоритмов")],
+        ), [])
 
     def test_an_itmo_organization_is_a_seed_and_a_stranger_is_not(self):
         seeds = self.seeds_for(
