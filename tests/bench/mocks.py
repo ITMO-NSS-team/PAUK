@@ -66,6 +66,28 @@ class MockGitHubClient:
     def has_readme(self, owner: str, name: str) -> bool:
         return True
 
+    # The people half of the GitHub API, used by repo_people. These answer
+    # empty, and that is not coverage of that stage: the universe models no
+    # contributors and no commits, so nothing in repo_people below the owner
+    # is exercised — bot filtering, git identities, the noreply-email skip.
+    # Modelling the people behind a repository moves GitHubProfile counts and
+    # the github_match candidate pool, so it is its own change.
+    #
+    # What they are here for is the bench's first promise, "no network": until
+    # repo_people was split out of repositories it reached the API through a
+    # patched client, and unpatched it fetches contributors, three pages of
+    # commits and a profile for each of the 80 repositories in the fixture.
+    def contributors(self, owner: str, name: str) -> list[dict]:
+        self.calls.append((owner, name))
+        return []
+
+    def commits(self, owner: str, name: str, pages: int) -> list[dict]:
+        self.calls.append((owner, name))
+        return []
+
+    def get_user(self, login: str) -> dict:
+        return {}
+
 
 class MockCrossrefClient:
     def __init__(self, universe: dict) -> None:

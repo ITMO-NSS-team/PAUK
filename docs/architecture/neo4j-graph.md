@@ -40,6 +40,12 @@
 (:Repository) -[:OWNED_BY]->     (:GitHubProfile)
 ```
 
+`Repository` несёт, кроме `name`/`url`/`description`/`stars_num`, ещё
+`topics`/`language`/`forks_num`/`archived`/`is_fork`/`license`/`last_updated` —
+всё это приходит в том же теле ответа `GET /repos/{owner}/{name}`, что и
+основные поля, и стоит ноль дополнительных запросов
+([pipeline/repositories.md](pipeline/repositories.md)).
+
 `AUTHORED` несёт `position`/`affiliation`/`affiliation_source`/
 `is_corresponding`; `CONTRIBUTED_TO` — `role`; `MENTIONS_LINK` — `context`
 (список), `page_number` (список, `0` = абстракт — Neo4j не хранит `null`
