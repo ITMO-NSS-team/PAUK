@@ -4,10 +4,10 @@ import { indexDetailsByKey } from "../src/core/data";
 import { buildSearchIndex, deptHitKey, parseDeptHitKey, searchHits } from "../src/features/search";
 import { loadSampleGraphData, loadSamplePubDetails, loadSampleRepoDetails } from "./fixtures";
 
-// Логика поиска (эта, чисто функциональная часть) осталась в
-// features/search/index.ts, хотя вкладка "Поиск" (features/tabs/search.ts)
-// временно убрана из UI — см. память проекта. Тесты на саму вкладку удалены
-// вместе с ней, эти — на переиспользуемую основу — остаются.
+// Логика поиска (эта, чисто функциональная часть) переиспользуется
+// features/globalSearch.ts (глобальное окно поиска по всем видам сразу,
+// см. tests/globalSearch.test.ts) — отдельной вкладки "Поиск" больше нет
+// (была features/tabs/search.ts, удалена вместе со своими тестами).
 const NO_PUB_DETAILS = new Map<string, PubDetail>();
 const NO_REPO_DETAILS = new Map<string, RepoDetail>();
 

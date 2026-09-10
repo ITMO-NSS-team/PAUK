@@ -29,6 +29,17 @@
       html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; color-scheme: dark; }
       body { background: var(--bg); color: var(--text); }
 
+      /* Единое кольцо фокуса для клавиатурной навигации — раньше нигде на
+         сайте не было ни одного :focus-visible, только браузерный дефолт
+         (у Chrome он на тёмном фоне почти не виден). Один общий селектор
+         на все интерактивные элементы, а не per-компонентный дубль —
+         "чтобы человеку или агенту просто было находить" относится и к
+         навигации с клавиатуры/через DOM, не только к мыши. */
+      button:focus-visible, a:focus-visible, input:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
       /* Общая раскладка страницы: сайдбар со списком слева, карта
          посередине, панель информации справа — все три одной высоты,
          карта занимает всё оставшееся место. НЕ прячется через
@@ -73,6 +84,72 @@
       }
       #brand:hover { background: var(--surface-2); }
 
+      /* Кнопка входа в глобальный поиск (features/globalSearch.ts) — тот
+         же визуальный вес, что и #brand, тем же способом открывается
+         клавишей "/" (см. там же), кнопка — для тех, кто не знает про
+         горячую клавишу. Единственный способ найти ДЕПАРТАМЕНТ — у него
+         нет своей вкладки/узла-кнопки на карте, всего департаментов
+         на реальных данных ~60, найти нужный на глаз на карте нереально. */
+      #global-search-trigger {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        padding: 8px 12px;
+        border: none;
+        border-bottom: 1px solid var(--border);
+        background: none;
+        color: var(--muted);
+        font-size: 12px;
+        text-align: left;
+        cursor: pointer;
+      }
+      #global-search-trigger:hover { background: var(--surface-2); color: var(--text); }
+      .global-search-trigger__hint {
+        padding: 1px 6px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 11px;
+      }
+
+      /* Окно глобального поиска — полноэкранный оверлей поверх ВСЕГО,
+         включая меню (z-index больше, чем у #menu) — доступен и с меню, и
+         из приложения, клавишей "/" в любой момент. */
+      #global-search {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding-top: 12vh;
+        background: rgba(0, 0, 0, 0.55);
+      }
+      #global-search[hidden] { display: none; }
+      .global-search-box {
+        width: min(560px, calc(100vw - 32px));
+        max-height: 60vh;
+        display: flex;
+        flex-direction: column;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+        overflow: hidden;
+      }
+      .global-search-input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 16px;
+        border: none;
+        border-bottom: 1px solid var(--border);
+        background: none;
+        color: var(--text);
+        font-size: 16px;
+      }
+      #global-search-results { overflow-y: auto; }
+
       /* Кнопки переключения вкладок — по одной на каждый TabModule из
          features/tabs/index.ts. "Здоровье БД" из старого GUI сознательно
          не переносим — для неё кнопки нет и не будет. */
@@ -106,10 +183,9 @@
          core/render.ts::renderList(), см. features/tabs/authors.ts. */
       #tab-content { flex: 1; overflow-y: auto; }
       /* Поле поиска по сущностям ТЕКУЩЕЙ вкладки (features/tabs/nodeListTab.ts)
-         — под фильтрами, над списком (см. #filter-bar выше). Sticky — та
-         же идея, что и у .search-input ниже: не должно скроллиться вместе
-         со списком, иначе для правки запроса пришлось бы скроллить назад
-         наверх. */
+         — под фильтрами, над списком (см. #filter-bar выше). Sticky —
+         не должно скроллиться вместе со списком, иначе для правки запроса
+         пришлось бы скроллить назад наверх. */
       .tab-search {
         position: sticky;
         top: 0;
@@ -145,24 +221,14 @@
          ширины сайдбара). */
       .tab-list-item__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .tab-list-item__meta { flex-shrink: 0; color: var(--muted); }
+      /* "Ничего не найдено" (features/tabs/nodeListTab.ts) — раньше пустой
+         результат поиска выглядел как пустая/сломанная страница, без
+         единой подсказки, что список просто отфильтрован в ноль. */
+      .tab-empty { padding: 24px 12px; text-align: center; color: var(--muted); font-size: 13px; }
 
-      /* Вкладка "Поиск" (features/tabs/search.ts): поле ввода "прилипает"
-         к верху при прокрутке списка результатов вниз (sticky), чтобы не
-         приходилось скроллить обратно наверх, чтобы поправить запрос. */
-      .search-input {
-        position: sticky;
-        top: 0;
-        width: 100%;
-        box-sizing: border-box;
-        padding: 10px 12px;
-        border: none;
-        border-bottom: 1px solid var(--border);
-        font-size: 13px;
-        background: var(--surface);
-        color: var(--text);
-      }
       /* В обычных вкладках meta — короткое число ("42", "★ 15", "2024"),
-         поэтому в один ряд с подписью оно умещается нормально. В поиске
+         поэтому в один ряд с подписью оно умещается нормально. В
+         глобальном поиске (features/globalSearch.ts, .search-results ниже)
          meta — целая строка вида "Институт прикладных систем · 4 публ.",
          и рядом с длинной подписью в одну строку оба не влезают: подпись
          сжималась почти до нуля и рвалась по одной букве на строку.
@@ -198,6 +264,22 @@
       #panel dt { color: var(--muted); }
       #panel dd { margin: 0; }
       #panel a { color: var(--accent); }
+      /* Ссылка на ДРУГУЮ сущность графа внутри карточки (features/panels.ts::PanelEntityRef)
+         — визуально то же самое, что и внешняя <a> выше (тот же цвет), но
+         это настоящая <button>: клик не открывает вкладку, а делает эту
+         сущность новым store.selection ("прослеживать связи" одним кликом,
+         см. map/build.ts::flyToSelection). font/цвет наследуются от dd, а не
+         от браузерного дефолта кнопки. */
+      .panel-entity-ref {
+        font: inherit;
+        color: var(--accent);
+        background: none;
+        border: none;
+        padding: 0;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .panel-entity-ref:hover { text-decoration: underline; }
 
       /* Индикатор "ещё грузится" (core/dom.ts::createLoadingIndicator) —
          показывается в строке карточки вместо значения, пока detail-файл
@@ -357,6 +439,11 @@
       <aside id="sidebar">
         <!-- Заголовок сайдбара — клик возвращает в меню (features/start.ts). -->
         <button type="button" id="brand">PAUK</button>
+        <!-- Открывает глобальный поиск (features/globalSearch.ts) — тот же
+             результат, что и клавиша "/" в любой момент. Единственный
+             способ найти департамент: у него нет своей вкладки/узла-кнопки
+             на карте. Текст ставит сама фича (локализация + горячая клавиша). -->
+        <button type="button" id="global-search-trigger"></button>
         <!-- data-tab на каждой кнопке — единственное, что нужно
              features/tabs/index.ts::mountTabs() для переключения. -->
         <nav id="tab-buttons">
@@ -376,6 +463,14 @@
            при монтировании, до этого момента (загрузка фикстур) не показываем
            пустую рамку. -->
       <aside id="panel" hidden></aside>
+    </div>
+    <!-- Глобальный поиск (features/globalSearch.ts) — ВНЕ #app и #menu:
+         открывается клавишей "/" из любого экрана (z-index выше обоих). -->
+    <div id="global-search" hidden>
+      <div class="global-search-box">
+        <input type="search" id="global-search-input" class="global-search-input" />
+        <div id="global-search-results" class="search-results"></div>
+      </div>
     </div>
     <!-- Показывается только если graph-data.json вообще не загрузился
          (см. комментарий в <style> выше) — app/main.ts снимает hidden. -->

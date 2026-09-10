@@ -102,6 +102,50 @@ describe("mountPanel", () => {
     expect(text.indexOf("Петрова А.С.")).toBeLessThan(text.indexOf("Сидоров П."));
   });
 
+  it("клик по соавтору в карточке автора делает его новым selection — 'прослеживать связи' одним кликом", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A1" } });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const coauthorButton = [...panel.querySelectorAll("button.panel-entity-ref")].find(
+      (button) => button.textContent === "Петрова А.С.",
+    ) as HTMLButtonElement | undefined;
+    if (!coauthorButton) throw new Error("кнопка-ссылка на соавтора А2 (Петрова А.С.) должна быть в карточке");
+
+    coauthorButton.click();
+
+    expect(store.get().selection).toEqual({ kind: "node", key: "A2" });
+  });
+
+  it("клик по публикации в карточке автора делает её новым selection", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A1" } });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const pubButton = [...panel.querySelectorAll("button.panel-entity-ref")].find(
+      (button) => button.textContent === "P1",
+    ) as HTMLButtonElement | undefined;
+    if (!pubButton) throw new Error("кнопка-ссылка на публикацию P1 должна быть в карточке");
+
+    pubButton.click();
+
+    expect(store.get().selection).toEqual({ kind: "node", key: "P1" });
+  });
+
+  it("внешние ссылки (GitHub/ORCID) остаются <a>, не кнопками — открываются в новой вкладке, а не меняют selection", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A1" } });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    const githubLink = panel.querySelector("a[href='https://github.com/ivanov-ii']");
+    expect(githubLink?.tagName).toBe("A");
+    expect(githubLink?.getAttribute("target")).toBe("_blank");
+  });
+
   it("карточка автора показывает GitHub, ORCID и учёную степень, когда они заполнены", async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
@@ -446,6 +490,25 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain(String(edge.w));
   });
 
+  it("клик по 'От'/'К' в карточке ребра переходит к этому узлу", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "edge", s: "A1", t: "A2", w: 2 },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const toButton = [...panel.querySelectorAll("button.panel-entity-ref")].find(
+      (button) => button.textContent === "Петрова А.С.",
+    ) as HTMLButtonElement | undefined;
+    if (!toButton) throw new Error("кнопка-ссылка на 'К' (А2, Петрова А.С.) должна быть в карточке ребра");
+
+    toButton.click();
+
+    expect(store.get().selection).toEqual({ kind: "node", key: "A2" });
+  });
+
   it("карточка ребра автор-автор показывает список общих публикаций", async () => {
     const data = await loadSampleGraphData();
     // A1-A2 во фикстуре: w=2, и ровно две реально общие публикации (P1, P5) —
@@ -519,6 +582,41 @@ describe("mountPanel", () => {
     expect(text).toContain("Связанные департаменты");
     expect(text.indexOf(dept1.name)).toBeGreaterThan(-1);
     expect(text.indexOf(dept1.name)).toBeLessThan(text.indexOf(dept2.name));
+  });
+
+  it("клик по связанному департаменту делает его новым selection", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "dept", id: 0 } });
+    const dept1 = data.departments.find((d) => d.id === 1);
+    if (!dept1) throw new Error("фикстура должна содержать департамент 1");
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const dept1Button = [...panel.querySelectorAll("button.panel-entity-ref")].find(
+      (button) => button.textContent === dept1.name,
+    ) as HTMLButtonElement | undefined;
+    if (!dept1Button) throw new Error("кнопка-ссылка на департамент 1 должна быть в карточке");
+
+    dept1Button.click();
+
+    expect(store.get().selection).toEqual({ kind: "dept", id: 1 });
+  });
+
+  it("клик по сущности в топ-10 «Обзора» делает её новым selection", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState()); // selection: null -> показан "Обзор" вкладки 1 (авторы)
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    // A1 (Иванов И.И.) — больше всех публикаций во фикстуре, должен быть в топ-10.
+    const topButton = [...panel.querySelectorAll("button.panel-entity-ref")].find(
+      (button) => button.textContent === "Иванов И.И.",
+    ) as HTMLButtonElement | undefined;
+    if (!topButton) throw new Error("кнопка-ссылка на А1 (Иванов И.И.) должна быть в топ-10 «Обзора»");
+
+    topButton.click();
+
+    expect(store.get().selection).toEqual({ kind: "node", key: "A1" });
   });
 
   it("возвращается к карточке «Обзор», когда selection сбрасывают в null", async () => {

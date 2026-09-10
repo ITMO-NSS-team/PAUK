@@ -114,6 +114,22 @@ describe("authorsTab", () => {
 
     expect(listItems(container)).toHaveLength(data.authors.length);
   });
+
+  it("запрос без совпадений показывает 'Ничего не найдено', а не пустой список", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState());
+    const container = document.createElement("div");
+
+    authorsTab.mount(container, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    const search = container.querySelector<HTMLInputElement>(".tab-search");
+    if (!search) throw new Error("вкладка должна содержать поле поиска");
+
+    search.value = "лщывалщыв"; // заведомо не встречается ни в одной подписи фикстуры
+    search.dispatchEvent(new Event("input"));
+
+    expect(listItems(container)).toHaveLength(0);
+    expect(container.querySelector(".tab-empty")?.textContent).toBe("Ничего не найдено");
+  });
 });
 
 describe("reposTab", () => {

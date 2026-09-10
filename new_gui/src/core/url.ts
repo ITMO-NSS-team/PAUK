@@ -6,9 +6,9 @@
 // делает features/urlSync.ts — здесь только преобразование данных в обе
 // стороны, поэтому оно тестируется без единого DOM-события.
 
-import type { Edge, GraphData, NodeKind } from "../contracts/graph";
+import type { Edge, GraphData } from "../contracts/graph";
 import { indexByKey } from "./data";
-import type { Screen, Selection, TabId } from "./state";
+import { TAB_KIND, type Screen, type Selection, type TabId } from "./state";
 
 /**
  * Смысловые имена вкладок в query-строке вместо голых чисел ("tab=persons",
@@ -29,23 +29,6 @@ const SLUG_TO_TAB: Record<string, TabId> = Object.fromEntries(
 
 /** Слаг меню — отдельно от {@link TAB_SLUGS}: меню не вкладка, у него нет `TabId`. */
 const MENU_SLUG = "start";
-
-/**
- * Какой вид узла/ребро какой вкладки — {@link parseUrlState} проверяет по
- * этой карте, что узел/ребро из `sel=node|edge` в URL реально принадлежит
- * вкладке из ТОГО ЖЕ URL, а не просто существует ГДЕ-ТО в data. Без этой
- * проверки `?tab=persons&sel=node&key=<ключ репозитория>` тихо восстановил
- * бы выбор чужой сущности — map/build.ts::applyGraphStyling потом не может
- * найти такой ключ в графе активной вкладки (граф пересобран под неё
- * заново) и просто не подсвечивает ничего (безопасно после отдельного
- * фикса с graph.hasNode()), но сама панель информации показала бы
- * карточку сущности, никак не относящейся к тому, что нарисовано на карте.
- */
-const TAB_KIND: Record<TabId, NodeKind> = {
-  1: "author",
-  2: "repo",
-  3: "pub",
-};
 
 /** Список рёбер СВОЕЙ вкладки — {@link parseUrlState} ищет `sel=edge` только среди них, а не среди всех трёх видов рёбер сразу. */
 function tabEdges(data: GraphData, tab: TabId): Edge[] {

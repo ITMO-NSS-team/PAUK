@@ -22,7 +22,7 @@ import {
 } from "../core/data";
 import { createLoadingIndicator, requireElement } from "../core/dom";
 import { kindLabel, localize, t } from "../core/i18n";
-import type { AppState, Store } from "../core/state";
+import type { AppState, Selection, Store } from "../core/state";
 
 /** Строка карточки ещё не может показать значение — соответствующий
  * `*Detail`-файл (см. {@link AuthorDetail}/{@link RepoDetail}) не домержился
@@ -31,14 +31,35 @@ import type { AppState, Store } from "../core/state";
  * не знаем, что там". */
 const LOADING: unique symbol = Symbol("panel-row-loading");
 
-/** Значение строки карточки — обычный текст, один или несколько кликабельных
- * ссылок (DOI, GitHub/ORCID, ссылка(и) на код), либо {@link LOADING}, пока
- * detail ещё не пришёл. */
-type PanelRowValue = string | PanelLink[] | typeof LOADING;
-/** Одна кликабельная ссылка в строке карточки — всегда открывается в новой вкладке ({@link buildCard}). */
+/** Значение строки карточки — обычный текст, список кликабельных ВНЕШНИХ
+ * ссылок ({@link PanelLink}, DOI/GitHub/ORCID/код — открываются в новой
+ * вкладке), список кликабельных ссылок на ДРУГИЕ СУЩНОСТИ ГРАФА
+ * ({@link PanelEntityRef} — соавторы, публикации, департаменты и т.п.:
+ * клик делает эту сущность новым store.selection, не открывает вкладку),
+ * либо {@link LOADING}, пока detail ещё не пришёл. */
+type PanelRowValue = string | PanelLink[] | PanelEntityRef[] | typeof LOADING;
+/** Одна кликабельная ВНЕШНЯЯ ссылка в строке карточки — всегда открывается в новой вкладке ({@link buildCard}). */
 interface PanelLink {
+  kind: "link";
   href: string;
   text: string;
+}
+/**
+ * Кликабельная ссылка на ДРУГУЮ сущность ЭТОГО ЖЕ графа (не внешний URL) —
+ * узел или департамент, клик по которой делает её новым `store.selection`
+ * (карта подлетает к ней, панель показывает уже её карточку — та же
+ * механика, что у клика по узлу на карте или по строке списка вкладки, см.
+ * map/build.ts::flyToSelection). Ключевая часть "прослеживать связи": не
+ * просто СКАЗАТЬ, кто с кем связан, а дать перейти по этой связи одним кликом.
+ */
+interface PanelEntityRef {
+  kind: "ref";
+  /** Куда положить как `store.selection` по клику. */
+  selection: Extract<Selection, { kind: "node" } | { kind: "dept" }>;
+  /** Кликабельная подпись — сама ссылка. */
+  label: string;
+  /** Необязательный некликабельный суффикс справа от подписи, например роль в репозитории ("(maintainer)"). */
+  meta?: string;
 }
 /** Одна строка карточки: `[подпись, значение]`. */
 type PanelRow = [label: string, value: PanelRowValue];
@@ -60,7 +81,7 @@ type PanelRow = [label: string, value: PanelRowValue];
  * doiLink("https://doi.org/10.1000/xyz123"); // тот же результат — префикс не задвоился
  */
 function doiLink(doi: string): PanelLink {
-  return { href: `https://doi.org/${doi.replace(/^https?:\/\/doi\.org\//, "")}`, text: doi };
+  return { kind: "link", href: `https://doi.org/${doi.replace(/^https?:\/\/doi\.org\//, "")}`, text: doi };
 }
 
 /**
@@ -76,7 +97,7 @@ function doiLink(doi: string): PanelLink {
  * githubLink("ivanov-ii"); // { href: "https://github.com/ivanov-ii", text: "ivanov-ii" }
  */
 function githubLink(username: string): PanelLink {
-  return { href: githubProfileUrl(username), text: username };
+  return { kind: "link", href: githubProfileUrl(username), text: username };
 }
 
 /**
@@ -90,7 +111,7 @@ function githubLink(username: string): PanelLink {
  * orcidLink("0000-0001-2345-6789"); // { href: "https://orcid.org/0000-0001-2345-6789", text: "0000-0001-2345-6789" }
  */
 function orcidLink(id: string): PanelLink {
-  return { href: `https://orcid.org/${id}`, text: id };
+  return { kind: "link", href: `https://orcid.org/${id}`, text: id };
 }
 
 /**
@@ -136,7 +157,7 @@ function safeHref(url: string, context: string): string {
  * // { href: "https://github.com/example-org/graph-toolkit", text: "example-org/graph-toolkit" }
  */
 function codeLink(url: string): PanelLink {
-  return { href: safeHref(url, "codeLink"), text: githubShortPath(url) };
+  return { kind: "link", href: safeHref(url, "codeLink"), text: githubShortPath(url) };
 }
 
 /**
@@ -149,7 +170,7 @@ function codeLink(url: string): PanelLink {
  * @param url - `AuthorDetail.google_scholar`.
  */
 function googleScholarLink(url: string): PanelLink {
-  return { href: safeHref(url, "googleScholarLink"), text: "Google Scholar" };
+  return { kind: "link", href: safeHref(url, "googleScholarLink"), text: "Google Scholar" };
 }
 
 /**
@@ -160,7 +181,7 @@ function googleScholarLink(url: string): PanelLink {
  * @param url - `PubDetail.openalex_url`.
  */
 function openalexUrlLink(url: string): PanelLink {
-  return { href: safeHref(url, "openalexUrlLink"), text: "OpenAlex" };
+  return { kind: "link", href: safeHref(url, "openalexUrlLink"), text: "OpenAlex" };
 }
 
 /**
@@ -172,7 +193,7 @@ function openalexUrlLink(url: string): PanelLink {
  * @param id - `AuthorDetail.openalex_id`.
  */
 function openalexIdLink(id: string): PanelLink {
-  return { href: `https://openalex.org/${id}`, text: id };
+  return { kind: "link", href: `https://openalex.org/${id}`, text: id };
 }
 
 /**
@@ -183,7 +204,7 @@ function openalexIdLink(id: string): PanelLink {
  * @param id - `AuthorDetail.openreview`.
  */
 function openreviewLink(id: string): PanelLink {
-  return { href: `https://openreview.net/profile?id=${id}`, text: id };
+  return { kind: "link", href: `https://openreview.net/profile?id=${id}`, text: id };
 }
 
 /**
@@ -193,7 +214,7 @@ function openreviewLink(id: string): PanelLink {
  * @param email - адрес почты.
  */
 function emailLink(email: string): PanelLink {
-  return { href: `mailto:${email}`, text: email };
+  return { kind: "link", href: `mailto:${email}`, text: email };
 }
 
 /**
@@ -235,40 +256,47 @@ export function mountPanel(
   const { repoPubs: repoPubIndex, pubRepos: pubRepoIndex } = buildRepoPubIndex(data);
 
   /**
-   * Строит подписи департаментов по списку их id, через запятую — для
-   * строки "связанные департаменты" в карточке департамента.
+   * Строит кликабельные ссылки на департаменты по списку их id — для строки
+   * "связанные департаменты" в карточке департамента. Клик по любому из них
+   * делает этот департамент новым `store.selection` — "прослеживать связи"
+   * между департаментами так же просто, как между узлами.
    *
    * @param ids - список id департаментов.
    * @param lang - язык интерфейса.
-   * @returns Подписи через `", "`, в том же порядке, что и `ids`.
+   * @returns Ссылки в том же порядке, что и `ids`.
    */
-  function deptLabelsOf(ids: number[], lang: AppState["lang"]): string {
-    return ids
-      .map((id) => {
-        const dept = deptById.get(id);
-        return dept ? localize(dept.name, dept.name_en, lang) : String(id);
-      })
-      .join(", ");
+  function deptRefsOf(ids: number[], lang: AppState["lang"]): PanelEntityRef[] {
+    return ids.map((id) => {
+      const dept = deptById.get(id);
+      const label = dept ? localize(dept.name, dept.name_en, lang) : String(id);
+      return { kind: "ref", selection: { kind: "dept", id }, label };
+    });
   }
 
   /**
-   * Строит подписи узлов графа по списку их ключей, через запятую — общая
-   * функция для строк "общие публикации"/"общие авторы" в карточке ребра
-   * и всех похожих списков в карточках автора/репозитория/публикации.
+   * Строит кликабельные ссылки на узлы графа по списку их ключей — общая
+   * функция для строк "общие публикации"/"общие авторы" в карточке ребра и
+   * всех похожих списков в карточках автора/репозитория/публикации/обзора.
+   * Клик по любой из них делает этот узел новым `store.selection` — камера
+   * подлетает к нему, а панель показывает уже его карточку (та же механика,
+   * что у клика по узлу на карте, см. map/build.ts::flyToSelection) —
+   * ключевая часть "прослеживать связи одним кликом", а не просто видеть
+   * список имён.
    *
    * @param keys - список ключей узлов (авторов, репозиториев или публикаций).
    * @param lang - язык интерфейса.
-   * @returns Подписи через `", "`, в том же порядке, что и `keys`. Ключ,
-   *   которого нет в `index` (не должно случаться на согласованных
-   *   данных), используется как есть, а не отбрасывается.
+   * @returns Ссылки в том же порядке, что и `keys`. Ключ, которого нет в
+   *   `index` (не должно случаться на согласованных данных), используется
+   *   как подпись как есть, а не отбрасывается — но тогда клик по нему
+   *   ни к чему не приведёт (mountReactiveGraph сам обнулит несуществующий
+   *   выбор, см. map/build.ts::selectionExistsIn).
    */
-  function labelsOf(keys: string[], lang: AppState["lang"]): string {
-    return keys
-      .map((key) => {
-        const node = index.get(key);
-        return node ? nodeLabel(node, lang, pubDetails) : key;
-      })
-      .join(", ");
+  function entityRefsOf(keys: string[], lang: AppState["lang"]): PanelEntityRef[] {
+    return keys.map((key) => {
+      const node = index.get(key);
+      const label = node ? nodeLabel(node, lang, pubDetails) : key;
+      return { kind: "ref", selection: { kind: "node", key }, label };
+    });
   }
 
   /**
@@ -334,24 +362,22 @@ export function mountPanel(
   }
 
   /**
-   * Строит подпись участников репозитория с ролью в формате `"Имя (роль)"`,
-   * через запятую, обрезано до {@link PANEL_CONFIG.listLimit}. Отдельная
-   * функция, а не {@link labelsOf}: нужно дописать роль после имени, а не
-   * только саму подпись узла.
+   * Строит кликабельные ссылки на участников репозитория, с ролью
+   * некликабельным суффиксом (например, `"Иванов И.И. (maintainer)"` —
+   * кликабельно только "Иванов И.И."), обрезано до {@link PANEL_CONFIG.listLimit}.
+   * Отдельная функция, а не {@link entityRefsOf}: нужно дописать роль после
+   * имени, а не только саму подпись узла.
    *
    * @param repoKey - ключ репозитория.
    * @param lang - язык интерфейса.
-   * @returns Подписи участников с ролями через `", "` (например, `"Иванов И.И. (maintainer)"`).
+   * @returns Ссылки участников с ролями в `meta`.
    */
-  function repoContributorsOf(repoKey: string, lang: AppState["lang"]): string {
-    return (repoAuthorIndex.get(repoKey) ?? [])
-      .slice(0, PANEL_CONFIG.listLimit)
-      .map((edge) => {
-        const author = index.get(edge.t);
-        const label = author ? nodeLabel(author, lang, pubDetails) : edge.t;
-        return `${label} (${edge.role})`;
-      })
-      .join(", ");
+  function repoContributorRefsOf(repoKey: string, lang: AppState["lang"]): PanelEntityRef[] {
+    return (repoAuthorIndex.get(repoKey) ?? []).slice(0, PANEL_CONFIG.listLimit).map((edge) => {
+      const author = index.get(edge.t);
+      const label = author ? nodeLabel(author, lang, pubDetails) : edge.t;
+      return { kind: "ref", selection: { kind: "node", key: edge.t }, label, meta: `(${edge.role})` };
+    });
   }
 
   /**
@@ -379,7 +405,10 @@ export function mountPanel(
    */
   function show(title: string, rows: PanelRow[]): void {
     container.hidden = false;
-    container.replaceChildren(buildCard(title, rows));
+    // onSelect — клик по PanelEntityRef внутри карточки пишет новую
+    // сущность прямо в store.selection, точно так же, как клик по узлу на
+    // карте (features/selection.ts) или по строке списка вкладки.
+    container.replaceChildren(buildCard(title, rows, (selection) => store.set({ selection })));
   }
 
   /**
@@ -436,7 +465,7 @@ export function mountPanel(
         [t("field.orcid", lang), completionRow(withOrcid, authorDetails.size)],
         [t("field.github", lang), completionRow(withGithub, authorDetails.size)],
         [t("field.email", lang), completionRow(withEmail, authorDetails.size)],
-        [t("overview.top", lang), labelsOf(topKeys, lang)],
+        [t("overview.top", lang), entityRefsOf(topKeys, lang)],
       ]);
     }
 
@@ -458,7 +487,7 @@ export function mountPanel(
         [t("field.reposCount", lang), String(repos.length)],
         [t("field.hasReadme", lang), completionRow(withReadme, repoDetails.size)],
         [t("field.license", lang), completionRow(withLicense, repoDetails.size)],
-        [t("overview.top", lang), labelsOf(topKeys, lang)],
+        [t("overview.top", lang), entityRefsOf(topKeys, lang)],
       ]);
     }
 
@@ -482,7 +511,7 @@ export function mountPanel(
       [t("overview.knownYear", lang), completionRow(withKnownYear, pubs.length)],
       [t("field.doi", lang), completionRow(withDoi, pubDetails.size)],
       [t("field.abstract", lang), completionRow(withAbstract, pubDetails.size)],
-      [t("overview.top", lang), labelsOf(topKeys, lang)],
+      [t("overview.top", lang), entityRefsOf(topKeys, lang)],
     ]);
   }
 
@@ -571,13 +600,13 @@ export function mountPanel(
         // строки ниже показывают список, только когда он не пуст (как и у
         // общих публикаций/авторов в карточке ребра).
         const recentPubs = recentPubKeysOf(node.key);
-        if (recentPubs.length > 0) rows.push([t("tab.pubs", lang), labelsOf(recentPubs, lang)]);
+        if (recentPubs.length > 0) rows.push([t("tab.pubs", lang), entityRefsOf(recentPubs, lang)]);
 
         const topCoauthors = topCoauthorKeys(node.key);
-        if (topCoauthors.length > 0) rows.push([t("field.topCoauthors", lang), labelsOf(topCoauthors, lang)]);
+        if (topCoauthors.length > 0) rows.push([t("field.topCoauthors", lang), entityRefsOf(topCoauthors, lang)]);
 
         const authorRepos = authorRepoKeysOf(node.key);
-        if (authorRepos.length > 0) rows.push([t("tab.repos", lang), labelsOf(authorRepos, lang)]);
+        if (authorRepos.length > 0) rows.push([t("tab.repos", lang), entityRefsOf(authorRepos, lang)]);
       }
       if (node.kind === "repo") {
         rows.push([t("field.stars", lang), String(node.stars)]);
@@ -593,11 +622,11 @@ export function mountPanel(
           rows.push([t("field.loadingDetails", lang), LOADING]);
         }
 
-        const contributors = repoContributorsOf(node.key, lang);
+        const contributors = repoContributorRefsOf(node.key, lang);
         if (contributors.length > 0) rows.push([t("field.contributors", lang), contributors]);
 
         const repoPubs = repoPubKeysOf(node.key);
-        if (repoPubs.length > 0) rows.push([t("tab.pubs", lang), labelsOf(repoPubs, lang)]);
+        if (repoPubs.length > 0) rows.push([t("tab.pubs", lang), entityRefsOf(repoPubs, lang)]);
       }
       if (node.kind === "pub") {
         rows.push([t("field.year", lang), node.year === null ? t("field.yearUnknown", lang) : String(node.year)]);
@@ -616,13 +645,13 @@ export function mountPanel(
         // ещё и code_url незачем.
         const pubRepoKeys = (pubRepoIndex.get(node.key) ?? []).slice(0, PANEL_CONFIG.listLimit);
         if (pubRepoKeys.length > 0) {
-          rows.push([t("tab.repos", lang), labelsOf(pubRepoKeys, lang)]);
+          rows.push([t("tab.repos", lang), entityRefsOf(pubRepoKeys, lang)]);
         } else if (detail?.has_code && detail.code_url.length > 0) {
           rows.push([t("field.code", lang), detail.code_url.map(codeLink)]);
         }
 
         const pubAuthorKeys = (pubAuthors.get(node.key) ?? []).slice(0, PANEL_CONFIG.listLimit);
-        if (pubAuthorKeys.length > 0) rows.push([t("tab.authors", lang), labelsOf(pubAuthorKeys, lang)]);
+        if (pubAuthorKeys.length > 0) rows.push([t("tab.authors", lang), entityRefsOf(pubAuthorKeys, lang)]);
       }
 
       return show(title, rows);
@@ -634,8 +663,8 @@ export function mountPanel(
       if (!from || !to) return hide();
 
       const rows: PanelRow[] = [
-        [t("field.edgeFrom", lang), nodeLabel(from, lang, pubDetails)],
-        [t("field.edgeTo", lang), nodeLabel(to, lang, pubDetails)],
+        [t("field.edgeFrom", lang), entityRefsOf([from.key], lang)],
+        [t("field.edgeTo", lang), entityRefsOf([to.key], lang)],
         [t("field.edgeWeight", lang), String(selection.w)],
       ];
 
@@ -650,12 +679,12 @@ export function mountPanel(
         const shared = (authorPubs.get(from.key) ?? [])
           .filter((pub) => (authorPubs.get(to.key) ?? []).includes(pub))
           .slice(0, PANEL_CONFIG.listLimit);
-        if (shared.length > 0) rows.push([t("field.sharedPubs", lang), labelsOf(shared, lang)]);
+        if (shared.length > 0) rows.push([t("field.sharedPubs", lang), entityRefsOf(shared, lang)]);
       } else if (from.kind === "pub" && to.kind === "pub") {
         const shared = (pubAuthors.get(from.key) ?? [])
           .filter((author) => (pubAuthors.get(to.key) ?? []).includes(author))
           .slice(0, PANEL_CONFIG.listLimit);
-        if (shared.length > 0) rows.push([t("field.sharedAuthors", lang), labelsOf(shared, lang)]);
+        if (shared.length > 0) rows.push([t("field.sharedAuthors", lang), entityRefsOf(shared, lang)]);
       }
 
       return show(t("kind.edge", lang), rows);
@@ -676,7 +705,7 @@ export function mountPanel(
       .sort(([, weightA], [, weightB]) => weightB - weightA)
       .slice(0, PANEL_CONFIG.listLimit)
       .map(([id]) => id);
-    if (relatedIds.length > 0) rows.push([t("field.relatedDepts", lang), deptLabelsOf(relatedIds, lang)]);
+    if (relatedIds.length > 0) rows.push([t("field.relatedDepts", lang), deptRefsOf(relatedIds, lang)]);
 
     return show(localize(dept.name, dept.name_en, lang), rows);
   }
@@ -688,15 +717,18 @@ export function mountPanel(
 
 /**
  * Собирает DOM-карточку из заголовка и списка пар "подпись — значение".
- * Только `textContent` для обычного текста и явные `<a>` с фиксированными
- * `href`/`text` для ссылок — никакого `innerHTML`, данные из графа не
- * должны интерпретироваться как разметка.
+ * Только `textContent` для обычного текста и явные `<a>`/`<button>` с
+ * фиксированными атрибутами для ссылок — никакого `innerHTML`, данные из
+ * графа не должны интерпретироваться как разметка.
  *
  * @param title - заголовок карточки (например, имя автора или "Обзор").
  * @param rows - строки карточки в порядке отображения.
+ * @param onSelectRef - вызывается с `PanelEntityRef.selection`, когда кликают
+ *   по ссылке на другую сущность графа (см. {@link PanelEntityRef}) — пишет
+ *   её в `store.selection` ("прослеживать связи" одним кликом).
  * @returns `<div class="panel-card">` с заголовком `<h3>` и списком `<dl>`, ещё не вставленный в DOM.
  */
-function buildCard(title: string, rows: PanelRow[]): HTMLElement {
+function buildCard(title: string, rows: PanelRow[], onSelectRef: (selection: Selection) => void): HTMLElement {
   const card = document.createElement("div");
   card.className = "panel-card";
 
@@ -714,10 +746,10 @@ function buildCard(title: string, rows: PanelRow[]): HTMLElement {
       dd.textContent = value;
     } else if (value === LOADING) {
       dd.appendChild(createLoadingIndicator());
-    } else {
-      // Несколько ссылок (например, несколько репозиториев с кодом) —
+    } else if (value[0]?.kind === "link") {
+      // Внешние ссылки (например, несколько репозиториев с кодом) —
       // разделяем запятой с пробелом, как и в старом GUI.
-      value.forEach((link, i) => {
+      (value as PanelLink[]).forEach((link, i) => {
         if (i > 0) dd.append(", ");
         const a = document.createElement("a");
         a.href = link.href;
@@ -725,6 +757,19 @@ function buildCard(title: string, rows: PanelRow[]): HTMLElement {
         a.rel = "noopener noreferrer";
         a.textContent = link.text;
         dd.appendChild(a);
+      });
+    } else {
+      // Ссылки на другие сущности графа — <button>, не <a>: клик не
+      // открывает вкладку, а меняет store.selection (см. onSelectRef).
+      (value as PanelEntityRef[]).forEach((ref, i) => {
+        if (i > 0) dd.append(", ");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "panel-entity-ref";
+        button.textContent = ref.label;
+        button.addEventListener("click", () => onSelectRef(ref.selection));
+        dd.appendChild(button);
+        if (ref.meta) dd.append(` ${ref.meta}`);
       });
     }
 

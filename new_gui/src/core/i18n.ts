@@ -100,7 +100,9 @@ export type LocaleKey =
   | "field.code"
   | "search.placeholder"
   | "search.pubsCountShort"
+  | "search.trigger"
   | "tab.searchPlaceholder"
+  | "tab.noResults"
   | "filter.coauth"
   | "filter.sharedAuthors"
   | "filter.yearMax"
@@ -171,7 +173,9 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "overview.knownYear": "Известен год",
     "search.placeholder": "Поиск по авторам, репозиториям, публикациям, департаментам…",
     "search.pubsCountShort": "публ.",
+    "search.trigger": "Поиск по всему",
     "tab.searchPlaceholder": "Поиск…",
+    "tab.noResults": "Ничего не найдено",
     "filter.coauth": "Мин. соавторство",
     "filter.sharedAuthors": "Мин. общих авторов",
     "filter.yearMax": "До года",
@@ -242,7 +246,9 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "overview.knownYear": "Known year",
     "search.placeholder": "Search authors, repositories, publications, departments…",
     "search.pubsCountShort": "pubs",
+    "search.trigger": "Search everything",
     "tab.searchPlaceholder": "Search…",
+    "tab.noResults": "No results found",
     "filter.coauth": "Min. co-authorship",
     "filter.sharedAuthors": "Min. shared authors",
     "filter.yearMax": "Up to year",

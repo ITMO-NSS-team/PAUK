@@ -77,6 +77,17 @@ export function createNodeListTab<T extends NodeLike>(config: NodeListTabConfig<
           ? sorted.filter((item) => config.label(item, state, pubDetails).toLowerCase().includes(q))
           : sorted;
 
+        // Пустой список без объяснения выглядит как сломанная страница, а
+        // не как "по этому запросу ничего нет" — раньше здесь после
+        // неудачного поиска просто не было вообще ничего под полем ввода.
+        if (visible.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "tab-empty";
+          empty.textContent = t("tab.noResults", state.lang);
+          listEl.replaceChildren(empty);
+          return;
+        }
+
         renderList(listEl, visible, (item) =>
           renderListItem({
             label: config.label(item, state, pubDetails),

@@ -176,3 +176,13 @@ export const DATA_CONFIG = {
 export const PANEL_CONFIG = {
   listLimit: 10,
 } as const;
+
+// Сколько результатов показывать в глобальном поиске (features/globalSearch.ts)
+// — больше, чем PANEL_CONFIG.listLimit: там ограничение "топ-10 самых
+// весомых" (по числу публикаций/звёзд/весу связи), а тут — "найти ИМЕННО
+// эту сущность по подстроке" среди тысяч (searchHits не сортирует по
+// релевантности, просто фильтрует), заниженный лимит скорее спрятал бы
+// нужный результат, чем помог его найти.
+export const SEARCH_CONFIG = {
+  resultsLimit: 30,
+} as const;

@@ -12,6 +12,7 @@ import { requireElement, showLoadError } from "../core/dom";
 import { loggedStep } from "../core/log";
 import { Store, type AppState } from "../core/state";
 import { mountFilters } from "../features/filters";
+import { mountGlobalSearch } from "../features/globalSearch";
 import { mountPanel } from "../features/panels";
 import { mountSelection } from "../features/selection";
 import { mountStart } from "../features/start";
@@ -193,12 +194,13 @@ loggedStep("graph-data.json", () => loadGraphData(DATA_CONFIG.graphDataUrl))
     // mountPanel слушает store и рисует карточку; mountTabs слушает клики
     // по кнопкам вкладок и переключает список в сайдбаре; mountFilters —
     // регуляторы порогов (язык теперь переключается кнопками меню внутри
-    // самого mountStart, отдельного mountLangToggle больше нет). Они не
-    // знают друг о друге напрямую — связь только через общий Store.
-    // Функции отписки (unmount) не вызываются: все они живут всё время
-    // работы страницы — здесь ничего не пересоздаётся поверх них самих
-    // (внутри mountTabs свои unmount вызываются при смене вкладки — это
-    // устройство самой этой фичи).
+    // самого mountStart, отдельного mountLangToggle больше нет);
+    // mountGlobalSearch — окно поиска по всем видам сразу (клавиша "/"),
+    // единственный способ найти департамент вообще. Они не знают друг о
+    // друге напрямую — связь только через общий Store. Функции отписки
+    // (unmount) не вызываются: все они живут всё время работы страницы —
+    // здесь ничего не пересоздаётся поверх них самих (внутри mountTabs свои
+    // unmount вызываются при смене вкладки — это устройство самой этой фичи).
     mountSelection(renderer, store);
     mountPanel(store, data, pubDetailsByKey, authorDetailsByKey, repoDetailsByKey);
     mountTabs(
@@ -211,6 +213,7 @@ loggedStep("graph-data.json", () => loadGraphData(DATA_CONFIG.graphDataUrl))
       repoDetailsByKey,
     );
     mountFilters(store);
+    mountGlobalSearch(store, data, pubDetailsByKey, repoDetailsByKey);
     mountUrlSync(store, data);
 
     console.info("Граф отрисован (списки видны сразу, detail-файлы догружаются):", {
