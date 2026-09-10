@@ -124,12 +124,39 @@ describe("parseUrlState", () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];
     if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    // tab: 1 ("persons"), не 3 — узел должен принадлежать своей вкладке
+    // (см. следующий тест), иначе parseUrlState теперь корректно откатит
+    // выбор на null.
     const original = {
       screen: "app" as const,
-      tab: 3 as const,
+      tab: 1 as const,
       selection: { kind: "node" as const, key: author.key },
     };
 
     expect(parseUrlState(`?${serializeUrlState(original)}`, data)).toEqual(original);
+  });
+
+  it("узел с другой вкладки (несовпадение kind) откатывается на null — ссылка не может подменить сущность", async () => {
+    const data = await loadSampleGraphData();
+    const author = data.authors[0];
+    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+
+    // author.key реально существует в data, но не как публикация — на
+    // tab=pubs это должно откатиться на null, а не тихо принять чужую сущность.
+    expect(parseUrlState(`?tab=pubs&sel=node&key=${author.key}`, data)).toEqual({
+      screen: "app",
+      tab: 3,
+      selection: null,
+    });
+  });
+
+  it("ребро с другой вкладки откатывается на null — ищем только среди рёбер своей вкладки", async () => {
+    const data = await loadSampleGraphData();
+    // A1-A2 — coauth-ребро (авторы), не существует среди pub_edges.
+    expect(parseUrlState("?tab=pubs&sel=edge&s=A1&t=A2", data)).toEqual({
+      screen: "app",
+      tab: 3,
+      selection: null,
+    });
   });
 });

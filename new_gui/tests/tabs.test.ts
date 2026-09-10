@@ -23,13 +23,14 @@ function fakeRenderer(): Sigma {
   return {} as unknown as Sigma;
 }
 
-function initialState(): AppState {
+function initialState(overrides: Partial<AppState> = {}): AppState {
   return {
     screen: "app",
     tab: 1,
     lang: "ru",
     selection: null,
     filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026, showNoDeptAuthors: true, showNoDeptPubs: true },
+    ...overrides,
   };
 }
 
@@ -164,6 +165,18 @@ describe("mountTabs — переключение вкладок", () => {
     expect(listItems(content)).toHaveLength(data.repos.length);
     expect(buttons.querySelector('[data-tab="2"]')?.classList.contains("tab-button--active")).toBe(true);
     expect(buttons.querySelector('[data-tab="1"]')?.classList.contains("tab-button--active")).toBe(false);
+  });
+
+  it("клик по кнопке вкладки не трогает selection сам по себе — обнулять устаревший выбор при пересборке графа умеет map/build.ts::mountReactiveGraph (см. tests/build.test.ts)", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState({ selection: { kind: "node", key: "A1" } }));
+    const buttons = buttonsMarkup();
+    const content = document.createElement("div");
+
+    mountTabs(buttons, content, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    (buttons.querySelector('[data-tab="2"]') as HTMLButtonElement).click();
+
+    expect(store.get().selection).toEqual({ kind: "node", key: "A1" });
   });
 });
 

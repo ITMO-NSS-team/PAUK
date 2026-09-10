@@ -64,4 +64,34 @@ describe("Store", () => {
     expect(listener).toHaveBeenCalledWith({ a: 1, b: 2 });
     expect(store.get()).toEqual({ a: 1, b: 2 });
   });
+
+  it("подписчик, вызвавший вложенный set() внутри своего колбэка, не заставляет ПОЗДНИЕ подписчики этого же раунда увидеть устаревшее состояние", () => {
+    // Регрессия: notify() раньше рассылал один и тот же снимок state всем
+    // подписчикам текущего раунда, захваченный ДО его начала. Если первый
+    // подписчик внутри себя вызывал store.set() (например,
+    // map/build.ts::mountReactiveGraph обнуляет устаревший selection при
+    // пересборке графа), вложенный notify() отрабатывал корректно, но
+    // подписчики ПОСЛЕ первого в исходном (внешнем) раунде всё равно
+    // получали старый снимок — и, если у них нет своего "уже видел это
+    // состояние" guard'а (как есть у features/tabs/index.ts::activateTab,
+    // но нет у features/panels.ts), перерисовывались по устаревшим данным
+    // ПОСЛЕДНИМИ, затирая корректный результат вложенного вызова.
+    const store = new Store<Counter>({ a: 1, b: 2 });
+    let nested = false;
+    let lastSeenByLateSubscriber: Counter | undefined;
+
+    store.subscribe((state) => {
+      if (!nested && state.a === 10) {
+        nested = true;
+        store.set({ b: 99 }); // вложенный set() внутри колбэка "раннего" подписчика
+      }
+    });
+    store.subscribe((state) => {
+      lastSeenByLateSubscriber = state; // "поздний" подписчик — без собственного idempotency guard'а
+    });
+
+    store.set({ a: 10 });
+
+    expect(lastSeenByLateSubscriber).toEqual({ a: 10, b: 99 }); // не { a: 10, b: 2 } — устаревший снимок исходного раунда
+  });
 });

@@ -3,7 +3,6 @@
 
 import Graph from "graphology";
 import Sigma from "sigma";
-import { drawDiscNodeLabel } from "sigma/rendering";
 import type { Settings } from "sigma/settings";
 import type { NodeDisplayData, PartialButFor } from "sigma/types";
 import type { AuthorDetail, PubDetail, RepoDetail } from "../contracts/graph";
@@ -12,7 +11,6 @@ import { loadDetails, loadGraphData, mergeDetailsInto } from "../core/data";
 import { requireElement, showLoadError } from "../core/dom";
 import { loggedStep } from "../core/log";
 import { Store, type AppState } from "../core/state";
-import { parseUrlState } from "../core/url";
 import { mountFilters } from "../features/filters";
 import { mountPanel } from "../features/panels";
 import { mountSelection } from "../features/selection";
@@ -21,35 +19,44 @@ import { mountTabs } from "../features/tabs";
 import { mountUrlSync } from "../features/urlSync";
 import { mountReactiveGraph, mountZoomDebug, populateGraph } from "../map/build";
 
-// "Obsidian"-свечение выбранного/наведённого узла — Sigma вызывает эту
-// функцию и на реальное наведение мышью, и на узел, у которого reducer в
-// map/build.ts::applyGraphStyling вернул `highlighted: true` (для Sigma
-// это один и тот же визуальный случай). Рисует мягкое свечение вокруг
-// узла его же цветом через штатный Canvas2D `context.shadowBlur`, затем
-// подпись — штатной `drawDiscNodeLabel`, чтобы не пересобирать её
-// позиционирование вручную.
+// Подпись узла — в цвет ЕГО ДЕПАРТАМЕНТА (data.color, тот же цвет, что и у
+// самого узла), а не одним общим цветом на все узлы, с белой обводкой
+// (context.strokeText до fillText), чтобы цветной текст не терялся на фоне
+// такого же цвета соседних узлов/рёбер (прямая просьба — "не белым цветом
+// подписывать узлы, а в цвет департамента с белой обводкой"). Позиция та же
+// формула, что и у штатного Sigma drawDiscNodeLabel — просто вместо него.
 //
-// Живёт здесь, а не в map/build.ts: импорт "sigma/rendering" тянет за
-// собой рантайм всего рендер-модуля Sigma, который на уровне модуля
-// трогает WebGL2RenderingContext — в jsdom (тесты) его нет. map/build.ts
-// импортируется тестами напрямую, а app/main.ts — нет (как и сама
-// конструкция `new Sigma(...)`, которая по той же причине живёт только здесь).
-function drawGlowingNodeHover(
+// Используется и как settings.defaultDrawNodeLabel (обычная отрисовка), и
+// как settings.defaultDrawNodeHover (наведённый мышью ИЛИ выбранный кликом
+// узел, reducer в map/build.ts помечает его highlighted: true — для Sigma
+// это один и тот же визуальный случай) — БЕЗ отдельного свечения
+// (context.shadowBlur), которое было раньше: оно делало наведение почти
+// неотличимым от выбора на вид ("наведение выглядит как выбор" — прямая
+// жалоба), а простое увеличение размера выбранного узла уже даёт reducer
+// (MAP_CONFIG.node.radiusSelected), отдельный ободок не нужен.
+//
+// Живёт здесь, а не в map/build.ts: конструкция `new Sigma(...)` и вообще
+// любой рантайм-импорт из "sigma"/"sigma/rendering" на уровне модуля трогает
+// WebGL2RenderingContext, которого нет в jsdom (тесты). map/build.ts
+// импортируется тестами напрямую, а app/main.ts — нет.
+function drawHaloedNodeLabel(
   context: CanvasRenderingContext2D,
   data: PartialButFor<NodeDisplayData, "x" | "y" | "size" | "label" | "color">,
   settings: Settings,
 ): void {
-  context.save();
-  context.shadowBlur = MAP_CONFIG.node.glowBlur;
-  context.shadowColor = data.color;
-  context.fillStyle = data.color;
-  context.beginPath();
-  context.arc(data.x, data.y, data.size, 0, Math.PI * 2);
-  context.closePath();
-  context.fill();
-  context.restore();
+  if (!data.label) return;
 
-  drawDiscNodeLabel(context, data, settings);
+  context.font = `${settings.labelWeight} ${settings.labelSize}px ${settings.labelFont}`;
+  const x = data.x + data.size + 3;
+  const y = data.y + settings.labelSize / 3;
+
+  context.lineJoin = "round";
+  context.lineWidth = MAP_CONFIG.node.labelHaloWidth;
+  context.strokeStyle = MAP_CONFIG.node.labelHaloColor;
+  context.strokeText(data.label, x, y);
+
+  context.fillStyle = data.color;
+  context.fillText(data.label, x, y);
 }
 
 // Единственное место, где создаётся Store — дальше он просто передаётся
@@ -129,13 +136,15 @@ loggedStep("graph-data.json", () => loadGraphData(DATA_CONFIG.graphDataUrl))
     const authorDetailsByKey = new Map<string, AuthorDetail>();
     const repoDetailsByKey = new Map<string, RepoDetail>();
 
-    // URL при первой загрузке может задавать другую вкладку/выбор/экран, чем
-    // дефолт Store (например, открыли сохранённую ссылку на конкретную
-    // вкладку) — применяем это ДО монтирования остальных фич, чтобы они
-    // сразу увидели нужное состояние, а не мигнули дефолтом (меню) и тут
-    // же переключились на него. На чистом "/" parseUrlState() сама вернёт
-    // { screen: "menu", ... } — ровно дефолт Store, никакого мигания.
-    store.set(parseUrlState(location.search, data));
+    // Перезагрузка страницы ВСЕГДА показывает меню — прямая просьба
+    // ("при перезагрузке сайта переходим на tab=start"), безусловно, даже
+    // если в адресной строке была сохранённая ссылка на конкретный узел.
+    // Store и так по умолчанию создан с screen: "menu" (см. выше) —
+    // отдельного store.set() здесь не нужно. URL из адресной строки при
+    // этом не читается вообще: разбор query (parseUrlState) остаётся
+    // нужен только features/urlSync.ts — для popstate (кнопки
+    // "назад"/"вперёд" браузера УЖЕ внутри текущей сессии), а не для
+    // самого первого захода на страницу.
 
     // Sigma конструируется с уже непустым графом — populateGraph() строит
     // его под начальное состояние ДО new Sigma(...), а не после (в
@@ -154,10 +163,10 @@ loggedStep("graph-data.json", () => loadGraphData(DATA_CONFIG.graphDataUrl))
       // Как и в MapLibre-версии (map.dragRotate.disable()) — это не
       // географическая карта, вращение холста не нужно.
       enableCameraRotation: false,
-      // "Obsidian"-свечение выбранного/наведённого узла — см. map/build.ts.
-      defaultDrawNodeHover: drawGlowingNodeHover,
-      // Дефолт Sigma — чёрный текст (#000), на тёмном фоне сливается в ноль.
-      labelColor: { color: MAP_CONFIG.node.labelColor },
+      // Одна и та же функция для обычной подписи и для наведённого/
+      // выбранного узла (без отдельного свечения) — см. выше.
+      defaultDrawNodeHover: drawHaloedNodeLabel,
+      defaultDrawNodeLabel: drawHaloedNodeLabel,
       // Подпись узла рисуется, только когда сам узел на экране достаточно
       // крупный — иначе на маленьком зуме подписи наваливаются друг на
       // друга сплошным нечитаемым слоем. Число подбирается на глаз через
@@ -223,9 +232,8 @@ loggedStep("graph-data.json", () => loadGraphData(DATA_CONFIG.graphDataUrl))
     loadDetailsInto<AuthorDetail>("authors-detail.json", DATA_CONFIG.authorDetailsUrl, authorDetailsByKey);
     loadDetailsInto<RepoDetail>("repos-detail.json", DATA_CONFIG.repoDetailsUrl, repoDetailsByKey);
 
-    // Прячет boot-экран. Меню или обычный интерфейс покажется дальше —
-    // это уже решил store.set(parseUrlState(...)) выше, features/start.ts
-    // сама следит за store.screen и переключает видимость.
+    // Прячет boot-экран — под ним всегда меню (см. выше), features/start.ts
+    // сама следит за store.screen и переключает видимость дальше.
     start.finishBoot();
   })
   .catch((error: unknown) => {

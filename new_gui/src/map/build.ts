@@ -12,7 +12,6 @@
 
 import type Graph from "graphology";
 import type Sigma from "sigma";
-import type { Camera } from "sigma";
 import type { EdgeDisplayData, NodeDisplayData } from "sigma/types";
 import type { AuthorNode, Edge, GraphData, PubDetail, PubNode, RepoNode } from "../contracts/graph";
 import { MAP_CONFIG, NO_DEPT_COLOR } from "../core/config";
@@ -301,9 +300,12 @@ function addDeptLabelAnchors(graph: Graph, data: GraphData, tab: TabId, filters:
  *    кликом узел или департамент. Пока фокус есть: сам фокус — крупнее
  *    ({@link MAP_CONFIG.node.radiusSelected}), его соседи
  *    (`graph.areNeighbors`) — чуть крупнее обычного
- *    ({@link MAP_CONFIG.node.neighborSizeScale}), всё остальное — тускнеет в
- *    {@link MAP_CONFIG.node.dimColor} (полупрозрачный — "замылить", а не
- *    сплошной серый) и теряет подпись. Рёбра, не касающиеся фокуса, при этом
+ *    ({@link MAP_CONFIG.node.neighborSizeScale}), но ТОЛЬКО когда фокус —
+ *    это выбор (клик), а не наведение мышью (иначе рост размера соседа
+ *    двигает его хитбокс под курсор и в плотных скоплениях hover "прыгает"
+ *    на случайные узлы); всё остальное — тускнеет в {@link
+ *    MAP_CONFIG.node.dimColor} (полупрозрачный — "замылить", а не сплошной
+ *    серый) и теряет подпись. Рёбра, не касающиеся фокуса, при этом
  *    `hidden: true` целиком — "остальные рёбра убрать", прямая просьба.
  *
  * @param renderer - Sigma-рендерер.
@@ -363,11 +365,28 @@ function applyGraphStyling(
     // пока наводят на что-то другое, а не тускнеть под собственной подсветкой.
     // focus !== nodeKey исключает сам фокус (наведённый, но не выбранный узел) —
     // у него уже нет ни radiusSelected, ни повода тускнеть или расти как сосед.
-    if (!isSelected && focus && focus !== nodeKey) {
+    // graph.hasNode(focus) ОБЯЗАТЕЛЕН: focus из store.selection переживает
+    // смену вкладки (клик на графе не сбрасывает выбор при переключении
+    // авторы/репозитории/публикации), а после смены вкладки populateGraph()
+    // полностью пересобирает граф под новый набор сущностей — старый ключ
+    // выбора почти наверняка не существует в НОВОМ графе. graph.areNeighbors()
+    // на несуществующем узле не возвращает false, а БРОСАЕТ исключение
+    // (graphology NotFoundGraphError) — без этой проверки оно летело на
+    // каждый узел каждого кадра рендера, ронявшее рендер-цикл Sigma
+    // намертво (репортнутый пользователем зависон: "нажал на ноду, начал
+    // переходить в другую вкладку — всё зависло").
+    if (!isSelected && focus && focus !== nodeKey && graph.hasNode(focus)) {
       if (graph.areNeighbors(focus, nodeKey)) {
-        // Якоря департаментов (size: 0) не растим — фиксированный размер
-        // сделал бы невидимую точку видимым кружком там, где его не было.
-        if (!isRegion) res.size = MAP_CONFIG.node.radius * MAP_CONFIG.node.neighborSizeScale;
+        // Рост размера — только когда фокус пришёл от ВЫБОРА (клика), не от
+        // наведения мышью (hoveredNode === null здесь означает "фокус — это
+        // store.selection, не hover", см. focusKey()). При наведении рост
+        // размера соседа двигает его хитбокс под курсор, из-за чего в
+        // плотных скоплениях узлов hover начинает "прыгать" на случайные
+        // соседние узлы — прямая жалоба пользователя ("наведение курсором на
+        // кучу — рандом какой-то"). Якоря департаментов (size: 0) тоже не
+        // растим — фиксированный размер сделал бы невидимую точку видимым
+        // кружком там, где его не было.
+        if (!isRegion && !hoveredNode) res.size = MAP_CONFIG.node.radius * MAP_CONFIG.node.neighborSizeScale;
       } else {
         res.color = MAP_CONFIG.node.dimColor;
         res.label = "";
@@ -417,32 +436,82 @@ function applyGraphStyling(
 }
 
 /**
- * Плавно подлетает камерой к только что выбранному узлу/департаменту —
- * единая точка "красивого" фокуса камеры для ЛЮБОГО источника выбора (клик
- * по графу, по строке списка вкладки, по результату поиска в панели):
- * все они одинаково пишут `store.selection`, а саму анимацию запускает
- * только {@link mountReactiveGraph} через подписку на Store. Отдельные
- * места, где раньше был свой `camera.animate` (например,
- * features/tabs/nodeListTab.ts), его больше не вызывают — дублировать
- * анимацию незачем.
+ * Проверяет, что сущность из `selection` реально существует в `graph` —
+ * используется при пересборке графа (смена вкладки/фильтров, см.
+ * {@link mountReactiveGraph}), чтобы обнулить выбор, который эту пересборку
+ * не переживает (узел/департамент с прошлой вкладки, публикация, которую
+ * только что скрыл `filters.yearMax`), а не оставлять его висеть на
+ * несуществующий ключ — `graph.areNeighbors()` бросает исключение на
+ * несуществующем узле, а не возвращает false (см. {@link applyGraphStyling}).
+ *
+ * @param graph - graphology-граф (актуальный, уже пересобранный).
+ * @param selection - проверяемый выбор.
+ * @returns `true`, если `selection === null` (нечего проверять) либо
+ *   сущность реально есть в `graph`; `false`, если выбор ссылается на то,
+ *   чего в графе больше нет.
+ */
+function selectionExistsIn(graph: Graph, selection: Selection): boolean {
+  if (selection === null) return true;
+  if (selection.kind === "node") return graph.hasNode(selection.key);
+  if (selection.kind === "dept") return graph.hasNode(deptNodeKey(selection.id));
+  // graph — "mixed" (graphology-дефолт), а populateGraph() добавляет рёбра
+  // через generic mergeEdge(), который на графе типа "mixed" создаёт
+  // НАПРАВЛЕННОЕ ребро (s → t). hasEdge(source, target) при этом проверяет
+  // только исходящие рёбра источника — в отличие от graph.areNeighbors()
+  // выше, которая явно смотрит и in, и out. Рёбра в этом приложении везде
+  // считаются неориентированными (см. core/url.ts, map/build.ts::applyGraphStyling::isSelectedEdge),
+  // поэтому проверяем оба порядка концов, а не только selection.s → selection.t.
+  return graph.hasEdge(selection.s, selection.t) || graph.hasEdge(selection.t, selection.s);
+}
+
+/**
+ * Плавно панорамирует камеру к только что выбранному узлу/департаменту —
+ * единая точка "довезти до узла" для ЛЮБОГО источника выбора (клик по
+ * графу, по строке списка вкладки, по результату поиска в панели): все они
+ * одинаково пишут `store.selection`, а саму анимацию запускает только
+ * {@link mountReactiveGraph} через подписку на Store. Отдельные места, где
+ * раньше был свой `camera.animate` (например, features/tabs/nodeListTab.ts),
+ * его больше не вызывают — дублировать анимацию незачем.
+ *
+ * Координаты берутся ЧЕРЕЗ `renderer.getNodeDisplayData(key)`, а НЕ через
+ * `graph.getNodeAttributes(key)` — это два РАЗНЫХ пространства координат:
+ * атрибуты узла графа хранят "сырые" координаты раскладки ForceAtlas2 (в
+ * произвольном масштабе), а Sigma внутри себя нормализует их в так
+ * называемое "framed graph" пространство (`Sigma.prototype.process()`:
+ * `data.x = attrs.x; ...; this.normalizationFunction.applyTo(data)`) — и
+ * ИМЕННО в этом нормализованном пространстве, не в сыром, живут
+ * `camera.x`/`camera.y` (см. `Sigma.prototype.graphToViewport()`:
+ * `framedGraphToViewport(normalizationFunction(graphPoint))`). Раньше здесь
+ * читались сырые атрибуты напрямую — камера уезжала в случайную точку
+ * далеко за пределами реального экрана ("пустое пространство", прямая
+ * жалоба пользователя), потому что сырые координаты ForceAtlas2 (диапазон
+ * порядка тысяч) интерпретировались как уже нормализованные (диапазон
+ * порядка единиц).
+ *
+ * Меняет и x/y, и zoom (`camera.ratio` → {@link MAP_CONFIG.camera.focusRatio}) —
+ * абсолютное значение ratio безопасно именно потому, что координаты теперь
+ * читаются из normalized "framed graph" пространства (см. выше): Sigma сама
+ * приводит любой граф к одному и тому же опорному масштабу ещё до того, как
+ * камера в нём начинает работать.
  *
  * Ребро (`selection.kind === "edge"`) камеру не двигает — у ребра нет одной
- * точки, к которой имело бы смысл приближаться (это остаётся как раньше,
- * ребро просто подсвечивается через edgeReducer).
+ * точки, к которой имело бы смысл ехать (это остаётся как раньше, ребро
+ * просто подсвечивается через edgeReducer).
  *
- * @param camera - Sigma-камера рендерера.
- * @param graph - graphology-граф (нужен, чтобы прочитать x/y выбранного узла/якоря департамента).
+ * @param renderer - Sigma-рендерер (нужен и для камеры, и для
+ *   {@link Sigma.getNodeDisplayData}, дающего координаты в правильном
+ *   пространстве — обычного graphology-графа для этого недостаточно).
  * @param selection - новое выбранное состояние (см. {@link Selection}).
  */
-function flyToSelection(camera: Camera, graph: Graph, selection: Selection): void {
+function flyToSelection(renderer: Sigma, selection: Selection): void {
   if (selection === null || selection.kind === "edge") return;
 
   const key = selection.kind === "node" ? selection.key : deptNodeKey(selection.id);
-  if (!graph.hasNode(key)) return;
+  const nodeData = renderer.getNodeDisplayData(key);
+  if (!nodeData) return;
 
-  const { x, y } = graph.getNodeAttributes(key);
-  camera.animate(
-    { x, y, ratio: MAP_CONFIG.camera.focusRatio },
+  renderer.getCamera().animate(
+    { x: nodeData.x, y: nodeData.y, ratio: MAP_CONFIG.camera.focusRatio },
     { duration: MAP_CONFIG.camera.focusDuration, easing: "quadraticInOut" },
   );
 }
@@ -512,6 +581,20 @@ export function mountReactiveGraph(
     if (state.tab !== prev.tab || state.lang !== prev.lang || state.filters !== prev.filters) {
       prev = state;
       populateGraph(graph, data, state.lang, state.tab, state.filters, pubDetails);
+      // Смена вкладки/фильтров пересобирает граф под другой набор
+      // сущностей — старый выбор (узел/департамент с прошлой вкладки, или
+      // публикация, которую только что скрыл filters.yearMax) почти
+      // наверняка в нём больше не существует. Не просто "красиво" —
+      // жизненно важно: applyGraphStyling дёргает graph.areNeighbors(focus, ...)
+      // для каждого узла, а graphology бросает исключение на несуществующем
+      // узле вместо false, что роняло рендер-цикл Sigma намертво (реальный
+      // репорт: "нажал на ноду, начал переходить в другую вкладку — зависло").
+      // Вложенный store.set() безопасен благодаря Store.notify(), читающему
+      // this.state заново на каждый колбэк (core/state.ts) — иначе
+      // подписчики ПОСЛЕ этого в том же раунде (например, mountPanel)
+      // получили бы уже устаревший state.selection и перезаписали бы им
+      // корректный результат этого вложенного вызова.
+      if (!selectionExistsIn(graph, state.selection)) store.set({ selection: null });
       return;
     }
     if (state.selection !== prev.selection) {
@@ -520,7 +603,7 @@ export function mountReactiveGraph(
       // refresh() только просит Sigma позвать реducer'ы заново и
       // перерисоваться, без пересборки графа.
       renderer.refresh();
-      flyToSelection(camera, graph, state.selection);
+      flyToSelection(renderer, state.selection);
     }
   });
 
@@ -533,8 +616,9 @@ export function mountReactiveGraph(
 }
 
 /**
- * Небольшой отладочный индикатор текущего `camera.ratio` сбоку экрана —
- * инструмент для подбора {@link MAP_CONFIG.region.ratioThreshold},
+ * Небольшой отладочный индикатор текущего `camera.ratio` поверх карты
+ * (нижний левый угол `#map`, не всего viewport — иначе попадал бы в область
+ * сайдбара) — инструмент для подбора {@link MAP_CONFIG.region.ratioThreshold},
  * {@link MAP_CONFIG.node.labelVisibleAtSize} и {@link MAP_CONFIG.edge.visibleBelowRatio}
  * на глаз, не постоянный элемент интерфейса. Создаёт DOM-элемент сам, а не
  * через разметку в `index.html` — убрать индикатор после калибровки можно
@@ -546,7 +630,10 @@ export function mountReactiveGraph(
 export function mountZoomDebug(renderer: Sigma): () => void {
   const el = document.createElement("div");
   Object.assign(el.style, {
-    position: "fixed",
+    // absolute относительно #map (position: relative в index.html), не
+    // fixed относительно всего viewport — иначе left:12px попадал бы в
+    // область сайдбара (280px слева), а не на саму карту.
+    position: "absolute",
     bottom: "12px",
     left: "12px",
     zIndex: "40",
@@ -558,7 +645,7 @@ export function mountZoomDebug(renderer: Sigma): () => void {
     borderRadius: "4px",
     pointerEvents: "none",
   });
-  document.body.appendChild(el);
+  renderer.getContainer().appendChild(el);
 
   const camera = renderer.getCamera();
   function render(): void {

@@ -108,6 +108,7 @@ export type LocaleKey =
   | "start.badge"
   | "start.title"
   | "start.subtitle"
+  | "start.cta"
   | "start.loading"
   | "start.rendering"
   | "start.error";
@@ -179,6 +180,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "start.title": "Карта соавторства и открытого кода ИТМО",
     "start.subtitle":
       "Публикации, авторы и департаменты ИТМО — и связанные с ними open-source репозитории на GitHub.",
+    "start.cta": "Смотреть карту",
     "start.loading": "Загрузка данных…",
     "start.rendering": "Отрисовка графа…",
     "start.error": "Данные не найдены. Проверьте, что new_generate/generate_data.py сгенерировал файлы.",
@@ -249,6 +251,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "start.title": "ITMO co-authorship and open-source code map",
     "start.subtitle":
       "Publications, authors and departments of ITMO — and the open-source repositories linked to them on GitHub.",
+    "start.cta": "View the map",
     "start.loading": "Loading data…",
     "start.rendering": "Rendering the graph…",
     "start.error": "Data not found. Make sure new_generate/generate_data.py has generated the files.",

@@ -100,6 +100,9 @@ type Reducer = (...args: any[]) => unknown;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type EventHandler = (...args: any[]) => void;
 
+/** См. fakeRenderer::getNodeDisplayData — сдвиг, доказывающий, что flyToSelection берёт координаты именно оттуда, а не из graph.getNodeAttributes(). */
+const FRAMED_COORD_OFFSET = 1000;
+
 /**
  * Фейковый Sigma-рендерер: хранит реальный graphology.Graph (нужен
  * reducer'ам для extremities/getEdgeAttribute/areNeighbors) и перехватывает
@@ -134,6 +137,16 @@ function fakeRenderer(graph: Graph): {
     on: (event: string, cb: EventHandler) => handlers.set(event, cb),
     off: vi.fn(),
     refresh,
+    // Намеренно ДРУГИЕ координаты, чем "сырые" graph.getNodeAttributes() —
+    // так же, как настоящая Sigma отдаёт из getNodeDisplayData() координаты
+    // ПОСЛЕ normalizationFunction, а не сырые атрибуты графа (см.
+    // map/build.ts::flyToSelection). Если код по ошибке снова начнёт читать
+    // graph.getNodeAttributes() напрямую, тест ниже это поймает.
+    getNodeDisplayData: (key: string) => {
+      if (!graph.hasNode(key)) return undefined;
+      const attrs = graph.getNodeAttributes(key);
+      return { ...attrs, x: attrs.x + FRAMED_COORD_OFFSET, y: attrs.y + FRAMED_COORD_OFFSET };
+    },
   } as unknown as Sigma;
 
   return {
@@ -429,6 +442,26 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     expect(nodeReducer("A3", NODE_BASE)).toMatchObject({ color: MAP_CONFIG.node.dimColor, label: "" }); // не сосед — притушен
   });
 
+  it("selection на ключ, которого нет в ТЕКУЩЕМ графе (например, после смены вкладки), не роняет reducer", async () => {
+    // Регрессия: раньше nodeReducer вызывал graph.areNeighbors(focus, ...)
+    // без проверки, что focus вообще существует в графе — graphology
+    // бросает исключение на несуществующем узле, а не возвращает false.
+    // Реалистичный сценарий — клик по узлу одной вкладки, затем переход на
+    // другую: граф пересобирается под новый набор сущностей, а выбор мог
+    // (по ошибке в другом месте, или до фикса в features/tabs/index.ts)
+    // пережить смену вкладки. Проверяем сам reducer — последний рубеж
+    // защиты, а не только то, что вызывающий код теперь сбрасывает выбор.
+    const data = await loadSampleGraphData();
+    const graph = new Graph();
+    graph.addNode("A2", { x: 1, y: 1 });
+    const store = new Store<AppState>(initialState({ selection: { kind: "node", key: "A1" } })); // "A1" отсутствует в graph
+    const { renderer, getReducer } = fakeRenderer(graph);
+
+    mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
+
+    expect(() => getReducer("nodeReducer")("A2", NODE_BASE)).not.toThrow();
+  });
+
   it("без выбора и без наведения ничего не притушено", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
@@ -455,7 +488,11 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     const nodeReducer = getReducer("nodeReducer");
 
     fire("enterNode", { node: "A2" });
-    expect(nodeReducer("A3", NODE_BASE)).toMatchObject({ color: NODE_BASE.color }); // сосед наведённого A2 — не притушен
+    // Сосед наведённого A2 — не притушен, но и НЕ увеличен (в отличие от
+    // соседа ВЫБРАННОГО узла): рост размера на hover в плотных скоплениях
+    // сдвигает хитбокс под курсор и ломает наведение — прямая жалоба
+    // пользователя ("наведение на кучу — рандом какой-то").
+    expect(nodeReducer("A3", NODE_BASE)).toMatchObject({ color: NODE_BASE.color, size: NODE_BASE.size });
     expect(nodeReducer("A1", NODE_BASE)).toMatchObject({ color: MAP_CONFIG.node.dimColor, label: "" }); // не сосед — притушен
 
     fire("leaveNode", {});
@@ -567,10 +604,13 @@ describe("applyGraphStyling — видимость рёбер по camera.ratio"
 });
 
 describe("mountZoomDebug", () => {
-  it("показывает текущий camera.ratio и обновляется при смене камеры, unmount убирает элемент", () => {
+  it("рисует индикатор ВНУТРИ контейнера карты (не document.body), показывает camera.ratio, обновляется, unmount убирает элемент", () => {
     let ratioHandler: ((state: { ratio: number }) => void) | undefined;
     let ratio = 1.234;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
     const renderer = {
+      getContainer: () => container,
       getCamera: () => ({
         getState: () => ({ ratio, x: 0, y: 0, angle: 0 }),
         on: (event: string, cb: (state: { ratio: number }) => void) => {
@@ -581,7 +621,7 @@ describe("mountZoomDebug", () => {
     } as unknown as Sigma;
 
     const unmount = mountZoomDebug(renderer);
-    const el = document.body.lastElementChild as HTMLElement;
+    const el = container.lastElementChild as HTMLElement;
     expect(el.textContent).toContain("1.234");
 
     ratio = 5.678;
@@ -589,7 +629,7 @@ describe("mountZoomDebug", () => {
     expect(el.textContent).toContain("5.678");
 
     unmount();
-    expect(document.body.contains(el)).toBe(false);
+    expect(container.contains(el)).toBe(false);
   });
 });
 
@@ -611,15 +651,36 @@ describe("mountReactiveGraph", () => {
 
     store.set({ tab: 2 });
     expect(realNodeKeys(graph)).toHaveLength(data.repos.length); // пересобран под новую вкладку
+    // "A1" (автор) не существует в новом графе (репозитории) — mountReactiveGraph
+    // сама обнуляет устаревший выбор (см. отдельный тест ниже), это и даёт
+    // второй refresh() здесь, не сама пересборка.
+    expect(store.get().selection).toBeNull();
+    expect(refresh).toHaveBeenCalledTimes(2);
 
     store.set({ lang: "en" });
     expect(realNodeKeys(graph)).toHaveLength(data.repos.length); // та же вкладка, граф пересобран заново (не упал)
 
     store.set({ filters: { ...store.get().filters, minCoauth: 5 } });
-    expect(refresh).toHaveBeenCalledTimes(1); // ни одно из трёх пересобраний refresh() не дёргало
+    expect(refresh).toHaveBeenCalledTimes(2); // ни одно из трёх пересобраний само по себе refresh() не дёргало
   });
 
-  it("выбор узла подлетает камерой к его координатам", async () => {
+  it("смена фильтра, скрывающего выбранную публикацию (filters.yearMax), тоже обнуляет устаревший выбор", async () => {
+    const data = await loadSampleGraphData();
+    const graph = new Graph();
+    populateGraph(graph, data, "ru", 3, NO_FILTER, NO_PUB_DETAILS);
+    const pub2024 = data.pubs.find((p) => p.year === 2024);
+    if (!pub2024) throw new Error("фикстура должна содержать публикацию 2024 года");
+    const store = new Store<AppState>(initialState({ tab: 3, selection: { kind: "node", key: pub2024.key } }));
+    const { renderer } = fakeRenderer(graph);
+
+    mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
+    store.set({ filters: { ...store.get().filters, yearMax: 2022 } }); // скрывает pub2024 (год > 2022)
+
+    expect(graph.hasNode(pub2024.key)).toBe(false); // публикация правда пропала из графа
+    expect(store.get().selection).toBeNull();
+  });
+
+  it("выбор узла подлетает камерой к координатам из getNodeDisplayData (framed graph), а НЕ к сырым graph.getNodeAttributes()", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A1", { x: 12, y: 34 });
@@ -629,13 +690,18 @@ describe("mountReactiveGraph", () => {
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
     store.set({ selection: { kind: "node", key: "A1" } });
 
+    // x/y сдвинуты на FRAMED_COORD_OFFSET относительно сырых атрибутов узла
+    // (см. fakeRenderer::getNodeDisplayData) — так тест ловит регрессию,
+    // из-за которой камера раньше улетала в пустоту на реальных данных:
+    // graph.getNodeAttributes() отдаёт СЫРЫЕ координаты ForceAtlas2, а не то
+    // нормализованное пространство, в котором живёт camera.x/y.
     expect(cameraAnimate).toHaveBeenCalledWith(
-      { x: 12, y: 34, ratio: MAP_CONFIG.camera.focusRatio },
+      { x: 12 + FRAMED_COORD_OFFSET, y: 34 + FRAMED_COORD_OFFSET, ratio: MAP_CONFIG.camera.focusRatio },
       { duration: MAP_CONFIG.camera.focusDuration, easing: "quadraticInOut" },
     );
   });
 
-  it("выбор департамента подлетает камерой к координатам его якоря", async () => {
+  it("выбор департамента подлетает камерой к координатам его якоря из getNodeDisplayData", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode(deptNodeKey(0), { x: 5, y: 6, size: 0 });
@@ -646,7 +712,7 @@ describe("mountReactiveGraph", () => {
     store.set({ selection: { kind: "dept", id: 0 } });
 
     expect(cameraAnimate).toHaveBeenCalledWith(
-      { x: 5, y: 6, ratio: MAP_CONFIG.camera.focusRatio },
+      { x: 5 + FRAMED_COORD_OFFSET, y: 6 + FRAMED_COORD_OFFSET, ratio: MAP_CONFIG.camera.focusRatio },
       { duration: MAP_CONFIG.camera.focusDuration, easing: "quadraticInOut" },
     );
   });
@@ -664,5 +730,28 @@ describe("mountReactiveGraph", () => {
     store.set({ selection: { kind: "edge", s: "A1", t: "A2", w: 1 } });
 
     expect(cameraAnimate).not.toHaveBeenCalled();
+  });
+
+  it("выбор ребра переживает пересборку графа (смена lang) независимо от порядка s/t — graph.hasEdge() чувствителен к направлению, ребро выбора — нет", async () => {
+    // populateGraph добавляет рёбра через generic graph.mergeEdge(), которое
+    // на графе типа "mixed" (дефолт graphology) создаёт НАПРАВЛЕННОЕ ребро
+    // s -> t — graph.hasEdge(t, s) для него вернуло бы false. Рёбра в этом
+    // приложении везде считаются неориентированными (core/url.ts и
+    // applyGraphStyling::isSelectedEdge уже проверяют оба порядка) —
+    // selectionExistsIn() должна делать то же самое.
+    const data = await loadSampleGraphData();
+    const graph = new Graph();
+    populateGraph(graph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
+    const edge = data.coauth_edges[0];
+    if (!edge) throw new Error("фикстура должна содержать хотя бы одно coauth-ребро");
+    const store = new Store<AppState>(
+      initialState({ selection: { kind: "edge", s: edge.t, t: edge.s, w: edge.w } }), // s/t НАРОЧНО перевёрнуты
+    );
+    const { renderer } = fakeRenderer(graph);
+
+    mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
+    store.set({ lang: "en" }); // безобидная пересборка, но всё равно проходит через selectionExistsIn()
+
+    expect(store.get().selection).not.toBeNull();
   });
 });

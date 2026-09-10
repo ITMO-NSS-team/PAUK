@@ -24,11 +24,7 @@ function mountMarkup(): void {
       <span id="menu-badge-text"></span>
       <h1 id="menu-title"></h1>
       <p id="menu-subtitle"></p>
-      <nav>
-        <button type="button" data-tab="1"></button>
-        <button type="button" data-tab="3"></button>
-        <button type="button" data-tab="2"></button>
-      </nav>
+      <button type="button" id="menu-enter"></button>
       <div>
         <button type="button" data-lang="ru"></button>
         <button type="button" data-lang="en"></button>
@@ -104,14 +100,23 @@ describe("mountStart", () => {
     expect((document.getElementById("app") as HTMLElement).hidden).toBe(false);
   });
 
-  it("клик по кнопке вкладки в меню переключает screen на 'app' и пишет tab", () => {
+  it("клик по кнопке входа переключает screen на 'app', всегда на первую вкладку", () => {
     const store = new Store<AppState>(initialState());
     mountStart(store);
 
-    document.querySelector<HTMLButtonElement>('[data-tab="3"]')?.click();
+    document.getElementById("menu-enter")?.click();
 
     expect(store.get().screen).toBe("app");
-    expect(store.get().tab).toBe(3);
+    expect(store.get().tab).toBe(1);
+  });
+
+  it("клик по кнопке входа не трогает selection сам по себе — обнулять устаревший выбор при смене вкладки умеет map/build.ts::mountReactiveGraph (см. tests/build.test.ts)", () => {
+    const store = new Store<AppState>(initialState({ screen: "menu", tab: 2, selection: { kind: "node", key: "R1" } }));
+    mountStart(store);
+
+    document.getElementById("menu-enter")?.click();
+
+    expect(store.get().selection).toEqual({ kind: "node", key: "R1" });
   });
 
   it("клик по кнопке языка в меню переключает store.lang", () => {

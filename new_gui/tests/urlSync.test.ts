@@ -90,17 +90,19 @@ describe("mountUrlSync", () => {
     const store = new Store<AppState>(initialState());
     mountUrlSync(store, data);
 
-    const author = data.authors[0];
-    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    const pub = data.pubs[0];
+    if (!pub) throw new Error("фикстура должна содержать хотя бы одну публикацию");
     // Симулируем реальный порядок событий браузера: сначала меняется сам URL
-    // (как при настоящем back/forward), потом приходит popstate.
-    history.pushState(null, "", `?tab=pubs&sel=node&key=${author.key}`);
+    // (как при настоящем back/forward), потом приходит popstate. Публикация,
+    // не автор — tab=pubs, узел должен принадлежать своей вкладке (см.
+    // core/url.ts::TAB_KIND), иначе parseUrlState откатит выбор на null.
+    history.pushState(null, "", `?tab=pubs&sel=node&key=${pub.key}`);
     const lengthBefore = history.length;
 
     window.dispatchEvent(new PopStateEvent("popstate"));
 
     expect(store.get().tab).toBe(3);
-    expect(store.get().selection).toEqual({ kind: "node", key: author.key });
+    expect(store.get().selection).toEqual({ kind: "node", key: pub.key });
     expect(history.length).toBe(lengthBefore);
   });
 

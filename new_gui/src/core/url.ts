@@ -6,7 +6,7 @@
 // делает features/urlSync.ts — здесь только преобразование данных в обе
 // стороны, поэтому оно тестируется без единого DOM-события.
 
-import type { GraphData } from "../contracts/graph";
+import type { Edge, GraphData, NodeKind } from "../contracts/graph";
 import { indexByKey } from "./data";
 import type { Screen, Selection, TabId } from "./state";
 
@@ -29,6 +29,35 @@ const SLUG_TO_TAB: Record<string, TabId> = Object.fromEntries(
 
 /** Слаг меню — отдельно от {@link TAB_SLUGS}: меню не вкладка, у него нет `TabId`. */
 const MENU_SLUG = "start";
+
+/**
+ * Какой вид узла/ребро какой вкладки — {@link parseUrlState} проверяет по
+ * этой карте, что узел/ребро из `sel=node|edge` в URL реально принадлежит
+ * вкладке из ТОГО ЖЕ URL, а не просто существует ГДЕ-ТО в data. Без этой
+ * проверки `?tab=persons&sel=node&key=<ключ репозитория>` тихо восстановил
+ * бы выбор чужой сущности — map/build.ts::applyGraphStyling потом не может
+ * найти такой ключ в графе активной вкладки (граф пересобран под неё
+ * заново) и просто не подсвечивает ничего (безопасно после отдельного
+ * фикса с graph.hasNode()), но сама панель информации показала бы
+ * карточку сущности, никак не относящейся к тому, что нарисовано на карте.
+ */
+const TAB_KIND: Record<TabId, NodeKind> = {
+  1: "author",
+  2: "repo",
+  3: "pub",
+};
+
+/** Список рёбер СВОЕЙ вкладки — {@link parseUrlState} ищет `sel=edge` только среди них, а не среди всех трёх видов рёбер сразу. */
+function tabEdges(data: GraphData, tab: TabId): Edge[] {
+  switch (tab) {
+    case 1:
+      return data.coauth_edges;
+    case 2:
+      return data.repo_edges;
+    case 3:
+      return data.pub_edges;
+  }
+}
 
 /**
  * Сериализует текущие `screen`/`tab`/`selection` в строку параметров URL —
@@ -140,7 +169,14 @@ export function parseUrlState(search: string, data: GraphData): { screen: Screen
   const kind = params.get("sel");
   if (kind === "node") {
     const key = params.get("key");
-    if (key !== null && indexByKey(data).has(key)) return { screen: "app", tab, selection: { kind: "node", key } };
+    const node = key !== null ? indexByKey(data).get(key) : undefined;
+    // node.kind === TAB_KIND[tab], не просто "ключ существует где-то в
+    // data" — иначе ссылка на репозиторий с tab=persons в URL тихо
+    // восстановила бы выбор сущности, никак не относящейся к нарисованной
+    // вкладке (см. {@link TAB_KIND}).
+    if (key !== null && node && node.kind === TAB_KIND[tab]) {
+      return { screen: "app", tab, selection: { kind: "node", key } };
+    }
   } else if (kind === "edge") {
     const s = params.get("s");
     const t = params.get("t");
@@ -148,8 +184,9 @@ export function parseUrlState(search: string, data: GraphData): { screen: Screen
       // Рёбра неориентированы — совпадение в любом порядке концов; вес не
       // кладём в URL, а берём заново из data, чтобы не тащить в ссылке
       // производное значение (и не доверять ему, если его подделали).
-      const allEdges = [...data.coauth_edges, ...data.repo_edges, ...data.pub_edges];
-      const edge = allEdges.find((e) => (e.s === s && e.t === t) || (e.s === t && e.t === s));
+      // Ищем только среди рёбер СВОЕЙ вкладки (см. {@link tabEdges}), не
+      // среди всех трёх видов сразу — по той же причине, что и у node выше.
+      const edge = tabEdges(data, tab).find((e) => (e.s === s && e.t === t) || (e.s === t && e.t === s));
       if (edge) return { screen: "app", tab, selection: { kind: "edge", s: edge.s, t: edge.t, w: edge.w } };
     }
   } else if (kind === "dept") {

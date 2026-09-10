@@ -1,16 +1,16 @@
 // Слой "features" — экран загрузки (boot-progress) и меню (полноэкранный
-// выбор языка и вкладки). Boot-экран виден с первого кадра, пока грузится
-// graph-data.json. Меню — не одноразовый онбординг с localStorage-флагом,
-// а настоящее состояние приложения (AppState.screen === "menu", см.
-// core/state.ts): показывается на каждой загрузке страницы без tab= в
-// URL, и на него всегда можно вернуться кликом по заголовку "PAUK" в
-// шапке сайдбара — так же, как то, что оно "стартовое", не мешало старому
-// GUI (pauk/gui/web/main.js) показывать свою заставку при каждой загрузке.
+// выбор языка + один вход в приложение). Boot-экран виден с первого кадра,
+// пока грузится graph-data.json. Меню — не одноразовый онбординг с
+// localStorage-флагом, а настоящее состояние приложения
+// (AppState.screen === "menu", см. core/state.ts): показывается на КАЖДОЙ
+// загрузке страницы БЕЗУСЛОВНО, даже если в адресной строке была
+// сохранённая ссылка на конкретный узел (app/main.ts не читает URL при
+// начальной загрузке вообще, см. там же) — прямая просьба, и на него
+// всегда можно вернуться кликом по заголовку "PAUK" в шапке сайдбара.
 
 import { requireElement } from "../core/dom";
 import { t, type LocaleKey } from "../core/i18n";
-import type { AppState, Store, TabId } from "../core/state";
-import { TAB_LABEL_KEYS } from "./tabs";
+import type { AppState, Store } from "../core/state";
 
 /** Стадия загрузки, которую показывает boot-экран. */
 export type BootStage = "loading" | "rendering" | "error";
@@ -62,7 +62,7 @@ export function mountStart(store: Store<AppState>): {
   const badge = requireElement("menu-badge-text");
   const title = requireElement("menu-title");
   const subtitle = requireElement("menu-subtitle");
-  const tabButtons = menu.querySelectorAll<HTMLButtonElement>("button[data-tab]");
+  const enterButton = requireElement("menu-enter");
   const langButtons = menu.querySelectorAll<HTMLButtonElement>("button[data-lang]");
 
   function setBootStage(stage: BootStage): void {
@@ -90,19 +90,20 @@ export function mountStart(store: Store<AppState>): {
     badge.textContent = t("start.badge", lang);
     title.textContent = t("start.title", lang);
     subtitle.textContent = t("start.subtitle", lang);
-    for (const button of tabButtons) {
-      button.textContent = t(TAB_LABEL_KEYS[Number(button.dataset.tab) as TabId], lang);
-    }
+    enterButton.textContent = t("start.cta", lang);
     for (const button of langButtons) {
       button.classList.toggle("menu-lang--active", button.dataset.lang === lang);
     }
   }
 
-  for (const button of tabButtons) {
-    button.addEventListener("click", () => {
-      store.set({ screen: "app", tab: Number(button.dataset.tab) as TabId });
-    });
-  }
+  // Один вход в приложение, всегда на первую вкладку — отдельные кнопки
+  // выбора вкладки на меню убраны по прямой просьбе. Устаревший выбор (с
+  // совсем другой вкладки, если до захода в меню была выбрана, например,
+  // публикация) сама обнулит map/build.ts::mountReactiveGraph — она видит
+  // смену store.tab независимо от того, что именно её вызвало.
+  enterButton.addEventListener("click", () => {
+    store.set({ screen: "app", tab: 1 });
+  });
   for (const button of langButtons) {
     button.addEventListener("click", () => {
       store.set({ lang: button.dataset.lang as AppState["lang"] });

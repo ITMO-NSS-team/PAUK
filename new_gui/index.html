@@ -31,19 +31,28 @@
 
       /* Общая раскладка страницы: сайдбар со списком слева, карта
          посередине, панель информации справа — все три одной высоты,
-         карта занимает всё оставшееся место. Целиком скрыт, пока
-         показано меню (features/start.ts переключает [hidden] по
-         AppState.screen) — [hidden] сам по себе проиграл бы правилу
-         `#app { display: flex }` по специфичности, поэтому здесь нужно
-         явное переопределение. */
+         карта занимает всё оставшееся место. НЕ прячется через
+         display: none, пока показано меню, хотя features/start.ts и
+         ставит на нём атрибут [hidden] (тот здесь намеренно не имеет
+         визуального эффекта — специфичность `#app { display: flex }`
+         выше специфичности браузерного правила для [hidden]): Sigma
+         конструируется сразу после загрузки данных (app/main.ts), ей
+         нужны настоящие ненулевые размеры #map в этот момент, а не
+         схлопнутый до 0×0 контейнер. #menu — непрозрачный fixed-оверлей
+         с более высоким z-index (см. ниже), поэтому меню всё равно
+         визуально полностью перекрывает #app, тем же способом, что
+         раньше делал #welcome-modal. */
       #app { display: flex; height: 100%; }
-      #app[hidden] { display: none; }
       /* overflow-x: hidden — подстраховка: если внутри забудут про
          min-width: 0 на новом flex-элементе (как уже дважды случалось —
          см. .filter-row input и .tab-list-item__label ниже), контент
          обрежется по границе сайдбара, а не вылезет поверх карты. */
       #sidebar { width: 280px; flex-shrink: 0; overflow-x: hidden; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--border); }
-      #map { flex: 1; min-width: 0; }
+      /* position: relative — точка отсчёта для map/build.ts::mountZoomDebug
+         (position: absolute внутри), чтобы индикатор зума лежал поверх
+         самой карты, а не всего viewport (в котором left:12px попал бы в
+         область сайдбара). */
+      #map { flex: 1; min-width: 0; position: relative; }
 
       /* Заголовок сайдбара — кликабелен, возвращает в меню
          (features/start.ts, store.set({ screen: "menu" })). Единственный
@@ -283,10 +292,9 @@
       .menu-badge-arrow { color: var(--muted); }
       .menu-title { font-size: clamp(28px, 4vw, 44px); font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; color: var(--text); margin: 0 0 16px; }
       .menu-subtitle { font-size: 15px; line-height: 1.55; color: var(--muted); margin: 0 auto 28px; max-width: 460px; }
-      /* Выбор вкладки прямо в меню — это и есть "меню", не один общий CTA
-         на "смотреть карту", как раньше. */
-      .menu-tabs { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
-      .menu-tabs button {
+      /* Один вход в приложение (всегда на первую вкладку) — отдельные
+         кнопки выбора вкладки на меню убраны по прямой просьбе. */
+      .menu-cta {
         padding: 12px 22px;
         background: var(--accent);
         color: #ffffff;
@@ -296,7 +304,7 @@
         font-weight: 700;
         cursor: pointer;
       }
-      .menu-tabs button:hover { opacity: 0.9; }
+      .menu-cta:hover { opacity: 0.9; }
       /* Языковые кнопки — переехали сюда из бывшего #lang-toggle. */
       .menu-lang { display: flex; gap: 8px; justify-content: center; margin-top: 20px; }
       .menu-lang button {
@@ -330,13 +338,10 @@
         </a>
         <h1 class="menu-title" id="menu-title"></h1>
         <p class="menu-subtitle" id="menu-subtitle"></p>
-        <!-- data-tab — то же соответствие, что и у #tab-buttons ниже;
-             текст ставит features/start.ts под текущий язык. -->
-        <nav class="menu-tabs">
-          <button type="button" data-tab="1"></button>
-          <button type="button" data-tab="3"></button>
-          <button type="button" data-tab="2"></button>
-        </nav>
+        <!-- Один вход в приложение (всегда на первую вкладку) — не три
+             отдельные кнопки выбора вкладки, как было раньше (убрано по
+             прямой просьбе). Текст ставит features/start.ts. -->
+        <button type="button" id="menu-enter" class="menu-cta"></button>
         <div class="menu-lang">
           <button type="button" data-lang="ru">RU</button>
           <button type="button" data-lang="en">EN</button>
@@ -344,8 +349,10 @@
       </div>
     </div>
 
-    <!-- hidden здесь же по той же причине, что и у #menu — реальное
-         переключение по AppState.screen делает features/start.ts. -->
+    <!-- hidden ставит и снимает features/start.ts по AppState.screen, но
+         визуально это ни на что не влияет (см. #app в <style> выше) —
+         #map должен иметь настоящие ненулевые размеры уже в момент
+         конструирования Sigma, даже если сейчас показано меню. -->
     <div id="app" hidden>
       <aside id="sidebar">
         <!-- Заголовок сайдбара — клик возвращает в меню (features/start.ts). -->
