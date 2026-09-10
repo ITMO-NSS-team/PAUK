@@ -420,13 +420,14 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
                         catalog_path(config))
         # Read before the pass: an answer about somebody folded away since
         # is stored under an id only the graph can still resolve.
-        answers = review.decisions(mongo_db, client.fetch_merged_id_map("Person"))
+        folded = client.fetch_merged_id_map("Person")
+        answers = review.decisions(mongo_db, folded)
         # A fold deletes a node, and the review journal records the decision
         # but not what the node held. The audit entry does.
         with actor_context("etl-pipeline", source="dedup-graph"):
             persons_removed, person_report = dedup_graph_persons(
                 client, collect_raw_orcids(mongo_db), catalog, decisions=answers,
-                chosen=review.staff_choices(mongo_db))
+                chosen=review.staff_choices(mongo_db, folded))
             publications_removed, publication_report = dedup_graph_publications(client)
             repositories_removed, repository_report = dedup_graph_repositories(client)
 

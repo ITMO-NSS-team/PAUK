@@ -517,3 +517,23 @@ class GitHubReviewTest(unittest.TestCase):
                 path.read_text(encoding="utf-8").splitlines() if line.strip()]
         (row,) = rows
         self.assertEqual((row["decision"], row["rule"]), ("rejected", "manual"))
+
+    def test_an_answer_survives_its_person_being_folded(self):
+        # The dedup merges B into A. The answer is stored about B, and an id
+        # nothing carries any more used to lose it — silently linking an
+        # account somebody had refused.
+        self.run_stage(*self.unsure())
+        review.record_verdict(self.db, review.GITHUB, ["A1", "XieN-N"], review.DIFFERENT,
+                              actor="user:katya")
+        survivor = person("A2", "Stanislav Shtuka")
+        survivor.merged_ids = ["A1"]
+        _, people = self.run_stage([survivor], [profile("XieN-N", name="Stanislav Shtuka")])
+        self.assertIsNone(people["A2"].github)
+
+    def test_and_the_question_is_not_put_again(self):
+        self.run_stage(*self.unsure())
+        review.record_verdict(self.db, review.GITHUB, ["A1", "XieN-N"], review.DIFFERENT)
+        survivor = person("A2", "Stanislav Shtuka")
+        survivor.merged_ids = ["A1"]
+        self.run_stage([survivor], [profile("XieN-N", name="Stanislav Shtuka")])
+        self.assertEqual(review.count(self.db, answered=False), 0)

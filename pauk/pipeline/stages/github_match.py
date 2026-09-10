@@ -42,6 +42,7 @@ from difflib import SequenceMatcher
 
 from pauk.models import Contribution, GitHubProfile, Person, Publication, Repository
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.pipeline.stages.dedup import folded_ids
 from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
 
@@ -288,7 +289,11 @@ class GitHubMatchStage(EnrichmentStage):
             settle, and pairs where the rules now match what somebody
             rejected.
         """
-        answers = review.github_decisions(self.prepared.db)
+        # Through the ids the dedup folded away: an account answered about
+        # somebody since merged is stored under an id nothing carries, and
+        # the answer would be lost exactly when it matters most.
+        answers = review.github_decisions(
+            self.prepared.db, folded_ids(self.prepared.read_models("persons", Person)))
         questions: list[dict] = []
         for row in decisions:
             answered = answers.get(frozenset((row["login"], row["person"])))

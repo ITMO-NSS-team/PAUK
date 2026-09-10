@@ -1379,3 +1379,19 @@ class StaffCatalogQuestionTest(unittest.TestCase):
         self.run_stage([person("A1", "Andrei Gennadevich Kuznetsov", ["W1"],
                                variants=["Andrei Kuznetsov"])])
         self.assertEqual(review.count(self.db, kind=review.STAFF), 0)
+
+    def test_a_choice_survives_its_person_being_folded(self):
+        # The choice is about A2; a later run knows A2 only as an id A1
+        # swallowed. Read without the alias map, rule 4 loses it and the
+        # records this answer was meant to fold stay split.
+        gennadevich = "kuznetsov|andrei|gennadevich"
+        for person_id in ("A2", "A4"):
+            review.record_choice(self.db, person_id,
+                                 ["kuznetsov|andrei|gennadevich",
+                                  "kuznetsov|andrei|dmitrievich"],
+                                 gennadevich, actor="user:katya")
+        survivor = person("A1", "Andrei Kuznetsov", ["W1"])
+        survivor.merged_ids = ["A2"]
+        result, people = self.run_stage([survivor, person("A4", "Kuznetsov Andrei", ["W2"])])
+        self.assertEqual(result["dedup_merged"], 1)
+        self.assertEqual(people, {"A1"})

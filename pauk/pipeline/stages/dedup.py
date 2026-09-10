@@ -572,6 +572,16 @@ def _grouped(pairs: Iterable[tuple[str, str]]) -> Iterator[list[str]]:
             yield members
 
 
+def folded_ids(people: Iterable[Person]) -> dict[str, str]:
+    """Ids folded away, pointing at the person who survived.
+
+    An answer given about somebody who has since been merged is stored under
+    an id nothing carries any more. Every reader of those answers needs this,
+    which is why it lives here rather than on one stage.
+    """
+    return {folded: person.id for person in people for folded in person.merged_ids}
+
+
 def staff_identities(catalog: RussianNamesCatalog | None,
                      people: Iterable[Person],
                      chosen: dict[str, str] | None = None) -> dict[str, str]:
@@ -977,7 +987,7 @@ class DedupStage(EnrichmentStage):
                 if publication.fields
             },
             staff_ids=self._staff_ids(people),
-            decisions=review.decisions(self.prepared.db, self._folded_ids(people)))
+            decisions=review.decisions(self.prepared.db, folded_ids(people)))
 
         removed: set[str] = set()
         for canonical, duplicates in groups:
@@ -1008,16 +1018,6 @@ class DedupStage(EnrichmentStage):
                         report_path, len(removed), held)
         return len(removed), held
 
-    @staticmethod
-    def _folded_ids(people: list[Person]) -> dict[str, str]:
-        """Ids this stage folded away, pointing at the person who survived.
-
-        An answer given about someone who has since been merged is stored
-        under an id nothing carries any more. Without this the answer would
-        quietly stop applying the moment its subject was folded.
-        """
-        return {folded: person.id for person in people for folded in person.merged_ids}
-
     def _staff_ids(self, people: list[Person]) -> dict[str, str]:
         """Staff-record identity per person, empty without a staff catalog.
 
@@ -1030,7 +1030,7 @@ class DedupStage(EnrichmentStage):
         if catalog is None:
             logger.info("dedup: no staff catalog at %s — merging on names and profiles alone", path)
             return {}
-        chosen = review.staff_choices(self.prepared.db)
+        chosen = review.staff_choices(self.prepared.db, folded_ids(people))
         # Asked here rather than in the naming stage: this is the rule the
         # answer unblocks, and the ambiguity is a property of the catalog
         # and the name, so noticing it costs no model call.

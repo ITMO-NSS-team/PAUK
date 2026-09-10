@@ -481,3 +481,38 @@ class WithdrawingWhatNobodyAskedTest(unittest.TestCase):
         review.withdraw(self.db, review.GROUP, ["A1", "A2", "A3"])
         (left,) = review.questions(self.db, answered=False)
         self.assertEqual(left["_id"], "person_group:A1:A2:A3")
+
+
+class AnswersSurviveAMergeTest(unittest.TestCase):
+    """An answer is about a person, and a person can stop existing.
+
+    The dedup folds B into A; every answer made about B is stored under an
+    id nothing carries any more. Read without the alias map, the answer is
+    simply not found — and the rules go on to do what somebody refused.
+    """
+
+    RECORDS = ["kuznetsov|andrei|gennadevich", "kuznetsov|andrei|dmitrievich"]
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+
+    def test_an_account_answer_follows_the_person(self):
+        review.record_verdict(self.db, review.GITHUB, ["B", "ivanov"], review.DIFFERENT)
+        self.assertEqual(review.github_decisions(self.db, {"B": "A"}),
+                         {frozenset({"A", "ivanov"}): review.DIFFERENT})
+
+    def test_a_catalog_choice_follows_the_person(self):
+        review.record_choice(self.db, "B", self.RECORDS, self.RECORDS[0])
+        self.assertEqual(review.staff_choices(self.db, {"B": "A"}), {"A": self.RECORDS[0]})
+
+    def test_a_pair_answer_follows_both_of_them(self):
+        review.record_verdict(self.db, review.PAIR, ["B", "C"], review.DIFFERENT)
+        self.assertEqual(review.decisions(self.db, {"B": "A", "C": "D"}),
+                         {frozenset({"A", "D"}): review.DIFFERENT})
+
+    def test_without_a_map_nothing_is_rewritten(self):
+        # The map is the caller's knowledge, not the store's: a reader that
+        # has none must still see the answers as they were stored.
+        review.record_verdict(self.db, review.GITHUB, ["B", "ivanov"], review.SAME)
+        self.assertEqual(review.github_decisions(self.db),
+                         {frozenset({"B", "ivanov"}): review.SAME})

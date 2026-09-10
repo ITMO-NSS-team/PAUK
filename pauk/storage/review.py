@@ -436,19 +436,27 @@ def record_choice(db: Database, person: str, records: list[str], chosen: str | N
     return db[COLLECTION].find_one({"_id": key})
 
 
-def staff_choices(db: Database) -> dict[str, str]:
+def staff_choices(db: Database, aliases: dict[str, str] | None = None) -> dict[str, str]:
     """The catalog record each person was said to be, where somebody said.
 
     Only the answers that name a record: "none of them" resolves the
     question but gives the merge rules nothing to fold on.
+
+    Args:
+        aliases: Merged-away id to the id that survived, as for `decisions`.
+            A person folded into another keeps the record chosen for them
+            under an id nothing carries, and rule 4 stops folding what the
+            answer was meant to fold.
     """
-    return {row["person"]: row["chosen"]
+    aliases = aliases or {}
+    return {aliases.get(row["person"], row["person"]): row["chosen"]
             for row in db[COLLECTION].find({"kind": STAFF, "verdict": SAME,
                                             "chosen": {"$ne": None}})
             if row.get("chosen") and row.get("person")}
 
 
-def github_decisions(db: Database) -> dict[frozenset[str], str]:
+def github_decisions(db: Database, aliases: dict[str, str] | None = None
+                     ) -> dict[frozenset[str], str]:
     """Answers about accounts, keyed by the login and person they are about.
 
     Read off `members`, not off the evidence. An answer can be given before
@@ -456,9 +464,17 @@ def github_decisions(db: Database) -> dict[frozenset[str], str]:
     reached yet — and such a document carries no evidence at all, so keying
     on it lost the answer exactly when it mattered.
 
+    Args:
+        aliases: Merged-away id to the id that survived, as for `decisions`.
+            An account answered about somebody who has since been folded is
+            stored under an id nothing carries; without this the answer is
+            not found, and the matcher goes on to link an account a person
+            had refused.
+
     The caller knows which half is the account, so the pair needs no order.
     """
-    return {frozenset(row["members"]): row["verdict"]
+    aliases = aliases or {}
+    return {frozenset(aliases.get(member, member) for member in row["members"]): row["verdict"]
             for row in db[COLLECTION].find({"kind": GITHUB,
                                             "verdict": {"$exists": True}})}
 
