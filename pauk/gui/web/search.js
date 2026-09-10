@@ -24,10 +24,18 @@ function _spNavBtns() {
   </div>`;
 }
 
+// A name comes in several spellings (RU and EN labels, the full Russian name,
+// the OpenAlex variants) and the label shown depends on LANG - so a query in
+// either alphabet has to match, whichever spelling is on screen.
+function authorHaystack(n) {
+  return [n.label, n.label_en, n.name_ru, n.name_en, ...(n.name_variants || [])]
+    .filter(Boolean).join(" ").toLowerCase();
+}
+
 // Authors and repos right away; publications after graph-search.js loads
 const searchIndex = [
   ...DATA.authors.map(n => ({ key: n.key, kind: "author", label: authorDisplayName(n),
-    ll: n.label.toLowerCase(),
+    ll: authorHaystack(n),
     sub: `${deptDisplayName(deptById.get(n.dept)) || "—"} · ${n.pubs_count} ${t("search.kindPubShort")}` })),
   ...DATA.repos.map(n => ({ key: n.key, kind: "repo", label: n.label,
     ll: (n.label + " " + (n.description || "")).toLowerCase(),
@@ -57,8 +65,9 @@ function searchHits(q, withDepts) {
   if (withDepts) {
     for (const d of DATA.departments) {
       if (d.name === "Без департамента") continue;
-      if (tokens.every(t => d.name.toLowerCase().includes(t)))
-        hits.push({ key: d.id, kind: "dept", label: deptDisplayName(d), ll: d.name.toLowerCase(), sub: null });
+      const dll = [d.name, d.name_en].filter(Boolean).join(" ").toLowerCase();
+      if (tokens.every(t => dll.includes(t)))
+        hits.push({ key: d.id, kind: "dept", label: deptDisplayName(d), ll: dll, sub: null });
     }
   }
   const ord = { author: 0, dept: 1, repo: 2, pub: 3 };
