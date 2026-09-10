@@ -262,6 +262,42 @@ class RepositoriesStage(EnrichmentStage):
         # Organizations fetched this run, shared across both passes so the
         # extra call happens once per organization and not once per repository.
         fetched_orgs: set[str] = set()
+        selected_repository_ids = (
+            self.selection.ids
+            if self.selection is not None and self.selection.entity == "repositories"
+            else None
+        )
+
+        repository_ids_by_citation: dict[str, set[str]] = {}
+        for repo in repositories.values():
+            if selected_repository_ids is not None and repo.id not in selected_repository_ids:
+                continue
+            repository_ids_by_citation.setdefault(repo.id, set()).add(repo.id)
+            for citation in [repo.url, *repo.cited_urls]:
+                citation_id = _url_repo_id(citation)
+                if citation_id is not None:
+                    repository_ids_by_citation.setdefault(citation_id, set()).add(repo.id)
+
+        # Refresh only claims backed by a matching discovered link. A
+        # publication_id can also come from an imported or curated repository
+        # row, so removing it from every repository mentioned by that paper
+        # would silently erase independent provenance.
+        for row in rows:
+            if not self._row_in_scope(row):
+                continue
+            for link in row.links:
+                repo_id = _url_repo_id(link.url)
+                if repo_id is None:
+                    continue
+                if selected_repository_ids is not None and repo_id not in selected_repository_ids:
+                    continue
+                for existing_id in repository_ids_by_citation.get(repo_id, ()):
+                    repo = repositories[existing_id]
+                    repo.publication_ids = [
+                        publication_id
+                        for publication_id in repo.publication_ids
+                        if publication_id != row.publication_id
+                    ]
         progress = self.progress_bar(
             total=len(self._pending_repository_ids(rows, repositories, unlinked)),
             unit="repository")
@@ -277,8 +313,7 @@ class RepositoriesStage(EnrichmentStage):
                 repo_id = f"github_{owner.lower()}_{name.lower()}"
                 if not self.in_scope("repositories", repo_id):
                     continue
-                # None is "not judged yet", not "no", and still implements.
-                implements = link.is_relevant is not False
+                implements = link.is_relevant is True
                 repo = repositories.get(repo_id)
                 if repo is not None:
                     if implements and row.publication_id not in repo.publication_ids:
@@ -289,15 +324,20 @@ class RepositoriesStage(EnrichmentStage):
                     if not self.needs_attempt(state):
                         continue
                 else:
-                    repo = Repository(id=repo_id, url=url, name=name,
-                                      publication_ids=[row.publication_id] if implements else [],
-                                      cited_urls=[url])
+                    repo = Repository(
+                        id=repo_id,
+                        url=url,
+                        name=name,
+                        publication_ids=[row.publication_id] if implements else [],
+                        cited_urls=[url],
+                    )
                     repositories[repo_id] = repo
                     state = None
                 # One repository can be mentioned by many publications. Its
-                # publication IDs are collected above, but the GitHub API must
-                # be called at most once per enrichment run (especially with
-                # --force, which otherwise retries every mention).
+                # author-artifact publication IDs and every cited URL are
+                # collected above, but the GitHub API must be called at most
+                # once per enrichment run (especially with --force, which
+                # otherwise retries every mention).
                 if repo_id in attempted_repo_ids:
                     continue
                 attempted_repo_ids.add(repo_id)

@@ -78,7 +78,7 @@
 * **`publication_date`** (`Date`) — дата публикации.
 * **`year`** (`Integer`) — год публикации.
 * **`has_code`** (`Boolean`) — найдена ли ссылка на код.
-* **`code_url`** (`String`) — ссылка на код.
+* **`code_url`** (`String`) — JSON-список ссылок на авторский код.
 * **`funding`** (`JSON`) — информация о финансировании.
 * **`openalex_url`** (`String`) — ссылка на публикацию в OpenAlex.
 * **`pdf_url`** (`String`) — ссылка на PDF.
@@ -225,6 +225,7 @@
 
 * **`context`** (`List[String]`) — фрагменты текста вокруг ссылки.
 * **`page_number`** (`List[Integer]`) — страницы (`0` = абстракт: Neo4j не хранит `null` в массиве-свойстве, поэтому сентинел не `None`).
+* **`classification_status`** (`String`) — `pending`, `classified` или `failed`.
 * **`is_relevant`** (`Boolean`) — вердикт релевантности.
 * **`llm_confidence`** (`Float`) — уверенность LLM.
 * **`llm_reason`** (`String`) — обоснование LLM.

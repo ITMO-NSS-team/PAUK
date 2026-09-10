@@ -60,6 +60,8 @@ class Publication(BaseModel):
     publication_date: date | None = None
     year: int | None = None
     has_code: bool = False
+    # JSON text containing every author-produced repository URL. It remains a
+    # string because the GUI and existing Neo4j data use this legacy contract.
     code_url: str | None = None
     funding: list[Funding] = Field(default_factory=list)
     openalex_url: str | None = None
