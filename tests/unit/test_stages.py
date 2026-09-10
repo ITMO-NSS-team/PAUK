@@ -1212,6 +1212,21 @@ class ImplementsFromRelevanceTest(unittest.TestCase):
         self.assertEqual(repos[self.REPO_ID].publication_ids, [])
 
     @patch("pauk.pipeline.stages.repositories.GitHubClient")
+    def test_a_classified_uncertain_link_is_only_a_citation(self, github_client):
+        row = RepoLink(publication_id="W1", links=[CodeLink(
+            url=self.URL,
+            classification_status=ClassificationStatus.CLASSIFIED,
+            is_relevant=None,
+            llm_confidence=0.3,
+            llm_reason="insufficient context",
+        )])
+
+        repository = self.run_stage(github_client, [row])[self.REPO_ID]
+
+        self.assertEqual(repository.publication_ids, [])
+        self.assertEqual(repository.cited_urls, [self.URL])
+
+    @patch("pauk.pipeline.stages.repositories.GitHubClient")
     def test_only_the_paper_whose_code_it_is_makes_a_claim(self, github_client):
         repos = self.run_stage(github_client, [self.link("W1", False), self.link("W2", True)])
         self.assertEqual(repos[self.REPO_ID].publication_ids, ["W2"])

@@ -207,6 +207,10 @@ class RelevancePropertySynchronizationTest(unittest.TestCase):
         self.assertNotIn("is_relevant", edge)
         self.assertEqual(edge["classification_status"], "classified")
         self.assertEqual(edge["llm_confidence"], 0.2)
+        self.assertNotIn(
+            ("Repository", "IMPLEMENTS", "Publication", "github_org_repo", "W1"),
+            client.edges,
+        )
 
     def test_failed_reclassification_preserves_last_complete_graph_state(self):
         client = RecordingNeo4jClient()
