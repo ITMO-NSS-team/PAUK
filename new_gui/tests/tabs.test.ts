@@ -1,5 +1,5 @@
 import type Sigma from "sigma";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { PubDetail, RepoDetail } from "../src/contracts/graph";
 import { indexDetailsByKey } from "../src/core/data";
 import { Store, type AppState } from "../src/core/state";
@@ -13,23 +13,29 @@ const NO_PUB_DETAILS = new Map<string, PubDetail>();
 const NO_REPO_DETAILS = new Map<string, RepoDetail>();
 
 /**
- * Вкладкам от рендерера нужна только camera.animate() (вызывается по клику
- * на элемент списка) — настоящий Sigma в jsdom не поднять (нужен
- * WebGL-канвас), поэтому подставляем минимальную заглушку.
+ * Вкладкам-спискам (createNodeListTab) от рендерера сейчас не нужно вообще
+ * ничего — камерой к выбранному подлетает централизованно
+ * map/build.ts::mountReactiveGraph, а не сама вкладка, — но параметр есть
+ * в общем контракте TabModule.mount() (см. features/tabs/types.ts), поэтому
+ * заглушка остаётся, просто пустая.
  */
-function fakeRenderer(): { renderer: Sigma; animate: ReturnType<typeof vi.fn> } {
-  const animate = vi.fn();
-  const renderer = { getCamera: () => ({ animate }) } as unknown as Sigma;
-  return { renderer, animate };
+function fakeRenderer(): Sigma {
+  return {} as unknown as Sigma;
 }
 
 function initialState(): AppState {
   return {
+    screen: "app",
     tab: 1,
     lang: "ru",
     selection: null,
-    filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026 },
+    filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026, showNoDeptAuthors: true, showNoDeptPubs: true },
   };
+}
+
+/** Строки списка вкладки — второй ребёнок контейнера (первый — поле поиска, см. createNodeListTab). */
+function listItems(container: HTMLElement): HTMLButtonElement[] {
+  return Array.from(container.querySelectorAll<HTMLButtonElement>(".tab-list-item"));
 }
 
 describe("authorsTab", () => {
@@ -38,18 +44,16 @@ describe("authorsTab", () => {
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
-    authorsTab.mount(container, store, fakeRenderer().renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    authorsTab.mount(container, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
     const sorted = [...data.authors].sort((a, b) => b.pubs_count - a.pubs_count);
-    expect(Array.from(container.children).map((el) => el.textContent)).toEqual(
-      sorted.map((a) => `${a.label}${a.pubs_count}`),
-    );
+    expect(listItems(container).map((el) => el.textContent)).toEqual(sorted.map((a) => `${a.label}${a.pubs_count}`));
 
     const first = sorted[0];
     if (!first) throw new Error("во фикстуре должен быть хотя бы один автор");
     store.set({ selection: { kind: "node", key: first.key } });
 
-    expect(container.firstElementChild?.classList.contains("tab-list-item--selected")).toBe(true);
+    expect(listItems(container)[0]?.classList.contains("tab-list-item--selected")).toBe(true);
   });
 
   it("переключение lang на en показывает label_en вместо label", async () => {
@@ -57,28 +61,57 @@ describe("authorsTab", () => {
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
-    authorsTab.mount(container, store, fakeRenderer().renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    authorsTab.mount(container, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
     store.set({ lang: "en" });
 
     const sorted = [...data.authors].sort((a, b) => b.pubs_count - a.pubs_count);
-    expect(Array.from(container.children).map((el) => el.textContent)).toEqual(
+    expect(listItems(container).map((el) => el.textContent)).toEqual(
       sorted.map((a) => `${a.label_en}${a.pubs_count}`),
     );
   });
 
-  it("клик по автору пишет выбор в store и подлетает к нему на карте", async () => {
+  it("клик по автору пишет выбор в store — камерой подлетает map/build.ts, не сама вкладка", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
-    const { renderer, animate } = fakeRenderer();
 
-    authorsTab.mount(container, store, renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
-    const firstItem = container.firstElementChild as HTMLButtonElement;
-    firstItem.click();
+    authorsTab.mount(container, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    listItems(container)[0]?.click();
 
     const author = [...data.authors].sort((a, b) => b.pubs_count - a.pubs_count)[0];
     expect(store.get().selection).toEqual({ kind: "node", key: author?.key });
-    expect(animate).toHaveBeenCalledOnce();
+  });
+
+  it("поле поиска фильтрует список по вхождению подстроки в подпись, без учёта регистра", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState());
+    const container = document.createElement("div");
+
+    authorsTab.mount(container, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    const search = container.querySelector<HTMLInputElement>(".tab-search");
+    if (!search) throw new Error("вкладка должна содержать поле поиска");
+
+    search.value = "иванов";
+    search.dispatchEvent(new Event("input"));
+
+    expect(listItems(container).map((el) => el.textContent)).toEqual(["Иванов И.И.4"]);
+  });
+
+  it("пустой запрос поиска снова показывает весь список", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState());
+    const container = document.createElement("div");
+
+    authorsTab.mount(container, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    const search = container.querySelector<HTMLInputElement>(".tab-search");
+    if (!search) throw new Error("вкладка должна содержать поле поиска");
+
+    search.value = "иванов";
+    search.dispatchEvent(new Event("input"));
+    search.value = "";
+    search.dispatchEvent(new Event("input"));
+
+    expect(listItems(container)).toHaveLength(data.authors.length);
   });
 });
 
@@ -88,9 +121,9 @@ describe("reposTab", () => {
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
-    reposTab.mount(container, store, fakeRenderer().renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    reposTab.mount(container, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
-    const stars = Array.from(container.children).map((el) => Number(el.textContent?.match(/\d+/)?.[0]));
+    const stars = listItems(container).map((el) => Number(el.textContent?.match(/\d+/)?.[0]));
     expect(stars).toEqual([...stars].sort((a, b) => b - a));
   });
 });
@@ -112,9 +145,9 @@ describe("mountTabs — переключение вкладок", () => {
     const buttons = buttonsMarkup();
     const content = document.createElement("div");
 
-    mountTabs(buttons, content, store, fakeRenderer().renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    mountTabs(buttons, content, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
-    expect(content.children.length).toBe(data.authors.length);
+    expect(listItems(content)).toHaveLength(data.authors.length);
     expect(buttons.querySelector('[data-tab="1"]')?.classList.contains("tab-button--active")).toBe(true);
   });
 
@@ -124,11 +157,11 @@ describe("mountTabs — переключение вкладок", () => {
     const buttons = buttonsMarkup();
     const content = document.createElement("div");
 
-    mountTabs(buttons, content, store, fakeRenderer().renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    mountTabs(buttons, content, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
     (buttons.querySelector('[data-tab="2"]') as HTMLButtonElement).click();
 
     expect(store.get().tab).toBe(2);
-    expect(content.children.length).toBe(data.repos.length);
+    expect(listItems(content)).toHaveLength(data.repos.length);
     expect(buttons.querySelector('[data-tab="2"]')?.classList.contains("tab-button--active")).toBe(true);
     expect(buttons.querySelector('[data-tab="1"]')?.classList.contains("tab-button--active")).toBe(false);
   });
@@ -140,9 +173,9 @@ describe("pubsTab", () => {
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
-    pubsTab.mount(container, store, fakeRenderer().renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    pubsTab.mount(container, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
-    const years = Array.from(container.children).map((el) => el.textContent?.includes("неизвестен"));
+    const years = listItems(container).map((el) => el.textContent?.includes("неизвестен"));
     // Как только встретили "год неизвестен", все последующие тоже должны быть без года.
     const firstUnknownIndex = years.indexOf(true);
     if (firstUnknownIndex !== -1) {
@@ -156,7 +189,7 @@ describe("pubsTab", () => {
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
-    pubsTab.mount(container, store, fakeRenderer().renderer, data, pubDetails, NO_REPO_DETAILS);
+    pubsTab.mount(container, store, fakeRenderer(), data, pubDetails, NO_REPO_DETAILS);
 
     const labels = Array.from(container.querySelectorAll(".tab-list-item__label")).map((el) => el.textContent);
     for (const pub of data.pubs) {

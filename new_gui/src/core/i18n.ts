@@ -93,19 +93,21 @@ export type LocaleKey =
   | "field.deptsCount"
   | "field.total"
   | "overview.title"
+  | "overview.top"
+  | "overview.avgPubsPerAuthor"
+  | "overview.knownYear"
   | "field.doi"
   | "field.code"
   | "search.placeholder"
   | "search.pubsCountShort"
-  | "lang.toggle"
+  | "tab.searchPlaceholder"
   | "filter.coauth"
   | "filter.sharedAuthors"
   | "filter.yearMax"
+  | "filter.showNoDept"
   | "start.badge"
   | "start.title"
   | "start.subtitle"
-  | "start.cta"
-  | "start.modes"
   | "start.loading"
   | "start.rendering"
   | "start.error";
@@ -163,18 +165,20 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.doi": "DOI",
     "field.code": "Код",
     "overview.title": "Обзор",
+    "overview.top": "Топ-10",
+    "overview.avgPubsPerAuthor": "Публикаций на автора (среднее)",
+    "overview.knownYear": "Известен год",
     "search.placeholder": "Поиск по авторам, репозиториям, публикациям, департаментам…",
     "search.pubsCountShort": "публ.",
-    "lang.toggle": "EN",
+    "tab.searchPlaceholder": "Поиск…",
     "filter.coauth": "Мин. соавторство",
     "filter.sharedAuthors": "Мин. общих авторов",
     "filter.yearMax": "До года",
+    "filter.showNoDept": "Показывать без департамента",
     "start.badge": "Открытый проект ИТМО",
     "start.title": "Карта соавторства и открытого кода ИТМО",
     "start.subtitle":
       "Публикации, авторы и департаменты ИТМО — и связанные с ними open-source репозитории на GitHub.",
-    "start.cta": "Смотреть карту",
-    "start.modes": "Авторы · Репозитории · Публикации · Поиск",
     "start.loading": "Загрузка данных…",
     "start.rendering": "Отрисовка графа…",
     "start.error": "Данные не найдены. Проверьте, что new_generate/generate_data.py сгенерировал файлы.",
@@ -231,18 +235,20 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.doi": "DOI",
     "field.code": "Code",
     "overview.title": "Overview",
+    "overview.top": "Top 10",
+    "overview.avgPubsPerAuthor": "Publications per author (avg.)",
+    "overview.knownYear": "Known year",
     "search.placeholder": "Search authors, repositories, publications, departments…",
     "search.pubsCountShort": "pubs",
-    "lang.toggle": "RU",
+    "tab.searchPlaceholder": "Search…",
     "filter.coauth": "Min. co-authorship",
     "filter.sharedAuthors": "Min. shared authors",
     "filter.yearMax": "Up to year",
+    "filter.showNoDept": "Show without department",
     "start.badge": "Open ITMO project",
     "start.title": "ITMO co-authorship and open-source code map",
     "start.subtitle":
       "Publications, authors and departments of ITMO — and the open-source repositories linked to them on GitHub.",
-    "start.cta": "View the map",
-    "start.modes": "Authors · Repositories · Publications · Search",
     "start.loading": "Loading data…",
     "start.rendering": "Rendering the graph…",
     "start.error": "Data not found. Make sure new_generate/generate_data.py has generated the files.",

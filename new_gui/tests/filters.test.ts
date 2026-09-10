@@ -4,10 +4,11 @@ import { Store, type AppState } from "../src/core/state";
 
 function initialState(overrides: Partial<AppState> = {}): AppState {
   return {
+    screen: "app",
     tab: 1,
     lang: "ru",
     selection: null,
-    filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026 },
+    filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026, showNoDeptAuthors: true, showNoDeptPubs: true },
     ...overrides,
   };
 }
@@ -75,10 +76,34 @@ describe("mountFilters", () => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
 
-      store.set({ tab: 4 });
+      store.set({ tab: 2 });
 
       expect(container.hidden).toBe(true);
       expect(container.children).toHaveLength(0);
+    });
+  });
+
+  it("на вкладках 1 и 3 есть чекбокс «показывать без департамента»", () => {
+    withContainer(() => {
+      const store = new Store<AppState>(initialState());
+      mountFilters(store);
+      expect(container.querySelectorAll("input[type='checkbox']")).toHaveLength(1);
+
+      store.set({ tab: 3 });
+      expect(container.querySelectorAll("input[type='checkbox']")).toHaveLength(1);
+    });
+  });
+
+  it("снятие чекбокса «без департамента» пишет false в соответствующее поле filters", () => {
+    withContainer(() => {
+      const store = new Store<AppState>(initialState());
+      mountFilters(store);
+
+      const checkbox = container.querySelector("input[type='checkbox']") as HTMLInputElement;
+      checkbox.checked = false;
+      checkbox.dispatchEvent(new Event("change"));
+
+      expect(store.get().filters.showNoDeptAuthors).toBe(false);
     });
   });
 });

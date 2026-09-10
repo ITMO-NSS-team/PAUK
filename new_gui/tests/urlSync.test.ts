@@ -5,10 +5,11 @@ import { loadSampleGraphData } from "./fixtures";
 
 function initialState(overrides: Partial<AppState> = {}): AppState {
   return {
+    screen: "app",
     tab: 1,
     lang: "ru",
     selection: null,
-    filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026 },
+    filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026, showNoDeptAuthors: true, showNoDeptPubs: true },
     ...overrides,
   };
 }
@@ -18,13 +19,32 @@ describe("mountUrlSync", () => {
     history.replaceState(null, "", "/");
   });
 
-  it("при монтировании нормализует URL под текущее состояние store", async () => {
+  it("на чистом URL при монтировании безусловно записывает текущее состояние store", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ tab: 2 }));
 
     mountUrlSync(store, data);
 
-    expect(location.search).toBe("?tab=2");
+    expect(location.search).toBe("?tab=repos");
+  });
+
+  it("screen: 'menu' при монтировании пишет tab=start, а не пустой query", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState({ screen: "menu" }));
+
+    mountUrlSync(store, data);
+
+    expect(location.search).toBe("?tab=start");
+  });
+
+  it("при непустом (частичном/битом) query нормализует URL под текущее состояние store", async () => {
+    const data = await loadSampleGraphData();
+    history.replaceState(null, "", "?tab=repos&sel=bogus");
+    const store = new Store<AppState>(initialState({ tab: 2 }));
+
+    mountUrlSync(store, data);
+
+    expect(location.search).toBe("?tab=repos");
   });
 
   it("смена selection в пределах той же вкладки — replaceState, история не растёт", async () => {
@@ -37,7 +57,7 @@ describe("mountUrlSync", () => {
     if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
     store.set({ selection: { kind: "node", key: author.key } });
 
-    expect(location.search).toBe(`?tab=1&sel=node&key=${author.key}`);
+    expect(location.search).toBe(`?tab=persons&sel=node&key=${author.key}`);
     expect(history.length).toBe(lengthBefore);
   });
 
@@ -49,7 +69,19 @@ describe("mountUrlSync", () => {
 
     store.set({ tab: 2 });
 
-    expect(location.search).toBe("?tab=2");
+    expect(location.search).toBe("?tab=repos");
+    expect(history.length).toBe(lengthBefore + 1);
+  });
+
+  it("смена screen (меню -> приложение) — pushState, как и смена вкладки", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState({ screen: "menu" }));
+    mountUrlSync(store, data);
+    const lengthBefore = history.length;
+
+    store.set({ screen: "app", tab: 2 });
+
+    expect(location.search).toBe("?tab=repos");
     expect(history.length).toBe(lengthBefore + 1);
   });
 
@@ -62,7 +94,7 @@ describe("mountUrlSync", () => {
     if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
     // Симулируем реальный порядок событий браузера: сначала меняется сам URL
     // (как при настоящем back/forward), потом приходит popstate.
-    history.pushState(null, "", `?tab=3&sel=node&key=${author.key}`);
+    history.pushState(null, "", `?tab=pubs&sel=node&key=${author.key}`);
     const lengthBefore = history.length;
 
     window.dispatchEvent(new PopStateEvent("popstate"));
@@ -78,7 +110,7 @@ describe("mountUrlSync", () => {
     const unmount = mountUrlSync(store, data);
     unmount();
 
-    history.pushState(null, "", "?tab=2");
+    history.pushState(null, "", "?tab=repos");
     window.dispatchEvent(new PopStateEvent("popstate"));
 
     expect(store.get().tab).toBe(1);

@@ -1,8 +1,8 @@
 // Слой "features" — реакция на клики пользователя по графу: превращает их
 // в изменения общего состояния (Store). Подсветка выбранного узла/ребра —
 // целиком в map/build.ts (единый nodeReducer/edgeReducer, см.
-// applySelectionHighlighting) — этот файл только решает, ЧТО выбрано, а не
-// КАК это нарисовать.
+// applyGraphStyling) — этот файл только решает, ЧТО выбрано, а не КАК это
+// нарисовать.
 //
 // В отличие от MapLibre-версии, здесь не нужно вручную решать приоритет
 // "сначала узел, потом ребро, иначе пусто": Sigma сама различает три
@@ -26,7 +26,14 @@ import type { AppState, Store } from "../core/state";
 export function mountSelection(renderer: Sigma, store: Store<AppState>): () => void {
   const graph = renderer.getGraph();
 
-  /** Клик по узлу — выбрать его. `node` — это же graphology node id, оно же node.key из данных. */
+  /**
+   * Клик по узлу — выбрать его. `node` — это же graphology node id, оно же
+   * `node.key` из данных. Узлы-якоря подписей департаментов (см.
+   * map/build.ts::addDeptLabelAnchors) сюда не попадают: у них `size: 0`,
+   * кликнуть по ним нельзя, как и в старом GUI (там подписи департаментов
+   * были чистым текстом на пассивном canvas-оверлее) — выбор департамента
+   * остаётся доступен через поиск.
+   */
   function onClickNode({ node }: { node: string }): void {
     store.set({ selection: { kind: "node", key: node } });
   }

@@ -1,29 +1,15 @@
-import type Sigma from "sigma";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { PubDetail, RepoDetail } from "../src/contracts/graph";
 import { indexDetailsByKey } from "../src/core/data";
-import { Store, type AppState } from "../src/core/state";
 import { buildSearchIndex, deptHitKey, parseDeptHitKey, searchHits } from "../src/features/search";
-import { searchTab } from "../src/features/tabs/search";
 import { loadSampleGraphData, loadSamplePubDetails, loadSampleRepoDetails } from "./fixtures";
 
+// Логика поиска (эта, чисто функциональная часть) осталась в
+// features/search/index.ts, хотя вкладка "Поиск" (features/tabs/search.ts)
+// временно убрана из UI — см. память проекта. Тесты на саму вкладку удалены
+// вместе с ней, эти — на переиспользуемую основу — остаются.
 const NO_PUB_DETAILS = new Map<string, PubDetail>();
 const NO_REPO_DETAILS = new Map<string, RepoDetail>();
-
-function fakeRenderer(): { renderer: Sigma; animate: ReturnType<typeof vi.fn> } {
-  const animate = vi.fn();
-  const renderer = { getCamera: () => ({ animate }) } as unknown as Sigma;
-  return { renderer, animate };
-}
-
-function initialState(): AppState {
-  return {
-    tab: 4,
-    lang: "ru",
-    selection: null,
-    filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026 },
-  };
-}
 
 describe("deptHitKey / parseDeptHitKey", () => {
   it("парсинг возвращает то же число, что было закодировано", () => {
@@ -93,97 +79,5 @@ describe("searchHits", () => {
 
     const hits = searchHits(index, author.label.slice(0, 3).toUpperCase());
     expect(hits.some((hit) => hit.key === author.key)).toBe(true);
-  });
-});
-
-describe("searchTab", () => {
-  it("ввод текста фильтрует список результатов", async () => {
-    const data = await loadSampleGraphData();
-    const store = new Store<AppState>(initialState());
-    const container = document.createElement("div");
-
-    searchTab.mount(container, store, fakeRenderer().renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
-    const results = container.querySelector(".search-results") as HTMLElement;
-    expect(results.children).toHaveLength(0);
-
-    const input = container.querySelector("input") as HTMLInputElement;
-    const author = data.authors[0];
-    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
-    input.value = author.label;
-    input.dispatchEvent(new Event("input"));
-
-    expect(results.children.length).toBeGreaterThan(0);
-  });
-
-  it("клик по результату-департаменту пишет selection dept, без flyTo (у департамента нет своих координат) и без переключения вкладки", async () => {
-    const data = await loadSampleGraphData();
-    const store = new Store<AppState>(initialState());
-    const container = document.createElement("div");
-    const { renderer, animate } = fakeRenderer();
-
-    searchTab.mount(container, store, renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
-    const input = container.querySelector("input") as HTMLInputElement;
-    const dept = data.departments[0];
-    if (!dept) throw new Error("фикстура должна содержать хотя бы один департамент");
-    input.value = dept.name;
-    input.dispatchEvent(new Event("input"));
-
-    // Поиск по имени департамента находит и авторов из него самого (их sub
-    // содержит имя департамента), поэтому берём именно результат-департамент
-    // по data-kind, а не полагаемся на порядок в списке.
-    const results = container.querySelector(".search-results") as HTMLElement;
-    const deptButton = results.querySelector('[data-kind="dept"]') as HTMLButtonElement;
-    deptButton.click();
-
-    expect(store.get().selection).toEqual({ kind: "dept", id: dept.id });
-    expect(animate).not.toHaveBeenCalled();
-    expect(store.get().tab).toBe(4); // у департамента нет своей вкладки с графом — вкладку не трогаем
-  });
-
-  it("клик по результату-автору переключает вкладку на 1 (иначе выбор невидим — карта на вкладке 4 пуста)", async () => {
-    const data = await loadSampleGraphData();
-    const store = new Store<AppState>(initialState());
-    const container = document.createElement("div");
-    const { renderer, animate } = fakeRenderer();
-
-    searchTab.mount(container, store, renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
-    const input = container.querySelector("input") as HTMLInputElement;
-    const author = data.authors[0];
-    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
-    input.value = author.label;
-    input.dispatchEvent(new Event("input"));
-
-    const results = container.querySelector(".search-results") as HTMLElement;
-    const authorButton = results.querySelector('[data-kind="author"]') as HTMLButtonElement;
-    authorButton.click();
-
-    expect(store.get().tab).toBe(1);
-    expect(store.get().selection).toEqual({ kind: "node", key: author.key });
-    expect(animate).toHaveBeenCalledOnce();
-  });
-
-  it("клик по результату-репозиторию переключает вкладку на 2, по результату-публикации — на 3", async () => {
-    const data = await loadSampleGraphData();
-    const store = new Store<AppState>(initialState());
-    const container = document.createElement("div");
-    const { renderer } = fakeRenderer();
-
-    searchTab.mount(container, store, renderer, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
-    const input = container.querySelector("input") as HTMLInputElement;
-    const results = container.querySelector(".search-results") as HTMLElement;
-
-    const repo = data.repos[0];
-    if (!repo) throw new Error("фикстура должна содержать хотя бы один репозиторий");
-    input.value = repo.label;
-    input.dispatchEvent(new Event("input"));
-    (results.querySelector('[data-kind="repo"]') as HTMLButtonElement).click();
-    expect(store.get().tab).toBe(2);
-
-    const pub = data.pubs[0];
-    if (!pub) throw new Error("фикстура должна содержать хотя бы одну публикацию");
-    input.value = pub.key;
-    input.dispatchEvent(new Event("input"));
-    (results.querySelector('[data-kind="pub"]') as HTMLButtonElement).click();
-    expect(store.get().tab).toBe(3);
   });
 });

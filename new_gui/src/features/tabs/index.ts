@@ -5,26 +5,31 @@ import type { AppState, Store, TabId } from "../../core/state";
 import { authorsTab } from "./authors";
 import { pubsTab } from "./pubs";
 import { reposTab } from "./repos";
-import { searchTab } from "./search";
 import type { TabModule } from "./types";
 
 // Вкладку "Здоровье БД" из старого GUI в new_gui не переносим вообще —
 // поэтому в TabId для неё нет номера и здесь для неё нет записи
-// (см. core/state.ts).
+// (см. core/state.ts). Вкладка "Поиск" убрана временно — переезжает в
+// левую панель каждой вкладки вместе с фильтрами, когда решится, как
+// именно (см. память проекта); сама логика поиска осталась в
+// features/search/index.ts, просто не смонтирована как отдельная вкладка.
 /** Соответствие номера вкладки её модулю {@link TabModule}. */
-const TAB_MODULES: Partial<Record<TabId, TabModule>> = {
+const TAB_MODULES: Record<TabId, TabModule> = {
   1: authorsTab,
   2: reposTab,
   3: pubsTab,
-  4: searchTab,
 };
 
-/** Какой ключ i18n соответствует подписи кнопки каждой вкладки — статичная разметка кнопок в index.html не хранит текст, только `data-tab`. */
-const TAB_LABEL_KEYS: Record<TabId, LocaleKey> = {
+/**
+ * Какой ключ i18n соответствует подписи кнопки каждой вкладки — статичная
+ * разметка кнопок в index.html не хранит текст, только `data-tab`.
+ * Экспортируется — те же кнопки-выборы вкладки повторяются в меню
+ * (features/start.ts), подписывать их вторым дублирующим словарём смысла нет.
+ */
+export const TAB_LABEL_KEYS: Record<TabId, LocaleKey> = {
   1: "tab.authors",
   2: "tab.repos",
   3: "tab.pubs",
-  4: "tab.search",
 };
 
 /**
@@ -47,7 +52,8 @@ const TAB_LABEL_KEYS: Record<TabId, LocaleKey> = {
  * @param renderer - Sigma-рендерер (передаётся дальше в `TabModule.mount()`).
  * @param data - данные графа.
  * @param pubDetails - карта деталей публикаций.
- * @param repoDetails - карта описаний/владельцев/ссылок репозиториев (нужна только вкладке "Поиск").
+ * @param repoDetails - карта описаний/владельцев/ссылок репозиториев — сейчас
+ *   ни одна из смонтированных вкладок её не читает (см. `./types.ts::TabModule`).
  * @returns Функция размонтирования (unmount) — снимает обработчик кликов по
  *   кнопкам, размонтирует активную вкладку и отписывается от Store.
  */
@@ -82,8 +88,9 @@ export function mountTabs(
 
     activeUnmount?.();
     activeTab = tabId;
-    const tabModule = TAB_MODULES[tabId];
-    activeUnmount = tabModule ? tabModule.mount(tabContentEl, store, renderer, data, pubDetails, repoDetails) : null;
+    // TAB_MODULES теперь Record, не Partial<Record<...>> — каждый TabId
+    // гарантированно имеет модуль, отдельной проверки на undefined не нужно.
+    activeUnmount = TAB_MODULES[tabId].mount(tabContentEl, store, renderer, data, pubDetails, repoDetails);
 
     for (const button of buttons) {
       button.classList.toggle("tab-button--active", Number(button.dataset.tab) === tabId);

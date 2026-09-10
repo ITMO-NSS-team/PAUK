@@ -14,17 +14,16 @@ import { loggedStep } from "../core/log";
 import { Store, type AppState } from "../core/state";
 import { parseUrlState } from "../core/url";
 import { mountFilters } from "../features/filters";
-import { mountLangToggle } from "../features/langToggle";
 import { mountPanel } from "../features/panels";
 import { mountSelection } from "../features/selection";
 import { mountStart } from "../features/start";
 import { mountTabs } from "../features/tabs";
 import { mountUrlSync } from "../features/urlSync";
-import { mountReactiveGraph, populateGraph } from "../map/build";
+import { mountReactiveGraph, mountZoomDebug, populateGraph } from "../map/build";
 
 // "Obsidian"-свечение выбранного/наведённого узла — Sigma вызывает эту
 // функцию и на реальное наведение мышью, и на узел, у которого reducer в
-// map/build.ts::applyHighlighting вернул `highlighted: true` (для Sigma
+// map/build.ts::applyGraphStyling вернул `highlighted: true` (для Sigma
 // это один и тот же визуальный случай). Рисует мягкое свечение вокруг
 // узла его же цветом через штатный Canvas2D `context.shadowBlur`, затем
 // подпись — штатной `drawDiscNodeLabel`, чтобы не пересобирать её
@@ -60,10 +59,11 @@ function drawGlowingNodeHover(
 // стартовое "без фильтра по году" значение и верхняя граница самого
 // слайдера физически не могут разойтись, это одно и то же число.
 const store = new Store<AppState>({
+  screen: "menu",
   tab: 1,
-  lang: "ru",
+  lang: "en",
   selection: null,
-  filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: FILTER_CONFIG.year.max },
+  filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: FILTER_CONFIG.year.max, showNoDeptAuthors: true, showNoDeptPubs: true },
 });
 
 // Данные приходят из четырёх *.json в корне сайта (см. DATA_CONFIG в
@@ -101,7 +101,7 @@ function loadDetailsInto<T extends { key: string }>(name: string, url: string, t
     });
 }
 
-// Стартовый экран (boot-progress + welcome-hero, см. features/start.ts) —
+// Стартовый экран (boot-progress + меню, см. features/start.ts) —
 // монтируется сразу, до первого fetch: boot-screen должен быть виден с
 // первого кадра, а не появиться с задержкой.
 const start = mountStart(store);
@@ -129,15 +129,13 @@ loggedStep("graph-data.json", () => loadGraphData(DATA_CONFIG.graphDataUrl))
     const authorDetailsByKey = new Map<string, AuthorDetail>();
     const repoDetailsByKey = new Map<string, RepoDetail>();
 
-    // URL при первой загрузке может задавать другую вкладку/выбор, чем
-    // дефолт Store (например, открыли сохранённую ссылку) — применяем это
-    // ДО монтирования остальных фич, чтобы они сразу увидели нужное
-    // состояние, а не мигнули дефолтом и тут же переключились на него.
-    // Тот же разбор переиспользуется ниже для hasDeepLink — открыли не с
-    // дефолтным view, значит welcome-экран должен пропуститься (как и в
-    // старом GUI: заставка не должна перекрывать уже осмысленную ссылку).
-    const urlState = parseUrlState(location.search, data);
-    store.set(urlState);
+    // URL при первой загрузке может задавать другую вкладку/выбор/экран, чем
+    // дефолт Store (например, открыли сохранённую ссылку на конкретную
+    // вкладку) — применяем это ДО монтирования остальных фич, чтобы они
+    // сразу увидели нужное состояние, а не мигнули дефолтом (меню) и тут
+    // же переключились на него. На чистом "/" parseUrlState() сама вернёт
+    // { screen: "menu", ... } — ровно дефолт Store, никакого мигания.
+    store.set(parseUrlState(location.search, data));
 
     // Sigma конструируется с уже непустым графом — populateGraph() строит
     // его под начальное состояние ДО new Sigma(...), а не после (в
@@ -158,22 +156,40 @@ loggedStep("graph-data.json", () => loadGraphData(DATA_CONFIG.graphDataUrl))
       enableCameraRotation: false,
       // "Obsidian"-свечение выбранного/наведённого узла — см. map/build.ts.
       defaultDrawNodeHover: drawGlowingNodeHover,
+      // Дефолт Sigma — чёрный текст (#000), на тёмном фоне сливается в ноль.
+      labelColor: { color: MAP_CONFIG.node.labelColor },
+      // Подпись узла рисуется, только когда сам узел на экране достаточно
+      // крупный — иначе на маленьком зуме подписи наваливаются друг на
+      // друга сплошным нечитаемым слоем. Число подбирается на глаз через
+      // mountZoomDebug ниже.
+      labelRenderedSizeThreshold: MAP_CONFIG.node.labelVisibleAtSize,
+      // Штатное прореживание подписей по сетке экрана, независимое от
+      // labelRenderedSizeThreshold — тоже подбирается на глаз.
+      labelDensity: MAP_CONFIG.node.labelDensity,
+      // Множитель zoom за один тик колеса — меньше дефолтного (1.7), чтобы
+      // зум ощущался медленнее. Кривая одного тика (easing) у Sigma зашита
+      // в коде жёстко, настройками не меняется — см. core/config.ts::camera.
+      zoomingRatio: MAP_CONFIG.camera.zoomingRatio,
     });
 
     // mountReactiveGraph дальше следит за store сама — остальным фичам
     // достаточно менять store.tab/lang/filters, не заботясь о том, что
     // ещё перерисовать.
     mountReactiveGraph(renderer, store, data, pubDetailsByKey);
+    // Временный инструмент калибровки MAP_CONFIG.region.ratioThreshold и
+    // .node.labelVisibleAtSize — удалить вызов, когда числа подобраны.
+    mountZoomDebug(renderer);
 
     // mountSelection слушает клики по графу и пишет выбор в store;
     // mountPanel слушает store и рисует карточку; mountTabs слушает клики
     // по кнопкам вкладок и переключает список в сайдбаре; mountFilters —
-    // регуляторы порогов; mountLangToggle слушает клик по кнопке языка.
-    // Они не знают друг о друге напрямую — связь только через общий
-    // Store. Функции отписки (unmount) не вызываются: все они живут всё
-    // время работы страницы — здесь ничего не пересоздаётся поверх них
-    // самих (внутри mountTabs свои unmount вызываются при смене вкладки —
-    // это устройство самой этой фичи).
+    // регуляторы порогов (язык теперь переключается кнопками меню внутри
+    // самого mountStart, отдельного mountLangToggle больше нет). Они не
+    // знают друг о друге напрямую — связь только через общий Store.
+    // Функции отписки (unmount) не вызываются: все они живут всё время
+    // работы страницы — здесь ничего не пересоздаётся поверх них самих
+    // (внутри mountTabs свои unmount вызываются при смене вкладки — это
+    // устройство самой этой фичи).
     mountSelection(renderer, store);
     mountPanel(store, data, pubDetailsByKey, authorDetailsByKey, repoDetailsByKey);
     mountTabs(
@@ -186,7 +202,6 @@ loggedStep("graph-data.json", () => loadGraphData(DATA_CONFIG.graphDataUrl))
       repoDetailsByKey,
     );
     mountFilters(store);
-    mountLangToggle(store);
     mountUrlSync(store, data);
 
     console.info("Граф отрисован (списки видны сразу, detail-файлы догружаются):", {
@@ -208,10 +223,10 @@ loggedStep("graph-data.json", () => loadGraphData(DATA_CONFIG.graphDataUrl))
     loadDetailsInto<AuthorDetail>("authors-detail.json", DATA_CONFIG.authorDetailsUrl, authorDetailsByKey);
     loadDetailsInto<RepoDetail>("repos-detail.json", DATA_CONFIG.repoDetailsUrl, repoDetailsByKey);
 
-    // Boot-экран прячется, welcome-hero показывается — но не поверх уже
-    // осмысленной ссылки (urlState.selection !== null означает, что в URL
-    // была не дефолтная вкладка/выбор, а не просто "страница открылась").
-    start.finishBoot(urlState.selection !== null);
+    // Прячет boot-экран. Меню или обычный интерфейс покажется дальше —
+    // это уже решил store.set(parseUrlState(...)) выше, features/start.ts
+    // сама следит за store.screen и переключает видимость.
+    start.finishBoot();
   })
   .catch((error: unknown) => {
     start.setBootStage("error");

@@ -58,6 +58,41 @@ function buildFilterRow(options: FilterRowOptions): HTMLElement {
   return row;
 }
 
+/** Параметры одной строки чекбокса — вход {@link buildCheckboxRow}. */
+interface CheckboxRowOptions {
+  /** Текст подписи рядом с чекбоксом. */
+  label: string;
+  /** Текущее состояние чекбокса. */
+  checked: boolean;
+  /** Вызывается при каждом клике по чекбоксу с новым состоянием. */
+  onChange: (checked: boolean) => void;
+}
+
+/**
+ * Собирает одну строку "чекбокс + подпись" — тот же принцип, что и
+ * {@link buildFilterRow}, но для булевых фильтров (например, "показывать
+ * без департамента"), а не числовых порогов.
+ *
+ * @param options - см. {@link CheckboxRowOptions}.
+ * @returns Готовый `<label class="filter-row">` с чекбоксом внутри, ещё не вставленный в DOM.
+ */
+function buildCheckboxRow(options: CheckboxRowOptions): HTMLElement {
+  const row = document.createElement("label");
+  row.className = "filter-row";
+
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = options.checked;
+  input.addEventListener("change", () => options.onChange(input.checked));
+
+  const label = document.createElement("span");
+  label.className = "filter-row__label";
+  label.textContent = options.label;
+
+  row.append(input, label);
+  return row;
+}
+
 /**
  * Подключает регуляторы фильтров для активной вкладки. Перестраивает
  * разметку только при смене вкладки или языка (`state.tab`/`state.lang`) —
@@ -110,6 +145,11 @@ export function mountFilters(store: Store<AppState>): () => void {
           value: filters.minCoauth,
           onChange: (value) => setFilter({ minCoauth: value }),
         }),
+        buildCheckboxRow({
+          label: t("filter.showNoDept", lang),
+          checked: filters.showNoDeptAuthors,
+          onChange: (checked) => setFilter({ showNoDeptAuthors: checked }),
+        }),
       );
     } else if (state.tab === 3) {
       rows.push(
@@ -126,6 +166,11 @@ export function mountFilters(store: Store<AppState>): () => void {
           max: FILTER_CONFIG.year.max,
           value: filters.yearMax,
           onChange: (value) => setFilter({ yearMax: value }),
+        }),
+        buildCheckboxRow({
+          label: t("filter.showNoDept", lang),
+          checked: filters.showNoDeptPubs,
+          onChange: (checked) => setFilter({ showNoDeptPubs: checked }),
         }),
       );
     }

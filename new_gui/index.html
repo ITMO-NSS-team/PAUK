@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -30,14 +30,39 @@
       body { background: var(--bg); color: var(--text); }
 
       /* Общая раскладка страницы: сайдбар со списком слева, карта
-         занимает всё оставшееся место. */
+         посередине, панель информации справа — все три одной высоты,
+         карта занимает всё оставшееся место. Целиком скрыт, пока
+         показано меню (features/start.ts переключает [hidden] по
+         AppState.screen) — [hidden] сам по себе проиграл бы правилу
+         `#app { display: flex }` по специфичности, поэтому здесь нужно
+         явное переопределение. */
       #app { display: flex; height: 100%; }
+      #app[hidden] { display: none; }
       /* overflow-x: hidden — подстраховка: если внутри забудут про
          min-width: 0 на новом flex-элементе (как уже дважды случалось —
          см. .filter-row input и .tab-list-item__label ниже), контент
          обрежется по границе сайдбара, а не вылезет поверх карты. */
       #sidebar { width: 280px; flex-shrink: 0; overflow-x: hidden; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--border); }
       #map { flex: 1; min-width: 0; }
+
+      /* Заголовок сайдбара — кликабелен, возвращает в меню
+         (features/start.ts, store.set({ screen: "menu" })). Единственный
+         путь назад в меню из обычного интерфейса. */
+      #brand {
+        display: block;
+        width: 100%;
+        padding: 12px;
+        border: none;
+        border-bottom: 1px solid var(--border);
+        background: none;
+        color: var(--text);
+        font-size: 14px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        text-align: left;
+        cursor: pointer;
+      }
+      #brand:hover { background: var(--surface-2); }
 
       /* Кнопки переключения вкладок — по одной на каждый TabModule из
          features/tabs/index.ts. "Здоровье БД" из старого GUI сознательно
@@ -71,6 +96,23 @@
       /* Список карточек внутри активной вкладки — отрисовывается через
          core/render.ts::renderList(), см. features/tabs/authors.ts. */
       #tab-content { flex: 1; overflow-y: auto; }
+      /* Поле поиска по сущностям ТЕКУЩЕЙ вкладки (features/tabs/nodeListTab.ts)
+         — под фильтрами, над списком (см. #filter-bar выше). Sticky — та
+         же идея, что и у .search-input ниже: не должно скроллиться вместе
+         со списком, иначе для правки запроса пришлось бы скроллить назад
+         наверх. */
+      .tab-search {
+        position: sticky;
+        top: 0;
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px 12px;
+        border: none;
+        border-bottom: 1px solid var(--border);
+        font-size: 13px;
+        background: var(--surface);
+        color: var(--text);
+      }
       .tab-list-item {
         display: flex;
         justify-content: space-between;
@@ -125,19 +167,21 @@
       .search-results .tab-list-item__label { white-space: normal; }
       .search-results .tab-list-item__meta { font-size: 12px; }
 
-      /* Плавающая карточка выбранного узла поверх карты. */
+      /* Панель информации о выбранном (или "Обзор" по умолчанию) — третья
+         flex-колонка #app, того же вида и ширины, что и #sidebar, только
+         зеркально (граница слева, а не справа). Раньше была плавающей
+         карточкой поверх карты (position: absolute) — теперь полноценный
+         сайдбар, по прямой просьбе ("такой же панелью как и слева с таким
+         же размером"). */
       #panel {
-        position: absolute;
-        top: 12px;
-        right: 12px;
-        max-width: 320px;
+        width: 280px;
+        flex-shrink: 0;
+        overflow-y: auto;
         background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 8px;
+        border-left: 1px solid var(--border);
         padding: 12px 16px;
         color: var(--text);
         font-size: 13px;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
       }
       #panel[hidden] { display: none; }
       #panel h3 { margin: 0 0 8px; font-size: 14px; }
@@ -185,21 +229,6 @@
       }
       #load-error[hidden] { display: none; }
 
-      /* Переключатель языка (app/main.ts) — сам текст ("EN"/"RU") ставит
-         JS через core/i18n.ts::t("lang.toggle", lang), тут только позиция. */
-      #lang-toggle {
-        position: absolute;
-        top: 12px;
-        left: 292px;
-        padding: 6px 10px;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        background: var(--surface);
-        color: var(--text);
-        font-size: 12px;
-        cursor: pointer;
-      }
-
       /* ---------- стартовый экран (features/start.ts) ---------- */
       /* boot-screen виден с первого кадра (не ждёт JS), пока грузится
          graph-data.json — прогресс идёт по стадиям (loading/rendering), не
@@ -222,10 +251,11 @@
       .boot-progress-bar { height: 100%; width: 0%; background: var(--accent); transition: width 0.2s ease-out; border-radius: inherit; }
       .boot-status { font-size: 12px; font-weight: 600; color: var(--muted); }
 
-      /* welcome-hero показывается один раз boot-экран скрылся (если только
-         URL не задавал уже осмысленный выбор, см. finishBoot() в
-         features/start.ts) — hidden в разметке по умолчанию. */
-      #welcome-modal {
+      /* Меню (features/start.ts) — не одноразовый онбординг, а настоящий
+         экран приложения (AppState.screen === "menu"): выбор языка и
+         вкладки. Показывается на каждой загрузке страницы без tab= в URL,
+         и на него всегда можно вернуться кликом по #brand в сайдбаре. */
+      #menu {
         position: fixed;
         inset: 0;
         z-index: 26;
@@ -234,9 +264,9 @@
         justify-content: center;
         background: var(--bg);
       }
-      #welcome-modal[hidden] { display: none; }
-      .welcome-hero { text-align: center; max-width: 560px; padding: 20px; }
-      .welcome-badge {
+      #menu[hidden] { display: none; }
+      .menu-hero { text-align: center; max-width: 560px; padding: 20px; }
+      .menu-badge {
         display: inline-flex;
         align-items: center;
         gap: 4px;
@@ -250,13 +280,13 @@
         text-decoration: none;
         margin-bottom: 24px;
       }
-      .welcome-badge-arrow { color: var(--muted); }
-      .welcome-title { font-size: clamp(28px, 4vw, 44px); font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; color: var(--text); margin: 0 0 16px; }
-      .welcome-subtitle { font-size: 15px; line-height: 1.55; color: var(--muted); margin: 0 auto 28px; max-width: 460px; }
-      .welcome-cta {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
+      .menu-badge-arrow { color: var(--muted); }
+      .menu-title { font-size: clamp(28px, 4vw, 44px); font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; color: var(--text); margin: 0 0 16px; }
+      .menu-subtitle { font-size: 15px; line-height: 1.55; color: var(--muted); margin: 0 auto 28px; max-width: 460px; }
+      /* Выбор вкладки прямо в меню — это и есть "меню", не один общий CTA
+         на "смотреть карту", как раньше. */
+      .menu-tabs { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+      .menu-tabs button {
         padding: 12px 22px;
         background: var(--accent);
         color: #ffffff;
@@ -266,8 +296,20 @@
         font-weight: 700;
         cursor: pointer;
       }
-      .welcome-cta:hover { opacity: 0.9; }
-      .welcome-modes { margin-top: 20px; font-size: 12px; letter-spacing: 0.03em; color: var(--muted); }
+      .menu-tabs button:hover { opacity: 0.9; }
+      /* Языковые кнопки — переехали сюда из бывшего #lang-toggle. */
+      .menu-lang { display: flex; gap: 8px; justify-content: center; margin-top: 20px; }
+      .menu-lang button {
+        padding: 6px 14px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .menu-lang button.menu-lang--active { color: var(--text); border-color: var(--accent); }
     </style>
   </head>
   <body>
@@ -278,31 +320,42 @@
       <div class="boot-progress"><div class="boot-progress-bar" id="boot-progress-bar"></div></div>
       <div class="boot-status" id="boot-status"></div>
     </div>
-    <!-- hidden снимается features/start.ts::finishBoot(), если только URL
-         не задавал уже осмысленный выбор (открыли сохранённую ссылку). -->
-    <div id="welcome-modal" hidden>
-      <div class="welcome-hero">
-        <a class="welcome-badge" href="https://github.com/ITMO-NSS-team/PAUK" target="_blank" rel="noopener noreferrer">
-          <span id="welcome-badge-text"></span> <span class="welcome-badge-arrow">›</span>
+    <!-- Меню (features/start.ts) — видимость переключается им же по
+         AppState.screen, hidden здесь только страховка на первый кадр до
+         запуска JS (тот же смысл, что был у #welcome-modal). -->
+    <div id="menu" hidden>
+      <div class="menu-hero">
+        <a class="menu-badge" href="https://github.com/ITMO-NSS-team/PAUK" target="_blank" rel="noopener noreferrer">
+          <span id="menu-badge-text"></span> <span class="menu-badge-arrow">›</span>
         </a>
-        <h1 class="welcome-title" id="welcome-title"></h1>
-        <p class="welcome-subtitle" id="welcome-subtitle"></p>
-        <button type="button" id="welcome-close" class="welcome-cta">
-          <span id="welcome-cta-text"></span> <span>→</span>
-        </button>
-        <div class="welcome-modes" id="welcome-modes"></div>
+        <h1 class="menu-title" id="menu-title"></h1>
+        <p class="menu-subtitle" id="menu-subtitle"></p>
+        <!-- data-tab — то же соответствие, что и у #tab-buttons ниже;
+             текст ставит features/start.ts под текущий язык. -->
+        <nav class="menu-tabs">
+          <button type="button" data-tab="1"></button>
+          <button type="button" data-tab="3"></button>
+          <button type="button" data-tab="2"></button>
+        </nav>
+        <div class="menu-lang">
+          <button type="button" data-lang="ru">RU</button>
+          <button type="button" data-lang="en">EN</button>
+        </div>
       </div>
     </div>
 
-    <div id="app">
+    <!-- hidden здесь же по той же причине, что и у #menu — реальное
+         переключение по AppState.screen делает features/start.ts. -->
+    <div id="app" hidden>
       <aside id="sidebar">
+        <!-- Заголовок сайдбара — клик возвращает в меню (features/start.ts). -->
+        <button type="button" id="brand">PAUK</button>
         <!-- data-tab на каждой кнопке — единственное, что нужно
              features/tabs/index.ts::mountTabs() для переключения. -->
         <nav id="tab-buttons">
           <button type="button" data-tab="1">Авторы</button>
-          <button type="button" data-tab="2">Репозитории</button>
           <button type="button" data-tab="3">Публикации</button>
-          <button type="button" data-tab="4">Поиск</button>
+          <button type="button" data-tab="2">Репозитории</button>
         </nav>
         <!-- Заполняется через features/filters.ts::mountFilters(); пусто и
              скрыто, пока не смонтирована активная вкладка с фильтром. -->
@@ -310,16 +363,13 @@
         <div id="tab-content"></div>
       </aside>
       <div id="map"></div>
+      <!-- Карточка с информацией о выбранном узле (или карточка "Обзор" по
+           умолчанию, пока ничего не выбрано) — заполняется через
+           features/panels.ts::mountPanel(). hidden снимается им же сразу
+           при монтировании, до этого момента (загрузка фикстур) не показываем
+           пустую рамку. -->
+      <aside id="panel" hidden></aside>
     </div>
-    <!-- Текст ("EN"/"RU") ставит app/main.ts при монтировании и при
-         каждом клике — сам переключатель ничего не знает про язык. -->
-    <button type="button" id="lang-toggle"></button>
-    <!-- Карточка с информацией о выбранном узле (или карточка "Обзор" по
-         умолчанию, пока ничего не выбрано) — заполняется через
-         features/panels.ts::mountPanel(). hidden снимается им же сразу
-         при монтировании, до этого момента (загрузка фикстур) не показываем
-         пустую рамку. -->
-    <div id="panel" hidden></div>
     <!-- Показывается только если graph-data.json вообще не загрузился
          (см. комментарий в <style> выше) — app/main.ts снимает hidden. -->
     <div id="load-error" hidden></div>

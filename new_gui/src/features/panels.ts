@@ -1,10 +1,12 @@
 // Слой "features" — панель с информацией о том, что сейчас выбрано.
 // Умеет показывать карточку узла (автор/репозиторий/публикация), ребра
 // (кто с кем связан и с каким весом), департамента (сводные числа из
-// самого Department) и карточку "Обзор" по умолчанию, когда вообще
-// ничего не выбрано (сводные числа по всему графу, а не по одному узлу).
+// самого Department) и карточку "Обзор" по умолчанию, когда вообще ничего
+// не выбрано — сводка ЗАВИСИТ от активной вкладки (топ-10 её сущностей,
+// заполняемость её detail-полей), не один общий набор чисел на все три
+// графа, см. {@link renderOverview}.
 
-import type { AuthorDetail, GraphData, PubDetail, PubNode, RepoDetail, RepoNode } from "../contracts/graph";
+import type { AuthorDetail, AuthorNode, GraphData, PubDetail, PubNode, RepoDetail, RepoNode } from "../contracts/graph";
 import { PANEL_CONFIG } from "../core/config";
 import {
   buildAuthorPubIndex,
@@ -381,21 +383,107 @@ export function mountPanel(
   }
 
   /**
-   * Рисует карточку "Обзор" по умолчанию, когда ничего не выбрано —
-   * сводные числа по всему текущему набору данных, не зависят от активной
-   * вкладки (в отличие от того, что рисует карта, которая всегда
-   * показывает только граф активной вкладки).
+   * Строит текст строки-процента заполненности поля. {@link LOADING}, пока
+   * detail-файл ещё вообще не начал приходить (`total === 0`) — денежным
+   * является число сущностей, чей detail УЖЕ пришёл, а не общее число
+   * сущностей вкладки: до того, как соответствующий `*-detail.json`
+   * домержился целиком (см. `app/main.ts::loadDetailsInto`), знаменатель
+   * "общее число" давал бы искусственно растущий с каждым fetch процент, а
+   * не реальную заполненность поля среди уже известных записей.
    *
-   * @param lang - язык интерфейса.
+   * @param count - число сущностей, у которых поле реально заполнено.
+   * @param total - число сущностей, чей detail уже пришёл (знаменатель).
    */
-  function renderOverview(lang: AppState["lang"]): void {
-    const rows: PanelRow[] = [
-      [t("field.authorsCount", lang), String(data.authors.length)],
-      [t("field.reposCount", lang), String(data.repos.length)],
-      [t("field.pubsCount", lang), String(data.pubs.length)],
-      [t("field.deptsCount", lang), String(data.departments.length)],
-    ];
-    show(t("overview.title", lang), rows);
+  function completionRow(count: number, total: number): PanelRowValue {
+    return total === 0 ? LOADING : `${Math.round((count / total) * 100)}%`;
+  }
+
+  /**
+   * Рисует карточку "Обзор" по умолчанию, когда ничего не выбрано — сводка
+   * по текущей активной ВКЛАДКЕ (в отличие от старой версии, где обзор был
+   * один общий на все три графа): топ-10 сущностей вкладки и заполняемость
+   * её detail-полей — то, что реально интересно про "авторов" отличается
+   * от того, что интересно про "публикации" или "репозитории", общая
+   * сводка на четыре числа не показывала ничего специфичного ни для одной
+   * из вкладок.
+   *
+   * @param state - текущее состояние приложения (`tab` выбирает вид сводки, `lang` — язык).
+   */
+  function renderOverview(state: AppState): void {
+    const { tab, lang } = state;
+
+    if (tab === 1) {
+      const authors: AuthorNode[] = data.authors;
+      const topKeys = [...authors]
+        .sort((a, b) => b.pubs_count - a.pubs_count)
+        .slice(0, PANEL_CONFIG.listLimit)
+        .map((a) => a.key);
+      const avgPubs = authors.length > 0 ? (authors.reduce((sum, a) => sum + a.pubs_count, 0) / authors.length).toFixed(1) : "0";
+
+      let withOrcid = 0;
+      let withGithub = 0;
+      let withEmail = 0;
+      for (const detail of authorDetails.values()) {
+        if (detail.orcid) withOrcid++;
+        if (detail.github) withGithub++;
+        if (detail.email) withEmail++;
+      }
+
+      return show(t("overview.title", lang), [
+        [t("field.authorsCount", lang), String(authors.length)],
+        [t("field.deptsCount", lang), String(data.departments.length)],
+        [t("overview.avgPubsPerAuthor", lang), avgPubs],
+        [t("field.orcid", lang), completionRow(withOrcid, authorDetails.size)],
+        [t("field.github", lang), completionRow(withGithub, authorDetails.size)],
+        [t("field.email", lang), completionRow(withEmail, authorDetails.size)],
+        [t("overview.top", lang), labelsOf(topKeys, lang)],
+      ]);
+    }
+
+    if (tab === 2) {
+      const repos: RepoNode[] = data.repos;
+      const topKeys = [...repos]
+        .sort((a, b) => b.stars - a.stars)
+        .slice(0, PANEL_CONFIG.listLimit)
+        .map((r) => r.key);
+
+      let withReadme = 0;
+      let withLicense = 0;
+      for (const detail of repoDetails.values()) {
+        if (detail.has_readme) withReadme++;
+        if (detail.license) withLicense++;
+      }
+
+      return show(t("overview.title", lang), [
+        [t("field.reposCount", lang), String(repos.length)],
+        [t("field.hasReadme", lang), completionRow(withReadme, repoDetails.size)],
+        [t("field.license", lang), completionRow(withLicense, repoDetails.size)],
+        [t("overview.top", lang), labelsOf(topKeys, lang)],
+      ]);
+    }
+
+    // tab === 3
+    const pubs: PubNode[] = data.pubs;
+    const topKeys = [...pubs]
+      .sort((a, b) => (b.year ?? -Infinity) - (a.year ?? -Infinity))
+      .slice(0, PANEL_CONFIG.listLimit)
+      .map((p) => p.key);
+    const withKnownYear = pubs.filter((p) => p.year !== null).length;
+
+    let withDoi = 0;
+    let withAbstract = 0;
+    for (const detail of pubDetails.values()) {
+      if (detail.doi) withDoi++;
+      if (detail.abstract) withAbstract++;
+    }
+
+    return show(t("overview.title", lang), [
+      [t("field.pubsCount", lang), String(pubs.length)],
+      [t("overview.knownYear", lang), completionRow(withKnownYear, pubs.length)],
+      [t("field.doi", lang), completionRow(withDoi, pubDetails.size)],
+      [t("field.abstract", lang), completionRow(withAbstract, pubDetails.size)],
+      [t("overview.top", lang), labelsOf(topKeys, lang)],
+    ]);
   }
 
   /**
@@ -418,7 +506,7 @@ export function mountPanel(
    */
   function render(state: AppState): void {
     const { selection, lang } = state;
-    if (selection === null) return renderOverview(lang);
+    if (selection === null) return renderOverview(state);
 
     if (selection.kind === "node") {
       const node = index.get(selection.key);

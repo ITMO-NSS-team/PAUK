@@ -9,12 +9,14 @@ const NO_PUB_DETAILS = new Map<string, PubDetail>();
 const NO_AUTHOR_DETAILS = new Map<string, AuthorDetail>();
 const NO_REPO_DETAILS = new Map<string, RepoDetail>();
 
-function initialState(): AppState {
+function initialState(overrides: Partial<AppState> = {}): AppState {
   return {
+    screen: "app",
     tab: 1,
     lang: "ru",
     selection: null,
-    filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026 },
+    filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026, showNoDeptAuthors: true, showNoDeptPubs: true },
+    ...overrides,
   };
 }
 
@@ -28,17 +30,44 @@ describe("mountPanel", () => {
     return () => panel.remove();
   });
 
-  it("показывает карточку «Обзор» со сводными числами, пока ничего не выбрано", async () => {
+  it("«Обзор» вкладки авторов — число авторов/департаментов, среднее публикаций, топ-10, заполненность полей — LOADING, пока detail пуст", async () => {
     const data = await loadSampleGraphData();
-    const store = new Store<AppState>(initialState());
+    const store = new Store<AppState>(initialState({ tab: 1 }));
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     expect(panel.hidden).toBe(false);
     expect(panel.querySelector("h3")?.textContent).toBe("Обзор");
     expect(panel.textContent).toContain(String(data.authors.length));
-    expect(panel.textContent).toContain(String(data.repos.length));
-    expect(panel.textContent).toContain(String(data.pubs.length));
     expect(panel.textContent).toContain(String(data.departments.length));
+    const avgPubs = data.authors.reduce((sum, a) => sum + a.pubs_count, 0) / data.authors.length;
+    expect(panel.textContent).toContain(avgPubs.toFixed(1));
+    expect(panel.textContent).toContain("Топ-10");
+    expect(panel.textContent).toContain("Иванов И.И."); // A1 — больше всех публикаций во фикстуре
+    // authorDetails пуст (detail ещё не пришёл) — доля ORCID/GitHub/email
+    // не считается от нуля к нулю, а показывает индикатор загрузки.
+    expect(panel.querySelectorAll(".loading-indicator").length).toBeGreaterThan(0);
+  });
+
+  it("«Обзор» вкладки репозиториев — число репозиториев, топ-10 по звёздам, доля с README/лицензией", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState({ tab: 2 }));
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.textContent).toContain(String(data.repos.length));
+    expect(panel.textContent).toContain("graph-toolkit"); // R1 — больше всех звёзд (42) во фикстуре
+    expect(panel.querySelectorAll(".loading-indicator").length).toBeGreaterThan(0);
+  });
+
+  it("«Обзор» вкладки публикаций — число публикаций, топ-10 по году, доля с известным годом/DOI/аннотацией", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState({ tab: 3 }));
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.textContent).toContain(String(data.pubs.length));
+    const withKnownYear = data.pubs.filter((p) => p.year !== null).length;
+    const knownYearPercent = Math.round((withKnownYear / data.pubs.length) * 100);
+    expect(panel.textContent).toContain(`${knownYearPercent}%`); // известен год считается сразу, не ждёт pubDetails
+    expect(panel.querySelectorAll(".loading-indicator").length).toBeGreaterThan(0); // DOI/аннотация — ждут pubDetails
   });
 
   it("показывает карточку узла с полями, специфичными для автора", async () => {

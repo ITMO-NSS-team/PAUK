@@ -6,10 +6,11 @@ import { mountSelection } from "../src/features/selection";
 
 function initialState(): AppState {
   return {
+    screen: "app",
     tab: 1,
     lang: "ru",
     selection: null,
-    filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026 },
+    filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026, showNoDeptAuthors: true, showNoDeptPubs: true },
   };
 }
 

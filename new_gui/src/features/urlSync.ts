@@ -31,9 +31,10 @@ import type { AppState, Store } from "../core/state";
  * выбор — просто не каждое такое изменение создаёт отдельную остановку в
  * истории.
  *
- * При монтировании функция сразу нормализует текущий URL под то, что
- * реально показано (`history.replaceState`) — это подчищает частичный или
- * битый query, с которым могла открыться страница.
+ * При монтировании функция всегда нормализует текущий URL под то, что
+ * реально показано (`history.replaceState`) — на чистом `/` это означает
+ * явную запись `?tab=start`: меню (features/start.ts) — настоящее состояние
+ * приложения (`AppState.screen`), а не "пока никакого состояния нет".
  *
  * @param store - Store приложения.
  * @param data - данные графа, нужны {@link parseUrlState} для проверки, что
@@ -61,21 +62,25 @@ export function mountUrlSync(store: Store<AppState>, data: GraphData): () => voi
 
   window.addEventListener("popstate", onPopState);
 
-  // Нормализует URL сразу при монтировании: если страница открылась с
-  // частичным/битым query (или вообще без него), в адресной строке должно
-  // остаться то, что реально показано (main.ts к этому моменту уже применил
-  // parseUrlState к начальному состоянию — здесь просто фиксируем результат).
+  // Нормализует URL сразу при монтировании: main.ts к этому моменту уже
+  // применил parseUrlState к начальному состоянию (в т.ч. на чистом "/" —
+  // в screen: "menu"), здесь просто фиксируем результат как "?tab=start"
+  // или "?tab=<слаг>...", а не оставляем пустой query.
   history.replaceState(null, "", `?${serializeUrlState(store.get())}`);
 
   let prev = store.get();
   const unsubscribe = store.subscribe((state) => {
-    if (state.tab === prev.tab && state.selection === prev.selection) return;
-    const tabChanged = state.tab !== prev.tab;
+    if (state.screen === prev.screen && state.tab === prev.tab && state.selection === prev.selection) return;
+    // Смена экрана (меню ↔ приложение) или вкладки — это реальная
+    // навигация, заслуживающая отдельной записи в истории; смена selection
+    // в пределах того же экрана/вкладки — лёгкое действие (клик по узлу),
+    // не должна заваливать историю остановками.
+    const majorChange = state.screen !== prev.screen || state.tab !== prev.tab;
     prev = state;
     if (applyingFromHistory) return;
 
     const url = `?${serializeUrlState(state)}`;
-    if (tabChanged) history.pushState(null, "", url);
+    if (majorChange) history.pushState(null, "", url);
     else history.replaceState(null, "", url);
   });
 
