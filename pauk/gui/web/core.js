@@ -15,6 +15,10 @@ const EDGE_OPACITY_COAUTH = ["interpolate", ["linear"], ["zoom"], 5.6, 0, 7.5, 0
 const EDGE_OPACITY_PUBS   = ["interpolate", ["linear"], ["zoom"], 5.6, 0, 7.5, 0.28, 12, 0.55];
 const FILL_OPACITY       = 0.35;
 const AUTHOR_LABEL_ZOOM  = 8.8;
+// Repositories are twenty times fewer than authors and spread over the same
+// map, so their labels stop colliding long before the authors' do.
+const REPO_LABEL_ZOOM    = 6.2;
+const labelZoom = () => (tab === 2 ? REPO_LABEL_ZOOM : AUTHOR_LABEL_ZOOM);
 // Below this zoom, clicks resolve to the department under the cursor —
 // nodes are too tightly packed to aim for individually.
 const DEPT_CLICK_ZOOM = 6.8;
@@ -68,6 +72,27 @@ function muteColor(hex) {
 const deptById = new Map();
 DATA.departments.forEach(d => { d.color = muteColor(d.color); deptById.set(d.id, d); });
 
+// ---------- groups: what a territory stands for on the current tab ----------
+// On the authors' and publications' maps that is always a department. On the
+// repositories' map a department is known for well under half of them, so the
+// owning GitHub organization stands in, and the field of the papers a
+// repository implements catches part of the rest. Everything downstream —
+// colour, hulls, labels, the card — goes through these three.
+
+const repoClusterById = new Map();
+(DATA.repo_clusters || []).forEach(c => {
+  c.color = muteColor(c.color);
+  repoClusterById.set(c.id, c);
+});
+
+const groupIdOf = n => (tab === 2 && n.cluster != null ? n.cluster : n.dept);
+const groupById = id => (tab === 2 ? repoClusterById.get(id) : deptById.get(id));
+const groupTable = () => (tab === 2 ? (DATA.repo_clusters || []) : DATA.departments);
+function groupDisplayName(g) {
+  if (!g) return "";
+  return (LANG === "en" && g.name_en) ? g.name_en : g.name;
+}
+
 // Canonical per-kind accent color, shown on the Overview panel's tab label
 // and reused anywhere a kind badge appears (search results). Department has
 // no tab of its own, so it gets full-strength text instead of a hue — plain
@@ -108,6 +133,15 @@ function buildAdjIndex(edges) {
 const coauthAdj = buildAdjIndex(DATA.coauth_edges);
 const pubAdj    = buildAdjIndex(DATA.pub_edges);
 const repoAdj   = buildAdjIndex(DATA.repo_edges);
+
+// Which signals put a repository pair together — keyed both ways so the edge
+// card can look up a pair without knowing which end maplibre reported first.
+const repoEdgeVia = new Map();
+(DATA.repo_edges || []).forEach(e => {
+  if (!e.via) return;
+  repoEdgeVia.set(e.s + "\u0000" + e.t, e.via);
+  repoEdgeVia.set(e.t + "\u0000" + e.s, e.via);
+});
 
 const repoPubs = new Map();
 const pubRepos = new Map();
@@ -165,7 +199,7 @@ function P(key) {
   return [n.gx ?? 500, n.gy ?? 500];
 }
 
-const nodeColor = n => deptById.get(n.dept)?.color || "#9aa2ac";
+const nodeColor = n => groupById(groupIdOf(n))?.color || "#9aa2ac";
 
 // ---------- sizing ----------
 

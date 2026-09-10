@@ -1,15 +1,15 @@
-"""Collect the people behind repositories the enrichment stage cannot reach.
+"""Collect the people behind chosen repositories, on demand.
 
-`RepositoriesStage` walks `repo_links` and harvests the repositories those
-links name (`repositories.py:168`). A repository created by any other route —
-the curated CSV import, a manual addition — has no link row pointing at it and
-is therefore never visited, with or without `--force`. This closes that gap
-and nothing else.
+Written when `RepositoriesStage` walked `repo_links` alone, so a repository
+created by any other route — the curated CSV import, a manual addition — had
+no link row pointing at it and was never visited, with or without `--force`.
+The `repo_people` stage now walks every row in the collection and closes that
+gap on its own, which leaves this a manual tool for a single targeted run.
 
-The harvest itself is the stage's own `_harvest_accounts`: reusing it is the
-point. A second implementation of "who is behind this repository" would drift
-from the one the pipeline actually runs, and the difference would show up as
-data, not as a failing test.
+The harvest itself is `RepoPeopleStage._harvest`: reusing it is the point. A
+second implementation of "who is behind this repository" would drift from the
+one the pipeline actually runs, and the difference would show up as data, not
+as a failing test.
 
 Writes with `upsert_models`, never `write_models`. The latter sets a group's
 complete membership, so handing it a subset would retract the group's claim on
@@ -28,7 +28,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from pauk.models import GitHubProfile, RepoLink, Repository
-from pauk.pipeline.stages.repositories import GITHUB_HOSTS, RepositoriesStage
+from pauk.pipeline.stages.repo_people import RepoPeopleStage
+from pauk.pipeline.stages.repositories import GITHUB_HOSTS
 from pauk.settings import settings
 from pauk.sources.github import GitHubClient
 from pauk.storage import PreparedStore, RawStore
@@ -135,7 +136,7 @@ def main() -> int:
         for group, repos in sorted(by_group.items()):
             prepared = PreparedStore(db, group)
             raw = RawStore(db, group)
-            stage = RepositoriesStage(prepared, raw, settings)
+            stage = RepoPeopleStage(prepared, raw, settings)
             touched: list[Repository] = []
             for repo in repos:
                 if budget is not None and budget <= 0:
@@ -148,9 +149,9 @@ def main() -> int:
                     continue
                 owner, name = target
                 before = list(repo.contributors)
-                known = profiles.get(f"github_{(repo.owner_login or '').lower()}")
-                stage._harvest_accounts(github, repo, owner, name,
-                                        known.type if known else None, profiles)
+                # The owner's stored type is no longer passed in: _harvest
+                # reads it off the owner's own profile in `profiles`.
+                stage._harvest(github, repo, owner, name, profiles)
                 touched.append(repo)
                 processed.append({"group": group, "id": repo.id, "url": repo.url,
                                   "contributors_before": len(before),

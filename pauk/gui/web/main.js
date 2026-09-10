@@ -5,6 +5,7 @@
 var tab = 1;
 var edgeMinCoauth = 1;
 var edgeMinPub    = 1;
+var edgeMinRepo   = 0;
 var yearMax = 2026;
 const YEAR_ABS_MAX = 2026;
 const YEAR_ABS_MIN = 2020;
@@ -85,6 +86,8 @@ function applyEdgeFilter() {
     map.setFilter("edges", [">=", ["get", "w"], edgeMinCoauth]);
   } else if (tab === 3) {
     map.setFilter("edges", [">=", ["get", "w"], edgeMinPub]);
+  } else if (tab === 2) {
+    map.setFilter("edges", [">=", ["get", "w"], edgeMinRepo]);
   } else {
     map.setFilter("edges", null);
   }
@@ -116,10 +119,19 @@ function updateEdgeFilterUI(tabNum) {
   const val    = document.getElementById("edge-threshold-val");
   if (tabNum === 1) {
     card.style.display = ""; label.textContent = t("filter.coauth");
-    slider.max = 30; slider.value = edgeMinCoauth; val.textContent = edgeMinCoauth;
+    slider.min = 1; slider.step = 1; slider.max = 30;
+    slider.value = edgeMinCoauth; val.textContent = edgeMinCoauth;
   } else if (tabNum === 3) {
     card.style.display = ""; label.textContent = t("filter.pubAuthors");
-    slider.max = 15; slider.value = edgeMinPub; val.textContent = edgeMinPub;
+    slider.min = 1; slider.step = 1; slider.max = 15;
+    slider.value = edgeMinPub; val.textContent = edgeMinPub;
+  } else if (tabNum === 2) {
+    // Repository edge weight is a sum of fractional signal shares, not a
+    // count of anything, so this one steps in quarters from zero — the other
+    // two tabs count whole publications and authors and start at one.
+    card.style.display = ""; label.textContent = t("filter.repoStrength");
+    slider.min = 0; slider.step = 0.25; slider.max = 4;
+    slider.value = edgeMinRepo; val.textContent = edgeMinRepo;
   } else {
     card.style.display = "none";
   }
@@ -228,6 +240,14 @@ map.on("load", () => {
     if (nf.length) { selectNode(nf[0].properties.key); return; }
     const ef = map.queryRenderedFeatures(e.point, { layers: ["edges"] });
     if (ef.length) { selectEdge(ef[0].properties); return; }
+    // Repositories stay visible at every zoom, so their tab never falls into
+    // the department-click branch above — the territory is still worth a click.
+    // Tab 2 only: territories are drawn on 1 and 3 as well, where a click that
+    // misses a node has always meant "clear the selection".
+    if (tab === 2) {
+      const df2 = map.queryRenderedFeatures(e.point, { layers: ["dept-fill"] });
+      if (df2.length) { selectDept(df2[0].properties.id); return; }
+    }
     clearAll();
   });
 
@@ -249,6 +269,7 @@ map.on("load", () => {
     document.getElementById("edge-threshold-val").textContent = v;
     if (tab === 1) edgeMinCoauth = v;
     if (tab === 3) edgeMinPub    = v;
+    if (tab === 2) edgeMinRepo   = v;
     applyEdgeFilter();
   });
 
@@ -306,9 +327,13 @@ function setTab(t) {
   document.getElementById("right-panel").style.display = isPage ? "none" : "";
 
   if (!isPage) {
-    const showDept = t === 1 || t === 3;
-    for (const l of ["dept-fill", "dept-line", "dept-edges"])
+    // Territories are drawn on every map tab; the department backbone is not —
+    // it is built from co-authorship between departments, which says nothing
+    // about how two repositories relate.
+    const showDept = t === 1 || t === 2 || t === 3;
+    for (const l of ["dept-fill", "dept-line"])
       map.setLayoutProperty(l, "visibility", showDept ? "visible" : "none");
+    map.setLayoutProperty("dept-edges", "visibility", t === 2 ? "none" : "visible");
     map.setPaintProperty("repos", "icon-opacity", t === 2 ? 1 : NODE_OPACITY);
     map.setPaintProperty("edges", "line-opacity", t === 2 ? 1 : t === 3 ? EDGE_OPACITY_PUBS : EDGE_OPACITY_COAUTH);
     clearAll();

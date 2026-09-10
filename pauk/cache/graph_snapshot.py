@@ -7,7 +7,7 @@ from typing import Any
 
 from pauk.storage import AtomicWriter
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
 
 
 def write_snapshot(path: Path, graph: dict[str, list]) -> None:
