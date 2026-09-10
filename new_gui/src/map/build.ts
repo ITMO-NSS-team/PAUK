@@ -134,38 +134,86 @@ export function populateGraph(
 }
 
 /**
- * Регистрирует nodeReducer/edgeReducer, которые красят выбранный узел/ребро
- * иначе — единая точка правды про то, как выглядит подсветка, вместо
- * прежних отдельных функций setSelectedNode/setSelectedEdge, красивших
- * поверх уже нарисованного. Реducer читает `store.get().selection` из
- * замыкания при каждом рендере — сам он ничего не перерисовывает, это
- * только "чем покрасить, если сейчас рендерится эта точка/линия", реальную
- * перерисовку просит `renderer.refresh()` в {@link mountReactiveGraph}.
+ * Регистрирует nodeReducer/edgeReducer, которые красят выбранный/наведённый
+ * узел и его соседей иначе, а всё остальное — приглушают ("Obsidian"-style
+ * притухание всего, что не относится к текущему фокусу). Единая точка
+ * правды про то, как выглядит подсветка, вместо императивных
+ * setSelectedNode/setSelectedEdge из MapLibre-версии. Реducer читает
+ * `store.get().selection` и локальный `hoveredNode` из замыкания при
+ * каждом рендере — сам он ничего не перерисовывает, реальную перерисовку
+ * просит `renderer.refresh()` (в {@link mountReactiveGraph} — на смену
+ * selection, и здесь же — на смену hoveredNode через возвращённый setter).
+ *
+ * "Фокус" — наведённый мышью узел, а если наведения нет — выбранный кликом
+ * узел (`store.get().selection`, только когда это узел, не ребро/департамент).
+ * Пока фокус есть: не-соседние узлы красятся в {@link MAP_CONFIG.node.dimColor}
+ * и теряют подпись, не касающиеся фокуса рёбра — в {@link MAP_CONFIG.edge.colorDimmed}
+ * (почти прозрачный, а не `hidden: true` — структура связей должна
+ * угадываться, а не резко пропадать).
  *
  * @param renderer - Sigma-рендерер.
  * @param store - Store приложения.
+ * @returns `setHoveredNode` — вызывать из обработчиков `enterNode`/`leaveNode`
+ *   (см. {@link mountReactiveGraph}) при каждой смене наведённого узла.
  */
-function applySelectionHighlighting(renderer: Sigma, store: Store<AppState>): void {
+function applyHighlighting(renderer: Sigma, store: Store<AppState>): { setHoveredNode: (key: string | null) => void } {
   const graph = renderer.getGraph();
+  let hoveredNode: string | null = null;
+
+  function focusKey(): string | null {
+    if (hoveredNode) return hoveredNode;
+    const selection = store.get().selection;
+    return selection?.kind === "node" ? selection.key : null;
+  }
 
   renderer.setSetting("nodeReducer", (nodeKey, data): Partial<NodeDisplayData> => {
     const selection = store.get().selection;
-    if (selection?.kind === "node" && selection.key === nodeKey) {
-      return { ...data, highlighted: true, size: MAP_CONFIG.node.radiusSelected };
+    const isSelected = selection?.kind === "node" && selection.key === nodeKey;
+    const res: Partial<NodeDisplayData> = { ...data };
+
+    if (isSelected) {
+      res.highlighted = true;
+      res.size = MAP_CONFIG.node.radiusSelected;
     }
-    return data;
+
+    const focus = focusKey();
+    // isSelected исключён отдельно: выбранный узел — сам себе фокус, когда
+    // ничего не наведено, но должен оставаться ярким, даже пока наводят
+    // на что-то другое, а не тускнеть под собственной же подсветкой.
+    if (!isSelected && focus && focus !== nodeKey && !graph.areNeighbors(focus, nodeKey)) {
+      res.color = MAP_CONFIG.node.dimColor;
+      res.label = "";
+    }
+
+    return res;
   });
 
   renderer.setSetting("edgeReducer", (edgeKey, data): Partial<EdgeDisplayData> => {
     const selection = store.get().selection;
-    if (selection?.kind === "edge") {
-      const [s, t] = graph.extremities(edgeKey);
-      if ((s === selection.s && t === selection.t) || (s === selection.t && t === selection.s)) {
-        return { ...data, color: MAP_CONFIG.edge.colorSelected, size: MAP_CONFIG.edge.widthSelected };
-      }
+    const [s, t] = graph.extremities(edgeKey);
+    const isSelectedEdge =
+      selection?.kind === "edge" &&
+      ((s === selection.s && t === selection.t) || (s === selection.t && t === selection.s));
+
+    if (isSelectedEdge) {
+      return { ...data, color: MAP_CONFIG.edge.colorSelected, size: MAP_CONFIG.edge.widthSelected };
     }
+
+    const focus = focusKey();
+    if (focus && s !== focus && t !== focus) {
+      return { ...data, color: MAP_CONFIG.edge.colorDimmed };
+    }
+
     return data;
   });
+
+  return {
+    setHoveredNode(key) {
+      if (hoveredNode === key) return;
+      hoveredNode = key;
+      renderer.refresh();
+    },
+  };
 }
 
 /**
@@ -188,7 +236,7 @@ function applySelectionHighlighting(renderer: Sigma, store: Store<AppState>): vo
  * @param store - Store приложения.
  * @param data - данные графа.
  * @param pubDetails - карта деталей публикаций.
- * @returns Функцию отписки (unmount) от Store.
+ * @returns Функцию отписки (unmount) — снимает подписку на Store и обработчики hover-событий.
  */
 export function mountReactiveGraph(
   renderer: Sigma,
@@ -197,10 +245,23 @@ export function mountReactiveGraph(
   pubDetails: PubDetailsByKey,
 ): () => void {
   const graph = renderer.getGraph();
-  applySelectionHighlighting(renderer, store);
+  const { setHoveredNode } = applyHighlighting(renderer, store);
+
+  // Отдельная пара обработчиков от той, что в features/selection.ts —
+  // там enterNode/leaveNode меняют курсор (что делать по клику), здесь —
+  // что подсвечивать (как рисовать). Разные слушатели одного и того же
+  // события у Sigma не конфликтуют между собой.
+  function onEnterNode({ node }: { node: string }): void {
+    setHoveredNode(node);
+  }
+  function onLeaveNode(): void {
+    setHoveredNode(null);
+  }
+  renderer.on("enterNode", onEnterNode);
+  renderer.on("leaveNode", onLeaveNode);
 
   let prev = store.get();
-  return store.subscribe((state) => {
+  const unsubscribe = store.subscribe((state) => {
     // filters — новый объект только когда его реально меняли (Store.set
     // мержит патч поверх состояния, не трогая поля вне патча), поэтому
     // сравнение по ссылке здесь корректно и дешевле глубокого сравнения.
@@ -217,4 +278,10 @@ export function mountReactiveGraph(
       renderer.refresh();
     }
   });
+
+  return () => {
+    renderer.off("enterNode", onEnterNode);
+    renderer.off("leaveNode", onLeaveNode);
+    unsubscribe();
+  };
 }

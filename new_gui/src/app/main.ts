@@ -3,6 +3,9 @@
 
 import Graph from "graphology";
 import Sigma from "sigma";
+import { drawDiscNodeLabel } from "sigma/rendering";
+import type { Settings } from "sigma/settings";
+import type { NodeDisplayData, PartialButFor } from "sigma/types";
 import type { AuthorDetail, PubDetail, RepoDetail } from "../contracts/graph";
 import { DATA_CONFIG, FILTER_CONFIG, MAP_CONFIG } from "../core/config";
 import { loadDetails, loadGraphData, mergeDetailsInto } from "../core/data";
@@ -14,9 +17,41 @@ import { mountFilters } from "../features/filters";
 import { mountLangToggle } from "../features/langToggle";
 import { mountPanel } from "../features/panels";
 import { mountSelection } from "../features/selection";
+import { mountStart } from "../features/start";
 import { mountTabs } from "../features/tabs";
 import { mountUrlSync } from "../features/urlSync";
 import { mountReactiveGraph, populateGraph } from "../map/build";
+
+// "Obsidian"-свечение выбранного/наведённого узла — Sigma вызывает эту
+// функцию и на реальное наведение мышью, и на узел, у которого reducer в
+// map/build.ts::applyHighlighting вернул `highlighted: true` (для Sigma
+// это один и тот же визуальный случай). Рисует мягкое свечение вокруг
+// узла его же цветом через штатный Canvas2D `context.shadowBlur`, затем
+// подпись — штатной `drawDiscNodeLabel`, чтобы не пересобирать её
+// позиционирование вручную.
+//
+// Живёт здесь, а не в map/build.ts: импорт "sigma/rendering" тянет за
+// собой рантайм всего рендер-модуля Sigma, который на уровне модуля
+// трогает WebGL2RenderingContext — в jsdom (тесты) его нет. map/build.ts
+// импортируется тестами напрямую, а app/main.ts — нет (как и сама
+// конструкция `new Sigma(...)`, которая по той же причине живёт только здесь).
+function drawGlowingNodeHover(
+  context: CanvasRenderingContext2D,
+  data: PartialButFor<NodeDisplayData, "x" | "y" | "size" | "label" | "color">,
+  settings: Settings,
+): void {
+  context.save();
+  context.shadowBlur = MAP_CONFIG.node.glowBlur;
+  context.shadowColor = data.color;
+  context.fillStyle = data.color;
+  context.beginPath();
+  context.arc(data.x, data.y, data.size, 0, Math.PI * 2);
+  context.closePath();
+  context.fill();
+  context.restore();
+
+  drawDiscNodeLabel(context, data, settings);
+}
 
 // Единственное место, где создаётся Store — дальше он просто передаётся
 // в конструкторы фич (features/*), которые сами решают, на какую часть
@@ -66,6 +101,12 @@ function loadDetailsInto<T extends { key: string }>(name: string, url: string, t
     });
 }
 
+// Стартовый экран (boot-progress + welcome-hero, см. features/start.ts) —
+// монтируется сразу, до первого fetch: boot-screen должен быть виден с
+// первого кадра, а не появиться с задержкой.
+const start = mountStart(store);
+start.setBootStage("loading");
+
 // Приоритетная загрузка: сперва graph-data.json — этого одного достаточно,
 // чтобы построить граф и все списки (summary-полей хватает на всё, что
 // видно сразу). Три *-detail.json грузятся уже ПОСЛЕ первой отрисовки,
@@ -78,6 +119,7 @@ function loadDetailsInto<T extends { key: string }>(name: string, url: string, t
 // рендерер строится сразу же, как только есть данные для его наполнения.
 loggedStep("graph-data.json", () => loadGraphData(DATA_CONFIG.graphDataUrl))
   .then((data) => {
+    start.setBootStage("rendering");
     // Пустые карты передаются во все фичи один раз — заполняются на месте
     // (mergeDetailsInto), когда придёт соответствующий *-detail.json, см.
     // ниже. Мутация видна всем, кто уже держит эту же ссылку, без
@@ -91,7 +133,11 @@ loggedStep("graph-data.json", () => loadGraphData(DATA_CONFIG.graphDataUrl))
     // дефолт Store (например, открыли сохранённую ссылку) — применяем это
     // ДО монтирования остальных фич, чтобы они сразу увидели нужное
     // состояние, а не мигнули дефолтом и тут же переключились на него.
-    store.set(parseUrlState(location.search, data));
+    // Тот же разбор переиспользуется ниже для hasDeepLink — открыли не с
+    // дефолтным view, значит welcome-экран должен пропуститься (как и в
+    // старом GUI: заставка не должна перекрывать уже осмысленную ссылку).
+    const urlState = parseUrlState(location.search, data);
+    store.set(urlState);
 
     // Sigma конструируется с уже непустым графом — populateGraph() строит
     // его под начальное состояние ДО new Sigma(...), а не после (в
@@ -110,6 +156,8 @@ loggedStep("graph-data.json", () => loadGraphData(DATA_CONFIG.graphDataUrl))
       // Как и в MapLibre-версии (map.dragRotate.disable()) — это не
       // географическая карта, вращение холста не нужно.
       enableCameraRotation: false,
+      // "Obsidian"-свечение выбранного/наведённого узла — см. map/build.ts.
+      defaultDrawNodeHover: drawGlowingNodeHover,
     });
 
     // mountReactiveGraph дальше следит за store сама — остальным фичам
@@ -159,8 +207,14 @@ loggedStep("graph-data.json", () => loadGraphData(DATA_CONFIG.graphDataUrl))
     loadDetailsInto<PubDetail>("pubs-detail.json", DATA_CONFIG.pubDetailsUrl, pubDetailsByKey);
     loadDetailsInto<AuthorDetail>("authors-detail.json", DATA_CONFIG.authorDetailsUrl, authorDetailsByKey);
     loadDetailsInto<RepoDetail>("repos-detail.json", DATA_CONFIG.repoDetailsUrl, repoDetailsByKey);
+
+    // Boot-экран прячется, welcome-hero показывается — но не поверх уже
+    // осмысленной ссылки (urlState.selection !== null означает, что в URL
+    // была не дефолтная вкладка/выбор, а не просто "страница открылась").
+    start.finishBoot(urlState.selection !== null);
   })
   .catch((error: unknown) => {
+    start.setBootStage("error");
     // loggedStep логирует только провал самого fetch/JSON.parse — ошибка,
     // брошенная уже ПОСЛЕ успешной загрузки (где-то в
     // mountReactiveGraph/mountSelection/... внутри .then() выше, включая

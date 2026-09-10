@@ -24,6 +24,48 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
   };
 }
 
+// any, не never[] — это фейк для перехвата колбэков в тесте, а не рабочий
+// код, где важна строгая типизация аргументов.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Reducer = (...args: any[]) => unknown;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type EventHandler = (...args: any[]) => void;
+
+/**
+ * Фейковый Sigma-рендерер: хранит реальный graphology.Graph (нужен
+ * reducer'ам для extremities/getEdgeAttribute/areNeighbors) и перехватывает
+ * setSetting(...)/on(...), чтобы тест мог вызвать сохранённые колбэки
+ * напрямую — настоящий Sigma в jsdom не поднять (нужен WebGL-канвас).
+ */
+function fakeRenderer(graph: Graph): {
+  renderer: Sigma;
+  refresh: ReturnType<typeof vi.fn>;
+  getReducer: (key: "nodeReducer" | "edgeReducer") => Reducer;
+  fire: (event: string, payload?: unknown) => void;
+} {
+  const reducers = new Map<string, Reducer>();
+  const handlers = new Map<string, EventHandler>();
+  const refresh = vi.fn();
+  const renderer = {
+    getGraph: () => graph,
+    setSetting: (key: string, value: unknown) => reducers.set(key, value as Reducer),
+    on: (event: string, cb: EventHandler) => handlers.set(event, cb),
+    off: vi.fn(),
+    refresh,
+  } as unknown as Sigma;
+
+  return {
+    renderer,
+    refresh,
+    getReducer: (key) => {
+      const reducer = reducers.get(key);
+      if (!reducer) throw new Error(`reducer "${key}" ещё не зарегистрирован`);
+      return reducer;
+    },
+    fire: (event, payload) => handlers.get(event)?.(payload),
+  };
+}
+
 describe("populateGraph на фикстур-данных", () => {
   it("отдаёт только узлы вкладки, а не всех сущностей сразу", async () => {
     const data = await loadSampleGraphData();
@@ -132,52 +174,92 @@ describe("populateGraph на фикстур-данных", () => {
   });
 });
 
-describe("applySelectionHighlighting (через mountReactiveGraph)", () => {
-  /**
-   * Фейковый Sigma-рендерер: хранит реальный graphology.Graph (для
-   * extremities/getEdgeAttribute внутри reducer'ов) и перехватывает
-   * setSetting("nodeReducer"/"edgeReducer", ...), чтобы тест мог вызвать
-   * сохранённый reducer напрямую — настоящий Sigma в jsdom не поднять
-   * (нужен WebGL-канвас), поэтому мы никогда не конструируем его в тестах.
-   */
-  // any, не never[] — это фейк для перехвата колбэков в тесте, а не
-  // рабочий код, где важна строгая типизация аргументов.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  type Reducer = (...args: any[]) => unknown;
+describe("applyHighlighting (через mountReactiveGraph) — выбор/наведение и притухание соседей", () => {
+  const NODE_BASE = { x: 0, y: 0, size: MAP_CONFIG.node.radius, color: "#fff", label: "L" };
+  const EDGE_BASE = {
+    size: MAP_CONFIG.edge.width,
+    color: MAP_CONFIG.edge.color,
+    label: null,
+    hidden: false,
+    forceLabel: false,
+    zIndex: 0,
+    type: "line",
+  };
 
-  function fakeRenderer(graph: Graph): { renderer: Sigma; getReducer: (key: "nodeReducer" | "edgeReducer") => Reducer } {
-    const reducers = new Map<string, Reducer>();
-    const renderer = {
-      getGraph: () => graph,
-      setSetting: (key: string, value: unknown) => reducers.set(key, value as Reducer),
-      refresh: vi.fn(),
-    } as unknown as Sigma;
-    return {
-      renderer,
-      getReducer: (key) => {
-        const reducer = reducers.get(key);
-        if (!reducer) throw new Error(`reducer "${key}" ещё не зарегистрирован`);
-        return reducer;
-      },
-    };
-  }
-
-  it("nodeReducer подсвечивает именно выбранный узел", async () => {
+  it("nodeReducer подсвечивает выбранный узел, соседей оставляет как есть, остальных притушает", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
-    populateGraph(graph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
+    graph.addNode("A1", { x: 0, y: 0 });
+    graph.addNode("A2", { x: 1, y: 1 });
+    graph.addNode("A3", { x: 2, y: 2 });
+    graph.addEdge("A1", "A2");
     const store = new Store<AppState>(initialState({ selection: { kind: "node", key: "A1" } }));
     const { renderer, getReducer } = fakeRenderer(graph);
 
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
     const nodeReducer = getReducer("nodeReducer");
 
-    const baseData = { x: 0, y: 0, size: MAP_CONFIG.node.radius, color: "#fff", label: "" };
-    expect(nodeReducer("A1", baseData)).toMatchObject({ highlighted: true, size: MAP_CONFIG.node.radiusSelected });
-    expect(nodeReducer("A2", baseData)).toBe(baseData); // не выбран — reducer возвращает данные как есть
+    expect(nodeReducer("A1", NODE_BASE)).toMatchObject({ highlighted: true, size: MAP_CONFIG.node.radiusSelected });
+    expect(nodeReducer("A2", NODE_BASE)).toMatchObject({ color: NODE_BASE.color, label: NODE_BASE.label }); // сосед — не тронут
+    expect(nodeReducer("A3", NODE_BASE)).toMatchObject({ color: MAP_CONFIG.node.dimColor, label: "" }); // не сосед — притушен
   });
 
-  it("edgeReducer подсвечивает ребро независимо от порядка s/t в selection", async () => {
+  it("без выбора и без наведения ничего не притушено", async () => {
+    const data = await loadSampleGraphData();
+    const graph = new Graph();
+    graph.addNode("A1", { x: 0, y: 0 });
+    graph.addNode("A2", { x: 1, y: 1 });
+    const store = new Store<AppState>(initialState());
+    const { renderer, getReducer } = fakeRenderer(graph);
+
+    mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
+    expect(getReducer("nodeReducer")("A2", NODE_BASE)).toEqual(NODE_BASE);
+  });
+
+  it("наведение мышью (enterNode) временно становится фокусом вместо выбора, leaveNode его снимает", async () => {
+    const data = await loadSampleGraphData();
+    const graph = new Graph();
+    graph.addNode("A1", { x: 0, y: 0 });
+    graph.addNode("A2", { x: 1, y: 1 });
+    graph.addNode("A3", { x: 2, y: 2 });
+    graph.addEdge("A2", "A3");
+    const store = new Store<AppState>(initialState()); // ничего не выбрано кликом
+    const { renderer, getReducer, fire } = fakeRenderer(graph);
+
+    mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
+    const nodeReducer = getReducer("nodeReducer");
+
+    fire("enterNode", { node: "A2" });
+    expect(nodeReducer("A3", NODE_BASE)).toMatchObject({ color: NODE_BASE.color }); // сосед наведённого A2 — не притушен
+    expect(nodeReducer("A1", NODE_BASE)).toMatchObject({ color: MAP_CONFIG.node.dimColor, label: "" }); // не сосед — притушен
+
+    fire("leaveNode", {});
+    expect(nodeReducer("A1", NODE_BASE)).toEqual(NODE_BASE); // наведение снято — фокуса больше нет
+  });
+
+  it("edgeReducer притушает рёбра, не задевающие фокус, но не трогает задевающие", async () => {
+    const data = await loadSampleGraphData();
+    const graph = new Graph();
+    graph.addNode("A1", { x: 0, y: 0 });
+    graph.addNode("A2", { x: 1, y: 1 });
+    graph.addNode("A3", { x: 2, y: 2 });
+    graph.addEdge("A1", "A2");
+    graph.addEdge("A2", "A3");
+    const store = new Store<AppState>(initialState({ selection: { kind: "node", key: "A1" } }));
+    const { renderer, getReducer } = fakeRenderer(graph);
+
+    mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
+    const edgeReducer = getReducer("edgeReducer");
+
+    const [touchingFocus] = graph.edges("A1", "A2");
+    const [notTouchingFocus] = graph.edges("A2", "A3");
+    if (!touchingFocus || !notTouchingFocus) throw new Error("граф должен содержать оба ребра");
+
+    expect(edgeReducer(touchingFocus, EDGE_BASE)).toMatchObject({ color: EDGE_BASE.color });
+    expect(edgeReducer(notTouchingFocus, EDGE_BASE)).toMatchObject({ color: MAP_CONFIG.edge.colorDimmed });
+  });
+
+  it("edgeReducer подсвечивает выбранное ребро независимо от порядка s/t — притухание сюда не примешивается (фокус только для selection.kind === node)", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0 });
@@ -191,8 +273,7 @@ describe("applySelectionHighlighting (через mountReactiveGraph)", () => {
     const [edgeKey] = graph.edges();
     if (!edgeKey) throw new Error("граф должен содержать хотя бы одно ребро");
 
-    const baseData = { size: MAP_CONFIG.edge.width, color: MAP_CONFIG.edge.color, label: null, hidden: false, forceLabel: false, zIndex: 0, type: "line" };
-    expect(edgeReducer(edgeKey, baseData)).toMatchObject({
+    expect(edgeReducer(edgeKey, EDGE_BASE)).toMatchObject({
       color: MAP_CONFIG.edge.colorSelected,
       size: MAP_CONFIG.edge.widthSelected,
     });
@@ -200,16 +281,6 @@ describe("applySelectionHighlighting (через mountReactiveGraph)", () => {
 });
 
 describe("mountReactiveGraph", () => {
-  function fakeRenderer(graph: Graph): { renderer: Sigma; refresh: ReturnType<typeof vi.fn> } {
-    const refresh = vi.fn();
-    const renderer = {
-      getGraph: () => graph,
-      setSetting: vi.fn(),
-      refresh,
-    } as unknown as Sigma;
-    return { renderer, refresh };
-  }
-
   it("не пересобирает граф при монтировании (он уже наполнен снаружи) и пересобирает при смене tab/lang/filters, но не при смене selection", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();

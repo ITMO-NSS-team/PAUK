@@ -5,46 +5,68 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PAUK</title>
     <style>
-      html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
+      /* Единая тёмная палитра ("Obsidian"-стиль) — единственное место, где
+         живут цвета вёрстки, дальше везде var(--...). --surface совпадает с
+         MAP_CONFIG.backgroundColor (#202020, core/config.ts) намеренно —
+         сайдбар/панель и canvas графа читаются как один тон, а не два
+         рассинхронизированных источника цвета (DOM-токены и canvas-конфиг
+         остаются двумя разными механизмами не просто так, см. память
+         проекта про design tokens — но значения выбраны совпадающими). */
+      :root {
+        --bg: #181818;
+        --surface: #202020;
+        --surface-2: #2a2a2a;
+        --border: #333333;
+        --text: #dcdcdc;
+        --muted: #8a8a8a;
+        --accent: #5c7cfa;
+        --accent-soft: rgba(92, 124, 250, 0.18);
+        --danger-bg: #2a1414;
+        --danger-border: #e03131;
+        --danger-text: #ffb3b3;
+      }
+
+      html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; color-scheme: dark; }
+      body { background: var(--bg); color: var(--text); }
 
       /* Общая раскладка страницы: сайдбар со списком слева, карта
-         занимает всё оставшееся место. Общая тема light/dark и палитра
-         (core/colors.ts) — отдельный следующий шаг, здесь только layout. */
+         занимает всё оставшееся место. */
       #app { display: flex; height: 100%; }
       /* overflow-x: hidden — подстраховка: если внутри забудут про
          min-width: 0 на новом flex-элементе (как уже дважды случалось —
          см. .filter-row input и .tab-list-item__label ниже), контент
          обрежется по границе сайдбара, а не вылезет поверх карты. */
-      #sidebar { width: 280px; flex-shrink: 0; overflow-x: hidden; display: flex; flex-direction: column; border-right: 1px solid #c4c4c4; }
+      #sidebar { width: 280px; flex-shrink: 0; overflow-x: hidden; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--border); }
       #map { flex: 1; min-width: 0; }
 
       /* Кнопки переключения вкладок — по одной на каждый TabModule из
          features/tabs/index.ts. "Здоровье БД" из старого GUI сознательно
          не переносим — для неё кнопки нет и не будет. */
-      #tab-buttons { display: flex; border-bottom: 1px solid #c4c4c4; }
+      #tab-buttons { display: flex; border-bottom: 1px solid var(--border); }
       #tab-buttons button {
         flex: 1;
         padding: 10px 4px;
         border: none;
         background: none;
+        color: var(--muted);
         font-size: 12px;
         cursor: pointer;
         border-bottom: 2px solid transparent;
       }
-      #tab-buttons button.tab-button--active { border-bottom-color: #3555e0; font-weight: 600; }
+      #tab-buttons button.tab-button--active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
 
       /* Регуляторы порогов фильтрации (features/filters.ts) — видны только
          для вкладок, у которых вообще есть фильтр (сейчас 1 и 3). */
-      #filter-bar { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border-bottom: 1px solid #c4c4c4; }
+      #filter-bar { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
       #filter-bar[hidden] { display: none; }
       .filter-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
-      .filter-row__label { flex-shrink: 0; color: #616161; }
+      .filter-row__label { flex-shrink: 0; color: var(--muted); }
       /* min-width: 0 обязателен — без него flex-элемент с nowrap-содержимым
          (тут это встроенный вид ползунка) не сжимается меньше своей
          "естественной" ширины и выталкивает строку за пределы сайдбара,
          когда подпись слева длинная (например "Мин. общих авторов"). */
       .filter-row input[type="range"] { flex: 1; min-width: 0; }
-      .filter-row__value { flex-shrink: 0; min-width: 2.5em; text-align: right; }
+      .filter-row__value { flex-shrink: 0; min-width: 2.5em; text-align: right; color: var(--text); }
 
       /* Список карточек внутри активной вкладки — отрисовывается через
          core/render.ts::renderList(), см. features/tabs/authors.ts. */
@@ -56,21 +78,22 @@
         width: 100%;
         padding: 8px 12px;
         border: none;
-        border-bottom: 1px solid #eee;
+        border-bottom: 1px solid var(--border);
         background: none;
+        color: var(--text);
         font-size: 13px;
         text-align: left;
         cursor: pointer;
       }
-      .tab-list-item:hover { background: #f2f2f2; }
-      .tab-list-item--selected { background: #e8ecfc; }
+      .tab-list-item:hover { background: var(--surface-2); }
+      .tab-list-item--selected { background: var(--accent-soft); }
       /* min-width: 0 — та же причина, что у .filter-row input выше: без
          него текст с white-space: nowrap не сжимается и вылезает за край
          строки (в поиске это выглядело как "буквы не отображаются" —
          текст на самом деле рисовался, просто за пределами видимой
          ширины сайдбара). */
       .tab-list-item__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .tab-list-item__meta { flex-shrink: 0; color: #616161; }
+      .tab-list-item__meta { flex-shrink: 0; color: var(--muted); }
 
       /* Вкладка "Поиск" (features/tabs/search.ts): поле ввода "прилипает"
          к верху при прокрутке списка результатов вниз (sticky), чтобы не
@@ -82,9 +105,10 @@
         box-sizing: border-box;
         padding: 10px 12px;
         border: none;
-        border-bottom: 1px solid #c4c4c4;
+        border-bottom: 1px solid var(--border);
         font-size: 13px;
-        background: #ffffff;
+        background: var(--surface);
+        color: var(--text);
       }
       /* В обычных вкладках meta — короткое число ("42", "★ 15", "2024"),
          поэтому в один ряд с подписью оно умещается нормально. В поиске
@@ -107,18 +131,20 @@
         top: 12px;
         right: 12px;
         max-width: 320px;
-        background: #ffffff;
-        border: 1px solid #c4c4c4;
+        background: var(--surface);
+        border: 1px solid var(--border);
         border-radius: 8px;
         padding: 12px 16px;
+        color: var(--text);
         font-size: 13px;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
       }
       #panel[hidden] { display: none; }
       #panel h3 { margin: 0 0 8px; font-size: 14px; }
       #panel dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; }
-      #panel dt { color: #616161; }
+      #panel dt { color: var(--muted); }
       #panel dd { margin: 0; }
+      #panel a { color: var(--accent); }
 
       /* Индикатор "ещё грузится" (core/dom.ts::createLoadingIndicator) —
          показывается в строке карточки вместо значения, пока detail-файл
@@ -128,7 +154,7 @@
         display: inline-block;
         width: 10px;
         height: 10px;
-        background: #9aa0ac;
+        background: var(--muted);
         border-radius: 2px;
         animation: loading-pulse 1s ease-in-out infinite;
       }
@@ -150,10 +176,10 @@
         transform: translate(-50%, -50%);
         max-width: 420px;
         padding: 16px 20px;
-        background: #fff5f5;
-        border: 1px solid #e03131;
+        background: var(--danger-bg);
+        border: 1px solid var(--danger-border);
         border-radius: 8px;
-        color: #7d1a1a;
+        color: var(--danger-text);
         font-size: 13px;
         text-align: center;
       }
@@ -166,15 +192,108 @@
         top: 12px;
         left: 292px;
         padding: 6px 10px;
-        border: 1px solid #c4c4c4;
+        border: 1px solid var(--border);
         border-radius: 6px;
-        background: #ffffff;
+        background: var(--surface);
+        color: var(--text);
         font-size: 12px;
         cursor: pointer;
       }
+
+      /* ---------- стартовый экран (features/start.ts) ---------- */
+      /* boot-screen виден с первого кадра (не ждёт JS), пока грузится
+         graph-data.json — прогресс идёт по стадиям (loading/rendering), не
+         побайтово, см. features/start.ts::STAGE_PROGRESS. */
+      #boot-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background: var(--bg);
+        transition: opacity 0.35s ease;
+      }
+      #boot-screen[hidden] { display: none; }
+      .boot-title { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); }
+      .boot-progress { width: 180px; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+      .boot-progress-bar { height: 100%; width: 0%; background: var(--accent); transition: width 0.2s ease-out; border-radius: inherit; }
+      .boot-status { font-size: 12px; font-weight: 600; color: var(--muted); }
+
+      /* welcome-hero показывается один раз boot-экран скрылся (если только
+         URL не задавал уже осмысленный выбор, см. finishBoot() в
+         features/start.ts) — hidden в разметке по умолчанию. */
+      #welcome-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 26;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg);
+      }
+      #welcome-modal[hidden] { display: none; }
+      .welcome-hero { text-align: center; max-width: 560px; padding: 20px; }
+      .welcome-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 7px 14px 7px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        text-decoration: none;
+        margin-bottom: 24px;
+      }
+      .welcome-badge-arrow { color: var(--muted); }
+      .welcome-title { font-size: clamp(28px, 4vw, 44px); font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; color: var(--text); margin: 0 0 16px; }
+      .welcome-subtitle { font-size: 15px; line-height: 1.55; color: var(--muted); margin: 0 auto 28px; max-width: 460px; }
+      .welcome-cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 22px;
+        background: var(--accent);
+        color: #ffffff;
+        border: none;
+        border-radius: 10px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .welcome-cta:hover { opacity: 0.9; }
+      .welcome-modes { margin-top: 20px; font-size: 12px; letter-spacing: 0.03em; color: var(--muted); }
     </style>
   </head>
   <body>
+    <!-- Стартовый экран (features/start.ts) — виден с первого кадра, до
+         того как JS вообще успевает что-то смонтировать. -->
+    <div id="boot-screen">
+      <div class="boot-title">PAUK</div>
+      <div class="boot-progress"><div class="boot-progress-bar" id="boot-progress-bar"></div></div>
+      <div class="boot-status" id="boot-status"></div>
+    </div>
+    <!-- hidden снимается features/start.ts::finishBoot(), если только URL
+         не задавал уже осмысленный выбор (открыли сохранённую ссылку). -->
+    <div id="welcome-modal" hidden>
+      <div class="welcome-hero">
+        <a class="welcome-badge" href="https://github.com/ITMO-NSS-team/PAUK" target="_blank" rel="noopener noreferrer">
+          <span id="welcome-badge-text"></span> <span class="welcome-badge-arrow">›</span>
+        </a>
+        <h1 class="welcome-title" id="welcome-title"></h1>
+        <p class="welcome-subtitle" id="welcome-subtitle"></p>
+        <button type="button" id="welcome-close" class="welcome-cta">
+          <span id="welcome-cta-text"></span> <span>→</span>
+        </button>
+        <div class="welcome-modes" id="welcome-modes"></div>
+      </div>
+    </div>
+
     <div id="app">
       <aside id="sidebar">
         <!-- data-tab на каждой кнопке — единственное, что нужно
