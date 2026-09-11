@@ -164,7 +164,9 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
 tr:last-child td { border-bottom: 0; }
 th { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
-td.val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; word-break: break-word; }
+/* Не только на ячейке: идентификаторы и адреса стоят и в span, а без
+   переноса длинная ссылка уезжает в соседний столбец. */
+.val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; word-break: break-word; }
 tr.ro td { color: var(--muted); }
 .fixed { table-layout: fixed; }
 .card.scroll { overflow-x: auto; }
@@ -314,3 +316,19 @@ select {
 }
 .steps > summary:hover { color: var(--text); }
 .steps[open] > summary { margin-bottom: 10px; }
+
+/* Ответ на вопрос очереди: поле «почему» и три кнопки под ним. */
+.verdicts input[type=text] { margin-bottom: 8px; }
+.verdicts .row { flex-wrap: wrap; gap: 6px; }
+.verdicts button { padding: 6px 11px; font-size: 13px; }
+
+/* Фазы конвейера: пройденные закрашены, идущая отмечена бледнее, до
+   которых не дошли — пустые. Полоска рядом с названием шага отвечает на
+   вопрос «сколько ещё», на который текст сам по себе не отвечает. */
+.phases { display: flex; gap: 3px; margin-bottom: 6px; min-width: 96px; }
+.phases span {
+  flex: 1; height: 5px; border-radius: 3px;
+  background: var(--g2);
+}
+.phases .done { background: var(--ok); }
+.phases .now { background: var(--ok); opacity: 0.45; }

@@ -39,36 +39,58 @@ BEAT_SECONDS = 60.0
 #: somebody pressed cancel while the run was under way.
 Stop = Callable[[], bool]
 
+#: Told which part of the run is under way, by name and by how many of how
+#: many are behind it. Passed alongside `stop` because both are hooks the
+#: worker holds and the work itself knows nothing about.
+#:
+#: May raise `Cancelled`. The work calls it between the parts it is made of,
+#: which is exactly where stopping is safe, so the worker answers a cancel
+#: from inside it rather than waiting for the whole part to finish.
+Report = Callable[..., None]
 
-def _collect(config: Settings, db: Database, payload, stop: Stop) -> dict[str, int]:
+
+def _collect(config: Settings, db: Database, payload, stop: Stop,
+             report: Report) -> dict[str, int]:
     from pauk.pipeline.runner import PipelineRunner
     from pauk.pipeline.selectors import PeriodSelector, WorkSelector
 
     selector = (WorkSelector(payload.work_id) if payload.work_id
                 else PeriodSelector(payload.date_from, payload.date_to))
-    return PipelineRunner(config, payload.group, db).run(selector)
+    return PipelineRunner(config, payload.group, db).run(selector, on_stage=report)
 
 
-def _publish(config: Settings, db: Database, payload, stop: Stop) -> dict[str, int]:
+def _publish(config: Settings, db: Database, payload, stop: Stop,
+             report: Report) -> dict[str, int]:
     from pauk.graph.load import load_jsonl_group
+    report("выкладка в граф")
     return load_jsonl_group(config, db, payload.group)
 
 
-def _dedup(config: Settings, db: Database, payload, stop: Stop) -> dict[str, int]:
+def _dedup(config: Settings, db: Database, payload, stop: Stop,
+           report: Report) -> dict[str, int]:
     from pauk.graph.dedup import run_graph_dedup
+    report("склейка дублей по всему графу")
     return run_graph_dedup(config, db)
 
 
-def _rebuild_map(config: Settings, db: Database, payload, stop: Stop) -> dict[str, int]:
+def _rebuild_map(config: Settings, db: Database, payload, stop: Stop,
+                 report: Report) -> dict[str, int]:
     from pauk.gui.rebuild import rebuild_map
+    report("пересборка карты")
     return rebuild_map(config, db, public=payload.public, seed=payload.seed)
+
+
+#: The three phases a pipeline run is made of, in order. Named here because
+#: the page draws one segment per phase and has to know how many there are.
+PHASES = ("сбор", "публикация", "карта")
 
 
 class Cancelled(Exception):
     """A job that was asked to stop, and did, between two of its phases."""
 
 
-def _pipeline(config: Settings, db: Database, payload, stop: Stop) -> dict[str, int]:
+def _pipeline(config: Settings, db: Database, payload, stop: Stop,
+              report: Report) -> dict[str, int]:
     """Collect, publish, rebuild the map. One job, three phases.
 
     Not three queued jobs: publishing names a group, and when the queue is
@@ -84,18 +106,29 @@ def _pipeline(config: Settings, db: Database, payload, stop: Stop) -> dict[str, 
         Cancelled: Somebody pressed cancel. Checked between phases only —
             a phase is never abandoned half-written.
     """
-    counts = _collect(config, db, payload, stop)
+    def during(phase: int) -> Report:
+        """The worker's reporter, with the phase this run is in attached.
+
+        The parts inside a phase report their own step and know nothing
+        about the phase they sit in, so it is added here rather than
+        threaded through every one of them.
+        """
+        def inner(step: str, done: int = 0, total: int = 0) -> None:
+            report(step, done, total, phase=phase)
+        return inner
+
+    counts = _collect(config, db, payload, stop, during(0))
     if stop():
         raise Cancelled("остановлено после сбора")
-    counts |= _publish(config, db, payload, stop)
+    counts |= _publish(config, db, payload, stop, during(1))
     if stop():
         raise Cancelled("остановлено после публикации")
-    return counts | _rebuild_map(config, db, payload, stop)
+    return counts | _rebuild_map(config, db, payload, stop, during(2))
 
 
 #: What each kind of job does. A closed table looked up by an enum, so no
 #: job can name a callable of its own.
-STEPS: dict[JobKind, Callable[[Settings, Database, BaseModel, Stop], dict[str, int]]] = {
+STEPS: dict[JobKind, Callable[[Settings, Database, BaseModel, Stop, Report], dict[str, int]]] = {
     JobKind.COLLECT: _collect,
     JobKind.PUBLISH: _publish,
     JobKind.DEDUP: _dedup,
@@ -218,9 +251,20 @@ class Worker:
             current = store.read(self.db, job.id)
             return bool(current and current.cancel_requested)
 
+        def report(step: str, done: int = 0, total: int = 0,
+                   phase: int | None = None) -> None:
+            store.progress(self.db, job.id, step, done, total, phase)
+            # Between two parts of the work nothing is half written, so this
+            # is where a cancel can be honoured. Before, the only such seam
+            # was between the three phases of a pipeline, and a run stopped
+            # during collection kept going through ten more stages — hours
+            # after somebody pressed the button.
+            if stop():
+                raise Cancelled(f"остановлено перед шагом «{step}»")
+
         try:
             with _Beat(self.db, job, self.name):
-                result = STEPS[job.kind](self.config, self.db, payload, stop)
+                result = STEPS[job.kind](self.config, self.db, payload, stop, report)
         except locks.Busy as error:
             # Not a failure. It goes back for whoever gets there next, and
             # this worker waits instead of picking it up again at once.

@@ -136,6 +136,9 @@ class Job(BaseModel):
     result: dict[str, int] = Field(default_factory=dict)
     error: str | None = None
     cancel_requested: bool = False
+    #: Where inside the run it is: the step by name, and how many of how
+    #: many are behind it. Absent until something reports.
+    progress: dict | None = None
 
     @property
     def is_final(self) -> bool:

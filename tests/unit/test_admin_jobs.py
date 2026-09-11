@@ -1,5 +1,7 @@
 import re
 import unittest
+from datetime import timedelta
+from urllib.parse import unquote
 
 import mongomock
 from fastapi.testclient import TestClient
@@ -7,8 +9,8 @@ from fastapi.testclient import TestClient
 from pauk.admin import deps
 from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key
-from pauk.jobs import store
-from pauk.jobs.models import GRAPH, JobKind, JobState
+from pauk.jobs import locks, store
+from pauk.jobs.models import GRAPH, JobKind, JobState, now
 from pauk.settings import Settings
 from pauk.storage.naming import group_name
 from tests.unit.test_admin_nodes import FakePanelGraph
@@ -230,6 +232,19 @@ class SchedulingTest(unittest.TestCase):
         client = client or self.client
         return client.post("/jobs", data={"csrf": csrf or self.csrf, **data})
 
+    def refused(self, **data):
+        """The complaint a mis-filled form comes back with.
+
+        A wrong period sends somebody back to the form with everything they
+        typed still there, not to a page with a status code on it — so the
+        answer is a redirect carrying the reason, not a 400.
+        """
+        response = self.post(**data)
+        self.assertEqual(response.status_code, 303)
+        location = response.headers["location"]
+        self.assertIn("problem=", location)
+        return unquote(location.split("problem=")[1])
+
     def test_an_admin_can_publish(self):
         self.assertEqual(self.post(kind="publish", group="2024").status_code, 303)
         self.assertEqual(store.count(self.db), 1)
@@ -267,12 +282,13 @@ class SchedulingTest(unittest.TestCase):
         # The form offers a list; a request that never met the form has to
         # meet the same list. Publishing an empty group takes the graph
         # lock to load nothing.
-        response = self.post(kind="publish", group="2025")
-        self.assertEqual(response.status_code, 400)
+        self.assertIn("нет подготовленных строк",
+                      self.refused(kind="publish", group="2025"))
         self.assertEqual(store.count(self.db), 0)
 
     def test_a_group_name_that_could_not_exist_is_refused(self):
-        self.assertEqual(self.post(kind="publish", group="../etc").status_code, 400)
+        self.refused(kind="publish", group="../etc")
+        self.assertEqual(store.count(self.db), 0)
 
     def test_the_group_offered_is_one_that_has_rows(self):
         self.assertIn(">2024</option>", self.client.get("/jobs").text)
@@ -297,24 +313,33 @@ class SchedulingTest(unittest.TestCase):
         self.assertTrue(store.recent(self.db)[0].resource.startswith("group:"))
 
     def test_both_a_work_and_a_period_is_refused(self):
-        response = self.post(kind="collect", work_id="W1",
-                             date_from="2024-01-01", date_to="2024-02-01")
-        self.assertEqual(response.status_code, 400)
+        self.assertIn("не оба сразу", self.refused(
+            kind="collect", work_id="W1", date_from="2024-01-01", date_to="2024-02-01"))
 
-    def test_neither_a_work_nor_a_period_is_refused(self):
-        self.assertEqual(self.post(kind="collect").status_code, 400)
+    def test_an_empty_form_says_what_to_fill_in(self):
+        # The commonest mistake: press the button without touching the
+        # dates. It used to answer with raw JSON and lose the form.
+        self.assertIn("укажите период", self.refused(kind="collect"))
+
+    def test_the_complaint_is_shown_on_the_page_it_returns_to(self):
+        # Carrying it in the address is only half: the page has to render it.
+        location = self.post(kind="collect").headers["location"]
+        self.assertIn("укажите период", self.client.get(location).text)
+
+    def test_one_date_of_two_says_which_is_missing(self):
+        # Told apart from an empty form: "choose a period" is unhelpful when
+        # half of one is already typed.
+        self.assertIn("вторая пустая", self.refused(kind="collect", date_from="2024-01-01"))
 
     def test_a_period_the_wrong_way_round_is_refused(self):
-        response = self.post(kind="collect", date_from="2024-12-31", date_to="2024-01-01")
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("позже", response.json()["detail"])
+        self.assertIn("позже", self.refused(
+            kind="collect", date_from="2024-12-31", date_to="2024-01-01"))
 
     def test_something_that_is_not_a_date_says_so(self):
         # Told apart from the wrong order: one message for both would be
         # wrong half the time.
-        response = self.post(kind="collect", date_from="вчера", date_to="2024-01-01")
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("не дата", response.json()["detail"])
+        self.assertIn("не дата", self.refused(
+            kind="collect", date_from="вчера", date_to="2024-01-01"))
 
     def test_rebuilding_the_map(self):
         self.post(kind="map", seed="7", public="on")
@@ -404,17 +429,27 @@ class CancelTest(unittest.TestCase):
         job = self.queued()
         self.assertEqual(self.cancel(job.id, csrf="not-the-token").status_code, 403)
 
+    def offered(self, action):
+        """Job ids the page offers a given button for.
+
+        Read per form, not off the whole page: several buttons carry a
+        job_id now, and looking for the id alone finds any of them.
+        """
+        body = self.client.get("/jobs").text
+        return re.findall(
+            r'action="' + action + r'".*?name="job_id" value="([^"]+)"',
+            body, re.S)
+
     def test_the_button_is_offered_while_a_job_can_still_be_stopped(self):
         waiting, live = self.queued(), self.running()
-        offered = re.findall(r'name="job_id" value="([^"]+)"', self.client.get("/jobs").text)
+        offered = self.offered("/jobs/cancel")
         self.assertIn(waiting.id, offered)
         self.assertIn(live.id, offered)
 
-    def test_no_button_once_the_job_is_over(self):
+    def test_no_cancel_button_once_the_job_is_over(self):
         job = self.queued()
         store.finish(self.db, job.id, {})
-        offered = re.findall(r'name="job_id" value="([^"]+)"', self.client.get("/jobs").text)
-        self.assertNotIn(job.id, offered)
+        self.assertNotIn(job.id, self.offered("/jobs/cancel"))
 
     def test_no_button_once_it_has_been_asked(self):
         job = self.running()
@@ -586,14 +621,22 @@ class MapOptionsTest(unittest.TestCase):
     def post(self, **data):
         return self.client.post("/jobs", data={"csrf": self.csrf, **data})
 
+    def refused(self, **data):
+        """The complaint the form comes back with, rather than a 500."""
+        response = self.post(**data)
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("problem=", response.headers["location"])
+        return response
+
     def test_a_seed_that_is_not_a_number_is_refused_not_crashed(self):
         for value in ("null", "1e999", "NaN", "{}", "3.5", "0x10"):
             with self.subTest(seed=value):
-                self.assertEqual(self.post(kind="map", seed=value).status_code, 400)
+                self.refused(kind="map", seed=value)
+                self.assertEqual(store.count(self.db), 0)
 
     def test_the_same_holds_for_the_whole_pipeline(self):
-        self.assertEqual(
-            self.post(kind="pipeline", work_id="W1", seed="null").status_code, 400)
+        self.refused(kind="pipeline", work_id="W1", seed="null")
+        self.assertEqual(store.count(self.db), 0)
 
     def test_a_missing_seed_falls_back_to_the_default(self):
         self.assertEqual(self.post(kind="map").status_code, 303)
@@ -664,3 +707,196 @@ class SilentJobOnThePageTest(unittest.TestCase):
         self.assertEqual(store.read(self.db, self.job.id).state, JobState.CANCELLED)
         self.assertNotIn("Сейчас идёт", self.page())
 
+
+
+class GiveUpTest(unittest.TestCase):
+    """Closing a run nothing is performing any more.
+
+    The worker settles abandoned jobs on its own, but only a running worker
+    does, and only after the lock lease has run out. A job cancelled before
+    it ever started holds nothing and is doing nothing; leaving it in "under
+    way" for a quarter of an hour tells everybody a lie.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "chief", "hunter2", role="admin")
+        create_user(self.db, "petrov", "hunter2", role="editor")
+        self.app = build(Settings(), self.db)
+        self.app.dependency_overrides[deps.graph_for] = lambda: FakePanelGraph()
+        self.client, self.csrf = CancelTest.sign_in(self, "chief")
+
+    def abandoned(self, *, quiet_minutes=20, cancelled=True):
+        """A job a worker took and never came back from."""
+        job = store.enqueue(self.db, JobKind.PIPELINE, {"group": "2024"}, actor="user:chief")
+        store.claim(self.db, "worker-that-died")
+        if cancelled:
+            store.request_cancel(self.db, job.id)
+        self.db[store.COLLECTION].update_one(
+            {"_id": job.id},
+            {"$set": {"heartbeat_at": now() - timedelta(minutes=quiet_minutes)}})
+        return job
+
+    def give_up(self, job_id, client=None, csrf=None):
+        client = client or self.client
+        return client.post("/jobs/give-up",
+                           data={"csrf": csrf or self.csrf, "job_id": job_id})
+
+    def test_a_cancelled_job_nobody_runs_is_closed_at_once(self):
+        job = self.abandoned()
+        self.assertEqual(self.give_up(job.id).status_code, 303)
+        self.assertEqual(store.read(self.db, job.id).state, JobState.CANCELLED)
+
+    def test_one_that_simply_died_is_recorded_as_failed(self):
+        job = self.abandoned(cancelled=False)
+        self.give_up(job.id)
+        settled = store.read(self.db, job.id)
+        self.assertEqual(settled.state, JobState.FAILED)
+        self.assertIn("воркер", settled.error)
+
+    def test_a_job_still_reporting_in_is_left_alone(self):
+        # Two minutes of silence is a slow step, not a dead worker.
+        job = self.abandoned(quiet_minutes=2)
+        self.assertEqual(self.give_up(job.id).status_code, 409)
+        self.assertEqual(store.read(self.db, job.id).state, JobState.CLAIMED)
+
+    def test_a_job_whose_resource_is_held_is_left_alone(self):
+        # Somebody is writing the graph. Silence there means a busy run, not
+        # an absent one, and closing it would free a resource still in use.
+        job = self.abandoned()
+        with locks.held(self.db, job.resource, "somebody-else"):
+            self.assertEqual(self.give_up(job.id).status_code, 409)
+        self.assertEqual(store.read(self.db, job.id).state, JobState.CLAIMED)
+
+    def test_a_finished_job_cannot_be_closed_again(self):
+        job = self.abandoned()
+        self.give_up(job.id)
+        self.assertEqual(self.give_up(job.id).status_code, 409)
+
+    def test_an_editor_may_not_close_one(self):
+        job = self.abandoned()
+        client, csrf = CancelTest.sign_in(self, "petrov")
+        self.assertEqual(self.give_up(job.id, client, csrf).status_code, 403)
+        self.assertEqual(store.read(self.db, job.id).state, JobState.CLAIMED)
+
+    def test_the_button_shows_up_only_on_a_silent_job(self):
+        live = store.enqueue(self.db, JobKind.MAP, {}, actor="user:chief")
+        store.claim(self.db, "worker-1")
+        store.start(self.db, live.id)
+        dead = self.abandoned()
+        offered = CancelTest.offered(self, "/jobs/give-up")
+        self.assertIn(dead.id, offered)
+        self.assertNotIn(live.id, offered)
+
+
+class RepeatTest(unittest.TestCase):
+    """Putting a finished run back in the queue from what it recorded."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "chief", "hunter2", role="admin")
+        create_user(self.db, "petrov", "hunter2", role="editor")
+        self.app = build(Settings(), self.db)
+        self.app.dependency_overrides[deps.graph_for] = lambda: FakePanelGraph()
+        self.client, self.csrf = CancelTest.sign_in(self, "chief")
+
+    def failed(self):
+        job = store.enqueue(self.db, JobKind.COLLECT,
+                            {"group": "2026-03-01__to__2026-08-29",
+                             "date_from": "2026-03-01", "date_to": "2026-08-29"},
+                            actor="user:chief")
+        store.claim(self.db, "worker-1")
+        store.start(self.db, job.id)
+        store.fail(self.db, job.id, "OpenAlex timed out")
+        return job
+
+    def repeat(self, job_id, client=None, csrf=None):
+        client = client or self.client
+        return client.post("/jobs/repeat",
+                           data={"csrf": csrf or self.csrf, "job_id": job_id})
+
+    def test_the_dates_come_back_without_being_typed_again(self):
+        # Which is where a period gets mistyped and the run collects the
+        # wrong months.
+        job = self.failed()
+        self.assertEqual(self.repeat(job.id).status_code, 303)
+        again = store.recent(self.db)[0]
+        self.assertEqual(again.payload, job.payload)
+        self.assertEqual(again.kind, job.kind)
+        self.assertEqual(again.state, JobState.QUEUED)
+
+    def test_the_failure_stays_in_the_history(self):
+        # Two attempts should read as two attempts.
+        job = self.failed()
+        self.repeat(job.id)
+        self.assertEqual(store.count(self.db), 2)
+        self.assertEqual(store.read(self.db, job.id).state, JobState.FAILED)
+
+    def test_who_asked_for_the_rerun_is_recorded(self):
+        job = self.failed()
+        self.repeat(job.id)
+        self.assertEqual(store.recent(self.db)[0].actor, "user:chief")
+
+    def test_a_run_still_going_cannot_be_repeated(self):
+        job = store.enqueue(self.db, JobKind.DEDUP, {}, actor="user:chief")
+        self.assertEqual(self.repeat(job.id).status_code, 404)
+        self.assertEqual(store.count(self.db), 1)
+
+    def test_an_editor_may_not_repeat_one(self):
+        job = self.failed()
+        client, csrf = CancelTest.sign_in(self, "petrov")
+        self.assertEqual(self.repeat(job.id, client, csrf).status_code, 403)
+        self.assertEqual(store.count(self.db), 1)
+
+    def test_the_button_shows_up_on_what_has_ended(self):
+        done = self.failed()
+        waiting = store.enqueue(self.db, JobKind.DEDUP, {}, actor="user:chief")
+        offered = CancelTest.offered(self, "/jobs/repeat")
+        self.assertIn(done.id, offered)
+        self.assertNotIn(waiting.id, offered)
+
+
+class PhaseBarTest(unittest.TestCase):
+    """Three segments for the three phases a pipeline run is made of."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "chief", "hunter2", role="admin")
+        self.app = build(Settings(), self.db)
+        self.app.dependency_overrides[deps.graph_for] = lambda: FakePanelGraph()
+        self.client, self.csrf = CancelTest.sign_in(self, "chief")
+
+    def under_way(self, kind, step, phase=None):
+        job = store.enqueue(self.db, kind, {"group": "2024"} if kind is not JobKind.DEDUP else {},
+                            actor="user:chief")
+        store.claim(self.db, "w")
+        store.start(self.db, job.id)
+        store.progress(self.db, job.id, step, phase=phase)
+        return job
+
+    def segments(self):
+        body = self.client.get("/jobs").text
+        block = re.search(r'<div class="phases".*?</div>', body, re.S)
+        return re.findall(r'<span class="([^"]*)">', block.group()) if block else []
+
+    def test_the_phases_behind_it_are_filled(self):
+        self.under_way(JobKind.PIPELINE, "выкладка в граф", phase=1)
+        self.assertEqual(self.segments(), ["done", "now", ""])
+
+    def test_the_first_phase_fills_nothing_yet(self):
+        self.under_way(JobKind.PIPELINE, "persons", phase=0)
+        self.assertEqual(self.segments(), ["now", "", ""])
+
+    def test_the_last_one_leaves_none_empty(self):
+        self.under_way(JobKind.PIPELINE, "пересборка карты", phase=2)
+        self.assertEqual(self.segments(), ["done", "done", "now"])
+
+    def test_a_single_step_gets_no_bar(self):
+        # There is nothing to divide: it is one thing, not three.
+        self.under_way(JobKind.MAP, "пересборка карты")
+        self.assertEqual(self.segments(), [])
+
+    def test_the_step_is_still_named_beside_it(self):
+        # The bar answers "how much is left", the words answer "what now".
+        self.under_way(JobKind.PIPELINE, "repositories", phase=0)
+        self.assertIn("repositories", self.client.get("/jobs").text)

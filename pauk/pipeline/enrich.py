@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 from pauk.pipeline.stages import ALL_STAGES, OPTIONAL_STAGES
 from pauk.pipeline.stages.base import PreparedSelection
 from pauk.settings import Settings, settings
 from pauk.storage import PreparedStore, RawStore
+
+#: Called before each stage with its name, how many are already behind it,
+#: and how many there are. A run takes hours; without this the only thing it
+#: says about itself is that it is alive.
+OnStage = Callable[[str, int, int], None]
 
 
 class Enricher:
@@ -21,7 +28,7 @@ class Enricher:
 
     def run(self, stage_name: str | None = None,
             selection: PreparedSelection | None = None,
-            force: bool = False) -> dict[str, int]:
+            force: bool = False, on_stage: OnStage | None = None) -> dict[str, int]:
         if stage_name not in (None, "all") and stage_name not in self.stages:
             available = ", ".join(self.stages)
             raise ValueError(f"unknown enrichment stage {stage_name!r}; choose one of: {available}, all")
@@ -30,7 +37,9 @@ class Enricher:
         # No GroupLock here (unlike origin/main pre-Mongo): removed in #102,
         # see the matching note in pauk/pipeline/collect.py::collect.
         with logging_redirect_tqdm():
-            for stage_class in classes:
+            for done, stage_class in enumerate(classes):
+                if on_stage is not None:
+                    on_stage(stage_class.name, done, len(classes))
                 for key, value in stage_class(self.prepared, self.raw, self.config, selection, force).run().items():
                     result[key] = result.get(key, 0) + value
         return result

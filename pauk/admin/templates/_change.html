@@ -8,8 +8,10 @@
   <b>{{ field }}</b>
   {# Значения нет — не показываем прочерк: при создании нечему было
      пропадать, при удалении нечему появляться. #}
-  {% if was is not none %}<span class="was">{{ was }}</span>{% endif %}
-  {% if now is not none %}<span class="now">{{ now }}</span>{% endif %}
+  {# Длинное значение приходит уже свёрнутым, чтобы страница не показала
+     его целиком и не сложила потом на глазах у читателя. #}
+  {% if was is not none %}<span class="was{% if was|is_long %} clipped{% endif %}">{{ was }}</span>{% endif %}
+  {% if now is not none %}<span class="now{% if now|is_long %} clipped{% endif %}">{{ now }}</span>{% endif %}
   {% if was is none and now is none %}<span class="muted">—</span>{% endif %}
 </div>
 {% endmacro %}

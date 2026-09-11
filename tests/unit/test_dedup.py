@@ -2,9 +2,11 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import mongomock
 
+from pauk.graph import dedup as graph_dedup
 from pauk.graph.dedup import (
     dedup_graph_persons,
     dedup_graph_publications,
@@ -23,7 +25,7 @@ from pauk.models import (
 from pauk.pipeline.stages.author_names import RussianNamesCatalog
 from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage
 from pauk.settings import Settings
-from pauk.storage import PreparedStore, RawStore
+from pauk.storage import PreparedStore, RawStore, review
 from tests.bench.mocks import RecordingNeo4jClient
 
 CATALOG_HEADER = "name_ru,surname,name,patronymic,degree\n"
@@ -959,3 +961,437 @@ class LoaderPersonMergeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReviewDecisionsTest(unittest.TestCase):
+    """What a person decided outranks the rules, and outlives the run.
+
+    The rules hold a pair back when the evidence runs out, and until now
+    every later run held the same pair back again. An answer has to reach
+    the rules themselves, because a merge cannot be undone afterwards.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.config = Settings(data_dir=Path(tmp.name))
+        self.prepared = PreparedStore(self.db, "sample")
+        self.raw = RawStore(self.db, "sample")
+
+    def namesakes(self):
+        """Two ITMO people with one name and nothing else in common.
+
+        Exactly the pair the rules refuse: identical name, no shared
+        coauthor, no shared department, no shared field.
+        """
+        return [person("A1", "Ivan Smirnov", ["W1"]),
+                person("A2", "Ivan Smirnov", ["W2"])]
+
+    def run_stage(self, people):
+        self.prepared.write_models("persons", people)
+        result = DedupStage(self.prepared, self.raw, self.config).run()
+        return result, {p.id: p for p in self.prepared.read_models("persons", Person)}
+
+    def journal(self, status=None):
+        path = self.config.audit_dir / self.prepared.group / CANDIDATES_FILENAME
+        rows = [json.loads(line) for line in
+                path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        return [row for row in rows if status is None or row["status"] == status]
+
+    def test_a_held_pair_becomes_a_question(self):
+        self.run_stage(self.namesakes())
+        (question,) = review.questions(self.db)
+        self.assertEqual(question["members"], ["A1", "A2"])
+        self.assertEqual(question["kind"], review.PAIR)
+        self.assertIn("identical name with nothing corroborating it",
+                      question["evidence"]["held_because"])
+
+    def test_answering_different_stops_the_question_coming_back(self):
+        # The point of storing the answer at all. Without it the same pair
+        # is held again by every run for ever.
+        self.run_stage(self.namesakes())
+        self.assertEqual(len(self.journal("held")), 1)
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.DIFFERENT,
+                              actor="user:roman")
+        result, people = self.run_stage(self.namesakes())
+        self.assertEqual(self.journal("held"), [])
+        self.assertEqual(result["dedup_merged"], 0)
+        self.assertEqual(set(people), {"A1", "A2"})
+
+    def test_answering_same_merges_what_the_rules_refused(self):
+        self.run_stage(self.namesakes())
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME,
+                              actor="user:roman")
+        result, people = self.run_stage(self.namesakes())
+        self.assertEqual(result["dedup_merged"], 1)
+        self.assertEqual(set(people), {"A1"})
+        self.assertEqual(people["A1"].merged_ids, ["A2"])
+        (applied,) = self.journal("merged")
+        self.assertEqual(applied["rules"], ["manual"])
+
+    def test_a_merge_nobody_would_have_paired_still_happens(self):
+        # _paired_persons only offers people who share a name token, an
+        # ORCID or a staff record. An answer must not depend on whether a
+        # blocking heuristic happened to put the two in one bucket.
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)
+        result, people = self.run_stage([
+            person("A1", "Ivan Smirnov", ["W1"]),
+            person("A2", "Anna Volkova", ["W2"]),
+        ])
+        self.assertEqual(result["dedup_merged"], 1)
+        self.assertEqual(set(people), {"A1"})
+
+    def test_an_answer_about_somebody_absent_does_nothing(self):
+        review.record_verdict(self.db, review.PAIR, ["A1", "A9"], review.SAME)
+        result, people = self.run_stage(self.namesakes())
+        self.assertEqual(result["dedup_merged"], 0)
+        self.assertEqual(set(people), {"A1", "A2"})
+
+    def test_a_contradicting_group_is_still_refused(self):
+        # The one thing an answer does not outrank. Two ORCIDs in one group
+        # mean the group describes more than one person, and merging it
+        # would be a decision to ignore an identity field.
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)
+        review.record_verdict(self.db, review.PAIR, ["A2", "A3"], review.SAME)
+        result, people = self.run_stage([
+            person("A1", "Ivan Smirnov", ["W1"], orcid="0000-0001"),
+            person("A2", "Ivan Smirnov", ["W2"]),
+            person("A3", "Ivan Smirnov", ["W3"], orcid="0000-0002"),
+        ])
+        self.assertEqual(result["dedup_merged"], 0)
+        self.assertEqual(set(people), {"A1", "A2", "A3"})
+        (refused,) = self.journal("held")
+        self.assertEqual(refused["persons"], ["A1", "A2", "A3"])
+
+    def test_an_answer_survives_its_subject_being_folded(self):
+        # A2 is answered about, then merged away by an unrelated rule. The
+        # answer is stored under an id no row carries any more.
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.DIFFERENT)
+        self.run_stage([
+            person("A1", "Ivan Smirnov", ["W1"]),
+            person("A3", "Ivan Smirnov", ["W2"], merged=["A2"]),
+        ])
+        found = review.decisions(self.db, {"A2": "A3"})
+        self.assertEqual(found, {frozenset({"A1", "A3"}): review.DIFFERENT})
+
+
+class GraphPassReviewTest(unittest.TestCase):
+    """The graph-wide pass asks and answers the same questions."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.config = Settings(data_dir=Path(tmp.name))
+        self.client = RecordingNeo4jClient()
+
+    def namesakes(self):
+        return [person("A1", "Ivan Smirnov", ["W1"]),
+                person("A2", "Ivan Smirnov", ["W2"])]
+
+    def publish(self, people):
+        prepared = PreparedStore(self.db, "sample")
+        prepared.write_models("persons", people)
+        prepared.write_models("publications",
+                              [publication("W1", "One"), publication("W2", "Two")])
+        load_group(self.client, prepared)
+
+    def test_the_graph_pass_holds_the_pair_and_answers_hold_it_back(self):
+        self.publish(self.namesakes())
+        removed, report = dedup_graph_persons(self.client, {})
+        self.assertEqual(removed, 0)
+        self.assertEqual(len([row for row in report if row["status"] == "held"]), 1)
+
+        answered = dedup_graph_persons(
+            self.client, {}, decisions={frozenset({"A1", "A2"}): review.DIFFERENT})
+        self.assertEqual(answered, (0, []))
+
+    def test_the_graph_pass_merges_what_a_person_confirmed(self):
+        self.publish(self.namesakes())
+        removed, _ = dedup_graph_persons(
+            self.client, {}, decisions={frozenset({"A1", "A2"}): review.SAME})
+        self.assertEqual(removed, 1)
+        self.assertEqual(set(self.client.nodes["Person"]), {"A1"})
+
+    def test_the_whole_pass_files_its_questions(self):
+        # Through run_graph_dedup rather than the inner function, because
+        # the wiring being checked lives in the caller: it reads the answers
+        # and files what was held.
+        self.publish(self.namesakes())
+        with patch.object(graph_dedup, "audited_client", return_value=self.client):
+            result = graph_dedup.run_graph_dedup(self.config, self.db)
+        self.assertEqual(result["graph_dedup_candidates"], 1)
+        (question,) = review.questions(self.db)
+        self.assertEqual(question["members"], ["A1", "A2"])
+        self.assertEqual(question["source"], review.GRAPH)
+
+    def test_the_whole_pass_reads_the_answers_back(self):
+        self.publish(self.namesakes())
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME,
+                              actor="user:roman")
+        with patch.object(graph_dedup, "audited_client", return_value=self.client):
+            result = graph_dedup.run_graph_dedup(self.config, self.db)
+        self.assertEqual(result["graph_persons_merged"], 1)
+        self.assertEqual(set(self.client.nodes["Person"]), {"A1"})
+
+
+class DisputedAnswerTest(unittest.TestCase):
+    """A refusal is not forever. The evidence can move under it.
+
+    Somebody says two records are two people; a later run finds them a
+    shared coauthor, and a rule that had nothing to stand on now fires.
+    The answer still wins, but the disagreement has to surface.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.config = Settings(data_dir=Path(tmp.name))
+        self.prepared = PreparedStore(self.db, "sample")
+        self.raw = RawStore(self.db, "sample")
+
+    def run_stage(self, people):
+        self.prepared.write_models("persons", people)
+        return DedupStage(self.prepared, self.raw, self.config).run()
+
+    def apart(self):
+        """Two namesakes with nothing in common, and a person saying so."""
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.DIFFERENT,
+                              actor="user:roman", note="two physicists")
+        return [person("A1", "Ivan Smirnov", ["W1"]),
+                person("A2", "Ivan Smirnov", ["W2"])]
+
+    def test_evidence_that_has_not_moved_raises_nothing(self):
+        self.run_stage(self.apart())
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+
+    def test_a_rule_that_now_fires_is_reported(self):
+        people = self.apart()
+        # A coauthor they now share outside the works they wrote together,
+        # which is what rule 3 was missing.
+        people.append(person("A3", "Petr Volkov", ["W1", "W2"]))
+        self.run_stage(people)
+        (row,) = review.questions(self.db, disputed=True)
+        self.assertEqual(row["members"], ["A1", "A2"])
+        self.assertEqual(row["disputed_rule"], "same_name")
+        self.assertEqual(row["verdict"], review.DIFFERENT)
+
+    def test_the_answer_still_wins(self):
+        people = self.apart()
+        people.append(person("A3", "Petr Volkov", ["W1", "W2"]))
+        result = self.run_stage(people)
+        self.assertEqual(result["dedup_merged"], 0)
+        remaining = {p.id for p in self.prepared.read_models("persons", Person)}
+        self.assertEqual(remaining, {"A1", "A2", "A3"})
+
+    def test_an_answered_pair_is_not_asked_again(self):
+        self.run_stage(self.apart())
+        self.assertEqual(review.count(self.db, answered=False), 0)
+
+    def test_confirming_the_answer_clears_the_disagreement(self):
+        people = self.apart()
+        people.append(person("A3", "Petr Volkov", ["W1", "W2"]))
+        self.run_stage(people)
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.DIFFERENT,
+                              actor="user:roman", note="still two people")
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+
+    def test_changing_your_mind_merges_them_next_run(self):
+        people = self.apart()
+        people.append(person("A3", "Petr Volkov", ["W1", "W2"]))
+        self.run_stage(people)
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME,
+                              actor="user:roman")
+        result = self.run_stage(people)
+        self.assertEqual(result["dedup_merged"], 1)
+
+
+class SplitGroupEndToEndTest(unittest.TestCase):
+    """A group refused by the rules, resolved by a person, applied by the rules.
+
+    The case the panel was a dead end for: three records under one name,
+    two addresses between them, and a bridge record carrying no address at
+    all — which is how the group forms in the first place.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.config = Settings(data_dir=Path(tmp.name))
+        self.prepared = PreparedStore(self.db, "sample")
+        self.raw = RawStore(self.db, "sample")
+
+    def trio(self):
+        return [person("A1", "Andrey Bogdanov", ["W1"], email="ab@itmo.ru"),
+                person("A2", "Andrey Bogdanov", ["W2"]),
+                person("A3", "Andrey Bogdanov", ["W3"], email="other@itmo.ru"),
+                person("A9", "Petr Volkov", ["W1", "W2", "W3"])]
+
+    def run_stage(self):
+        self.prepared.write_models("persons", self.trio())
+        result = DedupStage(self.prepared, self.raw, self.config).run()
+        return result, {p.id for p in self.prepared.read_models("persons", Person)}
+
+    def test_the_group_is_refused_and_asked_about(self):
+        result, people = self.run_stage()
+        self.assertEqual(result["dedup_merged"], 0)
+        self.assertEqual(people, {"A1", "A2", "A3", "A9"})
+        (question,) = review.questions(self.db, kind=review.GROUP)
+        self.assertEqual(question["members"], ["A1", "A2", "A3"])
+
+    def test_naming_one_pair_alone_changes_nothing(self):
+        # The rules rebuild the same group through A3 and refuse it again.
+        # This is why a split has to record the pairs across it as well.
+        self.run_stage()
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)
+        result, people = self.run_stage()
+        self.assertEqual(result["dedup_merged"], 0)
+        self.assertEqual(people, {"A1", "A2", "A3", "A9"})
+
+    def test_a_split_is_carried_out_on_the_next_run(self):
+        self.run_stage()
+        review.record_split(self.db, ["A1", "A2", "A3"], ["A1", "A2"],
+                            actor="user:roman")
+        result, people = self.run_stage()
+        self.assertEqual(result["dedup_merged"], 1)
+        self.assertEqual(people, {"A1", "A3", "A9"})
+
+    def test_the_group_stops_being_asked_about(self):
+        self.run_stage()
+        review.record_split(self.db, ["A1", "A2", "A3"], ["A1", "A2"])
+        self.run_stage()
+        self.assertEqual(review.count(self.db, kind=review.GROUP, answered=False), 0)
+
+
+class StaffCatalogQuestionTest(unittest.TestCase):
+    """Names the catalog holds twice, and the person who can tell them apart.
+
+    The catalog refuses to guess between two Andrei Kuznetsovs and is right
+    to: handing one of them the other's official record is the namesake bug
+    the whole module is built to avoid. Somebody at the university knows,
+    and their answer is what rule 4 was missing.
+    """
+
+    CATALOG = ["Кузнецов Андрей Геннадьевич,Кузнецов,Андрей,Геннадьевич,",
+               "Кузнецов Андрей Дмитриевич,Кузнецов,Андрей,Дмитриевич,"]
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.config = Settings(data_dir=Path(tmp.name))
+        self.config.static_dir.mkdir(parents=True, exist_ok=True)
+        (self.config.static_dir / "russian_names.csv").write_text(
+            CATALOG_HEADER + "".join(f"{row}\n" for row in self.CATALOG), encoding="utf-8")
+        self.prepared = PreparedStore(self.db, "sample")
+        self.raw = RawStore(self.db, "sample")
+
+    def run_stage(self, people):
+        self.prepared.write_models("persons", people)
+        result = DedupStage(self.prepared, self.raw, self.config).run()
+        return result, {p.id for p in self.prepared.read_models("persons", Person)}
+
+    def split_records(self):
+        """One researcher, two OpenAlex records, nothing tying them together."""
+        return [person("A1", "Andrei Kuznetsov", ["W1"]),
+                person("A2", "Kuznetsov Andrei", ["W2"])]
+
+    def test_a_name_the_catalog_holds_twice_becomes_a_question(self):
+        self.run_stage(self.split_records())
+        staff = review.questions(self.db, kind=review.STAFF)
+        self.assertEqual(len(staff), 2)
+        asked = {row["evidence"]["person"] for row in staff}
+        self.assertEqual(asked, {"A1", "A2"})
+        (one,) = [row for row in staff if row["evidence"]["person"] == "A1"]
+        self.assertEqual(sorted(one["evidence"]["records"]),
+                         ["kuznetsov|andrei|dmitrievich", "kuznetsov|andrei|gennadevich"])
+
+    def test_a_name_the_catalog_places_is_not_asked_about(self):
+        self.run_stage([person("A1", "Nikolay Nikitin", ["W1"])])
+        self.assertEqual(review.count(self.db, kind=review.STAFF), 0)
+
+    def test_a_name_given_as_initials_is_not_asked_about(self):
+        # "A. Kuznetsov" stands for every Kuznetsov whose given name starts
+        # with an A, including ones this catalog does not list. There is no
+        # closed set of records to choose between.
+        self.run_stage([person("A1", "A. Kuznetsov", ["W1"])])
+        self.assertEqual(review.count(self.db, kind=review.STAFF), 0)
+
+    def test_the_records_are_shown_as_a_person_reads_them(self):
+        self.run_stage(self.split_records())
+        (one,) = [row for row in review.questions(self.db, kind=review.STAFF)
+                  if row["evidence"]["person"] == "A1"]
+        self.assertEqual(sorted(one["evidence"]["record_names"]),
+                         ["Кузнецов Андрей Геннадьевич", "Кузнецов Андрей Дмитриевич"])
+
+    def test_the_records_stay_split_while_nobody_answers(self):
+        result, people = self.run_stage(self.split_records())
+        self.assertEqual(result["dedup_merged"], 0)
+        self.assertEqual(people, {"A1", "A2"})
+
+    def test_choosing_one_record_for_both_folds_them(self):
+        # Rule 4: two people resolving to the same staff record are one
+        # employee, whatever their spellings look like.
+        self.run_stage(self.split_records())
+        for person_id in ("A1", "A2"):
+            review.record_choice(self.db, person_id,
+                                 ["kuznetsov|andrei|gennadevich",
+                                  "kuznetsov|andrei|dmitrievich"],
+                                 "kuznetsov|andrei|gennadevich", actor="user:roman")
+        result, people = self.run_stage(self.split_records())
+        self.assertEqual(result["dedup_merged"], 1)
+        self.assertEqual(people, {"A1"})
+
+    def test_choosing_different_records_keeps_them_apart(self):
+        self.run_stage(self.split_records())
+        review.record_choice(self.db, "A1", ["kuznetsov|andrei|gennadevich",
+                                             "kuznetsov|andrei|dmitrievich"],
+                             "kuznetsov|andrei|gennadevich")
+        review.record_choice(self.db, "A2", ["kuznetsov|andrei|gennadevich",
+                                             "kuznetsov|andrei|dmitrievich"],
+                             "kuznetsov|andrei|dmitrievich")
+        result, people = self.run_stage(self.split_records())
+        self.assertEqual(result["dedup_merged"], 0)
+        self.assertEqual(people, {"A1", "A2"})
+
+    def test_an_answered_person_is_not_asked_again(self):
+        self.run_stage(self.split_records())
+        review.record_choice(self.db, "A1", ["kuznetsov|andrei|gennadevich",
+                                             "kuznetsov|andrei|dmitrievich"], None)
+        self.run_stage(self.split_records())
+        asked = {row["evidence"].get("person") for row
+                 in review.questions(self.db, kind=review.STAFF, answered=False)}
+        self.assertEqual(asked, {"A2"})
+
+    def test_a_record_outside_the_question_is_refused(self):
+        with self.assertRaises(review.ReviewError):
+            review.record_choice(self.db, "A1", ["kuznetsov|andrei|gennadevich"],
+                                 "someone|else|entirely")
+
+    def test_a_person_the_catalog_already_places_is_not_asked(self):
+        # One spelling names the patronymic and resolves to a single record;
+        # another is ambiguous. The catalog knows who this is, so there is
+        # nothing to ask — and asking anyway would put a settled person in
+        # the queue for somebody to puzzle over.
+        self.run_stage([person("A1", "Andrei Gennadevich Kuznetsov", ["W1"],
+                               variants=["Andrei Kuznetsov"])])
+        self.assertEqual(review.count(self.db, kind=review.STAFF), 0)
+
+    def test_a_choice_survives_its_person_being_folded(self):
+        # The choice is about A2; a later run knows A2 only as an id A1
+        # swallowed. Read without the alias map, rule 4 loses it and the
+        # records this answer was meant to fold stay split.
+        gennadevich = "kuznetsov|andrei|gennadevich"
+        for person_id in ("A2", "A4"):
+            review.record_choice(self.db, person_id,
+                                 ["kuznetsov|andrei|gennadevich",
+                                  "kuznetsov|andrei|dmitrievich"],
+                                 gennadevich, actor="user:katya")
+        survivor = person("A1", "Andrei Kuznetsov", ["W1"])
+        survivor.merged_ids = ["A2"]
+        result, people = self.run_stage([survivor, person("A4", "Kuznetsov Andrei", ["W2"])])
+        self.assertEqual(result["dedup_merged"], 1)
+        self.assertEqual(people, {"A1"})

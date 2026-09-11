@@ -12,14 +12,16 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 
 from pauk.admin.deps import Admin, CsrfChecked, CurrentUser, Db, Session, templates
-from pauk.jobs import store
+from pauk.jobs import locks, store
 from pauk.jobs.models import FINAL, JobKind, JobState
+from pauk.jobs.worker import PHASES
 from pauk.pipeline.selectors import PeriodSelector
 from pauk.pipeline.stages import ALL_STAGES
 from pauk.storage import PreparedStore
@@ -68,10 +70,24 @@ def _shown(job) -> dict:
         # Показывается, даже когда подбирать брошенные некому: без воркера
         # такая задача так и висела бы «идёт» без всяких оговорок.
         "stale": store.is_quiet(job),
+        "progress": job.progress,
+        # Одна полоска на фазу конвейера: пройденные закрашены, идущая
+        # отмечена, остальные пусты. Только у конвейера — у одиночной
+        # задачи делить нечего.
+        "phases": _phases(job),
         # Sorted so two renders list the counts the same way.
         "result": sorted((job.result or {}).items()),
         "payload": sorted((job.payload or {}).items()),
     }
+
+
+def _phases(job) -> list[str] | None:
+    """State of each pipeline phase: "done", "now" or "" for not yet."""
+    at = (job.progress or {}).get("phase")
+    if at is None:
+        return None
+    return ["done" if index < at else "now" if index == at else ""
+            for index in range(len(PHASES))]
 
 
 def _last_done(db) -> dict[str, object]:
@@ -136,9 +152,12 @@ def _collect_payload(form) -> dict:
     if work_id and (date_from or date_to):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "выберите либо одну работу, либо период — не оба сразу")
+    if not work_id and not date_from and not date_to:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "укажите период или одну работу по идентификатору")
     if not work_id and not (date_from and date_to):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "укажите работу или обе даты периода")
+                            "период задаётся двумя датами, вторая пустая")
     if date_from:
         # PeriodSelector raises ValueError both for a value that is not a
         # date and for a range the wrong way round, and one message for the
@@ -221,6 +240,37 @@ async def cancel(request: Request, user: Admin, db: Db, _: CsrfChecked):
     return RedirectResponse("/jobs", status_code=status.HTTP_303_SEE_OTHER)
 
 
+@router.post("/jobs/give-up")
+async def give_up(request: Request, user: Admin, db: Db, _: CsrfChecked):
+    """Close a run nothing is performing any more.
+
+    The worker settles abandoned jobs on its own, but only a running worker
+    does, and only after the lock lease has run out. A job cancelled before
+    it ever started holds nothing and is doing nothing; leaving it in "under
+    way" for a quarter of an hour tells everybody a lie.
+    """
+    form = await request.form()
+    job_id = str(form.get("job_id", "")).strip()
+    if not store.give_up(db, job_id, busy=locks.taken(db)):
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "задача ещё жива или уже закончилась")
+    logger.info("%s gave up on job %s", user.actor, job_id)
+    return RedirectResponse("/jobs", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/jobs/repeat")
+async def repeat(request: Request, user: Admin, db: Db, _: CsrfChecked):
+    """Queue the same run again after it failed."""
+    form = await request.form()
+    job_id = str(form.get("job_id", "")).strip()
+    job = store.repeat(db, job_id, actor=user.actor)
+    if job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            "повторить можно только законченную задачу")
+    logger.info("%s queued %s again as %s", user.actor, job_id, job.id)
+    return RedirectResponse("/jobs", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.post("/jobs")
 async def schedule(request: Request, user: Admin, db: Db, _: CsrfChecked):
     """Put a run in the queue.
@@ -236,11 +286,19 @@ async def schedule(request: Request, user: Admin, db: Db, _: CsrfChecked):
                             f"неизвестный вид задачи: {form.get('kind')!r}") from None
     try:
         job = store.enqueue(db, kind, _payload_from(kind, db, form), actor=user.actor)
+    except HTTPException as error:
+        # A form filled in wrongly goes back to the form, not to a page with
+        # a status code on it: everything typed is still there to correct,
+        # and an error page loses it.
+        if error.status_code != status.HTTP_400_BAD_REQUEST:
+            raise
+        return RedirectResponse(f"/jobs?problem={quote(str(error.detail))}",
+                                status_code=status.HTTP_303_SEE_OTHER)
     except ValidationError as error:
         # The payload models refuse it before anything is stored.
         first = error.errors()[0]
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            f"{'.'.join(str(part) for part in first['loc'])}: "
-                            f"{first['msg']}") from None
+        detail = (f"{'.'.join(str(part) for part in first['loc'])}: {first['msg']}")
+        return RedirectResponse(f"/jobs?problem={quote(detail)}",
+                                status_code=status.HTTP_303_SEE_OTHER)
     logger.info("%s queued a %s job: %s", user.actor, kind, job.id)
     return RedirectResponse(f"/jobs?queued={job.id}", status_code=status.HTTP_303_SEE_OTHER)

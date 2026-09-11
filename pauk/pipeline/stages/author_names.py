@@ -385,6 +385,14 @@ class RussianNamesCatalog:
         # person the other's official record, so the key is unusable for
         # match()/staff_id() below - kept out of by_key entirely.
         self.by_key = {key: rows[0] for key, rows in keyed.items() if len(rows) == 1}
+        # The same keys, kept for the panel to ask about: the rules cannot
+        # choose between two namesakes, somebody at the university can.
+        # Spelled-out forms only — "A. Kuznetsov" stands for every Kuznetsov
+        # on an A, including ones this catalog does not list.
+        self.namesakes_by_key = {
+            key: rows for key, rows in keyed.items()
+            if len(rows) > 1 and key in spelled_out
+        }
         # Identity is claimed only from the forms that spell the given name
         # out. "A. Duhanov" is good enough to write a name onto a card, but
         # it stands for every Duhanov whose given name starts with an A —
@@ -507,6 +515,25 @@ class RussianNamesCatalog:
             if row is not None:
                 return None if self._contradicts(person.name_raw, row) else _record_id(row)
         return None
+
+    def namesakes(self, person: Person) -> list[dict]:
+        """The catalog records this person's name cannot be told apart from.
+
+        Empty when the name resolves to one record, to none, or is written
+        down to initials — in the last case the candidates are not a closed
+        set and there is nothing to choose between.
+
+        The first spelling that hits is the answer: a person is asked about
+        once, and asking again under another of their spellings would be the
+        same question twice.
+        """
+        for name in (person.name_raw, *person.name_variants):
+            if not name:
+                continue
+            rows = self.namesakes_by_key.get(_fold(name))
+            if rows:
+                return rows
+        return []
 
     @staticmethod
     def _contradicts(name: str | None, row: dict) -> bool:

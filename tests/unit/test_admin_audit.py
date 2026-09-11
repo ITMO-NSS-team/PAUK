@@ -439,3 +439,95 @@ class ChangeLookTest(unittest.TestCase):
         page = self.client.get("/audit").text
         self.assertIn("без разбора по полям", page)
         self.assertEqual(self.blocks(), [])
+
+
+class FoldedOnArrivalTest(unittest.TestCase):
+    """A long value comes down already folded.
+
+    The script used to measure every value after the page had been painted,
+    so a screenful of article text appeared in full and collapsed under the
+    reader a moment later. The server knows the length; the browser should
+    not have to find out.
+    """
+
+    LONG = "1 УДК 005.94 Роль больших языковых моделей в управлении знаниями. " * 6
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def feed(self, value):
+        self.db[feed.COLLECTION].delete_many({})
+        self.db[feed.COLLECTION].insert_one(entry(diff={"full_text": [None, value]}))
+        return self.client.get("/audit").text
+
+    def test_a_long_value_arrives_folded(self):
+        body = self.feed(self.LONG)
+        self.assertIn('class="now clipped"', body)
+
+    def test_a_short_value_does_not(self):
+        # Folding it would send the browser a box to un-fold, which is the
+        # flash the mark exists to avoid, only backwards.
+        body = self.feed("Пётр")
+        self.assertIn('class="now"', body)
+        # Только в разметке: слово стоит и в самом скрипте.
+        self.assertNotIn('class="now clipped"', body)
+
+    def test_the_page_carries_no_measuring_pass(self):
+        # The script must not walk every value on the page: with a few
+        # hundred of them that is a forced layout each time.
+        body = self.feed(self.LONG)
+        self.assertNotIn('querySelectorAll(".was, .now, .clip")', body)
+        self.assertIn('querySelectorAll(".clipped")', body)
+
+
+class FeedFiltersTest(unittest.TestCase):
+    """Narrowing the feed by date, and reading it forwards."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.db[feed.COLLECTION].insert_many([
+            entry(timestamp="2026-08-20T09:00:00", entity_id="A1"),
+            entry(timestamp="2026-08-22T10:00:00", entity_id="A2"),
+            entry(timestamp="2026-08-22T23:30:00", entity_id="A3"),
+            entry(timestamp="2026-08-25T11:00:00", entity_id="A4"),
+        ])
+
+    def ids(self, **filters):
+        return [row["entity_id"] for row in feed.entries(self.db, **filters)]
+
+    def test_a_range_holds_both_of_its_days_whole(self):
+        # An entry at half past eleven at night is still that day's entry.
+        self.assertEqual(self.ids(since="2026-08-22", until="2026-08-22"),
+                         ["A3", "A2"])
+
+    def test_an_open_ended_range_works_either_way(self):
+        self.assertEqual(self.ids(since="2026-08-22"), ["A4", "A3", "A2"])
+        self.assertEqual(self.ids(until="2026-08-22"), ["A3", "A2", "A1"])
+
+    def test_the_feed_can_be_read_forwards(self):
+        # What happened first is what somebody retracing a run wants.
+        self.assertEqual(self.ids(oldest_first=True), ["A1", "A2", "A3", "A4"])
+
+    def test_the_total_counts_what_the_page_shows(self):
+        # The two used to translate the filter names separately, and a page
+        # and a total that disagree send somebody looking for missing rows.
+        for filters in ({"kind": "updated"}, {"since": "2026-08-22"},
+                        {"actor": "user:roman", "until": "2026-08-20"}):
+            with self.subTest(**filters):
+                self.assertEqual(feed.count(self.db, **filters),
+                                 len(feed.entries(self.db, **filters)))
+
+    def test_the_page_offers_the_new_filters(self):
+        create_user(self.db, "roman", "hunter2", role="editor")
+        client = TestClient(build(Settings(), self.db), follow_redirects=False)
+        client.post("/login", data={"login": "roman", "password": "hunter2"})
+        body = client.get("/audit", params={"since": "2026-08-22", "order": "old"}).text
+        self.assertIn('name="since" value="2026-08-22"', body)
+        self.assertIn("Всего: 3", body)
+        self.assertIn('value="old" selected', body)

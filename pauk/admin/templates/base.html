@@ -18,8 +18,11 @@
   <a href="/overrides" class="section {% if request.url.path.startswith('/overrides') %}on{% endif %}">
     Ручные решения
   </a>
+  <a href="/review" class="section {% if request.url.path.startswith('/review') %}on{% endif %}">
+    Спорные случаи
+  </a>
   <a href="/jobs" class="section {% if request.url.path.startswith('/jobs') %}on{% endif %}">
-    Задачи
+    Пайплайн
   </a>
   <div class="who">
     <span class="muted">{{ user.login }} · {{ user.role }}</span>
@@ -41,11 +44,13 @@
 {% block content %}{% endblock %}</main>
 <script>
   {
-    const values = [...document.querySelectorAll(".was, .now, .clip")];
-    values.forEach((value) => value.classList.add("clipped"));
+    // Свёрнутые значения приходят такими с сервера, поэтому мерить нужно
+    // только их, а не всё подряд, и страница не прыгает при загрузке.
+    const values = [...document.querySelectorAll(".clipped")];
     const cut = values.map((value) => value.scrollHeight > value.clientHeight);
     values.forEach((value, index) => {
       if (!cut[index]) {
+        // Уместилось целиком: разворачивать нечего, и кнопка соврала бы.
         value.classList.remove("clipped");
         return;
       }

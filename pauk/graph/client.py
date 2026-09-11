@@ -56,6 +56,13 @@ def _merge_duplicate_properties(label: str, canonical: dict, duplicate: dict) ->
             if isinstance(duplicate_value, list):
                 current = canonical_value if isinstance(canonical_value, list) else []
                 merged = _union_values(current, duplicate_value)
+                if key == "merged_ids":
+                    # A stale entry on the duplicate can name the survivor
+                    # itself, and the union would make the node its own
+                    # alias. mutations.merge_nodes guards the list it
+                    # writes; this is the same guard on the list the fold
+                    # merges into it.
+                    merged = [value for value in merged if value != canonical.get("id")]
                 if merged != canonical_value:
                     updates[key] = merged
         elif key in json_list_fields:

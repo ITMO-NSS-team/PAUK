@@ -38,6 +38,7 @@ from pauk.pipeline.stages.dedup import (
     staff_identities,
 )
 from pauk.settings import Settings
+from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
 from pauk.urls import normalize_repo_url
 
@@ -158,7 +159,10 @@ def collect_raw_orcids(mongo_db: Database) -> dict[str, str | None]:
 
 
 def dedup_graph_persons(client, raw_orcids: dict[str, str | None],
-                        catalog: RussianNamesCatalog | None = None) -> tuple[int, list[dict]]:
+                        catalog: RussianNamesCatalog | None = None,
+                        decisions: dict[frozenset[str], str] | None = None,
+                        chosen: dict[str, str] | None = None,
+                        ) -> tuple[int, list[dict]]:
     """Fold duplicate Person nodes across all published groups.
 
     Args:
@@ -169,6 +173,11 @@ def dedup_graph_persons(client, raw_orcids: dict[str, str | None],
             it. This is where it pays off most: person records split across
             groups reach each other here for the first time, and the
             catalog reconciles spellings no shared coauthor corroborates.
+        decisions: Answers people gave about pairs the rules held back, read
+            by the caller because this function is given a graph client and
+            no database.
+        chosen: Catalog records people picked for the names the catalog
+            cannot tell apart, read by the caller for the same reason.
 
     Returns:
         (removed, report): the number of folded nodes and the review
@@ -201,7 +210,7 @@ def dedup_graph_persons(client, raw_orcids: dict[str, str | None],
     }
     groups, report = plan_person_merges(
         people, trusted_orcid, fields_of=client.fetch_publication_fields(),
-        staff_ids=staff_identities(catalog, people))
+        staff_ids=staff_identities(catalog, people, chosen), decisions=decisions)
 
     merges: list[tuple[str, str]] = []
     canonical_nodes: list[tuple[str, dict]] = []
@@ -409,11 +418,16 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         if catalog is None:
             logger.info("graph dedup: no staff catalog at %s — merging on names and profiles alone",
                         catalog_path(config))
+        # Read before the pass: an answer about somebody folded away since
+        # is stored under an id only the graph can still resolve.
+        folded = client.fetch_merged_id_map("Person")
+        answers = review.decisions(mongo_db, folded)
         # A fold deletes a node, and the review journal records the decision
         # but not what the node held. The audit entry does.
         with actor_context("etl-pipeline", source="dedup-graph"):
             persons_removed, person_report = dedup_graph_persons(
-                client, collect_raw_orcids(mongo_db), catalog)
+                client, collect_raw_orcids(mongo_db), catalog, decisions=answers,
+                chosen=review.staff_choices(mongo_db, folded))
             publications_removed, publication_report = dedup_graph_publications(client)
             repositories_removed, repository_report = dedup_graph_repositories(client)
 
@@ -422,6 +436,11 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
             for row in (*person_report, *publication_report, *repository_report)
         ]
         held = sum(1 for row in report if row["status"] == "held")
+        # Only the person rows: publications and repositories are folded on
+        # a DOI or a url and never hold anything back, so there is nothing
+        # to ask about and no pair of people to key a question on.
+        review.record_held(mongo_db, person_report, source=review.GRAPH)
+        review.record_disputed(mongo_db, person_report)
         journal_path = config.cache_dir / CANDIDATES_FILENAME
         with AtomicWriter(journal_path) as fh:
             for row in report:

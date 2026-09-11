@@ -98,10 +98,18 @@ from pauk.pipeline.normalize import (
     _merge_person,
     _short_id,
 )
+from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
+from pauk.storage.review import DIFFERENT, SAME
 from pauk.urls import normalize_repo_url
 
-from .author_names import RussianNamesCatalog, _fold, _unmix_alphabets, catalog_path
+from .author_names import (
+    RussianNamesCatalog,
+    _fold,
+    _record_id,
+    _unmix_alphabets,
+    catalog_path,
+)
 from .base import EnrichmentStage
 
 logger = logging.getLogger(__name__)
@@ -257,12 +265,25 @@ def _is_initials_name(name: str) -> bool:
     return bool(INITIALS_NAME.match(name.strip()))
 
 
+def merge_rank(authored: int, orcid: str | None, node_id: str) -> tuple:
+    """Sort key deciding which record for one person survives a fold.
+
+    The one that carries the most work, then the one with an ORCID, then
+    the lower id so two runs over the same data agree. Shared with the
+    panel, which folds a pair the moment somebody confirms it: two rules
+    for picking a survivor would fold the same pair the other way round
+    depending on who did it.
+    """
+    return (-authored, orcid is None, node_id)
+
+
 def plan_person_merges(
     people: list[Person],
     trusted_orcid: dict[str, str | None],
     in_scope: set[str] | None = None,
     fields_of: dict[str, set[str]] | None = None,
     staff_ids: dict[str, str] | None = None,
+    decisions: dict[frozenset[str], str] | None = None,
 ) -> tuple[list[tuple[Person, list[Person]]], list[dict]]:
     """Decide which persons are one author and which pairs need human eyes.
 
@@ -274,6 +295,12 @@ def plan_person_merges(
         staff_ids: Staff-record identity per person id, for the people the
             official catalog resolves unambiguously (see staff_identities).
             Absent entries simply leave rule 4 out of that person's pairs.
+        decisions: Answers people gave about pairs the rules could not
+            settle (see pauk.storage.review). An answer outranks the rules:
+            "different" keeps a pair apart and out of the report, "same"
+            merges it whatever the evidence looks like. The one thing it
+            does not outrank is a group that contradicts itself — see
+            _group_conflict below.
 
     Returns:
         (groups, report): groups as (canonical, duplicates) tuples — the
@@ -287,6 +314,7 @@ def plan_person_merges(
     by_id = {person.id: person for person in people}
     fields_of = fields_of or {}
     staff_ids = staff_ids or {}
+    decisions = decisions or {}
 
     pub_authors: dict[str, set[str]] = {}
     for person in people:
@@ -339,13 +367,35 @@ def plan_person_merges(
     report: list[dict] = []
 
     def plan_pair(first: Person, second: Person, rule: str) -> None:
+        """Put a pair up for merging, unless somebody said they are two people.
+
+        A refusal is not forever: the pair may have gained a shared coauthor
+        since, and a rule that had nothing to stand on now does. That is
+        worth showing rather than acting on — the person who answered knew
+        something the rules do not, and quietly merging over them is the one
+        thing this whole mechanism exists to prevent.
+        """
+        if decisions.get(frozenset((first.id, second.id))) == DIFFERENT:
+            report.append({
+                "status": "disputed",
+                "person_a": first.id, "name_a": first.name_raw,
+                "person_b": second.id, "name_b": second.name_raw,
+                "rule": rule,
+            })
+            return
         merge_pairs.append((first.id, second.id))
         pair_rules[frozenset((first.id, second.id))] = rule
 
     for first, second in _paired_persons(people, in_scope, staff_ids):
         # A pooled record stands for everyone OpenAlex could not tell apart,
-        # so it is nobody in particular and merges with nothing.
+        # so it is nobody in particular and merges with nothing. Ahead of the
+        # answers below: such a pair never reaches the queue to be asked about.
         if _is_pooled_record(first) or _is_pooled_record(second):
+            continue
+        # A confirmed merge skips the rules; a refusal does not, because the
+        # evidence may have moved since. See plan_pair.
+        if decisions.get(frozenset((first.id, second.id))) == SAME:
+            plan_pair(first, second, "manual")
             continue
         # Two names that disagree on a part both spell out are two people,
         # however well a name variant of one fits the other.
@@ -398,7 +448,10 @@ def plan_person_merges(
             plan_pair(first, second, "name_variant")
         elif same_name and both_itmo and multi_token and not initials_only and corroboration:
             plan_pair(first, second, "same_name")
-        elif first.is_itmo or second.is_itmo:
+        elif (first.is_itmo or second.is_itmo) and frozenset(
+                (first.id, second.id)) not in decisions:
+            # Asked once and answered. Asking again every run is how a queue
+            # dies, and nothing here is new to ask about.
             reasons = []
             if not both_itmo:
                 reasons.append("only one person is ITMO-affiliated")
@@ -419,6 +472,22 @@ def plan_person_merges(
                 "shared_fields": sorted(shared_fields),
                 "held_because": reasons,
             })
+
+    # A merge somebody asked for, on a pair the blocking never offered.
+    # _paired_persons only yields people who share a name token, an ORCID or
+    # a staff record; a person who renamed, or whose namesake left the
+    # selection, would silently lose the answer made about them.
+    for members, verdict in decisions.items():
+        if verdict != SAME or len(members) != 2:
+            continue
+        first_id, second_id = sorted(members)
+        if first_id not in by_id or second_id not in by_id:
+            continue
+        if frozenset((first_id, second_id)) in pair_rules:
+            continue
+        if in_scope is not None and first_id not in in_scope and second_id not in in_scope:
+            continue
+        plan_pair(by_id[first_id], by_id[second_id], "manual")
 
     groups: list[tuple[Person, list[Person]]] = []
     for members in _grouped(merge_pairs):
@@ -441,7 +510,7 @@ def plan_person_merges(
             continue
         ranked = sorted(
             (by_id[member] for member in members),
-            key=lambda p: (-len(p.authored), p.orcid is None, p.id),
+            key=lambda p: merge_rank(len(p.authored), p.orcid, p.id),
         )
         canonical, duplicates = ranked[0], ranked[1:]
         groups.append((canonical, duplicates))
@@ -503,17 +572,69 @@ def _grouped(pairs: Iterable[tuple[str, str]]) -> Iterator[list[str]]:
             yield members
 
 
+def folded_ids(people: Iterable[Person]) -> dict[str, str]:
+    """Ids folded away, pointing at the person who survived.
+
+    An answer given about somebody who has since been merged is stored under
+    an id nothing carries any more. Every reader of those answers needs this,
+    which is why it lives here rather than on one stage.
+    """
+    return {folded: person.id for person in people for folded in person.merged_ids}
+
+
 def staff_identities(catalog: RussianNamesCatalog | None,
-                     people: Iterable[Person]) -> dict[str, str]:
+                     people: Iterable[Person],
+                     chosen: dict[str, str] | None = None) -> dict[str, str]:
     """Staff-record identity per person id, for the ones the catalog knows.
 
     An empty mapping — no catalog on this deployment, or nobody matched —
     simply leaves rule 4 out of the merge decision.
+
+    Args:
+        chosen: Records people picked for the names the catalog cannot tell
+            apart (see `RussianNamesCatalog.namesakes`). The catalog refuses
+            to guess between two Andrei Kuznetsovs and is right to; somebody
+            at the university knows which one this is, and their answer is
+            what rule 4 was missing.
     """
     if catalog is None:
         return {}
-    return {person.id: staff_id for person in people
-            if (staff_id := catalog.staff_id(person))}
+    chosen = chosen or {}
+    found = {}
+    for person in people:
+        staff_id = catalog.staff_id(person) or chosen.get(person.id)
+        if staff_id:
+            found[person.id] = staff_id
+    return found
+
+
+def staff_questions(catalog: RussianNamesCatalog | None, people: Iterable[Person],
+                    chosen: dict[str, str] | None = None) -> list[dict]:
+    """People whose name the catalog holds twice, for somebody to sort out.
+
+    Only asked where it would change something: a person the catalog
+    already places needs no question, and neither does one already answered.
+    """
+    if catalog is None:
+        return []
+    chosen = chosen or {}
+    questions = []
+    for person in people:
+        if catalog.staff_id(person) or person.id in chosen:
+            continue
+        rows = catalog.namesakes(person)
+        if not rows:
+            continue
+        questions.append({
+            "status": "held",
+            "person": person.id,
+            "name_raw": person.name_raw,
+            "records": [_record_id(row) for row in rows],
+            "record_names": [row.get("name_ru") or _record_id(row) for row in rows],
+            "record_degrees": [row.get("degree") for row in rows],
+            "held_because": ["the catalog holds several people under this name"],
+        })
+    return questions
 
 
 def _union(*lists: Iterable[str]) -> list[str]:
@@ -865,7 +986,8 @@ class DedupStage(EnrichmentStage):
                 for publication in self.prepared.read_models("publications", Publication)
                 if publication.fields
             },
-            staff_ids=self._staff_ids(people))
+            staff_ids=self._staff_ids(people),
+            decisions=review.decisions(self.prepared.db, folded_ids(people)))
 
         removed: set[str] = set()
         for canonical, duplicates in groups:
@@ -883,6 +1005,10 @@ class DedupStage(EnrichmentStage):
             self.prepared.write_models("persons", people)
 
         held = sum(1 for row in report if row["status"] == "held")
+        # The queue the panel reads. The file below stays: it is the whole
+        # run in one place, merges included, and people read it by eye.
+        review.record_held(self.prepared.db, report, source=review.STAGE)
+        review.record_disputed(self.prepared.db, report)
         report_path = self.config.audit_dir / self.prepared.group / CANDIDATES_FILENAME
         with AtomicWriter(report_path) as fh:
             for row in report:
@@ -903,7 +1029,14 @@ class DedupStage(EnrichmentStage):
         catalog = RussianNamesCatalog.load_if_present(path)
         if catalog is None:
             logger.info("dedup: no staff catalog at %s — merging on names and profiles alone", path)
-        return staff_identities(catalog, people)
+            return {}
+        chosen = review.staff_choices(self.prepared.db, folded_ids(people))
+        # Asked here rather than in the naming stage: this is the rule the
+        # answer unblocks, and the ambiguity is a property of the catalog
+        # and the name, so noticing it costs no model call.
+        review.record_held(self.prepared.db, staff_questions(catalog, people, chosen),
+                           source=review.STAGE)
+        return staff_identities(catalog, people, chosen)
 
     def _trusted_orcids(self, people: list[Person]) -> dict[str, str | None]:
         """ORCID per person id, preferring the raw OpenAlex author record.

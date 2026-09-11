@@ -35,9 +35,32 @@ def get_config(request: Request) -> Settings:
     return request.app.state.config
 
 
+#: How long the panel waits for Mongo before saying it is not there. The
+#: driver's own default is thirty seconds, which is a command being patient
+#: and a web request hanging.
+MONGO_TIMEOUT_MS = 2000
+
+#: Said whenever the panel cannot reach Mongo at all. Accounts, sessions,
+#: decisions and the queue all live there, so this is the whole panel being
+#: down rather than one page failing.
+MONGO_SILENT = "MongoDB не отвечает. Панель без неё работать не может."
+
+
 def get_session(request: Request, db: Annotated[Database, Depends(get_db)]) -> dict | None:
-    """The caller's session, or None. Never raises — used by the login page too."""
-    return read_session(db, request.cookies.get(COOKIE))
+    """The caller's session, or None when there is not one.
+
+    Raises:
+        HTTPException: 503 when Mongo cannot be reached. Sessions live
+            there, so an unreachable Mongo is not an anonymous visitor —
+            answering None would bounce somebody to a login page that
+            cannot work either, and every page would meanwhile have shown
+            a stack trace.
+    """
+    try:
+        return read_session(db, request.cookies.get(COOKIE))
+    except PyMongoError as error:
+        logger.warning("mongo is not answering, no session to read: %s", error)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, MONGO_SILENT) from None
 
 
 def require_user(session: Annotated[dict | None, Depends(get_session)]) -> User:
@@ -148,6 +171,26 @@ def graph_for(request: Request, user: Annotated[User, Depends(require_user)]) ->
         client.close()
 
 
+def graph_if_up(request: Request, user: Annotated[User, Depends(require_user)]) -> Iterator:
+    """The audited client, or None when the graph is not answering.
+
+    For a route that has something worth doing either way. Answering a
+    review question is one: the answer is written to Mongo and the rules
+    read it on their next run, so an unreachable Neo4j costs the merge that
+    could have happened now, not the decision itself.
+    """
+    try:
+        client = request.app.state.graph.audited(actor=user.actor, source="admin-ui")
+    except (ValueError, ServiceUnavailable, AuthError) as error:
+        logger.warning("graph unavailable, carrying on without it: %s", error)
+        yield None
+        return
+    try:
+        yield client
+    finally:
+        client.close()
+
+
 # Named aliases so routes read as `db: Db` instead of repeating the
 # Annotated form in every signature.
 logger = logging.getLogger("pauk.admin")
@@ -216,6 +259,24 @@ def job_words(kind) -> str:
 
 templates.env.filters["job_words"] = job_words
 
+
+# Length past which a value is rendered already folded. Low on purpose: a
+# needless button the script removes beats text cut with nothing saying so.
+LONG_VALUE = 160
+
+
+def is_long(value) -> bool:
+    """Whether a value should arrive folded rather than be folded on sight.
+
+    Decided here and not in the browser. The script used to measure every
+    value after the page had already been painted, so a screenful of article
+    text appeared in full and then collapsed under the reader.
+    """
+    return value is not None and len(str(value)) > LONG_VALUE
+
+
+templates.env.filters["is_long"] = is_long
+
 Db = Annotated[Database, Depends(get_db)]
 Config = Annotated[Settings, Depends(get_config)]
 Session = Annotated[dict | None, Depends(get_session)]
@@ -225,3 +286,4 @@ Admin = Annotated[User, Depends(require_admin)]
 CsrfChecked = Annotated[None, Depends(require_csrf)]
 StoresReady = Annotated[None, Depends(require_stores)]
 Graph = Annotated[object, Depends(graph_for)]
+MaybeGraph = Annotated[object | None, Depends(graph_if_up)]

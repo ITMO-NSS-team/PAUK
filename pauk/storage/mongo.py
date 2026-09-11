@@ -6,13 +6,21 @@ from pymongo.database import Database
 from pauk.settings import Settings
 
 
-def get_mongo_client(config: Settings) -> MongoClient:
+def get_mongo_client(config: Settings, timeout_ms: int | None = None) -> MongoClient:
     """Open a MongoDB client for the raw/prepared intermediate storage.
 
     Callers own the returned client and must close() it when done, same as
     Neo4jClient (see pauk/graph/client.py).
+
+    Args:
+        timeout_ms: How long to wait for a reachable server before giving
+            up. The driver's own default is thirty seconds, which suits a
+            command that would rather wait than fail; a caller answering a
+            web request passes something short.
     """
-    return MongoClient(config.mongo_uri)
+    if timeout_ms is None:
+        return MongoClient(config.mongo_uri)
+    return MongoClient(config.mongo_uri, serverSelectionTimeoutMS=timeout_ms)
 
 
 def ensure_indexes(db: Database) -> None:
@@ -36,3 +44,7 @@ def ensure_indexes(db: Database) -> None:
     # the panel warns an editor whenever a run is under way.
     db.jobs.create_index([("state", 1), ("created_at", 1)])
     db.jobs.create_index([("created_at", -1)])
+    # The review queue is opened on the unanswered questions, oldest first,
+    # and every dedup run reads back every answer given so far.
+    db.review_pairs.create_index([("verdict", 1), ("seen_at", 1)])
+    db.review_pairs.create_index([("members", 1)])

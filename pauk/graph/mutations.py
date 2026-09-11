@@ -378,10 +378,12 @@ def merge_nodes(client: Neo4jClient, label: str, duplicate_id: str, canonical_id
     and redirects the old id on every later publish. Without that entry the
     next publish recreates the node.
 
-    **This cannot be undone.** The duplicate is removed with its
-    relationships, and the audit diff covers node properties only — the
-    edges are gone with no record of what they were. Callers facing a human
-    must say so before doing it.
+    Nothing in the graph records which edge came from where afterwards,
+    so this is not undone from the graph. A Person can still be taken back
+    apart, because the prepared row it was published from describes its
+    node and all of its edges — see `pauk.graph.unmerge`. For the other two
+    labels there is no such reverse, and callers facing a human should say
+    so before folding.
 
     Returns:
         Number of nodes removed (0 or 1).

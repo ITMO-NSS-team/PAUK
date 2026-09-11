@@ -34,6 +34,21 @@
       {% endfor %}
     </select>
   </div>
+  <div class="pick">
+    <label for="since">С даты</label>
+    <input type="date" id="since" name="since" value="{{ filters.since }}">
+  </div>
+  <div class="pick">
+    <label for="until">По</label>
+    <input type="date" id="until" name="until" value="{{ filters.until }}">
+  </div>
+  <div class="pick">
+    <label for="order">Порядок</label>
+    <select id="order" name="order">
+      <option value="new" {% if order != "old" %}selected{% endif %}>сначала новые</option>
+      <option value="old" {% if order == "old" %}selected{% endif %}>сначала старые</option>
+    </select>
+  </div>
   <div class="id">
     <label for="entity_id">Идентификатор записи</label>
     <input type="text" id="entity_id" name="entity_id" value="{{ filters.entity_id }}">
@@ -43,7 +58,8 @@
     document.querySelectorAll("#filters select").forEach((box) =>
       box.addEventListener("change", () => box.form.submit()));
   </script>
-  {% if filters.actor or filters.entity_type or filters.entity_id or filters.kind %}
+  {% if filters.actor or filters.entity_type or filters.entity_id or filters.kind
+        or filters.since or filters.until or order == "old" %}
   <a href="/audit" class="muted" style="align-self:center">сбросить</a>
   {% endif %}
 </form>
@@ -81,9 +97,11 @@
 
 {% if pages > 1 %}
 <p style="margin-top:14px">
-  {% set qs = "&actor=" ~ filters.actor|urlencode ~ "&entity_type=" ~ filters.entity_type|urlencode ~ "&entity_id=" ~ filters.entity_id|urlencode ~ "&kind=" ~ filters.kind|urlencode %}
-  {% if page > 1 %}<a href="/audit?page={{ page - 1 }}{{ qs }}"><- новее</a>{% endif %}
-  {% if page < pages %}<a href="/audit?page={{ page + 1 }}{{ qs }}" style="margin-left:14px">старее -></a>{% endif %}
+  {% set qs = "&actor=" ~ filters.actor|urlencode ~ "&entity_type=" ~ filters.entity_type|urlencode ~ "&entity_id=" ~ filters.entity_id|urlencode ~ "&kind=" ~ filters.kind|urlencode ~ "&since=" ~ filters.since|urlencode ~ "&until=" ~ filters.until|urlencode ~ "&order=" ~ order|urlencode %}
+  {# Назад и вперёд, а не новее и старее: порядок переключается, и при
+     обратном «старее» указывало бы на страницу с более новыми записями. #}
+  {% if page > 1 %}<a href="/audit?page={{ page - 1 }}{{ qs }}"><- назад</a>{% endif %}
+  {% if page < pages %}<a href="/audit?page={{ page + 1 }}{{ qs }}" style="margin-left:14px">вперёд -></a>{% endif %}
 </p>
 {% endif %}
 {% endif %}

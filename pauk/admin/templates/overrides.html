@@ -40,9 +40,9 @@
       <tr>
         <td class="val"><a href="/nodes/{{ row.label }}/{{ row.target_id | urlencode }}">{{ row.title }}</a></td>
         <td><b>{{ row.field }}</b></td>
-        <td class="val"><span class="clip">{{ row.ours if row.ours is not none else "—" }}</span></td>
-        <td class="val"><span class="was">{{ row.was if row.was is not none else "—" }}</span></td>
-        <td class="val"><span class="now">{{ row.now if row.now is not none else "—" }}</span></td>
+        <td class="val"><span class="clip{% if row.ours|is_long %} clipped{% endif %}">{{ row.ours if row.ours is not none else "—" }}</span></td>
+        <td class="val"><span class="was{% if row.was|is_long %} clipped{% endif %}">{{ row.was if row.was is not none else "—" }}</span></td>
+        <td class="val"><span class="now{% if row.now|is_long %} clipped{% endif %}">{{ row.now if row.now is not none else "—" }}</span></td>
         <td class="muted">{{ row.actor }}<br>{{ row.when[:19]|replace("T", " ") }}</td>
       </tr>
       {% endfor %}

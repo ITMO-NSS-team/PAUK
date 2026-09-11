@@ -40,11 +40,8 @@ SESSION_HOURS = 12
 
 ATTEMPTS = "admin_login_attempts"
 
-# Failed logins tolerated before an account stops answering, and for how
-# long. Counted per login rather than per address: the panel sits behind a
-# VPN and often behind one proxy, so addresses say little, while the thing
-# worth protecting is the account. The lock is short on purpose — it costs
-# an attacker their guessing rate and costs the owner one coffee break.
+# Failed logins tolerated, and for how long. Counted per login, not per
+# address: behind a VPN and one proxy an address says little.
 MAX_FAILURES = 30
 LOCKOUT_MINUTES = 15
 
@@ -68,7 +65,17 @@ class AuthError(Exception):
 
 
 class TooManyAttempts(AuthError):
-    """The account is locked for a while after too many failures."""
+    """The account is locked for a while after too many failures.
+
+    Carries the wait in minutes so the page can say it in its own words.
+    The number is not a secret: failures are counted for logins that do not
+    exist too, so it tells an attacker nothing, and somebody who mistyped
+    their password needs to know whether to wait or to ask for help.
+    """
+
+    def __init__(self, message: str, minutes: int) -> None:
+        super().__init__(message)
+        self.minutes = minutes
 
 
 def _now() -> datetime:
@@ -224,7 +231,8 @@ def _refuse_while_locked(db: Database, login: str) -> None:
         db[ATTEMPTS].delete_one({"_id": login})
         return
     minutes = max(int((_aware(until) - _now()).total_seconds() // 60) + 1, 1)
-    raise TooManyAttempts(f"too many failed attempts; try again in {minutes} min")
+    raise TooManyAttempts(f"too many failed attempts; try again in {minutes} min",
+                          minutes)
 
 
 def _count_failure(db: Database, login: str) -> None:
