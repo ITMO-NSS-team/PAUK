@@ -393,12 +393,14 @@ def _run_relationship(args, client, db, actor: str) -> None:
 
 def _run_merge(args, client) -> None:
     # Merging deletes the duplicate together with its relationships, and
-    # the audit diff covers node properties only — there is nothing to
-    # restore the edges from afterwards.
+    # the audit diff covers node properties only. A Person can still be
+    # rebuilt from its prepared row (pauk.graph.unmerge), which is what the
+    # review queue's "split back" does; nothing rebuilds the other labels.
     if not args.yes:
         answer = input(
             f"Merge {args.label} {args.duplicate_id} into {args.canonical_id}?\n"
-            "This cannot be undone: the duplicate and its relationships are removed. [y/N] ")
+            "The duplicate and its relationships are removed. Only a Person can be "
+            "put back, from the panel, and only while its prepared row is there. [y/N] ")
         if answer.strip().lower() not in ("y", "yes"):
             raise SystemExit("cancelled")
     removed = merge_nodes(client, args.label, args.duplicate_id, args.canonical_id)

@@ -968,7 +968,9 @@ class ReviewDecisionsTest(unittest.TestCase):
 
     The rules hold a pair back when the evidence runs out, and until now
     every later run held the same pair back again. An answer has to reach
-    the rules themselves, because a merge cannot be undone afterwards.
+    the rules themselves: undoing a merge afterwards means rebuilding the
+    record from its prepared row, and this stage deletes that row when it
+    folds a pair.
     """
 
     def setUp(self):
