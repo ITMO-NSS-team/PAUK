@@ -26,13 +26,14 @@ next. A ring that walks no new repository ends the walk.
 from __future__ import annotations
 
 import logging
+from collections.abc import Collection, Iterable
 
 from pauk.models import GitHubProfile, Person, Repository
 from pauk.sources.github import GitHubClient
 from pauk.storage.static import StaticStore
 
 from .base import EnrichmentStage
-from .github_match import ITMO_IN_TEXT, GitHubMatchStage
+from .github_match import ITMO_IDENTITY_PATTERN, PETERSBURG_PATTERN, GitHubMatchStage
 from .repo_people import COMMIT_PAGES, _git_identities, _is_person
 
 logger = logging.getLogger(__name__)
@@ -47,31 +48,39 @@ MAX_REPOS_PER_SEED = 30
 MAX_RINGS = 5
 
 
-def is_itmo_organization(login: str, profile: GitHubProfile | None,
-                         catalog: frozenset[str]) -> bool:
-    """Whether an organization is ITMO's, and so worth walking into.
+def itmo_organization_status(login: str, profile: GitHubProfile | None,
+                             catalog: frozenset[str], *,
+                             repositories: Iterable[Repository] = (),
+                             confirmed: Collection[str] = ()) -> tuple[str, str]:
+    """Classify the evidence that an organization belongs to ITMO.
 
-    Three ways to tell, all of them about the organization itself: it is in
-    the curated catalogue, its login says ITMO, or its profile does.
-
-    Sharing a member with a confirmed account is deliberately *not* one of
-    them. That rule read as "an ITMO employee committed here", which is true
-    of google, microsoft, JetBrains and llvm-mirror — on real data it was the
-    only rule that ever fired, and it made seeds of all four. Walking into
-    them costs far more than API calls now: everyone credited on the
-    repositories they lead to becomes a GitHubProfile node.
-
-    A lab whose profile says nothing and whose login gives nothing away is
-    invisible here by design; that is what the catalogue is for.
+    Only ``confirmed`` organizations are safe traversal seeds. ``possible``
+    is intentionally diagnostic: a city or contributor can guide a review, but cannot make
+    us walk every Saint Petersburg organization.
     """
     if login.lower() in catalog:
-        return True
-    if ITMO_IN_TEXT.search(login):
-        return True
-    if profile is None:
-        return False
-    text = f"{profile.name or ''} {profile.description or ''} {profile.location or ''}"
-    return bool(ITMO_IN_TEXT.search(text))
+        return "confirmed", "catalog"
+    if ITMO_IDENTITY_PATTERN.search(login):
+        return "confirmed", "login"
+    profile = profile or GitHubProfile(id="", login=login)
+    identity_text = " ".join(filter(None, (
+        profile.name, profile.description, profile.company,
+    )))
+    if ITMO_IDENTITY_PATTERN.search(identity_text):
+        return "confirmed", "profile"
+    weak_text = " ".join(filter(None, (
+        profile.name, profile.description, profile.company, profile.location,
+    )))
+    if PETERSBURG_PATTERN.search(weak_text):
+        return "possible", "petersburg"
+    if any(
+        repository.owner_login == login
+        and any(contributor in confirmed for contributor in repository.contributors)
+        for repository in repositories
+    ):
+        # An employee may contribute to upstream projects outside ITMO.
+        return "possible", "itmo_contributor"
+    return "not_confirmed", ""
 
 
 class SocialGraphStage(EnrichmentStage):
@@ -86,12 +95,20 @@ class SocialGraphStage(EnrichmentStage):
         owner_logins = {repository.owner_login for repository in repositories
                         if repository.owner_login}
 
-        organizations = [
-            login for login in owner_logins
-            if (profiles.get(f"github_{login.lower()}") or GitHubProfile(
-                id="", login=login)).type == "organization"
-            and is_itmo_organization(login, profiles.get(f"github_{login.lower()}"), catalog)
-        ]
+        organizations = []
+        for login in owner_logins:
+            profile = profiles.get(f"github_{login.lower()}")
+            if (profile or GitHubProfile(id="", login=login)).type != "organization":
+                continue
+            status, reason = itmo_organization_status(
+                login, profile, catalog, repositories=repositories, confirmed=confirmed,
+            )
+            if status == "confirmed":
+                logger.info("social_graph: confirmed ITMO organization %s (%s)", login, reason)
+                organizations.append(login)
+            elif status == "possible":
+                logger.info("social_graph: possible ITMO organization %s (%s), not a seed",
+                            login, reason)
         return sorted(confirmed | set(organizations))
 
     def _harvest(self, client: GitHubClient, owner: str, name: str, url: str,
