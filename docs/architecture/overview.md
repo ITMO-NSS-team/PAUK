@@ -65,6 +65,7 @@ pauk/gui/web/graph-data.js, graph-search.js  статика для карты
 | `pauk/pipeline/` | collect → normalize → enrich → dedup | [pipeline/overview.md](pipeline/overview.md) |
 | `pauk/graph/` | JSONL/граф → Neo4j, дедуп на уровне графа | [neo4j-graph.md](neo4j-graph.md) |
 | `pauk/gui/` | снепшот → раскладка → статический сайт | [gui.md](gui.md) |
+| `pauk/paper_graph/` | разбор статьи (разделы → claims → файлы) из экспортов OSA | [paper-graph.md](paper-graph.md) |
 | `pauk/cache/` | снепшот графа на диск, дальше gui его читает | [cache.md](cache.md) |
 | `pauk/cli.py` | команды `pauk ...` | [cli.md](cli.md) |
 | — | деплой на лабораторный сервер | [deploy.md](deploy.md) |

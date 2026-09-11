@@ -15,8 +15,11 @@ data/static/russian_names.csv
 data/cache/*
 data/pdf/*
 data/audit/*
+# OSA paper exports - inputs to the article graph, not project data.
+data/paper_graphs/*
 !data/cache/.gitkeep
 !data/audit/.gitkeep
+!data/paper_graphs/.gitkeep
 
 pauk/gui/data/private/*
 !pauk/gui/data/private/.gitkeep

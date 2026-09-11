@@ -38,6 +38,11 @@ function showPubCard(key) {
       ? urls.map(u => `<a href="${esc(u)}" target="_blank">${esc(u.replace("https://github.com/", ""))}</a>`).join(", ")
       : `<span class="tag gray">${t("pub.none")}</span>`}</div>`;
   }
+  const paperGraph = typeof paperGraphOf === "function" ? paperGraphOf(key) : null;
+  if (paperGraph) {
+    const withCode = paperGraph.claims.filter(c => (c.files || []).length).length;
+    html += `<div class="card-row"><b>${t("pg.title")}</b> ${t("pg.cardHint", paperGraph.claims.length, withCode)}</div>`;
+  }
   html += `<div class="card-section">${t("pub.itmoAuthors", au.length)}</div><ul class="card-list">`;
   au.forEach(a => html += `<li data-k="${esc(a.key)}">${esc(authorDisplayName(a))}</li>`);
   html += `</ul>`;

@@ -347,6 +347,10 @@ function spShowPubProfile(key) {
     .map(([k]) => nodeByKey.get(k)).filter(Boolean);
   const repos = (pubRepos.get(key) || []).map(k => nodeByKey.get(k)).filter(Boolean);
   const urls = Array.isArray(n.code_url) ? n.code_url : [];
+  // Only papers an OSA run has been through have one; the rest of the
+  // profile is the same either way.
+  if (typeof pgResetFor === "function") pgResetFor(key);
+  const paperGraph = typeof paperGraphOf === "function" ? paperGraphOf(key) : null;
   const deptObj = deptById.get(n.dept), deptColor = deptObj?.color || "#9aa2ac";
 
   const spMain = document.getElementById("sp-main");
@@ -374,7 +378,10 @@ function spShowPubProfile(key) {
           `<li data-k="${esc(p.key)}"><div class="li-name">${esc(shortLabel(p.label))}</div><span class="li-count">${p.year || "?"}</span></li>`
         ).join("")}</ul></div>` : ""}
       </div>
+      ${paperGraph ? `<div class="sp-card pg-card" id="pg-card"></div>` : ""}
     </div>`;
+
+  if (paperGraph) pgRenderCard(document.getElementById("pg-card"), key);
 
   spMain.querySelectorAll("[data-dept-id]").forEach(el => {
     el.onclick = () => {

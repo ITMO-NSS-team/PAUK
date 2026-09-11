@@ -14,6 +14,7 @@ from pymongo.database import Database
 
 from pauk.cache import GraphSnapshotExporter
 from pauk.gui.generate_data import write_graph_files
+from pauk.gui.generate_paper_graphs import write_paper_graphs
 from pauk.gui.generate_stats import write_stats
 from pauk.jobs.locks import held
 from pauk.jobs.models import GRAPH
@@ -50,5 +51,8 @@ def _rebuild_locked(config: Settings, *, public: bool, seed: int,
         logger.info("map rebuild: snapshot at %s", snapshot_path)
     counts = write_graph_files(snapshot_path, out_dir, seed=seed, public=public)
     counts.update(write_stats(out_dir))
+    # Read off disk, not out of the snapshot - paper graphs come from OSA
+    # exports, so a rebuild picks up whatever has been dropped there since.
+    counts.update(write_paper_graphs(config.paper_graphs_dir, out_dir))
     logger.info("map rebuild: %s", ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
     return counts

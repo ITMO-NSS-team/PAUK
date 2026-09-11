@@ -41,7 +41,11 @@ REQUIRED_FILES = {
     "graph-stats.js": (DATA_DIR, f"python -m pauk.gui.generate_stats --out-dir {DATA_DIR}"),
 }
 
-_DATA_DIR_FILES = {name for name, (d, _cmd) in REQUIRED_FILES.items() if d == DATA_DIR}
+# paper-graphs.js is not in REQUIRED_FILES: an install with no OSA exports
+# is a normal install, and the profile page just shows no paper graph.
+_DATA_DIR_FILES = {name for name, (d, _cmd) in REQUIRED_FILES.items() if d == DATA_DIR} | {
+    "paper-graphs.js"
+}
 
 
 def _warn_missing_generated_files():

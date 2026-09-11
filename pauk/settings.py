@@ -65,6 +65,10 @@ class Settings:
         return self.data_dir / "prepared"
 
     @property
+    def paper_graphs_dir(self) -> Path:
+        return self.data_dir / "paper_graphs"
+
+    @property
     def cache_dir(self) -> Path:
         return self.data_dir / "cache"
 
