@@ -43,7 +43,9 @@ function selectDept(did) {
   if (c && map.getZoom() < DEPT_CLICK_ZOOM)
     map.flyTo({ center: proj(c[0], c[1]), zoom: DEPT_CLICK_ZOOM - 0.3, duration: 700 });
   map.setPaintProperty("dept-fill", "fill-opacity", ["case", ["==", ["get", "id"], did], 0.62, 0.08]);
-  showDeptCard(did);
+  // A territory on the repositories tab is a cluster, not necessarily a
+  // department — see showClusterCard in tab-repos.js.
+  if (tab === 2) showClusterCard(did); else showDeptCard(did);
   drawOverlay();
 }
 

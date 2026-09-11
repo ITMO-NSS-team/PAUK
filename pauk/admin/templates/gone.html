@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% import "_change.html" as show %}
+{% block content %}
+<h1>{{ label }} <span class="muted">{{ node_id }}</span></h1>
+<p class="note">Этой записи в графе нет.
+  {% if history %}Ниже изменения записи.{% endif %}</p>
+<p class="muted"><a href="/nodes/{{ label }}"><- к поиску {{ label }}</a></p>
+
+{% if history %}
+<div class="card">
+  <table>
+    <tr><th>когда</th><th>кто</th><th>как</th><th>изменения</th></tr>
+    {% for row in history %}
+    <tr>
+      <td class="val" style="white-space:nowrap">{{ row.timestamp[:19]|replace("T", " ") }}</td>
+      <td>{{ row.actor }}</td>
+      <td><span class="kind kind-{{ row.change_kind }}">{{ row.kind_ru }}</span></td>
+      <td>
+        {% for field, pair in row.changes %}{{ show.change(field, pair[0], pair[1]) }}
+        {% else %}<span class="muted">без разбора по полям</span>
+        {% endfor %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% else %}
+<p class="muted">В журнале нет истории изменения, только решение об удалении.</p>
+{% endif %}
+
+{% if user.can_write %}
+  {% if restorable %}
+  <form method="post" action="/nodes/{{ label }}/restore/{{ node_id | urlencode }}" style="margin-top:24px">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button type="submit">Восстановить</button>
+  </form>
+  {% else %}
+  <p class="muted" style="margin-top:24px">
+    Можно только
+    <a href="/nodes/{{ label }}/new">создать заново</a>.
+  </p>
+  {% endif %}
+{% endif %}
+{% endblock %}

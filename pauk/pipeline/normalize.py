@@ -46,6 +46,10 @@ SUBSUP_OPEN = re.compile(r"\s+(<(?:sub|sup)\b[^>]*>)", re.IGNORECASE)
 # "Ag <sub>2</sub> B <sub>5</sub>" — an element symbol between two
 # subscripts continues the same formula, unlike a following word.
 SUBSUP_CHAIN = re.compile(r"(</(?:sub|sup)>)\s+(?=[A-Za-z]{1,2}\s*<(?:sub|sup)\b)", re.IGNORECASE)
+# "CaCO-=SUB=-3-=/SUB=-" — elibrary-style markup, which some Russian
+# journals deposit instead of HTML. Rewritten into the tags it stands for
+# so the rules above apply to it too, then dropped with everything else.
+PSEUDO_TAG = re.compile(r"-=(/?)([A-Za-z][A-Za-z0-9]*)=-")
 TAG = re.compile(r"<[^>]+>")
 SPACE_AFTER_OPEN = re.compile(r"([(\[])\s+")
 SPACE_BEFORE_TIGHT = re.compile(r"\s+([/,;:.)\]@-])")
@@ -80,11 +84,14 @@ def _clean_markup(text: str | None) -> str | None:
     verbatim — "monolayer <mml:math>…<mml:mi>WSe</mml:mi><mml:mn>2</mml:mn>…"
     where the title reads "monolayer WSe2". A formula collapses to its own
     text with the inner spacing removed and stays attached to what it
-    subscripts; everything else just loses its tags.
+    subscripts; everything else just loses its tags. Journals published
+    through elibrary deposit the same formulas in its own markup
+    ("CaCO-=SUB=-3-=/SUB=-"), which is normalized to tags first.
     """
     if not text:
         return text
     cleaned = html.unescape(text)
+    cleaned = PSEUDO_TAG.sub(r"<\1\2>", cleaned)
     cleaned = MATH_BLOCK.sub(_math_text, cleaned)
     cleaned = SUBSUP_CHAIN.sub(r"\1", cleaned)
     cleaned = SUBSUP_OPEN.sub(r"\1", cleaned)
@@ -274,6 +281,7 @@ class OpenAlexNormalizer:
                 if existing_publication:
                     normalized_publication.has_code = existing_publication.has_code
                     normalized_publication.code_url = existing_publication.code_url
+                    normalized_publication.full_text = existing_publication.full_text
                     normalized_publication.department_ids = existing_publication.department_ids
                     normalized_publication.mentions_links = existing_publication.mentions_links
                     normalized_publication.versions = existing_publication.versions

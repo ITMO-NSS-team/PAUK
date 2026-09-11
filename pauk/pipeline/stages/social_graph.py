@@ -34,7 +34,7 @@ from pauk.storage.static import StaticStore
 
 from .base import EnrichmentStage
 from .github_match import ITMO_IDENTITY_PATTERN, PETERSBURG_PATTERN, GitHubMatchStage
-from .repositories import COMMIT_PAGES, _git_identities, _is_person
+from .repo_people import COMMIT_PAGES, _git_identities, _is_person
 
 logger = logging.getLogger(__name__)
 
