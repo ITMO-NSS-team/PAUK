@@ -516,3 +516,44 @@ class AnswersSurviveAMergeTest(unittest.TestCase):
         review.record_verdict(self.db, review.GITHUB, ["B", "ivanov"], review.SAME)
         self.assertEqual(review.github_decisions(self.db),
                          {frozenset({"B", "ivanov"}): review.SAME})
+
+
+class UndoingAnAppliedAnswerTest(unittest.TestCase):
+    """What the store has to change once a fold has been taken apart.
+
+    Both halves matter. Clearing `applied_at` says the graph no longer
+    holds one node where there were two; flipping the verdict is what stops
+    the next run folding them straight back, which would leave the person
+    who undid it looking at their undo undone.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        review.record_held(self.db, [held_pair("A1", "A2")])
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME,
+                              actor="user:roman")
+        review.mark_applied(self.db, review.PAIR, ["A1", "A2"])
+
+    def test_the_answer_becomes_the_opposite_one(self):
+        review.record_undo(self.db, review.PAIR, ["A1", "A2"], actor="user:katya")
+        (row,) = review.questions(self.db, answered=True)
+        self.assertEqual(row["verdict"], review.DIFFERENT)
+        self.assertEqual(row["actor"], "user:katya")
+
+    def test_the_fold_is_no_longer_claimed(self):
+        review.record_undo(self.db, review.PAIR, ["A1", "A2"])
+        (row,) = review.questions(self.db, answered=True)
+        self.assertNotIn("applied_at", row)
+
+    def test_the_rules_are_told_to_keep_them_apart(self):
+        review.record_undo(self.db, review.PAIR, ["A1", "A2"])
+        self.assertEqual(review.decisions(self.db), {frozenset({"A1", "A2"}): review.DIFFERENT})
+
+    def test_an_answer_that_never_reached_the_graph_is_refused(self):
+        review.record_verdict(self.db, review.PAIR, ["B1", "B2"], review.SAME)
+        with self.assertRaises(review.ReviewError):
+            review.record_undo(self.db, review.PAIR, ["B1", "B2"])
+
+    def test_and_so_is_a_question_nobody_ever_asked(self):
+        with self.assertRaises(review.ReviewError):
+            review.record_undo(self.db, review.PAIR, ["C1", "C2"])

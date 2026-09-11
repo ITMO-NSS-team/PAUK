@@ -295,6 +295,17 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
 }
 
 
+def person_spec(row: dict) -> NodeSpec:
+    """Which of the two person specs describes this row.
+
+    Persons share one file and one label; `is_itmo` picks the relationship
+    whitelist, because an external person never gets BELONGS_TO or
+    CONTRIBUTED_TO. Kept here rather than at the call site: a publish and
+    an undone merge have to read the same row the same way.
+    """
+    return NODE_REGISTRY["itmo_person" if row.get("is_itmo") else "external_person"]
+
+
 def extract_node(row: dict, spec: NodeSpec) -> tuple[str, tuple[str, dict]]:
     """Extract a single node from a prepared-JSONL row.
 

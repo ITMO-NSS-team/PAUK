@@ -1,9 +1,10 @@
 """The queue of pairs the deduplicator could not settle, as a page.
 
-Nothing here merges anything. An answer is written down and the rules read
-it on their next run (see `pauk.storage.review`), which is the only order
-that works: a merge cannot be undone, so the decision has to reach the
-algorithm before it decides, not patch the result afterwards.
+An answer is written down first and the rules read it on their next run
+(see `pauk.storage.review`); when both records are already published, the
+fold also happens straight away, so nobody waits a day to see their own
+decision take effect. Undoing one is the other way round — the graph comes
+apart first and the answer is rewritten only if it did (`split_back`).
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from pauk.admin.deps import (
     templates,
 )
 from pauk.graph.mutations import MutationError, NotFound, merge_nodes, read_node
+from pauk.graph.unmerge import NothingToRebuild, split_person
 from pauk.pipeline.stages.dedup import merge_rank
 from pauk.storage import review
 
@@ -315,6 +317,61 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
         done = _fold_now(graph, db, members, user.actor)
     return RedirectResponse(f"/review?tab={tab}&done={done}" if done else f"/review?tab={tab}",
                             status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/review/split-back")
+async def split_back(request: Request, user: Editor, db: Db, graph: MaybeGraph,
+                     _: CsrfChecked, __: StoresReady):
+    """Take a fold apart again: the record merged away comes back.
+
+    The graph goes first here and the store second, the opposite of
+    answering. An answer is worth keeping whatever happens next, because
+    the rules apply it themselves; an undo is worth nothing until the graph
+    actually comes apart, and "different" written over a fold that refused
+    to open would describe a graph that does not exist.
+    """
+    form = await request.form()
+    kind = str(form.get("kind", review.PAIR))
+    members = [part for part in str(form.get("members", "")).split(",") if part]
+    tab = str(form.get("tab", "answered"))
+
+    def back(problem: str = "", done: str = ""):
+        query = f"?tab={tab}"
+        if problem:
+            query += f"&problem={quote(problem)}"
+        if done:
+            query += f"&done={done}"
+        return RedirectResponse(f"/review{query}", status_code=status.HTTP_303_SEE_OTHER)
+
+    if kind != review.PAIR:
+        # Only a pair is ever folded: a group is answered by splitting it,
+        # and the other two kinds link things rather than merge them.
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "слитой была только пара")
+    if graph is None:
+        return back("Граф недоступен, разделить записи сейчас нельзя.")
+    # Before the graph is touched, not after: an undo the store would then
+    # refuse to record leaves the pair apart in the graph and "one person"
+    # in the queue, and the next run puts them back together.
+    if not review.applied(db, kind, members):
+        return back("Это решение ничего не сливало, разделять нечего.")
+    try:
+        split_person(graph, db, members)
+    except NothingToRebuild as error:
+        logger.warning("%s could not split %s: %s", user.actor, members, error)
+        return back("Вернуть запись нечем: подготовленных строк для неё не осталось "
+                    "или её удалили вручную.")
+    except NotFound as error:
+        logger.warning("%s could not split %s: %s", user.actor, members, error)
+        return back("В графе нет этого слияния. Возможно, записи уже разделили.")
+    except MutationError as error:
+        logger.warning("%s could not split %s: %s", user.actor, members, error)
+        return back("Разделить не удалось, подробности в журнале сервиса.")
+    # Written only now, and written as a verdict rather than dropped: an
+    # answer taken back would leave the question open, and the next run
+    # would fold the pair again for the same reason it did the first time.
+    review.record_undo(db, kind, members, actor=user.actor)
+    logger.info("%s split %s back apart", user.actor, members)
+    return back(done="apart")
 
 
 @router.post("/review/withdraw")

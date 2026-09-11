@@ -7,9 +7,11 @@ JSONL journal nobody read back, and the next run refused the same thing
 again.
 
 Kept here instead, a refusal becomes a question, and a person's answer
-outlives the run that asked. That is the whole point: the answer has to be
-consulted *before* the algorithm decides, not patched over the result
-afterwards, because a merge cannot be undone.
+outlives the run that asked. That is the whole point: the answer is
+consulted *before* the algorithm decides rather than patched over its
+result. A fold can be taken apart afterwards (`pauk.graph.unmerge`), but
+only by rebuilding the record from the prepared row it was published from,
+and only for as long as that row is there.
 
 Four shapes of question, because the three producers refuse in four ways:
 
@@ -388,6 +390,35 @@ def withdraw(db: Database, kind: str, members: list[str]) -> bool:
                     # Nothing left to disagree with once the answer is gone.
                     "disputed_at": "", "disputed_rule": ""}})
     return result.matched_count > 0
+
+
+def applied(db: Database, kind: str, members: list[str]) -> bool:
+    """Whether this answer has already folded two records into one."""
+    asked = db[COLLECTION].find_one({"_id": question_id(kind, members)})
+    return bool(asked and asked.get("applied_at"))
+
+
+def record_undo(db: Database, kind: str, members: list[str],
+                actor: str = "unknown", note: str = "") -> dict | None:
+    """Turn an applied "same" into a "different" after the fold was taken apart.
+
+    Both halves of the undo are needed and neither is enough alone. Clearing
+    `applied_at` says the graph no longer holds one node; the verdict has to
+    flip because "same" is exactly what would fold the pair again on the
+    next run — the answer would undo the undo.
+
+    Raises:
+        ReviewError: The question was never folded, so there is nothing to
+            record the undoing of.
+    """
+    key = question_id(kind, members)
+    asked = db[COLLECTION].find_one({"_id": key})
+    if asked is None or not asked.get("applied_at"):
+        raise ReviewError(f"{key} was not folded; there is nothing to take apart")
+    record_verdict(db, kind, members, DIFFERENT, actor=actor, note=note)
+    db[COLLECTION].update_one({"_id": key}, {"$unset": {"applied_at": ""}})
+    logger.info("review: %s taken apart by %s", key, actor)
+    return db[COLLECTION].find_one({"_id": key})
 
 
 def mark_applied(db: Database, kind: str, members: list[str]) -> bool:

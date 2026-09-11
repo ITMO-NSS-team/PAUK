@@ -7,8 +7,12 @@ from fastapi.testclient import TestClient
 from pauk.admin import deps
 from pauk.admin.app import build
 from pauk.admin.auth import create_user
+from pauk.graph.jsonl_loader import load_prepared_rows
+from pauk.graph.load import ENTITY_FILES
+from pauk.graph.mutations import merge_nodes
+from pauk.models import Person, Publication
 from pauk.settings import Settings
-from pauk.storage import review
+from pauk.storage import PreparedStore, review
 from tests.unit.test_admin_nodes import FakePanelGraph
 from tests.unit.test_review_store import held_group, held_pair
 
@@ -737,3 +741,135 @@ class SkippedTabTest(unittest.TestCase):
     def test_an_untouched_question_still_offers_it(self):
         review.record_held(self.db, [held_pair("B1", "B2")])
         self.assertIn('value="skip"', self.body("pressing"))
+
+
+class SplitBackTest(unittest.TestCase):
+    """Undoing a fold from the page it was made on.
+
+    The pair is folded through the panel first, so what the button takes
+    apart is a real merge and not a graph arranged to look like one.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        create_user(self.db, "guest", "hunter2", role="viewer")
+        review.record_held(self.db, [held_pair("A1", "A2")])
+        self.prepared = PreparedStore(self.db, "sample")
+        self.prepared.write_models("persons", [
+            Person(id="A1", openalex_id="A1", name_raw="Ivan Smirnov", is_itmo=True,
+                   authored=[{"publication_id": "W1", "position": 1}]),
+            Person(id="A2", openalex_id="A2", name_raw="I. Smirnov", is_itmo=False,
+                   authored=[{"publication_id": "W2", "position": 1}]),
+        ])
+        self.prepared.write_models("publications", [
+            Publication(id="W1", title="W1"), Publication(id="W2", title="W2")])
+        self.graph = FakePanelGraph()
+        load_prepared_rows(self.graph, {
+            filename: list(self.prepared.read_rows(entity))
+            for entity, filename in ENTITY_FILES.items()})
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_if_up] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.sign_in()
+
+    def sign_in(self, login="roman"):
+        self.client.post("/login", data={"login": login, "password": "hunter2"})
+
+    def body(self):
+        return self.client.get("/review", params={"tab": "answered"}).text
+
+    def csrf(self):
+        return self.body().split('name="csrf" value="')[1].split('"')[0]
+
+    def fold(self):
+        self.client.post("/review/answer", data={
+            "csrf": self.csrf(), "kind": review.PAIR, "members": "A1,A2", "verdict": "same"})
+
+    def split_back(self):
+        return self.client.post("/review/split-back", data={
+            "csrf": self.csrf(), "kind": review.PAIR, "members": "A1,A2", "tab": "answered"})
+
+    def test_an_applied_answer_offers_it(self):
+        self.fold()
+        self.assertIn("/review/split-back", self.body())
+
+    def test_and_does_not_offer_to_only_take_the_answer_back(self):
+        # Withdrawing alone would leave one node where the person expects
+        # two, and the button would be a lie about what it does.
+        self.fold()
+        self.assertNotIn("/review/withdraw", self.body())
+
+    def test_an_answer_still_waiting_offers_the_plain_undo(self):
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)
+        body = self.body()
+        self.assertIn("/review/withdraw", body)
+        self.assertNotIn("/review/split-back", body)
+
+    def test_the_record_and_its_work_come_back(self):
+        self.fold()
+        self.assertEqual(self.split_back().status_code, 303)
+        self.assertIn(("Person", "A2"), self.graph.nodes)
+        authored = {(src_id, tgt_id) for _s, rel, _t, src_id, tgt_id
+                    in self.graph.relationships if rel == "AUTHORED"}
+        self.assertEqual(authored, {("A1", "W1"), ("A2", "W2")})
+
+    def test_the_answer_flips_so_the_next_run_agrees(self):
+        self.fold()
+        self.split_back()
+        (row,) = review.questions(self.db, answered=True)
+        self.assertEqual(row["verdict"], review.DIFFERENT)
+        self.assertNotIn("applied_at", row)
+        self.assertEqual(review.decisions(self.db), {frozenset({"A1", "A2"}): review.DIFFERENT})
+
+    def test_the_page_says_it_happened(self):
+        self.fold()
+        location = self.split_back().headers["location"]
+        self.assertIn("done=apart", location)
+        self.assertIn("Записи разделены", self.client.get(location).text)
+
+    def test_with_no_row_to_rebuild_from_the_fold_stands(self):
+        self.fold()
+        self.db.persons.delete_one({"id": "A2"})
+        location = self.split_back().headers["location"]
+        self.assertIn("problem=", location)
+        self.assertIn("Вернуть запись нечем", self.client.get(location).text)
+        self.assertNotIn(("Person", "A2"), self.graph.nodes)
+        (row,) = review.questions(self.db, answered=True)
+        self.assertEqual(row["verdict"], review.SAME)
+        self.assertIsNotNone(row["applied_at"])
+
+    def test_with_the_graph_down_nothing_is_rewritten(self):
+        # The store must not say the pair came apart while the graph still
+        # holds one node for it.
+        self.fold()
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_if_up] = lambda: None
+        client = TestClient(app, follow_redirects=False)
+        client.post("/login", data={"login": "roman", "password": "hunter2"})
+        token = client.get("/review", params={"tab": "answered"}) \
+            .text.split('name="csrf" value="')[1].split('"')[0]
+        location = client.post("/review/split-back", data={
+            "csrf": token, "kind": review.PAIR, "members": "A1,A2"}).headers["location"]
+        self.assertIn("problem=", location)
+        (row,) = review.questions(self.db, answered=True)
+        self.assertEqual(row["verdict"], review.SAME)
+
+    def test_a_viewer_cannot_split_anything(self):
+        self.fold()
+        self.sign_in(login="guest")
+        response = self.client.post("/review/split-back", data={
+            "csrf": self.csrf(), "kind": review.PAIR, "members": "A1,A2"})
+        self.assertEqual(response.status_code, 403)
+        self.assertNotIn(("Person", "A2"), self.graph.nodes)
+
+    def test_a_fold_this_answer_did_not_make_is_left_alone(self):
+        # Folded by a pipeline run instead of from here, so the answer
+        # carries no applied_at. Undoing it would take the graph apart and
+        # then fail to rewrite the answer, leaving the two disagreeing.
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)
+        merge_nodes(self.graph, "Person", "A2", "A1")
+        response = self.client.post("/review/split-back", data={
+            "csrf": self.csrf(), "kind": review.PAIR, "members": "A1,A2"})
+        self.assertIn("problem=", response.headers["location"])
+        self.assertNotIn(("Person", "A2"), self.graph.nodes)

@@ -7,7 +7,11 @@
 
 {% set done = request.query_params.get("done") %}
 {% if done == "merged" %}
-<p class="note">Записи слиты. Связи перешли на оставшуюся, отменить нельзя.</p>
+<p class="note">Записи слиты, связи перешли на оставшуюся.
+   Если это ошибка, в отвеченных есть «разделить обратно».</p>
+{% elif done == "apart" %}
+<p class="note">Записи разделены. Запись вернулась со своими связями,
+   и вопрос теперь отвечен как «разные люди».</p>
 {% elif done == "chosen" %}
 <p class="note">Запись выбрана. Сведёт на следующем прогоне дедупликации.</p>
 {% elif done == "split" %}
@@ -147,6 +151,16 @@
           <input type="hidden" name="members" value="{{ row.members|join(',') }}">
           <input type="hidden" name="tab" value="{{ tab }}">
           <button type="submit" class="ghost">изменить</button>
+        </form>
+        {% elif row.applied_at %}
+        {# Не «передумать»: ответ убрать мало, в графе от него остался один
+           узел вместо двух. Кнопка разбирает слияние и записывает «разные». #}
+        <form method="post" action="/review/split-back">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="kind" value="{{ row.kind }}">
+          <input type="hidden" name="members" value="{{ row.members|join(',') }}">
+          <input type="hidden" name="tab" value="{{ tab }}">
+          <button type="submit" class="ghost">разделить обратно</button>
         </form>
         {% elif row.verdict %}
         <form method="post" action="/review/withdraw">

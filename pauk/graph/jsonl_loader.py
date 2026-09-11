@@ -16,7 +16,7 @@ from pauk.urls import normalize_repo_url
 
 from .audit import AuditedNeo4jClient
 from .client import Neo4jClient, chunked
-from .extract import NODE_REGISTRY, extract_node, extract_relationships
+from .extract import NODE_REGISTRY, extract_node, extract_relationships, person_spec
 
 __all__ = ["extract_repo_links", "load_prepared_rows", "normalize_repo_url"]
 
@@ -176,14 +176,12 @@ def load_prepared_rows(
             logger.info("%s: skipped %d failed (never enriched) row(s)", filename, skipped_failed)
 
     # Persons share a single file but is_itmo picks which relationship
-    # whitelist applies (external persons never get BELONGS_TO/CONTRIBUTED_TO
-    # - see extract.py's itmo_person/external_person specs). The node itself
-    # always carries the single :Person label; is_itmo travels as a sticky
-    # property (see upsert_person_nodes_batch).
+    # whitelist applies (person_spec). The node itself always carries the
+    # single :Person label; is_itmo travels as a sticky property (see
+    # upsert_person_nodes_batch).
     person_merges: list[tuple[str, str]] = []
     for row in rows_by_file.get("persons.jsonl") or ():
-        is_itmo = bool(row.get("is_itmo"))
-        spec = NODE_REGISTRY["itmo_person" if is_itmo else "external_person"]
+        spec = person_spec(row)
         _labels, node = extract_node(row, spec)
         person_nodes.append(node)
         for merged_id in row.get("merged_ids") or []:
