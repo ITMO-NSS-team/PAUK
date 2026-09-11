@@ -123,3 +123,69 @@ class MergesSurviveAPublishTest(unittest.TestCase):
         self.publish()
         self.assertEqual(self.people(), ["A1", "A2"])
         self.assertEqual(self.authored(), [("A1", "W1"), ("A2", "W2")])
+
+
+class StoppedMidPublishError(Exception):
+    """Stands in for the worker's Cancelled, which lives a layer away."""
+
+
+class PublishProgressTest(unittest.TestCase):
+    """A publish says how far it has got, and can be given up between chunks.
+
+    Until now the whole load was one call that came back when it was done.
+    A cancel pressed during it was noticed after it finished, which for a
+    large group is the one moment nobody was waiting for.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.prepared = PreparedStore(self.db, "sample")
+        self.prepared.write_models("persons", [
+            Person(id=f"A{index}", openalex_id=f"A{index}", name_raw=f"Person {index}",
+                   is_itmo=True, authored=[{"publication_id": "W1", "position": 1}])
+            for index in range(3)])
+        self.prepared.write_models("publications", [Publication(id="W1", title="W1")])
+        self.graph = FakePanelGraph()
+
+    def publish(self, report=None):
+        load_prepared_rows(self.graph, {
+            filename: list(self.prepared.read_rows(entity))
+            for entity, filename in ENTITY_FILES.items()}, report=report)
+
+    def test_it_says_what_it_is_doing(self):
+        told = []
+        self.publish(report=lambda *row: told.append(row))
+        steps = {step for step, _done, _total in told}
+        self.assertEqual(steps, {"выкладка узлов", "выкладка связей"})
+
+    def test_the_counts_add_up_to_everything_there_was(self):
+        told = []
+        self.publish(report=lambda *row: told.append(row))
+        nodes = [row for row in told if row[0] == "выкладка узлов"][-1]
+        self.assertEqual(nodes[1], nodes[2])
+        links = [row for row in told if row[0] == "выкладка связей"][-1]
+        self.assertEqual(links[1], links[2])
+
+    def test_a_publish_can_be_given_up_part_way(self):
+        def refuse(step, done, total):
+            raise StoppedMidPublishError(step)
+
+        with self.assertRaises(StoppedMidPublishError):
+            self.publish(report=refuse)
+
+    def test_and_what_it_wrote_before_that_is_there(self):
+        # Nothing is rolled back: the group is loaded in part, and the next
+        # publish finishes it because every write is a MERGE.
+        def refuse(step, done, total):
+            if step == "выкладка связей":
+                raise StoppedMidPublishError(step)
+
+        with self.assertRaises(StoppedMidPublishError):
+            self.publish(report=refuse)
+        self.assertEqual(len([key for key in self.graph.nodes if key[0] == "Person"]), 3)
+        self.publish()
+        self.assertEqual(len(self.graph.relationships), 3)
+
+    def test_a_publish_nobody_is_watching_still_works(self):
+        self.publish()
+        self.assertEqual(len([key for key in self.graph.nodes if key[0] == "Person"]), 3)

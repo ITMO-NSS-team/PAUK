@@ -63,7 +63,11 @@ def _publish(config: Settings, db: Database, payload, stop: Stop,
              report: Report) -> dict[str, int]:
     from pauk.graph.load import load_jsonl_group
     report("выкладка в граф")
-    return load_jsonl_group(config, db, payload.group)
+    # The reporter goes in, so the load says how far it has got and can be
+    # stopped between two chunks. Given up halfway it leaves the group
+    # loaded in part; the next publish finishes it, because every write in
+    # there is a MERGE.
+    return load_jsonl_group(config, db, payload.group, report=report)
 
 
 def _dedup(config: Settings, db: Database, payload, stop: Stop,

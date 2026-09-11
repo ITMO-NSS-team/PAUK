@@ -9,7 +9,8 @@ import mongomock
 
 from pauk.models import CodeLink, GitHubProfile, Publication, RepoLink, Repository
 from pauk.models.processing import ProcessingStatus
-from pauk.pipeline.stages.base import PreparedSelection
+from pauk.pipeline.enrich import _inside
+from pauk.pipeline.stages.base import EnrichmentStage, PreparedSelection
 from pauk.pipeline.stages.code_links import (
     CodeLinksStage,
     _collect_occurrences,
@@ -798,3 +799,87 @@ class NormalizeLigaturesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StoppedFromOutsideError(Exception):
+    """Stands in for the worker's own Cancelled, which lives a layer away."""
+
+
+class CountingStage(EnrichmentStage):
+    """A stage that does nothing but walk a list through `progress`."""
+
+    name = "counting"
+
+    def run(self) -> dict[str, int]:
+        self.seen = []
+        for item in self.progress(range(5), total=5, label="считает"):
+            self.seen.append(item)
+        return {"seen": len(self.seen)}
+
+
+class StageProgressTest(unittest.TestCase):
+    """A run has to say where it is and stop when it is asked to.
+
+    Before, the only seam was between stages: a cancel pressed inside a
+    stage that takes an hour was honoured an hour later, and the page said
+    nothing in the meantime.
+    """
+
+    def setUp(self):
+        db = mongomock.MongoClient()["pauk_test"]
+        self.prepared = PreparedStore(db, "sample")
+        self.raw = RawStore(db, "sample")
+        self.told: list[tuple[str, int, int]] = []
+
+    def stage(self, **kwargs):
+        return CountingStage(self.prepared, self.raw, Settings(),
+                             on_progress=lambda *row: self.told.append(row), **kwargs)
+
+    def test_it_says_how_far_it_has_got(self):
+        stage = self.stage()
+        stage.REPORT_SECONDS = 0
+        stage.run()
+        self.assertEqual(self.told,
+                         [("считает", 1, 5), ("считает", 2, 5), ("считает", 3, 5),
+                          ("считает", 4, 5), ("считает", 5, 5)])
+
+    def test_a_fast_loop_does_not_say_it_five_thousand_times(self):
+        # Every word costs two round trips to Mongo, and a stage can walk
+        # thousands of cheap rows a second.
+        self.stage().run()
+        self.assertEqual(len(self.told), 1)
+
+    def test_a_stage_stops_where_it_was_asked_to(self):
+        def refuse(label, done, total):
+            raise StoppedFromOutsideError(label)
+
+        stage = CountingStage(self.prepared, self.raw, Settings(), on_progress=refuse)
+        with self.assertRaises(StoppedFromOutsideError):
+            stage.run()
+        # The row it was holding is finished; the next one was never begun.
+        self.assertEqual(stage.seen, [0])
+
+    def test_a_stage_nobody_is_watching_runs_as_before(self):
+        stage = CountingStage(self.prepared, self.raw, Settings())
+        self.assertEqual(stage.run(), {"seen": 5})
+
+
+class StageProgressReachesThePageTest(unittest.TestCase):
+    """What the page is told while a stage is running."""
+
+    def test_the_counts_still_mean_stages_not_rows(self):
+        # The page reads them as "stage 3 of 10". A stage counting its own
+        # rows into the same two numbers would have said "stage 501 of
+        # 20000", so its progress goes into the label instead.
+        told = []
+        inside = _inside(lambda *row: told.append(row), 2, 10)
+        inside("персоны", 501, 20000)
+        self.assertEqual(told, [("персоны 501/20000", 2, 10)])
+
+    def test_a_stage_that_cannot_count_is_named_alone(self):
+        told = []
+        _inside(lambda *row: told.append(row), 0, 10)("персоны", 0, 0)
+        self.assertEqual(told, [("персоны", 0, 10)])
+
+    def test_nobody_watching_means_no_hook_at_all(self):
+        self.assertIsNone(_inside(None, 0, 10))
