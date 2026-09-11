@@ -1003,6 +1003,10 @@ class DedupStage(EnrichmentStage):
         if removed:
             people = [person for person in people if person.id not in removed]
             self.prepared.write_models("persons", people)
+        # Which answers this fold carried out. Read off the rows rather than
+        # off the plan: the same pair can be folded through a third person,
+        # and the rows are what the next run will believe anyway.
+        review.mark_applied_merges(self.prepared.db, folded_ids(people))
 
         held = sum(1 for row in report if row["status"] == "held")
         # The queue the panel reads. The file below stays: it is the whole

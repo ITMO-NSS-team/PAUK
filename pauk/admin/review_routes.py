@@ -26,7 +26,7 @@ from pauk.admin.deps import (
     templates,
 )
 from pauk.graph.mutations import MutationError, NotFound, merge_nodes, read_node
-from pauk.graph.unmerge import NothingToRebuild, split_person
+from pauk.graph.unmerge import NothingToRebuild, rebuildable, split_person
 from pauk.pipeline.stages.dedup import merge_rank
 from pauk.storage import review
 
@@ -201,10 +201,25 @@ def queue(request: Request, user: CurrentUser, session: Session, db: Db,
     return templates.TemplateResponse(request, "review.html", {
         "user": user, "csrf": session["csrf"], "tab": tab, "page": page,
         "pages": max((total + PAGE - 1) // PAGE, 1), "total": total,
-        "rows": [_shown(row) for row in
-                 review.questions(db, limit=PAGE, skip=(page - 1) * PAGE, **TABS[tab])],
+        "rows": _splittable(db, [_shown(row) for row in
+                                 review.questions(db, limit=PAGE, skip=(page - 1) * PAGE,
+                                                  **TABS[tab])]),
         "counts": {name: review.count(db, **filters) for name, filters in TABS.items()},
     })
+
+
+def _splittable(db, rows: list[dict]) -> list[dict]:
+    """Say which folded pairs can still be taken apart.
+
+    Asked once for the whole page: a fold is undone by rebuilding the
+    record from its prepared row, and the only thing the page needs to know
+    is whether both rows are still there.
+    """
+    wanted = {member for row in rows if row["applied_at"] for member in row["members"]}
+    have = rebuildable(db, wanted) if wanted else set()
+    for row in rows:
+        row["can_split"] = bool(row["applied_at"]) and set(row["members"]) <= have
+    return rows
 
 
 def _fold_now(graph, db, members: list[str], actor: str) -> str:

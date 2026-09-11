@@ -557,3 +557,47 @@ class UndoingAnAppliedAnswerTest(unittest.TestCase):
     def test_and_so_is_a_question_nobody_ever_asked(self):
         with self.assertRaises(review.ReviewError):
             review.record_undo(self.db, review.PAIR, ["C1", "C2"])
+
+
+class MarkingWhatARunFoldedTest(unittest.TestCase):
+    """A run folds hundreds of pairs and knows only what became what."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        review.record_held(self.db, [held_pair("A1", "A2")])
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)
+
+    def applied_at(self):
+        (row,) = review.questions(self.db, answered=True)
+        return row.get("applied_at")
+
+    def test_an_answer_whose_pair_became_one_record_is_marked(self):
+        self.assertEqual(review.mark_applied_merges(self.db, {"A2": "A1"}), 1)
+        self.assertIsNotNone(self.applied_at())
+
+    def test_a_pair_still_two_records_is_not(self):
+        self.assertEqual(review.mark_applied_merges(self.db, {"B1": "B2"}), 0)
+        self.assertIsNone(self.applied_at())
+
+    def test_it_does_not_matter_which_of_the_two_survived(self):
+        review.mark_applied_merges(self.db, {"A1": "A2"})
+        self.assertIsNotNone(self.applied_at())
+
+    def test_a_pair_folded_through_a_third_person_counts(self):
+        # Both were swallowed by somebody else, so they are one record now
+        # and the answer has had its effect.
+        review.mark_applied_merges(self.db, {"A1": "A0", "A2": "A0"})
+        self.assertIsNotNone(self.applied_at())
+
+    def test_a_refusal_is_never_marked(self):
+        review.record_verdict(self.db, review.PAIR, ["B1", "B2"], review.DIFFERENT)
+        review.mark_applied_merges(self.db, {"B2": "B1"})
+        (row,) = [row for row in review.questions(self.db, answered=True)
+                  if row["members"] == ["B1", "B2"]]
+        self.assertNotIn("applied_at", row)
+
+    def test_marking_twice_keeps_the_first_time(self):
+        review.mark_applied_merges(self.db, {"A2": "A1"})
+        first = self.applied_at()
+        self.assertEqual(review.mark_applied_merges(self.db, {"A2": "A1"}), 0)
+        self.assertEqual(self.applied_at(), first)

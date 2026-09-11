@@ -22,6 +22,7 @@ restores it.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 
 from pymongo.database import Database
 
@@ -51,6 +52,16 @@ def _prepared_persons(db: Database, ids: list[str]) -> dict[str, dict]:
     here — and the panel has no group to name anyway.
     """
     return {row["id"]: row for row in PreparedStore(db, group="").get_rows("persons", ids)}
+
+
+def rebuildable(db: Database, ids: Iterable[str]) -> set[str]:
+    """Which of these people still have a row to be rebuilt from.
+
+    What the panel asks before offering to take a fold apart: the
+    collection stage deletes the rows it folds, and a button that can only
+    fail is worse than saying why there is none.
+    """
+    return set(_prepared_persons(db, list(ids)))
 
 
 def _folded_side(client, members: list[str]) -> tuple[str, str, dict]:

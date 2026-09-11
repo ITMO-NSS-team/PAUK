@@ -441,6 +441,9 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         # to ask about and no pair of people to key a question on.
         review.record_held(mongo_db, person_report, source=review.GRAPH)
         review.record_disputed(mongo_db, person_report)
+        # Re-read, not the map from before the pass: what this pass folded
+        # is exactly the difference between the two.
+        review.mark_applied_merges(mongo_db, client.fetch_merged_id_map("Person"))
         journal_path = config.cache_dir / CANDIDATES_FILENAME
         with AtomicWriter(journal_path) as fh:
             for row in report:

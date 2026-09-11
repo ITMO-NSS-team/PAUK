@@ -392,6 +392,39 @@ def withdraw(db: Database, kind: str, members: list[str]) -> bool:
     return result.matched_count > 0
 
 
+def mark_applied_merges(db: Database, merged_into: dict[str, str]) -> int:
+    """Record every answered pair a run has just folded into one record.
+
+    `mark_applied` is for the panel, which folds one pair and knows which.
+    A run folds hundreds at once and knows only what became what, so the
+    answers are matched against that map instead: a "same" whose two ids
+    now land on one record has been applied, whoever applied it.
+
+    Without this the queue kept promising "will merge on the next run" for
+    pairs the last run had already merged, and offered to take the answer
+    back — which would have left the records folded and the question open.
+
+    Args:
+        merged_into: Folded-away id to the record that survived. What
+            `folded_ids` builds from the prepared rows and
+            `fetch_merged_id_map` reads off the graph.
+
+    Returns:
+        How many answers were marked.
+    """
+    moment = _now()
+    marked = 0
+    for asked in db[COLLECTION].find({"kind": PAIR, "verdict": SAME,
+                                      "applied_at": {"$exists": False}}):
+        landed = {merged_into.get(member, member) for member in asked["members"]}
+        if len(landed) == 1:
+            db[COLLECTION].update_one({"_id": asked["_id"]}, {"$set": {"applied_at": moment}})
+            marked += 1
+    if marked:
+        logger.info("review: %d answered pair(s) are now one record", marked)
+    return marked
+
+
 def applied(db: Database, kind: str, members: list[str]) -> bool:
     """Whether this answer has already folded two records into one."""
     asked = db[COLLECTION].find_one({"_id": question_id(kind, members)})

@@ -873,3 +873,20 @@ class SplitBackTest(unittest.TestCase):
             "csrf": self.csrf(), "kind": review.PAIR, "members": "A1,A2"})
         self.assertIn("problem=", response.headers["location"])
         self.assertNotIn(("Person", "A2"), self.graph.nodes)
+
+    def test_without_a_row_to_rebuild_from_there_is_no_button(self):
+        # Folded by the collection stage, which deletes the row it folds.
+        # A button here could only fail, so the page says why instead.
+        self.fold()
+        self.db.persons.delete_one({"id": "A2"})
+        body = self.body()
+        self.assertNotIn("/review/split-back", body)
+        self.assertIn("исходных строк не осталось", body)
+
+    def test_nor_is_there_the_plain_undo_in_its_place(self):
+        # Taking the answer back would leave the records folded and the
+        # question open, which is the state this whole screen exists to
+        # avoid.
+        self.fold()
+        self.db.persons.delete_one({"id": "A2"})
+        self.assertNotIn("/review/withdraw", self.body())

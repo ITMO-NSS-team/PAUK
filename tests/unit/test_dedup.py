@@ -1032,6 +1032,43 @@ class ReviewDecisionsTest(unittest.TestCase):
         (applied,) = self.journal("merged")
         self.assertEqual(applied["rules"], ["manual"])
 
+    def test_an_answered_question_is_never_asked_again(self):
+        # Every run re-examines the same pairs and refreshes what it knows
+        # about them. It must refresh the evidence and not the answer: a
+        # queue that asks again what somebody already decided is a queue
+        # nobody works through twice.
+        self.run_stage(self.namesakes())
+        self.assertEqual(review.count(self.db, answered=False), 1)
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.DIFFERENT,
+                              actor="user:roman", note="two physicists")
+        self.run_stage(self.namesakes())
+        self.assertEqual(review.count(self.db, answered=False), 0)
+        (answer,) = review.questions(self.db, answered=True)
+        self.assertEqual(answer["verdict"], review.DIFFERENT)
+        self.assertEqual(answer["note"], "two physicists")
+        self.assertEqual(answer["actor"], "user:roman")
+
+    def test_the_queue_learns_the_merge_has_happened(self):
+        # Otherwise the page goes on promising "will merge on the next run"
+        # for a pair the last run already merged, and offers to take the
+        # answer back — which would leave the records folded and the
+        # question open.
+        self.run_stage(self.namesakes())
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)
+        (before,) = review.questions(self.db, answered=True)
+        self.assertNotIn("applied_at", before)
+        self.run_stage(self.namesakes())
+        (after,) = review.questions(self.db, answered=True)
+        self.assertIsNotNone(after["applied_at"])
+
+    def test_a_refusal_is_never_marked_as_carried_out(self):
+        # "Different" changes nothing, so there is nothing to have applied.
+        self.run_stage(self.namesakes())
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.DIFFERENT)
+        self.run_stage(self.namesakes())
+        (answer,) = review.questions(self.db, answered=True)
+        self.assertNotIn("applied_at", answer)
+
     def test_a_merge_nobody_would_have_paired_still_happens(self):
         # _paired_persons only offers people who share a name token, an
         # ORCID or a staff record. An answer must not depend on whether a
@@ -1136,6 +1173,17 @@ class GraphPassReviewTest(unittest.TestCase):
             result = graph_dedup.run_graph_dedup(self.config, self.db)
         self.assertEqual(result["graph_persons_merged"], 1)
         self.assertEqual(set(self.client.nodes["Person"]), {"A1"})
+
+    def test_and_writes_down_that_it_carried_them_out(self):
+        # This pass leaves the prepared rows alone, so the pair it folds can
+        # still be taken apart — but only if the queue knows it was folded.
+        self.publish(self.namesakes())
+        review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME,
+                              actor="user:roman")
+        with patch.object(graph_dedup, "audited_client", return_value=self.client):
+            graph_dedup.run_graph_dedup(self.config, self.db)
+        (answer,) = review.questions(self.db, answered=True)
+        self.assertIsNotNone(answer["applied_at"])
 
 
 class DisputedAnswerTest(unittest.TestCase):
