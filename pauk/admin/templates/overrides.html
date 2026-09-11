@@ -73,6 +73,11 @@
         <td>{{ row.actor }}{% if row.note %}<br><span class="muted">{{ row.note }}</span>{% endif %}</td>
         {% if user.can_write %}
         <td>
+          {% if not row.undoable %}
+          {# Заявка на то, что человек добавил сам. Отменять нечего: чтобы
+             её снять, надо удалить саму запись или связь. #}
+          <span class="muted">—</span>
+          {% else %}
           <form method="post" action="/overrides/undo">
             <input type="hidden" name="csrf" value="{{ csrf }}">
             <input type="hidden" name="kind" value="{{ row.kind }}">
@@ -89,6 +94,7 @@
             <input type="hidden" name="target_id" value="{{ row.target_id }}">
             <button type="submit" class="ghost">отменить</button>
           </form>
+          {% endif %}
         </td>
         {% endif %}
       </tr>

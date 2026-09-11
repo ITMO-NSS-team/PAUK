@@ -6,15 +6,26 @@ the panel. That is the point of showing it here: a field that keeps
 changing back is a conflict between a person and the pipeline, and it is
 visible only when both are in one list.
 
-Reading only. Nothing in this module edits the graph or the feed itself.
+Reading, and one write: `trim`, which is the only thing that ever removes
+an entry. Nothing here edits the graph.
 """
 
 from __future__ import annotations
 
+import logging
+from datetime import UTC, datetime, timedelta
+
 from pymongo.database import Database
+
+logger = logging.getLogger("pauk.admin")
 
 COLLECTION = "audit"
 PAGE = 50
+
+#: How much history `trim` keeps by default. Half a year covers "what
+#: happened to this record" and every conflict the panel compares, and is
+#: well past the point where anybody asks.
+KEEP_DAYS = 180
 
 # What the entries look like, in the panel's words. `operation` is the
 # client method that made the change, which says nothing to a reader.
@@ -121,3 +132,40 @@ def deleted_state(db: Database, entity_type: str, entity_id: str) -> dict:
         return {}
     return {name: pair[0] for name, pair in (row.get("diff") or {}).items()
             if pair and pair[0] is not None}
+
+
+def older_than(days: int) -> str:
+    """The cutoff `trim` takes, in the form the entries are stamped with."""
+    return (datetime.now(UTC) - timedelta(days=days)).isoformat()
+
+
+def trim(db: Database, before: str, apply: bool = False) -> dict[str, int]:
+    """Drop entries older than a cutoff.
+
+    The feed is the one thing here that only ever grows: every edit writes a
+    line and every publish a summary per batch, and until now nothing
+    removed any of it.
+
+    What it costs to lose is bounded. A record deleted by hand is restored
+    from the snapshot kept in its own decision (`graph_overrides`), which
+    this does not touch — the feed is only the fallback for records deleted
+    before those snapshots existed. Everything else here is read to be
+    looked at, not acted on.
+
+    Args:
+        before: ISO timestamp. Entries stamped earlier go. Text comparison
+            is time comparison, which is why the entries are stamped in ISO
+            in the first place.
+        apply: False counts what would go and changes nothing, so the size
+            of the cut can be seen before it is made.
+
+    Returns:
+        How many entries matched and how many were removed.
+    """
+    query = {"timestamp": {"$lt": before}}
+    matched = db[COLLECTION].count_documents(query)
+    if not apply:
+        return {"audit_matched": matched, "audit_removed": 0}
+    removed = db[COLLECTION].delete_many(query).deleted_count
+    logger.info("audit: %d entr(y/ies) older than %s removed", removed, before)
+    return {"audit_matched": matched, "audit_removed": removed}

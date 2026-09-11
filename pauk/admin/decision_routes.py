@@ -25,6 +25,7 @@ from pauk.graph.mutations import (
 )
 from pauk.graph.overrides import (
     DELETE,
+    LINK,
     SET,
     apply_overrides,
     deactivate_override,
@@ -81,9 +82,17 @@ async def undo(request: Request, user: Editor, db: Db, graph: Graph,
     back: dict = {}
     try:
         if kind == "rel":
+            if op == LINK:
+                # A link somebody added is a claim, not an instruction: it
+                # is taken back by removing the link, which has its own
+                # button on the record's page. Anything else about a
+                # relationship is the removal, which is what this undoes.
+                raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                    "добавленную вручную связь снимают на карточке записи")
             triple = (str(form["src_label"]), str(form["rel_type"]), str(form["tgt_label"]))
             src_id, tgt_id = str(form["src_id"]), str(form["target_id"])
-            dropped = deactivate_relationship_override(db, *triple, src_id, tgt_id)
+            dropped = deactivate_relationship_override(db, *triple, src_id, tgt_id,
+                                                       only_op=DELETE)
         else:
             label, node_id = str(form["label"]), str(form["target_id"])
             if op == DELETE:

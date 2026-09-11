@@ -53,6 +53,8 @@ from pauk.graph.mutations import (
     update_node,
 )
 from pauk.graph.overrides import (
+    CREATE,
+    LINK,
     deactivate_override,
     record_override,
     record_relationship_override,
@@ -251,16 +253,21 @@ async def create(request: Request, label: str, user: Editor,
         create_node(graph, label, node_id, fields)
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
-    # A tombstone from an earlier deletion would remove this node again on
-    # the next publish. Creating the id by hand says plainly that it is
-    # wanted, so the decision to delete it is withdrawn.
+    # Two things get written down. The record is claimed as wanted, so a
+    # prune does not take it for a leftover of a row that used to exist —
+    # nothing else in the graph says a person put it there. And a tombstone
+    # from an earlier deletion is withdrawn, or the next publish would
+    # remove the id again.
     #
-    # Undone if that cannot be written. Pessimistic: most of the time there
+    # Undone if neither can be written. Pessimistic: most of the time there
     # is no tombstone and the node would have been fine, but whether there
     # is one can only be learned from the store that is refusing to answer,
     # and a node that disappears at the next publish is the worse outcome.
-    _record(undo=lambda: delete_node(graph, label, node_id),
-            write=lambda: deactivate_override(db, label, node_id, only_op="delete"))
+    def claim() -> None:
+        deactivate_override(db, label, node_id, only_op="delete")
+        record_override(db, label, node_id, CREATE, fields, actor=user.actor)
+
+    _record(undo=lambda: delete_node(graph, label, node_id), write=claim)
     logger.info("%s created %s %s", user.actor, label, node_id)
     return RedirectResponse(_node_url(label, node_id, "created=1"),
                             status_code=status.HTTP_303_SEE_OTHER)
@@ -442,13 +449,13 @@ def _link_failed(label: str, node_id: str, message: str) -> RedirectResponse:
 
 @router.post("/nodes/{label}/rel/add/{node_id:path}")
 async def link(request: Request, label: str, node_id: str, user: Editor,
-               graph: Graph, _: CsrfChecked, __: StoresReady):
+               db: Db, graph: Graph, _: CsrfChecked, __: StoresReady):
     """Connect this node to another one.
 
-    No override is recorded, and that is not an omission: the loader only
-    ever MERGEs the edges it has rows for and never removes the ones it
-    does not know about, so a hand-made link survives publishing on its
-    own. Recording one would be a decision nothing ever has to reapply.
+    Recorded as a decision, though nothing ever reapplies it: publishing
+    leaves an edge it has no row for alone, so the link survives on its own.
+    What it does not survive is a prune, which has no other way of telling
+    an edge a person added from one the pipeline has stopped making.
     """
     _known_label(label)
     form = await request.form()
@@ -493,6 +500,14 @@ async def link(request: Request, label: str, node_id: str, user: Editor,
                if wanted != "id" else ". Проверьте идентификатор."))
     except MutationError as error:
         return _link_failed(label, node_id, str(error))
+    # Claimed for the same reason a hand-made record is: publishing leaves
+    # an edge it does not know alone, but a prune cannot tell it from one
+    # the pipeline has stopped making.
+    _record(undo=lambda: delete_relationship(graph, src_label, rel_type, tgt_label,
+                                             src_id, tgt_id),
+            write=lambda: record_relationship_override(
+                db, src_label, rel_type, tgt_label, src_id, tgt_id,
+                op=LINK, actor=user.actor))
     logger.info("%s linked (%s %s)-[:%s]->(%s %s)",
                 user.actor, src_label, src_id, rel_type, tgt_label, tgt_id)
     return RedirectResponse(_node_url(label, node_id, "linked=1"),

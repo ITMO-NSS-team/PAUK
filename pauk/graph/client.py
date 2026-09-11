@@ -473,6 +473,39 @@ class Neo4jClient:
             return session.execute_read(
                 lambda tx: [dict(record) for record in tx.run(query)])
 
+    def fetch_node_ids(self, label: str) -> set[str]:
+        """Every id the graph holds under one label.
+
+        For comparing the graph against the source it was built from. The
+        whole set at once rather than a page at a time: the comparison is
+        set arithmetic, and half of it is meaningless.
+        """
+        query = cast(LiteralString, f"MATCH (n:{label}) RETURN n.id AS id")
+        with self.driver.session(default_access_mode="READ") as session:
+            return session.execute_read(
+                lambda tx: {record["id"] for record in tx.run(query) if record["id"] is not None})
+
+    def fetch_relationship_pairs(self, src_label: str, rel_type: str, tgt_label: str,
+                                 tgt_match_prop: str = "id") -> set[tuple[str, str]]:
+        """Every edge of one triple, as the loader would name it.
+
+        The far end is reported by whatever the loader matches it on — a
+        url for a Repository, a login for a GitHubProfile — so the answer
+        can be compared with what the prepared rows ask for without
+        translating either side.
+        """
+        query = cast(
+            LiteralString,
+            f"""
+            MATCH (src:{src_label})-[:{rel_type}]->(tgt:{tgt_label})
+            RETURN src.id AS src_id, tgt.{tgt_match_prop} AS tgt_id
+            """,
+        )
+        with self.driver.session(default_access_mode="READ") as session:
+            return session.execute_read(lambda tx: {
+                (record["src_id"], record["tgt_id"]) for record in tx.run(query)
+                if record["src_id"] is not None and record["tgt_id"] is not None})
+
     def fetch_merged_id_map(self, label: str) -> dict[str, str]:
         """Map of merged-away id to canonical id stored on `label` nodes.
 

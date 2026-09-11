@@ -17,7 +17,9 @@ import logging
 
 from pymongo.database import Database
 
+from pauk.admin import feed
 from pauk.admin.auth import ROLES, AuthError, create_user, list_users, set_active
+from pauk.graph import prune
 from pauk.graph.audit import actor_context, audited_client
 from pauk.graph.mutations import (
     NODE_FIELDS,
@@ -32,6 +34,9 @@ from pauk.graph.mutations import (
     update_node,
 )
 from pauk.graph.overrides import (
+    CREATE,
+    DELETE,
+    LINK,
     active_overrides,
     apply_overrides,
     deactivate_override,
@@ -87,6 +92,10 @@ def add_parser(subparsers) -> None:
     create.add_argument("label", choices=sorted(NODE_FIELDS))
     create.add_argument("id")
     create.add_argument("--set", dest="assignments", action="append", metavar="FIELD=VALUE")
+    create.add_argument("--note", default=None, help="why the record was added")
+    create.add_argument("--once", action="store_true",
+                        help="create without claiming it; a prune will then treat the "
+                             "record as a leftover")
 
     node_set = node.add_parser("set", help="change fields on a node")
     node_set.add_argument("label", choices=sorted(NODE_FIELDS))
@@ -121,6 +130,10 @@ def add_parser(subparsers) -> None:
         rel.add_argument("tgt_id")
         if name == "add":
             rel.add_argument("--set", dest="assignments", action="append", metavar="FIELD=VALUE")
+            rel.add_argument("--note", default=None, help="why the link was added")
+            rel.add_argument("--once", action="store_true",
+                             help="link without claiming it; a prune will then treat the "
+                                  "link as a leftover")
         else:
             rel.add_argument("--note", default=None, help="why the link was removed")
             rel.add_argument("--once", action="store_true",
@@ -148,6 +161,26 @@ def add_parser(subparsers) -> None:
         undo_rel.add_argument(argument)
 
     commands.add_parser("schema", help="list the labels, fields and relationships that can be edited")
+
+    graph_prune = commands.add_parser(
+        "prune", help="remove from the graph what the prepared rows no longer ask for")
+    graph_prune.add_argument(
+        "--apply", action="store_true",
+        help="remove them; without it the list is printed and nothing changes")
+    graph_prune.add_argument(
+        "--limit", type=int, default=20,
+        help="how many of each kind to print (default: 20)")
+
+    audit = commands.add_parser(
+        "audit", help="the change feed").add_subparsers(dest="audit_command", required=True)
+    audit_trim = audit.add_parser(
+        "trim", help="drop entries older than a given age, so the feed stops growing")
+    audit_trim.add_argument(
+        "--keep-days", type=int, default=feed.KEEP_DAYS,
+        help=f"how much history to keep (default: {feed.KEEP_DAYS})")
+    audit_trim.add_argument(
+        "--apply", action="store_true",
+        help="delete them; without it the count is printed and nothing changes")
 
     worker = commands.add_parser(
         "worker", help="perform the scheduled runs, one at a time")
@@ -201,6 +234,12 @@ def run(args, config: Settings, db: Database | None) -> None:
         _run_user(args, db)
         return
 
+    # Same: the feed is a Mongo collection, and trimming it is not a change
+    # to the graph that anything would record.
+    if args.admin_command == "audit":
+        _run_audit(args, db)
+        return
+
     # The worker opens its own connections, per job and per step, because a
     # single one held open for hours is a connection that dies quietly. It
     # also sets its own actor: each job records who asked for it.
@@ -212,7 +251,10 @@ def run(args, config: Settings, db: Database | None) -> None:
     client = audited_client(config, db)
     try:
         with actor_context(actor, source="admin-cli"):
-            _dispatch(args, client, db, actor)
+            if args.admin_command == "prune":
+                _run_prune(args, client, db)
+            else:
+                _dispatch(args, client, db, actor)
     except MutationError as error:
         raise SystemExit(str(error)) from None
     finally:
@@ -233,6 +275,60 @@ def _run_worker(args, config: Settings, db: Database) -> None:
             print("nothing queued")
         return
     worker.run_forever()
+
+
+def _run_prune(args, client, db: Database) -> None:
+    """Bring the graph back to what the prepared rows describe.
+
+    Listing by default. The graph is what the map and the panel read, and
+    a deletion nobody looked at first is the wrong way round for a step
+    that exists because the two copies had drifted apart unnoticed.
+    """
+    plan = prune.plan(client, db)
+    for label, ids in sorted(plan.nodes.items()):
+        print(f"{label}: {len(ids)} record(s) no row explains")
+        for node_id in ids[:args.limit]:
+            print(f"    {node_id}")
+        if len(ids) > args.limit:
+            print(f"    ... and {len(ids) - args.limit} more")
+    for (src_label, rel_type, tgt_label), pairs in sorted(plan.edges.items()):
+        print(f"({src_label})-[:{rel_type}]->({tgt_label}): {len(pairs)} link(s) no row asks for")
+        for src_id, tgt_id in pairs[:args.limit]:
+            print(f"    {src_id} -> {tgt_id}")
+        if len(pairs) > args.limit:
+            print(f"    ... and {len(pairs) - args.limit} more")
+    if plan.kept_by_hand:
+        print(f"kept: {plan.kept_by_hand} added by hand and claimed as a decision")
+    if plan.folding:
+        print(f"kept: {plan.folding} id(s) the next publish folds into another record")
+    if not plan.total():
+        print("the graph matches the prepared rows")
+        return
+    if not args.apply:
+        print(f"\n{plan.total()} in all; nothing removed, pass --apply to remove them")
+        return
+    result = prune.apply(client, plan)
+    print(f"\nremoved {result['pruned_relationships']} link(s) "
+          f"and {result['pruned_nodes']} record(s)")
+
+
+def _run_audit(args, db: Database) -> None:
+    """Keep the change feed from growing for ever.
+
+    Counting by default. A cut of the journal is not something to discover
+    afterwards, so the size of it is printed first and made only when asked
+    for.
+    """
+    cutoff = feed.older_than(args.keep_days)
+    result = feed.trim(db, cutoff, apply=args.apply)
+    kept = feed.count(db)
+    matched = result["audit_matched"]
+    if not args.apply:
+        print(f"{matched} entr(y/ies) older than {args.keep_days} days "
+              f"(before {cutoff[:10]}), out of {kept} in all")
+        print("nothing removed; pass --apply to remove them")
+        return
+    print(f"removed {result['audit_removed']} entr(y/ies), {kept} left")
 
 
 def _run_user(args, db: Database) -> None:
@@ -282,8 +378,15 @@ def _run_node(args, client, db, actor: str) -> None:
         print(json.dumps(read_node(client, args.label, args.id),
                          ensure_ascii=False, indent=2, default=str))
     elif args.node_command == "create":
-        node = create_node(client, args.label, args.id, _parse_assignments(args.assignments))
-        logger.info("created %s %s", args.label, args.id)
+        fields = _parse_assignments(args.assignments)
+        node = create_node(client, args.label, args.id, fields)
+        # Claimed, not reapplied: no prepared row will ever explain this
+        # record, and a prune would take it for a leftover of one.
+        if db is not None and not args.once:
+            record_override(db, args.label, args.id, CREATE, fields, actor=actor,
+                            note=args.note or "")
+        logger.info("created %s %s%s", args.label, args.id,
+                    "" if db is not None and not args.once else " (not recorded as a decision)")
         print(json.dumps(node, ensure_ascii=False, indent=2, default=str))
     elif args.node_command == "set":
         node = _set_fields(args, client, db, actor)
@@ -359,8 +462,10 @@ def _run_overrides(args, client, db) -> None:
         else:
             raise SystemExit(f"no override recorded for {args.label} {args.id}")
     elif args.overrides_command == "undo-rel":
+        # Only the removal: a link somebody added shares the document id
+        # with one somebody removed, and this command is about the second.
         if deactivate_relationship_override(db, args.src_label, args.rel_type, args.tgt_label,
-                                            args.src_id, args.tgt_id):
+                                            args.src_id, args.tgt_id, only_op=DELETE):
             print(f"({args.src_label} {args.src_id})-[:{args.rel_type}]->"
                   f"({args.tgt_label} {args.tgt_id}) will be rebuilt by the next publish")
         else:
@@ -372,12 +477,18 @@ def _run_overrides(args, client, db) -> None:
 
 def _run_relationship(args, client, db, actor: str) -> None:
     if args.rel_command == "add":
-        # No override needed: the loader only ever creates edges, so one
-        # added by hand is never taken away by a publish.
+        # Nothing reapplies this: the loader only ever creates edges, so one
+        # added by hand is never taken away by a publish. It is claimed so a
+        # prune can tell it from an edge the pipeline has stopped making.
         create_relationship(client, args.src_label, args.rel_type, args.tgt_label,
                             args.src_id, args.tgt_id, _parse_assignments(args.assignments))
-        logger.info("linked (%s %s)-[:%s]->(%s %s)", args.src_label, args.src_id,
-                    args.rel_type, args.tgt_label, args.tgt_id)
+        if db is not None and not args.once:
+            record_relationship_override(db, args.src_label, args.rel_type, args.tgt_label,
+                                         args.src_id, args.tgt_id, op=LINK, actor=actor,
+                                         note=args.note or "")
+        logger.info("linked (%s %s)-[:%s]->(%s %s)%s", args.src_label, args.src_id,
+                    args.rel_type, args.tgt_label, args.tgt_id,
+                    "" if db is not None and not args.once else " (not recorded as a decision)")
         return
 
     # Deletion is the direction that needs remembering: the same prepared

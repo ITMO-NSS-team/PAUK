@@ -240,12 +240,13 @@ class RestoreTest(unittest.TestCase):
 
     def test_creating_the_same_id_by_hand_also_withdraws_it(self):
         # Typing the id into the create form says just as plainly that the
-        # record is wanted.
-        from pauk.graph.overrides import active_overrides
+        # record is wanted. What is left in force is the claim that a person
+        # made it, not the decision to delete it.
+        from pauk.graph.overrides import CREATE, active_overrides
         csrf = self.sign_in()
         self.client.post("/nodes/LinkCandidate/new",
                          data={"csrf": csrf, "id": "L1", "url": "https://new.test"})
-        self.assertEqual(active_overrides(self.db), [])
+        self.assertEqual([row["op"] for row in active_overrides(self.db)], [CREATE])
 
     def test_a_node_the_feed_cannot_describe_is_not_restorable(self):
         csrf = self.sign_in()
@@ -531,3 +532,55 @@ class FeedFiltersTest(unittest.TestCase):
         self.assertIn('name="since" value="2026-08-22"', body)
         self.assertIn("Всего: 3", body)
         self.assertIn('value="old" selected', body)
+
+
+class TrimTest(unittest.TestCase):
+    """The feed is the one collection nothing ever shortened.
+
+    Every edit writes a line and every publish a summary per batch, so it
+    grows for as long as the service runs. Trimming has to be something a
+    person asks for and can see the size of first.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.db[feed.COLLECTION].insert_many([
+            entry(timestamp="2024-01-01T10:00:00", entity_id="OLD"),
+            entry(timestamp="2025-06-01T10:00:00", entity_id="OLDER"),
+            entry(timestamp="2026-09-01T10:00:00", entity_id="RECENT"),
+        ])
+
+    def ids(self):
+        return sorted(row["entity_id"] for row in self.db[feed.COLLECTION].find())
+
+    def test_counting_changes_nothing(self):
+        result = feed.trim(self.db, "2026-01-01T00:00:00")
+        self.assertEqual(result, {"audit_matched": 2, "audit_removed": 0})
+        self.assertEqual(self.ids(), ["OLD", "OLDER", "RECENT"])
+
+    def test_applying_removes_what_it_counted(self):
+        result = feed.trim(self.db, "2026-01-01T00:00:00", apply=True)
+        self.assertEqual(result, {"audit_matched": 2, "audit_removed": 2})
+        self.assertEqual(self.ids(), ["RECENT"])
+
+    def test_the_cutoff_is_compared_as_text_because_the_stamps_are(self):
+        # ISO 8601 sorts the same by text and by time, which is the whole
+        # reason the entries are stamped this way.
+        feed.trim(self.db, "2025-01-01T00:00:00", apply=True)
+        self.assertEqual(self.ids(), ["OLDER", "RECENT"])
+
+    def test_nothing_old_enough_means_nothing_happens(self):
+        self.assertEqual(feed.trim(self.db, "2000-01-01T00:00:00", apply=True),
+                         {"audit_matched": 0, "audit_removed": 0})
+        self.assertEqual(len(self.ids()), 3)
+
+    def test_the_default_age_is_a_date_in_the_past(self):
+        cutoff = feed.older_than(feed.KEEP_DAYS)
+        self.assertLess(cutoff, feed.older_than(0))
+
+    def test_what_is_left_is_still_readable(self):
+        # The indexes and the filters read the same documents afterwards;
+        # trimming must not leave the feed in a shape the page cannot show.
+        feed.trim(self.db, "2026-01-01T00:00:00", apply=True)
+        self.assertEqual(feed.count(self.db), 1)
+        self.assertEqual(len(feed.entries(self.db)), 1)

@@ -13,6 +13,8 @@ from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key
 from pauk.graph.mutations import RELATIONSHIPS, MutationError
 from pauk.graph.overrides import (
     COLLECTION,
+    CREATE,
+    LINK,
     active_overrides,
     record_override,
     tombstoned_relationships,
@@ -276,12 +278,15 @@ class RelationshipScreenTest(unittest.TestCase):
         self.assertEqual(response.status_code, 303)
         self.assertIn(("Person", "AUTHORED", "Publication", "A1", "W1"), self.graph.relationships)
 
-    def test_a_created_link_needs_no_override_to_survive_publishing(self):
-        # The loader never removes edges it does not know about, so there
-        # is nothing for a decision to reapply.
+    def test_a_created_link_is_claimed_as_somebody_decision(self):
+        # Nothing ever reapplies it — publishing leaves an edge it has no
+        # row for alone. It is written down so a prune can tell it from an
+        # edge the pipeline made and has since stopped making.
         csrf = self.sign_in()
         self.client.post("/nodes/Person/rel/add/A1", data=self.link_data(csrf))
-        self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
+        (claim,) = list(self.db[COLLECTION].find())
+        self.assertEqual((claim["kind"], claim["op"], claim["active"]),
+                         ("rel", LINK, True))
 
     def test_a_relationship_outside_the_eleven_known_triples_is_refused(self):
         # A malformed triple is a 400 — the form cannot produce one, so it
@@ -397,12 +402,17 @@ class CreateNodeTest(unittest.TestCase):
         self.assertEqual(response.headers["location"], "/nodes/Person/A9?created=1")
         self.assertEqual(self.graph.nodes[("Person", "A9")]["name_en"], "New Person")
 
-    def test_a_hand_made_node_needs_no_override_to_survive_publishing(self):
-        # The loader only touches ids it has rows for, so an invented id is
-        # never overwritten and there is nothing to reapply.
+    def test_a_hand_made_node_is_claimed_as_somebody_decision(self):
+        # The loader only touches ids it has rows for, so nothing has to
+        # reapply this. It is written down because no row will ever explain
+        # the record, and a prune would take it for a leftover.
         csrf = self.sign_in()
-        self.client.post("/nodes/Person/new", data={"csrf": csrf, "id": "A9"})
-        self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
+        self.client.post("/nodes/Person/new", data={"csrf": csrf, "id": "A9",
+                                                    "name_ru": "Новый"})
+        (claim,) = list(self.db[COLLECTION].find())
+        self.assertEqual((claim["op"], claim["target_id"], claim["active"]),
+                         (CREATE, "A9", True))
+        self.assertEqual(claim["fields"], {"name_ru": "Новый"})
 
     def test_a_node_without_an_id_is_refused(self):
         csrf = self.sign_in()
@@ -1270,11 +1280,75 @@ class EveryWritePathIsGuardedTest(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         self.assertIn("не откатилась", response.json()["detail"])
 
-    def test_linking_needs_no_guard(self):
-        # It records no decision, so there is no second write to fail: a
-        # link made by hand survives publishing on its own.
-        response = self.client.post("/nodes/Person/rel/add/A1", data={
-            "csrf": self.csrf, "triple": "Person|AUTHORED|Publication",
-            "other_id": "W1"})
-        self.assertEqual(response.status_code, 303)
-        self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
+    def test_linking_takes_the_link_away_again(self):
+        # The link is claimed as somebody's decision, so there is a second
+        # write to fail — and an unclaimed link is one a prune removes.
+        with patch.object(nodes, "record_relationship_override", self.unreachable):
+            response = self.client.post("/nodes/Person/rel/add/A1", data={
+                "csrf": self.csrf, "triple": "Person|AUTHORED|Publication",
+                "other_id": "W1"})
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn(("Person", "AUTHORED", "Publication", "A1", "W1"),
+                         self.graph.relationships)
+
+
+class HandMadeIsClaimedTest(unittest.TestCase):
+    """What a person adds has to be distinguishable from what a run left.
+
+    Publishing never removes a node or an edge it has no row for, so until
+    now nothing recorded either of them: there was nothing to reapply. A
+    prune changes that — it removes what no row explains — and then "no row
+    explains it" covers both a leftover and somebody's deliberate work.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add("Person", "A1", name_en="Ivan Petrov")
+        self.graph.add("Publication", "W1", title="paper")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one(
+            {"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
+
+    def claims(self):
+        return [(row.get("kind", "node"), row["op"], row["target_id"])
+                for row in self.db[COLLECTION].find({"active": True})]
+
+    def test_a_record_somebody_typed_in_is_claimed(self):
+        self.client.post("/nodes/Person/new", data={"csrf": self.csrf, "id": "A9"})
+        self.assertEqual(self.claims(), [("node", CREATE, "A9")])
+
+    def test_a_link_somebody_made_is_claimed(self):
+        self.client.post("/nodes/Person/rel/add/A1", data={
+            "csrf": self.csrf, "triple": "Person|AUTHORED|Publication", "other_id": "W1"})
+        self.assertEqual(self.claims(), [("rel", LINK, "W1")])
+
+    def test_a_claim_is_not_an_instruction(self):
+        # apply_overrides must not read "somebody added this link" as
+        # "remove this link", which is what the only other kind of
+        # relationship decision means.
+        from pauk.graph.overrides import apply_overrides
+        self.client.post("/nodes/Person/rel/add/A1", data={
+            "csrf": self.csrf, "triple": "Person|AUTHORED|Publication", "other_id": "W1"})
+        apply_overrides(self.graph, self.db)
+        self.assertIn(("Person", "AUTHORED", "Publication", "A1", "W1"),
+                      self.graph.relationships)
+
+    def test_a_claimed_record_keeps_its_fields_through_a_reapply(self):
+        from pauk.graph.overrides import apply_overrides
+        self.client.post("/nodes/Person/new",
+                         data={"csrf": self.csrf, "id": "A9", "name_ru": "Новый"})
+        self.graph.nodes[("Person", "A9")]["name_ru"] = "Затёрли"
+        apply_overrides(self.graph, self.db)
+        self.assertEqual(self.graph.nodes[("Person", "A9")]["name_ru"], "Новый")
+
+    def test_a_record_with_no_fields_is_still_claimed(self):
+        # An id and nothing else is a legitimate record to invent, and a
+        # "set" decision with no fields is refused — so this used to be the
+        # one case a claim could not be written for.
+        self.client.post("/nodes/LinkCandidate/new", data={"csrf": self.csrf, "id": "L9"})
+        self.assertEqual(self.claims(), [("node", CREATE, "L9")])

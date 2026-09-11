@@ -18,7 +18,7 @@ from __future__ import annotations
 from pymongo.database import Database
 
 from pauk.admin import feed
-from pauk.graph.overrides import COLLECTION, SET, active_overrides
+from pauk.graph.overrides import COLLECTION, CREATE, DELETE, LINK, SET, active_overrides
 
 PAGE = 50
 
@@ -37,6 +37,16 @@ def _moment(value) -> str:
     if value is None:
         return ""
     return value.isoformat() if hasattr(value, "isoformat") else str(value).replace(" ", "T", 1)
+
+
+#: What each kind of decision is called on the page, by (is it a link, op).
+WORDS = {
+    (True, DELETE): "связь удалена",
+    (True, LINK): "связь добавлена вручную",
+    (False, SET): "поля изменены",
+    (False, DELETE): "запись удалена",
+    (False, CREATE): "запись заведена вручную",
+}
 
 
 def _title(row: dict) -> str:
@@ -62,12 +72,11 @@ def in_force(db: Database, limit: int = PAGE, skip: int = 0) -> list[dict]:
                 .sort("updated_at", -1).skip(skip).limit(limit))
     for row in rows:
         row["title"] = _title(row)
-        if row.get("kind") == "rel":
-            row["what"] = "связь удалена"
-        elif row.get("op") == SET:
-            row["what"] = "поля изменены"
-        else:
-            row["what"] = "запись удалена"
+        row["what"] = WORDS.get((row.get("kind") == "rel", row.get("op")), "решение")
+        # A claim on something a person added is not an instruction, so
+        # there is nothing to stop applying. Removing the record or the
+        # link is how it is taken back, and both have their own buttons.
+        row["undoable"] = row.get("op") not in (CREATE, LINK)
         row["pairs"] = sorted(
             (name, (row.get("auto_value") or {}).get(name), value)
             for name, value in (row.get("fields") or {}).items())

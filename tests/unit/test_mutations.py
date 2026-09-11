@@ -153,6 +153,32 @@ class FakeGraph:
     def promote_link_candidates_batch(self, candidates):
         self.calls.append("promote_link_candidates_batch")
 
+    def fetch_node_ids(self, label):
+        return {node_id for (node_label, node_id) in self.nodes if node_label == label}
+
+    def fetch_relationship_pairs(self, src_label, rel_type, tgt_label, tgt_match_prop="id"):
+        """Edges of one triple, the way the real query reports them.
+
+        Both ends have to exist: the real one is a MATCH on two nodes, and
+        an edge in this dict whose far end was never created would be a
+        graph the driver cannot produce.
+        """
+        def node(label, match_value):
+            for (node_label, node_id), props in self.nodes.items():
+                if node_label != label:
+                    continue
+                if match_value == (node_id if tgt_match_prop == "id"
+                                   else props.get(tgt_match_prop)):
+                    return True
+            return False
+
+        return {
+            (src_id, tgt_id)
+            for source, rel, target, src_id, tgt_id in self.relationships
+            if (source, rel, target) == (src_label, rel_type, tgt_label)
+            and (src_label, src_id) in self.nodes and node(tgt_label, tgt_id)
+        }
+
     def fetch_merged_id_map(self, label):
         """Aliases the way the real client reads them: off the nodes.
 
