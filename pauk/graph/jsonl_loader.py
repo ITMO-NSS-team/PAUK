@@ -110,6 +110,37 @@ def extract_repo_links(
     return candidate_nodes, repo_edges, candidate_edges, candidate_promotions
 
 
+def _keep_graph_merges(client, label: str, nodes: list[tuple[str, dict]]) -> int:
+    """Add back the folded-away ids the graph knows and the rows do not.
+
+    A fold made on the graph — the graph-wide dedup pass, or a pair
+    confirmed in the review queue — writes `merged_ids` onto the surviving
+    node and nowhere else. Publishing that node from its row would replace
+    the list with the row's own, `fetch_merged_id_map` would stop resolving
+    the folded id, and the duplicate below would be recreated with all of
+    its relationships. The fold would be silently undone by a republish.
+
+    Returns:
+        How many nodes kept an id their row does not carry.
+    """
+    if not nodes:
+        return 0
+    held: dict[str, list[str]] = defaultdict(list)
+    for alias, canonical in client.fetch_merged_id_map(label).items():
+        if alias != canonical:
+            held[canonical].append(alias)
+    kept = 0
+    for node_id, props in nodes:
+        known = props.get("merged_ids") or []
+        extra = [alias for alias in held.get(node_id, ()) if alias not in known]
+        if extra:
+            props["merged_ids"] = [*known, *extra]
+            kept += 1
+    if kept:
+        logger.info("nodes (:%s): %d node(s) kept a fold their row does not carry", label, kept)
+    return kept
+
+
 def load_prepared_rows(
     client: Neo4jClient | AuditedNeo4jClient,
     rows_by_file: dict[str, list[dict]],
@@ -202,6 +233,12 @@ def load_prepared_rows(
             candidate_promotions.update(promotions)
     else:
         logger.info("repo_links.jsonl: no rows, skipping")
+
+    # Before anything is written: the three labels that can be folded carry
+    # merges the prepared rows have never seen.
+    _keep_graph_merges(client, "Person", person_nodes)
+    for label in ("Publication", "Repository"):
+        _keep_graph_merges(client, label, node_batches.get(label) or [])
 
     for labels, nodes in node_batches.items():
         for chunk in chunked(nodes):
