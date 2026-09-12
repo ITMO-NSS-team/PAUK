@@ -318,7 +318,9 @@
     "name_ru": "Институт информационно-навигационных систем",
     "kind": "institute",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "Department of Information and Navigation Systems"
+    ]
   },
   {
     "uid": "institute-of-intelligent-industrial-technologies",
