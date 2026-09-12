@@ -374,7 +374,9 @@
     "name_ru": "Международная лаборатория \"Интегрированные системы ориентации и навигации\"",
     "kind": "lab",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "International Laboratory Integrated Navigation and Attitude Reference Systems"
+    ]
   },
   {
     "uid": "international-laboratory-of-multi-agent-distributed-and-networked-systems-management",
@@ -390,7 +392,9 @@
     "name_ru": "Международная лаборатория \"Силовая электроника и автоматизированный электропривод\"",
     "kind": "lab",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "Laboratory of Power Electronics and Automated Electric Drive"
+    ]
   },
   {
     "uid": "international-scientific-center-for-nonlinear-and-adaptive-control-systems",
@@ -414,7 +418,10 @@
     "name_ru": "Лаборатория компьютерной инженерии",
     "kind": "lab",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [],
+    "context_aliases": [
+      "Computer Engineering Laboratory"
+    ]
   },
   {
     "uid": "laboratory-of-cryptographic-methods-for-information-protection",
@@ -422,7 +429,9 @@
     "name_ru": "Лаборатория криптографических методов защиты информации",
     "kind": "lab",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "Laboratory of Cryptographic Methods of Information Security"
+    ]
   },
   {
     "uid": "laboratory-of-cyber-physical-systems",
@@ -896,7 +905,9 @@
     "name_ru": "Международная научная лаборатория лазерных микро- и нанотехнологий",
     "kind": "lab",
     "parent": "school-of-physics-and-engineering",
-    "aliases": []
+    "aliases": [
+      "International Scientific Laboratory of Laser Micro- and Nanotechnology"
+    ]
   },
   {
     "uid": "international-scientific-laboratory-of-modern-photonic-materials-and-technologies",
@@ -936,7 +947,10 @@
     "name_ru": "Лаборатория изучения культурного наследия",
     "kind": "lab",
     "parent": "school-of-physics-and-engineering",
-    "aliases": []
+    "aliases": [],
+    "context_aliases": [
+      "Cultural Heritage Research Laboratory"
+    ]
   },
   {
     "uid": "laboratory-of-digital-and-display-holography",

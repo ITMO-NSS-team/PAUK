@@ -1,3 +1,4 @@
+import logging
 import re
 from datetime import UTC, datetime
 
@@ -7,6 +8,8 @@ from pauk.storage.static import StaticStore
 
 from .base import EnrichmentStage
 
+logger = logging.getLogger(__name__)
+
 # Affiliations read "<department>, <organisation>, <address>"; splitting on these
 # separators yields those parts, so an ITMO marker can be located next to a name.
 _PART_SPLIT = re.compile(r"[\n;,]")
@@ -15,10 +18,18 @@ _PART_SPLIT = re.compile(r"[\n;,]")
 # organisation right beside the department), never merely elsewhere in the blob —
 # that is what keeps a co-affiliated "Department of Physics, SPbU" from matching.
 _ITMO_MARKER = re.compile(r"\bitmo\b|\bifmo\b|итмо|information technolog\w*,?\s*mechanics", re.IGNORECASE)
+# The catalogue quotes and hyphenates a name ("Energy-Efficient"), authors often
+# do neither; folding both to spaces on each side lets containment survive that.
+_PUNCT = re.compile("[«»“”„‟‘’‚‛\"'‐-―-]")
+
+
+def _normalize(text: str) -> str:
+    """Casefold, fold quotes and dashes to spaces, collapse runs of whitespace."""
+    return " ".join(_PUNCT.sub(" ", text.casefold()).split())
 
 
 def _match_names(department: Department) -> list[str]:
-    """Casefolded names to look for in affiliation text: English, Russian, variants.
+    """Normalized names to look for in affiliation text: English, Russian, variants.
 
     Matching stays plain substring containment; adding name_ru lets Cyrillic
     affiliations match, which name_en-only matching missed. Word-boundary matching
@@ -27,18 +38,18 @@ def _match_names(department: Department) -> list[str]:
     while removing no genuine false positives.
     """
     names = [department.name_en, department.name_ru, *department.name_variants]
-    return [name.casefold() for name in names if name]
+    return [_normalize(name) for name in names if name]
 
 
 def _context_names(department: Department) -> list[str]:
-    """Casefolded generic aliases matched only next to an ITMO marker.
+    """Normalized generic aliases matched only next to an ITMO marker.
 
     Names like "Department of Physics" also name foreign units, so matching them
     against the whole affiliation blob would pull in co-affiliations. Requiring an
     ITMO marker in the same or an adjacent part recovers the ITMO authors without
     that cost.
     """
-    return [name.casefold() for name in department.context_aliases if name]
+    return [_normalize(name) for name in department.context_aliases if name]
 
 
 class DepartmentsStage(EnrichmentStage):
@@ -63,10 +74,11 @@ class DepartmentsStage(EnrichmentStage):
             if self._person_in_scope(person) and self.needs_attempt(person.processing.get(self.name))
         ]
         changed = 0
+        seen: set[str] = set()
         for person in self.progress(candidates, total=len(candidates)):
             state = person.processing.get(self.name)
             affiliations = [a.affiliation or "" for a in person.authored]
-            text = " ".join(" ".join(a.split()) for a in affiliations).casefold()
+            text = _normalize(" ".join(affiliations))
             matched = [dept_id for dept_id, names in matchers if any(name in text for name in names)]
             # ITMO-context pass: generic aliases match only in a part adjacent to an
             # ITMO marker, so a co-affiliated foreign department cannot pull them in.
@@ -77,7 +89,7 @@ class DepartmentsStage(EnrichmentStage):
                     marked = {i for i, part in enumerate(parts) if _ITMO_MARKER.search(part)}
                     if not marked:
                         continue
-                    itmo_parts += [part.casefold() for i, part in enumerate(parts) if marked & {i - 1, i, i + 1}]
+                    itmo_parts += [_normalize(part) for i, part in enumerate(parts) if marked & {i - 1, i, i + 1}]
                 for part in itmo_parts:
                     hits = [(dept_id, name) for dept_id, names in ctx_matchers for name in names if name in part]
                     # Keep the most specific alias per part: drop one that is merely a
@@ -88,6 +100,7 @@ class DepartmentsStage(EnrichmentStage):
                         for dept_id, name in hits
                         if not any(name != other and name in other for _, other in hits)
                     ]
+            seen.update(matched)
             person.department_ids = list(dict.fromkeys([*person.department_ids, *matched]))
             for authorship in person.authored:
                 pub = by_pub.get(authorship.publication_id)
@@ -100,6 +113,7 @@ class DepartmentsStage(EnrichmentStage):
                 result_count=len(matched),
             )
             changed += 1
+        logger.info("Matched %d of %d catalogue departments", len(seen), len(departments))
         self.prepared.write_models("persons", people)
         self.prepared.write_models("departments", departments)
         self.prepared.write_models("organizations", organizations)
