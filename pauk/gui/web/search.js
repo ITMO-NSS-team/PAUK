@@ -57,7 +57,11 @@ function searchHits(q, withDepts) {
   if (withDepts) {
     for (const d of DATA.departments) {
       if (d.name === "Без департамента") continue;
-      if (tokens.every(t => d.name.toLowerCase().includes(t)))
+      // One unit is written three ways: Russian, English, and the spellings its own
+      // authors use ("SCAMT"). Every token has to sit in one of them, so half a match
+      // in Russian plus half in English is not a hit.
+      const names = [d.name, d.name_en, ...(d.name_variants || [])].filter(Boolean).map(n => n.toLowerCase());
+      if (names.some(n => tokens.every(t => n.includes(t))))
         hits.push({ key: d.id, kind: "dept", label: deptDisplayName(d), ll: d.name.toLowerCase(), sub: null });
     }
   }
