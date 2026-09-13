@@ -549,9 +549,13 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     graph.addNode("A2", { x: 1, y: 1 });
     graph.addEdge("A1", "A2", { weight: 3 });
     const store = new Store<AppState>(initialState({ selection: { kind: "edge", s: "A2", t: "A1", w: 3 } }));
-    const { renderer, getReducer } = fakeRenderer(graph);
+    const { renderer, getReducer, fireCameraUpdated } = fakeRenderer(graph);
 
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
+    // Дефолтный ratio=1 в applyGraphStyling больше MAP_CONFIG.edge.visibleBelowRatio
+    // (0.2) — рёбра сами по себе скрыты до приближения, подсветку выбора
+    // проверяем на ratio, при котором рёбра вообще видны.
+    fireCameraUpdated(MAP_CONFIG.edge.visibleBelowRatio - 0.1);
     const edgeReducer = getReducer("edgeReducer");
     const [edgeKey] = graph.edges();
     if (!edgeKey) throw new Error("граф должен содержать хотя бы одно ребро");
@@ -697,6 +701,29 @@ describe("mountReactiveGraph", () => {
     // нормализованное пространство, в котором живёт camera.x/y.
     expect(cameraAnimate).toHaveBeenCalledWith(
       { x: 12 + FRAMED_COORD_OFFSET, y: 34 + FRAMED_COORD_OFFSET, ratio: MAP_CONFIG.camera.focusRatio },
+      { duration: MAP_CONFIG.camera.focusDuration, easing: "quadraticInOut" },
+    );
+  });
+
+  it("смена вкладки И selection ОДНИМ патчем (как делает features/globalSearch.ts) тоже подлетает камерой — не только раздельные store.set()", async () => {
+    // Регрессия: раньше ветка "сменилась вкладка" всегда делала return, даже
+    // если selection в ТОМ ЖЕ патче тоже сменился — камера так никогда и не
+    // подлетала к результату глобального поиска, если он принадлежал другой
+    // вкладке (подсветка на карте при этом была верной, только сам вид
+    // камеры оставался там, где был до выбора).
+    const data = await loadSampleGraphData();
+    const graph = new Graph();
+    populateGraph(graph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS); // изначально вкладка 1
+    const store = new Store<AppState>(initialState({ tab: 1 }));
+    const { renderer, cameraAnimate } = fakeRenderer(graph);
+    const repo = data.repos[0];
+    if (!repo) throw new Error("фикстура должна содержать хотя бы один репозиторий");
+
+    mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
+    store.set({ tab: 2, selection: { kind: "node", key: repo.key } }); // один патч, как в глобальном поиске
+
+    expect(cameraAnimate).toHaveBeenCalledWith(
+      { x: repo.gx + FRAMED_COORD_OFFSET, y: repo.gy + FRAMED_COORD_OFFSET, ratio: MAP_CONFIG.camera.focusRatio },
       { duration: MAP_CONFIG.camera.focusDuration, easing: "quadraticInOut" },
     );
   });

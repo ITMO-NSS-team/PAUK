@@ -28,13 +28,13 @@ describe("mountUrlSync", () => {
     expect(location.search).toBe("?tab=repos");
   });
 
-  it("screen: 'menu' при монтировании пишет tab=start, а не пустой query", async () => {
+  it("screen: 'menu' при монтировании пишет tab=menu, а не пустой query", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ screen: "menu" }));
 
     mountUrlSync(store, data);
 
-    expect(location.search).toBe("?tab=start");
+    expect(location.search).toBe("?tab=menu");
   });
 
   it("при непустом (частичном/битом) query нормализует URL под текущее состояние store", async () => {

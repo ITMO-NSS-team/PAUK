@@ -3,8 +3,8 @@ import { parseUrlState, serializeUrlState } from "../src/core/url";
 import { loadSampleGraphData } from "./fixtures";
 
 describe("serializeUrlState", () => {
-  it("screen: 'menu' — только tab=start, tab/selection состояния игнорируются", () => {
-    expect(serializeUrlState({ screen: "menu", tab: 2, selection: { kind: "dept", id: 0 } })).toBe("tab=start");
+  it("screen: 'menu' — только tab=menu, tab/selection состояния игнорируются", () => {
+    expect(serializeUrlState({ screen: "menu", tab: 2, selection: { kind: "dept", id: 0 } })).toBe("tab=menu");
   });
 
   it("без selection кладёт только tab, слагом, не числом", () => {
@@ -46,9 +46,9 @@ describe("parseUrlState", () => {
     expect(parseUrlState("", data)).toEqual({ screen: "menu", tab: 1, selection: null });
   });
 
-  it("tab=start — тоже меню (явная запись, см. features/urlSync.ts)", async () => {
+  it("tab=menu — тоже меню (явная запись, см. features/urlSync.ts)", async () => {
     const data = await loadSampleGraphData();
-    expect(parseUrlState("?tab=start", data)).toEqual({ screen: "menu", tab: 1, selection: null });
+    expect(parseUrlState("?tab=menu", data)).toEqual({ screen: "menu", tab: 1, selection: null });
   });
 
   it("неизвестный слаг вкладки тоже откатывается на меню — безопаснее показать выбор, чем угадывать по битой ссылке", async () => {

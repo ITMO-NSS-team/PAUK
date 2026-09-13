@@ -73,6 +73,48 @@ describe("mountGlobalSearch", () => {
     expect((document.getElementById("global-search") as HTMLElement).hidden).toBe(true);
   });
 
+  it("Enter в поле ввода выбирает первый результат", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState({ tab: 2 })); // намеренно не на вкладке автора
+    mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+
+    document.getElementById("global-search-trigger")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const input = document.getElementById("global-search-input") as HTMLInputElement;
+    input.value = "Иванов";
+    input.dispatchEvent(new Event("input"));
+
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+    expect(store.get().tab).toBe(1);
+    expect(store.get().selection).toEqual({ kind: "node", key: "A1" });
+    expect((document.getElementById("global-search") as HTMLElement).hidden).toBe(true);
+  });
+
+  it("Enter, нажатый НЕ в поле ввода (например, уже на кнопке результата), не подменяет выбор первым результатом", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState());
+    mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+
+    document.getElementById("global-search-trigger")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const input = document.getElementById("global-search-input") as HTMLInputElement;
+    input.value = "П"; // должно найтись больше одного автора
+    input.dispatchEvent(new Event("input"));
+
+    const items = [...document.querySelectorAll<HTMLButtonElement>("#global-search-results .tab-list-item")];
+    if (items.length < 2) throw new Error("для этого теста нужно хотя бы два результата");
+    const second = items[1];
+    if (!second) throw new Error("должен быть второй результат");
+
+    // event.target здесь — сама кнопка (второй результат), не input: код
+    // должен проверять именно "event.target === input", а не более широкое
+    // "это не INPUT/TEXTAREA" — иначе Enter здесь тоже подхватило бы "выбрать
+    // первый" и выбрало бы ПЕРВЫЙ результат вместо второго (или вместо
+    // штатного клика по самой кнопке, за который отвечает браузер, а не мы).
+    second.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+    expect(store.get().selection).toBeNull();
+  });
+
   it("Escape закрывает открытое окно", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
@@ -152,13 +194,44 @@ describe("mountGlobalSearch", () => {
     expect(document.querySelector("#global-search-results .tab-empty")?.textContent).toBe("Ничего не найдено");
   });
 
-  it("пустой запрос (сразу после открытия) не показывает 'Ничего не найдено' — просто пустой список", async () => {
+  it("пустой запрос (сразу после открытия) показывает департаменты для просмотра, крупнейшие сверху — не 'Ничего не найдено' и не пустой список", async () => {
     const data = await loadSampleGraphData();
+    // Департамент 0 во фикстуре (n=7) крупнее департамента 2 (n=5) — 0 должен идти первым.
+    const dept0 = data.departments.find((d) => d.id === 0);
+    const dept1 = data.departments.find((d) => d.id === 2);
+    if (!dept0 || !dept1) throw new Error("фикстура должна содержать департаменты 0 и 2");
+    if (dept0.n <= dept1.n) throw new Error("фикстура должна давать разброс по размеру департаментов для проверки сортировки");
     const store = new Store<AppState>(initialState());
     mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
     document.getElementById("global-search-trigger")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     expect(document.querySelector("#global-search-results .tab-empty")).toBeNull();
+    expect(document.querySelector(".global-search-hint")?.textContent).toBe("Департаменты");
+    const hits = [...document.querySelectorAll<HTMLButtonElement>("#global-search-results .tab-list-item")];
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits.every((hit) => hit.dataset.kind === "dept")).toBe(true);
+    expect(hits.findIndex((h) => h.textContent === dept0.name)).toBeLessThan(
+      hits.findIndex((h) => h.textContent === dept1.name),
+    );
+  });
+
+  it("клик по департаменту из подсказки 'для просмотра' выбирает его", async () => {
+    const data = await loadSampleGraphData();
+    const dept = data.departments[0];
+    if (!dept) throw new Error("фикстура должна содержать хотя бы один департамент");
+    const store = new Store<AppState>(initialState());
+    mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+
+    document.getElementById("global-search-trigger")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const hit = [...document.querySelectorAll<HTMLButtonElement>("#global-search-results .tab-list-item")].find(
+      (button) => button.textContent === dept.name,
+    );
+    if (!hit) throw new Error(`департамент "${dept.name}" должен быть в подсказке "для просмотра"`);
+
+    hit.click();
+
+    expect(store.get().selection).toEqual({ kind: "dept", id: dept.id });
+    expect((document.getElementById("global-search") as HTMLElement).hidden).toBe(true);
   });
 });

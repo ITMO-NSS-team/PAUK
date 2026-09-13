@@ -575,11 +575,21 @@ export function mountReactiveGraph(
 
   let prev = store.get();
   const unsubscribe = store.subscribe((state) => {
+    // Снимок СТАРЫХ значений в самом начале — единственное место, где
+    // обновляется prev (раньше было раскидано по обеим веткам ниже
+    // отдельными "prev = state", из-за чего ветка "сменилась вкладка"
+    // делала return ДО того, как успевала проверить смену selection —
+    // если вкладку и selection меняли ОДНИМ патчем (например,
+    // features/globalSearch.ts: {screen, tab, selection} разом), камера
+    // так никогда и не подлетала к результату — только подсветка на карте
+    // "молча" оказывалась верной, а сам вид оставался там, где был).
+    const { tab: prevTab, lang: prevLang, filters: prevFilters, selection: prevSelection } = prev;
+    prev = state;
+
     // filters — новый объект только когда его реально меняли (Store.set
     // мержит патч поверх состояния, не трогая поля вне патча), поэтому
     // сравнение по ссылке здесь корректно и дешевле глубокого сравнения.
-    if (state.tab !== prev.tab || state.lang !== prev.lang || state.filters !== prev.filters) {
-      prev = state;
+    if (state.tab !== prevTab || state.lang !== prevLang || state.filters !== prevFilters) {
       populateGraph(graph, data, state.lang, state.tab, state.filters, pubDetails);
       // Смена вкладки/фильтров пересобирает граф под другой набор
       // сущностей — старый выбор (узел/департамент с прошлой вкладки, или
@@ -594,14 +604,20 @@ export function mountReactiveGraph(
       // подписчики ПОСЛЕ этого в том же раунде (например, mountPanel)
       // получили бы уже устаревший state.selection и перезаписали бы им
       // корректный результат этого вложенного вызова.
-      if (!selectionExistsIn(graph, state.selection)) store.set({ selection: null });
-      return;
+      if (!selectionExistsIn(graph, state.selection)) {
+        store.set({ selection: null });
+        return; // вложенный notify() уже отработал результат за нас (включая refresh() ниже)
+      }
     }
-    if (state.selection !== prev.selection) {
-      prev = state;
+
+    // НЕ "else if" — смена вкладки/фильтров и смена selection не исключают
+    // друг друга: features/globalSearch.ts::mountGlobalSearch кладёт их
+    // ОДНИМ патчем, если результат принадлежит другой вкладке.
+    if (state.selection !== prevSelection) {
       // Реducer уже видит новый store.get().selection к этому моменту —
       // refresh() только просит Sigma позвать реducer'ы заново и
-      // перерисоваться, без пересборки графа.
+      // перерисоваться, без пересборки графа (а если граф выше уже
+      // пересобран populateGraph — без ЕЩЁ одной пересборки).
       renderer.refresh();
       flyToSelection(renderer, state.selection);
     }
@@ -636,7 +652,11 @@ export function mountZoomDebug(renderer: Sigma): () => void {
     position: "absolute",
     bottom: "12px",
     left: "12px",
-    zIndex: "40",
+    // Меньше, чем z-index у #menu (26, index.html) — иначе индикатор,
+    // будучи ребёнком #map (сам без своего z-index), просвечивал бы поверх
+    // непрозрачного оверлея меню (прямая жалоба — "не показывать zoom
+    // ratio на start"). Выше самого канваса Sigma этого достаточно.
+    zIndex: "5",
     padding: "4px 8px",
     background: "rgba(0, 0, 0, 0.6)",
     color: "#fff",

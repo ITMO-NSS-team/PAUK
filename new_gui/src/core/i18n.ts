@@ -93,7 +93,6 @@ export type LocaleKey =
   | "field.deptsCount"
   | "field.total"
   | "overview.title"
-  | "overview.top"
   | "overview.avgPubsPerAuthor"
   | "overview.knownYear"
   | "field.doi"
@@ -101,6 +100,7 @@ export type LocaleKey =
   | "search.placeholder"
   | "search.pubsCountShort"
   | "search.trigger"
+  | "search.browseDepts"
   | "tab.searchPlaceholder"
   | "tab.noResults"
   | "filter.coauth"
@@ -168,12 +168,12 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.doi": "DOI",
     "field.code": "Код",
     "overview.title": "Обзор",
-    "overview.top": "Топ-10",
     "overview.avgPubsPerAuthor": "Публикаций на автора (среднее)",
     "overview.knownYear": "Известен год",
     "search.placeholder": "Поиск по авторам, репозиториям, публикациям, департаментам…",
     "search.pubsCountShort": "публ.",
     "search.trigger": "Поиск по всему",
+    "search.browseDepts": "Департаменты",
     "tab.searchPlaceholder": "Поиск…",
     "tab.noResults": "Ничего не найдено",
     "filter.coauth": "Мин. соавторство",
@@ -241,12 +241,12 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.doi": "DOI",
     "field.code": "Code",
     "overview.title": "Overview",
-    "overview.top": "Top 10",
     "overview.avgPubsPerAuthor": "Publications per author (avg.)",
     "overview.knownYear": "Known year",
     "search.placeholder": "Search authors, repositories, publications, departments…",
     "search.pubsCountShort": "pubs",
     "search.trigger": "Search everything",
+    "search.browseDepts": "Departments",
     "tab.searchPlaceholder": "Search…",
     "tab.noResults": "No results found",
     "filter.coauth": "Min. co-authorship",

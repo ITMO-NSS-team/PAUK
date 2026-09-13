@@ -2,7 +2,7 @@
 // Умеет показывать карточку узла (автор/репозиторий/публикация), ребра
 // (кто с кем связан и с каким весом), департамента (сводные числа из
 // самого Department) и карточку "Обзор" по умолчанию, когда вообще ничего
-// не выбрано — сводка ЗАВИСИТ от активной вкладки (топ-10 её сущностей,
+// не выбрано — сводка ЗАВИСИТ от активной вкладки (числа сущностей,
 // заполняемость её detail-полей), не один общий набор чисел на все три
 // графа, см. {@link renderOverview}.
 
@@ -400,15 +400,34 @@ export function mountPanel(
   /**
    * Показывает панель с готовой карточкой.
    *
-   * @param title - заголовок карточки (`<h3>`).
+   * @param title - заголовок карточки (`<h3>`, например имя автора или "Обзор").
+   * @param kind - короткий бейдж вида сущности рядом с заголовком (например
+   *   "Автор"/"Департамент"/"Публикации" для "Обзора" текущей вкладки) —
+   *   после того, как почти любая сущность стала кликабельной ссылкой на
+   *   другую (см. {@link PanelEntityRef}), легко потерять, на карточку
+   *   КАКОГО вида сущности только что перепрыгнули.
    * @param rows - строки карточки, см. {@link PanelRow}.
+   * @param showBack - показывать ли кнопку "← Обзор" — не для самого
+   *   "Обзора" (там уже некуда возвращаться), для всех остальных карточек.
    */
-  function show(title: string, rows: PanelRow[]): void {
+  function show(title: string, kind: string, rows: PanelRow[], showBack: boolean): void {
     container.hidden = false;
-    // onSelect — клик по PanelEntityRef внутри карточки пишет новую
-    // сущность прямо в store.selection, точно так же, как клик по узлу на
-    // карте (features/selection.ts) или по строке списка вкладки.
-    container.replaceChildren(buildCard(title, rows, (selection) => store.set({ selection })));
+    container.replaceChildren(
+      buildCard({
+        title,
+        kind,
+        rows,
+        // "← Обзор"/"← Overview" — null для самого "Обзора" (там уже
+        // некуда возвращаться), готовая локализованная строка для всех
+        // остальных карточек.
+        backLabel: showBack ? `← ${t("overview.title", store.get().lang)}` : null,
+        // Клик по PanelEntityRef внутри карточки пишет новую сущность прямо
+        // в store.selection, точно так же, как клик по узлу на карте
+        // (features/selection.ts) или по строке списка вкладки.
+        onSelectRef: (selection) => store.set({ selection }),
+        onBack: () => store.set({ selection: null }),
+      }),
+    );
   }
 
   /**
@@ -440,13 +459,14 @@ export function mountPanel(
    */
   function renderOverview(state: AppState): void {
     const { tab, lang } = state;
+    // Какую вкладку резюмирует "Обзор" — в бейдж рядом с заголовком, а не
+    // только в подсветку кнопки вкладки в сайдбаре: панель может быть
+    // единственным, на что смотрят в моменте (например, после долгой серии
+    // переходов по кликабельным ссылкам).
+    const tabKind = tab === 1 ? t("tab.authors", lang) : tab === 2 ? t("tab.repos", lang) : t("tab.pubs", lang);
 
     if (tab === 1) {
       const authors: AuthorNode[] = data.authors;
-      const topKeys = [...authors]
-        .sort((a, b) => b.pubs_count - a.pubs_count)
-        .slice(0, PANEL_CONFIG.listLimit)
-        .map((a) => a.key);
       const avgPubs = authors.length > 0 ? (authors.reduce((sum, a) => sum + a.pubs_count, 0) / authors.length).toFixed(1) : "0";
 
       let withOrcid = 0;
@@ -458,23 +478,23 @@ export function mountPanel(
         if (detail.email) withEmail++;
       }
 
-      return show(t("overview.title", lang), [
-        [t("field.authorsCount", lang), String(authors.length)],
-        [t("field.deptsCount", lang), String(data.departments.length)],
-        [t("overview.avgPubsPerAuthor", lang), avgPubs],
-        [t("field.orcid", lang), completionRow(withOrcid, authorDetails.size)],
-        [t("field.github", lang), completionRow(withGithub, authorDetails.size)],
-        [t("field.email", lang), completionRow(withEmail, authorDetails.size)],
-        [t("overview.top", lang), entityRefsOf(topKeys, lang)],
-      ]);
+      return show(
+        t("overview.title", lang),
+        tabKind,
+        [
+          [t("field.authorsCount", lang), String(authors.length)],
+          [t("field.deptsCount", lang), String(data.departments.length)],
+          [t("overview.avgPubsPerAuthor", lang), avgPubs],
+          [t("field.orcid", lang), completionRow(withOrcid, authorDetails.size)],
+          [t("field.github", lang), completionRow(withGithub, authorDetails.size)],
+          [t("field.email", lang), completionRow(withEmail, authorDetails.size)],
+        ],
+        false,
+      );
     }
 
     if (tab === 2) {
       const repos: RepoNode[] = data.repos;
-      const topKeys = [...repos]
-        .sort((a, b) => b.stars - a.stars)
-        .slice(0, PANEL_CONFIG.listLimit)
-        .map((r) => r.key);
 
       let withReadme = 0;
       let withLicense = 0;
@@ -483,20 +503,20 @@ export function mountPanel(
         if (detail.license) withLicense++;
       }
 
-      return show(t("overview.title", lang), [
-        [t("field.reposCount", lang), String(repos.length)],
-        [t("field.hasReadme", lang), completionRow(withReadme, repoDetails.size)],
-        [t("field.license", lang), completionRow(withLicense, repoDetails.size)],
-        [t("overview.top", lang), entityRefsOf(topKeys, lang)],
-      ]);
+      return show(
+        t("overview.title", lang),
+        tabKind,
+        [
+          [t("field.reposCount", lang), String(repos.length)],
+          [t("field.hasReadme", lang), completionRow(withReadme, repoDetails.size)],
+          [t("field.license", lang), completionRow(withLicense, repoDetails.size)],
+        ],
+        false,
+      );
     }
 
     // tab === 3
     const pubs: PubNode[] = data.pubs;
-    const topKeys = [...pubs]
-      .sort((a, b) => (b.year ?? -Infinity) - (a.year ?? -Infinity))
-      .slice(0, PANEL_CONFIG.listLimit)
-      .map((p) => p.key);
     const withKnownYear = pubs.filter((p) => p.year !== null).length;
 
     let withDoi = 0;
@@ -506,13 +526,17 @@ export function mountPanel(
       if (detail.abstract) withAbstract++;
     }
 
-    return show(t("overview.title", lang), [
-      [t("field.pubsCount", lang), String(pubs.length)],
-      [t("overview.knownYear", lang), completionRow(withKnownYear, pubs.length)],
-      [t("field.doi", lang), completionRow(withDoi, pubDetails.size)],
-      [t("field.abstract", lang), completionRow(withAbstract, pubDetails.size)],
-      [t("overview.top", lang), entityRefsOf(topKeys, lang)],
-    ]);
+    return show(
+      t("overview.title", lang),
+      tabKind,
+      [
+        [t("field.pubsCount", lang), String(pubs.length)],
+        [t("overview.knownYear", lang), completionRow(withKnownYear, pubs.length)],
+        [t("field.doi", lang), completionRow(withDoi, pubDetails.size)],
+        [t("field.abstract", lang), completionRow(withAbstract, pubDetails.size)],
+      ],
+      false,
+    );
   }
 
   /**
@@ -654,7 +678,7 @@ export function mountPanel(
         if (pubAuthorKeys.length > 0) rows.push([t("tab.authors", lang), entityRefsOf(pubAuthorKeys, lang)]);
       }
 
-      return show(title, rows);
+      return show(title, kindLabel(node.kind, lang), rows, true);
     }
 
     if (selection.kind === "edge") {
@@ -687,7 +711,7 @@ export function mountPanel(
         if (shared.length > 0) rows.push([t("field.sharedAuthors", lang), entityRefsOf(shared, lang)]);
       }
 
-      return show(t("kind.edge", lang), rows);
+      return show(t("kind.edge", lang), t("kind.edge", lang), rows, true);
     }
 
     // selection.kind === "dept"
@@ -707,7 +731,7 @@ export function mountPanel(
       .map(([id]) => id);
     if (relatedIds.length > 0) rows.push([t("field.relatedDepts", lang), deptRefsOf(relatedIds, lang)]);
 
-    return show(localize(dept.name, dept.name_en, lang), rows);
+    return show(localize(dept.name, dept.name_en, lang), kindLabel("dept", lang), rows, true);
   }
 
   render(store.get());
@@ -715,26 +739,65 @@ export function mountPanel(
   return unsubscribe;
 }
 
+/** Параметры одной карточки — вход {@link buildCard}. */
+interface PanelCardOptions {
+  /** Заголовок карточки (например, имя автора или "Обзор"). */
+  title: string;
+  /**
+   * Короткий бейдж вида сущности рядом с заголовком (например
+   * "Автор"/"Департамент"/название вкладки для "Обзора") — после того, как
+   * почти любая сущность в карточке стала кликабельной ссылкой на другую
+   * (см. {@link PanelEntityRef}), легко потерять, на карточку КАКОГО вида
+   * сущности только что перепрыгнули, глядя только на список полей.
+   */
+  kind: string;
+  /** Строки карточки в порядке отображения. */
+  rows: PanelRow[];
+  /**
+   * Текст кнопки "назад к обзору" (например `"← Обзор"`), уже
+   * локализованный вызывающим кодом — `null`, если кнопку показывать не
+   * нужно (у самого "Обзора" — там уже некуда возвращаться).
+   */
+  backLabel: string | null;
+  /** Вызывается с `PanelEntityRef.selection`, когда кликают по ссылке на другую сущность графа — пишет её в `store.selection` ("прослеживать связи" одним кликом). */
+  onSelectRef: (selection: Selection) => void;
+  /** Вызывается по клику на кнопку "назад к обзору" (см. `backLabel`). */
+  onBack: () => void;
+}
+
 /**
- * Собирает DOM-карточку из заголовка и списка пар "подпись — значение".
+ * Собирает DOM-карточку: (необязательная) кнопка "назад к обзору",
+ * заголовок с бейджем вида сущности, список пар "подпись — значение".
  * Только `textContent` для обычного текста и явные `<a>`/`<button>` с
  * фиксированными атрибутами для ссылок — никакого `innerHTML`, данные из
  * графа не должны интерпретироваться как разметка.
  *
- * @param title - заголовок карточки (например, имя автора или "Обзор").
- * @param rows - строки карточки в порядке отображения.
- * @param onSelectRef - вызывается с `PanelEntityRef.selection`, когда кликают
- *   по ссылке на другую сущность графа (см. {@link PanelEntityRef}) — пишет
- *   её в `store.selection` ("прослеживать связи" одним кликом).
- * @returns `<div class="panel-card">` с заголовком `<h3>` и списком `<dl>`, ещё не вставленный в DOM.
+ * @param options - см. {@link PanelCardOptions}.
+ * @returns `<div class="panel-card">`, ещё не вставленный в DOM.
  */
-function buildCard(title: string, rows: PanelRow[], onSelectRef: (selection: Selection) => void): HTMLElement {
+function buildCard(options: PanelCardOptions): HTMLElement {
+  const { title, kind, rows, backLabel, onSelectRef, onBack } = options;
   const card = document.createElement("div");
   card.className = "panel-card";
 
+  if (backLabel !== null) {
+    const back = document.createElement("button");
+    back.type = "button";
+    back.className = "panel-back";
+    back.textContent = backLabel;
+    back.addEventListener("click", onBack);
+    card.appendChild(back);
+  }
+
+  const head = document.createElement("div");
+  head.className = "panel-card__head";
   const heading = document.createElement("h3");
   heading.textContent = title;
-  card.appendChild(heading);
+  const kindBadge = document.createElement("span");
+  kindBadge.className = "panel-kind";
+  kindBadge.textContent = kind;
+  head.append(heading, kindBadge);
+  card.appendChild(head);
 
   const list = document.createElement("dl");
   for (const [label, value] of rows) {
@@ -748,7 +811,9 @@ function buildCard(title: string, rows: PanelRow[], onSelectRef: (selection: Sel
       dd.appendChild(createLoadingIndicator());
     } else if (value[0]?.kind === "link") {
       // Внешние ссылки (например, несколько репозиториев с кодом) —
-      // разделяем запятой с пробелом, как и в старом GUI.
+      // разделяем запятой с пробелом, как и в старом GUI. "↗" в CSS
+      // (.panel-card a::after) отличает их от .panel-entity-ref — те того
+      // же цвета, но остаются в приложении, а не открывают вкладку.
       (value as PanelLink[]).forEach((link, i) => {
         if (i > 0) dd.append(", ");
         const a = document.createElement("a");

@@ -28,7 +28,7 @@ const SLUG_TO_TAB: Record<string, TabId> = Object.fromEntries(
 );
 
 /** Слаг меню — отдельно от {@link TAB_SLUGS}: меню не вкладка, у него нет `TabId`. */
-const MENU_SLUG = "start";
+const MENU_SLUG = "menu";
 
 /** Список рёбер СВОЕЙ вкладки — {@link parseUrlState} ищет `sel=edge` только среди них, а не среди всех трёх видов рёбер сразу. */
 function tabEdges(data: GraphData, tab: TabId): Edge[] {
@@ -46,20 +46,20 @@ function tabEdges(data: GraphData, tab: TabId): Edge[] {
  * Сериализует текущие `screen`/`tab`/`selection` в строку параметров URL —
  * ровно то, что дальше передаётся в `history.pushState`/`replaceState` (см.
  * features/urlSync.ts). На меню (`screen === "menu"`) в строке нет ничего,
- * кроме `tab=start` — там нечего выбирать, `tab`/`selection` из состояния
+ * кроме `tab=menu` — там нечего выбирать, `tab`/`selection` из состояния
  * при этом игнорируются. Вес ребра (`w`) сознательно не кладётся в
  * результат — при разборе ({@link parseUrlState}) он заново берётся из
  * `data`, а не из URL, чтобы ссылка не могла "соврать" о весе.
  *
  * @param state - минимальный срез состояния приложения, который стоит
  *   отражать в адресной строке.
- * @returns Строка вида `"tab=start"`, `"tab=persons"` или
+ * @returns Строка вида `"tab=menu"`, `"tab=persons"` или
  *   `"tab=persons&sel=node&key=A1"` — без ведущего `"?"` (его добавляет
  *   вызывающий код перед `pushState`/`replaceState`).
  *
  * @example
  * serializeUrlState({ screen: "menu", tab: 1, selection: null });
- * // "tab=start"
+ * // "tab=menu"
  *
  * serializeUrlState({ screen: "app", tab: 1, selection: { kind: "node", key: "A1" } });
  * // "tab=persons&sel=node&key=A1"
@@ -94,7 +94,7 @@ export function serializeUrlState(state: { screen: Screen; tab: TabId; selection
  * {@link serializeUrlState}, но не идентичная ей 1-в-1: результат ещё и
  * проверяется по реальным `data`.
  *
- * - Query без `tab` вообще (чистый `/`) ИЛИ `tab=start` — меню
+ * - Query без `tab` вообще (чистый `/`) ИЛИ `tab=menu` — меню
  *   (`screen: "menu"`), а не молчаливый откат на вкладку по умолчанию с
  *   пустым query, как было раньше: меню теперь настоящее состояние
  *   приложения, а не отсутствие состояния.
@@ -122,7 +122,7 @@ export function serializeUrlState(state: { screen: Screen; tab: TabId; selection
  * // { screen: "menu", tab: 1, selection: null }
  *
  * // Явное меню — то же самое:
- * parseUrlState("?tab=start", data);
+ * parseUrlState("?tab=menu", data);
  * // { screen: "menu", tab: 1, selection: null }
  *
  * // Ключ узла реально есть в data — восстанавливаем выбор:

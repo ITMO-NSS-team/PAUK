@@ -4,6 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PAUK</title>
+    <!-- Inter — тот же выбор, что у большинства тёмных дата-дашбордов
+         (тот же дух, что у Obsidian, на который ориентируется вся палитра
+         выше): читаемый плотный текст на маленьком размере (13px в панели,
+         12px в кнопках вкладок), в отличие от system-ui не "гуляет" между
+         ОС. Только реально используемые в CSS ниже начертания (400-800),
+         не весь диапазон "про запас". system-ui в font-family всё ещё
+         первый фолбэк в момент до подгрузки шрифта и на случай, если
+         Google Fonts недоступен (см. font-family ниже) — сайт не должен
+         визуально ломаться без интернета до этого домена. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <style>
       /* Единая тёмная палитра ("Obsidian"-стиль) — единственное место, где
          живут цвета вёрстки, дальше везде var(--...). --surface совпадает с
@@ -19,14 +31,14 @@
         --border: #333333;
         --text: #dcdcdc;
         --muted: #8a8a8a;
-        --accent: #5c7cfa;
-        --accent-soft: rgba(92, 124, 250, 0.18);
+        --accent: #ff7f50;
+        --accent-soft: rgba(255, 127, 80, 0.18);
         --danger-bg: #2a1414;
         --danger-border: #e03131;
         --danger-text: #ffb3b3;
       }
 
-      html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; color-scheme: dark; }
+      html, body { margin: 0; height: 100%; font-family: "Inter", system-ui, sans-serif; color-scheme: dark; }
       body { background: var(--bg); color: var(--text); }
 
       /* Единое кольцо фокуса для клавиатурной навигации — раньше нигде на
@@ -38,6 +50,24 @@
       button:focus-visible, a:focus-visible, input:focus-visible {
         outline: 2px solid var(--accent);
         outline-offset: 2px;
+      }
+
+      /* accent-color — штатное CSS-свойство (Chrome/Firefox/Safari
+         2022+), красит НАТИВНЫЙ рендер range/checkbox/radio в цвет темы
+         без переопределения их устройства через ::-webkit-slider-thumb и
+         подобные хаки под каждый браузер отдельно. Без него ползунки
+         фильтров (features/filters.ts) и переключатель языка ("Показывать
+         без департамента") были синими цветами ОС/браузера по умолчанию —
+         единственное несовпадающее с остальной палитрой место в интерфейсе. */
+      input[type="range"], input[type="checkbox"] { accent-color: var(--accent); }
+
+      /* Плавные, но короткие переходы для того, что и так меняется по
+         hover/клику в сайдбаре (кнопка меню, поиска, вкладок, строк
+         списка) — один общий селектор, а не per-компонентный transition в
+         каждом правиле ниже. 0.12s — заметно, но не "залипает" при быстрой
+         прокрутке списка мышью по строкам. */
+      #brand, #global-search-trigger, #tab-buttons button, .tab-list-item {
+        transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
       }
 
       /* Общая раскладка страницы: сайдбар со списком слева, карта
@@ -93,7 +123,7 @@
       #global-search-trigger {
         display: flex;
         align-items: center;
-        justify-content: space-between;
+        gap: 8px;
         width: 100%;
         padding: 8px 12px;
         border: none;
@@ -105,7 +135,32 @@
         cursor: pointer;
       }
       #global-search-trigger:hover { background: var(--surface-2); color: var(--text); }
+      /* Значок лупы перед подписью — без него кнопка выглядела как
+         обычный текстовый пункт меню, а не как вход в поиск, узнаваемый с
+         одного взгляда (тот же язык, что у поля поиска внутри самого окна,
+         см. .global-search-input). ::before, не текст в JS
+         (features/globalSearch.ts) — чисто декоративный элемент разметки.
+         SVG через mask (не символ Юникода "⌕" — тот почти нигде не входит
+         в шрифты, включая подключённый Inter, и рисовался пустым
+         прямоугольником, "значок поиска сломан"), background-color:
+         currentColor — цвет и его transition при hover берутся из самого
+         текста кнопки, отдельно красить не нужно. */
+      #global-search-trigger::before {
+        content: "";
+        width: 13px;
+        height: 13px;
+        flex-shrink: 0;
+        background-color: currentColor;
+        -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='10' cy='10' r='6.5'/%3E%3Cline x1='20' y1='20' x2='15' y2='15'/%3E%3C/svg%3E") center / contain no-repeat;
+        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='10' cy='10' r='6.5'/%3E%3Cline x1='20' y1='20' x2='15' y2='15'/%3E%3C/svg%3E") center / contain no-repeat;
+      }
+      /* margin-left: auto, а не justify-content: space-between на всём
+         триггере — тот растащил бы иконку/подпись/хинт на три угла кнопки
+         с пустотой посередине (три flex-элемента, не два), а тут нужно,
+         чтобы иконка с подписью оставались рядом слева, и только хинт "/"
+         уезжал направо. */
       .global-search-trigger__hint {
+        margin-left: auto;
         padding: 1px 6px;
         border: 1px solid var(--border);
         border-radius: 4px;
@@ -149,6 +204,17 @@
         font-size: 16px;
       }
       #global-search-results { overflow-y: auto; }
+      /* Заголовок подсказки "Департаменты" на пустом запросе
+         (features/globalSearch.ts) — объясняет, откуда взялся список,
+         когда пользователь ещё ничего не вводил. */
+      .global-search-hint {
+        padding: 10px 12px 4px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
 
       /* Кнопки переключения вкладок — по одной на каждый TabModule из
          features/tabs/index.ts. "Здоровье БД" из старого GUI сознательно
@@ -254,16 +320,83 @@
         overflow-y: auto;
         background: var(--surface);
         border-left: 1px solid var(--border);
-        padding: 12px 16px;
+        padding: 16px;
         color: var(--text);
         font-size: 13px;
       }
       #panel[hidden] { display: none; }
-      #panel h3 { margin: 0 0 8px; font-size: 14px; }
-      #panel dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; }
+      /* "← Обзор" (features/panels.ts::buildCard) — единственный путь
+         вернуться к сводке, не сбрасывая selection каким-то окольным путём
+         (клик по пустому месту карты, смена вкладки и т.п.). Отсутствует
+         на самой карточке "Обзор" — там уже некуда возвращаться. */
+      .panel-back {
+        display: block;
+        margin: 0 0 10px;
+        padding: 0;
+        border: none;
+        background: none;
+        color: var(--muted);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .panel-back:hover { color: var(--accent); }
+      /* Заголовок + бейдж вида сущности в одной строке — после того, как
+         почти любое поле карточки стало кликабельной ссылкой на другую
+         сущность (см. .panel-entity-ref ниже), лишний ориентир "на что я
+         сейчас смотрю" не помешает. */
+      .panel-card__head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 0 0 12px;
+      }
+      /* min-width: 0 — без него длинный заголовок (например, полное
+         название публикации, core/data.ts::nodeLabel() не обрезает его для
+         панели в отличие от карты) не сжимается внутри флекс-строки и либо
+         выталкивает .panel-kind за пределы панели, либо не переносится на
+         новую строку вовсе — тот же нюанс, что уже дважды случался в этом
+         файле (.filter-row input, .tab-list-item__label). */
+      #panel h3 { margin: 0; min-width: 0; font-size: 15px; line-height: 1.3; overflow-wrap: break-word; }
+      .panel-kind {
+        flex-shrink: 0;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: var(--surface-2);
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        white-space: nowrap;
+      }
+      /* Строки-пары "подпись — значение" в виде мини-таблицы с разделителями
+         — раньше это был просто gap между строками без единого визуального
+         "конца" одной пары и "начала" следующей, тем более на длинных
+         значениях (аннотация публикации, список из 10 кликабельных ссылок),
+         занимающих несколько строк. */
+      #panel dl {
+        margin: 0;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0 12px;
+      }
+      #panel dt, #panel dd {
+        padding: 7px 0;
+        border-bottom: 1px solid var(--border);
+      }
       #panel dt { color: var(--muted); }
-      #panel dd { margin: 0; }
+      #panel dd { margin: 0; line-height: 1.45; }
+      /* Последняя пара строки — без нижней границы, чтобы список не
+         заканчивался "висящей" линией перед пустым местом до конца панели. */
+      #panel dt:last-of-type, #panel dd:last-of-type { border-bottom: none; }
       #panel a { color: var(--accent); }
+      /* "↗" отличает ВНЕШНИЕ ссылки (DOI/GitHub/ORCID — открываются в
+         новой вкладке) от .panel-entity-ref ниже (тот же цвет, но остаётся
+         внутри приложения) — иначе визуально неотличимы, хотя ведут себя
+         совсем по-разному. */
+      #panel dd a::after { content: " ↗"; font-size: 0.85em; }
       /* Ссылка на ДРУГУЮ сущность графа внутри карточки (features/panels.ts::PanelEntityRef)
          — визуально то же самое, что и внешняя <a> выше (тот же цвет), но
          это настоящая <button>: клик не открывает вкладку, а делает эту
@@ -353,7 +486,12 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: var(--bg);
+        /* Лёгкий радиальный градиент вместо плоской заливки — первый
+           экран, который видит вообще каждый, стоит того, чтобы не быть
+           одним сплошным цветом. --surface в центре светлее --bg по краям
+           совпадает с уже существующим отношением этих двух токенов
+           (сайдбар/панель светлее фона), а не вводит третий новый цвет. */
+        background: radial-gradient(ellipse 900px 700px at 50% 40%, var(--surface) 0%, var(--bg) 70%);
       }
       #menu[hidden] { display: none; }
       .menu-hero { text-align: center; max-width: 560px; padding: 20px; }
@@ -370,7 +508,9 @@
         color: var(--text);
         text-decoration: none;
         margin-bottom: 24px;
+        transition: border-color 0.12s ease;
       }
+      .menu-badge:hover { border-color: var(--accent); }
       .menu-badge-arrow { color: var(--muted); }
       .menu-title { font-size: clamp(28px, 4vw, 44px); font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; color: var(--text); margin: 0 0 16px; }
       .menu-subtitle { font-size: 15px; line-height: 1.55; color: var(--muted); margin: 0 auto 28px; max-width: 460px; }
@@ -385,8 +525,16 @@
         font-size: 14px;
         font-weight: 700;
         cursor: pointer;
+        transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
       }
-      .menu-cta:hover { opacity: 0.9; }
+      /* filter: brightness(), не отдельный hex-цвет "посветлее" — единственный
+         источник цвета остаётся --accent (core/config.ts::MAP_CONFIG держит
+         тот же принцип для canvas-стороны — см. память проекта про design
+         tokens). Лёгкий подъём + мягкое свечение вместо голого opacity —
+         то же ощущение "нажимаемой" кнопки, что и было, но не выглядит
+         просто "притушенным". */
+      .menu-cta:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 4px 16px var(--accent-soft); }
+      .menu-cta:active { transform: translateY(0); }
       /* Языковые кнопки — переехали сюда из бывшего #lang-toggle. */
       .menu-lang { display: flex; gap: 8px; justify-content: center; margin-top: 20px; }
       .menu-lang button {
@@ -398,7 +546,9 @@
         font-size: 12px;
         font-weight: 600;
         cursor: pointer;
+        transition: color 0.12s ease, border-color 0.12s ease;
       }
+      .menu-lang button:hover { color: var(--text); }
       .menu-lang button.menu-lang--active { color: var(--text); border-color: var(--accent); }
     </style>
   </head>

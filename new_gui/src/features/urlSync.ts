@@ -33,7 +33,7 @@ import type { AppState, Store } from "../core/state";
  *
  * При монтировании функция всегда нормализует текущий URL под то, что
  * реально показано (`history.replaceState`) — на чистом `/` это означает
- * явную запись `?tab=start`: меню (features/start.ts) — настоящее состояние
+ * явную запись `?tab=menu`: меню (features/start.ts) — настоящее состояние
  * приложения (`AppState.screen`), а не "пока никакого состояния нет".
  *
  * @param store - Store приложения.
@@ -64,7 +64,7 @@ export function mountUrlSync(store: Store<AppState>, data: GraphData): () => voi
 
   // Нормализует URL сразу при монтировании: main.ts к этому моменту уже
   // применил parseUrlState к начальному состоянию (в т.ч. на чистом "/" —
-  // в screen: "menu"), здесь просто фиксируем результат как "?tab=start"
+  // в screen: "menu"), здесь просто фиксируем результат как "?tab=menu"
   // или "?tab=<слаг>...", а не оставляем пустой query.
   history.replaceState(null, "", `?${serializeUrlState(store.get())}`);
 

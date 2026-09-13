@@ -30,7 +30,7 @@ describe("mountPanel", () => {
     return () => panel.remove();
   });
 
-  it("«Обзор» вкладки авторов — число авторов/департаментов, среднее публикаций, топ-10, заполненность полей — LOADING, пока detail пуст", async () => {
+  it("«Обзор» вкладки авторов — число авторов/департаментов, среднее публикаций, заполненность полей — LOADING, пока detail пуст", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ tab: 1 }));
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
@@ -41,24 +41,21 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain(String(data.departments.length));
     const avgPubs = data.authors.reduce((sum, a) => sum + a.pubs_count, 0) / data.authors.length;
     expect(panel.textContent).toContain(avgPubs.toFixed(1));
-    expect(panel.textContent).toContain("Топ-10");
-    expect(panel.textContent).toContain("Иванов И.И."); // A1 — больше всех публикаций во фикстуре
     // authorDetails пуст (detail ещё не пришёл) — доля ORCID/GitHub/email
     // не считается от нуля к нулю, а показывает индикатор загрузки.
     expect(panel.querySelectorAll(".loading-indicator").length).toBeGreaterThan(0);
   });
 
-  it("«Обзор» вкладки репозиториев — число репозиториев, топ-10 по звёздам, доля с README/лицензией", async () => {
+  it("«Обзор» вкладки репозиториев — число репозиториев, доля с README/лицензией", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ tab: 2 }));
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     expect(panel.textContent).toContain(String(data.repos.length));
-    expect(panel.textContent).toContain("graph-toolkit"); // R1 — больше всех звёзд (42) во фикстуре
     expect(panel.querySelectorAll(".loading-indicator").length).toBeGreaterThan(0);
   });
 
-  it("«Обзор» вкладки публикаций — число публикаций, топ-10 по году, доля с известным годом/DOI/аннотацией", async () => {
+  it("«Обзор» вкладки публикаций — число публикаций, доля с известным годом/DOI/аннотацией", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ tab: 3 }));
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
@@ -81,6 +78,44 @@ describe("mountPanel", () => {
     expect(panel.hidden).toBe(false);
     expect(panel.querySelector("h3")?.textContent).toBe(author.label);
     expect(panel.textContent).toContain(String(author.pubs_count));
+  });
+
+  it("карточка автора показывает бейдж «Автор» и кнопку «← Обзор»", async () => {
+    const data = await loadSampleGraphData();
+    const author = data.authors[0];
+    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: author.key } });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.querySelector(".panel-kind")?.textContent).toBe("Автор");
+    expect(panel.querySelector(".panel-back")?.textContent).toBe("← Обзор");
+  });
+
+  it("клик по «← Обзор» сбрасывает selection и возвращает карточку «Обзор»", async () => {
+    const data = await loadSampleGraphData();
+    const author = data.authors[0];
+    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: author.key } });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    const back = panel.querySelector<HTMLButtonElement>(".panel-back");
+    if (!back) throw new Error("на карточке автора должна быть кнопка «← Обзор»");
+
+    back.click();
+
+    expect(store.get().selection).toBeNull();
+    expect(panel.querySelector("h3")?.textContent).toBe("Обзор");
+  });
+
+  it("«Обзор» показывает бейдж текущей вкладки, но НЕ показывает кнопку «← Обзор» — возвращаться уже некуда", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState()); // selection: null, tab: 1
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.querySelector(".panel-kind")?.textContent).toBe("Авторы");
+    expect(panel.querySelector(".panel-back")).toBeNull();
   });
 
   it("карточка автора показывает его публикации и топ соавторов по убыванию веса", async () => {
@@ -565,6 +600,8 @@ describe("mountPanel", () => {
     expect(panel.querySelector("h3")?.textContent).toBe(dept.name);
     expect(panel.textContent).toContain(String(dept.n_authors));
     expect(panel.textContent).toContain(String(dept.n_repos));
+    expect(panel.querySelector(".panel-kind")?.textContent).toBe("Департамент");
+    expect(panel.querySelector(".panel-back")?.textContent).toBe("← Обзор");
   });
 
   it("карточка департамента показывает связанные департаменты по убыванию веса (dept_edges)", async () => {
@@ -600,23 +637,6 @@ describe("mountPanel", () => {
     dept1Button.click();
 
     expect(store.get().selection).toEqual({ kind: "dept", id: 1 });
-  });
-
-  it("клик по сущности в топ-10 «Обзора» делает её новым selection", async () => {
-    const data = await loadSampleGraphData();
-    const store = new Store<AppState>(initialState()); // selection: null -> показан "Обзор" вкладки 1 (авторы)
-
-    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
-
-    // A1 (Иванов И.И.) — больше всех публикаций во фикстуре, должен быть в топ-10.
-    const topButton = [...panel.querySelectorAll("button.panel-entity-ref")].find(
-      (button) => button.textContent === "Иванов И.И.",
-    ) as HTMLButtonElement | undefined;
-    if (!topButton) throw new Error("кнопка-ссылка на А1 (Иванов И.И.) должна быть в топ-10 «Обзора»");
-
-    topButton.click();
-
-    expect(store.get().selection).toEqual({ kind: "node", key: "A1" });
   });
 
   it("возвращается к карточке «Обзор», когда selection сбрасывают в null", async () => {

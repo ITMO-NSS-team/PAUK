@@ -6,6 +6,7 @@
 // около 60, найти нужный "на глаз" по подписям на карте нереально.
 
 import type { GraphData, PubDetail, RepoDetail } from "../contracts/graph";
+import type { SearchHit } from "../contracts/search";
 import { SEARCH_CONFIG } from "../core/config";
 import { requireElement } from "../core/dom";
 import { t } from "../core/i18n";
@@ -17,8 +18,10 @@ import { buildSearchIndex, parseDeptHitKey, searchHits } from "./search";
  * Подключает глобальный поиск. Открывается кнопкой `#global-search-trigger`
  * в сайдбаре или клавишей `"/"` (если фокус не в текстовом поле — иначе
  * "/" печаталась бы как обычный символ), закрывается `Escape` или кликом
- * по затемнённому фону. Работает из ЛЮБОГО экрана (`AppState.screen`) —
- * `#global-search` лежит вне `#app`/`#menu` с более высоким z-index, см. index.html.
+ * по затемнённому фону, `Enter` в поле ввода выбирает первый результат
+ * (без этого добраться до результата можно было только мышью или долгим
+ * Tab'ом). Работает из ЛЮБОГО экрана (`AppState.screen`) — `#global-search`
+ * лежит вне `#app`/`#menu` с более высоким z-index, см. index.html.
  *
  * Клик по результату пишет `store.selection` (и `store.tab`/`screen`, если
  * нужно переключить их под вид найденной сущности) — та же механика "выбор
@@ -58,19 +61,21 @@ export function mountGlobalSearch(
   renderTrigger(store.get().lang);
   const unsubscribeTrigger = store.subscribe((state) => renderTrigger(state.lang));
 
-  /** Перерисовывает список результатов под текущий текст в поле ввода. */
-  function render(): void {
-    const hits = searchHits(index, input.value);
-
-    if (input.value.trim() && hits.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "tab-empty";
-      empty.textContent = t("tab.noResults", store.get().lang);
-      resultsEl.replaceChildren(empty);
-      return;
-    }
-
-    renderList(resultsEl, hits.slice(0, SEARCH_CONFIG.resultsLimit), (hit) =>
+  /**
+   * Рисует список результатов, независимо от того, откуда они взялись —
+   * из фильтра по запросу ({@link searchHits}) или из подсказки
+   * "департаменты для просмотра" на пустом запросе (см. {@link render}) —
+   * клик ведёт себя одинаково в обоих случаях.
+   *
+   * @param container - куда рисовать список — обычно {@link resultsEl}
+   *   целиком, но для подсказки "департаменты для просмотра" это отдельный
+   *   `<div>` ПОСЛЕ заголовка подсказки (см. {@link render}), не сам
+   *   `resultsEl` — иначе `renderList()` его же `replaceChildren()` стёр бы
+   *   и сам заголовок.
+   * @param hits - результаты для отображения (уже обрезаны до нужной длины вызывающим кодом).
+   */
+  function renderHits(container: HTMLElement, hits: SearchHit[]): void {
+    renderList(container, hits, (hit) =>
       renderListItem({
         label: hit.label,
         meta: hit.sub ?? undefined,
@@ -88,6 +93,44 @@ export function mountGlobalSearch(
         },
       }),
     );
+  }
+
+  /** Перерисовывает список результатов под текущий текст в поле ввода. */
+  function render(): void {
+    const query = input.value;
+
+    if (!query.trim()) {
+      // Пустой запрос — не "нечего показать", а подсказка "департаменты
+      // для просмотра", крупнейшие сверху: департамент нельзя выбрать
+      // никаким другим способом, если не знаешь его точное название
+      // заранее (нет ни своей вкладки, ни узла-кнопки на карте) —
+      // пользователь должен иметь возможность просто заглянуть в список,
+      // а не только искать по угаданному запросу.
+      const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
+      const deptHits = [...index]
+        .filter((hit) => hit.kind === "dept")
+        .sort((a, b) => (deptById.get(parseDeptHitKey(b.key))?.n ?? 0) - (deptById.get(parseDeptHitKey(a.key))?.n ?? 0))
+        .slice(0, SEARCH_CONFIG.resultsLimit);
+
+      const heading = document.createElement("div");
+      heading.className = "global-search-hint";
+      heading.textContent = t("search.browseDepts", store.get().lang);
+      const list = document.createElement("div");
+      resultsEl.replaceChildren(heading, list);
+      renderHits(list, deptHits);
+      return;
+    }
+
+    const hits = searchHits(index, query);
+    if (hits.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "tab-empty";
+      empty.textContent = t("tab.noResults", store.get().lang);
+      resultsEl.replaceChildren(empty);
+      return;
+    }
+
+    renderHits(resultsEl, hits.slice(0, SEARCH_CONFIG.resultsLimit));
   }
 
   function open(): void {
@@ -115,11 +158,23 @@ export function mountGlobalSearch(
   /**
    * `"/"` открывает поиск из любого места интерфейса (кроме текстовых
    * полей — иначе перехватывало бы обычный ввод символа "/"), `Escape`
-   * закрывает уже открытое окно.
+   * закрывает уже открытое окно, `Enter` В САМОМ ПОЛЕ ВВОДА выбирает
+   * первый результат — без этого добраться до результата с клавиатуры
+   * можно было только Tab'ом до нужной кнопки (ненадёжно и медленно для
+   * того, кто водит браузер клавиатурой/через DOM, а не мышью). Именно
+   * `event.target === input`, а не любой `<input>`/`<textarea>` — если
+   * фокус уже НА КОНКРЕТНОЙ кнопке результата (добрались туда Tab'ом),
+   * Enter на ней и так работает штатно (клик по самой себе), нашей же
+   * логике "кликнуть по ПЕРВОЙ" там делать нечего — иначе Enter на третьем
+   * результате возвращал бы первый, а не выбранный.
    */
   function onKeydown(event: KeyboardEvent): void {
     if (!overlay.hidden && event.key === "Escape") {
       close();
+      return;
+    }
+    if (!overlay.hidden && event.key === "Enter" && event.target === input) {
+      resultsEl.querySelector<HTMLButtonElement>(".tab-list-item")?.click();
       return;
     }
     const target = event.target as HTMLElement;
