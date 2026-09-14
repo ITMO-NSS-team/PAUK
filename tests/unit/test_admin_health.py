@@ -131,7 +131,7 @@ class PageTest(unittest.TestCase):
 
     def test_an_empty_page_says_what_to_do(self):
         body = self.client.get("/health").text
-        self.assertIn("Проверок ещё не было", body)
+        self.assertIn("Нажмите «Посчитать»", body)
         self.assertIn('value="health"', body)
 
     def test_a_saved_answer_is_shown_with_its_date(self):

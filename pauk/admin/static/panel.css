@@ -332,3 +332,17 @@ select {
 }
 .phases .done { background: var(--ok); }
 .phases .now { background: var(--ok); opacity: 0.45; }
+
+/* Вердикт по проверкам: три счётчика, которые не должны сливаться в одну
+   строку разноцветных слов. Число цветом, подпись серым, каждый в своей
+   рамке. */
+.verdict { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.verdict .tally {
+  display: inline-flex; align-items: baseline; gap: 7px;
+  padding: 7px 14px; border: 1px solid var(--border); border-radius: 999px;
+  color: var(--muted); font-size: 13px;
+}
+.verdict .tally b { font-size: 17px; font-weight: 700; }
+.verdict .bad b { color: var(--danger); }
+.verdict .mid b { color: var(--warn); }
+.verdict .good b { color: var(--ok); }

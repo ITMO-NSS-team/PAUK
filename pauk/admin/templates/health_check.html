@@ -4,8 +4,6 @@
 <p class="muted" style="margin:-8px 0 6px">
   <a href="/health">&lt;- к проверкам</a> · {{ check.group }}
 </p>
-{% if check.hint %}<p style="margin:0 0 18px">{{ check.hint }}</p>{% endif %}
-
 <div class="card" style="margin-bottom:20px">
   <div class="row" style="justify-content:space-between; align-items:center; margin:0">
     <div>
@@ -18,7 +16,7 @@
       {% else %}<span class="muted">Показаны все.</span>{% endif %}
     </div>
     <a href="/health/{{ check.id }}/csv" class="ghost"
-       style="padding:8px 14px; text-decoration:none">Скачать CSV</a>
+       style="padding:8px 14px; text-decoration:none; font-weight:700">Скачать CSV</a>
   </div>
 </div>
 
