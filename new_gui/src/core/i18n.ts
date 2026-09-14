@@ -95,6 +95,9 @@ export type LocaleKey =
   | "overview.title"
   | "overview.avgPubsPerAuthor"
   | "overview.knownYear"
+  | "chart.authorsByDept"
+  | "chart.pubsByYear"
+  | "chart.reposByStars"
   | "field.doi"
   | "field.code"
   | "search.placeholder"
@@ -107,6 +110,7 @@ export type LocaleKey =
   | "filter.sharedAuthors"
   | "filter.yearMax"
   | "filter.showNoDept"
+  | "filter.edgeZoom"
   | "start.badge"
   | "start.title"
   | "start.subtitle"
@@ -173,6 +177,9 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "overview.title": "Обзор",
     "overview.avgPubsPerAuthor": "Публикаций на автора (среднее)",
     "overview.knownYear": "Известен год",
+    "chart.authorsByDept": "Авторы по департаментам",
+    "chart.pubsByYear": "Публикации по годам",
+    "chart.reposByStars": "Репозитории по звёздам",
     "search.placeholder": "Поиск по авторам, репозиториям, публикациям, департаментам…",
     "search.pubsCountShort": "публ.",
     "search.trigger": "Поиск по всему",
@@ -183,6 +190,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "filter.sharedAuthors": "Мин. общих авторов",
     "filter.yearMax": "До года",
     "filter.showNoDept": "Показывать без департамента",
+    "filter.edgeZoom": "Порог показа рёбер",
     "start.badge": "Открытый проект ИТМО",
     "start.title": "Карта соавторства и открытого кода ИТМО",
     "start.subtitle":
@@ -257,6 +265,9 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "overview.title": "Overview",
     "overview.avgPubsPerAuthor": "Publications per author (avg.)",
     "overview.knownYear": "Known year",
+    "chart.authorsByDept": "Authors by department",
+    "chart.pubsByYear": "Publications by year",
+    "chart.reposByStars": "Repositories by stars",
     "search.placeholder": "Search authors, repositories, publications, departments…",
     "search.pubsCountShort": "pubs",
     "search.trigger": "Search everything",
@@ -267,6 +278,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "filter.sharedAuthors": "Min. shared authors",
     "filter.yearMax": "Up to year",
     "filter.showNoDept": "Show without department",
+    "filter.edgeZoom": "Edge visibility threshold",
     "start.badge": "Open ITMO project",
     "start.title": "ITMO co-authorship and open-source code map",
     "start.subtitle":

@@ -60,12 +60,34 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
         self.assertEqual(author_detail["email"], "ivanov@itmo.ru")
         self.assertEqual(author_detail["affiliations"], [{"name": "ITMO"}])  # JSON-text parsed
 
-    def test_summary_label_is_always_the_truncated_public_form(self):
+    def test_summary_label_is_the_full_form_not_the_truncated_public_one(self):
         # graph-data.json is one shared file across build variants (see
         # graph_builder.py on public/private being decided by file location,
-        # not content), so the map label is always truncated, not just for --public.
+        # not content) - the map label currently uses author_label(...,
+        # public=False): full surname ("Иванов", not the old "Ива..") and,
+        # with no patronymic in this fixture, the full first name too (see
+        # author_label()'s own force_initial=public branch, nodes.py) -
+        # readability won out for now over the public-safe truncated form
+        # (see nodes.py::AuthorNodeBuilder.build()).
         summary, _detail = GraphDataBuilder(self._sample_db(), seed=1).build()
-        self.assertEqual(summary["authors"][0]["label"], "Ива.. И.")
+        self.assertEqual(summary["authors"][0]["label"], "Иванов Иван")
+
+    def test_summary_label_en_falls_back_to_name_en_when_split_en_name_parts_are_missing(self):
+        # The real snapshot has surname_en/first_name_en/second_name_en as
+        # None for every single person (no pipeline stage ever populates
+        # them) - author_label() then always returns "", and without a
+        # name_en fallback label_en silently became identical to label_ru
+        # for 100% of authors regardless of the selected UI language (the
+        # actual bug report: choosing English didn't make names English
+        # anywhere except the panel card, which reads AuthorDetail.name_en
+        # separately once it has merged in).
+        db = self._sample_db()
+        db["persons"][0]["surname_en"] = None
+        db["persons"][0]["first_name_en"] = None
+        db["persons"][0]["second_name_en"] = None
+        db["persons"][0]["name_en"] = "Ivan Ivanov"
+        summary, _detail = GraphDataBuilder(db, seed=1).build()
+        self.assertEqual(summary["authors"][0]["label_en"], "Ivan Ivanov")
 
     def test_author_detail_is_the_same_regardless_of_output_folder(self):
         # The full name is still available - via detail, not summary.

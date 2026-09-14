@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { FILTER_CONFIG } from "../src/core/config";
 import { mountFilters } from "../src/features/filters";
 import { Store, type AppState } from "../src/core/state";
 
@@ -8,13 +9,28 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
     tab: 1,
     lang: "ru",
     selection: null,
-    filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026, showNoDeptAuthors: true, showNoDeptPubs: true },
+    filters: {
+      minCoauth: 1,
+      minSharedAuthors: 1,
+      yearMax: 2026,
+      showNoDeptAuthors: true,
+      showNoDeptPubs: true,
+      edgeZoomThreshold: 0.4,
+    },
     ...overrides,
   };
 }
 
 describe("mountFilters", () => {
   let container: HTMLElement;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   function withContainer<T>(run: () => T): T {
     container = document.createElement("div");
@@ -27,59 +43,111 @@ describe("mountFilters", () => {
     }
   }
 
-  it("на вкладке 1 показывает один регулятор — порог соавторства", () => {
+  it("на вкладке 1 показывает два регулятора — зум рёбер (общий для всех вкладок) и порог соавторства", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
 
       expect(container.hidden).toBe(false);
       const inputs = container.querySelectorAll("input[type='range']");
-      expect(inputs).toHaveLength(1);
-      expect((inputs[0] as HTMLInputElement).value).toBe("1");
+      expect(inputs).toHaveLength(2);
+      expect((inputs[0] as HTMLInputElement).value).toBe("0.4"); // зум рёбер — первым, до вкладко-специфичных
+      expect((inputs[1] as HTMLInputElement).value).toBe("1"); // порог соавторства
     });
   });
 
-  it("на вкладке 3 показывает два регулятора — общих авторов и год", () => {
+  it("на вкладке 3 показывает три регулятора — зум рёбер, общих авторов и год", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState({ tab: 3 }));
       mountFilters(store);
 
-      expect(container.querySelectorAll("input[type='range']")).toHaveLength(2);
+      expect(container.querySelectorAll("input[type='range']")).toHaveLength(3);
     });
   });
 
-  it("на вкладке 2 (репозитории) регуляторов нет вообще, панель скрыта", () => {
+  it("на вкладке 2 (репозитории) есть только общий регулятор зума рёбер, панель не скрыта", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState({ tab: 2 }));
       mountFilters(store);
 
-      expect(container.hidden).toBe(true);
-      expect(container.children).toHaveLength(0);
+      expect(container.hidden).toBe(false);
+      expect(container.querySelectorAll("input[type='range']")).toHaveLength(1);
+      expect(container.querySelectorAll("input[type='checkbox']")).toHaveLength(0);
     });
   });
 
-  it("движение ползунка пишет новое значение в store.filters", () => {
+  it("движение вкладко-специфичного ползунка пишет новое значение в store.filters — с задержкой (debounce), не мгновенно", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
 
-      const input = container.querySelector("input[type='range']") as HTMLInputElement;
+      // [1] — второй range-инпут, первый ([0]) теперь общий регулятор
+      // зума рёбер (см. тест выше про порядок строк).
+      const input = container.querySelectorAll("input[type='range']")[1] as HTMLInputElement;
       input.value = "7";
       input.dispatchEvent(new Event("input"));
 
-      expect(store.get().filters.minCoauth).toBe(7);
+      // Подпись значения рядом с ползунком обновляется сразу — это просто
+      // DOM-текст, не тормозит и не должно ждать debounce. [1] — та же
+      // строка, что и сам ползунок выше (не строка общего зума рёбер).
+      expect(container.querySelectorAll(".filter-row__value")[1]?.textContent).toBe("7");
+      expect(store.get().filters.minCoauth).toBe(1); // ещё не применилось
+
+      vi.advanceTimersByTime(FILTER_CONFIG.debounceMs - 1);
+      expect(store.get().filters.minCoauth).toBe(1); // всё ещё не применилось — чуть-чуть не хватило
+
+      vi.advanceTimersByTime(1);
+      expect(store.get().filters.minCoauth).toBe(7); // применилось ровно через debounceMs
     });
   });
 
-  it("переключение на вкладку без фильтров скрывает панель и очищает разметку", () => {
+  it("быстрое перетаскивание ползунка (много тиков подряд) применяет ТОЛЬКО последнее значение, не каждый тик", () => {
+    withContainer(() => {
+      const store = new Store<AppState>(initialState());
+      mountFilters(store);
+
+      const input = container.querySelectorAll("input[type='range']")[1] as HTMLInputElement;
+      // Имитация перетаскивания — несколько "input" подряд, каждый раньше,
+      // чем истёк debounceMs предыдущего: каждое новое движение сбрасывает
+      // отсчёт таймера, применяется только значение, на котором пользователь
+      // реально остановился, а не промежуточные тики (иначе на реальных
+      // данных перетаскивание гоняло бы полную пересборку графа на каждый
+      // пиксель и лагало — прямая жалоба).
+      for (const value of [2, 3, 4, 5, 6, 7]) {
+        input.value = String(value);
+        input.dispatchEvent(new Event("input"));
+        vi.advanceTimersByTime(FILTER_CONFIG.debounceMs - 1);
+      }
+      expect(store.get().filters.minCoauth).toBe(1); // ни один промежуточный тик не применился
+
+      vi.advanceTimersByTime(1);
+      expect(store.get().filters.minCoauth).toBe(7); // применилось только последнее значение
+    });
+  });
+
+  it("движение общего ползунка зума рёбер пишет edgeZoomThreshold независимо от вкладки", () => {
+    withContainer(() => {
+      const store = new Store<AppState>(initialState({ tab: 2 })); // вкладка без своих фильтров
+      mountFilters(store);
+
+      const input = container.querySelector("input[type='range']") as HTMLInputElement;
+      input.value = "0.15";
+      input.dispatchEvent(new Event("input"));
+      vi.advanceTimersByTime(FILTER_CONFIG.debounceMs);
+
+      expect(store.get().filters.edgeZoomThreshold).toBe(0.15);
+    });
+  });
+
+  it("переключение вкладки перестраивает вкладко-специфичные регуляторы, но общий зум рёбер остаётся", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
 
       store.set({ tab: 2 });
 
-      expect(container.hidden).toBe(true);
-      expect(container.children).toHaveLength(0);
+      expect(container.hidden).toBe(false);
+      expect(container.querySelectorAll("input[type='range']")).toHaveLength(1);
     });
   });
 

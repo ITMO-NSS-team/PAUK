@@ -17,9 +17,17 @@ interface FilterRowOptions {
   min: number;
   /** Максимально допустимое значение ползунка. */
   max: number;
+  /** Шаг ползунка — по умолчанию 1 (счётные пороги вроде "число публикаций"); дробный для непрерывных величин вроде camera.ratio. */
+  step?: number;
   /** Текущее значение ползунка. */
   value: number;
-  /** Вызывается при каждом движении ползунка с новым числовым значением. */
+  /**
+   * Вызывается с новым числовым значением — не на каждый тик перетаскивания,
+   * а с задержкой {@link FILTER_CONFIG.debounceMs} после того, как
+   * пользователь остановился (см. {@link buildFilterRow}): применение
+   * фильтра пересобирает граф, дёргать это на каждый пиксель перетаскивания
+   * ощущалось как лаг.
+   */
   onChange: (value: number) => void;
 }
 
@@ -43,15 +51,27 @@ function buildFilterRow(options: FilterRowOptions): HTMLElement {
   input.type = "range";
   input.min = String(options.min);
   input.max = String(options.max);
+  input.step = String(options.step ?? 1);
   input.value = String(options.value);
 
   const value = document.createElement("span");
   value.className = "filter-row__value";
   value.textContent = String(options.value);
 
+  // Подпись значения — сразу, на каждый тик (это просто DOM-текст, не
+  // тормозит). options.onChange — с задержкой (debounce): применение
+  // фильтра пересобирает весь граф (map/build.ts::populateGraph), на
+  // реальных данных это заметно тяжелее одного движения ползунка — без
+  // задержки перетаскивание гоняло полную пересборку на каждый пиксель и
+  // лагало (прямая жалоба). Таймер один на строку (в замыкании) — новое
+  // движение сбрасывает предыдущий отсчёт, применяется только последнее
+  // значение, на котором пользователь реально остановился.
+  let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   input.addEventListener("input", () => {
     value.textContent = input.value;
-    options.onChange(Number(input.value));
+    const parsed = Number(input.value);
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => options.onChange(parsed), FILTER_CONFIG.debounceMs);
   });
 
   row.append(label, input, value);
@@ -134,7 +154,19 @@ export function mountFilters(store: Store<AppState>): () => void {
     prevLang = state.lang;
 
     const { lang, filters } = state;
-    const rows: HTMLElement[] = [];
+    // Порог видимости рёбер по зуму — общий для всех трёх вкладок (это
+    // настройка отрисовки карты, а не фильтр конкретного вида сущностей),
+    // поэтому строится один раз, а не внутри if/else по вкладке ниже.
+    const rows: HTMLElement[] = [
+      buildFilterRow({
+        label: t("filter.edgeZoom", lang),
+        min: FILTER_CONFIG.edgeZoom.min,
+        max: FILTER_CONFIG.edgeZoom.max,
+        step: FILTER_CONFIG.edgeZoom.step,
+        value: filters.edgeZoomThreshold,
+        onChange: (value) => setFilter({ edgeZoomThreshold: value }),
+      }),
+    ];
 
     if (state.tab === 1) {
       rows.push(
@@ -175,7 +207,10 @@ export function mountFilters(store: Store<AppState>): () => void {
       );
     }
 
-    container.hidden = rows.length === 0;
+    // Раньше скрывался, если для вкладки не было ни одного регулятора
+    // (у "Репозиториев" не было своих) — с общим для всех вкладок
+    // регулятором зума рёбер выше строк всегда хотя бы одна, панель всегда видна.
+    container.hidden = false;
     container.replaceChildren(...rows);
   }
 

@@ -10,7 +10,7 @@ function initialState(): AppState {
     tab: 1,
     lang: "ru",
     selection: null,
-    filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026, showNoDeptAuthors: true, showNoDeptPubs: true },
+    filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026, showNoDeptAuthors: true, showNoDeptPubs: true, edgeZoomThreshold: 0.4 },
   };
 }
 

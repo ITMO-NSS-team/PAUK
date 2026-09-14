@@ -70,9 +70,9 @@ class MinSeparation:
     (`layout.py::spread_min_distance`), so coincident points don't clump
     into a solid blob."""
 
-    authors: float = 4.5
+    authors: float = 5.0
     """Authors are usually far more numerous than publications on the map - points need more breathing room to stay visually distinct."""
-    pubs: float = 3.5
+    pubs: float = 4.0
     """Fewer publications than authors, so less separation is needed."""
 
 

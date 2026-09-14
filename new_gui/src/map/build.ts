@@ -111,7 +111,9 @@ function tabGraphNodes(data: GraphData, tab: TabId, filters: Filters): GraphNode
   const excludedDept = noDeptId(data);
   switch (tab) {
     case 1:
-      return filters.showNoDeptAuthors ? data.authors : data.authors.filter((a) => a.dept !== excludedDept);
+      return filters.showNoDeptAuthors
+        ? data.authors
+        : data.authors.filter((a) => a.dept !== excludedDept);
     case 2:
       return data.repos;
     case 3: {
@@ -233,7 +235,13 @@ export function populateGraph(
  * @param filters - текущие пороги фильтров.
  * @param lang - язык интерфейса (влияет на подпись).
  */
-function addDeptLabelAnchors(graph: Graph, data: GraphData, tab: TabId, filters: Filters, lang: Lang): void {
+function addDeptLabelAnchors(
+  graph: Graph,
+  data: GraphData,
+  tab: TabId,
+  filters: Filters,
+  lang: Lang,
+): void {
   const nodesByDept = new Map<number, GraphNode[]>();
   for (const node of tabGraphNodes(data, tab, filters)) {
     const list = nodesByDept.get(node.dept) ?? [];
@@ -292,21 +300,34 @@ function addDeptLabelAnchors(graph: Graph, data: GraphData, tab: TabId, filters:
  *    {@link MAP_CONFIG.node.labelVisibleAtSize}, департаменты не форсируются
  *    и остаются без подписи (у них и так size: 0).
  * 2. **Видимость рёбер** — реальные рёбра прячутся (`hidden: true`), когда
- *    `cameraRatio` больше {@link MAP_CONFIG.edge.visibleBelowRatio} (на
+ *    `cameraRatio` больше пользовательского порога
+ *    `store.get().filters.edgeZoomThreshold` (features/filters.ts — на
  *    сильном отдалении тысячи рёбер сливаются в сплошную дымку); рёбра между
  *    департаментами скрыты ВСЕГДА (нужны только для соседства в п.3).
  * 3. **Подсветка/притухание** ("Obsidian"-style) — три уровня яркости, а не
- *    два. "Фокус" — наведённый мышью узел, а если наведения нет — выбранный
- *    кликом узел или департамент. Пока фокус есть: сам фокус — крупнее
- *    ({@link MAP_CONFIG.node.radiusSelected}), его соседи
- *    (`graph.areNeighbors`) — чуть крупнее обычного
- *    ({@link MAP_CONFIG.node.neighborSizeScale}), но ТОЛЬКО когда фокус —
- *    это выбор (клик), а не наведение мышью (иначе рост размера соседа
- *    двигает его хитбокс под курсор и в плотных скоплениях hover "прыгает"
- *    на случайные узлы); всё остальное — тускнеет в {@link
+ *    два, и ДВА НЕЗАВИСИМЫХ источника фокуса сразу, а не один вместо
+ *    другого: выбор кликом (см. {@link selectionFocusKey}) остаётся
+ *    "закреплённым" фокусом независимо от того, что происходит с мышью —
+ *    раньше наведение на любой другой узел ПЕРЕБИВАЛО выбор целиком
+ *    (подсветка/рёбра выбранного узла пропадали при простом движении
+ *    курсора, прямая жалоба), а после первой попытки исправить это выбор
+ *    стал наоборот полностью ИГНОРИРОВАТЬ наведение, что тоже неверно —
+ *    заблокировало предпросмотр соседей других узлов, пока что-то уже
+ *    выбрано (тоже прямая жалоба: "мы должны иметь возможность искать
+ *    дальше"). Правильно — оба источника активны одновременно (см.
+ *    {@link isNeighborOf}): узел ярче обычного, если он выбранный,
+ *    наведённый, ИЛИ сосед любого из них. Крупнее становится только сам
+ *    выбор ({@link MAP_CONFIG.node.radiusSelected}) — ни наведённый узел,
+ *    ни чьи-либо соседи размер не меняют (прямая просьба); соседи ВЫБОРА
+ *    (не наведения) дополнительно получают принудительную подпись
+ *    (`forceLabel: true`), не зависящую от {@link MAP_CONFIG.node.labelVisibleAtSize}.
+ *    Всё, что не подходит ни под одно из условий выше, — тускнеет в {@link
  *    MAP_CONFIG.node.dimColor} (полупрозрачный — "замылить", а не сплошной
- *    серый) и теряет подпись. Рёбра, не касающиеся фокуса, при этом
- *    `hidden: true` целиком — "остальные рёбра убрать", прямая просьба.
+ *    серый) и теряет подпись. Рёбра, не касающиеся ни выбора, ни
+ *    наведения, при этом `hidden: true` целиком — "остальные рёбра убрать",
+ *    прямая просьба. Смена выбора (клик по новому узлу) сама снимает
+ *    подсветку старого — она читается из `store.get().selection` заново на
+ *    каждый рендер, отдельно ничего сбрасывать не нужно.
  *
  * @param renderer - Sigma-рендерер.
  * @param store - Store приложения.
@@ -326,12 +347,27 @@ function applyGraphStyling(
     return cameraRatio > MAP_CONFIG.region.ratioThreshold;
   }
 
-  function focusKey(): string | null {
-    if (hoveredNode) return hoveredNode;
+  function selectionFocusKey(): string | null {
     const selection = store.get().selection;
     if (selection?.kind === "node") return selection.key;
     if (selection?.kind === "dept") return deptNodeKey(selection.id);
     return null;
+  }
+
+  /**
+   * `true`, если `nodeKey` — сосед узла/департамента `focus` (а не сам
+   * `focus`). `focus === null` или отсутствие `focus` в ТЕКУЩЕМ графе (после
+   * смены вкладки — см. развёрнутый комментарий у вызова ниже) — оба безопасно
+   * дают `false`, не бросая исключение: `graph.areNeighbors()` на
+   * несуществующем узле бросает `NotFoundGraphError`, а не возвращает `false`.
+   */
+  function isNeighborOf(focus: string | null, nodeKey: string): boolean {
+    return (
+      focus !== null &&
+      focus !== nodeKey &&
+      graph.hasNode(focus) &&
+      graph.areNeighbors(focus, nodeKey)
+    );
   }
 
   renderer.setSetting("nodeReducer", (nodeKey, data): Partial<NodeDisplayData> => {
@@ -359,34 +395,30 @@ function applyGraphStyling(
       if (!isRegion) res.size = MAP_CONFIG.node.radiusSelected;
     }
 
-    const focus = focusKey();
-    // isSelected исключён отдельно: выбранный узел/департамент — сам себе
-    // фокус, когда ничего не наведено, но должен оставаться ярким, даже
-    // пока наводят на что-то другое, а не тускнеть под собственной подсветкой.
-    // focus !== nodeKey исключает сам фокус (наведённый, но не выбранный узел) —
-    // у него уже нет ни radiusSelected, ни повода тускнеть или расти как сосед.
-    // graph.hasNode(focus) ОБЯЗАТЕЛЕН: focus из store.selection переживает
-    // смену вкладки (клик на графе не сбрасывает выбор при переключении
-    // авторы/репозитории/публикации), а после смены вкладки populateGraph()
-    // полностью пересобирает граф под новый набор сущностей — старый ключ
-    // выбора почти наверняка не существует в НОВОМ графе. graph.areNeighbors()
-    // на несуществующем узле не возвращает false, а БРОСАЕТ исключение
-    // (graphology NotFoundGraphError) — без этой проверки оно летело на
-    // каждый узел каждого кадра рендера, ронявшее рендер-цикл Sigma
-    // намертво (репортнутый пользователем зависон: "нажал на ноду, начал
-    // переходить в другую вкладку — всё зависло").
-    if (!isSelected && focus && focus !== nodeKey && graph.hasNode(focus)) {
-      if (graph.areNeighbors(focus, nodeKey)) {
-        // Рост размера — только когда фокус пришёл от ВЫБОРА (клика), не от
-        // наведения мышью (hoveredNode === null здесь означает "фокус — это
-        // store.selection, не hover", см. focusKey()). При наведении рост
-        // размера соседа двигает его хитбокс под курсор, из-за чего в
-        // плотных скоплениях узлов hover начинает "прыгать" на случайные
-        // соседние узлы — прямая жалоба пользователя ("наведение курсором на
-        // кучу — рандом какой-то"). Якоря департаментов (size: 0) тоже не
-        // растим — фиксированный размер сделал бы невидимую точку видимым
-        // кружком там, где его не было.
-        if (!isRegion && !hoveredNode) res.size = MAP_CONFIG.node.radius * MAP_CONFIG.node.neighborSizeScale;
+    // Выбор и наведение — два НЕЗАВИСИМЫХ источника фокуса (см. развёрнутый
+    // комментарий у applyGraphStyling выше) — оба проверяются раздельно, а
+    // не через общий "focus", чтобы наведение на другой узел не отменяло
+    // подсветку уже выбранного, и наоборот: выбор не блокировал предпросмотр
+    // соседей наведения. isSelected исключён отдельно — выбор сам себе
+    // фокус, ему незачем тускнеть под собственной подсветкой.
+    const selKey = selectionFocusKey();
+    const isNeighborOfSelection = isNeighborOf(selKey, nodeKey);
+    const isHoveredNode = hoveredNode !== null && hoveredNode === nodeKey;
+    const isNeighborOfHover = isNeighborOf(hoveredNode, nodeKey);
+    const anyFocusActive = selKey !== null || hoveredNode !== null;
+
+    if (!isSelected && anyFocusActive) {
+      if (isNeighborOfSelection || isHoveredNode || isNeighborOfHover) {
+        // Крупнее — только сам выбор (radiusSelected выше), ни наведённый
+        // узел, ни чьи-либо соседи размер не меняют (прямая просьба).
+        // Принудительная подпись (forceLabel, не зависит от
+        // labelVisibleAtSize) — только у соседей ВЫБОРА (клика): имя должно
+        // быть видно сразу после клика, а не только если размер узла сам по
+        // себе перевалил порог видимости подписи. У соседей НАВЕДЕНИЯ подпись
+        // не форсируем — не просили, и на карте с тысячами узлов это была бы
+        // лишняя "каша" подписей при простом движении мыши. У якорей
+        // департаментов (isRegion) подписи и так решает showingRegionLabels() выше.
+        if (!isRegion && isNeighborOfSelection) res.forceLabel = true;
       } else {
         res.color = MAP_CONFIG.node.dimColor;
         res.label = "";
@@ -402,7 +434,9 @@ function applyGraphStyling(
     // реальных, они существуют в графе только для areNeighbors() выше).
     if (parseDeptNodeKey(s) !== null) return { ...data, hidden: true };
 
-    if (cameraRatio > MAP_CONFIG.edge.visibleBelowRatio) return { ...data, hidden: true };
+    // Порог теперь пользовательский регулятор (features/filters.ts), не
+    // захардкоженная MAP_CONFIG.edge.visibleBelowRatio — прямая просьба.
+    if (cameraRatio > store.get().filters.edgeZoomThreshold) return { ...data, hidden: true };
 
     const selection = store.get().selection;
     const isSelectedEdge =
@@ -413,8 +447,14 @@ function applyGraphStyling(
       return { ...data, color: MAP_CONFIG.edge.colorSelected, size: MAP_CONFIG.edge.widthSelected };
     }
 
-    const focus = focusKey();
-    if (focus && s !== focus && t !== focus) {
+    // Видно, если ребро касается ВЫБОРА ИЛИ НАВЕДЕНИЯ (независимо друг от
+    // друга, см. applyGraphStyling выше) — то же самое "два источника фокуса
+    // одновременно", что и в nodeReducer.
+    const selKey = selectionFocusKey();
+    const touchesSelection = selKey !== null && (s === selKey || t === selKey);
+    const touchesHover = hoveredNode !== null && (s === hoveredNode || t === hoveredNode);
+    const anyFocusActive = selKey !== null || hoveredNode !== null;
+    if (anyFocusActive && !touchesSelection && !touchesHover) {
       return { ...data, hidden: true };
     }
 
@@ -510,10 +550,12 @@ function flyToSelection(renderer: Sigma, selection: Selection): void {
   const nodeData = renderer.getNodeDisplayData(key);
   if (!nodeData) return;
 
-  renderer.getCamera().animate(
-    { x: nodeData.x, y: nodeData.y, ratio: MAP_CONFIG.camera.focusRatio },
-    { duration: MAP_CONFIG.camera.focusDuration, easing: "quadraticInOut" },
-  );
+  renderer
+    .getCamera()
+    .animate(
+      { x: nodeData.x, y: nodeData.y, ratio: MAP_CONFIG.camera.focusRatio },
+      { duration: MAP_CONFIG.camera.focusDuration, easing: "quadraticInOut" },
+    );
 }
 
 /**
@@ -635,8 +677,9 @@ export function mountReactiveGraph(
  * Небольшой отладочный индикатор текущего `camera.ratio` поверх карты
  * (нижний левый угол `#map`, не всего viewport — иначе попадал бы в область
  * сайдбара) — инструмент для подбора {@link MAP_CONFIG.region.ratioThreshold},
- * {@link MAP_CONFIG.node.labelVisibleAtSize} и {@link MAP_CONFIG.edge.visibleBelowRatio}
- * на глаз, не постоянный элемент интерфейса. Создаёт DOM-элемент сам, а не
+ * {@link MAP_CONFIG.node.labelVisibleAtSize} и (пользовательского теперь)
+ * порога {@link AppState.filters.edgeZoomThreshold} на глаз, не постоянный
+ * элемент интерфейса. Создаёт DOM-элемент сам, а не
  * через разметку в `index.html` — убрать индикатор после калибровки можно
  * одной строкой в `app/main.ts`, без правки вёрстки.
  *

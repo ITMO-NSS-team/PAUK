@@ -96,6 +96,11 @@ export interface AppState {
    *   без реального департамента (у new_generate/departments.py для них есть
    *   синтетическая запись "Без департамента", см. core/config.ts::NO_DEPT_COLOR).
    *   По умолчанию `true` — сегодняшнее поведение не меняется, пока не выключат явно.
+   * - `edgeZoomThreshold` — общий для всех трёх вкладок порог `camera.ratio`
+   *   (map/build.ts::applyGraphStyling), выше которого рёбра скрываются
+   *   целиком (на сильном отдалении тысячи рёбер сливаются в сплошную
+   *   дымку). Раньше жил как константа {@link MAP_CONFIG.edge.visibleBelowRatio},
+   *   стал пользовательским регулятором по прямой просьбе.
    */
   filters: {
     minCoauth: number;
@@ -103,6 +108,7 @@ export interface AppState {
     yearMax: number;
     showNoDeptAuthors: boolean;
     showNoDeptPubs: boolean;
+    edgeZoomThreshold: number;
   };
 }
 

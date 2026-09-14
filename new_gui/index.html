@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PAUK</title>
+    <!-- Фирменный значок паука (src/assets/icons/ — общая папка под такие
+         файлы) — та же картинка, что "pauk-frame" в старом pauk/gui/web/,
+         восьмикратно увеличенная версия (152×136) для чёткости на favicon,
+         а не исходные 19×17 (там браузер апскейлил бы сам, размыто). Vite
+         сам находит и хеширует такие локальные пути в href при сборке — не
+         нужен отдельный public/ (тот здесь уже занят под настоящие данные,
+         см. vite.config.ts::publicDir). -->
+    <link rel="icon" type="image/png" href="./src/assets/icons/pauk-frame-8x.png" />
     <!-- Inter — тот же выбор, что у большинства тёмных дата-дашбордов
          (тот же дух, что у Obsidian, на который ориентируется вся палитра
          выше): читаемый плотный текст на маленьком размере (13px в панели,
@@ -15,7 +23,10 @@
          визуально ломаться без интернета до этого домена. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
     <style>
       /* Единая тёмная палитра ("Obsidian"-стиль) — единственное место, где
          живут цвета вёрстки, дальше везде var(--...). --surface совпадает с
@@ -38,8 +49,17 @@
         --danger-text: #ffb3b3;
       }
 
-      html, body { margin: 0; height: 100%; font-family: "Inter", system-ui, sans-serif; color-scheme: dark; }
-      body { background: var(--bg); color: var(--text); }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font-family: "Inter", system-ui, sans-serif;
+        color-scheme: dark;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+      }
 
       /* Единое кольцо фокуса для клавиатурной навигации — раньше нигде на
          сайте не было ни одного :focus-visible, только браузерный дефолт
@@ -47,27 +67,81 @@
          на все интерактивные элементы, а не per-компонентный дубль —
          "чтобы человеку или агенту просто было находить" относится и к
          навигации с клавиатуры/через DOM, не только к мыши. */
-      button:focus-visible, a:focus-visible, input:focus-visible {
+      button:focus-visible,
+      a:focus-visible,
+      input:focus-visible {
         outline: 2px solid var(--accent);
         outline-offset: 2px;
       }
 
       /* accent-color — штатное CSS-свойство (Chrome/Firefox/Safari
-         2022+), красит НАТИВНЫЙ рендер range/checkbox/radio в цвет темы
-         без переопределения их устройства через ::-webkit-slider-thumb и
-         подобные хаки под каждый браузер отдельно. Без него ползунки
-         фильтров (features/filters.ts) и переключатель языка ("Показывать
-         без департамента") были синими цветами ОС/браузера по умолчанию —
-         единственное несовпадающее с остальной палитрой место в интерфейсе. */
-      input[type="range"], input[type="checkbox"] { accent-color: var(--accent); }
+         2022+), красит НАТИВНЫЙ рендер checkbox/radio в цвет темы без
+         переопределения их устройства через ::-webkit-*-thumb и подобные
+         хаки под каждый браузер отдельно. Без него переключатель языка
+         ("Показывать без департамента") был бы синим цветом ОС/браузера
+         по умолчанию — единственное несовпадающее с остальной палитрой
+         место в интерфейсе. Диапазоны (range) сюда не входят — у них
+         свой бегунок ниже, с фирменным значком вместо родного кружка/овала. */
+      input[type="checkbox"] {
+        accent-color: var(--accent);
+      }
+      /* Бегунок ползунков-фильтров (features/filters.ts) — фирменный
+         значок паука (src/assets/icons/pauk-frame.png) вместо родного
+         кружка/овала браузера: тот был заметно шире самой дорожки и
+         визуально спорил с остальным интерфейсом (прямая жалоба). Дорожка
+         (::-webkit-slider-runnable-track/::-moz-range-track) рисуется
+         отдельно — без appearance: none на самом input ею занимался бы
+         браузер, а вместе с бегунком её нужно красить в тон дорожкам
+         фильтров, а не в системный синий. Дублирование между -webkit- и
+         -moz- версиями не сократить: это два разных набора псевдоэлементов,
+         не единый стандарт (Firefox не понимает ::-webkit-*, Chrome/Safari —
+         ::-moz-*), у CSS нет способа описать "бегунок диапазона" один раз. */
+      input[type="range"] {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 100%;
+        background: transparent;
+        cursor: pointer;
+      }
+      input[type="range"]::-webkit-slider-runnable-track {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border);
+      }
+      input[type="range"]::-webkit-slider-thumb {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 16px;
+        height: 16px;
+        margin-top: -6px; /* центрирует 16px бегунок относительно 4px дорожки: (4 - 16) / 2 */
+        background: url("./src/assets/icons/pauk-frame.png") center / contain no-repeat;
+      }
+      input[type="range"]::-moz-range-track {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border);
+      }
+      input[type="range"]::-moz-range-thumb {
+        width: 16px;
+        height: 16px;
+        border: none;
+        border-radius: 0;
+        background: url("./src/assets/icons/pauk-frame.png") center / contain no-repeat;
+      }
 
       /* Плавные, но короткие переходы для того, что и так меняется по
          hover/клику в сайдбаре (кнопка меню, поиска, вкладок, строк
          списка) — один общий селектор, а не per-компонентный transition в
          каждом правиле ниже. 0.12s — заметно, но не "залипает" при быстрой
          прокрутке списка мышью по строкам. */
-      #brand, #global-search-trigger, #tab-buttons button, .tab-list-item {
-        transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+      #brand,
+      #global-search-trigger,
+      #tab-buttons button,
+      .tab-list-item {
+        transition:
+          background-color 0.12s ease,
+          color 0.12s ease,
+          border-color 0.12s ease;
       }
 
       /* Общая раскладка страницы: сайдбар со списком слева, карта
@@ -83,17 +157,32 @@
          с более высоким z-index (см. ниже), поэтому меню всё равно
          визуально полностью перекрывает #app, тем же способом, что
          раньше делал #welcome-modal. */
-      #app { display: flex; height: 100%; }
+      #app {
+        display: flex;
+        height: 100%;
+      }
       /* overflow-x: hidden — подстраховка: если внутри забудут про
          min-width: 0 на новом flex-элементе (как уже дважды случалось —
          см. .filter-row input и .tab-list-item__label ниже), контент
          обрежется по границе сайдбара, а не вылезет поверх карты. */
-      #sidebar { width: 280px; flex-shrink: 0; overflow-x: hidden; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--border); }
+      #sidebar {
+        width: 280px;
+        flex-shrink: 0;
+        overflow-x: hidden;
+        display: flex;
+        flex-direction: column;
+        background: var(--surface);
+        border-right: 1px solid var(--border);
+      }
       /* position: relative — точка отсчёта для map/build.ts::mountZoomDebug
          (position: absolute внутри), чтобы индикатор зума лежал поверх
          самой карты, а не всего viewport (в котором left:12px попал бы в
          область сайдбара). */
-      #map { flex: 1; min-width: 0; position: relative; }
+      #map {
+        flex: 1;
+        min-width: 0;
+        position: relative;
+      }
 
       /* Заголовок сайдбара — кликабелен, возвращает в меню
          (features/start.ts, store.set({ screen: "menu" })). Единственный
@@ -112,7 +201,9 @@
         text-align: left;
         cursor: pointer;
       }
-      #brand:hover { background: var(--surface-2); }
+      #brand:hover {
+        background: var(--surface-2);
+      }
 
       /* Кнопка входа в глобальный поиск (features/globalSearch.ts) — тот
          же визуальный вес, что и #brand, тем же способом открывается
@@ -134,7 +225,10 @@
         text-align: left;
         cursor: pointer;
       }
-      #global-search-trigger:hover { background: var(--surface-2); color: var(--text); }
+      #global-search-trigger:hover {
+        background: var(--surface-2);
+        color: var(--text);
+      }
       /* Значок лупы перед подписью — без него кнопка выглядела как
          обычный текстовый пункт меню, а не как вход в поиск, узнаваемый с
          одного взгляда (тот же язык, что у поля поиска внутри самого окна,
@@ -151,8 +245,10 @@
         height: 13px;
         flex-shrink: 0;
         background-color: currentColor;
-        -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='10' cy='10' r='6.5'/%3E%3Cline x1='20' y1='20' x2='15' y2='15'/%3E%3C/svg%3E") center / contain no-repeat;
-        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='10' cy='10' r='6.5'/%3E%3Cline x1='20' y1='20' x2='15' y2='15'/%3E%3C/svg%3E") center / contain no-repeat;
+        -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='10' cy='10' r='6.5'/%3E%3Cline x1='20' y1='20' x2='15' y2='15'/%3E%3C/svg%3E")
+          center / contain no-repeat;
+        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='10' cy='10' r='6.5'/%3E%3Cline x1='20' y1='20' x2='15' y2='15'/%3E%3C/svg%3E")
+          center / contain no-repeat;
       }
       /* margin-left: auto, а не justify-content: space-between на всём
          триггере — тот растащил бы иконку/подпись/хинт на три угла кнопки
@@ -181,7 +277,9 @@
         padding-top: 12vh;
         background: rgba(0, 0, 0, 0.55);
       }
-      #global-search[hidden] { display: none; }
+      #global-search[hidden] {
+        display: none;
+      }
       .global-search-box {
         width: min(560px, calc(100vw - 32px));
         max-height: 60vh;
@@ -203,7 +301,9 @@
         color: var(--text);
         font-size: 16px;
       }
-      #global-search-results { overflow-y: auto; }
+      #global-search-results {
+        overflow-y: auto;
+      }
       /* Заголовок подсказки "Департаменты" на пустом запросе
          (features/globalSearch.ts) — объясняет, откуда взялся список,
          когда пользователь ещё ничего не вводил. */
@@ -219,7 +319,10 @@
       /* Кнопки переключения вкладок — по одной на каждый TabModule из
          features/tabs/index.ts. "Здоровье БД" из старого GUI сознательно
          не переносим — для неё кнопки нет и не будет. */
-      #tab-buttons { display: flex; border-bottom: 1px solid var(--border); }
+      #tab-buttons {
+        display: flex;
+        border-bottom: 1px solid var(--border);
+      }
       #tab-buttons button {
         flex: 1;
         padding: 10px 4px;
@@ -230,24 +333,55 @@
         cursor: pointer;
         border-bottom: 2px solid transparent;
       }
-      #tab-buttons button.tab-button--active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+      #tab-buttons button.tab-button--active {
+        color: var(--text);
+        border-bottom-color: var(--accent);
+        font-weight: 600;
+      }
 
       /* Регуляторы порогов фильтрации (features/filters.ts) — видны только
          для вкладок, у которых вообще есть фильтр (сейчас 1 и 3). */
-      #filter-bar { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
-      #filter-bar[hidden] { display: none; }
-      .filter-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
-      .filter-row__label { flex-shrink: 0; color: var(--muted); }
+      #filter-bar {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      #filter-bar[hidden] {
+        display: none;
+      }
+      .filter-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+      }
+      .filter-row__label {
+        flex-shrink: 0;
+        color: var(--muted);
+      }
       /* min-width: 0 обязателен — без него flex-элемент с nowrap-содержимым
          (тут это встроенный вид ползунка) не сжимается меньше своей
          "естественной" ширины и выталкивает строку за пределы сайдбара,
          когда подпись слева длинная (например "Мин. общих авторов"). */
-      .filter-row input[type="range"] { flex: 1; min-width: 0; }
-      .filter-row__value { flex-shrink: 0; min-width: 2.5em; text-align: right; color: var(--text); }
+      .filter-row input[type="range"] {
+        flex: 1;
+        min-width: 0;
+      }
+      .filter-row__value {
+        flex-shrink: 0;
+        min-width: 2.5em;
+        text-align: right;
+        color: var(--text);
+      }
 
       /* Список карточек внутри активной вкладки — отрисовывается через
          core/render.ts::renderList(), см. features/tabs/authors.ts. */
-      #tab-content { flex: 1; overflow-y: auto; }
+      #tab-content {
+        flex: 1;
+        overflow-y: auto;
+      }
       /* Поле поиска по сущностям ТЕКУЩЕЙ вкладки (features/tabs/nodeListTab.ts)
          — под фильтрами, над списком (см. #filter-bar выше). Sticky —
          не должно скроллиться вместе со списком, иначе для правки запроса
@@ -278,19 +412,36 @@
         text-align: left;
         cursor: pointer;
       }
-      .tab-list-item:hover { background: var(--surface-2); }
-      .tab-list-item--selected { background: var(--accent-soft); }
+      .tab-list-item:hover {
+        background: var(--surface-2);
+      }
+      .tab-list-item--selected {
+        background: var(--accent-soft);
+      }
       /* min-width: 0 — та же причина, что у .filter-row input выше: без
          него текст с white-space: nowrap не сжимается и вылезает за край
          строки (в поиске это выглядело как "буквы не отображаются" —
          текст на самом деле рисовался, просто за пределами видимой
          ширины сайдбара). */
-      .tab-list-item__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .tab-list-item__meta { flex-shrink: 0; color: var(--muted); }
+      .tab-list-item__label {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .tab-list-item__meta {
+        flex-shrink: 0;
+        color: var(--muted);
+      }
       /* "Ничего не найдено" (features/tabs/nodeListTab.ts) — раньше пустой
          результат поиска выглядел как пустая/сломанная страница, без
          единой подсказки, что список просто отфильтрован в ноль. */
-      .tab-empty { padding: 24px 12px; text-align: center; color: var(--muted); font-size: 13px; }
+      .tab-empty {
+        padding: 24px 12px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 13px;
+      }
 
       /* В обычных вкладках meta — короткое число ("42", "★ 15", "2024"),
          поэтому в один ряд с подписью оно умещается нормально. В
@@ -305,8 +456,12 @@
         align-items: flex-start;
         gap: 2px;
       }
-      .search-results .tab-list-item__label { white-space: normal; }
-      .search-results .tab-list-item__meta { font-size: 12px; }
+      .search-results .tab-list-item__label {
+        white-space: normal;
+      }
+      .search-results .tab-list-item__meta {
+        font-size: 12px;
+      }
 
       /* Панель информации о выбранном (или "Обзор" по умолчанию) — третья
          flex-колонка #app, того же вида и ширины, что и #sidebar, только
@@ -324,7 +479,9 @@
         color: var(--text);
         font-size: 13px;
       }
-      #panel[hidden] { display: none; }
+      #panel[hidden] {
+        display: none;
+      }
       /* "← Обзор" (features/panels.ts::buildCard) — единственный путь
          вернуться к сводке, не сбрасывая selection каким-то окольным путём
          (клик по пустому месту карты, смена вкладки и т.п.). Отсутствует
@@ -340,7 +497,9 @@
         font-size: 12px;
         cursor: pointer;
       }
-      .panel-back:hover { color: var(--accent); }
+      .panel-back:hover {
+        color: var(--accent);
+      }
       /* Заголовок + бейдж вида сущности в одной строке — после того, как
          почти любое поле карточки стало кликабельной ссылкой на другую
          сущность (см. .panel-entity-ref ниже), лишний ориентир "на что я
@@ -358,7 +517,13 @@
          выталкивает .panel-kind за пределы панели, либо не переносится на
          новую строку вовсе — тот же нюанс, что уже дважды случался в этом
          файле (.filter-row input, .tab-list-item__label). */
-      #panel h3 { margin: 0; min-width: 0; font-size: 15px; line-height: 1.3; overflow-wrap: break-word; }
+      #panel h3 {
+        margin: 0;
+        min-width: 0;
+        font-size: 15px;
+        line-height: 1.3;
+        overflow-wrap: break-word;
+      }
       .panel-kind {
         flex-shrink: 0;
         padding: 2px 8px;
@@ -371,6 +536,15 @@
         letter-spacing: 0.03em;
         white-space: nowrap;
       }
+      /* Имя на ВТОРОМ языке под заголовком карточки автора (features/panels.ts,
+         PanelCardOptions.subtitle) — мельче и серым, прямая просьба: для
+         EN-интерфейса сверху английское имя, под ним русское, и наоборот. */
+      .panel-card__subtitle {
+        margin: 0 0 12px;
+        font-size: 12px;
+        color: var(--muted);
+        overflow-wrap: break-word;
+      }
       /* Строки-пары "подпись — значение" в виде мини-таблицы с разделителями
          — раньше это был просто gap между строками без единого визуального
          "конца" одной пары и "начала" следующей, тем более на длинных
@@ -382,21 +556,35 @@
         grid-template-columns: auto 1fr;
         gap: 0 12px;
       }
-      #panel dt, #panel dd {
+      #panel dt,
+      #panel dd {
         padding: 7px 0;
         border-bottom: 1px solid var(--border);
       }
-      #panel dt { color: var(--muted); }
-      #panel dd { margin: 0; line-height: 1.45; }
+      #panel dt {
+        color: var(--muted);
+      }
+      #panel dd {
+        margin: 0;
+        line-height: 1.45;
+      }
       /* Последняя пара строки — без нижней границы, чтобы список не
          заканчивался "висящей" линией перед пустым местом до конца панели. */
-      #panel dt:last-of-type, #panel dd:last-of-type { border-bottom: none; }
-      #panel a { color: var(--accent); }
+      #panel dt:last-of-type,
+      #panel dd:last-of-type {
+        border-bottom: none;
+      }
+      #panel a {
+        color: var(--accent);
+      }
       /* "↗" отличает ВНЕШНИЕ ссылки (DOI/GitHub/ORCID — открываются в
          новой вкладке) от .panel-entity-ref ниже (тот же цвет, но остаётся
          внутри приложения) — иначе визуально неотличимы, хотя ведут себя
          совсем по-разному. */
-      #panel dd a::after { content: " ↗"; font-size: 0.85em; }
+      #panel dd a::after {
+        content: " ↗";
+        font-size: 0.85em;
+      }
       /* Ссылка на ДРУГУЮ сущность графа внутри карточки (features/panels.ts::PanelEntityRef)
          — визуально то же самое, что и внешняя <a> выше (тот же цвет), но
          это настоящая <button>: клик не открывает вкладку, а делает эту
@@ -412,7 +600,60 @@
         cursor: pointer;
         text-decoration: none;
       }
-      .panel-entity-ref:hover { text-decoration: underline; }
+      .panel-entity-ref:hover {
+        text-decoration: underline;
+      }
+
+      /* Простые графики "Обзора" (features/panels.ts::buildBarChart) — DOM +
+         CSS вместо canvas/SVG: ширина .chart-bar-row__fill в процентах от
+         максимума ряда, вся "координатная система" — один инлайновый
+         style="width: N%" на общий рендер-цикл не завязана вообще. */
+      .panel-chart {
+        padding: 4px 16px 14px;
+      }
+      .panel-chart h4 {
+        margin: 0 0 8px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .chart-bar-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        padding: 3px 0;
+      }
+      .chart-bar-row__label {
+        flex: 0 0 auto;
+        width: 88px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--muted);
+      }
+      .chart-bar-row__track {
+        flex: 1;
+        min-width: 0;
+        height: 8px;
+        border-radius: 4px;
+        background: var(--surface-2);
+        overflow: hidden;
+      }
+      .chart-bar-row__fill {
+        height: 100%;
+        background: var(--accent);
+        border-radius: inherit;
+        transition: width 0.2s ease-out;
+      }
+      .chart-bar-row__value {
+        flex: 0 0 auto;
+        min-width: 2em;
+        text-align: right;
+        color: var(--text);
+      }
 
       /* Индикатор "ещё грузится" (core/dom.ts::createLoadingIndicator) —
          показывается в строке карточки вместо значения, пока detail-файл
@@ -427,8 +668,15 @@
         animation: loading-pulse 1s ease-in-out infinite;
       }
       @keyframes loading-pulse {
-        0%, 100% { opacity: 0.35; transform: scale(0.8); }
-        50% { opacity: 1; transform: scale(1); }
+        0%,
+        100% {
+          opacity: 0.35;
+          transform: scale(0.8);
+        }
+        50% {
+          opacity: 1;
+          transform: scale(1);
+        }
       }
 
       /* Сообщение о неудачной загрузке graph-data.json (app/main.ts) — если
@@ -451,7 +699,9 @@
         font-size: 13px;
         text-align: center;
       }
-      #load-error[hidden] { display: none; }
+      #load-error[hidden] {
+        display: none;
+      }
 
       /* ---------- стартовый экран (features/start.ts) ---------- */
       /* boot-screen виден с первого кадра (не ждёт JS), пока грузится
@@ -469,11 +719,34 @@
         background: var(--bg);
         transition: opacity 0.35s ease;
       }
-      #boot-screen[hidden] { display: none; }
-      .boot-title { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); }
-      .boot-progress { width: 180px; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
-      .boot-progress-bar { height: 100%; width: 0%; background: var(--accent); transition: width 0.2s ease-out; border-radius: inherit; }
-      .boot-status { font-size: 12px; font-weight: 600; color: var(--muted); }
+      #boot-screen[hidden] {
+        display: none;
+      }
+      .boot-title {
+        font-size: 24px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        color: var(--text);
+      }
+      .boot-progress {
+        width: 180px;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border);
+        overflow: hidden;
+      }
+      .boot-progress-bar {
+        height: 100%;
+        width: 0%;
+        background: var(--accent);
+        transition: width 0.2s ease-out;
+        border-radius: inherit;
+      }
+      .boot-status {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+      }
 
       /* Меню (features/start.ts) — не одноразовый онбординг, а настоящий
          экран приложения (AppState.screen === "menu"): выбор языка и
@@ -491,10 +764,20 @@
            одним сплошным цветом. --surface в центре светлее --bg по краям
            совпадает с уже существующим отношением этих двух токенов
            (сайдбар/панель светлее фона), а не вводит третий новый цвет. */
-        background: radial-gradient(ellipse 900px 700px at 50% 40%, var(--surface) 0%, var(--bg) 70%);
+        background: radial-gradient(
+          ellipse 900px 700px at 50% 40%,
+          var(--surface) 0%,
+          var(--bg) 70%
+        );
       }
-      #menu[hidden] { display: none; }
-      .menu-hero { text-align: center; max-width: 560px; padding: 20px; }
+      #menu[hidden] {
+        display: none;
+      }
+      .menu-hero {
+        text-align: center;
+        max-width: 560px;
+        padding: 20px;
+      }
       .menu-badge {
         display: inline-flex;
         align-items: center;
@@ -510,10 +793,27 @@
         margin-bottom: 24px;
         transition: border-color 0.12s ease;
       }
-      .menu-badge:hover { border-color: var(--accent); }
-      .menu-badge-arrow { color: var(--muted); }
-      .menu-title { font-size: clamp(28px, 4vw, 44px); font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; color: var(--text); margin: 0 0 16px; }
-      .menu-subtitle { font-size: 15px; line-height: 1.55; color: var(--muted); margin: 0 auto 28px; max-width: 460px; }
+      .menu-badge:hover {
+        border-color: var(--accent);
+      }
+      .menu-badge-arrow {
+        color: var(--muted);
+      }
+      .menu-title {
+        font-size: clamp(28px, 4vw, 44px);
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        line-height: 1.15;
+        color: var(--text);
+        margin: 0 0 16px;
+      }
+      .menu-subtitle {
+        font-size: 15px;
+        line-height: 1.55;
+        color: var(--muted);
+        margin: 0 auto 28px;
+        max-width: 460px;
+      }
       /* Один вход в приложение (всегда на первую вкладку) — отдельные
          кнопки выбора вкладки на меню убраны по прямой просьбе. */
       .menu-cta {
@@ -525,7 +825,10 @@
         font-size: 14px;
         font-weight: 700;
         cursor: pointer;
-        transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+        transition:
+          transform 0.12s ease,
+          box-shadow 0.12s ease,
+          filter 0.12s ease;
       }
       /* filter: brightness(), не отдельный hex-цвет "посветлее" — единственный
          источник цвета остаётся --accent (core/config.ts::MAP_CONFIG держит
@@ -533,10 +836,21 @@
          tokens). Лёгкий подъём + мягкое свечение вместо голого opacity —
          то же ощущение "нажимаемой" кнопки, что и было, но не выглядит
          просто "притушенным". */
-      .menu-cta:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 4px 16px var(--accent-soft); }
-      .menu-cta:active { transform: translateY(0); }
+      .menu-cta:hover {
+        filter: brightness(1.08);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px var(--accent-soft);
+      }
+      .menu-cta:active {
+        transform: translateY(0);
+      }
       /* Языковые кнопки — переехали сюда из бывшего #lang-toggle. */
-      .menu-lang { display: flex; gap: 8px; justify-content: center; margin-top: 20px; }
+      .menu-lang {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin-top: 20px;
+      }
       .menu-lang button {
         padding: 6px 14px;
         border: 1px solid var(--border);
@@ -546,10 +860,17 @@
         font-size: 12px;
         font-weight: 600;
         cursor: pointer;
-        transition: color 0.12s ease, border-color 0.12s ease;
+        transition:
+          color 0.12s ease,
+          border-color 0.12s ease;
       }
-      .menu-lang button:hover { color: var(--text); }
-      .menu-lang button.menu-lang--active { color: var(--text); border-color: var(--accent); }
+      .menu-lang button:hover {
+        color: var(--text);
+      }
+      .menu-lang button.menu-lang--active {
+        color: var(--text);
+        border-color: var(--accent);
+      }
     </style>
   </head>
   <body>
@@ -565,7 +886,12 @@
          запуска JS (тот же смысл, что был у #welcome-modal). -->
     <div id="menu" hidden>
       <div class="menu-hero">
-        <a class="menu-badge" href="https://github.com/ITMO-NSS-team/PAUK" target="_blank" rel="noopener noreferrer">
+        <a
+          class="menu-badge"
+          href="https://github.com/ITMO-NSS-team/PAUK"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
           <span id="menu-badge-text"></span> <span class="menu-badge-arrow">›</span>
         </a>
         <h1 class="menu-title" id="menu-title"></h1>

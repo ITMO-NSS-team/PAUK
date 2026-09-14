@@ -8,7 +8,14 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
     tab: 1,
     lang: "ru",
     selection: null,
-    filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026, showNoDeptAuthors: true, showNoDeptPubs: true },
+    filters: {
+      minCoauth: 1,
+      minSharedAuthors: 1,
+      yearMax: 2026,
+      showNoDeptAuthors: true,
+      showNoDeptPubs: true,
+      edgeZoomThreshold: 0.4,
+    },
     ...overrides,
   };
 }
@@ -125,7 +132,9 @@ describe("mountStart", () => {
   });
 
   it("клик по кнопке входа не трогает selection сам по себе — обнулять устаревший выбор при смене вкладки умеет map/build.ts::mountReactiveGraph (см. tests/build.test.ts)", () => {
-    const store = new Store<AppState>(initialState({ screen: "menu", tab: 2, selection: { kind: "node", key: "R1" } }));
+    const store = new Store<AppState>(
+      initialState({ screen: "menu", tab: 2, selection: { kind: "node", key: "R1" } }),
+    );
     mountStart(store);
 
     document.getElementById("menu-enter")?.click();

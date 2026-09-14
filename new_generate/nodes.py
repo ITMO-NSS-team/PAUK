@@ -168,12 +168,15 @@ class AuthorNodeBuilder:
             regardless of build variant - privacy is no longer decided here
             by trimming fields, it's decided outside, by which folder
             `main()` writes the final file into (`authors-detail.json` only
-            ever goes into `private/`, see `graph_builder.py`). The map
-            label (`label`/`label_en`) is always the truncated form
-            (`author_label(..., public=True)`) - the only option now that
-            `graph-data.json` is one shared file for every variant; the full
-            name is only visible via `name_ru`/`name_en` in detail, which is
-            private by location.
+            ever goes into `private/`, see `graph_builder.py`). The map label
+            (`label`/`label_en`) uses `author_label(..., public=False)` -
+            full surname + initials ("Фамилия И.О."), not the
+            three-letter-truncated public-safe form - readability on the map
+            won out for now over anonymizing a label that already sits next
+            to a `graph-data.json` shipped as one shared file for every
+            build variant. Flip back to `public=True` here if/when an actual
+            public deploy needs the map label itself anonymized again (the
+            truncation behavior in `author_label()` isn't removed, just unused).
         """
         # set() - a publication could have been counted twice from some data
         # mismatch, so count unique ids, not the raw list length.
@@ -184,11 +187,27 @@ class AuthorNodeBuilder:
         for row in self.db["persons"]:
             pid_ = row["id"]  # "id", not "key" - that's the column name in the snapshot
             x, y = self.pos[pid_]
-            # label_ru/label_en are always the truncated form (public=True):
-            # the map is drawn from one shared file across every build
-            # variant, so the full name can never live here, see build()'s docstring.
-            label_ru = author_label(row["surname_ru"], row["first_name_ru"], row["second_name_ru"], public=True) or row.get("name_ru") or ""
-            label_en = author_label(row["surname_en"], row["first_name_en"], row["second_name_en"], public=True) or label_ru
+            # Full surname + initials (public=False) - see build()'s docstring.
+            label_ru = author_label(row["surname_ru"], row["first_name_ru"], row["second_name_ru"], public=False) or row.get("name_ru") or ""
+            # surname_en/first_name_en/second_name_en are None for every
+            # single person in the real snapshot today (no pipeline stage
+            # ever populates them) - author_label() always returns "" here,
+            # so this used to silently fall back straight to label_ru,
+            # meaning label_en was byte-identical to the Russian label for
+            # 100% of authors regardless of the selected language. name_en
+            # (the free-text transliterated name, e.g. "Maria Zaitseva") IS
+            # populated for effectively everyone (author_names.py) - falling
+            # back to it (not to label_ru) is what actually makes the EN
+            # interface show English names on the map/lists, not just once
+            # AuthorDetail has merged into the panel card. It isn't run
+            # through author_label() itself (no reliable surname/given-name
+            # split for it - see author_label()'s own docstring on why
+            # guessing word order is exactly the failure mode to avoid).
+            label_en = (
+                author_label(row["surname_en"], row["first_name_en"], row["second_name_en"], public=False)
+                or row.get("name_en")
+                or label_ru
+            )
             summary.append(
                 {
                     "key": pid_,

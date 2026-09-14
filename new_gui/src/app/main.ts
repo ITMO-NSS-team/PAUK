@@ -78,6 +78,7 @@ const store = new Store<AppState>({
     yearMax: FILTER_CONFIG.year.max,
     showNoDeptAuthors: true,
     showNoDeptPubs: true,
+    edgeZoomThreshold: FILTER_CONFIG.edgeZoom.default,
   },
 });
 

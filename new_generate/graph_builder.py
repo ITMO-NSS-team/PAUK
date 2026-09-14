@@ -21,10 +21,12 @@ CLI/disk writes.
 - One run, no `--public`/`--private` mode: generation used to run twice (once
   per build variant), producing an almost identical `graph-data.json` that
   only differed in whether the author label was truncated. `GraphDataBuilder`
-  now computes exactly one version of everything - the map label is always
-  truncated (`author_label(..., public=True)`, see `nodes.py`), and
-  `authors-detail.json` always holds every person field (private ones
-  included), untrimmed. Public/private is decided not by content but by disk
+  now computes exactly one version of everything - the map label is currently
+  the full form (`author_label(..., public=False)`, see `nodes.py` -
+  readability won out over anonymizing a label next to a file already shared
+  across build variants; flip back to `public=True` there for an actual
+  public deploy), and `authors-detail.json` always holds every person field
+  (private ones included), untrimmed. Public/private is decided not by content but by disk
   location: `main()` writes `graph-data.json`/`repos-detail.json`/
   `pubs-detail.json` into `public/` (no personal field lives there), and
   `authors-detail.json` only into `private/`. For local development (today's
