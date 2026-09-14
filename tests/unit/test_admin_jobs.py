@@ -485,10 +485,23 @@ class DedupConfirmationTest(unittest.TestCase):
         question = re.search(r'confirm\("([^"]+)"', page[page.index("dedup-form"):]).group(1)
         self.assertIn("необратим", question)
 
-    def test_only_the_merge_is_guarded(self):
-        # Collecting and rebuilding the map can be run again; folding two
-        # records into one cannot be taken back.
-        self.assertEqual(self.client.get("/jobs").text.count("confirm("), 1)
+    def test_the_run_that_removes_things_asks_too(self):
+        page = self.client.get("/jobs").text
+        question = re.search(r'confirm\("([^"]+)"', page[page.index("prune-form"):]).group(1)
+        self.assertIn("без галочки", question)
+
+    def test_and_only_those_two(self):
+        # Collecting, publishing and rebuilding the map ask nothing: run any
+        # of them again and the result is the same. The two that take
+        # something away are the two that stop and ask.
+        self.assertEqual(self.client.get("/jobs").text.count("confirm("), 2)
+
+    def test_counting_is_not_guarded(self):
+        # The checkbox is what turns the run into one that removes, and the
+        # question only comes up when it is ticked.
+        page = self.client.get("/jobs").text
+        script = page[page.index("prune-form"):]
+        self.assertIn("form.apply.checked", script)
 
 
 class PipelineOrderTest(unittest.TestCase):
@@ -900,3 +913,54 @@ class PhaseBarTest(unittest.TestCase):
         # The bar answers "how much is left", the words answer "what now".
         self.under_way(JobKind.PIPELINE, "repositories", phase=0)
         self.assertIn("repositories", self.client.get("/jobs").text)
+
+
+class PruneJobTest(unittest.TestCase):
+    """Scheduling the comparison from the page instead of a terminal.
+
+    Counting and removing are the same run with a different payload, so the
+    page can offer the safe one by default and the other behind a tick.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "chief", "hunter2", role="admin")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: FakePanelGraph()
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "chief", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one(
+            {"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
+
+    def queued(self):
+        return store.read(self.db, list(self.db[store.COLLECTION].find())[0]["_id"])
+
+    def test_the_page_offers_it(self):
+        self.assertIn('value="prune"', self.client.get("/jobs").text)
+
+    def test_an_unticked_box_queues_a_run_that_only_counts(self):
+        response = self.client.post("/jobs", data={"csrf": self.csrf, "kind": "prune"})
+        self.assertEqual(response.status_code, 303)
+        job = self.queued()
+        self.assertEqual(job.kind, JobKind.PRUNE)
+        self.assertEqual(job.payload, {"apply": False})
+
+    def test_a_ticked_box_queues_one_that_removes(self):
+        self.client.post("/jobs", data={"csrf": self.csrf, "kind": "prune", "apply": "true"})
+        self.assertEqual(self.queued().payload, {"apply": True})
+
+    def test_it_waits_for_whatever_else_is_writing_the_graph(self):
+        # It deletes nodes and edges, so it contends with a publish and a
+        # dedup rather than running beside one.
+        self.client.post("/jobs", data={"csrf": self.csrf, "kind": "prune"})
+        self.assertEqual(self.queued().resource, "graph")
+
+    def test_an_editor_cannot_queue_one(self):
+        create_user(self.db, "petrov", "hunter2", role="editor")
+        client = TestClient(build(Settings(), self.db), follow_redirects=False)
+        client.post("/login", data={"login": "petrov", "password": "hunter2"})
+        csrf = self.db[SESSIONS].find_one(
+            {"_id": session_key(client.cookies[COOKIE])})["csrf"]
+        response = client.post("/jobs", data={"csrf": csrf, "kind": "prune"})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.db[store.COLLECTION].count_documents({}), 0)

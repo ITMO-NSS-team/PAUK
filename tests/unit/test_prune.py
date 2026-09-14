@@ -7,6 +7,7 @@ comparison against itself.
 """
 
 import unittest
+from unittest.mock import patch
 
 import mongomock
 
@@ -15,7 +16,11 @@ from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import ENTITY_FILES
 from pauk.graph.mutations import merge_nodes
 from pauk.graph.overrides import record_override, record_relationship_override
+from pauk.jobs import locks
+from pauk.jobs.models import PrunePayload
+from pauk.jobs.worker import _prune
 from pauk.models import GitHubProfile, Person, Publication, Repository
+from pauk.settings import Settings
 from pauk.storage import PreparedStore
 from tests.unit.test_admin_nodes import FakePanelGraph
 
@@ -234,3 +239,57 @@ class UnlinkedByHandTest(PruneTest):
                                      actor="user:roman")
         self.graph.relationships.pop(("Person", "AUTHORED", "Publication", "A1", "W1"))
         self.assertEqual(self.plan().edges, {})
+
+
+class PruneAsAJobTest(PruneTest):
+    """The step the panel schedules. Counting and removing are one run."""
+
+    def setUp(self):
+        super().setUp()
+        self.write(github_profiles=[GitHubProfile(id="G1", login="one"),
+                                    GitHubProfile(id="G2", login="two")])
+        self.publish()
+        self.write(github_profiles=[GitHubProfile(id="G1", login="one")])
+        self.told = []
+
+    def run_step(self, apply):
+        with patch("pauk.graph.audit.audited_client", return_value=self.graph):
+            return _prune(Settings(), self.db, PrunePayload(apply=apply),
+                          lambda: False, lambda step, *_: self.told.append(step))
+
+    def profiles(self):
+        return sorted(node_id for label, node_id in self.graph.nodes
+                      if label == "GitHubProfile")
+
+    def test_counting_changes_nothing(self):
+        result = self.run_step(apply=False)
+        self.assertEqual(result["prune_nodes"], 1)
+        self.assertNotIn("pruned_nodes", result)
+        self.assertEqual(self.profiles(), ["G1", "G2"])
+
+    def test_applying_removes_what_it_counted(self):
+        result = self.run_step(apply=True)
+        self.assertEqual((result["prune_nodes"], result["pruned_nodes"]), (1, 1))
+        self.assertEqual(self.profiles(), ["G1"])
+
+    def test_it_says_what_it_is_doing(self):
+        self.run_step(apply=True)
+        self.assertEqual(self.told, ["сверка графа с источником", "чистка графа"])
+
+    def test_a_run_that_only_counts_says_so_by_saying_less(self):
+        self.run_step(apply=False)
+        self.assertEqual(self.told, ["сверка графа с источником"])
+
+    def test_it_holds_the_graph_while_it_works(self):
+        # It deletes nodes and edges. A publish writing at the same time
+        # would be comparing against rows this one is about to act on.
+        held = []
+        real = locks.held
+
+        def watched(db, resource, owner=None):
+            held.append(resource)
+            return real(db, resource, owner)
+
+        with patch.object(locks, "held", watched):
+            self.run_step(apply=False)
+        self.assertEqual(held, ["graph"])

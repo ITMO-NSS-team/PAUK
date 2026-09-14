@@ -77,6 +77,30 @@ def _dedup(config: Settings, db: Database, payload, stop: Stop,
     return run_graph_dedup(config, db)
 
 
+def _prune(config: Settings, db: Database, payload, stop: Stop,
+           report: Report) -> dict[str, int]:
+    from pauk.graph import prune
+    from pauk.graph.audit import actor_context, audited_client
+    from pauk.jobs.locks import held
+    from pauk.jobs.models import GRAPH
+
+    report("сверка графа с источником")
+    with held(db, GRAPH):
+        client = audited_client(config, db)
+        try:
+            plan = prune.plan(client, db)
+            counts = {"prune_nodes": sum(len(ids) for ids in plan.nodes.values()),
+                      "prune_relationships": sum(len(pairs) for pairs in plan.edges.values()),
+                      "prune_kept_by_hand": plan.kept_by_hand}
+            if not payload.apply:
+                return counts
+            report("чистка графа")
+            with actor_context("etl-pipeline", source="prune"):
+                return counts | prune.apply(client, plan)
+        finally:
+            client.close()
+
+
 def _rebuild_map(config: Settings, db: Database, payload, stop: Stop,
                  report: Report) -> dict[str, int]:
     from pauk.gui.rebuild import rebuild_map
@@ -137,6 +161,7 @@ STEPS: dict[JobKind, Callable[[Settings, Database, BaseModel, Stop, Report], dic
     JobKind.PUBLISH: _publish,
     JobKind.DEDUP: _dedup,
     JobKind.MAP: _rebuild_map,
+    JobKind.PRUNE: _prune,
     JobKind.PIPELINE: _pipeline,
 }
 

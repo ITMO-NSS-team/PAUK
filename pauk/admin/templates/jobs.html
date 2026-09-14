@@ -138,6 +138,36 @@
       });
     </script>
   </div>
+
+  <div class="card aside">
+    <div class="head">
+      <b>Сверка с источником</b>
+      {% if last_done.prune %}<span class="ago">последний раз {{ last_done.prune|moment }}</span>{% endif %}
+    </div>
+    <p class="muted">Публикация умеет только добавлять, поэтому запись, удалённая
+      из Mongo, и связь, которую строка перестала заявлять, остаются в графе.
+      Здесь они находятся. Заведённое и связанное вручную не трогается — оно
+      записано в ручных решениях.</p>
+    <form method="post" action="/jobs" id="prune-form">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="kind" value="prune">
+      {# Сначала посчитать, потом убрать: на графе, который ни разу не
+         сверяли, в список попадёт и то, что заводили руками до того, как
+         это стали записывать. #}
+      <div><label><input type="checkbox" name="apply" value="true"> убрать найденное,
+        а не только посчитать</label></div>
+      <div style="margin-top:8px"><button type="submit">Запустить</button></div>
+    </form>
+    <script>
+      document.getElementById("prune-form")?.addEventListener("submit", (event) => {
+        const form = event.currentTarget;
+        if (form.apply.checked &&
+            !confirm("Убрать из графа всё, чего нет в источнике?\n\nСначала лучше запустить без галочки и посмотреть список в результате задачи.")) {
+          event.preventDefault();
+        }
+      });
+    </script>
+  </div>
 </details>
 {% endif %}
 

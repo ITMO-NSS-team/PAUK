@@ -22,6 +22,7 @@ class JobKind(StrEnum):
     PUBLISH = "publish"
     DEDUP = "dedup"
     MAP = "map"
+    PRUNE = "prune"
     #: Collect, publish and rebuild the map, in that order, as one job.
     #: Not three jobs queued together: publishing needs a group, and at the
     #: moment the queue is filled that group has no rows yet.
@@ -93,6 +94,18 @@ class DedupPayload(BaseModel):
     """Nothing to choose: dedup runs over every published group."""
 
 
+class PrunePayload(BaseModel):
+    """Whether to remove what the comparison finds, or only count it.
+
+    Off by default, and the page asks before turning it on. The first run
+    on a graph that has never been compared lists everything a person ever
+    added before their additions were written down, and that list is meant
+    to be read rather than acted on.
+    """
+
+    apply: bool = False
+
+
 class MapPayload(BaseModel):
     public: bool = False
     seed: int = 42
@@ -110,6 +123,7 @@ PAYLOADS: dict[JobKind, type[BaseModel]] = {
     JobKind.PUBLISH: PublishPayload,
     JobKind.DEDUP: DedupPayload,
     JobKind.MAP: MapPayload,
+    JobKind.PRUNE: PrunePayload,
     JobKind.PIPELINE: PipelinePayload,
 }
 

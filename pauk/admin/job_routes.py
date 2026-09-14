@@ -39,6 +39,7 @@ KINDS = {
     JobKind.PUBLISH: "публикация",
     JobKind.DEDUP: "дедуп",
     JobKind.MAP: "пересборка карты",
+    JobKind.PRUNE: "сверка с источником",
 }
 
 STATES = {
@@ -203,6 +204,9 @@ def _payload_from(kind: JobKind, db, form) -> dict:
         return {"group": group}
     if kind is JobKind.MAP:
         return _map_options(form)
+    if kind is JobKind.PRUNE:
+        # An unticked checkbox sends nothing, which is the counting run.
+        return {"apply": bool(form.get("apply"))}
     return {}
 
 
