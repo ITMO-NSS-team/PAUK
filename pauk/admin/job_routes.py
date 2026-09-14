@@ -33,6 +33,11 @@ router = APIRouter()
 
 # What each kind and state is called on the page. `JobKind.PUBLISH` is a
 # name for the code, not for a reader.
+#: Сколько чисел в итоге задачи показывать сразу. Дальше — под сводку: у
+#: полного конвейера их за сорок, и столбцом в сорок строк они выдавливают
+#: соседние ячейки.
+RESULT_OPEN_UPTO = 12
+
 KINDS = {
     JobKind.PIPELINE: "весь конвейер",
     JobKind.COLLECT: "сбор",
@@ -79,8 +84,43 @@ def _shown(job) -> dict:
         "phases": _phases(job),
         # Sorted so two renders list the counts the same way.
         "result": sorted((job.result or {}).items()),
-        "payload": sorted((job.payload or {}).items()),
+        "payload": _payload_lines(job.kind, job.payload or {}),
     }
+
+
+#: Поля полезной нагрузки словами страницы. Голое `seed=42` рядом с
+#: законченным прогоном ничего не говорит, а `public=False` читается
+#: ровно наоборот тому, что значит.
+PAYLOAD_WORDS = {
+    "group": "группа",
+    "date_from": "с",
+    "date_to": "по",
+    "work_id": "одна работа",
+    "seed": "зерно раскладки",
+}
+
+
+def _payload_lines(kind, payload: dict) -> list[str]:
+    """Чем задача была запущена, по строке на параметр.
+
+    Пустые поля не показываются: `work_id=None` у прогона за период — это
+    не параметр, а его отсутствие.
+    """
+    if JobKind(kind) is JobKind.PRUNE:
+        # «apply=False» рядом с успешной задачей читается как «ничего не
+        # нашли», хотя значит «нашли и не тронули».
+        return ["убрать найденное" if payload.get("apply")
+                else "только посчитать, ничего не удалять"]
+    lines = []
+    for name, value in sorted(payload.items()):
+        if value is None or value == "":
+            continue
+        if name == "public":
+            lines.append("карта без персональных данных" if value
+                         else "карта с персональными данными")
+            continue
+        lines.append(f"{PAYLOAD_WORDS.get(name, name)}: {value}")
+    return lines
 
 
 def _phases(job) -> list[str] | None:
@@ -133,6 +173,7 @@ def jobs(request: Request, user: CurrentUser, session: Session, db: Db,
         "final": {str(name) for name in FINAL},
         "actors": sorted(db[store.COLLECTION].distinct("actor")),
         "last_done": _last_done(db),
+        "result_open_upto": RESULT_OPEN_UPTO,
         # Read off the pipeline, not written out here: a stage added to the
         # registry would otherwise leave the page describing the old one.
         "stages": [stage.name for stage in ALL_STAGES],

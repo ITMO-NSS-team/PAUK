@@ -964,3 +964,47 @@ class PruneJobTest(unittest.TestCase):
         response = client.post("/jobs", data={"csrf": csrf, "kind": "prune"})
         self.assertEqual(response.status_code, 403)
         self.assertEqual(self.db[store.COLLECTION].count_documents({}), 0)
+
+
+class ResultTooLongTest(unittest.TestCase):
+    """A full run hands back forty-odd counters.
+
+    Down one table cell they push the neighbouring columns apart and bury
+    every other run in the history under one of them.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "chief", "hunter2", role="admin")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: FakePanelGraph()
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "chief", "password": "hunter2"})
+
+    def finished(self, kind, payload, result):
+        job = store.enqueue(self.db, kind, payload, actor="user:roman")
+        store.claim(self.db, "w1")
+        store.start(self.db, job.id)
+        store.finish(self.db, job.id, result)
+        return job
+
+    def test_a_short_result_is_read_without_clicking(self):
+        self.finished(JobKind.PRUNE, {"apply": False},
+                      {"prune_nodes": 1, "prune_relationships": 2, "prune_kept_by_hand": 3})
+        body = self.client.get("/jobs").text
+        self.assertIn("prune_kept_by_hand", body)
+        self.assertNotIn("<details>", body.split("История")[-1])
+
+    def test_a_long_one_is_folded_behind_how_many_there_are(self):
+        many = {f"count_{index:02}": index for index in range(43)}
+        self.finished(JobKind.PIPELINE, {"group": "g", "date_from": "2026-01-01"}, many)
+        body = self.client.get("/jobs").text
+        self.assertIn("43 числа", body)
+        # Folded, not dropped: the numbers are still there to open.
+        self.assertIn("count_42", body)
+
+    def test_the_line_between_is_still_open(self):
+        # Twelve is the last size shown as it is; the threshold is a
+        # decision, not a rounding.
+        self.finished(JobKind.DEDUP, {}, {f"count_{index:02}": index for index in range(12)})
+        self.assertNotIn("<summary", self.client.get("/jobs").text.split("История")[-1])

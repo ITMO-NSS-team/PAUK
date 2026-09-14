@@ -1,4 +1,18 @@
 {% extends "base.html" %}
+
+{# Итог прогона — это счётчики, и у полного конвейера их за сорок. Столбцом
+   в сорок строк он выдавливает соседние ячейки и хоронит всё остальное в
+   истории, поэтому длинный прячется под сводку. #}
+{% macro numbers(rows) %}{% for name, value in rows %}<div><b>{{ name }}</b>: {{ value }}</div>{% endfor %}{% endmacro %}
+{% macro result(rows, open_upto) %}
+{%- if rows|length > open_upto %}
+<details>
+  <summary class="muted">{{ rows|length }} {{ rows|length|plural("число", "числа", "чисел") }}</summary>
+  <div style="margin-top:6px">{{ numbers(rows) }}</div>
+</details>
+{%- else %}{{ numbers(rows) }}{% endif %}
+{% endmacro %}
+
 {% block content %}
 <h1>Пайплайн</h1>
 
@@ -116,6 +130,11 @@
     </div>
   </div>
 
+</details>
+
+{# Ни дедуп, ни сверка не входят в конвейер: он их не запускает. Внутри
+   свёрнутого списка шагов их принимали за части прогона и не находили. #}
+<div class="pair">
   <div class="card aside">
     <div class="head">
       <b>Дедупликация графа</b>
@@ -168,7 +187,7 @@
       });
     </script>
   </div>
-</details>
+</div>
 {% endif %}
 
 {% if under_way %}
@@ -180,7 +199,9 @@
     {% for job in under_way %}
     <tr>
       <td><b>{{ job.kind }}</b>
-        {% if job.payload %}<br><span class="muted">{% for name, value in job.payload %}{{ name }}={{ value }} {% endfor %}</span>{% endif %}
+        {% if job.payload %}
+        {% for line in job.payload %}<br><span class="muted">{{ line }}</span>{% endfor %}
+        {% endif %}
       </td>
       <td>{{ job.actor }}<br><span class="muted">{{ job.worker or "ещё не взята" }}</span></td>
       <td class="val" style="white-space:nowrap">{{ (job.started_at or job.created_at)|moment }}</td>
@@ -278,7 +299,9 @@
     <tr>
       <td class="val" style="white-space:nowrap">{{ job.created_at|moment }}</td>
       <td>{{ job.kind }}
-        {% if job.payload %}<br><span class="muted">{% for name, value in job.payload %}{{ name }}={{ value }} {% endfor %}</span>{% endif %}
+        {% if job.payload %}
+        {% for line in job.payload %}<br><span class="muted">{{ line }}</span>{% endfor %}
+        {% endif %}
       </td>
       <td>{{ job.actor }}</td>
       <td>{{ job.state_ru }}
@@ -286,7 +309,7 @@
       </td>
       <td>
         {% if job.error %}<span class="note bad" style="display:block">{{ job.error }}</span>
-        {% elif job.result %}{% for name, value in job.result %}<div><b>{{ name }}</b>: {{ value }}</div>{% endfor %}
+        {% elif job.result %}{{ result(job.result, result_open_upto) }}
         {% else %}<span class="muted">—</span>{% endif %}
         {% if user.can_run and job.state not in final and not job.cancel_requested %}
         <form method="post" action="/jobs/cancel" style="margin-top:6px">

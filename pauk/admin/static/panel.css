@@ -246,6 +246,13 @@ select {
 .change .now { color: var(--ok); background: rgba(47, 107, 69, 0.10); }
 .change .was + .now::before { content: "→"; color: var(--faint); margin: 0 6px 0 2px; }
 
+/* Значение в ячейке таблицы. Адрес или идентификатор без единого пробела
+   переносить негде, и по умолчанию он вылезает за свою колонку и ложится
+   поверх соседней. `anywhere`, а не `break-word`: последний рвёт только
+   когда слово не влезает целиком в пустую строку, а внутри узкой колонки
+   этого не хватает. */
+.clip { overflow-wrap: anywhere; }
+
 .clipped {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -346,3 +353,10 @@ select {
 .verdict .bad b { color: var(--danger); }
 .verdict .mid b { color: var(--warn); }
 .verdict .good b { color: var(--ok); }
+
+/* Две карточки рядом. `.row` для этого не годится: он выравнивает по
+   нижнему краю и тянет каждую по содержимому, отчего соседние блоки
+   выходят разной ширины и высоты и читаются как разные по важности. */
+.pair { display: flex; gap: 16px; align-items: stretch; flex-wrap: wrap; }
+.pair > .card { flex: 1 1 22rem; margin-bottom: 20px; }
+.pair > .card + .card { margin-top: 0; }
