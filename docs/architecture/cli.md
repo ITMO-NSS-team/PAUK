@@ -94,6 +94,20 @@ pauk dedup graph
 запускается вручную, когда накопилось несколько групп. См.
 [pipeline/dedup.md](pipeline/dedup.md).
 
+## `versions report`
+
+```
+pauk versions report [--output <путь>]
+```
+
+Ищет пары публикаций, похожие на версии одной работы, которые `dedup`
+пропустил из-за разного DOI и отредактированного заголовка (препринт →
+публикация, оригинал → перевод, ревизия под своим DOI). Только читает
+граф — Mongo не требуется. Пишет журнал (по умолчанию
+`data/cache/version_candidates.jsonl`), ничего не сливает — каждая пара
+со `status: "held"`, подтверждение за человеком. См.
+[pipeline/version-candidates.md](pipeline/version-candidates.md).
+
 ## `admin` — ручная правка графа
 
 ```
