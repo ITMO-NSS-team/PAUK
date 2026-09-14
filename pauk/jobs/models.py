@@ -23,6 +23,7 @@ class JobKind(StrEnum):
     DEDUP = "dedup"
     MAP = "map"
     PRUNE = "prune"
+    HEALTH = "health"
     #: Collect, publish and rebuild the map, in that order, as one job.
     #: Not three jobs queued together: publishing needs a group, and at the
     #: moment the queue is filled that group has no rows yet.
@@ -94,6 +95,10 @@ class DedupPayload(BaseModel):
     """Nothing to choose: dedup runs over every published group."""
 
 
+class HealthPayload(BaseModel):
+    """Nothing to choose: the checks run over the whole graph."""
+
+
 class PrunePayload(BaseModel):
     """Whether to remove what the comparison finds, or only count it.
 
@@ -124,6 +129,7 @@ PAYLOADS: dict[JobKind, type[BaseModel]] = {
     JobKind.DEDUP: DedupPayload,
     JobKind.MAP: MapPayload,
     JobKind.PRUNE: PrunePayload,
+    JobKind.HEALTH: HealthPayload,
     JobKind.PIPELINE: PipelinePayload,
 }
 

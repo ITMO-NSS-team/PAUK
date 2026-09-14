@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Здоровье БД</h1>
+
+{% set queued = request.query_params.get("queued") %}
+{% if queued %}
+<p class="note">Проверки поставлены в очередь. Результат появится здесь, когда воркер их выполнит.</p>
+{% endif %}
+
+{% if not computed_at %}
+<p class="muted" style="margin:-8px 0 18px">
+  Проверок ещё не было. Тридцать с лишним запросов по всему графу — считаются
+  задачей, а не при открытии страницы, иначе страница открывалась бы минуту.
+</p>
+{% else %}
+<p class="muted" style="margin:-8px 0 18px">
+  Тридцать с лишним дешёвых запросов по графу: пропуски, подозрительные имена,
+  дубли, противоречия. Считаны {{ computed_at[:19]|replace("T", " ") }}
+  {%- if totals.nodes %}, в графе было {{ totals.nodes }} узлов и {{ totals.rels }} связей{% endif %}.
+</p>
+{% endif %}
+
+<div class="card" style="margin-bottom:20px">
+  <div class="row" style="justify-content:space-between; align-items:center; margin:0">
+    <div>
+      {% if computed_at %}
+      <span class="kind kind-deleted">плохо {{ verdict.fail }}</span>
+      <span class="kind kind-updated">внимание {{ verdict.warn }}</span>
+      <span class="kind kind-created">в порядке {{ verdict.ok }}</span>
+      {% if verdict.error %}<span class="kind kind-deleted">не выполнились {{ verdict.error }}</span>{% endif %}
+      {% else %}
+      <span class="muted">нечего показать</span>
+      {% endif %}
+    </div>
+    {% if user.role == "admin" %}
+    <form method="post" action="/jobs">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="kind" value="health">
+      <button type="submit">{% if computed_at %}Пересчитать{% else %}Посчитать{% endif %}</button>
+    </form>
+    {% else %}
+    <span class="muted">пересчёт — за администратором</span>
+    {% endif %}
+  </div>
+</div>
+
+{% for group in groups %}
+<h1 style="margin-top:28px">{{ group.name }}
+  <span class="muted">{{ group.checks|length }}</span></h1>
+<div class="card">
+  <table class="fixed">
+    <colgroup><col><col style="width:9rem"><col style="width:9rem"></colgroup>
+    {% for check in group.checks %}
+    <tr>
+      <td>
+        {# Ссылка только там, где есть что открыть: у проверки на нуле
+           показывать нечего, а упавшая покажет ту же ошибку второй раз. #}
+        {% if openable(check) %}
+        <a href="/health/{{ check.id }}"><b>{{ check.title }}</b></a>
+        {% else %}<b>{{ check.title }}</b>{% endif %}
+        {% if check.hint %}<br><span class="muted">{{ check.hint }}</span>{% endif %}
+      </td>
+      <td class="val" style="text-align:right">
+        {{ check.n if check.n is not none else "—" }}
+        {% if check.pct is not none %}<br><span class="muted">{{ check.pct }}% из {{ check.of }}</span>{% endif %}
+      </td>
+      <td>
+        <span class="kind {% if check.status == 'ok' %}kind-created
+              {%- elif check.status == 'warn' %}kind-updated{% else %}kind-deleted{% endif %}">
+          {{ words[check.status] }}</span>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% else %}
+<div class="card">
+  <p class="muted">Пусто. Нажмите «Посчитать» — проверки пройдут по графу и
+    результат останется здесь.</p>
+</div>
+{% endfor %}
+{% endblock %}

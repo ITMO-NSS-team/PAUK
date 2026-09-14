@@ -94,6 +94,28 @@ def _prune(config: Settings, db: Database, payload, stop: Stop,
         client.close()
 
 
+def _health(config: Settings, db: Database, payload, stop: Stop,
+            report: Report) -> dict[str, int]:
+    from pauk.admin import health
+    from pauk.graph.audit import audited_client
+    from pauk.gui.generate_stats import collect
+
+    report("проверки по графу")
+    # Reads only, so no lock is taken. The job still contends for the graph
+    # (`resource_for`), which keeps it from measuring a graph that a publish
+    # is halfway through rewriting.
+    client = audited_client(config, db)
+    try:
+        stats = collect(client.driver)
+    finally:
+        client.close()
+    health.save(db, stats)
+    counted = health.verdict(stats["checks"])
+    return {"checks": len(stats["checks"]),
+            "checks_failed": counted["fail"], "checks_warned": counted["warn"],
+            "checks_broken": counted["error"]}
+
+
 def _rebuild_map(config: Settings, db: Database, payload, stop: Stop,
                  report: Report) -> dict[str, int]:
     from pauk.gui.rebuild import rebuild_map
@@ -155,6 +177,7 @@ STEPS: dict[JobKind, Callable[[Settings, Database, BaseModel, Stop, Report], dic
     JobKind.DEDUP: _dedup,
     JobKind.MAP: _rebuild_map,
     JobKind.PRUNE: _prune,
+    JobKind.HEALTH: _health,
     JobKind.PIPELINE: _pipeline,
 }
 

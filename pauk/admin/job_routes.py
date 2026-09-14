@@ -40,6 +40,7 @@ KINDS = {
     JobKind.DEDUP: "дедуп",
     JobKind.MAP: "пересборка карты",
     JobKind.PRUNE: "сверка с источником",
+    JobKind.HEALTH: "проверки по графу",
 }
 
 STATES = {
