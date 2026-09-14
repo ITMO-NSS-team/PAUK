@@ -8,7 +8,7 @@ type GraphNode = AuthorNode | RepoNode | PubNode;
  * Загружает `graph-data.json` по сети и проверяет его форму в dev-режиме
  * через {@link assertGraphData}. Голый JSON, без обёртки `window.GRAPH=...;`
  * — та обёртка была нужна только старому `pauk/gui/web/` (подключение через
- * `<script>` без сборщика), `new_generate/generate_data.py` пишет обычный
+ * `<script>` без сборщика), `new_generate/graph_builder.py` пишет обычный
  * `.json`, поэтому здесь просто `response.json()`.
  *
  * @param url - адрес файла `graph-data.json` (например, из Vite dev-сервера прокси или статики).
@@ -108,7 +108,7 @@ export function mergeDetailsInto<T extends { key: string }>(target: Map<string, 
  *   - у одного из обязательных полей (`departments`, `authors`, `repos`,
  *     `pubs`, `coauth_edges`, `repo_edges`, `pub_edges`) нет массива;
  *   - у первого автора нет `key`/`label_en` нужного типа (признак того, что
- *     `generate_data.py` поменял форму `AuthorNode`).
+ *     `graph_builder.py` поменял форму `AuthorNode`).
  *
  * Ничего не делает и не бросает исключений, если данные прошли все
  * проверки — используется как type assertion (`asserts data is GraphData`),
@@ -144,7 +144,7 @@ export function assertGraphData(data: unknown): asserts data is GraphData {
   const firstAuthor = (graph.authors as unknown[])[0] as Record<string, unknown> | undefined;
   if (firstAuthor && (typeof firstAuthor.label_en !== "string" || typeof firstAuthor.key !== "string")) {
     throw new Error(
-      "assertGraphData: форма AuthorNode разошлась с контрактом (нет key/label_en) — проверь generate_data.py",
+      "assertGraphData: форма AuthorNode разошлась с контрактом (нет key/label_en) — проверь graph_builder.py",
     );
   }
 }

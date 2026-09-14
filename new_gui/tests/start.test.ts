@@ -69,9 +69,23 @@ describe("mountStart", () => {
     setBootStage("error");
 
     expect(bar.style.width).toBe("70%"); // не сдвинулся
-    expect(document.getElementById("boot-status")?.textContent).toBe(
-      "Данные не найдены. Проверьте, что new_generate/generate_data.py сгенерировал файлы.",
-    );
+    expect(document.getElementById("boot-status")?.textContent).toBe("Ошибка загрузки.");
+  });
+
+  it("hideBootOnError прячет boot-экран немедленно, без задержки finishBoot и без доводки бара до 100%", () => {
+    const store = new Store<AppState>(initialState());
+    const { setBootStage, hideBootOnError } = mountStart(store);
+    const boot = document.getElementById("boot-screen") as HTMLElement;
+    const bar = document.getElementById("boot-progress-bar") as HTMLElement;
+
+    setBootStage("rendering");
+    hideBootOnError();
+
+    // Синхронно, а не после setTimeout, как finishBoot() — баннер с точной
+    // причиной ошибки (#load-error) стоит ниже boot-экрана по z-index и
+    // должен стать видимым сразу, а не через 200мс.
+    expect(boot.hidden).toBe(true);
+    expect(bar.style.width).toBe("70%"); // не "доскакивает" до 100%, в отличие от finishBoot()
   });
 
   it("finishBoot прячет boot-экран, видимость меню/приложения остаётся под управлением screen", () => {

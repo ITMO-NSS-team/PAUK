@@ -152,7 +152,7 @@ export const FILTER_CONFIG = {
   year: { min: 2020, max: new Date().getFullYear() },
 } as const;
 
-// Пути к настоящим данным (пишет `new_generate/generate_data.py`, по
+// Пути к настоящим данным (пишет `new_generate/graph_builder.py`, по
 // умолчанию — прямо в <repo_root>/data/gui/private, без вложенной "data/",
 // см. pauk.settings.Settings.gui_dir). Vite отдаёт содержимое publicDir
 // (см. vite.config.ts) от корня сайта, поэтому файл `graph-data.json`,

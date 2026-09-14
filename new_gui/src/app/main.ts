@@ -5,10 +5,11 @@ import Graph from "graphology";
 import Sigma from "sigma";
 import type { Settings } from "sigma/settings";
 import type { NodeDisplayData, PartialButFor } from "sigma/types";
-import type { AuthorDetail, PubDetail, RepoDetail } from "../contracts/graph";
+import type { AuthorDetail, GraphData, PubDetail, RepoDetail } from "../contracts/graph";
 import { DATA_CONFIG, FILTER_CONFIG, MAP_CONFIG } from "../core/config";
 import { loadDetails, loadGraphData, mergeDetailsInto } from "../core/data";
 import { requireElement, showLoadError } from "../core/dom";
+import { t } from "../core/i18n";
 import { loggedStep } from "../core/log";
 import { Store, type AppState } from "../core/state";
 import { mountFilters } from "../features/filters";
@@ -71,11 +72,17 @@ const store = new Store<AppState>({
   tab: 1,
   lang: "en",
   selection: null,
-  filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: FILTER_CONFIG.year.max, showNoDeptAuthors: true, showNoDeptPubs: true },
+  filters: {
+    minCoauth: 1,
+    minSharedAuthors: 1,
+    yearMax: FILTER_CONFIG.year.max,
+    showNoDeptAuthors: true,
+    showNoDeptPubs: true,
+  },
 });
 
 // Данные приходят из четырёх *.json в корне сайта (см. DATA_CONFIG в
-// core/config.ts) — статика, которую пишет new_generate/generate_data.py в
+// core/config.ts) — статика, которую пишет new_generate/graph_builder.py в
 // <repo_root>/data/gui/private (пока работаем только с приватным
 // вариантом — публичный, урезанный, вариант данных подключим отдельно,
 // когда дойдём до скрытия полей/усечения инициалов). Файлов может не
@@ -92,7 +99,11 @@ const store = new Store<AppState>({
  * @param url - адрес `*-detail.json` (см. {@link DATA_CONFIG}).
  * @param target - карта, в которую нужно домешать результат (мутируется на месте, см. {@link mergeDetailsInto}).
  */
-function loadDetailsInto<T extends { key: string }>(name: string, url: string, target: Map<string, T>): void {
+function loadDetailsInto<T extends { key: string }>(
+  name: string,
+  url: string,
+  target: Map<string, T>,
+): void {
   loggedStep(name, () => loadDetails<T>(url))
     .then((details) => {
       mergeDetailsInto(target, details);
@@ -128,131 +139,153 @@ start.setBootStage("loading");
 loggedStep("graph-data.json", () => loadGraphData(DATA_CONFIG.graphDataUrl))
   .then((data) => {
     start.setBootStage("rendering");
-    // Пустые карты передаются во все фичи один раз — заполняются на месте
-    // (mergeDetailsInto), когда придёт соответствующий *-detail.json, см.
-    // ниже. Мутация видна всем, кто уже держит эту же ссылку, без
-    // повторного монтирования — только store.notify(), чтобы разбудить
-    // то, что уже подписано на Store (mountPanel).
-    const pubDetailsByKey = new Map<string, PubDetail>();
-    const authorDetailsByKey = new Map<string, AuthorDetail>();
-    const repoDetailsByKey = new Map<string, RepoDetail>();
-
-    // Перезагрузка страницы ВСЕГДА показывает меню — прямая просьба
-    // ("при перезагрузке сайта переходим на tab=menu"), безусловно, даже
-    // если в адресной строке была сохранённая ссылка на конкретный узел.
-    // Store и так по умолчанию создан с screen: "menu" (см. выше) —
-    // отдельного store.set() здесь не нужно. URL из адресной строки при
-    // этом не читается вообще: разбор query (parseUrlState) остаётся
-    // нужен только features/urlSync.ts — для popstate (кнопки
-    // "назад"/"вперёд" браузера УЖЕ внутри текущей сессии), а не для
-    // самого первого захода на страницу.
-
-    // Sigma конструируется с уже непустым графом — populateGraph() строит
-    // его под начальное состояние ДО new Sigma(...), а не после (в
-    // отличие от MapLibre, где источники/слои добавлялись в пустую карту
-    // уже после её асинхронной инициализации).
-    const container = requireElement("map");
-    container.style.background = MAP_CONFIG.backgroundColor;
-
-    const graph = new Graph();
-    const initial = store.get();
-    populateGraph(graph, data, initial.lang, initial.tab, initial.filters, pubDetailsByKey);
-
-    const renderer = new Sigma(graph, container, {
-      stagePadding: MAP_CONFIG.fitPadding,
-      enableEdgeEvents: true,
-      // Как и в MapLibre-версии (map.dragRotate.disable()) — это не
-      // географическая карта, вращение холста не нужно.
-      enableCameraRotation: false,
-      // Одна и та же функция для обычной подписи и для наведённого/
-      // выбранного узла (без отдельного свечения) — см. выше.
-      defaultDrawNodeHover: drawHaloedNodeLabel,
-      defaultDrawNodeLabel: drawHaloedNodeLabel,
-      // Подпись узла рисуется, только когда сам узел на экране достаточно
-      // крупный — иначе на маленьком зуме подписи наваливаются друг на
-      // друга сплошным нечитаемым слоем. Число подбирается на глаз через
-      // mountZoomDebug ниже.
-      labelRenderedSizeThreshold: MAP_CONFIG.node.labelVisibleAtSize,
-      // Штатное прореживание подписей по сетке экрана, независимое от
-      // labelRenderedSizeThreshold — тоже подбирается на глаз.
-      labelDensity: MAP_CONFIG.node.labelDensity,
-      // Множитель zoom за один тик колеса — меньше дефолтного (1.7), чтобы
-      // зум ощущался медленнее. Кривая одного тика (easing) у Sigma зашита
-      // в коде жёстко, настройками не меняется — см. core/config.ts::camera.
-      zoomingRatio: MAP_CONFIG.camera.zoomingRatio,
-    });
-
-    // mountReactiveGraph дальше следит за store сама — остальным фичам
-    // достаточно менять store.tab/lang/filters, не заботясь о том, что
-    // ещё перерисовать.
-    mountReactiveGraph(renderer, store, data, pubDetailsByKey);
-    // Временный инструмент калибровки MAP_CONFIG.region.ratioThreshold и
-    // .node.labelVisibleAtSize — удалить вызов, когда числа подобраны.
-    mountZoomDebug(renderer);
-
-    // mountSelection слушает клики по графу и пишет выбор в store;
-    // mountPanel слушает store и рисует карточку; mountTabs слушает клики
-    // по кнопкам вкладок и переключает список в сайдбаре; mountFilters —
-    // регуляторы порогов (язык теперь переключается кнопками меню внутри
-    // самого mountStart, отдельного mountLangToggle больше нет);
-    // mountGlobalSearch — окно поиска по всем видам сразу (клавиша "/"),
-    // единственный способ найти департамент вообще. Они не знают друг о
-    // друге напрямую — связь только через общий Store. Функции отписки
-    // (unmount) не вызываются: все они живут всё время работы страницы —
-    // здесь ничего не пересоздаётся поверх них самих (внутри mountTabs свои
-    // unmount вызываются при смене вкладки — это устройство самой этой фичи).
-    mountSelection(renderer, store);
-    mountPanel(store, data, pubDetailsByKey, authorDetailsByKey, repoDetailsByKey);
-    mountTabs(
-      requireElement("tab-buttons"),
-      requireElement("tab-content"),
-      store,
-      renderer,
-      data,
-      pubDetailsByKey,
-      repoDetailsByKey,
-    );
-    mountFilters(store);
-    mountGlobalSearch(store, data, pubDetailsByKey, repoDetailsByKey);
-    mountUrlSync(store, data);
-
-    console.info("Граф отрисован (списки видны сразу, detail-файлы догружаются):", {
-      департаменты: data.departments.length,
-      авторы: data.authors.length,
-      репозитории: data.repos.length,
-      публикации: data.pubs.length,
-    });
-
-    // Дальше — три detail-файла фоном, каждый независимо от других: тот,
-    // что придёт первым, сразу домешивается и будит подписчиков, не ждёт
-    // остальных два. Если клик по узлу случится раньше, чем придёт его
-    // detail, mountPanel сама покажет индикатор загрузки (LOADING в
-    // features/panels.ts) — это единственное, что должно произойти, а не
-    // пустая/сломанная карточка. У --public сборки authors-detail.json
-    // вовсе нет — тогда loggedStep() залогирует 404, карточка автора так
-    // и останется в состоянии "загрузка", без падения и без баннера.
-    loadDetailsInto<PubDetail>("pubs-detail.json", DATA_CONFIG.pubDetailsUrl, pubDetailsByKey);
-    loadDetailsInto<AuthorDetail>("authors-detail.json", DATA_CONFIG.authorDetailsUrl, authorDetailsByKey);
-    loadDetailsInto<RepoDetail>("repos-detail.json", DATA_CONFIG.repoDetailsUrl, repoDetailsByKey);
-
-    // Прячет boot-экран — под ним всегда меню (см. выше), features/start.ts
-    // сама следит за store.screen и переключает видимость дальше.
-    start.finishBoot();
+    // Дальше — сборка Sigma/фич из уже загруженных данных, целиком
+    // синхронная. Обёрнута в try/catch отдельно от .catch() всей цепочки
+    // ниже: тот .catch() теперь отвечает ТОЛЬКО за провал самой загрузки
+    // graph-data.json (сеть/HTTP/JSON.parse/assertGraphData) — если он же
+    // ловил бы и падения отсюда (конструктор Sigma, mountReactiveGraph и
+    // т.п.), баннер "не удалось загрузить данные графа" показывался бы и
+    // тогда, когда данные на самом деле загрузились нормально, а сломалось
+    // что-то в отрисовке — вводя в заблуждение о причине.
+    try {
+      renderApp(data);
+    } catch (error: unknown) {
+      console.error("[rendering] сбой после успешной загрузки graph-data.json:", error);
+      start.setBootStage("error");
+      start.hideBootOnError();
+      showLoadError(t("start.errorRender", store.get().lang));
+    }
   })
   .catch((error: unknown) => {
+    console.error("[graph-data.json] не удалось загрузить:", error);
     start.setBootStage("error");
-    // loggedStep логирует только провал самого fetch/JSON.parse — ошибка,
-    // брошенная уже ПОСЛЕ успешной загрузки (где-то в
-    // mountReactiveGraph/mountSelection/... внутри .then() выше, включая
-    // саму конструкцию Sigma — например, если в браузере недоступен
-    // WebGL), в консоль сама по себе не попадает никак, потому что этот
-    // .catch() ловит её молча. Логируем явно — иначе баннер "не удалось
-    // загрузить данные графа" вводит в заблуждение (данные загрузились
-    // нормально, упало что-то другое), а разобраться, что именно, без
-    // единой строчки в консоли невозможно.
-    console.error("[graph-data.json] сбой после успешной загрузки:", error);
+    start.hideBootOnError();
     showLoadError(
-      `Не удалось загрузить данные графа (${DATA_CONFIG.graphDataUrl}). ` +
-        "Проверьте, что new_generate/generate_data.py сгенерировал файлы в data/gui/private.",
+      `${t("start.errorFetch", store.get().lang)} (${DATA_CONFIG.graphDataUrl}). ${t("start.errorFetchHint", store.get().lang)}`,
     );
   });
+
+/**
+ * Строит граф, монтирует все фичи и запускает фоновую загрузку detail-файлов
+ * — вся синхронная работа после успешной загрузки `graph-data.json`,
+ * вынесена в отдельную функцию, чтобы вызывающий код (см. выше) мог обернуть
+ * её целиком в try/catch одной строкой, не переотступая полсотни строк.
+ *
+ * @param data - уже загруженные и провалидированные данные графа.
+ */
+function renderApp(data: GraphData): void {
+  // Пустые карты передаются во все фичи один раз — заполняются на месте
+  // (mergeDetailsInto), когда придёт соответствующий *-detail.json, см.
+  // ниже. Мутация видна всем, кто уже держит эту же ссылку, без
+  // повторного монтирования — только store.notify(), чтобы разбудить
+  // то, что уже подписано на Store (mountPanel).
+  const pubDetailsByKey = new Map<string, PubDetail>();
+  const authorDetailsByKey = new Map<string, AuthorDetail>();
+  const repoDetailsByKey = new Map<string, RepoDetail>();
+
+  // Перезагрузка страницы ВСЕГДА показывает меню — прямая просьба
+  // ("при перезагрузке сайта переходим на tab=menu"), безусловно, даже
+  // если в адресной строке была сохранённая ссылка на конкретный узел.
+  // Store и так по умолчанию создан с screen: "menu" (см. выше) —
+  // отдельного store.set() здесь не нужно. URL из адресной строки при
+  // этом не читается вообще: разбор query (parseUrlState) остаётся
+  // нужен только features/urlSync.ts — для popstate (кнопки
+  // "назад"/"вперёд" браузера УЖЕ внутри текущей сессии), а не для
+  // самого первого захода на страницу.
+
+  // Sigma конструируется с уже непустым графом — populateGraph() строит
+  // его под начальное состояние ДО new Sigma(...), а не после (в
+  // отличие от MapLibre, где источники/слои добавлялись в пустую карту
+  // уже после её асинхронной инициализации).
+  const container = requireElement("map");
+  container.style.background = MAP_CONFIG.backgroundColor;
+
+  const graph = new Graph();
+  const initial = store.get();
+  populateGraph(graph, data, initial.lang, initial.tab, initial.filters, pubDetailsByKey);
+
+  const renderer = new Sigma(graph, container, {
+    stagePadding: MAP_CONFIG.fitPadding,
+    enableEdgeEvents: true,
+    // Как и в MapLibre-версии (map.dragRotate.disable()) — это не
+    // географическая карта, вращение холста не нужно.
+    enableCameraRotation: false,
+    // Одна и та же функция для обычной подписи и для наведённого/
+    // выбранного узла (без отдельного свечения) — см. выше.
+    defaultDrawNodeHover: drawHaloedNodeLabel,
+    defaultDrawNodeLabel: drawHaloedNodeLabel,
+    // Подпись узла рисуется, только когда сам узел на экране достаточно
+    // крупный — иначе на маленьком зуме подписи наваливаются друг на
+    // друга сплошным нечитаемым слоем. Число подбирается на глаз через
+    // mountZoomDebug ниже.
+    labelRenderedSizeThreshold: MAP_CONFIG.node.labelVisibleAtSize,
+    // Штатное прореживание подписей по сетке экрана, независимое от
+    // labelRenderedSizeThreshold — тоже подбирается на глаз.
+    labelDensity: MAP_CONFIG.node.labelDensity,
+    // Множитель zoom за один тик колеса — меньше дефолтного (1.7), чтобы
+    // зум ощущался медленнее. Кривая одного тика (easing) у Sigma зашита
+    // в коде жёстко, настройками не меняется — см. core/config.ts::camera.
+    zoomingRatio: MAP_CONFIG.camera.zoomingRatio,
+  });
+
+  // mountReactiveGraph дальше следит за store сама — остальным фичам
+  // достаточно менять store.tab/lang/filters, не заботясь о том, что
+  // ещё перерисовать.
+  mountReactiveGraph(renderer, store, data, pubDetailsByKey);
+  // Временный инструмент калибровки MAP_CONFIG.region.ratioThreshold и
+  // .node.labelVisibleAtSize — удалить вызов, когда числа подобраны.
+  mountZoomDebug(renderer);
+
+  // mountSelection слушает клики по графу и пишет выбор в store;
+  // mountPanel слушает store и рисует карточку; mountTabs слушает клики
+  // по кнопкам вкладок и переключает список в сайдбаре; mountFilters —
+  // регуляторы порогов (язык теперь переключается кнопками меню внутри
+  // самого mountStart, отдельного mountLangToggle больше нет);
+  // mountGlobalSearch — окно поиска по всем видам сразу (клавиша "/"),
+  // единственный способ найти департамент вообще. Они не знают друг о
+  // друге напрямую — связь только через общий Store. Функции отписки
+  // (unmount) не вызываются: все они живут всё время работы страницы —
+  // здесь ничего не пересоздаётся поверх них самих (внутри mountTabs свои
+  // unmount вызываются при смене вкладки — это устройство самой этой фичи).
+  mountSelection(renderer, store);
+  mountPanel(store, data, pubDetailsByKey, authorDetailsByKey, repoDetailsByKey);
+  mountTabs(
+    requireElement("tab-buttons"),
+    requireElement("tab-content"),
+    store,
+    renderer,
+    data,
+    pubDetailsByKey,
+    repoDetailsByKey,
+  );
+  mountFilters(store);
+  mountGlobalSearch(store, data, pubDetailsByKey, repoDetailsByKey);
+  mountUrlSync(store, data);
+
+  console.info("Граф отрисован (списки видны сразу, detail-файлы догружаются):", {
+    департаменты: data.departments.length,
+    авторы: data.authors.length,
+    репозитории: data.repos.length,
+    публикации: data.pubs.length,
+  });
+
+  // Дальше — три detail-файла фоном, каждый независимо от других: тот,
+  // что придёт первым, сразу домешивается и будит подписчиков, не ждёт
+  // остальных два. Если клик по узлу случится раньше, чем придёт его
+  // detail, mountPanel сама покажет индикатор загрузки (LOADING в
+  // features/panels.ts) — это единственное, что должно произойти, а не
+  // пустая/сломанная карточка. У --public сборки authors-detail.json
+  // вовсе нет — тогда loggedStep() залогирует 404, карточка автора так
+  // и останется в состоянии "загрузка", без падения и без баннера.
+  loadDetailsInto<PubDetail>("pubs-detail.json", DATA_CONFIG.pubDetailsUrl, pubDetailsByKey);
+  loadDetailsInto<AuthorDetail>(
+    "authors-detail.json",
+    DATA_CONFIG.authorDetailsUrl,
+    authorDetailsByKey,
+  );
+  loadDetailsInto<RepoDetail>("repos-detail.json", DATA_CONFIG.repoDetailsUrl, repoDetailsByKey);
+
+  // Прячет boot-экран — под ним всегда меню (см. выше), features/start.ts
+  // сама следит за store.screen и переключает видимость дальше.
+  start.finishBoot();
+}

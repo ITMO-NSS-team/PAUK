@@ -583,7 +583,7 @@ export function mountPanel(
         rows.push([t("field.pubsCount", lang), String(node.pubs_count)]);
         // authorDetails.has(), не просто .get() — new_generate строит
         // authors-detail.json так, что запись есть у КАЖДОГО автора, даже
-        // если все поля в ней пустые (см. new_generate/generate_data.py).
+        // если все поля в ней пустые (см. new_generate/graph_builder.py).
         // Значит "записи нет" означает ровно одно: файл ещё не домержился
         // (см. app/main.ts) — а не то, что у автора реально нет данных.
         if (authorDetails.has(node.key)) {
@@ -609,7 +609,7 @@ export function mountPanel(
           // Раздельно по источнику — OpenAlex (варианты по публикациям) и
           // ORCID (имя, под которым автор сам просит его указывать) — это
           // разные по происхождению вещи, см. author_variants() в
-          // new_generate/generate_data.py.
+          // new_generate/graph_builder.py.
           if (authorDetail && authorDetail.name_variants.openalex.length > 0) {
             rows.push([t("field.nameVariantsOpenalex", lang), authorDetail.name_variants.openalex.join(", ")]);
           }

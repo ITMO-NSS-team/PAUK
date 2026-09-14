@@ -1,4 +1,4 @@
-// Формы данных, которые реально отдаёт new_generate/generate_data.py (build_graph_data()).
+// Формы данных, которые реально отдаёт new_generate/graph_builder.py (build_graph_data()).
 // Это зеркало Python-кода, а не желаемая форма — если генератор поменяет
 // вывод, сначала правится этот файл, а уже потом код, который на него ссылается.
 //
@@ -149,7 +149,7 @@ export interface Edge {
 
 // В отличие от Edge выше (s/t — строковые ключи author/pub/repo), у
 // dept_edges s/t — это Department.id (сквозной числовой gid, см.
-// generate_data.py: g() возвращает int, а не строку) — отдельный тип, а не
+// graph_builder.py: g() возвращает int, а не строку) — отдельный тип, а не
 // переиспользование Edge, чтобы не смешивать два разных вида ключей.
 export interface DeptEdge {
   s: number;

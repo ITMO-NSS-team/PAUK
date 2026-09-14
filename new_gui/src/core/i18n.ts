@@ -113,7 +113,10 @@ export type LocaleKey =
   | "start.cta"
   | "start.loading"
   | "start.rendering"
-  | "start.error";
+  | "start.error"
+  | "start.errorFetch"
+  | "start.errorFetchHint"
+  | "start.errorRender";
 
 const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
   ru: {
@@ -187,7 +190,18 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "start.cta": "Смотреть карту",
     "start.loading": "Загрузка данных…",
     "start.rendering": "Отрисовка графа…",
-    "start.error": "Данные не найдены. Проверьте, что new_generate/generate_data.py сгенерировал файлы.",
+    // Статус-текст под прогресс-баром при любой ошибке — специально
+    // нейтральный: причин две совсем разные (не удалось загрузить
+    // graph-data.json ИЛИ данные загрузились, но сломалась отрисовка), а
+    // сам boot-экран прячется сразу же (features/start.ts::hideBootOnError)
+    // ради видимого баннера с точной причиной ниже — этот текст никто не
+    // должен реально увидеть, но он не должен врать, если всё-таки увидит.
+    "start.error": "Ошибка загрузки.",
+    "start.errorFetch": "Не удалось загрузить данные графа",
+    "start.errorFetchHint":
+      'Проверьте, что "python -m new_generate.graph_builder" сгенерировал файлы в data/gui/private.',
+    "start.errorRender":
+      "Данные графа загрузились, но при отрисовке произошла ошибка. Подробности — в консоли браузера (F12).",
   },
   en: {
     "tab.authors": "Authors",
@@ -260,7 +274,12 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "start.cta": "View the map",
     "start.loading": "Loading data…",
     "start.rendering": "Rendering the graph…",
-    "start.error": "Data not found. Make sure new_generate/generate_data.py has generated the files.",
+    "start.error": "Loading error.",
+    "start.errorFetch": "Failed to load the graph data",
+    "start.errorFetchHint":
+      'Make sure "python -m new_generate.graph_builder" has generated the files in data/gui/private.',
+    "start.errorRender":
+      "The graph data loaded, but something failed while rendering it. See the browser console (F12) for details.",
   },
 };
 

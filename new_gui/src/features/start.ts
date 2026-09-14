@@ -52,6 +52,17 @@ export function mountStart(store: Store<AppState>): {
    * app/main.ts ДО вызова этой функции) — здесь решать нечего.
    */
   finishBoot: () => void;
+  /**
+   * Прячет boot-экран НЕМЕДЛЕННО (без анимации/задержки {@link finishBoot} и
+   * без "доскакивания" бара до 100%) — вызывать при ошибке, ДО
+   * `showLoadError()` в app/main.ts. `#boot-screen` непрозрачен и стоит выше
+   * `#load-error` по z-index (index.html) — без этого баннер с реальной
+   * причиной ошибки рисуется, но полностью перекрыт boot-экраном, и
+   * единственное, что видит пользователь — общий статус-текст
+   * {@link STAGE_LOCALE_KEY.error} ("Данные не найдены...") независимо от
+   * того, что сломалось на самом деле.
+   */
+  hideBootOnError: () => void;
 } {
   const boot = requireElement("boot-screen");
   const bar = requireElement("boot-progress-bar");
@@ -78,6 +89,10 @@ export function mountStart(store: Store<AppState>): {
     setTimeout(() => {
       boot.hidden = true;
     }, 200);
+  }
+
+  function hideBootOnError(): void {
+    boot.hidden = true;
   }
 
   /** Перерисовывает меню (текст + видимость меню/приложения) под текущее состояние. */
@@ -117,5 +132,5 @@ export function mountStart(store: Store<AppState>): {
   render(store.get());
   store.subscribe(render);
 
-  return { setBootStage, finishBoot };
+  return { setBootStage, finishBoot, hideBootOnError };
 }
