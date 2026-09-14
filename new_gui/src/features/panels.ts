@@ -30,7 +30,7 @@ import {
 } from "../core/data";
 import { createLoadingIndicator, requireElement } from "../core/dom";
 import { kindLabel, localize, t } from "../core/i18n";
-import type { AppState, Selection, Store } from "../core/state";
+import { TAB_FOR_KIND, type AppState, type Selection, type Store } from "../core/state";
 
 /** Строка карточки ещё не может показать значение — соответствующий
  * `*Detail`-файл (см. {@link AuthorDetail}/{@link RepoDetail}) не домержился
@@ -455,8 +455,27 @@ export function mountPanel(
         backLabel: showBack ? `← ${t("overview.title", store.get().lang)}` : null,
         // Клик по PanelEntityRef внутри карточки пишет новую сущность прямо
         // в store.selection, точно так же, как клик по узлу на карте
-        // (features/selection.ts) или по строке списка вкладки.
-        onSelectRef: (selection) => store.set({ selection }),
+        // (features/selection.ts) или по строке списка вкладки. Ссылки на
+        // сущность ДРУГОГО вида (например, "публикации" на карточке
+        // автора — это узлы-публикации, а не узлы-авторы) требуют ЕЩЁ и
+        // сменить tab — иначе selection указывал бы на узел, которого нет
+        // в графе ТЕКУЩЕЙ вкладки, и flyToSelection() тихо не находил бы
+        // координаты (renderer.getNodeDisplayData() возвращает undefined
+        // для несуществующего узла) — камера не подлетала бы вовсе, хотя
+        // сама карточка новой сущности показывалась бы нормально: та же
+        // логика, что и в features/globalSearch.ts (TAB_FOR_KIND). У
+        // "dept" смены вкладки не нужно — якоря департаментов есть в
+        // графе каждой из трёх вкладок.
+        onSelectRef: (selection) => {
+          if (selection?.kind === "node") {
+            const node = index.get(selection.key);
+            if (node) {
+              store.set({ tab: TAB_FOR_KIND[node.kind], selection });
+              return;
+            }
+          }
+          store.set({ selection });
+        },
         onBack: () => store.set({ selection: null }),
         subtitle,
         extra,

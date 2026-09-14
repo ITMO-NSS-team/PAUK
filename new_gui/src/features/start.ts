@@ -6,7 +6,9 @@
 // загрузке страницы БЕЗУСЛОВНО, даже если в адресной строке была
 // сохранённая ссылка на конкретный узел (app/main.ts не читает URL при
 // начальной загрузке вообще, см. там же) — прямая просьба, и на него
-// всегда можно вернуться кликом по заголовку "PAUK" в шапке сайдбара.
+// всегда можно вернуться кликом по кнопке "← Меню" в шапке сайдбара
+// (раньше там было название проекта "PAUK" без объяснения, что кнопка
+// вообще кликабельна — прямая просьба сделать её назначение понятным).
 
 import { requireElement } from "../core/dom";
 import { t, type LocaleKey } from "../core/i18n";
@@ -102,6 +104,7 @@ export function mountStart(store: Store<AppState>): {
     app.hidden = isMenu;
 
     const lang = state.lang;
+    brand.textContent = t("brand.backToMenu", lang);
     badge.textContent = t("start.badge", lang);
     title.textContent = t("start.title", lang);
     subtitle.textContent = t("start.subtitle", lang);

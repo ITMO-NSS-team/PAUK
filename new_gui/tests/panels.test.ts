@@ -273,12 +273,18 @@ describe("mountPanel", () => {
     coauthorButton.click();
 
     expect(store.get().selection).toEqual({ kind: "node", key: "A2" });
+    expect(store.get().tab).toBe(1); // тот же вид сущности — вкладка не переключается зря
   });
 
-  it("клик по публикации в карточке автора делает её новым selection", async () => {
+  it("клик по публикации в карточке автора делает её новым selection И переключает вкладку на 'Публикации'", async () => {
+    // Регрессия: publication — узел ДРУГОГО вида, чем текущая вкладка
+    // (автор, tab=1) — если tab не переключить вместе с selection, узла
+    // P1 не будет в графе текущей (авторской) вкладки, и камера
+    // (map/build.ts::flyToSelection) тихо не найдёт его координаты —
+    // "анимация переноса с панели на граф работает только для авторов".
     const data = await loadSampleGraphData();
     const store = new Store<AppState>({
-      ...initialState(),
+      ...initialState({ tab: 1 }),
       selection: { kind: "node", key: "A1" },
     });
 
@@ -292,6 +298,7 @@ describe("mountPanel", () => {
     pubButton.click();
 
     expect(store.get().selection).toEqual({ kind: "node", key: "P1" });
+    expect(store.get().tab).toBe(3);
   });
 
   it("внешние ссылки (GitHub/ORCID) остаются <a>, не кнопками — открываются в новой вкладке, а не меняют selection", async () => {

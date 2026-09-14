@@ -126,6 +126,7 @@ function buildCheckboxRow(options: CheckboxRowOptions): HTMLElement {
  */
 export function mountFilters(store: Store<AppState>): () => void {
   const container = requireElement("filter-bar");
+  const sectionLabel = requireElement("filters-section-label");
 
   let prevTab: AppState["tab"] | null = null;
   let prevLang: Lang | null = null;
@@ -154,6 +155,7 @@ export function mountFilters(store: Store<AppState>): () => void {
     prevLang = state.lang;
 
     const { lang, filters } = state;
+    sectionLabel.textContent = t("section.filters", lang);
     // Порог видимости рёбер по зуму — общий для всех трёх вкладок (это
     // настройка отрисовки карты, а не фильтр конкретного вида сущностей),
     // поэтому строится один раз, а не внутри if/else по вкладке ниже.

@@ -74,20 +74,52 @@
         outline-offset: 2px;
       }
 
-      /* accent-color — штатное CSS-свойство (Chrome/Firefox/Safari
-         2022+), красит НАТИВНЫЙ рендер checkbox/radio в цвет темы без
-         переопределения их устройства через ::-webkit-*-thumb и подобные
-         хаки под каждый браузер отдельно. Без него переключатель языка
-         ("Показывать без департамента") был бы синим цветом ОС/браузера
-         по умолчанию — единственное несовпадающее с остальной палитрой
-         место в интерфейсе. Диапазоны (range) сюда не входят — у них
-         свой бегунок ниже, с фирменным значком вместо родного кружка/овала. */
+      /* Чекбокс переключателя ("Показывать без департамента") — тот же
+         фирменный паук в цвет акцента, что и у бегунка ползунков ниже,
+         вместо родной галочки браузера: appearance: none убирает нативный
+         рендер целиком (accent-color тут уже не подходит — она красит
+         родной чекмарк, а картинкой его не подменить). Пустой квадрат с
+         рамкой — когда не отмечено, паук проступает — когда отмечено;
+         background-size 70%, а не "contain" (как у бегунка ниже) —
+         значку нужен небольшой отступ от рамки, иначе он утыкается в неё
+         впритык и выглядит зажатым. */
       input[type="checkbox"] {
-        accent-color: var(--accent);
+        appearance: none;
+        -webkit-appearance: none;
+        width: 16px;
+        height: 16px;
+        margin: 0;
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        background-color: var(--surface-2);
+        cursor: pointer;
+        vertical-align: middle;
+      }
+      input[type="checkbox"]:checked {
+        border-color: var(--accent);
+        background: var(--surface-2) url("./src/assets/icons/pauk-frame-accent.png") center / 70%
+          no-repeat;
+      }
+      /* Общее кольцо фокуса (:focus-visible выше) поверх и так уже
+         говорящей рамки/паука — лишнее, прямая просьба ("не обводи кнопку,
+         паука хватает"). Только у чекбокса: у остальных интерактивных
+         элементов кольцо остаётся — там ничего другого не показывает,
+         что на них фокус. И :focus, и :focus-visible (не только второе) —
+         чекбоксы во многих браузерах считаются "focus-visible" уже при
+         клике мышью, не только с клавиатуры, обе формы фокуса нужно
+         погасить. box-shadow — отдельно от outline: часть браузеров
+         (в т.ч. Safari) рисует дефолтный ободок фокуса на form-элементах
+         через него, а не через outline, одного "outline: none" было
+         недостаточно. !important — этот селектор должен побеждать даже
+         непредвиденные более специфичные правила извне. */
+      input[type="checkbox"]:focus,
+      input[type="checkbox"]:focus-visible {
+        outline: none !important;
+        box-shadow: none !important;
       }
       /* Бегунок ползунков-фильтров (features/filters.ts) — фирменный
-         значок паука (src/assets/icons/pauk-frame.png) вместо родного
-         кружка/овала браузера: тот был заметно шире самой дорожки и
+         значок паука в цвет акцента (src/assets/icons/pauk-frame-accent.png)
+         вместо родного кружка/овала браузера: тот был заметно шире самой дорожки и
          визуально спорил с остальным интерфейсом (прямая жалоба). Дорожка
          (::-webkit-slider-runnable-track/::-moz-range-track) рисуется
          отдельно — без appearance: none на самом input ею занимался бы
@@ -114,7 +146,7 @@
         width: 16px;
         height: 16px;
         margin-top: -6px; /* центрирует 16px бегунок относительно 4px дорожки: (4 - 16) / 2 */
-        background: url("./src/assets/icons/pauk-frame.png") center / contain no-repeat;
+        background: url("./src/assets/icons/pauk-frame-accent.png") center / contain no-repeat;
       }
       input[type="range"]::-moz-range-track {
         height: 4px;
@@ -126,7 +158,7 @@
         height: 16px;
         border: none;
         border-radius: 0;
-        background: url("./src/assets/icons/pauk-frame.png") center / contain no-repeat;
+        background: url("./src/assets/icons/pauk-frame-accent.png") center / contain no-repeat;
       }
 
       /* Плавные, но короткие переходы для того, что и так меняется по
@@ -173,6 +205,26 @@
         flex-direction: column;
         background: var(--surface);
         border-right: 1px solid var(--border);
+      }
+      /* Подписи-разделители секций сайдбара — сейчас только "Фильтры" и
+         "Быстрый поиск" (у поиска/выбора графа убрали, мешались, прямая
+         жалоба). Тот же стиль, что у заголовка карточки "Обзор" (#panel h3
+         ниже — жирный, обычный цвет текста, без капса и разрядки), просто
+         мельче: обе — заголовки одного уровня по смыслу (подпись раздела),
+         разного размера только потому, что здесь это вспомогательная
+         подпись в узком сайдбаре, а не главный заголовок панели. БЕЗ
+         своего фона (был темнее сайдбара — "сильно выделяется", прямая
+         жалоба) — просто текст. padding-bottom: 0 — весь отступ СНИЗУ даёт
+         padding-top следующего блока (#filter-bar/.tab-search ниже — у
+         обоих одно и то же число, специально совпадающее — прямая просьба
+         "между Quick Search и Search такой же [отступ], как между Filters
+         и Edge"), а не сумма "низ подписи + верх следующего блока" сразу
+         из двух источников, как было раньше. */
+      .sidebar-section-label {
+        padding: 8px 12px 0;
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 700;
       }
       /* position: relative — точка отсчёта для map/build.ts::mountZoomDebug
          (position: absolute внутри), чтобы индикатор зума лежал поверх
@@ -339,13 +391,21 @@
         font-weight: 600;
       }
 
-      /* Регуляторы порогов фильтрации (features/filters.ts) — видны только
-         для вкладок, у которых вообще есть фильтр (сейчас 1 и 3). */
+      /* Регуляторы порогов фильтрации (features/filters.ts) — общий зум
+         рёбер виден на любой вкладке, вкладко-специфичные (соавторство,
+         общие авторы, год, "без департамента") — только там, где применимы
+         (сейчас 1 и 3). gap заметно больше, чем внутри одной строки
+         регулятора (.filter-row ниже) — прямая просьба развести РАЗНЫЕ
+         фильтры между собой, а не просто "побольше воздуха" в принципе. */
       #filter-bar {
         display: flex;
         flex-direction: column;
-        gap: 6px;
-        padding: 8px 12px;
+        gap: 14px;
+        /* padding-top: 16px — заметный отступ от подписи "Фильтры" до
+           первого регулятора (прямая просьба "побольше"), совпадает с
+           padding-top у .tab-search ниже (тот же зазор между "Быстрый
+           поиск" и полем ввода, прямая просьба сделать одинаково). */
+        padding: 16px 12px 10px;
         border-bottom: 1px solid var(--border);
       }
       #filter-bar[hidden] {
@@ -391,12 +451,26 @@
         top: 0;
         width: 100%;
         box-sizing: border-box;
-        padding: 8px 12px;
+        /* padding-top: 16px — тот же отступ, что у #filter-bar выше, между
+           подписью "Быстрый поиск" и самим полем (прямая просьба сделать
+           как у "Фильтры"/"Edge visibility threshold"). */
+        padding: 16px 12px 8px;
         border: none;
         border-bottom: 1px solid var(--border);
         font-size: 13px;
         background: var(--surface);
         color: var(--text);
+      }
+      /* Общее кольцо фокуса (:focus-visible в самом начале файла) рисуется
+         СНАРУЖИ рамки элемента (outline-offset: 2px) — у поля поиска
+         вкладки это заезжало на подпись "Быстрый поиск" прямо над ним,
+         визуально сливаясь с ней в одну кляксу (прямая жалоба, скриншот).
+         Вместо кольца — просто перекрашиваем УЖЕ существующую нижнюю
+         границу поля в акцентный цвет: индикатор фокуса виден, но строго
+         внутри собственных границ поля, наружу не вылезает. */
+      .tab-search:focus-visible {
+        outline: none;
+        border-bottom-color: var(--accent);
       }
       .tab-list-item {
         display: flex;
@@ -441,6 +515,46 @@
         text-align: center;
         color: var(--muted);
         font-size: 13px;
+      }
+      /* Постраничное переключение списка вкладки (features/tabs/nodeListTab.ts)
+         — список обрезан до TAB_LIST_CONFIG.pageSize строк за раз (на
+         реальных данных — тысячи авторов/публикаций, отрисовывать/скроллить
+         их все разом незачем), "‹ N / M ›" под списком — прямая просьба
+         "чтобы можно было также их крутить в листе". Пустой div (не hidden),
+         когда страница одна — чтобы список не дёргался по высоте, покажется
+         пагинация или нет, решает сам JS. */
+      .tab-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-top: 1px solid var(--border);
+      }
+      .tab-pagination__button {
+        width: 26px;
+        height: 26px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface-2);
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .tab-pagination__button:hover:not(:disabled) {
+        border-color: var(--accent);
+      }
+      .tab-pagination__button:disabled {
+        color: var(--muted);
+        cursor: default;
+        opacity: 0.5;
+      }
+      .tab-pagination__status {
+        min-width: 3.5em;
+        text-align: center;
+        color: var(--muted);
+        font-size: 12px;
       }
 
       /* В обычных вкладках meta — короткое число ("42", "★ 15", "2024"),
@@ -913,23 +1027,36 @@
          конструирования Sigma, даже если сейчас показано меню. -->
     <div id="app" hidden>
       <aside id="sidebar">
-        <!-- Заголовок сайдбара — клик возвращает в меню (features/start.ts). -->
-        <button type="button" id="brand">PAUK</button>
+        <!-- Клик возвращает в меню (features/start.ts) — текст ("← Меню"/
+             "← Menu") ставит сама features/start.ts::render() под язык,
+             статика здесь — только запасной вариант до первого рендера. -->
+        <button type="button" id="brand">← Menu</button>
         <!-- Открывает глобальный поиск (features/globalSearch.ts) — тот же
              результат, что и клавиша "/" в любой момент. Единственный
              способ найти департамент: у него нет своей вкладки/узла-кнопки
-             на карте. Текст ставит сама фича (локализация + горячая клавиша). -->
+             на карте. Текст ставит сама фича (локализация + горячая клавиша).
+             Своей подписи-раздела больше нет (была лишней — кнопка и так
+             говорит "Search everything", прямая жалоба "мешаются"). -->
         <button type="button" id="global-search-trigger"></button>
         <!-- data-tab на каждой кнопке — единственное, что нужно
-             features/tabs/index.ts::mountTabs() для переключения. -->
+             features/tabs/index.ts::mountTabs() для переключения. Своей
+             подписи-раздела больше нет — по той же причине, что и у поиска
+             выше. -->
         <nav id="tab-buttons">
           <button type="button" data-tab="1">Авторы</button>
           <button type="button" data-tab="3">Публикации</button>
           <button type="button" data-tab="2">Репозитории</button>
         </nav>
+        <!-- Подпись-раздел "Фильтры"/"Filters" (текст ставит
+             features/filters.ts под язык) — единственная оставшаяся из
+             трёх (у поиска/выбора графа убрали, мешались, прямая жалоба). -->
+        <div class="sidebar-section-label" id="filters-section-label"></div>
         <!-- Заполняется через features/filters.ts::mountFilters(); пусто и
              скрыто, пока не смонтирована активная вкладка с фильтром. -->
         <div id="filter-bar" hidden></div>
+        <!-- Подпись-раздел "Быстрый поиск"/"Quick Search" и сам список
+             (features/tabs/nodeListTab.ts::createNodeListTab строит их сама
+             при монтировании вкладки — здесь только пустой контейнер). -->
         <div id="tab-content"></div>
       </aside>
       <div id="map"></div>

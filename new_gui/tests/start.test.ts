@@ -170,4 +170,14 @@ describe("mountStart", () => {
       "ITMO co-authorship and open-source code map",
     );
   });
+
+  it("#brand показывает «← Меню»/«← Menu» под текущий язык — не название проекта", () => {
+    const store = new Store<AppState>(initialState({ lang: "ru" }));
+    mountStart(store);
+
+    expect(document.getElementById("brand")?.textContent).toBe("← Меню");
+
+    store.set({ lang: "en" });
+    expect(document.getElementById("brand")?.textContent).toBe("← Menu");
+  });
 });

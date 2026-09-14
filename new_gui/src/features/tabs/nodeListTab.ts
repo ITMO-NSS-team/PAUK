@@ -1,4 +1,5 @@
 import type { GraphData, PubDetail } from "../../contracts/graph";
+import { TAB_LIST_CONFIG } from "../../core/config";
 import { t } from "../../core/i18n";
 import { renderList, renderListItem } from "../../core/render";
 import type { AppState } from "../../core/state";
@@ -57,6 +58,15 @@ export function createNodeListTab<T extends NodeLike>(config: NodeListTabConfig<
       // отдельного узла ПЕРЕД списком это нужно сделать явно самим mount().
       container.replaceChildren();
 
+      // Подпись-раздел "Быстрый поиск"/"Quick Search" (прямая просьба —
+      // разделы сайдбара "с подписями") — рисуется самим этим модулем, а
+      // не общей разметкой index.html: #tab-content целиком перестраивается
+      // здесь при каждой смене вкладки, отдельного статического места под
+      // подпись снаружи не нужно.
+      const sectionLabel = document.createElement("div");
+      sectionLabel.className = "sidebar-section-label";
+      container.append(sectionLabel);
+
       const searchInput = document.createElement("input");
       searchInput.type = "search";
       searchInput.className = "tab-search";
@@ -66,9 +76,59 @@ export function createNodeListTab<T extends NodeLike>(config: NodeListTabConfig<
       const listEl = document.createElement("div");
       container.append(listEl);
 
+      const paginationEl = document.createElement("div");
+      paginationEl.className = "tab-pagination";
+      container.append(paginationEl);
+
       let query = "";
+      // Номер текущей страницы (с нуля) — сбрасывается на 0 при каждом
+      // новом поисковом запросе (см. ниже): иначе после поиска можно было
+      // бы застрять на, скажем, пятой странице совсем другого, гораздо
+      // более короткого результата, где такой страницы уже нет.
+      let page = 0;
+
+      /**
+       * Строит "‹ N / M ›" под списком — только когда страниц больше одной
+       * (на коротком результате пагинация просто не нужна, не показываем
+       * пустую строку управления ради одной-единственной страницы).
+       */
+      function renderPagination(pageCount: number, lang: AppState["lang"]): void {
+        if (pageCount <= 1) {
+          paginationEl.replaceChildren();
+          return;
+        }
+
+        const prev = document.createElement("button");
+        prev.type = "button";
+        prev.className = "tab-pagination__button";
+        prev.textContent = "‹";
+        prev.disabled = page === 0;
+        prev.setAttribute("aria-label", t("tab.prevPage", lang));
+        prev.addEventListener("click", () => {
+          page -= 1;
+          render(store.get());
+        });
+
+        const status = document.createElement("span");
+        status.className = "tab-pagination__status";
+        status.textContent = `${page + 1} / ${pageCount}`;
+
+        const next = document.createElement("button");
+        next.type = "button";
+        next.className = "tab-pagination__button";
+        next.textContent = "›";
+        next.disabled = page >= pageCount - 1;
+        next.setAttribute("aria-label", t("tab.nextPage", lang));
+        next.addEventListener("click", () => {
+          page += 1;
+          render(store.get());
+        });
+
+        paginationEl.replaceChildren(prev, status, next);
+      }
 
       function render(state: AppState): void {
+        sectionLabel.textContent = t("section.quickSearch", state.lang);
         searchInput.placeholder = t("tab.searchPlaceholder", state.lang);
 
         const selectedKey = state.selection?.kind === "node" ? state.selection.key : null;
@@ -85,10 +145,20 @@ export function createNodeListTab<T extends NodeLike>(config: NodeListTabConfig<
           empty.className = "tab-empty";
           empty.textContent = t("tab.noResults", state.lang);
           listEl.replaceChildren(empty);
+          paginationEl.replaceChildren();
           return;
         }
 
-        renderList(listEl, visible, (item) =>
+        const pageCount = Math.ceil(visible.length / TAB_LIST_CONFIG.pageSize);
+        // Список мог сократиться (новый запрос, смена языка на фильтр —
+        // впрочем, язык тут ни при чём, но сам факт "visible стал короче")
+        // так, что текущая страница перестала существовать — откатываемся
+        // на последнюю реально существующую, а не показываем пустоту.
+        if (page >= pageCount) page = pageCount - 1;
+        const start = page * TAB_LIST_CONFIG.pageSize;
+        const pageItems = visible.slice(start, start + TAB_LIST_CONFIG.pageSize);
+
+        renderList(listEl, pageItems, (item) =>
           renderListItem({
             label: config.label(item, state, pubDetails),
             meta: config.meta(item, state),
@@ -101,10 +171,12 @@ export function createNodeListTab<T extends NodeLike>(config: NodeListTabConfig<
             },
           }),
         );
+        renderPagination(pageCount, state.lang);
       }
 
       searchInput.addEventListener("input", () => {
         query = searchInput.value;
+        page = 0;
         render(store.get());
       });
 

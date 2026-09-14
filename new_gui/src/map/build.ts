@@ -316,9 +316,14 @@ function addDeptLabelAnchors(
  *    выбрано (тоже прямая жалоба: "мы должны иметь возможность искать
  *    дальше"). Правильно — оба источника активны одновременно (см.
  *    {@link isNeighborOf}): узел ярче обычного, если он выбранный,
- *    наведённый, ИЛИ сосед любого из них. Крупнее становится только сам
- *    выбор ({@link MAP_CONFIG.node.radiusSelected}) — ни наведённый узел,
- *    ни чьи-либо соседи размер не меняют (прямая просьба); соседи ВЫБОРА
+ *    наведённый, сосед любого из них, ИЛИ один из двух концов ВЫБРАННОГО
+ *    (кликом) РЕБРА — выбор ребра подсвечивает оба его конца с подписями,
+ *    так же, как выбор узла подсвечивает соседей, только наведение на
+ *    ребро (в отличие от наведения на узел) на это никак не влияет —
+ *    отдельного hover-состояния для рёбер нет. Крупнее становится только
+ *    сам выбор УЗЛА ({@link MAP_CONFIG.node.radiusSelected}) — ни
+ *    наведённый узел, ни чьи-либо соседи, ни концы выбранного ребра размер
+ *    не меняют (прямая просьба); соседи ВЫБОРА и концы выбранного ребра
  *    (не наведения) дополнительно получают принудительную подпись
  *    (`forceLabel: true`), не зависящую от {@link MAP_CONFIG.node.labelVisibleAtSize}.
  *    Всё, что не подходит ни под одно из условий выше, — тускнеет в {@link
@@ -355,6 +360,20 @@ function applyGraphStyling(
   }
 
   /**
+   * Оба конца выбранного (кликом) РЕБРА — единственный случай, когда
+   * "фокус" это ДВА ключа сразу, а не один, поэтому отдельная функция, а не
+   * ещё один вариант {@link selectionFocusKey}. Нужна и nodeReducer (сами
+   * концы не тускнеют, подпись форсирована), и edgeReducer (СОСЕДНИЕ рёбра
+   * концов остаются видимыми — та же логика "выбор показывает свои
+   * связи", что и у выбора узла, не два голых конца без единого другого
+   * ребра рядом).
+   */
+  function selectionEdgeEndpoints(): [string, string] | null {
+    const selection = store.get().selection;
+    return selection?.kind === "edge" ? [selection.s, selection.t] : null;
+  }
+
+  /**
    * `true`, если `nodeKey` — сосед узла/департамента `focus` (а не сам
    * `focus`). `focus === null` или отсутствие `focus` в ТЕКУЩЕМ графе (после
    * смены вкладки — см. развёрнутый комментарий у вызова ниже) — оба безопасно
@@ -377,6 +396,15 @@ function applyGraphStyling(
     const isSelected =
       (selection?.kind === "node" && selection.key === nodeKey) ||
       (selection?.kind === "dept" && deptNodeKey(selection.id) === nodeKey);
+    // Узел — один из двух концов ВЫБРАННОГО (кликом) ребра — подсвечивается
+    // так же, как сосед выбора узла: не тускнеет, подпись форсирована, но
+    // размер не растёт и highlighted не ставится — это два конца одного
+    // ребра, а не "сам выбор" в смысле isSelected выше. Только выбор
+    // (клик), не наведение на ребро — отдельного hover-состояния для рёбер
+    // в приложении нет и не появляется здесь (прямая просьба: "поправь
+    // выделение", наведение не трогать).
+    const edgeEndpoints = selectionEdgeEndpoints();
+    const isSelectedEdgeEndpoint = edgeEndpoints !== null && edgeEndpoints.includes(nodeKey);
 
     if (isRegion) {
       res.forceLabel = showingRegionLabels();
@@ -405,20 +433,42 @@ function applyGraphStyling(
     const isNeighborOfSelection = isNeighborOf(selKey, nodeKey);
     const isHoveredNode = hoveredNode !== null && hoveredNode === nodeKey;
     const isNeighborOfHover = isNeighborOf(hoveredNode, nodeKey);
-    const anyFocusActive = selKey !== null || hoveredNode !== null;
+    // Соседи ЛЮБОГО из двух концов выбранного ребра — та же логика, что и
+    // "выбор узла показывает всех его соседей", применённая к обоим концам
+    // сразу: иначе рёбра к третьим узлам от концов оставались бы видны
+    // (edgeReducer ниже), но САМИ эти третьи узлы всё равно тускнели бы —
+    // видимая линия к притушенному узлу выглядит как рассинхрон.
+    const isNeighborOfEdgeSelection =
+      edgeEndpoints !== null &&
+      (isNeighborOf(edgeEndpoints[0], nodeKey) || isNeighborOf(edgeEndpoints[1], nodeKey));
+    // "Активен ли вообще какой-то фокус" — ГЛОБАЛЬНЫЙ вопрос (нужен, чтобы
+    // притушить ВСЕ остальные узлы, а не только решить про ЭТОТ конкретный),
+    // поэтому берёт selection?.kind === "edge" целиком, а не
+    // isSelectedEdgeEndpoint (тот — про ЭТОТ КОНКРЕТНЫЙ nodeKey, для любого
+    // узла, не являющегося одним из двух концов, он всегда false — если бы
+    // anyFocusActive считался через него, третьи узлы при выбранном ребре
+    // никогда бы не тускнели вообще).
+    const anyFocusActive = selKey !== null || hoveredNode !== null || selection?.kind === "edge";
 
     if (!isSelected && anyFocusActive) {
-      if (isNeighborOfSelection || isHoveredNode || isNeighborOfHover) {
-        // Крупнее — только сам выбор (radiusSelected выше), ни наведённый
-        // узел, ни чьи-либо соседи размер не меняют (прямая просьба).
-        // Принудительная подпись (forceLabel, не зависит от
-        // labelVisibleAtSize) — только у соседей ВЫБОРА (клика): имя должно
+      if (
+        isNeighborOfSelection ||
+        isHoveredNode ||
+        isNeighborOfHover ||
+        isSelectedEdgeEndpoint ||
+        isNeighborOfEdgeSelection
+      ) {
+        // Крупнее — только сам выбор УЗЛА (radiusSelected выше), ни
+        // наведённый узел, ни чьи-либо соседи, ни концы выбранного ребра
+        // размер не меняют (прямая просьба). Принудительная подпись
+        // (forceLabel, не зависит от labelVisibleAtSize) — у соседей ВЫБОРА
+        // (клика), у концов выбранного РЕБРА и у ИХ соседей: имя должно
         // быть видно сразу после клика, а не только если размер узла сам по
         // себе перевалил порог видимости подписи. У соседей НАВЕДЕНИЯ подпись
         // не форсируем — не просили, и на карте с тысячами узлов это была бы
-        // лишняя "каша" подписей при простом движении мыши. У якорей
-        // департаментов (isRegion) подписи и так решает showingRegionLabels() выше.
-        if (!isRegion && isNeighborOfSelection) res.forceLabel = true;
+        // лишняя "каша" подписей при простом движении мыши. У якорей департаментов
+        // (isRegion) подписи и так решает showingRegionLabels() выше.
+        if (!isRegion && (isNeighborOfSelection || isSelectedEdgeEndpoint)) res.forceLabel = true;
       } else {
         res.color = MAP_CONFIG.node.dimColor;
         res.label = "";
@@ -447,14 +497,24 @@ function applyGraphStyling(
       return { ...data, color: MAP_CONFIG.edge.colorSelected, size: MAP_CONFIG.edge.widthSelected };
     }
 
-    // Видно, если ребро касается ВЫБОРА ИЛИ НАВЕДЕНИЯ (независимо друг от
-    // друга, см. applyGraphStyling выше) — то же самое "два источника фокуса
-    // одновременно", что и в nodeReducer.
+    // Видно, если ребро касается ВЫБОРА, НАВЕДЕНИЯ, ИЛИ одного из двух
+    // концов ВЫБРАННОГО РЕБРА (независимо друг от друга, см.
+    // applyGraphStyling выше) — то же самое "два источника фокуса
+    // одновременно", что и в nodeReducer, плюс третий случай: выбор ребра
+    // показывает не только само это ребро, но и ВСЕ ОСТАЛЬНЫЕ рёбра его
+    // концов — ту же "картину соседства", что уже показывает выбор узла
+    // (там ведь тоже остаются видны ВСЕ рёбра выбранного узла, не только
+    // одно) — иначе выбор ребра выглядел бы как два никуда больше не
+    // подключённых узла с одной линией между ними, даже если на самом
+    // деле у них есть другие связи (прямая жалоба: "остальные рёбра не видно").
     const selKey = selectionFocusKey();
+    const edgeEndpoints = selectionEdgeEndpoints();
     const touchesSelection = selKey !== null && (s === selKey || t === selKey);
+    const touchesEdgeSelectionEndpoint =
+      edgeEndpoints !== null && (edgeEndpoints.includes(s) || edgeEndpoints.includes(t));
     const touchesHover = hoveredNode !== null && (s === hoveredNode || t === hoveredNode);
-    const anyFocusActive = selKey !== null || hoveredNode !== null;
-    if (anyFocusActive && !touchesSelection && !touchesHover) {
+    const anyFocusActive = selKey !== null || hoveredNode !== null || edgeEndpoints !== null;
+    if (anyFocusActive && !touchesSelection && !touchesEdgeSelectionEndpoint && !touchesHover) {
       return { ...data, hidden: true };
     }
 

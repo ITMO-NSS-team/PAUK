@@ -91,7 +91,14 @@ export function mountTabs(
     activeTab = tabId;
     // TAB_MODULES теперь Record, не Partial<Record<...>> — каждый TabId
     // гарантированно имеет модуль, отдельной проверки на undefined не нужно.
-    activeUnmount = TAB_MODULES[tabId].mount(tabContentEl, store, renderer, data, pubDetails, repoDetails);
+    activeUnmount = TAB_MODULES[tabId].mount(
+      tabContentEl,
+      store,
+      renderer,
+      data,
+      pubDetails,
+      repoDetails,
+    );
 
     for (const button of buttons) {
       button.classList.toggle("tab-button--active", Number(button.dataset.tab) === tabId);

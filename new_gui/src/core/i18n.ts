@@ -106,11 +106,16 @@ export type LocaleKey =
   | "search.browseDepts"
   | "tab.searchPlaceholder"
   | "tab.noResults"
+  | "tab.prevPage"
+  | "tab.nextPage"
   | "filter.coauth"
   | "filter.sharedAuthors"
   | "filter.yearMax"
   | "filter.showNoDept"
   | "filter.edgeZoom"
+  | "brand.backToMenu"
+  | "section.filters"
+  | "section.quickSearch"
   | "start.badge"
   | "start.title"
   | "start.subtitle"
@@ -186,11 +191,16 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "search.browseDepts": "Департаменты",
     "tab.searchPlaceholder": "Поиск…",
     "tab.noResults": "Ничего не найдено",
+    "tab.prevPage": "Предыдущая страница",
+    "tab.nextPage": "Следующая страница",
     "filter.coauth": "Мин. соавторство",
     "filter.sharedAuthors": "Мин. общих авторов",
     "filter.yearMax": "До года",
     "filter.showNoDept": "Показывать без департамента",
     "filter.edgeZoom": "Порог показа рёбер",
+    "brand.backToMenu": "← Меню",
+    "section.filters": "Фильтры",
+    "section.quickSearch": "Быстрый поиск",
     "start.badge": "Открытый проект ИТМО",
     "start.title": "Карта соавторства и открытого кода ИТМО",
     "start.subtitle":
@@ -274,11 +284,16 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "search.browseDepts": "Departments",
     "tab.searchPlaceholder": "Search…",
     "tab.noResults": "No results found",
+    "tab.prevPage": "Previous page",
+    "tab.nextPage": "Next page",
     "filter.coauth": "Min. co-authorship",
     "filter.sharedAuthors": "Min. shared authors",
     "filter.yearMax": "Up to year",
     "filter.showNoDept": "Show without department",
     "filter.edgeZoom": "Edge visibility threshold",
+    "brand.backToMenu": "← Menu",
+    "section.filters": "Filters",
+    "section.quickSearch": "Quick Search",
     "start.badge": "Open ITMO project",
     "start.title": "ITMO co-authorship and open-source code map",
     "start.subtitle":

@@ -13,7 +13,14 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
     tab: 1,
     lang: "ru",
     selection: null,
-    filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026, showNoDeptAuthors: true, showNoDeptPubs: true, edgeZoomThreshold: 0.4 },
+    filters: {
+      minCoauth: 1,
+      minSharedAuthors: 1,
+      yearMax: 2026,
+      showNoDeptAuthors: true,
+      showNoDeptPubs: true,
+      edgeZoomThreshold: 0.4,
+    },
     ...overrides,
   };
 }
@@ -39,7 +46,9 @@ describe("mountGlobalSearch", () => {
     const store = new Store<AppState>(initialState());
     mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
-    document.getElementById("global-search-trigger")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    document
+      .getElementById("global-search-trigger")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     const overlay = document.getElementById("global-search") as HTMLElement;
     const input = document.getElementById("global-search-input") as HTMLInputElement;
@@ -78,7 +87,9 @@ describe("mountGlobalSearch", () => {
     const store = new Store<AppState>(initialState({ tab: 2 })); // намеренно не на вкладке автора
     mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
-    document.getElementById("global-search-trigger")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    document
+      .getElementById("global-search-trigger")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const input = document.getElementById("global-search-input") as HTMLInputElement;
     input.value = "Иванов";
     input.dispatchEvent(new Event("input"));
@@ -95,12 +106,16 @@ describe("mountGlobalSearch", () => {
     const store = new Store<AppState>(initialState());
     mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
-    document.getElementById("global-search-trigger")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    document
+      .getElementById("global-search-trigger")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const input = document.getElementById("global-search-input") as HTMLInputElement;
     input.value = "П"; // должно найтись больше одного автора
     input.dispatchEvent(new Event("input"));
 
-    const items = [...document.querySelectorAll<HTMLButtonElement>("#global-search-results .tab-list-item")];
+    const items = [
+      ...document.querySelectorAll<HTMLButtonElement>("#global-search-results .tab-list-item"),
+    ];
     if (items.length < 2) throw new Error("для этого теста нужно хотя бы два результата");
     const second = items[1];
     if (!second) throw new Error("должен быть второй результат");
@@ -120,7 +135,9 @@ describe("mountGlobalSearch", () => {
     const store = new Store<AppState>(initialState());
     mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
-    document.getElementById("global-search-trigger")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    document
+      .getElementById("global-search-trigger")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 
     expect((document.getElementById("global-search") as HTMLElement).hidden).toBe(true);
@@ -132,7 +149,9 @@ describe("mountGlobalSearch", () => {
     mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
     const overlay = document.getElementById("global-search") as HTMLElement;
-    document.getElementById("global-search-trigger")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    document
+      .getElementById("global-search-trigger")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     overlay.dispatchEvent(new MouseEvent("click", { bubbles: true })); // target === overlay сам по себе
 
     expect(overlay.hidden).toBe(true);
@@ -143,7 +162,9 @@ describe("mountGlobalSearch", () => {
     const store = new Store<AppState>(initialState({ tab: 2 })); // намеренно НЕ на вкладке автора
     mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
-    document.getElementById("global-search-trigger")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    document
+      .getElementById("global-search-trigger")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const input = document.getElementById("global-search-input") as HTMLInputElement;
     input.value = "Иванов";
     input.dispatchEvent(new Event("input"));
@@ -165,14 +186,16 @@ describe("mountGlobalSearch", () => {
     const store = new Store<AppState>(initialState({ tab: 3 }));
     mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
-    document.getElementById("global-search-trigger")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    document
+      .getElementById("global-search-trigger")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const input = document.getElementById("global-search-input") as HTMLInputElement;
     input.value = dept.name;
     input.dispatchEvent(new Event("input"));
 
-    const hit = [...document.querySelectorAll<HTMLButtonElement>("#global-search-results .tab-list-item")].find(
-      (button) => button.dataset.kind === "dept",
-    );
+    const hit = [
+      ...document.querySelectorAll<HTMLButtonElement>("#global-search-results .tab-list-item"),
+    ].find((button) => button.dataset.kind === "dept");
     if (!hit) throw new Error(`должен найтись департамент "${dept.name}" среди результатов`);
     hit.click();
 
@@ -185,13 +208,17 @@ describe("mountGlobalSearch", () => {
     const store = new Store<AppState>(initialState());
     mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
-    document.getElementById("global-search-trigger")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    document
+      .getElementById("global-search-trigger")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const input = document.getElementById("global-search-input") as HTMLInputElement;
     input.value = "лщывалщыв"; // заведомо не встречается ни в одной подписи фикстуры
     input.dispatchEvent(new Event("input"));
 
     expect(document.querySelectorAll("#global-search-results .tab-list-item")).toHaveLength(0);
-    expect(document.querySelector("#global-search-results .tab-empty")?.textContent).toBe("Ничего не найдено");
+    expect(document.querySelector("#global-search-results .tab-empty")?.textContent).toBe(
+      "Ничего не найдено",
+    );
   });
 
   it("пустой запрос (сразу после открытия) показывает департаменты для просмотра, крупнейшие сверху — не 'Ничего не найдено' и не пустой список", async () => {
@@ -200,15 +227,22 @@ describe("mountGlobalSearch", () => {
     const dept0 = data.departments.find((d) => d.id === 0);
     const dept1 = data.departments.find((d) => d.id === 2);
     if (!dept0 || !dept1) throw new Error("фикстура должна содержать департаменты 0 и 2");
-    if (dept0.n <= dept1.n) throw new Error("фикстура должна давать разброс по размеру департаментов для проверки сортировки");
+    if (dept0.n <= dept1.n)
+      throw new Error(
+        "фикстура должна давать разброс по размеру департаментов для проверки сортировки",
+      );
     const store = new Store<AppState>(initialState());
     mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
-    document.getElementById("global-search-trigger")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    document
+      .getElementById("global-search-trigger")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     expect(document.querySelector("#global-search-results .tab-empty")).toBeNull();
     expect(document.querySelector(".global-search-hint")?.textContent).toBe("Департаменты");
-    const hits = [...document.querySelectorAll<HTMLButtonElement>("#global-search-results .tab-list-item")];
+    const hits = [
+      ...document.querySelectorAll<HTMLButtonElement>("#global-search-results .tab-list-item"),
+    ];
     expect(hits.length).toBeGreaterThan(0);
     expect(hits.every((hit) => hit.dataset.kind === "dept")).toBe(true);
     expect(hits.findIndex((h) => h.textContent === dept0.name)).toBeLessThan(
@@ -223,10 +257,12 @@ describe("mountGlobalSearch", () => {
     const store = new Store<AppState>(initialState());
     mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
-    document.getElementById("global-search-trigger")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const hit = [...document.querySelectorAll<HTMLButtonElement>("#global-search-results .tab-list-item")].find(
-      (button) => button.textContent === dept.name,
-    );
+    document
+      .getElementById("global-search-trigger")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const hit = [
+      ...document.querySelectorAll<HTMLButtonElement>("#global-search-results .tab-list-item"),
+    ].find((button) => button.textContent === dept.name);
     if (!hit) throw new Error(`департамент "${dept.name}" должен быть в подсказке "для просмотра"`);
 
     hit.click();

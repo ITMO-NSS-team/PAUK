@@ -36,12 +36,27 @@ describe("mountFilters", () => {
     container = document.createElement("div");
     container.id = "filter-bar";
     document.body.appendChild(container);
+    const sectionLabel = document.createElement("div");
+    sectionLabel.id = "filters-section-label";
+    document.body.appendChild(sectionLabel);
     try {
       return run();
     } finally {
       container.remove();
+      sectionLabel.remove();
     }
   }
+
+  it("подписывает секцию сайдбара («Фильтры»/«Filters») под текущий язык", () => {
+    withContainer(() => {
+      const store = new Store<AppState>(initialState({ lang: "ru" }));
+      mountFilters(store);
+      expect(document.getElementById("filters-section-label")?.textContent).toBe("Фильтры");
+
+      store.set({ lang: "en" });
+      expect(document.getElementById("filters-section-label")?.textContent).toBe("Filters");
+    });
+  });
 
   it("на вкладке 1 показывает два регулятора — зум рёбер (общий для всех вкладок) и порог соавторства", () => {
     withContainer(() => {

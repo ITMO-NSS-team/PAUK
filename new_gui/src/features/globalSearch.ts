@@ -87,7 +87,11 @@ export function mountGlobalSearch(
           if (hit.kind === "dept") {
             store.set({ screen: "app", selection: { kind: "dept", id: parseDeptHitKey(hit.key) } });
           } else {
-            store.set({ screen: "app", tab: TAB_FOR_KIND[hit.kind], selection: { kind: "node", key: hit.key } });
+            store.set({
+              screen: "app",
+              tab: TAB_FOR_KIND[hit.kind],
+              selection: { kind: "node", key: hit.key },
+            });
           }
           close();
         },
@@ -109,7 +113,11 @@ export function mountGlobalSearch(
       const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
       const deptHits = [...index]
         .filter((hit) => hit.kind === "dept")
-        .sort((a, b) => (deptById.get(parseDeptHitKey(b.key))?.n ?? 0) - (deptById.get(parseDeptHitKey(a.key))?.n ?? 0))
+        .sort(
+          (a, b) =>
+            (deptById.get(parseDeptHitKey(b.key))?.n ?? 0) -
+            (deptById.get(parseDeptHitKey(a.key))?.n ?? 0),
+        )
         .slice(0, SEARCH_CONFIG.resultsLimit);
 
       const heading = document.createElement("div");

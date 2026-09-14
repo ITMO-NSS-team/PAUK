@@ -666,6 +666,70 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     }); // не сосед — притушен
   });
 
+  it("выбор РЕБРА подсвечивает оба его конца с подписями, как соседей выбора узла — но не увеличивает и не помечает highlighted", async () => {
+    const data = await loadSampleGraphData();
+    const graph = new Graph();
+    graph.addNode("A1", { x: 0, y: 0 });
+    graph.addNode("A2", { x: 1, y: 1 });
+    graph.addNode("A3", { x: 2, y: 2 }); // не участвует в выбранном ребре — должен остаться притушен
+    graph.addEdge("A1", "A2", { weight: 2 });
+    const store = new Store<AppState>(
+      initialState({ selection: { kind: "edge", s: "A1", t: "A2", w: 2 } }),
+    );
+    const { renderer, getReducer } = fakeRenderer(graph);
+
+    mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
+    const nodeReducer = getReducer("nodeReducer");
+
+    for (const key of ["A1", "A2"]) {
+      const res = nodeReducer(key, NODE_BASE);
+      expect(res).toMatchObject({ color: NODE_BASE.color, size: NODE_BASE.size, forceLabel: true });
+      expect(res).not.toHaveProperty("highlighted", true); // это два конца ребра, не "сам выбор" узла
+    }
+    expect(nodeReducer("A3", NODE_BASE)).toMatchObject({
+      color: MAP_CONFIG.node.dimColor,
+      label: "",
+    });
+  });
+
+  it("выбор РЕБРА оставляет видимыми ДРУГИЕ рёбра его концов (и не тушит узлы на другом конце тех рёбер) — не только сам выбранный отрезок", async () => {
+    const data = await loadSampleGraphData();
+    const graph = new Graph();
+    graph.addNode("A1", { x: 0, y: 0 });
+    graph.addNode("A2", { x: 1, y: 1 });
+    graph.addNode("A5", { x: 4, y: 4 }); // сосед A1 через ДРУГОЕ ребро (не выбранное)
+    graph.addNode("A6", { x: 5, y: 5 });
+    graph.addNode("A7", { x: 6, y: 6 });
+    graph.addEdge("A1", "A2", { weight: 2 }); // выбранное ребро
+    graph.addEdge("A1", "A5", { weight: 1 }); // другое ребро того же конца — должно остаться видимым
+    graph.addEdge("A6", "A7", { weight: 1 }); // совсем не связано ни с A1, ни с A2 — должно скрыться
+    const store = new Store<AppState>(
+      initialState({ selection: { kind: "edge", s: "A1", t: "A2", w: 2 } }),
+    );
+    const { renderer, getReducer } = fakeRenderer(graph);
+
+    mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
+    const nodeReducer = getReducer("nodeReducer");
+    const edgeReducer = getReducer("edgeReducer");
+    const [edgeA1A5] = graph.edges("A1", "A5");
+    const [edgeA6A7] = graph.edges("A6", "A7");
+    if (!edgeA1A5 || !edgeA6A7) throw new Error("граф должен содержать оба вспомогательных ребра");
+
+    // Раньше "anyFocusActive"/видимость рёбер для выбора ребра не учитывали
+    // ничего, кроме самого выбранного отрезка — все ОСТАЛЬНЫЕ рёбра обоих
+    // концов пропадали целиком (прямая жалоба: "остальные рёбра не видно").
+    expect(edgeReducer(edgeA1A5, EDGE_BASE)).toMatchObject({ color: EDGE_BASE.color });
+    // Узел на другом конце этого ребра (A5) не должен тускнеть — видимая
+    // линия к притушенному узлу выглядела бы как рассинхрон.
+    expect(nodeReducer("A5", NODE_BASE)).toMatchObject({
+      color: NODE_BASE.color,
+      size: NODE_BASE.size,
+    });
+    // A6-A7 никак не связано ни с A1, ни с A2 — по-прежнему скрыто,
+    // "остальное убрать" всё ещё работает, просто не для ВСЕГО подряд.
+    expect(edgeReducer(edgeA6A7, EDGE_BASE)).toMatchObject({ hidden: true });
+  });
+
   it("edgeReducer скрывает рёбра, не задевающие фокус, но не трогает задевающие", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
