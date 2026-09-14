@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
+
 from pymongo import MongoClient
 from pymongo.database import Database
 
 from pauk.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 
 def get_mongo_client(config: Settings, timeout_ms: int | None = None) -> MongoClient:
@@ -23,9 +27,49 @@ def get_mongo_client(config: Settings, timeout_ms: int | None = None) -> MongoCl
     return MongoClient(config.mongo_uri, serverSelectionTimeoutMS=timeout_ms)
 
 
+#: Collections created with stronger compression than the server default.
+#: `raw` keeps a verbatim copy of every API answer and is three quarters of
+#: the database; `revisions` keeps a full snapshot per changed row. Both are
+#: repetitive JSON, which zstd folds several times over, and neither is read
+#: often enough for the extra work to show.
+COMPRESSED = ("raw", "revisions")
+
+
+def ensure_compression(db: Database) -> list[str]:
+    """Create the heavy collections compressed, before anything writes to them.
+
+    Only ones that do not exist yet. WiredTiger takes the compressor when
+    the collection is created, and changing it afterwards applies to new
+    blocks alone — an existing collection needs `collMod` and a rewrite,
+    which is an operator's decision with a lock attached, not something a
+    command does on startup.
+
+    Returns:
+        The collections it created, empty on a database that already has
+        them or on a server that does not take the option.
+    """
+    created = []
+    try:
+        existing = set(db.list_collection_names())
+        for name in COMPRESSED:
+            if name in existing:
+                continue
+            db.create_collection(
+                name, storageEngine={"wiredTiger": {"configString": "block_compressor=zstd"}})
+            created.append(name)
+    except Exception as error:
+        # A double that does not implement collection options, an old
+        # server, an account without the right. None of that is a reason to
+        # refuse to run: the collection is made by the first write anyway,
+        # just with the default compressor.
+        logger.info("collections left at the default compression: %s", error)
+    return created
+
+
 def ensure_indexes(db: Database) -> None:
     """Create indexes the storage layer relies on. Idempotent - safe to call
     on every command startup, same spot as Neo4j's create_constraints()."""
+    ensure_compression(db)
     db.revisions.create_index([("entity_type", 1), ("entity_id", 1), ("version", 1)])
     db.raw.create_index([("source", 1), ("group", 1), ("fetched_at", 1)])
     db.raw.create_index([("source", 1), ("fetched_at", 1)])
