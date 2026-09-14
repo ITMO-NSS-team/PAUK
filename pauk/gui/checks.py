@@ -53,8 +53,12 @@ GROUP_EN = {
 CYR, LAT = r"\\p{IsCyrillic}", r"\\p{IsLatin}"
 RU_NAME_FIELDS = "[p.surname_ru, p.first_name_ru, p.second_name_ru]"
 
-# is_itmo:Itmo/External label migration - #150.
-_ITMO_TOTAL = "MATCH (p:Person:Itmo) RETURN count(p)"
+# Раньше сотрудник отличался меткой (:Person:Itmo) от внешнего автора
+# (:Person:External). Меток больше нет: загрузчик ставит одну :Person, а
+# принадлежность к ИТМО носит липким свойством is_itmo — см. itmo_person и
+# external_person в pauk/graph/extract.py. Проверки, оставшиеся на метках,
+# молча считали ноль из нуля и показывали «ок» (#150).
+_ITMO_TOTAL = "MATCH (p:Person) WHERE p.is_itmo RETURN count(p)"
 _PUB_TOTAL = "MATCH (p:Publication) RETURN count(p)"
 _DEPT_TOTAL = "MATCH (d:Department) RETURN count(d)"
 
@@ -72,13 +76,13 @@ CHECKS = [
         group="Пропуски",
         title="Сотрудники без департамента",
         title_en="Staff without a department",
-        count="MATCH (p:Person:Itmo) WHERE NOT (p)-[:BELONGS_TO]->() RETURN count(p)",
+        count="MATCH (p:Person) WHERE p.is_itmo AND NOT (p)-[:BELONGS_TO]->() RETURN count(p)",
         of=_ITMO_TOTAL,
         warn=0.05,
         fail=0.25,
         hint="Итоги по департаментам занижены.",
         hint_en="Department totals are undercounted.",
-        examples=f"""MATCH (p:Person:Itmo) WHERE NOT (p)-[:BELONGS_TO]->()
+        examples=f"""MATCH (p:Person) WHERE p.is_itmo AND NOT (p)-[:BELONGS_TO]->()
             OPTIONAL MATCH (p)-[:AUTHORED]->(pub:Publication)
             WITH p, count(pub) AS pubs, max(pub.year) AS last_year
             RETURN p.id AS id, p.name_raw AS `Имя (лат.)`, {_FIO} AS `ФИО`,
@@ -106,13 +110,13 @@ CHECKS = [
         group="Пропуски",
         title="Публикации без автора из ИТМО",
         title_en="Publications with no ITMO author",
-        count="MATCH (p:Publication) WHERE NOT (p)<-[:AUTHORED]-(:Person:Itmo) RETURN count(p)",
+        count="MATCH (p:Publication) WHERE NOT EXISTS { (p)<-[:AUTHORED]-(a:Person) WHERE a.is_itmo } RETURN count(p)",
         of=_PUB_TOTAL,
         warn=0.01,
         fail=0.05,
         hint="Не попадают на карту.",
         hint_en="Don't make it onto the map.",
-        examples="""MATCH (p:Publication) WHERE NOT (p)<-[:AUTHORED]-(:Person:Itmo)
+        examples="""MATCH (p:Publication) WHERE NOT EXISTS { (p)<-[:AUTHORED]-(a:Person) WHERE a.is_itmo }
             OPTIONAL MATCH (p)<-[:AUTHORED]-(a:Person)
             WITH p, count(a) AS authors
             RETURN p.id AS id, p.title AS `Заголовок`, p.year AS `Год`,
@@ -140,7 +144,7 @@ CHECKS = [
         group="Пропуски",
         title="Сотрудники без русского ФИО",
         title_en="Staff without a Russian full name",
-        count="MATCH (p:Person:Itmo) WHERE p.name_ru IS NULL "
+        count="MATCH (p:Person) WHERE p.is_itmo AND p.name_ru IS NULL "
         "OR trim(p.name_ru) = '' RETURN count(p)",
         of=_ITMO_TOTAL,
         warn=0.02,
@@ -149,8 +153,8 @@ CHECKS = [
         "для группы, из которой пришли эти люди.",
         hint_en="Shown in Latin script. The author_names stage hasn't run "
         "for the batch these people came from.",
-        examples="""MATCH (p:Person:Itmo)
-            WHERE p.name_ru IS NULL OR trim(p.name_ru) = ''
+        examples="""MATCH (p:Person)
+            WHERE p.is_itmo AND p.name_ru IS NULL OR trim(p.name_ru) = ''
             OPTIONAL MATCH (p)-[:AUTHORED]->(pub:Publication)
             WITH p, count(pub) AS pubs
             RETURN p.id AS id, p.name_raw AS `Имя (лат.)`,
@@ -162,7 +166,7 @@ CHECKS = [
         group="Пропуски",
         title="Сотрудники без отчества",
         title_en="Staff without a patronymic",
-        count="MATCH (p:Person:Itmo) WHERE p.second_name_ru IS NULL "
+        count="MATCH (p:Person) WHERE p.is_itmo AND p.second_name_ru IS NULL "
         "OR trim(p.second_name_ru) = '' RETURN count(p)",
         of=_ITMO_TOTAL,
         warn=0.25,
@@ -171,8 +175,8 @@ CHECKS = [
         "Отчество приходит только из справочника сотрудников.",
         hint_en='Signed as "Surname Given name" — nothing to shorten to '
         '"Surname G.P." with. The patronymic comes only from the staff directory.',
-        examples="""MATCH (p:Person:Itmo)
-            WHERE p.second_name_ru IS NULL OR trim(p.second_name_ru) = ''
+        examples="""MATCH (p:Person)
+            WHERE p.is_itmo AND p.second_name_ru IS NULL OR trim(p.second_name_ru) = ''
             OPTIONAL MATCH (p)-[:AUTHORED]->(pub:Publication)
             WITH p, count(pub) AS pubs
             RETURN p.id AS id, p.name_raw AS `Имя (лат.)`,
@@ -194,7 +198,8 @@ CHECKS = [
         hint_en="Labels end up mixing languages.",
         examples="""MATCH (d:Department)
             WHERE d.name_ru IS NULL OR trim(d.name_ru) = ''
-            OPTIONAL MATCH (d)<-[:BELONGS_TO]-(p:Person:Itmo)
+            OPTIONAL MATCH (d)<-[:BELONGS_TO]-(p:Person)
+            WHERE p.is_itmo
             WITH d, count(p) AS people
             RETURN d.id AS id, d.name_en AS `Название (лат.)`, people AS `Сотрудников`
             ORDER BY people DESC LIMIT $lim""",
@@ -248,7 +253,8 @@ CHECKS = [
         hint="По ним департамент опознаётся в тексте статьи.",
         hint_en="These are how a department gets recognized in a paper's text.",
         examples="""MATCH (d:Department) WHERE size(coalesce(d.name_variants, [])) = 0
-            OPTIONAL MATCH (d)<-[:BELONGS_TO]-(p:Person:Itmo)
+            OPTIONAL MATCH (d)<-[:BELONGS_TO]-(p:Person)
+            WHERE p.is_itmo
             WITH d, count(p) AS people
             RETURN d.id AS id, coalesce(d.name_ru, d.name_en) AS `Департамент`,
                    people AS `Сотрудников`
@@ -260,7 +266,7 @@ CHECKS = [
         group="Имена",
         title="Кириллица и латиница внутри одного слова",
         title_en="Cyrillic and Latin mixed within one word",
-        count=f"""MATCH (p:Person:Itmo) WHERE any(v IN {RU_NAME_FIELDS}
+        count=f"""MATCH (p:Person) WHERE p.is_itmo AND any(v IN {RU_NAME_FIELDS}
                        WHERE v IS NOT NULL AND v =~ '.*({CYR}{LAT}|{LAT}{CYR}).*')
                      RETURN count(p)""",
         of=_ITMO_TOTAL,
@@ -268,7 +274,7 @@ CHECKS = [
         fail=0.005,
         hint="Сбой транслитерации: «Вершиinin», «Полевaя», «Аkhмеров».",
         hint_en='Transliteration glitch: "Вершиinin", "Полевaя", "Аkhмеров".',
-        examples=f"""MATCH (p:Person:Itmo) WHERE any(v IN {RU_NAME_FIELDS}
+        examples=f"""MATCH (p:Person) WHERE p.is_itmo AND any(v IN {RU_NAME_FIELDS}
               WHERE v IS NOT NULL AND v =~ '.*({CYR}{LAT}|{LAT}{CYR}).*')
             RETURN p.id AS id, {_FIO} AS `ФИО (рус.)`, p.name_raw AS `Имя (лат.)`,
                    coalesce(p.surname_ru,'') AS `Фамилия`,
@@ -281,7 +287,7 @@ CHECKS = [
         group="Имена",
         title="Знак ударения внутри имени",
         title_en="Stress mark inside a name",
-        count=f"""MATCH (p:Person:Itmo) WHERE any(v IN {RU_NAME_FIELDS}
+        count=f"""MATCH (p:Person) WHERE p.is_itmo AND any(v IN {RU_NAME_FIELDS}
                        WHERE v IS NOT NULL AND v =~ '.*[\\\\u0300-\\\\u036F].*')
                      RETURN count(p)""",
         of=_ITMO_TOTAL,
@@ -289,7 +295,7 @@ CHECKS = [
         fail=0.005,
         hint="«Смоля́нская» — поиск по такому имени не найдёт человека.",
         hint_en='"Смоля́нская" — searching for this name won\'t find the person.',
-        examples=f"""MATCH (p:Person:Itmo) WHERE any(v IN {RU_NAME_FIELDS}
+        examples=f"""MATCH (p:Person) WHERE p.is_itmo AND any(v IN {RU_NAME_FIELDS}
               WHERE v IS NOT NULL AND v =~ '.*[\\\\u0300-\\\\u036F].*')
             RETURN p.id AS id, {_FIO} AS `ФИО (рус.)`, p.name_raw AS `Имя (лат.)`
             ORDER BY p.name_raw LIMIT $lim""",
@@ -299,14 +305,14 @@ CHECKS = [
         group="Имена",
         title="Фамилия из одной буквы",
         title_en="One-letter surname",
-        count="""MATCH (p:Person:Itmo) WHERE p.surname_ru IS NOT NULL
+        count="""MATCH (p:Person) WHERE p.is_itmo AND p.surname_ru IS NOT NULL
                     AND size(trim(replace(p.surname_ru, '.', ''))) = 1 RETURN count(p)""",
         of=_ITMO_TOTAL,
         warn=1e-9,
         fail=0.005,
         hint="Короткие фамилии схлопнулись до инициала.",
         hint_en="Short surnames collapsed down to an initial.",
-        examples="""MATCH (p:Person:Itmo) WHERE p.surname_ru IS NOT NULL
+        examples="""MATCH (p:Person) WHERE p.is_itmo AND p.surname_ru IS NOT NULL
               AND size(trim(replace(p.surname_ru, '.', ''))) = 1
             RETURN p.id AS id, p.surname_ru AS `Фамилия (рус.)`,
                    p.name_raw AS `Имя (лат.)`
@@ -317,8 +323,8 @@ CHECKS = [
         group="Имена",
         title="Русское ФИО записано латиницей",
         title_en="Russian name written in Latin script",
-        count=f"""MATCH (p:Person:Itmo)
-                     WHERE p.surname_ru IS NOT NULL AND trim(p.surname_ru) <> ''
+        count=f"""MATCH (p:Person)
+                     WHERE p.is_itmo AND p.surname_ru IS NOT NULL AND trim(p.surname_ru) <> ''
                        AND p.surname_ru =~ '[{LAT}\\\\s.-]+'
                      RETURN count(p)""",
         of=_ITMO_TOTAL,
@@ -326,8 +332,8 @@ CHECKS = [
         fail=0.005,
         hint="Транслитерация не отработала.",
         hint_en="Transliteration didn't run.",
-        examples=f"""MATCH (p:Person:Itmo)
-              WHERE p.surname_ru IS NOT NULL AND trim(p.surname_ru) <> ''
+        examples=f"""MATCH (p:Person)
+              WHERE p.is_itmo AND p.surname_ru IS NOT NULL AND trim(p.surname_ru) <> ''
                 AND p.surname_ru =~ '[{LAT}\\\\s.-]+'
             RETURN p.id AS id, {_FIO} AS `ФИО (рус.)`, p.name_raw AS `Имя (лат.)`
             ORDER BY p.name_raw LIMIT $lim""",
@@ -337,7 +343,7 @@ CHECKS = [
         group="Имена",
         title="Вместо имени только инициалы",
         title_en="Initials instead of a given name",
-        count="""MATCH (p:Person:Itmo) WHERE p.first_name_ru IS NOT NULL
+        count="""MATCH (p:Person) WHERE p.is_itmo AND p.first_name_ru IS NOT NULL
                     AND trim(p.first_name_ru) <> ''
                     AND size(trim(replace(replace(p.first_name_ru,'.',''),' ',''))) <= 2
                     RETURN count(p)""",
@@ -346,7 +352,7 @@ CHECKS = [
         fail=0.15,
         hint="В источнике не было полного имени.",
         hint_en="The source didn't have a full name.",
-        examples="""MATCH (p:Person:Itmo) WHERE p.first_name_ru IS NOT NULL
+        examples="""MATCH (p:Person) WHERE p.is_itmo AND p.first_name_ru IS NOT NULL
               AND trim(p.first_name_ru) <> ''
               AND size(trim(replace(replace(p.first_name_ru,'.',''),' ',''))) <= 2
             RETURN p.id AS id, coalesce(p.surname_ru,'') AS `Фамилия`,
@@ -359,8 +365,8 @@ CHECKS = [
         group="Дубликаты",
         title="Полные тёзки среди сотрудников",
         title_en="Complete namesakes among staff",
-        count="""MATCH (p:Person:Itmo)
-            WHERE p.surname_ru IS NOT NULL AND size(trim(p.surname_ru)) > 1
+        count="""MATCH (p:Person)
+            WHERE p.is_itmo AND p.surname_ru IS NOT NULL AND size(trim(p.surname_ru)) > 1
             WITH toLower(trim(p.surname_ru)) + '|' +
                  toLower(trim(coalesce(p.first_name_ru,''))) + '|' +
                  toLower(trim(coalesce(p.second_name_ru,''))) AS k, count(*) AS c
@@ -371,8 +377,8 @@ CHECKS = [
         hint="Совпадает всё ФИО целиком — либо однофамильцы, либо один человек дважды.",
         hint_en="The entire full name matches — either same-name coincidences, "
         "or one person entered twice.",
-        examples=f"""MATCH (p:Person:Itmo)
-            WHERE p.surname_ru IS NOT NULL AND size(trim(p.surname_ru)) > 1
+        examples=f"""MATCH (p:Person)
+            WHERE p.is_itmo AND p.surname_ru IS NOT NULL AND size(trim(p.surname_ru)) > 1
             WITH toLower(trim(p.surname_ru)) + '|' +
                  toLower(trim(coalesce(p.first_name_ru,''))) + '|' +
                  toLower(trim(coalesce(p.second_name_ru,''))) AS k,
@@ -388,8 +394,8 @@ CHECKS = [
         group="Дубликаты",
         title="Одинаковая подпись «Фамилия И.»",
         title_en='Same short signature "Surname I."',
-        count="""MATCH (p:Person:Itmo)
-            WHERE p.surname_ru IS NOT NULL AND size(trim(p.surname_ru)) > 1
+        count="""MATCH (p:Person)
+            WHERE p.is_itmo AND p.surname_ru IS NOT NULL AND size(trim(p.surname_ru)) > 1
               AND p.first_name_ru IS NOT NULL AND trim(p.first_name_ru) <> ''
             WITH toLower(trim(p.surname_ru)) + ' ' +
                  toLower(left(trim(p.first_name_ru),1)) AS k, count(*) AS c
@@ -400,8 +406,8 @@ CHECKS = [
         hint="Именно так люди подписаны на карте — этих не различить визуально.",
         hint_en="This is exactly how people are labeled on the map — "
         "these can't be told apart visually.",
-        examples="""MATCH (p:Person:Itmo)
-            WHERE p.surname_ru IS NOT NULL AND size(trim(p.surname_ru)) > 1
+        examples="""MATCH (p:Person)
+            WHERE p.is_itmo AND p.surname_ru IS NOT NULL AND size(trim(p.surname_ru)) > 1
               AND p.first_name_ru IS NOT NULL AND trim(p.first_name_ru) <> ''
             WITH trim(p.surname_ru) + ' ' + left(trim(p.first_name_ru),1) + '.' AS sig,
                  collect(p) AS ps
@@ -481,30 +487,6 @@ CHECKS = [
                    [x IN ps | x.id] AS `Идентификаторы`,
                    [x IN ps | x.title] AS `Заголовки`
             ORDER BY size(ps) DESC LIMIT $lim""",
-    ),
-    Check(
-        id="itmo_ext_pair",
-        group="Дубликаты",
-        title="Человек заведён и как сотрудник, и как внешний",
-        title_en="Person entered as both staff and external",
-        count="""MATCH (i:Person:Itmo) WHERE i.id STARTS WITH 'itmo_'
-            WITH i, 'ext_' + substring(i.id, 5) AS e
-            MATCH (:Person:External {id: e}) RETURN count(*)""",
-        of=_ITMO_TOTAL,
-        warn=0.01,
-        fail=0.05,
-        hint="Соавторство теряется, если на статье он подписан не от ИТМО.",
-        hint_en="Co-authorship is lost if a paper credits them outside ITMO.",
-        examples="""MATCH (i:Person:Itmo) WHERE i.id STARTS WITH 'itmo_'
-            WITH i, 'ext_' + substring(i.id, 5) AS eid
-            MATCH (e:Person:External {id: eid})
-            OPTIONAL MATCH (i)-[:AUTHORED]->(pi:Publication)
-            WITH i, e, count(pi) AS itmo_pubs
-            OPTIONAL MATCH (e)-[:AUTHORED]->(pe:Publication)
-            RETURN i.name_raw AS `Имя`, i.id AS `id (ИТМО)`, e.id AS `id (внешний)`,
-                   itmo_pubs AS `Публикаций от ИТМО`,
-                   count(pe) AS `Публикаций вне ИТМО`
-            ORDER BY count(pe) DESC LIMIT $lim""",
     ),
     Check(
         id="repo_url_case",
