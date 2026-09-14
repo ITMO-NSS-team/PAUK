@@ -215,13 +215,16 @@ class HeartbeatTest(unittest.TestCase):
     def test_the_lease_is_pushed_out(self):
         # The lock is taken inside the step, the way the real functions
         # take it: taking it first would leave the resource busy and the
-        # worker would pass the job over instead of claiming it.
+        # worker would pass the job over instead of claiming it. And it is
+        # taken as the process, which is what `held` does — this worker is
+        # named "worker-1", and renewing under that name would match
+        # nothing while the lease quietly ran out.
         store.enqueue(self.db, JobKind.PUBLISH, {"group": "2024"})
         beaten = threading.Event()
         first = []
 
         def step(config, db, payload, stop, report):
-            locks.acquire(db, GRAPH, "worker-1")
+            locks.acquire(db, GRAPH, locks.this_process())
             first.append(self.db[locks.COLLECTION].find_one({"_id": GRAPH})["expires_at"])
             beaten.wait(timeout=2)
             return {}

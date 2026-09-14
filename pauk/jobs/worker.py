@@ -81,24 +81,17 @@ def _prune(config: Settings, db: Database, payload, stop: Stop,
            report: Report) -> dict[str, int]:
     from pauk.graph import prune
     from pauk.graph.audit import actor_context, audited_client
-    from pauk.jobs.locks import held
-    from pauk.jobs.models import GRAPH
 
     report("сверка графа с источником")
-    with held(db, GRAPH):
-        client = audited_client(config, db)
-        try:
-            plan = prune.plan(client, db)
-            counts = {"prune_nodes": sum(len(ids) for ids in plan.nodes.values()),
-                      "prune_relationships": sum(len(pairs) for pairs in plan.edges.values()),
-                      "prune_kept_by_hand": plan.kept_by_hand}
-            if not payload.apply:
-                return counts
-            report("чистка графа")
-            with actor_context("etl-pipeline", source="prune"):
-                return counts | prune.apply(client, plan)
-        finally:
-            client.close()
+    client = audited_client(config, db)
+    try:
+        # The lock lives in `prune.run`, the way it lives in a publish:
+        # a plan and its application have to be one turn, and a run from a
+        # terminal takes the same turn as this one.
+        with actor_context("etl-pipeline", source="prune"):
+            return prune.run(client, db, payload.apply, report=report).counts()
+    finally:
+        client.close()
 
 
 def _rebuild_map(config: Settings, db: Database, payload, stop: Stop,
@@ -172,10 +165,18 @@ class _Beat:
     The work is one synchronous call that does not come back for hours, so
     nothing renews the lease from inside it. A daemon thread renews the
     heartbeat and the resource lock, and stops when the call returns.
+
+    The lock is renewed as the process, not as the worker's name. The two
+    are the same string until somebody passes `--name`, and then they are
+    not: the lock was taken by `locks.this_process()` inside the step, and
+    a renewal under any other name matches nothing and says nothing. The
+    lease would then run out under a long publish and let a second writer
+    in, which is the one thing the lock exists to prevent.
     """
 
-    def __init__(self, db: Database, job: Job, owner: str) -> None:
-        self._db, self._job, self._owner = db, job, owner
+    def __init__(self, db: Database, job: Job, owner: str | None = None) -> None:
+        self._db, self._job = db, job
+        self._owner = owner or locks.this_process()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop, daemon=True,
                                         name=f"beat-{job.id}")
@@ -292,7 +293,7 @@ class Worker:
                 raise Cancelled(f"остановлено перед шагом «{step}»")
 
         try:
-            with _Beat(self.db, job, self.name):
+            with _Beat(self.db, job):
                 result = STEPS[job.kind](self.config, self.db, payload, stop, report)
         except locks.Busy as error:
             # Not a failure. It goes back for whoever gets there next, and
