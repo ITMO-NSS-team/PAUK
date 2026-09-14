@@ -16,6 +16,7 @@ from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import ENTITY_FILES
 from pauk.graph.mutations import merge_nodes
 from pauk.graph.overrides import record_override, record_relationship_override
+from pauk.graph.unmerge import split_person
 from pauk.jobs import locks
 from pauk.jobs.models import PrunePayload
 from pauk.jobs.worker import _prune
@@ -241,6 +242,32 @@ class UnlinkedByHandTest(PruneTest):
         self.assertEqual(self.plan().edges, {})
 
 
+class AfterAnUndoneMergeTest(PruneTest):
+    """The two graph-wide operations have to agree about the same records.
+
+    Taking a fold apart rebuilds a record from its prepared row, and the
+    prune removes records no prepared row explains. If they disagreed, one
+    would undo the other every time both ran.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.write(persons=[person("A1", "Ivan", ["W1"]), person("A2", "I. S.", ["W2"])],
+                   publications=[Publication(id="W1", title="One"),
+                                 Publication(id="W2", title="Two")])
+        self.publish()
+        merge_nodes(self.graph, "Person", "A2", "A1")
+        split_person(self.graph, self.db, ["A1", "A2"])
+
+    def test_the_record_that_came_back_is_not_a_leftover(self):
+        plan = self.plan()
+        self.assertEqual(plan.nodes, {})
+        self.assertEqual(plan.edges, {})
+
+    def test_and_its_work_came_back_with_it(self):
+        self.assertEqual(self.links("AUTHORED"), [("A1", "W1"), ("A2", "W2")])
+
+
 class PruneAsAJobTest(PruneTest):
     """The step the panel schedules. Counting and removing are one run."""
 
@@ -280,16 +307,15 @@ class PruneAsAJobTest(PruneTest):
         self.run_step(apply=False)
         self.assertEqual(self.told, ["сверка графа с источником"])
 
-    def test_it_holds_the_graph_while_it_works(self):
+    def test_it_waits_for_whoever_else_is_writing_the_graph(self):
         # It deletes nodes and edges. A publish writing at the same time
-        # would be comparing against rows this one is about to act on.
-        held = []
-        real = locks.held
-
-        def watched(db, resource, owner=None):
-            held.append(resource)
-            return real(db, resource, owner)
-
-        with patch.object(locks, "held", watched):
+        # would be comparing against rows this one is about to act on, so
+        # the two take turns rather than overlap.
+        with locks.held(self.db, "graph", owner="another-process"), \
+                self.assertRaises(locks.Busy):
             self.run_step(apply=False)
-        self.assertEqual(held, ["graph"])
+        self.assertEqual(self.profiles(), ["G1", "G2"])
+
+    def test_and_gives_it_back_afterwards(self):
+        self.run_step(apply=True)
+        self.assertEqual(locks.taken(self.db), set())

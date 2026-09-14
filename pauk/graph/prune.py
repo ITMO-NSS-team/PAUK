@@ -28,10 +28,13 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from pymongo.database import Database
 
+from pauk.jobs.locks import held
+from pauk.jobs.models import GRAPH
 from pauk.storage.prepared import PreparedStore
 
 from .client import chunked
@@ -57,10 +60,20 @@ class Plan:
     kept_by_hand: int = 0
     #: Ids the next publish will fold into another record rather than drop.
     folding: int = 0
+    #: What was actually removed. Empty until a run applies the plan.
+    removed: dict[str, int] = field(default_factory=dict)
 
     def total(self) -> int:
         return (sum(len(ids) for ids in self.nodes.values())
                 + sum(len(pairs) for pairs in self.edges.values()))
+
+    def counts(self) -> dict[str, int]:
+        """The numbers a run hands back, for the page and the log."""
+        return {
+            "prune_nodes": sum(len(ids) for ids in self.nodes.values()),
+            "prune_relationships": sum(len(pairs) for pairs in self.edges.values()),
+            "prune_kept_by_hand": self.kept_by_hand,
+        } | self.removed
 
 
 class _WouldWrite:
@@ -257,3 +270,31 @@ def apply(client, plan_to_apply: Plan) -> dict[str, int]:
     return {"pruned_relationships": edges, "pruned_nodes": nodes}
 
 
+
+
+def run(client, mongo_db: Database, apply_it: bool = False,
+        report: Callable[[str], None] | None = None) -> Plan:
+    """Compare, and remove what the comparison found if that is what was asked.
+
+    One lock around both halves rather than one around each: between a plan
+    and its application the graph must not move, or the plan describes a
+    graph that is no longer there. Held here and not by the caller, the way
+    a publish holds it, so a run from a terminal and a run from the panel
+    take the same turn.
+
+    Args:
+        apply_it: False compares and reports, and is what both callers do
+            by default.
+        report: Told when the removal starts, for a run that has somewhere
+            to say it.
+
+    Raises:
+        Busy: Something else is writing the graph.
+    """
+    with held(mongo_db, GRAPH):
+        planned = plan(client, mongo_db)
+        if apply_it:
+            if report is not None:
+                report("чистка графа")
+            planned.removed = apply(client, planned)
+        return planned

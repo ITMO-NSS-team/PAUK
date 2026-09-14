@@ -44,6 +44,7 @@ from pauk.graph.overrides import (
     record_override,
     record_relationship_override,
 )
+from pauk.jobs.locks import Busy
 from pauk.jobs.worker import POLL_SECONDS as WORKER_POLL
 from pauk.jobs.worker import Worker
 from pauk.settings import Settings
@@ -283,8 +284,14 @@ def _run_prune(args, client, db: Database) -> None:
     Listing by default. The graph is what the map and the panel read, and
     a deletion nobody looked at first is the wrong way round for a step
     that exists because the two copies had drifted apart unnoticed.
+
+    The comparison and the removal are one turn under the graph lock, so
+    this cannot run while a publish is writing — see `prune.run`.
     """
-    plan = prune.plan(client, db)
+    try:
+        plan = prune.run(client, db, args.apply)
+    except Busy as error:
+        raise SystemExit(str(error)) from None
     for label, ids in sorted(plan.nodes.items()):
         print(f"{label}: {len(ids)} record(s) no row explains")
         for node_id in ids[:args.limit]:
@@ -307,9 +314,8 @@ def _run_prune(args, client, db: Database) -> None:
     if not args.apply:
         print(f"\n{plan.total()} in all; nothing removed, pass --apply to remove them")
         return
-    result = prune.apply(client, plan)
-    print(f"\nremoved {result['pruned_relationships']} link(s) "
-          f"and {result['pruned_nodes']} record(s)")
+    print(f"\nremoved {plan.removed['pruned_relationships']} link(s) "
+          f"and {plan.removed['pruned_nodes']} record(s)")
 
 
 def _run_trim(args, db: Database) -> None:
