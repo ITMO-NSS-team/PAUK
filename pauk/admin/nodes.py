@@ -23,7 +23,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from neo4j.exceptions import Neo4jError
 from pymongo.errors import PyMongoError
 
-from pauk.admin import decisions, feed
+from pauk.admin import decisions, feed, source
 from pauk.admin.deps import (
     CsrfChecked,
     CurrentUser,
@@ -330,6 +330,8 @@ def show(request: Request, label: str, node_id: str, user: CurrentUser,
         "props": props, "editable": editable, "reserved": sorted(RESERVED_FIELDS),
         "relationships": _worded(node_relationships(graph, label, node_id), label),
         "history": feed.history(db, label, node_id, limit=10),
+        "source_history": source.history(db, label, node_id),
+        "source_versions": source.count(db, label, node_id),
         "links": _links_for(label), "labels": sorted(NODE_FIELDS)})
 
 
