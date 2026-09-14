@@ -34,9 +34,12 @@ ENTITIES = {
     if filename in FILE_LABELS
 }
 
-#: Written by the store, not by the pipeline, and saying nothing about what
-#: a run decided.
-BOOKKEEPING = frozenset({"_id", "_version", "groups"})
+#: Not what a run decided about the record, only how it got there. `_id`,
+#: `groups` and `_version` are the store's; `_processing` is the pipeline's
+#: own note of which stage has run and how many times, and it changes on
+#: every pass — shown, it fills the table with "4 пол. -> 4 пол." beside
+#: every real change.
+BOOKKEEPING = frozenset({"_id", "_version", "groups", "_processing"})
 
 
 def _shown(value: Any) -> Any:

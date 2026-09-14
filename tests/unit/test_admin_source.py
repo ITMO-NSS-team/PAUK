@@ -71,6 +71,17 @@ class HistoryTest(unittest.TestCase):
         self.store.write_rows("persons", [{"id": "A2", "name_raw": "Anna"}])
         self.assertEqual(source.history(self.db, "Person", "A2")[0]["changes"], [])
 
+    def test_the_pipelines_own_notes_are_not_changes(self):
+        # `_processing` moves on every pass — which stage ran, how many
+        # attempts — and is not something the source said about the person.
+        self.db[source.REVISIONS].insert_one(
+            archived("persons", "A5", 1,
+                     {"id": "A5", "_processing": {"pdf": {"status": "completed"}}},
+                     "период-2", "2026-07-01T10:00:00"))
+        self.store.write_rows("persons", [
+            {"id": "A5", "_processing": {"pdf": {"status": "failed"}}}])
+        self.assertEqual(source.history(self.db, "Person", "A5")[0]["changes"], [])
+
     def test_a_list_is_counted_rather_than_printed(self):
         # A person's publications change on most runs. Printed whole they
         # bury the one field somebody came to look at.
