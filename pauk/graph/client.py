@@ -654,7 +654,8 @@ class Neo4jClient:
             row = session.execute_read(lambda tx: tx.run(query).single())
         return int(row["total"]) if row else 0
 
-    def list_nodes(self, label: str, fields: list[str], limit: int = 50) -> list[dict]:
+    def list_nodes(self, label: str, fields: list[str], limit: int = 50,
+                   skip: int = 0) -> list[dict]:
         """The first nodes of a label, in id order.
 
         What the panel shows before anything is typed: on a small graph it
@@ -664,15 +665,18 @@ class Neo4jClient:
             label: Node label, interpolated into Cypher — whitelist only.
             fields: Property names to return, also interpolated.
             limit: How many rows to bring back.
+            skip: How many to pass over first, for paging.
         """
         returned = ", ".join(f"n.{name} AS {name}" for name in fields)
-        text = f"MATCH (n:{label}) RETURN n.id AS id, {returned} ORDER BY id LIMIT $limit"
+        text = (f"MATCH (n:{label}) RETURN n.id AS id, {returned} "
+                f"ORDER BY id SKIP $skip LIMIT $limit")
         with self.driver.session() as session:
             rows = session.execute_read(
-                lambda tx: list(tx.run(cast(LiteralString, text), limit=limit)))
+                lambda tx: list(tx.run(cast(LiteralString, text), limit=limit, skip=skip)))
         return [dict(row) for row in rows]
 
-    def search_nodes(self, label: str, fields: list[str], query: str, limit: int = 50) -> list[dict]:
+    def search_nodes(self, label: str, fields: list[str], query: str, limit: int = 50,
+                     skip: int = 0) -> list[dict]:
         """Nodes of one label whose text matches, for the panel's search box.
 
         Case-insensitive substring match across the fields the caller
@@ -686,6 +690,7 @@ class Neo4jClient:
                 whitelist only.
             query: What the user typed.
             limit: How many rows to bring back.
+            skip: How many to pass over first, for paging.
 
         Returns:
             One dict per node: its `id` plus the searched fields.
@@ -695,12 +700,12 @@ class Neo4jClient:
         text = (
             f"MATCH (n:{label}) WHERE n.id = $exact OR {conditions} "
             f"RETURN n.id AS id, {returned}, (n.id = $exact) AS exact "
-            f"ORDER BY exact DESC, id LIMIT $limit"
+            f"ORDER BY exact DESC, id SKIP $skip LIMIT $limit"
         )
         with self.driver.session() as session:
             rows = session.execute_read(
                 lambda tx: list(tx.run(cast(LiteralString, text), needle=query.lower(),
-                                       exact=query, limit=limit)))
+                                       exact=query, limit=limit, skip=skip)))
         return [dict(row) for row in rows]
 
     def fetch_node_relationships(self, label: str, node_id: str) -> list[dict]:

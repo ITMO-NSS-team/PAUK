@@ -26,7 +26,7 @@ from tests.unit.test_mutations import FakeGraph
 class FakePanelGraph(FakeGraph):
     """FakeGraph plus the two reads the node screens need."""
 
-    def search_nodes(self, label, fields, query, limit=50):
+    def search_nodes(self, label, fields, query, limit=50, skip=0):
         needle = query.lower()
         found = []
         for (node_label, node_id), props in self.nodes.items():
@@ -39,15 +39,15 @@ class FakePanelGraph(FakeGraph):
                 row.update({name: props.get(name) for name in fields})
                 found.append(row)
         found.sort(key=lambda row: (not row["exact"], row["id"]))
-        return found[:limit]
+        return found[skip:skip + limit]
 
     def close(self):
         """The panel closes its client per request; the real one has this."""
 
-    def list_nodes(self, label, fields, limit=50):
+    def list_nodes(self, label, fields, limit=50, skip=0):
         rows = [{"id": node_id, **{name: props.get(name) for name in fields}}
                 for (node_label, node_id), props in self.nodes.items() if node_label == label]
-        return sorted(rows, key=lambda row: row["id"])[:limit]
+        return sorted(rows, key=lambda row: row["id"])[skip:skip + limit]
 
     def _by_match(self, label, match_value):
         """The node an edge points at, found the way the loader finds it.
@@ -137,13 +137,45 @@ class NodeScreenTest(unittest.TestCase):
         self.assertIn("A2", body)
         self.assertIn("Показаны 2", body)
 
-    def test_the_listing_says_when_it_is_only_the_first_page(self):
+    def fill_two_pages(self):
         from pauk.graph.mutations import SEARCH_LIMIT
         for n in range(SEARCH_LIMIT + 10):
             self.graph.nodes[("Repository", f"R{n:03}")] = {"id": f"R{n:03}", "url": f"u{n}"}
+        return SEARCH_LIMIT
+
+    def test_a_long_listing_offers_the_next_page(self):
+        # Before, it stopped at the cap and said so, and there was no way
+        # to see the rest at all.
+        self.fill_two_pages()
         self.sign_in()
         body = self.client.get("/nodes/Repository").text
-        self.assertIn(f"первые {SEARCH_LIMIT}", body)
+        self.assertIn("page=2", body)
+        self.assertIn("Страница 1", body)
+
+    def test_and_the_next_page_holds_what_the_first_one_cut(self):
+        limit = self.fill_two_pages()
+        self.sign_in()
+        body = self.client.get("/nodes/Repository", params={"page": 2}).text
+        self.assertIn(f"R{limit:03}", body)
+        self.assertIn("назад", body)
+
+    def test_the_last_page_does_not_offer_another(self):
+        self.fill_two_pages()
+        self.sign_in()
+        self.assertNotIn("page=3", self.client.get("/nodes/Repository", params={"page": 2}).text)
+
+    def test_a_value_with_nowhere_to_break_is_wrapped(self):
+        # Адрес без единого пробела переносить негде: без обёртки он
+        # вылезал за свою колонку и ложился поверх соседней.
+        long_url = "reijgerigji9ejrgoijergijerigjierjgijergijerignerngoinergnierngijreoi"
+        self.graph.add("LinkCandidate", "L1", url=long_url, host="a" * 90)
+        self.sign_in()
+        body = self.client.get("/nodes/LinkCandidate").text
+        self.assertIn(f'class="clip">{long_url}', body)
+
+    def test_a_short_listing_says_nothing_about_pages(self):
+        self.sign_in()
+        self.assertNotIn("Страница", self.client.get("/nodes/Person").text)
 
     def test_an_empty_label_says_so_rather_than_showing_a_blank_page(self):
         self.sign_in()

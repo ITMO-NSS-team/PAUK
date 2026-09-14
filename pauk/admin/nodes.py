@@ -195,16 +195,22 @@ def _parse_value(raw: str, current: object = None):
 
 @router.get("/nodes/{label}", response_class=HTMLResponse)
 def search(request: Request, label: str, user: CurrentUser, session: Session,
-           graph: Graph, q: str = ""):
+           graph: Graph, q: str = "", page: int = 1):
+    """Nodes of one label, a page at a time.
+
+    Whether there is a page after this one is asked as its own one-row
+    question. The graph has no cheap count of what a search matches, and
+    the "one row more than a page" trick does not work here: the page cap
+    lives in the mutation layer and would clip the extra row away.
+    """
     _known_label(label)
-    # The same number the template is given: otherwise the "these are the
-    # first N" line compares the row count against a different limit and
-    # never appears.
-    rows = search_nodes(graph, label, q, SEARCH_LIMIT)
+    page = max(page, 1)
+    rows = search_nodes(graph, label, q, SEARCH_LIMIT, skip=(page - 1) * SEARCH_LIMIT)
+    more = bool(rows) and bool(search_nodes(graph, label, q, 1, skip=page * SEARCH_LIMIT))
     return templates.TemplateResponse(request, "search.html", {
         "user": user, "csrf": session["csrf"], "label": label, "query": q,
-        "rows": rows, "limit": SEARCH_LIMIT, "fields": SEARCH_FIELDS[label],
-        "labels": sorted(NODE_FIELDS)})
+        "rows": rows[:SEARCH_LIMIT], "limit": SEARCH_LIMIT, "page": page, "more": more,
+        "fields": SEARCH_FIELDS[label], "labels": sorted(NODE_FIELDS)})
 
 
 @router.get("/nodes/{label}/new", response_class=HTMLResponse)

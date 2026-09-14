@@ -192,7 +192,8 @@ def read_node(client: Neo4jClient, label: str, node_id: str) -> dict:
     return props
 
 
-def search_nodes(client: Neo4jClient, label: str, query: str, limit: int = 50) -> list[dict]:
+def search_nodes(client: Neo4jClient, label: str, query: str, limit: int = 50,
+                 skip: int = 0) -> list[dict]:
     """Find nodes of one label by id or by a piece of their name.
 
     Reading, not writing — but it goes through this layer for the same
@@ -206,6 +207,9 @@ def search_nodes(client: Neo4jClient, label: str, query: str, limit: int = 50) -
         query: Text typed into the search box.
         limit: Rows to return, capped so a wide query cannot pull the
             whole graph into a page.
+        skip: Rows to pass over first. What makes the page after the first
+            one reachable: without it the list ended at the cap and there
+            was no way to see what came next.
 
     Raises:
         UnknownEntity: Unknown label.
@@ -218,8 +222,8 @@ def search_nodes(client: Neo4jClient, label: str, query: str, limit: int = 50) -
     # nothing" — on an empty graph the difference is between a blank page
     # and seeing that it is in fact empty.
     if not query:
-        return client.list_nodes(label, fields, capped)
-    return client.search_nodes(label, fields, query, capped)
+        return client.list_nodes(label, fields, capped, skip)
+    return client.search_nodes(label, fields, query, capped, skip)
 
 
 def node_relationships(client: Neo4jClient, label: str, node_id: str) -> list[dict]:
