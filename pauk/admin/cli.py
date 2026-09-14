@@ -47,6 +47,7 @@ from pauk.graph.overrides import (
 from pauk.jobs.worker import POLL_SECONDS as WORKER_POLL
 from pauk.jobs.worker import Worker
 from pauk.settings import Settings
+from pauk.storage.prepared import REVISIONS, trim_revisions
 
 logger = logging.getLogger("pauk.admin")
 
@@ -171,16 +172,15 @@ def add_parser(subparsers) -> None:
         "--limit", type=int, default=20,
         help="how many of each kind to print (default: 20)")
 
-    audit = commands.add_parser(
-        "audit", help="the change feed").add_subparsers(dest="audit_command", required=True)
-    audit_trim = audit.add_parser(
-        "trim", help="drop entries older than a given age, so the feed stops growing")
-    audit_trim.add_argument(
+    trim = commands.add_parser(
+        "trim", help="shorten the two histories that only ever grow: the change "
+                     "feed and the archive of replaced rows")
+    trim.add_argument(
         "--keep-days", type=int, default=feed.KEEP_DAYS,
         help=f"how much history to keep (default: {feed.KEEP_DAYS})")
-    audit_trim.add_argument(
+    trim.add_argument(
         "--apply", action="store_true",
-        help="delete them; without it the count is printed and nothing changes")
+        help="delete them; without it the counts are printed and nothing changes")
 
     worker = commands.add_parser(
         "worker", help="perform the scheduled runs, one at a time")
@@ -234,10 +234,10 @@ def run(args, config: Settings, db: Database | None) -> None:
         _run_user(args, db)
         return
 
-    # Same: the feed is a Mongo collection, and trimming it is not a change
-    # to the graph that anything would record.
-    if args.admin_command == "audit":
-        _run_audit(args, db)
+    # Same: both histories are Mongo collections, and shortening them is not
+    # a change to the graph that anything would record.
+    if args.admin_command == "trim":
+        _run_trim(args, db)
         return
 
     # The worker opens its own connections, per job and per step, because a
@@ -312,23 +312,29 @@ def _run_prune(args, client, db: Database) -> None:
           f"and {result['pruned_nodes']} record(s)")
 
 
-def _run_audit(args, db: Database) -> None:
-    """Keep the change feed from growing for ever.
+def _run_trim(args, db: Database) -> None:
+    """Keep the two growing histories from growing for ever.
 
-    Counting by default. A cut of the journal is not something to discover
+    Both at once because they grow for the same reason and are shortened on
+    the same schedule: the change feed records what happened to the graph,
+    the revision archive what a prepared row said before a run replaced it.
+
+    Counting by default. A cut of either is not something to discover
     afterwards, so the size of it is printed first and made only when asked
     for.
     """
     cutoff = feed.older_than(args.keep_days)
-    result = feed.trim(db, cutoff, apply=args.apply)
-    kept = feed.count(db)
-    matched = result["audit_matched"]
+    entries = feed.trim(db, cutoff, apply=args.apply)
+    versions = trim_revisions(db, cutoff, apply=args.apply)
     if not args.apply:
-        print(f"{matched} entr(y/ies) older than {args.keep_days} days "
-              f"(before {cutoff[:10]}), out of {kept} in all")
+        print(f"older than {args.keep_days} days (before {cutoff[:10]}):")
+        print(f"    change feed:      {entries['audit_matched']} of {feed.count(db)}")
+        print(f"    replaced rows:    {versions['revisions_matched']} of "
+              f"{db[REVISIONS].count_documents({})}")
         print("nothing removed; pass --apply to remove them")
         return
-    print(f"removed {result['audit_removed']} entr(y/ies), {kept} left")
+    print(f"removed {entries['audit_removed']} feed entr(y/ies) "
+          f"and {versions['revisions_removed']} archived version(s)")
 
 
 def _run_user(args, db: Database) -> None:

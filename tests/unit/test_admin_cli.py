@@ -15,6 +15,7 @@ from pauk.graph.overrides import (
     tombstoned_relationships,
 )
 from pauk.settings import Settings
+from pauk.storage.prepared import REVISIONS
 from tests.unit.test_mutations import FakeGraph
 
 
@@ -344,11 +345,17 @@ class DeleteSnapshotTest(unittest.TestCase):
         self.assertIsNone(self.db[COLLECTION].find_one({"op": "delete"}))
 
 
-class AuditTrimCommandTest(unittest.TestCase):
-    """`pauk admin audit trim`, the only thing that shortens the feed."""
+class TrimCommandTest(unittest.TestCase):
+    """`pauk admin trim`, the only thing that shortens either history."""
 
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
+        self.db[REVISIONS].insert_many([
+            {"entity_type": "persons", "entity_id": "OLD", "version": 1,
+             "snapshot": {}, "replaced_at": "2024-01-01T10:00:00"},
+            {"entity_type": "persons", "entity_id": "RECENT", "version": 1,
+             "snapshot": {}, "replaced_at": "2026-09-01T10:00:00"},
+        ])
         self.db[feed.COLLECTION].insert_many([
             {"timestamp": "2024-01-01T10:00:00", "actor": "pipeline", "source": "publish",
              "operation": "upsert_nodes", "entity_type": "Person", "entity_id": "OLD",
@@ -361,19 +368,29 @@ class AuditTrimCommandTest(unittest.TestCase):
     def run_trim(self, *argv):
         printed = []
         with patch("builtins.print", lambda *words: printed.append(" ".join(map(str, words)))):
-            admin_cli.run(parse("audit", "trim", *argv), Settings(), self.db)
+            admin_cli.run(parse("trim", *argv), Settings(), self.db)
         return "\n".join(printed)
+
+    def versions(self):
+        return sorted(row["entity_id"] for row in self.db[REVISIONS].find())
 
     def test_it_counts_without_being_asked_to_delete(self):
         said = self.run_trim("--keep-days", "30")
         self.assertIn("--apply", said)
         self.assertEqual(feed.count(self.db), 2)
+        self.assertEqual(self.versions(), ["OLD", "RECENT"])
 
     def test_it_deletes_when_asked(self):
         self.run_trim("--keep-days", "30", "--apply")
         self.assertEqual(feed.count(self.db), 1)
         (left,) = feed.entries(self.db)
         self.assertEqual(left["entity_id"], "RECENT")
+
+    def test_it_shortens_the_archive_of_replaced_rows_too(self):
+        # Both histories grow for the same reason and are cut on the same
+        # schedule; two commands would mean remembering the second one.
+        self.run_trim("--keep-days", "30", "--apply")
+        self.assertEqual(self.versions(), ["RECENT"])
 
     def test_it_never_opens_a_graph_connection(self):
         # The feed is a Mongo collection. Reaching for Neo4j to trim it

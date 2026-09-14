@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
 from typing import TypeVar
@@ -7,7 +8,42 @@ from typing import TypeVar
 from pydantic import BaseModel
 from pymongo.database import Database
 
+logger = logging.getLogger(__name__)
+
 M = TypeVar("M", bound=BaseModel)
+
+#: Where a replaced row's previous version is filed. One collection for
+#: every entity, like `raw`.
+REVISIONS = "revisions"
+
+
+def trim_revisions(db: Database, before: str, apply: bool = False) -> dict[str, int]:
+    """Drop archived versions older than a cutoff.
+
+    Every real change to a prepared row files the whole previous document
+    here, and nothing has ever removed one. Two thirds of a working
+    database can end up being versions of persons nobody asks about.
+
+    The archive is worth keeping — it is the only record of what a row said
+    before a run changed it — but it is worth keeping for as long as
+    somebody might ask, not for ever.
+
+    Args:
+        before: ISO timestamp. Versions replaced earlier go. Compared as
+            text, which is the same as by time for ISO 8601 and is why
+            `replaced_at` is written that way.
+        apply: False counts what would go and changes nothing.
+
+    Returns:
+        How many versions matched and how many were removed.
+    """
+    query = {"replaced_at": {"$lt": before}}
+    matched = db[REVISIONS].count_documents(query)
+    if not apply:
+        return {"revisions_matched": matched, "revisions_removed": 0}
+    removed = db[REVISIONS].delete_many(query).deleted_count
+    logger.info("revisions: %d version(s) replaced before %s removed", removed, before)
+    return {"revisions_matched": matched, "revisions_removed": removed}
 
 
 class PreparedStore:
@@ -101,7 +137,7 @@ class PreparedStore:
         """
         key_field = self._key_field(entity)
         collection = self._collection(entity)
-        revisions = self.db.revisions
+        revisions = self.db[REVISIONS]
         written_ids = []
         for row in rows:
             row_id = row[key_field]
@@ -129,7 +165,7 @@ class PreparedStore:
         write_models(), it never removes the group marker from untouched rows.
         """
         collection = self._collection(entity)
-        revisions = self.db.revisions
+        revisions = self.db[REVISIONS]
         for model in rows:
             self._upsert_row(entity, model.model_dump(mode="json", by_alias=True), collection, revisions)
 
