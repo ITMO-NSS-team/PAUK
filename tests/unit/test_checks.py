@@ -14,6 +14,7 @@ import unittest
 
 from pauk.graph.mutations import NODE_FIELDS, RELATIONSHIPS
 from pauk.gui.checks import BY_ID, CHECKS, GROUP_EN
+from pauk.gui.generate_stats import QUERIES
 
 #: Labels and relationship types as Cypher writes them: after a colon,
 #: inside a node pattern `(a:Label)` or a relationship one `[r:TYPE]`.
@@ -45,6 +46,14 @@ class NamesExistTest(unittest.TestCase):
                     unknown = names_in(cypher) - self.known
                     self.assertEqual(unknown, set())
 
+    def test_the_counts_beside_the_checks_ask_about_something_real_too(self):
+        # The same rot reached the tiles on the map's tab: "ITMO staff: 0"
+        # sat there for as long as the checks did, and the top-departments
+        # list was simply empty.
+        for cypher in QUERIES:
+            with self.subTest(query=cypher[:40]):
+                self.assertEqual(names_in(cypher) - self.known, set())
+
     def test_the_guard_would_have_caught_the_label_that_went_away(self):
         # The bug this test exists for: `Itmo` was a label until the loader
         # moved the distinction onto a property, and the checks kept asking
@@ -63,6 +72,31 @@ class NamesExistTest(unittest.TestCase):
         # honest query.
         self.assertEqual(names_in("MATCH (e:Person {id: eid}) WHERE e.name_ru IS NULL RETURN e"),
                          {"Person"})
+
+
+class PrecedenceTest(unittest.TestCase):
+    """`AND` binds tighter than `OR`, and that has already bitten once.
+
+    Every check about staff is scoped with `p.is_itmo AND ...`. Where the
+    condition it scopes contains an `OR`, the scope applies to the first
+    half alone — `(is_itmo AND missing) OR empty` counts external authors
+    too — and the check goes on looking right while answering a different
+    question.
+    """
+
+    def test_an_or_under_a_scope_is_bracketed(self):
+        for check in CHECKS:
+            for part, cypher in (("count", check.count), ("of", check.of),
+                                 ("examples", check.examples)):
+                if not cypher or "is_itmo AND" not in cypher:
+                    continue
+                scoped = cypher.split("is_itmo AND", 1)[1]
+                # Only the condition the scope introduces matters; an OR in
+                # a later clause of the query is its own business.
+                condition = scoped.split("RETURN")[0].split("OPTIONAL MATCH")[0]
+                with self.subTest(check=check.id, part=part):
+                    if " OR " in condition:
+                        self.assertIn("(", condition.split(" OR ")[0])
 
 
 class ShapeTest(unittest.TestCase):
