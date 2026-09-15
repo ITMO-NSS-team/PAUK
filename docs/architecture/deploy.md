@@ -3,7 +3,7 @@
 **Что здесь:** как карта разворачивается на сервере лаборатории и как
 подключается внешний PDF-Crawler-Service.
 
-**Какие файлы задействует:** `scripts/deploy.sh`, `.env`/`.env.example`
+**Какие файлы задействует:** `scripts/deploy.sh`, `scripts/deploy_new_gui.sh`, `.env`/`.env.example`
 (`PAUK_PDF_CRAWLER_URL`).
 
 Карта крутится на `einsteinium.nsslab` (`ssh asteb@einsteinium.nsslab`,
@@ -73,6 +73,36 @@ docker run -d --name pauk-mongo -p 27017:27017 \
 заново, не гоняет `pauk cache export`, не публикует в Neo4j. Это только
 обновление кода и перезапуск процесса раздачи уже сгенерированной
 статики — генерация карты остаётся ручным шагом до/после деплоя.
+
+## `scripts/deploy_new_gui.sh` — новый GUI
+
+`new_gui` крутится на том же сервере рядом со старой картой, в своей
+`screen`-сессии `pauk-new-gui` на порту **8502**: `http://einsteinium.nsslab:8502`.
+Старую сессию `pauk` (8501) скрипт не трогает.
+
+```bash
+./scripts/deploy_new_gui.sh
+```
+
+В отличие от `deploy.sh`, на сервере ничего не собирается и `git pull` не
+делается — сайт статический, собирается локально с текущей ветки:
+
+1. Если есть незакоммиченные изменения — предупреждение и подтверждение
+   (`y/N`): они попадут в сборку.
+2. Проверка, что в `data/gui/private/` есть все четыре JSON (`graph-data`,
+   `authors-detail`, `repos-detail`, `pubs-detail`). Сами данные скрипт не
+   генерирует — это `new_generate/graph_builder.py` заранее.
+3. `npm run build` в `new_gui/` — Vite копирует данные из `data/gui/private/`
+   в `new_gui/dist/`, поэтому на сервер уходит **приватный** вариант, с
+   личными полями авторов. Доступ к серверу — только через VPN лаборатории.
+4. `ping` и `ssh`-проверка, как в `deploy.sh`.
+5. `rsync -avz --delete new_gui/dist/ → ~/pauk-new-gui/`.
+6. Перезапуск `screen -dmS pauk-new-gui python3 -m http.server 8502` с
+   проверкой, что сессия поднялась.
+
+`python3 -m http.server` не сжимает ответы: первая загрузка страницы —
+около 36 МБ JSON. Повторные заходы дешевле — сервер отвечает `304` на
+неизменённые файлы.
 
 ## PDF-Crawler-Service — не часть этого репозитория
 
