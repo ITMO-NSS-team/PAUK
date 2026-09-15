@@ -274,9 +274,12 @@ describe("mountPanel", () => {
     const items = [...(dt?.nextElementSibling?.querySelectorAll("li") ?? [])];
     expect(items.map((li) => li.textContent)).toEqual([
       "Sample University 2021–2024 · OpenAlex, ORCID",
-      "Other Institute (OpenAlex)",
+      "Other Institute OpenAlex",
     ]);
     expect(items[0]?.querySelector("a")?.getAttribute("href")).toBe("https://ror.org/0sample01");
+    // Без ROR — не ссылка, но источник так же отдельным серым суффиксом, а не в скобках.
+    expect(items[1]?.querySelector("a")).toBeNull();
+    expect(items[1]?.querySelector(".panel-list__meta")?.textContent).toBe("OpenAlex");
   });
 
   it("публикации автора — по одной на строку, с позицией автора и отметкой «автор для переписки»", async () => {

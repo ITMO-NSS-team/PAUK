@@ -61,7 +61,13 @@ interface PanelLink {
  */
 interface PanelList {
   kind: "list";
-  items: (string | PanelLink | PanelEntityRef)[];
+  items: (string | PanelText | PanelLink | PanelEntityRef)[];
+}
+/** Некликабельный пункт {@link PanelList} с серым суффиксом — оформлен так же, как {@link PanelLink}, только без ссылки. */
+interface PanelText {
+  kind: "text";
+  text: string;
+  meta?: string;
 }
 /**
  * Кликабельная ссылка на ДРУГУЮ сущность ЭТОГО ЖЕ графа (не внешний URL) —
@@ -268,7 +274,7 @@ const AFFILIATION_SOURCE_LABELS: Record<string, string> = { openalex: "OpenAlex"
  * //  {name: "ITMO", ror: "04txgxn49", years: [2019], source: "orcid"}]
  * // -> [{ kind: "link", href: "https://ror.org/04txgxn49", text: "ITMO", meta: "2019–2024 · OpenAlex, ORCID" }]
  */
-function affiliationItems(affiliations: Affiliation[]): (string | PanelLink)[] {
+function affiliationItems(affiliations: Affiliation[]): (PanelLink | PanelText)[] {
   const byName = new Map<string, { ror: string; years: number[]; sources: Set<string> }>();
   for (const aff of affiliations) {
     const entry = byName.get(aff.name) ?? { ror: "", years: [], sources: new Set<string>() };
@@ -287,14 +293,12 @@ function affiliationItems(affiliations: Affiliation[]): (string | PanelLink)[] {
       sources: [...sources],
     }))
     .sort((a, b) => (b.last ?? -Infinity) - (a.last ?? -Infinity))
-    .map(({ name, ror, first, last, sources }): string | PanelLink => {
+    .map(({ name, ror, first, last, sources }): PanelLink | PanelText => {
       const yearsText = first === null ? "" : first === last ? String(first) : `${first}–${last}`;
       const meta = [yearsText, sources.join(", ")].filter(Boolean).join(" · ");
       return ror
         ? { kind: "link", href: `https://ror.org/${encodeURIComponent(ror)}`, text: name, meta }
-        : meta
-          ? `${name} (${meta})`
-          : name;
+        : { kind: "text", text: name, meta };
     });
 }
 
@@ -1184,7 +1188,8 @@ function buildCard(options: PanelCardOptions): HTMLElement {
       li.textContent = item;
       return li;
     }
-    li.appendChild(item.kind === "link" ? linkElement(item) : refElement(item));
+    if (item.kind === "text") li.append(item.text);
+    else li.appendChild(item.kind === "link" ? linkElement(item) : refElement(item));
     if (item.meta) {
       const meta = document.createElement("span");
       meta.className = "panel-list__meta";
