@@ -395,12 +395,12 @@ function applyGraphStyling(
   }
 
   renderer.setSetting("nodeReducer", (nodeKey, data): Partial<NodeDisplayData> => {
-    // Якорь департамента — невидимая служебная точка: не подписывается и не
-    // подсвечивается даже при выборе департамента (названия департаментов
-    // рисуют регионы, map/regions.ts), иначе выбор выглядел бы как узел с
-    // названием департамента.
+    // Якорь департамента — служебная точка: не рисуется вовсе (hidden), не
+    // подписывается и не подсвечивается даже при выборе департамента (названия
+    // рисуют регионы, map/regions.ts). Координаты скрытого узла Sigma всё равно
+    // считает — камера по-прежнему может к нему сдвинуться (flyToSelection).
     if (parseDeptNodeKey(nodeKey) !== null) {
-      return { ...data, label: "", forceLabel: false, highlighted: false };
+      return { ...data, hidden: true, label: "", forceLabel: false, highlighted: false };
     }
     const res: Partial<NodeDisplayData> = { ...data };
     const selection = store.get().selection;

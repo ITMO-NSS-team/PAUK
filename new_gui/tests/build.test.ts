@@ -450,7 +450,7 @@ describe("populateGraph — якоря подписей департаменто
 });
 
 describe("applyGraphStyling (через mountReactiveGraph) — якоря департаментов", () => {
-  it("якорь департамента никогда не подписывается и не подсвечивается — ни на любом зуме, ни при выборе самого департамента", async () => {
+  it("якорь департамента скрыт, не подписывается и не подсвечивается — ни на любом зуме, ни при выборе самого департамента", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0, dept: 0 });
@@ -464,6 +464,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — якоря де�
     for (const ratio of [0.1, 1, 2]) {
       fireCameraUpdated(ratio);
       expect(nodeReducer(deptNodeKey(0), { ...NODE_BASE, size: 0 })).toMatchObject({
+        hidden: true,
         label: "",
         forceLabel: false,
         highlighted: false,
