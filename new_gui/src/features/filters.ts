@@ -209,6 +209,32 @@ export function mountFilters(store: Store<AppState>): () => void {
       );
     }
 
+    // Регионы департаментов (map/regions.ts) — после фильтров вкладки:
+    // переключатель свой у каждой вкладки, пороги общие.
+    rows.push(
+      buildCheckboxRow({
+        label: t("filter.showRegions", lang),
+        checked: filters.showRegions[state.tab],
+        onChange: (checked) =>
+          setFilter({ showRegions: { ...store.get().filters.showRegions, [state.tab]: checked } }),
+      }),
+      buildFilterRow({
+        label: t("filter.regionZoom", lang),
+        min: FILTER_CONFIG.regionZoom.min,
+        max: FILTER_CONFIG.regionZoom.max,
+        step: FILTER_CONFIG.regionZoom.step,
+        value: filters.regionZoomThreshold,
+        onChange: (value) => setFilter({ regionZoomThreshold: value }),
+      }),
+      buildFilterRow({
+        label: t("filter.regionMinNodes", lang),
+        min: FILTER_CONFIG.regionMinNodes.min,
+        max: FILTER_CONFIG.regionMinNodes.max,
+        value: filters.regionMinNodes,
+        onChange: (value) => setFilter({ regionMinNodes: value }),
+      }),
+    );
+
     // Раньше скрывался, если для вкладки не было ни одного регулятора
     // (у "Репозиториев" не было своих) — с общим для всех вкладок
     // регулятором зума рёбер выше строк всегда хотя бы одна, панель всегда видна.

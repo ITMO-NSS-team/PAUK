@@ -17,7 +17,7 @@ import type { AuthorNode, Edge, GraphData, PubDetail, PubNode, RepoNode } from "
 import { MAP_CONFIG, NO_DEPT_COLOR } from "../core/config";
 import { nodeLabel } from "../core/data";
 import { localize, type Lang } from "../core/i18n";
-import type { AppState, Selection, Store, TabId } from "../core/state";
+import { isRegionMode, type AppState, type Selection, type Store, type TabId } from "../core/state";
 
 type GraphNode = AuthorNode | RepoNode | PubNode;
 type Filters = AppState["filters"];
@@ -88,7 +88,7 @@ function truncateLabel(label: string, maxLength: number): string {
  *   (например, на тестовых фикстурах) — тогда фильтр "без департамента"
  *   просто ничего не отсекает, а не падает.
  */
-function noDeptId(data: GraphData): number | null {
+export function noDeptId(data: GraphData): number | null {
   return data.departments.find((dept) => dept.color === NO_DEPT_COLOR)?.id ?? null;
 }
 
@@ -107,7 +107,7 @@ function noDeptId(data: GraphData): number | null {
  * @param filters - текущие пороги фильтров.
  * @returns Список узлов, которые нужно нарисовать для этой вкладки.
  */
-function tabGraphNodes(data: GraphData, tab: TabId, filters: Filters): GraphNode[] {
+export function tabGraphNodes(data: GraphData, tab: TabId, filters: Filters): GraphNode[] {
   const excludedDept = noDeptId(data);
   switch (tab) {
     case 1:
@@ -180,6 +180,7 @@ export function populateGraph(
     graph.addNode(node.key, {
       x: node.gx,
       y: node.gy,
+      dept: node.dept,
       size: MAP_CONFIG.node.radius,
       color: deptColorById.get(node.dept) ?? MAP_CONFIG.node.fallbackColor,
       label: truncateLabel(nodeLabel(node, lang, pubDetails), MAP_CONFIG.node.labelMaxLength),
@@ -291,14 +292,10 @@ function addDeptLabelAnchors(
  * hoveredNode/cameraRatio через возвращённые setter'ы).
  *
  * Три заботы сразу:
- * 1. **Подписи департаментов vs подписи узлов** — пока `cameraRatio` больше
- *    {@link MAP_CONFIG.region.ratioThreshold}, узлы-якоря департаментов
- *    (см. {@link deptNodeKey}) получают `forceLabel: true` (их размер — 0,
- *    без forceLabel подпись никогда не прошла бы порог размера), а обычные
- *    узлы теряют свою подпись — кроме выбранного, тот виден на любом зуме.
- *    Когда камера приближена — наоборот: обычные подписи по
- *    {@link MAP_CONFIG.node.labelVisibleAtSize}, департаменты не форсируются
- *    и остаются без подписи (у них и так size: 0).
+ * 1. **Якоря департаментов** (см. {@link deptNodeKey}) никогда не
+ *    подписываются и не подсвечиваются — названия департаментов рисуют
+ *    регионы (map/regions.ts). Выбор департамента оставляет яркими узлы
+ *    этого департамента и притушает остальные.
  * 2. **Видимость рёбер** — реальные рёбра прячутся (`hidden: true`), когда
  *    `cameraRatio` больше пользовательского порога
  *    `store.get().filters.edgeZoomThreshold` (features/filters.ts — на
@@ -348,15 +345,23 @@ function applyGraphStyling(
   let hoveredNode: string | null = null;
   let cameraRatio = 1;
 
-  function showingRegionLabels(): boolean {
-    return cameraRatio > MAP_CONFIG.region.ratioThreshold;
-  }
-
   function selectionFocusKey(): string | null {
     const selection = store.get().selection;
-    if (selection?.kind === "node") return selection.key;
-    if (selection?.kind === "dept") return deptNodeKey(selection.id);
-    return null;
+    return selection?.kind === "node" ? selection.key : null;
+  }
+
+  /** Департамент выбора (клик по региону или результат поиска), иначе `null`. */
+  function selectedDept(): number | null {
+    const selection = store.get().selection;
+    return selection?.kind === "dept" ? selection.id : null;
+  }
+
+  /** Узел принадлежит выбранному департаменту — атрибут `dept` пишет {@link populateGraph}. */
+  function inSelectedDept(nodeKey: string): boolean {
+    const dept = selectedDept();
+    return (
+      dept !== null && graph.hasNode(nodeKey) && graph.getNodeAttribute(nodeKey, "dept") === dept
+    );
   }
 
   /**
@@ -390,12 +395,16 @@ function applyGraphStyling(
   }
 
   renderer.setSetting("nodeReducer", (nodeKey, data): Partial<NodeDisplayData> => {
-    const isRegion = parseDeptNodeKey(nodeKey) !== null;
+    // Якорь департамента — невидимая служебная точка: не подписывается и не
+    // подсвечивается даже при выборе департамента (названия департаментов
+    // рисуют регионы, map/regions.ts), иначе выбор выглядел бы как узел с
+    // названием департамента.
+    if (parseDeptNodeKey(nodeKey) !== null) {
+      return { ...data, label: "", forceLabel: false, highlighted: false };
+    }
     const res: Partial<NodeDisplayData> = { ...data };
     const selection = store.get().selection;
-    const isSelected =
-      (selection?.kind === "node" && selection.key === nodeKey) ||
-      (selection?.kind === "dept" && deptNodeKey(selection.id) === nodeKey);
+    const isSelected = selection?.kind === "node" && selection.key === nodeKey;
     // Узел — один из двух концов ВЫБРАННОГО (кликом) ребра — подсвечивается
     // так же, как сосед выбора узла: не тускнеет, подпись форсирована, но
     // размер не растёт и highlighted не ставится — это два конца одного
@@ -406,21 +415,9 @@ function applyGraphStyling(
     const edgeEndpoints = selectionEdgeEndpoints();
     const isSelectedEdgeEndpoint = edgeEndpoints !== null && edgeEndpoints.includes(nodeKey);
 
-    if (isRegion) {
-      res.forceLabel = showingRegionLabels();
-    } else if (showingRegionLabels() && !isSelected) {
-      // Пока показываются имена департаментов, обычные подписи не рисуются
-      // вовсе (кроме выбранного узла — он виден на любом зуме) — иначе оба
-      // вида подписей накладывались бы друг на друга на сильном отдалении.
-      res.label = "";
-    }
-
     if (isSelected) {
       res.highlighted = true;
-      // Только у реальных узлов — у якоря департамента size всегда 0,
-      // фиксированная абсолютная radiusSelected сделала бы его видимым
-      // кружком там, где его никогда не было.
-      if (!isRegion) res.size = MAP_CONFIG.node.radiusSelected;
+      res.size = MAP_CONFIG.node.radiusSelected;
     }
 
     // Выбор и наведение — два НЕЗАВИСИМЫХ источника фокуса (см. развёрнутый
@@ -448,7 +445,11 @@ function applyGraphStyling(
     // узла, не являющегося одним из двух концов, он всегда false — если бы
     // anyFocusActive считался через него, третьи узлы при выбранном ребре
     // никогда бы не тускнели вообще).
-    const anyFocusActive = selKey !== null || hoveredNode !== null || selection?.kind === "edge";
+    const anyFocusActive =
+      selKey !== null ||
+      hoveredNode !== null ||
+      selection?.kind === "edge" ||
+      selection?.kind === "dept";
 
     if (!isSelected && anyFocusActive) {
       if (
@@ -456,7 +457,8 @@ function applyGraphStyling(
         isHoveredNode ||
         isNeighborOfHover ||
         isSelectedEdgeEndpoint ||
-        isNeighborOfEdgeSelection
+        isNeighborOfEdgeSelection ||
+        inSelectedDept(nodeKey)
       ) {
         // Крупнее — только сам выбор УЗЛА (radiusSelected выше), ни
         // наведённый узел, ни чьи-либо соседи, ни концы выбранного ребра
@@ -466,9 +468,8 @@ function applyGraphStyling(
         // быть видно сразу после клика, а не только если размер узла сам по
         // себе перевалил порог видимости подписи. У соседей НАВЕДЕНИЯ подпись
         // не форсируем — не просили, и на карте с тысячами узлов это была бы
-        // лишняя "каша" подписей при простом движении мыши. У якорей департаментов
-        // (isRegion) подписи и так решает showingRegionLabels() выше.
-        if (!isRegion && (isNeighborOfSelection || isSelectedEdgeEndpoint)) res.forceLabel = true;
+        // лишняя "каша" подписей при простом движении мыши.
+        if (isNeighborOfSelection || isSelectedEdgeEndpoint) res.forceLabel = true;
       } else {
         res.color = MAP_CONFIG.node.dimColor;
         res.label = "";
@@ -513,8 +514,16 @@ function applyGraphStyling(
     const touchesEdgeSelectionEndpoint =
       edgeEndpoints !== null && (edgeEndpoints.includes(s) || edgeEndpoints.includes(t));
     const touchesHover = hoveredNode !== null && (s === hoveredNode || t === hoveredNode);
-    const anyFocusActive = selKey !== null || hoveredNode !== null || edgeEndpoints !== null;
-    if (anyFocusActive && !touchesSelection && !touchesEdgeSelectionEndpoint && !touchesHover) {
+    const touchesSelectedDept = inSelectedDept(s) || inSelectedDept(t);
+    const anyFocusActive =
+      selKey !== null || hoveredNode !== null || edgeEndpoints !== null || selectedDept() !== null;
+    if (
+      anyFocusActive &&
+      !touchesSelection &&
+      !touchesEdgeSelectionEndpoint &&
+      !touchesHover &&
+      !touchesSelectedDept
+    ) {
       return { ...data, hidden: true };
     }
 
@@ -530,6 +539,8 @@ function applyGraphStyling(
     setCameraRatio(ratio) {
       if (cameraRatio === ratio) return;
       cameraRatio = ratio;
+      // Отдалились в режим регионов с курсором на узле — снять подсветку узла.
+      if (isRegionMode(store.get(), ratio)) hoveredNode = null;
       renderer.refresh();
     },
   };
@@ -610,12 +621,16 @@ function flyToSelection(renderer: Sigma, selection: Selection): void {
   const nodeData = renderer.getNodeDisplayData(key);
   if (!nodeData) return;
 
-  renderer
-    .getCamera()
-    .animate(
-      { x: nodeData.x, y: nodeData.y, ratio: MAP_CONFIG.camera.focusRatio },
-      { duration: MAP_CONFIG.camera.focusDuration, easing: "quadraticInOut" },
-    );
+  // Департамент — только сдвиг к его якорю без приближения: вплотную регионы
+  // пропадают (map/regions.ts), а смотреть на департамент нужно именно на них.
+  const target =
+    selection.kind === "node"
+      ? { x: nodeData.x, y: nodeData.y, ratio: MAP_CONFIG.camera.focusRatio }
+      : { x: nodeData.x, y: nodeData.y };
+  renderer.getCamera().animate(target, {
+    duration: MAP_CONFIG.camera.focusDuration,
+    easing: "quadraticInOut",
+  });
 }
 
 /**
@@ -655,6 +670,8 @@ export function mountReactiveGraph(
   // что подсвечивать (как рисовать). Разные слушатели одного и того же
   // события у Sigma не конфликтуют между собой.
   function onEnterNode({ node }: { node: string }): void {
+    // В режиме регионов узлы не реагируют на мышь — подсвечивается регион (map/regions.ts).
+    if (isRegionMode(store.get(), renderer.getCamera().getState().ratio)) return;
     setHoveredNode(node);
   }
   function onLeaveNode(): void {
@@ -736,9 +753,8 @@ export function mountReactiveGraph(
 /**
  * Небольшой отладочный индикатор текущего `camera.ratio` поверх карты
  * (нижний левый угол `#map`, не всего viewport — иначе попадал бы в область
- * сайдбара) — инструмент для подбора {@link MAP_CONFIG.region.ratioThreshold},
- * {@link MAP_CONFIG.node.labelVisibleAtSize} и (пользовательского теперь)
- * порога {@link AppState.filters.edgeZoomThreshold} на глаз, не постоянный
+ * сайдбара) — инструмент для подбора {@link MAP_CONFIG.node.labelVisibleAtSize}
+ * и порогов зума рёбер/регионов на глаз, не постоянный
  * элемент интерфейса. Создаёт DOM-элемент сам, а не
  * через разметку в `index.html` — убрать индикатор после калибровки можно
  * одной строкой в `app/main.ts`, без правки вёрстки.

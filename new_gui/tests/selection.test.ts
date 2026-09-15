@@ -10,7 +10,17 @@ function initialState(): AppState {
     tab: 1,
     lang: "ru",
     selection: null,
-    filters: { minCoauth: 1, minSharedAuthors: 1, yearMax: 2026, showNoDeptAuthors: true, showNoDeptPubs: true, edgeZoomThreshold: 0.4 },
+    filters: {
+      minCoauth: 1,
+      minSharedAuthors: 1,
+      yearMax: 2026,
+      showNoDeptAuthors: true,
+      showNoDeptPubs: true,
+      edgeZoomThreshold: 0.4,
+      showRegions: { 1: false, 2: false, 3: false },
+      regionZoomThreshold: 0.25,
+      regionMinNodes: 10,
+    },
   };
 }
 
@@ -21,15 +31,24 @@ function initialState(): AppState {
  * сохранённый колбэк напрямую вместо настоящего клика мышью. Настоящий
  * Sigma в jsdom не поднять (нужен WebGL-канвас).
  */
-function fakeRenderer(graph: Graph): { renderer: Sigma; fire: (event: string, payload?: unknown) => void } {
+function fakeRenderer(
+  graph: Graph,
+  ratio = 1,
+): {
+  renderer: Sigma;
+  container: { style: { cursor?: string } };
+  fire: (event: string, payload?: unknown) => void;
+} {
   const handlers = new Map<string, (payload?: unknown) => void>();
+  const container: { style: { cursor?: string } } = { style: {} };
   const renderer = {
     getGraph: () => graph,
-    getContainer: () => ({ style: {} }) as unknown as HTMLElement,
+    getContainer: () => container as unknown as HTMLElement,
+    getCamera: () => ({ getState: () => ({ ratio }) }),
     on: (event: string, cb: (payload?: unknown) => void) => handlers.set(event, cb),
     off: vi.fn(),
   } as unknown as Sigma;
-  return { renderer, fire: (event, payload) => handlers.get(event)?.(payload) };
+  return { renderer, container, fire: (event, payload) => handlers.get(event)?.(payload) };
 }
 
 describe("mountSelection", () => {
@@ -60,12 +79,73 @@ describe("mountSelection", () => {
 
   it("клик по пустому месту (clickStage) снимает выбор", () => {
     const graph = new Graph();
-    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "A1" } });
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
     const { renderer, fire } = fakeRenderer(graph);
 
     mountSelection(renderer, store);
-    fire("clickStage");
+    fire("clickStage", { event: { x: 10, y: 20 } });
 
     expect(store.get().selection).toBeNull();
+  });
+
+  it("клик по пустому месту внутри видимого региона выбирает его департамент", () => {
+    const graph = new Graph();
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+    const { renderer, fire } = fakeRenderer(graph);
+    const deptAtViewport = vi.fn((point: { x: number; y: number }) => (point.x < 50 ? 7 : null));
+
+    mountSelection(renderer, store, deptAtViewport);
+
+    fire("clickStage", { event: { x: 10, y: 20 } });
+    expect(deptAtViewport).toHaveBeenCalledWith({ x: 10, y: 20 });
+    expect(store.get().selection).toEqual({ kind: "dept", id: 7 });
+
+    fire("clickStage", { event: { x: 90, y: 20 } }); // вне регионов — выбор снимается, как раньше
+    expect(store.get().selection).toBeNull();
+  });
+  it("в режиме регионов (регионы включены, камера дальше порога) клик по узлу или ребру выбирает регион под курсором, а не узел", () => {
+    const graph = new Graph();
+    graph.addNode("A1");
+    graph.addNode("A2");
+    graph.addEdge("A1", "A2", { weight: 1 });
+    const state = initialState();
+    const store = new Store<AppState>({
+      ...state,
+      filters: { ...state.filters, showRegions: { 1: true, 2: false, 3: true } },
+    });
+    const { renderer, container, fire } = fakeRenderer(graph, 1); // ratio 1 > regionZoomThreshold 0.25
+
+    mountSelection(renderer, store, () => 4);
+
+    fire("clickNode", { node: "A1", event: { x: 1, y: 1 } });
+    expect(store.get().selection).toEqual({ kind: "dept", id: 4 });
+
+    fire("clickEdge", { edge: graph.edges()[0], event: { x: 1, y: 1 } });
+    expect(store.get().selection).toEqual({ kind: "dept", id: 4 });
+
+    fire("enterNode", { node: "A1" }); // курсором в режиме регионов управляют регионы
+    expect(container.style.cursor).toBeUndefined();
+  });
+
+  it("ближе порога (режим узлов) клик по узлу выбирает узел, даже если регионы включены", () => {
+    const graph = new Graph();
+    graph.addNode("A1");
+    const state = initialState();
+    const store = new Store<AppState>({
+      ...state,
+      filters: { ...state.filters, showRegions: { 1: true, 2: false, 3: true } },
+    });
+    const { renderer, fire } = fakeRenderer(graph, 0.1);
+
+    mountSelection(renderer, store, () => 4);
+    fire("clickNode", { node: "A1", event: { x: 1, y: 1 } });
+
+    expect(store.get().selection).toEqual({ kind: "node", key: "A1" });
   });
 });

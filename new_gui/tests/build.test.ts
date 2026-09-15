@@ -25,6 +25,9 @@ const NO_FILTER = {
   showNoDeptAuthors: true,
   showNoDeptPubs: true,
   edgeZoomThreshold: 10,
+  showRegions: { 1: false, 2: false, 3: false },
+  regionZoomThreshold: 0.25,
+  regionMinNodes: 10,
 };
 // Большинство тестов здесь не про названия публикаций — пустая карта
 // оставляет nodeLabel() на старом поведении (заглушка — ключ публикации).
@@ -446,53 +449,27 @@ describe("populateGraph — якоря подписей департаменто
   });
 });
 
-describe("applyGraphStyling (через mountReactiveGraph) — подписи департаментов vs узлов по зуму", () => {
-  it("далеко (ratio выше порога): якорь департамента получает forceLabel, обычный узел теряет подпись", async () => {
+describe("applyGraphStyling (через mountReactiveGraph) — якоря департаментов", () => {
+  it("якорь департамента никогда не подписывается и не подсвечивается — ни на любом зуме, ни при выборе самого департамента", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
-    graph.addNode("A1", { x: 0, y: 0 });
+    graph.addNode("A1", { x: 0, y: 0, dept: 0 });
     graph.addNode(deptNodeKey(0), { x: 0, y: 0, size: 0 });
-    const store = new Store<AppState>(initialState());
+    const store = new Store<AppState>(initialState({ selection: { kind: "dept", id: 0 } }));
     const { renderer, getReducer, fireCameraUpdated } = fakeRenderer(graph);
 
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
     const nodeReducer = getReducer("nodeReducer");
-    fireCameraUpdated(MAP_CONFIG.region.ratioThreshold + 1);
 
-    expect(nodeReducer(deptNodeKey(0), NODE_BASE)).toMatchObject({ forceLabel: true });
-    expect(nodeReducer("A1", NODE_BASE)).toMatchObject({ label: "" });
-  });
-
-  it("близко (ratio ниже порога): обычный узел сохраняет подпись, якорь департамента её не форсирует", async () => {
-    const data = await loadSampleGraphData();
-    const graph = new Graph();
-    graph.addNode("A1", { x: 0, y: 0 });
-    graph.addNode(deptNodeKey(0), { x: 0, y: 0, size: 0 });
-    const store = new Store<AppState>(initialState());
-    const { renderer, getReducer, fireCameraUpdated } = fakeRenderer(graph);
-
-    mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
-    const nodeReducer = getReducer("nodeReducer");
-    fireCameraUpdated(MAP_CONFIG.region.ratioThreshold - 1);
-
-    expect(nodeReducer("A1", NODE_BASE)).toMatchObject({ label: NODE_BASE.label });
-    expect(nodeReducer(deptNodeKey(0), NODE_BASE)).toMatchObject({ forceLabel: false });
-  });
-
-  it("выбранный обычный узел сохраняет подпись, даже когда показываются подписи департаментов", async () => {
-    const data = await loadSampleGraphData();
-    const graph = new Graph();
-    graph.addNode("A1", { x: 0, y: 0 });
-    const store = new Store<AppState>(initialState({ selection: { kind: "node", key: "A1" } }));
-    const { renderer, getReducer, fireCameraUpdated } = fakeRenderer(graph);
-
-    mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
-    fireCameraUpdated(MAP_CONFIG.region.ratioThreshold + 1);
-
-    expect(getReducer("nodeReducer")("A1", NODE_BASE)).toMatchObject({
-      label: NODE_BASE.label,
-      highlighted: true,
-    });
+    for (const ratio of [0.1, 1, 2]) {
+      fireCameraUpdated(ratio);
+      expect(nodeReducer(deptNodeKey(0), { ...NODE_BASE, size: 0 })).toMatchObject({
+        label: "",
+        forceLabel: false,
+        highlighted: false,
+        size: 0,
+      });
+    }
   });
 });
 
@@ -640,30 +617,38 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     }); // ни то ни другое — притушен
   });
 
-  it("выбор департамента фокусирует так же, как выбор узла — соседние департаменты не притушены", async () => {
+  it("выбор департамента оставляет яркими его узлы и их рёбра, остальные узлы притушает", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
+    graph.addNode("A1", { x: 0, y: 0, dept: 0 });
+    graph.addNode("A2", { x: 1, y: 1, dept: 0 });
+    graph.addNode("A3", { x: 2, y: 2, dept: 1 });
+    graph.addNode("A4", { x: 3, y: 3, dept: 1 });
     graph.addNode(deptNodeKey(0), { x: 0, y: 0, size: 0 });
-    graph.addNode(deptNodeKey(1), { x: 1, y: 1, size: 0 });
-    graph.addNode(deptNodeKey(2), { x: 2, y: 2, size: 0 });
-    graph.addEdge(deptNodeKey(0), deptNodeKey(1));
+    graph.addEdge("A1", "A2");
+    graph.addEdge("A2", "A3");
+    graph.addEdge("A3", "A4");
     const store = new Store<AppState>(initialState({ selection: { kind: "dept", id: 0 } }));
     const { renderer, getReducer } = fakeRenderer(graph);
 
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
     const nodeReducer = getReducer("nodeReducer");
+    const edgeReducer = getReducer("edgeReducer");
 
-    expect(nodeReducer(deptNodeKey(0), NODE_BASE)).toMatchObject({ highlighted: true });
-    // Сосед-департамент — не притушен, но и не увеличен (isRegion исключён из
-    // neighborSizeScale-ветки): фиксированный размер сделал бы невидимую
-    // (size: 0) точку-якорь видимым кружком там, где его никогда не было.
-    expect(nodeReducer(deptNodeKey(1), NODE_BASE)).toMatchObject({
+    expect(nodeReducer("A1", NODE_BASE)).toMatchObject({
       color: NODE_BASE.color,
-      size: NODE_BASE.size,
+      label: NODE_BASE.label,
     });
-    expect(nodeReducer(deptNodeKey(2), NODE_BASE)).toMatchObject({
+    expect(nodeReducer("A1", NODE_BASE)).not.toMatchObject({ highlighted: true });
+    expect(nodeReducer("A3", NODE_BASE)).toMatchObject({
       color: MAP_CONFIG.node.dimColor,
-    }); // не сосед — притушен
+      label: "",
+    });
+
+    const edgeKey = (s: string, t: string) => graph.edge(s, t) ?? "";
+    expect(edgeReducer(edgeKey("A1", "A2"), EDGE_BASE)).toMatchObject({ hidden: false });
+    expect(edgeReducer(edgeKey("A2", "A3"), EDGE_BASE)).toMatchObject({ hidden: false }); // касается департамента
+    expect(edgeReducer(edgeKey("A3", "A4"), EDGE_BASE)).toMatchObject({ hidden: true }); // оба конца чужие
   });
 
   it("выбор РЕБРА подсвечивает оба его конца с подписями, как соседей выбора узла — но не увеличивает и не помечает highlighted", async () => {
@@ -952,7 +937,7 @@ describe("mountReactiveGraph", () => {
     );
   });
 
-  it("выбор департамента подлетает камерой к координатам его якоря из getNodeDisplayData", async () => {
+  it("выбор департамента сдвигает камеру к его якорю, но не приближает — иначе регионы пропали бы", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode(deptNodeKey(0), { x: 5, y: 6, size: 0 });
@@ -966,7 +951,6 @@ describe("mountReactiveGraph", () => {
       {
         x: 5 + FRAMED_COORD_OFFSET,
         y: 6 + FRAMED_COORD_OFFSET,
-        ratio: MAP_CONFIG.camera.focusRatio,
       },
       { duration: MAP_CONFIG.camera.focusDuration, easing: "quadraticInOut" },
     );

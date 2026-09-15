@@ -27,6 +27,9 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
       showNoDeptAuthors: true,
       showNoDeptPubs: true,
       edgeZoomThreshold: 0.4,
+      showRegions: { 1: false, 2: false, 3: false },
+      regionZoomThreshold: 0.25,
+      regionMinNodes: 10,
     },
     ...overrides,
   };
@@ -1009,6 +1012,10 @@ describe("mountPanel", () => {
 
     const text = panel.textContent ?? "";
     expect(text).toContain("Связанные департаменты");
+    const dt = [...panel.querySelectorAll("dt")].find(
+      (el) => el.textContent === "Связанные департаменты",
+    );
+    expect(dt?.classList.contains("panel-row--block")).toBe(true); // список с «+ ещё N», а не через запятую
     expect(text.indexOf(dept1.name)).toBeGreaterThan(-1);
     expect(text.indexOf(dept1.name)).toBeLessThan(text.indexOf(dept2.name));
   });

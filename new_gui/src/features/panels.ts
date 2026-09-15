@@ -1054,10 +1054,13 @@ export function mountPanel(
 
     const relatedIds = [...(deptEdgeIndex.get(dept.id) ?? new Map<number, number>()).entries()]
       .sort(([, weightA], [, weightB]) => weightB - weightA)
-      .slice(0, PANEL_CONFIG.listLimit)
       .map(([id]) => id);
-    if (relatedIds.length > 0)
-      rows.push([t("field.relatedDepts", lang), deptRefsOf(relatedIds, lang)]);
+    if (relatedIds.length > 0) {
+      rows.push([
+        t("field.relatedDepts", lang),
+        { kind: "list", items: deptRefsOf(relatedIds, lang) },
+      ]);
+    }
 
     return show(
       localize(dept.name, dept.name_en, lang),

@@ -122,6 +122,9 @@ export type LocaleKey =
   | "filter.yearMax"
   | "filter.showNoDept"
   | "filter.edgeZoom"
+  | "filter.showRegions"
+  | "filter.regionZoom"
+  | "filter.regionMinNodes"
   | "brand.backToMenu"
   | "section.filters"
   | "section.quickSearch"
@@ -216,6 +219,9 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "filter.yearMax": "До года",
     "filter.showNoDept": "Показывать без департамента",
     "filter.edgeZoom": "Порог показа рёбер",
+    "filter.showRegions": "Регионы департаментов",
+    "filter.regionZoom": "Порог показа регионов",
+    "filter.regionMinNodes": "Мин. узлов в регионе",
     "brand.backToMenu": "← Меню",
     "section.filters": "Фильтры",
     "section.quickSearch": "Быстрый поиск",
@@ -318,6 +324,9 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "filter.yearMax": "Up to year",
     "filter.showNoDept": "Show without department",
     "filter.edgeZoom": "Edge visibility threshold",
+    "filter.showRegions": "Department regions",
+    "filter.regionZoom": "Region visibility threshold",
+    "filter.regionMinNodes": "Min. nodes per region",
     "brand.backToMenu": "← Menu",
     "section.filters": "Filters",
     "section.quickSearch": "Quick Search",

@@ -101,6 +101,14 @@ export interface AppState {
    *   целиком (на сильном отдалении тысячи рёбер сливаются в сплошную
    *   дымку). Раньше жил как константа {@link MAP_CONFIG.edge.visibleBelowRatio},
    *   стал пользовательским регулятором по прямой просьбе.
+   * - `showRegions` — показывать ли регионы департаментов (map/regions.ts),
+   *   отдельно для каждой вкладки.
+   * - `regionZoomThreshold` — порог `camera.ratio`, выше которого (на
+   *   отдалении) регионы видны; диапазон не пересекается с
+   *   `edgeZoomThreshold` (см. FILTER_CONFIG), поэтому на любом зуме видно
+   *   хотя бы что-то одно из двух.
+   * - `regionMinNodes` — минимум узлов в одном острове региона; острова
+   *   меньше не рисуются.
    */
   filters: {
     minCoauth: number;
@@ -109,7 +117,23 @@ export interface AppState {
     showNoDeptAuthors: boolean;
     showNoDeptPubs: boolean;
     edgeZoomThreshold: number;
+    showRegions: Record<TabId, boolean>;
+    regionZoomThreshold: number;
+    regionMinNodes: number;
   };
+}
+
+/**
+ * Режим регионов: регионы включены на вкладке и камера дальше
+ * `filters.regionZoomThreshold`. В этом режиме наведение и клик работают с
+ * регионами департаментов (map/regions.ts), а узлы и рёбра не выбираются;
+ * ближе порога — наоборот.
+ *
+ * @param state - текущее состояние.
+ * @param cameraRatio - `camera.ratio` рендерера.
+ */
+export function isRegionMode(state: Readonly<AppState>, cameraRatio: number): boolean {
+  return state.filters.showRegions[state.tab] && cameraRatio > state.filters.regionZoomThreshold;
 }
 
 /**

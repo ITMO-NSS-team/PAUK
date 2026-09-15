@@ -15,6 +15,9 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
       showNoDeptAuthors: true,
       showNoDeptPubs: true,
       edgeZoomThreshold: 0.4,
+      showRegions: { 1: false, 2: false, 3: false },
+      regionZoomThreshold: 0.25,
+      regionMinNodes: 10,
     },
     ...overrides,
   };

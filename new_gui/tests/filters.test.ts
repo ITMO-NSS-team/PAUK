@@ -15,7 +15,10 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
       yearMax: 2026,
       showNoDeptAuthors: true,
       showNoDeptPubs: true,
-      edgeZoomThreshold: 0.4,
+      edgeZoomThreshold: 0.2,
+      showRegions: { 1: false, 2: false, 3: false },
+      regionZoomThreshold: 0.25,
+      regionMinNodes: 10,
     },
     ...overrides,
   };
@@ -31,6 +34,13 @@ describe("mountFilters", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
+
+  function checkboxByLabel(text: string): HTMLInputElement | null {
+    const row = [...container.querySelectorAll(".filter-row")].find(
+      (el) => el.querySelector(".filter-row__label")?.textContent === text,
+    );
+    return row?.querySelector<HTMLInputElement>("input[type='checkbox']") ?? null;
+  }
 
   function withContainer<T>(run: () => T): T {
     container = document.createElement("div");
@@ -58,36 +68,36 @@ describe("mountFilters", () => {
     });
   });
 
-  it("на вкладке 1 показывает два регулятора — зум рёбер (общий для всех вкладок) и порог соавторства", () => {
+  it("на вкладке 1: зум рёбер (общий), порог соавторства, затем два общих регулятора регионов", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
 
       expect(container.hidden).toBe(false);
       const inputs = container.querySelectorAll("input[type='range']");
-      expect(inputs).toHaveLength(2);
-      expect((inputs[0] as HTMLInputElement).value).toBe("0.4"); // зум рёбер — первым, до вкладко-специфичных
+      expect(inputs).toHaveLength(4);
+      expect((inputs[0] as HTMLInputElement).value).toBe("0.2"); // зум рёбер — первым, до вкладко-специфичных
       expect((inputs[1] as HTMLInputElement).value).toBe("1"); // порог соавторства
     });
   });
 
-  it("на вкладке 3 показывает три регулятора — зум рёбер, общих авторов и год", () => {
+  it("на вкладке 3: зум рёбер, общих авторов, год и два регулятора регионов", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState({ tab: 3 }));
       mountFilters(store);
 
-      expect(container.querySelectorAll("input[type='range']")).toHaveLength(3);
+      expect(container.querySelectorAll("input[type='range']")).toHaveLength(5);
     });
   });
 
-  it("на вкладке 2 (репозитории) есть только общий регулятор зума рёбер, панель не скрыта", () => {
+  it("на вкладке 2 (репозитории) только общие регуляторы: зум рёбер и регионы, панель не скрыта", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState({ tab: 2 }));
       mountFilters(store);
 
       expect(container.hidden).toBe(false);
-      expect(container.querySelectorAll("input[type='range']")).toHaveLength(1);
-      expect(container.querySelectorAll("input[type='checkbox']")).toHaveLength(0);
+      expect(container.querySelectorAll("input[type='range']")).toHaveLength(3);
+      expect(container.querySelectorAll("input[type='checkbox']")).toHaveLength(1); // только «Регионы департаментов»
     });
   });
 
@@ -146,11 +156,11 @@ describe("mountFilters", () => {
       mountFilters(store);
 
       const input = container.querySelector("input[type='range']") as HTMLInputElement;
-      input.value = "0.15";
+      input.value = "0.1";
       input.dispatchEvent(new Event("input"));
       vi.advanceTimersByTime(FILTER_CONFIG.debounceMs);
 
-      expect(store.get().filters.edgeZoomThreshold).toBe(0.15);
+      expect(store.get().filters.edgeZoomThreshold).toBe(0.1);
     });
   });
 
@@ -162,18 +172,22 @@ describe("mountFilters", () => {
       store.set({ tab: 2 });
 
       expect(container.hidden).toBe(false);
-      expect(container.querySelectorAll("input[type='range']")).toHaveLength(1);
+      // Общие для всех вкладок: зум рёбер, зум регионов, минимум узлов в регионе.
+      expect(container.querySelectorAll("input[type='range']")).toHaveLength(3);
     });
   });
 
-  it("на вкладках 1 и 3 есть чекбокс «показывать без департамента»", () => {
+  it("на вкладках 1 и 3 есть чекбокс «показывать без департамента», на 2 — нет", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
-      expect(container.querySelectorAll("input[type='checkbox']")).toHaveLength(1);
+      expect(checkboxByLabel("Показывать без департамента")).not.toBeNull();
 
       store.set({ tab: 3 });
-      expect(container.querySelectorAll("input[type='checkbox']")).toHaveLength(1);
+      expect(checkboxByLabel("Показывать без департамента")).not.toBeNull();
+
+      store.set({ tab: 2 });
+      expect(checkboxByLabel("Показывать без департамента")).toBeNull();
     });
   });
 
@@ -182,11 +196,55 @@ describe("mountFilters", () => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
 
-      const checkbox = container.querySelector("input[type='checkbox']") as HTMLInputElement;
+      const checkbox = checkboxByLabel("Показывать без департамента");
+      if (!checkbox) throw new Error("чекбокс «без департамента» должен быть на вкладке авторов");
       checkbox.checked = false;
       checkbox.dispatchEvent(new Event("change"));
 
       expect(store.get().filters.showNoDeptAuthors).toBe(false);
+    });
+  });
+  it("чекбокс «Регионы департаментов» есть на всех вкладках и переключает только текущую", () => {
+    withContainer(() => {
+      const store = new Store<AppState>(
+        initialState({
+          tab: 3,
+          filters: { ...initialState().filters, showRegions: { 1: true, 2: false, 3: true } },
+        }),
+      );
+      mountFilters(store);
+
+      const checkbox = checkboxByLabel("Регионы департаментов");
+      expect(checkbox?.checked).toBe(true);
+      if (!checkbox) throw new Error("чекбокс регионов должен быть на вкладке публикаций");
+      checkbox.checked = false;
+      checkbox.dispatchEvent(new Event("change"));
+      expect(store.get().filters.showRegions).toEqual({ 1: true, 2: false, 3: false });
+
+      store.set({ tab: 2 });
+      expect(checkboxByLabel("Регионы департаментов")?.checked).toBe(false);
+    });
+  });
+
+  it("ползунки регионов пишут regionZoomThreshold и regionMinNodes, диапазон зума рёбер не заходит в диапазон регионов", () => {
+    withContainer(() => {
+      const store = new Store<AppState>(initialState());
+      mountFilters(store);
+
+      const ranges = [...container.querySelectorAll<HTMLInputElement>("input[type='range']")];
+      const [edgeZoom] = ranges;
+      const [regionZoom, minNodes] = ranges.slice(-2); // регионы — последними, после фильтров вкладки
+      expect(Number(edgeZoom?.max)).toBeLessThanOrEqual(Number(regionZoom?.min));
+
+      if (!regionZoom || !minNodes) throw new Error("ползунки регионов должны быть в фильтрах");
+      regionZoom.value = "0.4";
+      regionZoom.dispatchEvent(new Event("input"));
+      minNodes.value = "25";
+      minNodes.dispatchEvent(new Event("input"));
+      vi.advanceTimersByTime(FILTER_CONFIG.debounceMs);
+
+      expect(store.get().filters.regionZoomThreshold).toBe(0.4);
+      expect(store.get().filters.regionMinNodes).toBe(25);
     });
   });
 });

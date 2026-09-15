@@ -11,7 +11,7 @@ import { loadDetails, loadGraphData, mergeDetailsInto } from "../core/data";
 import { requireElement, showLoadError } from "../core/dom";
 import { t } from "../core/i18n";
 import { loggedStep } from "../core/log";
-import { Store, type AppState } from "../core/state";
+import { isRegionMode, Store, type AppState } from "../core/state";
 import { mountFilters } from "../features/filters";
 import { mountGlobalSearch } from "../features/globalSearch";
 import { mountPanel } from "../features/panels";
@@ -20,6 +20,7 @@ import { mountStart } from "../features/start";
 import { mountTabs } from "../features/tabs";
 import { mountUrlSync } from "../features/urlSync";
 import { mountReactiveGraph, mountZoomDebug, populateGraph } from "../map/build";
+import { mountRegions } from "../map/regions";
 
 // Подпись узла — в цвет ЕГО ДЕПАРТАМЕНТА (data.color, тот же цвет, что и у
 // самого узла), а не одним общим цветом на все узлы, с белой обводкой
@@ -79,6 +80,9 @@ const store = new Store<AppState>({
     showNoDeptAuthors: true,
     showNoDeptPubs: true,
     edgeZoomThreshold: FILTER_CONFIG.edgeZoom.default,
+    showRegions: { ...FILTER_CONFIG.showRegions },
+    regionZoomThreshold: FILTER_CONFIG.regionZoom.default,
+    regionMinNodes: FILTER_CONFIG.regionMinNodes.default,
   },
 });
 
@@ -213,7 +217,14 @@ function renderApp(data: GraphData): void {
     enableCameraRotation: false,
     // Одна и та же функция для обычной подписи и для наведённого/
     // выбранного узла (без отдельного свечения) — см. выше.
-    defaultDrawNodeHover: drawHaloedNodeLabel,
+    defaultDrawNodeHover: (context, nodeData, settings) => {
+      // В режиме регионов наведённый узел не подписывается — подсвечивается
+      // регион (map/regions.ts); выбранный узел (highlighted) остаётся подписан.
+      const ratio = renderer.getCamera().getState().ratio;
+      if (nodeData.highlighted || !isRegionMode(store.get(), ratio)) {
+        drawHaloedNodeLabel(context, nodeData, settings);
+      }
+    },
     defaultDrawNodeLabel: drawHaloedNodeLabel,
     // Подпись узла рисуется, только когда сам узел на экране достаточно
     // крупный — иначе на маленьком зуме подписи наваливаются друг на
@@ -227,14 +238,15 @@ function renderApp(data: GraphData): void {
     // зум ощущался медленнее. Кривая одного тика (easing) у Sigma зашита
     // в коде жёстко, настройками не меняется — см. core/config.ts::camera.
     zoomingRatio: MAP_CONFIG.camera.zoomingRatio,
+    maxCameraRatio: MAP_CONFIG.camera.maxRatio,
   });
 
   // mountReactiveGraph дальше следит за store сама — остальным фичам
   // достаточно менять store.tab/lang/filters, не заботясь о том, что
   // ещё перерисовать.
   mountReactiveGraph(renderer, store, data, pubDetailsByKey);
-  // Временный инструмент калибровки MAP_CONFIG.region.ratioThreshold и
-  // .node.labelVisibleAtSize — удалить вызов, когда числа подобраны.
+  // Временный инструмент калибровки порогов зума и MAP_CONFIG.node.labelVisibleAtSize —
+  // удалить вызов, когда числа подобраны.
   mountZoomDebug(renderer);
 
   // mountSelection слушает клики по графу и пишет выбор в store;
@@ -248,7 +260,8 @@ function renderApp(data: GraphData): void {
   // (unmount) не вызываются: все они живут всё время работы страницы —
   // здесь ничего не пересоздаётся поверх них самих (внутри mountTabs свои
   // unmount вызываются при смене вкладки — это устройство самой этой фичи).
-  mountSelection(renderer, store);
+  const regions = mountRegions(renderer, store, data);
+  mountSelection(renderer, store, regions.deptAtViewport);
   mountPanel(store, data, pubDetailsByKey, authorDetailsByKey, repoDetailsByKey);
   mountTabs(
     requireElement("tab-buttons"),
