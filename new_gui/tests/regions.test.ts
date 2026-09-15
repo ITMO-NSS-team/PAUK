@@ -357,4 +357,41 @@ describe("mountRegions", () => {
     moveMouse(2, 2);
     expect(container.style.cursor).toBe("");
   });
+
+  it("при выбранном узле или ребре названия регионов не рисуются даже в режиме регионов", () => {
+    const { renderer, context, render } = fakeRenderer({ value: 1 });
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A0" },
+    });
+    mountRegions(renderer, store, sampleData());
+
+    render();
+    expect(context.fill).toHaveBeenCalled(); // сами регионы видны
+    expect(context.fillText).not.toHaveBeenCalled();
+
+    store.set({ selection: { kind: "edge", s: "A0", t: "A1", w: 1 } });
+    context.fillText.mockClear();
+    render();
+    expect(context.fillText).not.toHaveBeenCalled();
+  });
+
+  it("выбранный регион держит заливку и название при приближении, остальные остаются только обводкой", () => {
+    const ratio = { value: 1 };
+    const { renderer, context, render } = fakeRenderer(ratio);
+    const data = sampleData();
+    data.authors.push(...cluster(500, 500, 16, 1).map((p, i) => authorNode(`B${i}`, p)));
+    data.departments.push(department(1, "Лаборатория", "#00ff00"));
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "dept", id: 1 } });
+    mountRegions(renderer, store, data);
+    const filled: string[] = [];
+    context.fill.mockImplementation(() => filled.push(context.fillStyle));
+
+    ratio.value = 0.1; // режим узлов
+    render();
+
+    expect(filled).toEqual(["#00ff00"]);
+    expect(context.fillText.mock.calls.map(([text]) => text)).toEqual(["Лаборатория"]);
+    expect(context.stroke).toHaveBeenCalledTimes(2); // обводка у обоих регионов
+  });
 });

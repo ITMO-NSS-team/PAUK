@@ -514,16 +514,11 @@ function applyGraphStyling(
     const touchesEdgeSelectionEndpoint =
       edgeEndpoints !== null && (edgeEndpoints.includes(s) || edgeEndpoints.includes(t));
     const touchesHover = hoveredNode !== null && (s === hoveredNode || t === hoveredNode);
-    const touchesSelectedDept = inSelectedDept(s) || inSelectedDept(t);
+    // Выбранный департамент своих рёбер не показывает — у региона нет узла,
+    // рёбра которого можно было бы подсветить, как у выбранного узла.
     const anyFocusActive =
       selKey !== null || hoveredNode !== null || edgeEndpoints !== null || selectedDept() !== null;
-    if (
-      anyFocusActive &&
-      !touchesSelection &&
-      !touchesEdgeSelectionEndpoint &&
-      !touchesHover &&
-      !touchesSelectedDept
-    ) {
+    if (anyFocusActive && !touchesSelection && !touchesEdgeSelectionEndpoint && !touchesHover) {
       return { ...data, hidden: true };
     }
 

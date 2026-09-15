@@ -617,7 +617,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     }); // ни то ни другое — притушен
   });
 
-  it("выбор департамента оставляет яркими его узлы и их рёбра, остальные узлы притушает", async () => {
+  it("выбор департамента оставляет яркими его узлы, остальные притушает, рёбра не показывает — у региона нет своего узла", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0, dept: 0 });
@@ -646,8 +646,8 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     });
 
     const edgeKey = (s: string, t: string) => graph.edge(s, t) ?? "";
-    expect(edgeReducer(edgeKey("A1", "A2"), EDGE_BASE)).toMatchObject({ hidden: false });
-    expect(edgeReducer(edgeKey("A2", "A3"), EDGE_BASE)).toMatchObject({ hidden: false }); // касается департамента
+    expect(edgeReducer(edgeKey("A1", "A2"), EDGE_BASE)).toMatchObject({ hidden: true }); // оба конца в департаменте
+    expect(edgeReducer(edgeKey("A2", "A3"), EDGE_BASE)).toMatchObject({ hidden: true });
     expect(edgeReducer(edgeKey("A3", "A4"), EDGE_BASE)).toMatchObject({ hidden: true }); // оба конца чужие
   });
 

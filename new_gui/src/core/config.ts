@@ -183,7 +183,7 @@ export const FILTER_CONFIG = {
   // Порог camera.ratio режима регионов (core/state.ts::isRegionMode): дальше
   // него — заливка, названия, наведение и клик по регионам; ближе — только
   // обводка регионов, выбираются узлы.
-  regionZoom: { min: 0.25, max: 1, step: 0.01, default: 0.6 },
+  regionZoom: { min: 0.25, max: 1, step: 0.01, default: 0.4 },
   // Минимум узлов в одном острове региона.
   regionMinNodes: { min: 1, max: 50, default: 10 },
   // Какие вкладки показывают регионы при старте: авторы и публикации.

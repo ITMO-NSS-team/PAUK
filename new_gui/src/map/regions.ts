@@ -11,7 +11,8 @@
 // 4. Границы оставшихся клеток обходятся в замкнутые контуры и сглаживаются.
 //
 // Рисуется на отдельном canvas под рёбрами (mountRegions), названия — на
-// canvas над узлами, только пока камера дальше filters.regionZoomThreshold.
+// canvas над узлами; что именно видно на каком зуме и при каком выборе — см.
+// mountRegions.
 
 import type Sigma from "sigma";
 import type { Coordinates } from "sigma/types";
@@ -334,9 +335,12 @@ export function wrapLabel(
  *
  * В режиме регионов (core/state.ts::isRegionMode — камера дальше порога):
  * заливка, обводка и названия; регион под курсором ярче, клик по нему
- * выбирает департамент. Названия не накладываются: крупные регионы важнее, а
- * при выбранном департаменте видно только его название. Ближе порога — только
- * обводка, без названий и без реакции на мышь.
+ * выбирает департамент. Названия не накладываются: крупные регионы важнее.
+ * Ближе порога — только обводка, без названий и без реакции на мышь.
+ *
+ * Выбранный регион ведёт себя как выбранный узел: его заливка и название
+ * видны на любом зуме, названия остальных скрыты. При выбранном узле или
+ * ребре названий регионов нет.
  *
  * @param renderer - Sigma-рендерер.
  * @param store - Store приложения.
@@ -407,6 +411,7 @@ export function mountRegions(
         : selection?.kind === "node"
           ? (deptByNode.get(selection.key) ?? null)
           : null;
+    const selectedDept = selection?.kind === "dept" ? selection.id : null;
     const cfg = REGION_CONFIG;
 
     for (const region of regions) {
@@ -423,7 +428,8 @@ export function mountRegions(
       }
       fill.fillStyle = color;
       fill.strokeStyle = color;
-      if (full) {
+      // Выбранный регион держит заливку на любом зуме — как выбранный узел свою подсветку.
+      if (full || region.dept === selectedDept) {
         const alpha = region.dept === hoveredDept ? cfg.hoverFillAlpha : cfg.fillAlpha;
         fill.globalAlpha = alpha * dim;
         fill.fill("evenodd");
@@ -433,13 +439,14 @@ export function mountRegions(
       fill.stroke();
     }
     fill.globalAlpha = 1;
-    if (!full) return;
 
-    // Названия: при выбранном департаменте — только его; иначе сначала регион
-    // под курсором, потом по убыванию размера, пропуская перекрывающиеся.
-    const selectedDept = selection?.kind === "dept" ? selection.id : null;
+    // Названия: выбран департамент — только его, на любом зуме; выбран узел или
+    // ребро — никаких; ничего не выбрано — все (в режиме регионов), сначала
+    // регион под курсором, потом по убыванию размера, пропуская перекрывающиеся.
     const ordered = regions
-      .filter((region) => selectedDept === null || region.dept === selectedDept)
+      .filter((region) =>
+        selectedDept !== null ? region.dept === selectedDept : selection === null && full,
+      )
       .sort(
         (a, b) =>
           Number(b.dept === hoveredDept) - Number(a.dept === hoveredDept) || b.weight - a.weight,
