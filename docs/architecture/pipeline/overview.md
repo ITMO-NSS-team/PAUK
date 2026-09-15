@@ -106,7 +106,10 @@ repositories → repo_people → dedup → github_match → author_names`).
 [code-links.md](code-links.md), [emails.md](emails.md),
 [repositories.md](repositories.md), [repo-people.md](repo-people.md),
 [dedup.md](dedup.md),
-[github-match.md](github-match.md), [social-graph.md](social-graph.md).
+[github-match.md](github-match.md), [author-names.md](author-names.md),
+[social-graph.md](social-graph.md). Заметка про `author_names` также описывает
+отдельный LLM-контракт, повторные попытки и ремонт исторически некорректных
+`completed`.
 
 ## Резюмируемость
 

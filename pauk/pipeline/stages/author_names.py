@@ -24,8 +24,9 @@ instance) doesn't have to reassemble it from the parts itself:
    catalog row sharing a folded surname token — a broader net than the
    strict catalog match above, so the model can disambiguate namesakes the
    way a human reviewer would (rule 1 of NAME_SPLIT_PROMPT: prefer a
-   plausible candidate, verbatim). The reply is validated by three
-   deterministic guards before it is trusted: _guard_invented_second_name
+   plausible candidate, verbatim). A stage-specific response contract first
+   checks types and the candidate index. Three deterministic guards then run
+   before the four mandatory name parts are checked: _guard_invented_second_name
    drops a patronymic invented from a bare initial (models in this class
    do this readily despite the prompt's explicit ban — the same risk this
    module refused to take when the logic was hand-written);
@@ -34,9 +35,11 @@ instance) doesn't have to reassemble it from the parts itself:
    nothing confirms it (naming traditions with more than one given name and
    no patronymic at all — Spanish "Pedro Luis González" — otherwise get a
    given name mislabeled as one); and _guard_broken_transliteration drops
-   or fixes a *_ru field that isn't actually in Cyrillic. A failed LLM call
+   or fixes a *_ru field that isn't actually in Cyrillic. An incomplete reply
+   gets one corrective retry. A failed LLM call or an invalid second reply
    falls back to reverse transliteration ("Pavel Ivanov" -> "Павел Иванов",
-   to_cyrillic) for name_ru only, and is retried on the next pipeline run.
+   to_cyrillic) for name_ru only, is marked FAILED, and is retried on the next
+   pipeline run without overwriting an earlier complete split.
    Runs for external persons too, not just ITMO staff: a foreign co-author's
    name gets the same Russian/English split, and the graph carries it
    (external_person prop_fields, see graph/extract.py) even though the ITMO
@@ -60,6 +63,8 @@ import csv
 import difflib
 import logging
 import re
+import unicodedata
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -771,9 +776,6 @@ def _guard_invented_second_name(person: Person, parsed: dict, candidates: list[d
     return parsed
 
 
-_LATIN_LETTER = re.compile(r"[A-Za-z]")
-
-
 def _guard_broken_transliteration(parsed: dict) -> dict:
     """Fix or null a *_ru field that isn't actually in Cyrillic, in place.
 
@@ -789,7 +791,7 @@ def _guard_broken_transliteration(parsed: dict) -> dict:
     """
     for field in ("surname_ru", "first_name_ru", "second_name_ru"):
         value = parsed.get(field)
-        if not value or not _LATIN_LETTER.search(value):
+        if not value or not any(char.isalpha() and not _is_cyrillic(char) for char in value):
             continue
         if _is_bare_initial(value):
             parsed[field] = to_cyrillic(value)
@@ -846,9 +848,150 @@ def _guard_misclassified_second_name(parsed: dict) -> dict:
     return parsed
 
 
+REQUIRED_NAME_FIELDS = ("surname_ru", "first_name_ru", "surname_en", "first_name_en")
+_NAME_FIELDS = (*REQUIRED_NAME_FIELDS, "second_name_ru", "second_name_en")
+_SEMANTIC_ATTEMPTS = 2
+
+
+def _normalize_name_split_response(parsed: dict, candidate_count: int) -> dict:
+    """Return a normalized copy after validating the response's basic shape.
+
+    Required-field completeness is checked after the deterministic guards:
+    the second-name classifier can legitimately move a value into first_name,
+    while the transliteration guard can invalidate a required Russian field.
+    """
+    if not isinstance(parsed, dict):
+        raise ValueError(f"name split response must be an object, got {type(parsed).__name__}")
+    normalized = dict(parsed)
+    for field in _NAME_FIELDS:
+        value = normalized.get(field)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise ValueError(f"{field} must be a string or null")
+        normalized[field] = value.strip() or None
+
+    reason = normalized.get("reason")
+    if reason is not None:
+        if not isinstance(reason, str):
+            raise ValueError("reason must be a string or null")
+        normalized["reason"] = reason.strip() or None
+
+    matched_candidate = normalized.get("matched_candidate")
+    if matched_candidate is not None:
+        if isinstance(matched_candidate, bool) or not isinstance(matched_candidate, int):
+            raise ValueError("matched_candidate must be an integer or null")
+        if not 0 <= matched_candidate < candidate_count:
+            raise ValueError(
+                f"matched_candidate index {matched_candidate} is outside the {candidate_count} candidates"
+            )
+    return normalized
+
+
+def _is_latin_letter(char: str) -> bool:
+    return char.isalpha() and "LATIN" in unicodedata.name(char, "")
+
+
+def required_name_field_issues(values: Mapping[str, object]) -> dict[str, str]:
+    """Return every violation of the completed author-name contract."""
+    issues = {}
+    for field in REQUIRED_NAME_FIELDS:
+        value = values.get(field)
+        if not isinstance(value, str) or not value.strip():
+            issues[field] = "must be a non-empty string"
+            continue
+        letters = [char for char in value if char.isalpha()]
+        if not letters:
+            issues[field] = "must contain at least one letter"
+            continue
+        belongs_to_alphabet = _is_cyrillic if field.endswith("_ru") else _is_latin_letter
+        if any(not belongs_to_alphabet(char) for char in letters):
+            alphabet = "Cyrillic" if field.endswith("_ru") else "Latin"
+            issues[field] = f"must contain only {alphabet} letters"
+    return issues
+
+
+def _validate_required_name_fields(parsed: dict) -> None:
+    """Enforce the invariant represented by a completed author_names state."""
+    issues = required_name_field_issues(parsed)
+    if issues:
+        details = "; ".join(f"{field}: {reason}" for field, reason in issues.items())
+        raise ValueError(f"invalid required name fields: {details}")
+
+
+def _validate_name_split_response(
+    person: Person, parsed: dict, candidates: list[dict]
+) -> tuple[dict, bool]:
+    normalized = _normalize_name_split_response(parsed, len(candidates))
+    before_second_names = (normalized.get("second_name_ru"), normalized.get("second_name_en"))
+    normalized = _guard_invented_second_name(person, normalized, candidates)
+    normalized = _guard_misclassified_second_name(normalized)
+    normalized = _guard_broken_transliteration(normalized)
+    _validate_required_name_fields(normalized)
+    corrected = (normalized.get("second_name_ru"), normalized.get("second_name_en")) != before_second_names
+    return normalized, corrected
+
+
+def _semantic_retry_prompt(prompt: str, error: str) -> str:
+    return (
+        f"{prompt}\n\n"
+        f"Your previous JSON reply was rejected because {error}. "
+        "Return the complete JSON object again, with every required field filled and correctly typed."
+    )
+
+
 class AuthorNamesStage(EnrichmentStage):
     name = "author_names"
     progress_label = "Authors: splitting names into RU/EN parts (LLM)"
+
+    def _request_name_split(
+        self,
+        client: OpenRouterClient,
+        llm_log: LlmLogStore,
+        person: Person,
+        candidates: list[dict],
+        prompt: str,
+    ) -> tuple[dict | None, bool, str | None]:
+        request_prompt = prompt
+        last_error = None
+        for response_attempt in range(1, _SEMANTIC_ATTEMPTS + 1):
+            raw_parsed = client.chat_json(request_prompt)
+            corrected = False
+            validated = None
+            if raw_parsed is None:
+                last_error = getattr(client, "last_error", None) or "no response"
+            else:
+                try:
+                    validated, corrected = _validate_name_split_response(
+                        person, raw_parsed, candidates
+                    )
+                except ValueError as exc:
+                    last_error = str(exc)
+                else:
+                    last_error = None
+
+            llm_log.record(
+                group=self.prepared.group,
+                model=self.config.llm_model,
+                prompt=request_prompt,
+                raw_response=client.last_response,
+                parsed=raw_parsed,
+                usage=client.last_usage,
+                error=last_error,
+                context={"person_id": person.id, "response_attempt": response_attempt},
+            )
+            if validated is not None:
+                return validated, corrected, None
+            logger.warning(
+                "author_names: %s response attempt %d rejected: %s",
+                person.id,
+                response_attempt,
+                last_error,
+            )
+            if raw_parsed is None or response_attempt == _SEMANTIC_ATTEMPTS:
+                break
+            request_prompt = _semantic_retry_prompt(prompt, last_error or "the response was invalid")
+        return None, False, last_error
 
     def run(self) -> dict[str, int]:
         catalog = RussianNamesCatalog.load(catalog_path(self.config))
@@ -895,16 +1038,8 @@ class AuthorNamesStage(EnrichmentStage):
 
             person_candidates = _name_split_candidates(catalog, person)
             prompt = _build_name_split_prompt(person, person_candidates)
-            parsed = client.chat_json(prompt)
-            llm_log.record(
-                group=self.prepared.group,
-                model=self.config.llm_model,
-                prompt=prompt,
-                raw_response=client.last_response,
-                parsed=parsed,
-                usage=client.last_usage,
-                error=None if parsed is not None else "no response",
-                context={"person_id": person.id},
+            parsed, second_name_corrected, llm_error = self._request_name_split(
+                client, llm_log, person, person_candidates, prompt
             )
             if parsed is None:
                 # Reverse transliteration for name_ru, same as before this
@@ -917,18 +1052,14 @@ class AuthorNamesStage(EnrichmentStage):
                 person.name_ru = person.name_ru or to_cyrillic(person.name_raw)
                 person.name_en = person.name_en or person.name_raw
                 person.processing[self.name] = self._state(
-                    state, ProcessingStatus.FAILED, 0, error="llm request failed"
+                    state, ProcessingStatus.FAILED, 0, error=llm_error or "llm request failed"
                 )
                 self.prepared.upsert_models("persons", [person])
                 failed += 1
                 changed += 1
                 continue
 
-            before_second_names = (parsed.get("second_name_ru"), parsed.get("second_name_en"))
-            parsed = _guard_invented_second_name(person, parsed, person_candidates)
-            parsed = _guard_misclassified_second_name(parsed)
-            parsed = _guard_broken_transliteration(parsed)
-            if (parsed.get("second_name_ru"), parsed.get("second_name_en")) != before_second_names:
+            if second_name_corrected:
                 dropped += 1
 
             person.surname_ru = parsed.get("surname_ru") or None
@@ -937,22 +1068,15 @@ class AuthorNamesStage(EnrichmentStage):
             person.surname_en = parsed.get("surname_en") or None
             person.first_name_en = parsed.get("first_name_en") or None
             person.second_name_en = parsed.get("second_name_en") or None
-            person.name_ru = (
-                " ".join(
-                    part
-                    for part in (person.surname_ru, person.first_name_ru, person.second_name_ru)
-                    if part
-                )
-                or person.name_ru
+            person.name_ru = " ".join(
+                part
+                for part in (person.surname_ru, person.first_name_ru, person.second_name_ru)
+                if part
             )
-            person.name_en = (
-                " ".join(
-                    part
-                    for part in (person.surname_en, person.first_name_en, person.second_name_en)
-                    if part
-                )
-                or person.name_en
-                or person.name_raw
+            person.name_en = " ".join(
+                part
+                for part in (person.surname_en, person.first_name_en, person.second_name_en)
+                if part
             )
             if parsed.get("matched_candidate") is not None:
                 matched += 1

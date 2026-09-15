@@ -73,6 +73,7 @@
 | Скрипт | Что делает | Пишет |
 |---|---|---|
 | `repair_implements.py` | Снимает исторические притязания `IMPLEMENTS`, если все ссылки на репозиторий классифицированы и ни одна не имеет `is_relevant=true`; `pending`/`failed` не трогает | Mongo |
+| `plan_author_names_repair.py` | Находит `author_names=completed` с пустыми обязательными частями имени и формирует manifest и уникальные по группам файлы id для точечного `--force`; Mongo не меняет | только `data/reports/` |
 | `prune_stranger_profiles.py` | Удаляет GitHub-профили, добытые только с репозиториев, которые никто не реализует | Mongo |
 | `prune_graph_to_mongo.py` | Удаляет из графа то, чего в Mongo больше нет: рёбра `IMPLEMENTS` и узлы `GitHubProfile` | Neo4j |
 
