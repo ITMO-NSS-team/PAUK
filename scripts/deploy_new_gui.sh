@@ -11,7 +11,7 @@ REMOTE_HOST="einsteinium.nsslab"
 REMOTE="asteb@${REMOTE_HOST}"
 REMOTE_DIR="pauk-new-gui"
 SCREEN_NAME="pauk-new-gui"
-PORT=8502
+PORT="${PORT:-8502}"
 
 root="$(git rev-parse --show-toplevel)"
 data_dir="$root/data/gui/private"
@@ -54,13 +54,19 @@ if ! command -v python3 > /dev/null; then
     echo "python3 not found on the server." >&2
     exit 1
 fi
+python3 --version
 if screen -list | grep -q '\.${SCREEN_NAME}[[:space:]]'; then
     screen -S $SCREEN_NAME -X quit
 fi
-screen -dmS $SCREEN_NAME python3 -m http.server $PORT --directory "\$HOME/$REMOTE_DIR"
-sleep 1
+# cd instead of --directory: that flag needs Python 3.7+. The server's own
+# output goes to a log outside the served folder, so a crash is diagnosable.
+log="\$HOME/${SCREEN_NAME}.log"
+cd "\$HOME/$REMOTE_DIR"
+screen -dmS $SCREEN_NAME sh -c "python3 -m http.server $PORT > '\$log' 2>&1"
+sleep 2
 if ! screen -list | grep -q '\.${SCREEN_NAME}[[:space:]]'; then
-    echo "Screen session didn't stay up - is port $PORT already taken?" >&2
+    echo "Screen session didn't stay up. Server output (\$log):" >&2
+    tail -n 20 "\$log" >&2
     exit 1
 fi
 EOF

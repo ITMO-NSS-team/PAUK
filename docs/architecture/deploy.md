@@ -82,7 +82,11 @@ docker run -d --name pauk-mongo -p 27017:27017 \
 
 ```bash
 ./scripts/deploy_new_gui.sh
+PORT=8503 ./scripts/deploy_new_gui.sh   # если 8502 занят
 ```
+
+Если процесс раздачи не поднялся, скрипт печатает хвост его вывода из
+`~/pauk-new-gui.log` на сервере (например, `Address already in use`).
 
 В отличие от `deploy.sh`, на сервере ничего не собирается и `git pull` не
 делается — сайт статический, собирается локально с текущей ветки:
