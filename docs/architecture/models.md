@@ -55,8 +55,8 @@ Pydantic-модели того, что лежит в `data/prepared/<group>/*.js
   подключён. `email` — адрес для карточки, один; `emails` — все известные
   адреса, по ним `github_match` опознаёт аккаунт (аккаунт подписан тем,
   которым коммитит, а не тем, который выбрали показывать).
-  `github`/`google_scholar`/`openreview` заполняются тремя путями: ссылка,
-  указанная автором в ORCID, профиль OpenReview и `github_match`.
+  `github` заполняется ссылкой из ORCID и стейджем `github_match`;
+  `google_scholar` — ссылкой из ORCID.
 - Блок под комментарием `# stub` (`scopus_id`, `researcher_id`, `h_index`,
   `wikipedia` и ещё около полутора десятков полей) — поля из
   предложенной Камилем схемы графа, ни один pipeline stage их не
@@ -133,10 +133,9 @@ JSONL):
   всё остальное → пропустить без `--force`). Не пытайтесь читать в него
   дополнительный смысл про «почему» — причина сбоя идёт текстом в
   `ProcessingState.error`, не отдельным статусом.
-- **`ProcessingState`** — `status`, `request_key`, `phase`, `attempts`,
+- **`ProcessingState`** — `status`, `request_key`, `attempts`,
   `finished_at`, `error`, `result_count`. `request_key` связывает результат
-  с конкретным входом внешнего API (ORCID, DOI, email); `phase` нужен
-  многошаговому OpenReview-поиску.
+  с конкретным входом внешнего API (OpenAlex id, ORCID, DOI).
 
 ## `__init__.py`
 
