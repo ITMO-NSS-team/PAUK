@@ -103,10 +103,12 @@ export type LocaleKey =
   | "field.createdAt"
   | "field.updatedAt"
   | "field.corresponding"
+  | "field.authorPosition"
   | "section.general"
   | "section.private"
   | "section.service"
   | "panel.showMore"
+  | "panel.showLess"
   | "search.placeholder"
   | "search.pubsCountShort"
   | "search.trigger"
@@ -189,10 +191,12 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.createdAt": "Создан",
     "field.updatedAt": "Обновлён",
     "field.corresponding": "автор для переписки",
+    "field.authorPosition": "{n}-й автор",
     "section.general": "Общее",
     "section.private": "Приватное",
     "section.service": "Служебное",
     "panel.showMore": "+ ещё {n}",
+    "panel.showLess": "− свернуть",
     "overview.title": "Обзор",
     "overview.avgPubsPerAuthor": "Публикаций на автора (среднее)",
     "overview.knownYear": "Известен год",
@@ -289,10 +293,12 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.createdAt": "Created",
     "field.updatedAt": "Updated",
     "field.corresponding": "corresponding",
+    "field.authorPosition": "author #{n}",
     "section.general": "General",
     "section.private": "Private",
     "section.service": "Service",
     "panel.showMore": "+ {n} more",
+    "panel.showLess": "− show less",
     "overview.title": "Overview",
     "overview.avgPubsPerAuthor": "Publications per author (avg.)",
     "overview.knownYear": "Known year",

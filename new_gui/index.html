@@ -727,21 +727,37 @@
       #panel dd.panel-row--block {
         grid-column: 1 / -1;
       }
+      /* Увеличенные отступы сверху и снизу — чтобы соседние длинные поля
+         (например, варианты имени и аффилиации) не сливались в один список. */
       #panel dt.panel-row--block {
-        padding-bottom: 4px;
+        padding-top: 16px;
+        padding-bottom: 6px;
         border-bottom: none;
+      }
+      #panel dt.panel-row--block:first-child {
+        padding-top: 7px;
       }
       #panel dd.panel-row--block {
         padding-top: 0;
+        padding-bottom: 12px;
       }
+      /* Пункты разделены линией, как строки списка в поиске (.tab-list-item). */
       .panel-list {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
         margin: 0;
         padding: 0;
         list-style: none;
         overflow-wrap: anywhere;
+      }
+      .panel-list li {
+        padding: 6px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .panel-list li:first-child {
+        padding-top: 0;
+      }
+      .panel-list li:last-child {
+        padding-bottom: 0;
+        border-bottom: none;
       }
       .panel-list__meta {
         color: var(--muted);

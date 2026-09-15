@@ -905,7 +905,9 @@ export function mountPanel(
             const role = authorDetail?.pub_roles?.[pubKeys[i] ?? ""];
             const meta = role
               ? [
-                  role.position === null ? "" : `#${role.position}`,
+                  role.position === null
+                    ? ""
+                    : t("field.authorPosition", lang).replace("{n}", String(role.position)),
                   role.corresponding ? t("field.corresponding", lang) : "",
                 ]
                   .filter(Boolean)
@@ -1196,22 +1198,32 @@ function buildCard(options: PanelCardOptions): HTMLElement {
     const ul = document.createElement("ul");
     ul.className = "panel-list";
     const limit = PANEL_CONFIG.listLimit;
-    ul.append(...value.items.slice(0, limit).map(listItemElement));
-
     const hidden = value.items.length - limit;
-    if (hidden > 0) {
-      const more = document.createElement("button");
-      more.type = "button";
-      more.className = "panel-list__more";
-      more.textContent = t("panel.showMore", lang).replace("{n}", String(hidden));
-      more.addEventListener("click", () => {
-        more.parentElement?.remove();
-        ul.append(...value.items.slice(limit).map(listItemElement));
+    let expanded = false;
+
+    // Кнопка переключает список между первыми `limit` пунктами и всеми.
+    function renderItems(): void {
+      ul.replaceChildren(
+        ...(expanded ? value.items : value.items.slice(0, limit)).map(listItemElement),
+      );
+      if (hidden <= 0) return;
+
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "panel-list__more";
+      toggle.textContent = expanded
+        ? t("panel.showLess", lang)
+        : t("panel.showMore", lang).replace("{n}", String(hidden));
+      toggle.addEventListener("click", () => {
+        expanded = !expanded;
+        renderItems();
       });
-      const moreItem = document.createElement("li");
-      moreItem.appendChild(more);
-      ul.appendChild(moreItem);
+      const toggleItem = document.createElement("li");
+      toggleItem.appendChild(toggle);
+      ul.appendChild(toggleItem);
     }
+
+    renderItems();
     return ul;
   }
 
