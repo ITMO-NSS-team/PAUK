@@ -81,6 +81,18 @@ export interface AuthorDetail {
   openreview: string;
   email: string;
   affiliations: Affiliation[];
+  // Три поля ниже необязательные: authors-detail.json, сгенерированный до их
+  // появления, их не содержит, и карточка автора не должна на нём падать.
+  // Позиция автора в списке авторов и флаг "автор для переписки" — по ключу публикации.
+  pub_roles?: Record<string, PubRole>;
+  // ISO-строки из Neo4j (toString(datetime)), служебные поля.
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PubRole {
+  position: number | null;
+  corresponding: boolean;
 }
 
 export interface RepoNode {

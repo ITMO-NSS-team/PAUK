@@ -7,6 +7,7 @@
 // графа, см. {@link renderOverview}.
 
 import type {
+  Affiliation,
   AuthorDetail,
   AuthorNode,
   GraphData,
@@ -45,12 +46,22 @@ const LOADING: unique symbol = Symbol("panel-row-loading");
  * ({@link PanelEntityRef} — соавторы, публикации, департаменты и т.п.:
  * клик делает эту сущность новым store.selection, не открывает вкладку),
  * либо {@link LOADING}, пока detail ещё не пришёл. */
-type PanelRowValue = string | PanelLink[] | PanelEntityRef[] | typeof LOADING;
+type PanelRowValue = string | PanelLink[] | PanelEntityRef[] | PanelList | typeof LOADING;
 /** Одна кликабельная ВНЕШНЯЯ ссылка в строке карточки — всегда открывается в новой вкладке ({@link buildCard}). */
 interface PanelLink {
   kind: "link";
   href: string;
   text: string;
+  /** Необязательный некликабельный суффикс, например годы аффилиации. */
+  meta?: string;
+}
+/**
+ * Длинное поле-список: подпись во всю ширину, под ней по элементу на строку,
+ * первые {@link PANEL_CONFIG.listLimit} и кнопка "ещё N" для остальных.
+ */
+interface PanelList {
+  kind: "list";
+  items: (string | PanelLink | PanelEntityRef)[];
 }
 /**
  * Кликабельная ссылка на ДРУГУЮ сущность ЭТОГО ЖЕ графа (не внешний URL) —
@@ -71,6 +82,16 @@ interface PanelEntityRef {
 }
 /** Одна строка карточки: `[подпись, значение]`. */
 type PanelRow = [label: string, value: PanelRowValue];
+/** Раздел карточки: заголовок (`null` — без заголовка) и его строки. */
+interface PanelSection {
+  title: string | null;
+  rows: PanelRow[];
+}
+
+/** Карточка из одного раздела без заголовка — для карточек, которые на разделы не делятся. */
+function untitled(rows: PanelRow[]): PanelSection[] {
+  return [{ title: null, rows }];
+}
 
 /**
  * Строит ссылку на DOI публикации — как и в старом GUI (`search.js`): если
@@ -231,6 +252,71 @@ function emailLink(email: string): PanelLink {
   return { kind: "link", href: `mailto:${email}`, text: email };
 }
 
+const AFFILIATION_SOURCE_LABELS: Record<string, string> = { openalex: "OpenAlex", orcid: "ORCID" };
+
+/**
+ * Склеивает записи аффилиаций с одинаковым названием (одна и та же
+ * организация приходит отдельно от OpenAlex и от ORCID) в один пункт списка:
+ * название (ссылка на ror.org, если ROR известен), диапазон лет и источники.
+ * Сверху — самые недавние.
+ *
+ * @param affiliations - `AuthorDetail.affiliations`.
+ * @returns Пункты для {@link PanelList}.
+ *
+ * @example
+ * // [{name: "ITMO", ror: "04txgxn49", years: [2023, 2024], source: "openalex"},
+ * //  {name: "ITMO", ror: "04txgxn49", years: [2019], source: "orcid"}]
+ * // -> [{ kind: "link", href: "https://ror.org/04txgxn49", text: "ITMO", meta: "2019–2024 · OpenAlex, ORCID" }]
+ */
+function affiliationItems(affiliations: Affiliation[]): (string | PanelLink)[] {
+  const byName = new Map<string, { ror: string; years: number[]; sources: Set<string> }>();
+  for (const aff of affiliations) {
+    const entry = byName.get(aff.name) ?? { ror: "", years: [], sources: new Set<string>() };
+    entry.ror ||= aff.ror;
+    entry.years.push(...aff.years);
+    entry.sources.add(AFFILIATION_SOURCE_LABELS[aff.source] ?? aff.source);
+    byName.set(aff.name, entry);
+  }
+
+  return [...byName.entries()]
+    .map(([name, { ror, years, sources }]) => ({
+      name,
+      ror,
+      first: years.length > 0 ? Math.min(...years) : null,
+      last: years.length > 0 ? Math.max(...years) : null,
+      sources: [...sources],
+    }))
+    .sort((a, b) => (b.last ?? -Infinity) - (a.last ?? -Infinity))
+    .map(({ name, ror, first, last, sources }): string | PanelLink => {
+      const yearsText = first === null ? "" : first === last ? String(first) : `${first}–${last}`;
+      const meta = [yearsText, sources.join(", ")].filter(Boolean).join(" · ");
+      return ror
+        ? { kind: "link", href: `https://ror.org/${encodeURIComponent(ror)}`, text: name, meta }
+        : meta
+          ? `${name} (${meta})`
+          : name;
+    });
+}
+
+/**
+ * Форматирует служебную ISO-метку времени (`created_at`/`updated_at`) под
+ * язык интерфейса. Нераспознанная строка возвращается как есть.
+ *
+ * @param value - ISO-строка, например `"2026-08-14T10:23:45.123Z"`.
+ * @param lang - язык интерфейса.
+ */
+function formatTimestamp(value: string, lang: AppState["lang"]): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(lang === "ru" ? "ru-RU" : "en-GB", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 /**
  * Подключает панель информации: подписывается на Store и перерисовывает
  * содержимое каждый раз, когда меняется `state.selection` ИЛИ
@@ -326,52 +412,48 @@ export function mountPanel(
    * @returns До `PANEL_CONFIG.listLimit` ключей публикаций из `pubKeys`, от новых к старым.
    */
   function recentPubKeysFrom(pubKeys: string[]): string[] {
+    return pubKeysByYear(pubKeys).slice(0, PANEL_CONFIG.listLimit);
+  }
+
+  /**
+   * Все ключи публикаций из `pubKeys`, от новых к старым, без обрезки —
+   * для списков с кнопкой "ещё N" ({@link PanelList}).
+   *
+   * @param pubKeys - произвольный список ключей (не обязательно только публикаций).
+   */
+  function pubKeysByYear(pubKeys: string[]): string[] {
     return pubKeys
       .map((key) => index.get(key))
       .filter((node): node is PubNode => node?.kind === "pub")
       .sort((a, b) => (b.year ?? -Infinity) - (a.year ?? -Infinity))
-      .slice(0, PANEL_CONFIG.listLimit)
       .map((node) => node.key);
   }
 
   /**
-   * Возвращает ключи публикаций автора, недавние сверху, обрезано до
-   * {@link PANEL_CONFIG.listLimit}.
-   *
-   * @param authorKey - ключ автора.
-   * @returns До `PANEL_CONFIG.listLimit` ключей публикаций, от новых к старым.
-   */
-  function recentPubKeysOf(authorKey: string): string[] {
-    return recentPubKeysFrom(authorPubs.get(authorKey) ?? []);
-  }
-
-  /**
    * Возвращает ключи соавторов автора, по убыванию суммарного веса связи
-   * (числа совместных публикаций), обрезано до {@link PANEL_CONFIG.listLimit}.
+   * (числа совместных публикаций).
    *
    * @param authorKey - ключ автора.
-   * @returns До `PANEL_CONFIG.listLimit` ключей соавторов, от самых частых к редким.
+   * @returns Ключи всех соавторов, от самых частых к редким.
    */
   function topCoauthorKeys(authorKey: string): string[] {
     return [...(coauthIndex.get(authorKey) ?? new Map<string, number>()).entries()]
       .sort(([, weightA], [, weightB]) => weightB - weightA)
-      .slice(0, PANEL_CONFIG.listLimit)
       .map(([key]) => key);
   }
 
   /**
    * Возвращает ключи репозиториев автора, по убыванию звёзд (как и в
-   * старом GUI), обрезано до {@link PANEL_CONFIG.listLimit}.
+   * старом GUI).
    *
    * @param authorKey - ключ автора.
-   * @returns До `PANEL_CONFIG.listLimit` ключей репозиториев, от самых популярных к менее популярным.
+   * @returns Ключи всех репозиториев автора, от самых популярных к менее популярным.
    */
   function authorRepoKeysOf(authorKey: string): string[] {
     return (authorRepoIndex.get(authorKey) ?? [])
       .map((key) => index.get(key))
       .filter((node): node is RepoNode => node?.kind === "repo")
       .sort((a, b) => b.stars - a.stars)
-      .slice(0, PANEL_CONFIG.listLimit)
       .map((node) => node.key);
   }
 
@@ -425,7 +507,7 @@ export function mountPanel(
    *   после того, как почти любая сущность стала кликабельной ссылкой на
    *   другую (см. {@link PanelEntityRef}), легко потерять, на карточку
    *   КАКОГО вида сущности только что перепрыгнули.
-   * @param rows - строки карточки, см. {@link PanelRow}.
+   * @param sections - разделы карточки со строками, см. {@link PanelSection}.
    * @param showBack - показывать ли кнопку "← Обзор" — не для самого
    *   "Обзора" (там уже некуда возвращаться), для всех остальных карточек.
    * @param subtitle - см. {@link PanelCardOptions.subtitle} — имя того же
@@ -438,7 +520,7 @@ export function mountPanel(
   function show(
     title: string,
     kind: string,
-    rows: PanelRow[],
+    sections: PanelSection[],
     showBack: boolean,
     subtitle?: string | null,
     extra?: HTMLElement | null,
@@ -448,7 +530,8 @@ export function mountPanel(
       buildCard({
         title,
         kind,
-        rows,
+        sections,
+        lang: store.get().lang,
         // "← Обзор"/"← Overview" — null для самого "Обзора" (там уже
         // некуда возвращаться), готовая локализованная строка для всех
         // остальных карточек.
@@ -538,14 +621,14 @@ export function mountPanel(
       return show(
         t("overview.title", lang),
         tabKind,
-        [
+        untitled([
           [t("field.authorsCount", lang), String(authors.length)],
           [t("field.deptsCount", lang), String(data.departments.length)],
           [t("overview.avgPubsPerAuthor", lang), avgPubs],
           [t("field.orcid", lang), completionRow(withOrcid, authorDetails.size)],
           [t("field.github", lang), completionRow(withGithub, authorDetails.size)],
           [t("field.email", lang), completionRow(withEmail, authorDetails.size)],
-        ],
+        ]),
         false,
         null,
         authorsByDeptChart(authors, lang),
@@ -565,11 +648,11 @@ export function mountPanel(
       return show(
         t("overview.title", lang),
         tabKind,
-        [
+        untitled([
           [t("field.reposCount", lang), String(repos.length)],
           [t("field.hasReadme", lang), completionRow(withReadme, repoDetails.size)],
           [t("field.license", lang), completionRow(withLicense, repoDetails.size)],
-        ],
+        ]),
         false,
         null,
         reposByStarsChart(repos, lang),
@@ -590,12 +673,12 @@ export function mountPanel(
     return show(
       t("overview.title", lang),
       tabKind,
-      [
+      untitled([
         [t("field.pubsCount", lang), String(pubs.length)],
         [t("overview.knownYear", lang), completionRow(withKnownYear, pubs.length)],
         [t("field.doi", lang), completionRow(withDoi, pubDetails.size)],
         [t("field.abstract", lang), completionRow(withAbstract, pubDetails.size)],
-      ],
+      ]),
       false,
       null,
       pubsByYearChart(pubs, lang),
@@ -731,96 +814,135 @@ export function mountPanel(
       // имени вовсе, у публикации заголовок в принципе на одном языке.
       let title = nodeLabel(node, lang, pubDetails);
       let subtitle: string | null = null;
-      const rows: PanelRow[] = [
-        [t("field.key", lang), node.key],
-        [t("field.kind", lang), kindLabel(node.kind, lang)],
-        [
-          t("field.dept", lang),
-          dept ? localize(dept.name, dept.name_en, lang) : t("field.unknownDept", lang),
-        ],
+      const keyRow: PanelRow = [t("field.key", lang), node.key];
+      const kindRow: PanelRow = [t("field.kind", lang), kindLabel(node.kind, lang)];
+      const deptRow: PanelRow = [
+        t("field.dept", lang),
+        dept ? localize(dept.name, dept.name_en, lang) : t("field.unknownDept", lang),
       ];
+      const rows: PanelRow[] = [keyRow, kindRow, deptRow];
       if (node.kind === "author") {
-        rows.push([t("field.pubsCount", lang), String(node.pubs_count)]);
-        // authorDetails.has(), не просто .get() — new_generate строит
-        // authors-detail.json так, что запись есть у КАЖДОГО автора, даже
-        // если все поля в ней пустые (см. new_generate/graph_builder.py).
-        // Значит "записи нет" означает ровно одно: файл ещё не домержился
-        // (см. app/main.ts) — а не то, что у автора реально нет данных.
-        if (authorDetails.has(node.key)) {
-          const authorDetail = authorDetails.get(node.key);
-          // Заголовок — полное имя на нужном языке, если оно вообще
-          // известно ("Фамилия Имя Отчество", не "Фамилия И.О."); если
-          // пусто (редкий случай) — остаётся сокращённая подпись узла.
-          const fullName = authorDetail
-            ? localize(authorDetail.name_ru, authorDetail.name_en, lang)
-            : "";
+        // Разделы — по пометкам полей в pauk/cache/export.py: public/связи
+        // графа — "Общее", private — "Приватное", id и метки времени — "Служебное".
+        const general: PanelRow[] = [
+          deptRow,
+          [t("field.pubsCount", lang), String(node.pubs_count)],
+        ];
+        const privateRows: PanelRow[] = [];
+        const service: PanelRow[] = [keyRow, kindRow];
+
+        // new_generate пишет запись в authors-detail.json для КАЖДОГО автора,
+        // даже с пустыми полями, поэтому "записи нет" значит ровно одно:
+        // файл ещё не домержился (см. app/main.ts).
+        const authorDetail = authorDetails.get(node.key);
+        if (authorDetail) {
+          // Заголовок — полное имя на нужном языке, если оно известно; под
+          // ним имя на втором языке, если оно отличается.
+          const fullName = localize(authorDetail.name_ru, authorDetail.name_en, lang);
           if (fullName) {
             title = fullName;
-            // Тот же localize() с ПЕРЕСТАВЛЕННЫМИ местами аргументами — имя
-            // на языке, который НЕ выбран интерфейсом, а не отдельная логика
-            // "взять другое поле": для lang="en" title уже name_en, otherName
-            // тогда name_ru, и наоборот. Не показываем, если оба языка дали
-            // одну и ту же строку (иностранный автор без отдельной
-            // транслитерации) — дублировать заголовок под самим собой незачем.
-            const otherName = authorDetail
-              ? localize(authorDetail.name_en, authorDetail.name_ru, lang)
-              : "";
+            const otherName = localize(authorDetail.name_en, authorDetail.name_ru, lang);
             if (otherName && otherName !== fullName) subtitle = otherName;
           }
-          if (authorDetail?.degree) rows.push([t("field.degree", lang), authorDetail.degree]);
-          if (authorDetail?.github)
-            rows.push([t("field.github", lang), [githubLink(authorDetail.github)]]);
-          if (authorDetail?.orcid)
-            rows.push([t("field.orcid", lang), [orcidLink(authorDetail.orcid)]]);
-          if (authorDetail?.openalex_id)
-            rows.push([t("field.openalexId", lang), [openalexIdLink(authorDetail.openalex_id)]]);
-          if (authorDetail?.google_scholar) {
-            rows.push([
+          if (authorDetail.openalex_id)
+            general.push([t("field.openalexId", lang), [openalexIdLink(authorDetail.openalex_id)]]);
+
+          if (authorDetail.degree) privateRows.push([t("field.degree", lang), authorDetail.degree]);
+          if (authorDetail.github)
+            privateRows.push([t("field.github", lang), [githubLink(authorDetail.github)]]);
+          if (authorDetail.orcid)
+            privateRows.push([t("field.orcid", lang), [orcidLink(authorDetail.orcid)]]);
+          if (authorDetail.google_scholar) {
+            privateRows.push([
               t("field.googleScholar", lang),
               [googleScholarLink(authorDetail.google_scholar)],
             ]);
           }
-          if (authorDetail?.openreview)
-            rows.push([t("field.openreview", lang), [openreviewLink(authorDetail.openreview)]]);
-          if (authorDetail?.email)
-            rows.push([t("field.email", lang), [emailLink(authorDetail.email)]]);
-          if (authorDetail && authorDetail.affiliations.length > 0) {
-            const names = [...new Set(authorDetail.affiliations.map((a) => a.name))];
-            rows.push([t("field.affiliations", lang), names.join(", ")]);
+          if (authorDetail.openreview)
+            privateRows.push([
+              t("field.openreview", lang),
+              [openreviewLink(authorDetail.openreview)],
+            ]);
+          if (authorDetail.email)
+            privateRows.push([t("field.email", lang), [emailLink(authorDetail.email)]]);
+          if (authorDetail.affiliations.length > 0) {
+            privateRows.push([
+              t("field.affiliations", lang),
+              { kind: "list", items: affiliationItems(authorDetail.affiliations) },
+            ]);
           }
-          // Раздельно по источнику — OpenAlex (варианты по публикациям) и
-          // ORCID (имя, под которым автор сам просит его указывать) — это
-          // разные по происхождению вещи, см. author_variants() в
-          // new_generate/graph_builder.py.
-          if (authorDetail && authorDetail.name_variants.openalex.length > 0) {
-            rows.push([
+          // Раздельно по источнику — см. author_variants() в new_generate/nodes.py.
+          if (authorDetail.name_variants.openalex.length > 0) {
+            privateRows.push([
               t("field.nameVariantsOpenalex", lang),
-              authorDetail.name_variants.openalex.join(", "),
+              { kind: "list", items: authorDetail.name_variants.openalex },
             ]);
           }
-          if (authorDetail && authorDetail.name_variants.orcid.length > 0) {
-            rows.push([
+          if (authorDetail.name_variants.orcid.length > 0) {
+            privateRows.push([
               t("field.nameVariantsOrcid", lang),
-              authorDetail.name_variants.orcid.join(", "),
+              { kind: "list", items: authorDetail.name_variants.orcid },
             ]);
           }
+
+          if (authorDetail.created_at)
+            service.push([
+              t("field.createdAt", lang),
+              formatTimestamp(authorDetail.created_at, lang),
+            ]);
+          if (authorDetail.updated_at)
+            service.push([
+              t("field.updatedAt", lang),
+              formatTimestamp(authorDetail.updated_at, lang),
+            ]);
         } else {
-          rows.push([t("field.loadingDetails", lang), LOADING]);
+          privateRows.push([t("field.loadingDetails", lang), LOADING]);
         }
 
-        // Сами счётчики выше не говорят, КАКИЕ именно публикации/соавторы —
-        // строки ниже показывают список, только когда он не пуст (как и у
-        // общих публикаций/авторов в карточке ребра).
-        const recentPubs = recentPubKeysOf(node.key);
-        if (recentPubs.length > 0) rows.push([t("tab.pubs", lang), entityRefsOf(recentPubs, lang)]);
+        const pubKeys = pubKeysByYear(authorPubs.get(node.key) ?? []);
+        if (pubKeys.length > 0) {
+          const pubRefs = entityRefsOf(pubKeys, lang).map((ref, i) => {
+            const role = authorDetail?.pub_roles?.[pubKeys[i] ?? ""];
+            const meta = role
+              ? [
+                  role.position === null ? "" : `#${role.position}`,
+                  role.corresponding ? t("field.corresponding", lang) : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              : "";
+            return meta ? { ...ref, meta } : ref;
+          });
+          general.push([t("tab.pubs", lang), { kind: "list", items: pubRefs }]);
+        }
 
-        const topCoauthors = topCoauthorKeys(node.key);
-        if (topCoauthors.length > 0)
-          rows.push([t("field.topCoauthors", lang), entityRefsOf(topCoauthors, lang)]);
+        const coauthors = topCoauthorKeys(node.key);
+        if (coauthors.length > 0) {
+          general.push([
+            t("field.topCoauthors", lang),
+            { kind: "list", items: entityRefsOf(coauthors, lang) },
+          ]);
+        }
 
         const authorRepos = authorRepoKeysOf(node.key);
-        if (authorRepos.length > 0)
-          rows.push([t("tab.repos", lang), entityRefsOf(authorRepos, lang)]);
+        if (authorRepos.length > 0) {
+          general.push([
+            t("tab.repos", lang),
+            { kind: "list", items: entityRefsOf(authorRepos, lang) },
+          ]);
+        }
+
+        return show(
+          title,
+          kindLabel(node.kind, lang),
+          [
+            { title: t("section.general", lang), rows: general },
+            { title: t("section.private", lang), rows: privateRows },
+            { title: t("section.service", lang), rows: service },
+          ],
+          true,
+          subtitle,
+        );
       }
       if (node.kind === "repo") {
         rows.push([t("field.stars", lang), String(node.stars)]);
@@ -876,7 +998,7 @@ export function mountPanel(
           rows.push([t("tab.authors", lang), entityRefsOf(pubAuthorKeys, lang)]);
       }
 
-      return show(title, kindLabel(node.kind, lang), rows, true, subtitle);
+      return show(title, kindLabel(node.kind, lang), untitled(rows), true, subtitle);
     }
 
     if (selection.kind === "edge") {
@@ -910,7 +1032,7 @@ export function mountPanel(
           rows.push([t("field.sharedAuthors", lang), entityRefsOf(shared, lang)]);
       }
 
-      return show(t("kind.edge", lang), t("kind.edge", lang), rows, true);
+      return show(t("kind.edge", lang), t("kind.edge", lang), untitled(rows), true);
     }
 
     // selection.kind === "dept"
@@ -931,7 +1053,12 @@ export function mountPanel(
     if (relatedIds.length > 0)
       rows.push([t("field.relatedDepts", lang), deptRefsOf(relatedIds, lang)]);
 
-    return show(localize(dept.name, dept.name_en, lang), kindLabel("dept", lang), rows, true);
+    return show(
+      localize(dept.name, dept.name_en, lang),
+      kindLabel("dept", lang),
+      untitled(rows),
+      true,
+    );
   }
 
   render(store.get());
@@ -951,8 +1078,10 @@ interface PanelCardOptions {
    * сущности только что перепрыгнули, глядя только на список полей.
    */
   kind: string;
-  /** Строки карточки в порядке отображения. */
-  rows: PanelRow[];
+  /** Разделы карточки в порядке отображения; пустые разделы не рисуются. */
+  sections: PanelSection[];
+  /** Язык интерфейса — для подписи кнопки "ещё N" у {@link PanelList}. */
+  lang: AppState["lang"];
   /**
    * Текст кнопки "назад к обзору" (например `"← Обзор"`), уже
    * локализованный вызывающим кодом — `null`, если кнопку показывать не
@@ -993,7 +1122,7 @@ interface PanelCardOptions {
  * @returns `<div class="panel-card">`, ещё не вставленный в DOM.
  */
 function buildCard(options: PanelCardOptions): HTMLElement {
-  const { title, kind, rows, backLabel, onSelectRef, onBack, subtitle, extra } = options;
+  const { title, kind, sections, lang, backLabel, onSelectRef, onBack, subtitle, extra } = options;
   const card = document.createElement("div");
   card.className = "panel-card";
 
@@ -1006,65 +1135,132 @@ function buildCard(options: PanelCardOptions): HTMLElement {
     card.appendChild(back);
   }
 
+  // Заголовок и имя на втором языке — одним блоком, чтобы подзаголовок стоял
+  // вплотную к имени, а не после общего отступа шапки.
   const head = document.createElement("div");
   head.className = "panel-card__head";
+  const titles = document.createElement("div");
+  titles.className = "panel-card__titles";
   const heading = document.createElement("h3");
   heading.textContent = title;
-  const kindBadge = document.createElement("span");
-  kindBadge.className = "panel-kind";
-  kindBadge.textContent = kind;
-  head.append(heading, kindBadge);
-  card.appendChild(head);
-
+  titles.appendChild(heading);
   if (subtitle) {
     const sub = document.createElement("div");
     sub.className = "panel-card__subtitle";
     sub.textContent = subtitle;
-    card.appendChild(sub);
+    titles.appendChild(sub);
+  }
+  const kindBadge = document.createElement("span");
+  kindBadge.className = "panel-kind";
+  kindBadge.textContent = kind;
+  head.append(titles, kindBadge);
+  card.appendChild(head);
+
+  function linkElement(link: PanelLink): HTMLAnchorElement {
+    const a = document.createElement("a");
+    a.href = link.href;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.textContent = link.text;
+    return a;
   }
 
-  const list = document.createElement("dl");
-  for (const [label, value] of rows) {
-    const dt = document.createElement("dt");
-    dt.textContent = label;
+  // Ссылки на другие сущности графа — <button>, не <a>: клик не открывает
+  // вкладку, а меняет store.selection (см. onSelectRef).
+  function refElement(ref: PanelEntityRef): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "panel-entity-ref";
+    button.textContent = ref.label;
+    button.addEventListener("click", () => onSelectRef(ref.selection));
+    return button;
+  }
 
-    const dd = document.createElement("dd");
-    if (typeof value === "string") {
-      dd.textContent = value;
-    } else if (value === LOADING) {
-      dd.appendChild(createLoadingIndicator());
-    } else if (value[0]?.kind === "link") {
-      // Внешние ссылки (например, несколько репозиториев с кодом) —
-      // разделяем запятой с пробелом, как и в старом GUI. "↗" в CSS
-      // (.panel-card a::after) отличает их от .panel-entity-ref — те того
-      // же цвета, но остаются в приложении, а не открывают вкладку.
-      (value as PanelLink[]).forEach((link, i) => {
-        if (i > 0) dd.append(", ");
-        const a = document.createElement("a");
-        a.href = link.href;
-        a.target = "_blank";
-        a.rel = "noopener noreferrer";
-        a.textContent = link.text;
-        dd.appendChild(a);
+  function listItemElement(item: PanelList["items"][number]): HTMLLIElement {
+    const li = document.createElement("li");
+    if (typeof item === "string") {
+      li.textContent = item;
+      return li;
+    }
+    li.appendChild(item.kind === "link" ? linkElement(item) : refElement(item));
+    if (item.meta) {
+      const meta = document.createElement("span");
+      meta.className = "panel-list__meta";
+      meta.textContent = item.meta;
+      li.append(" ", meta);
+    }
+    return li;
+  }
+
+  function listElement(value: PanelList): HTMLUListElement {
+    const ul = document.createElement("ul");
+    ul.className = "panel-list";
+    const limit = PANEL_CONFIG.listLimit;
+    ul.append(...value.items.slice(0, limit).map(listItemElement));
+
+    const hidden = value.items.length - limit;
+    if (hidden > 0) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "panel-list__more";
+      more.textContent = t("panel.showMore", lang).replace("{n}", String(hidden));
+      more.addEventListener("click", () => {
+        more.parentElement?.remove();
+        ul.append(...value.items.slice(limit).map(listItemElement));
       });
-    } else {
-      // Ссылки на другие сущности графа — <button>, не <a>: клик не
-      // открывает вкладку, а меняет store.selection (см. onSelectRef).
-      (value as PanelEntityRef[]).forEach((ref, i) => {
-        if (i > 0) dd.append(", ");
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "panel-entity-ref";
-        button.textContent = ref.label;
-        button.addEventListener("click", () => onSelectRef(ref.selection));
-        dd.appendChild(button);
-        if (ref.meta) dd.append(` ${ref.meta}`);
-      });
+      const moreItem = document.createElement("li");
+      moreItem.appendChild(more);
+      ul.appendChild(moreItem);
+    }
+    return ul;
+  }
+
+  for (const section of sections) {
+    if (section.rows.length === 0) continue;
+
+    const sectionEl = document.createElement("section");
+    sectionEl.className = "panel-section";
+    if (section.title) {
+      const sectionTitle = document.createElement("h4");
+      sectionTitle.className = "panel-section__title";
+      sectionTitle.textContent = section.title;
+      sectionEl.appendChild(sectionTitle);
     }
 
-    list.append(dt, dd);
+    const list = document.createElement("dl");
+    for (const [label, value] of section.rows) {
+      const dt = document.createElement("dt");
+      dt.textContent = label;
+
+      const dd = document.createElement("dd");
+      if (typeof value === "string") {
+        dd.textContent = value;
+      } else if (value === LOADING) {
+        dd.appendChild(createLoadingIndicator());
+      } else if (!Array.isArray(value)) {
+        // Длинный список — подпись и значения во всю ширину, по элементу на строку.
+        dt.classList.add("panel-row--block");
+        dd.classList.add("panel-row--block");
+        dd.appendChild(listElement(value));
+      } else if (value[0]?.kind === "link") {
+        // Несколько внешних ссылок в одной строке — через запятую, как и в старом GUI.
+        (value as PanelLink[]).forEach((link, i) => {
+          if (i > 0) dd.append(", ");
+          dd.appendChild(linkElement(link));
+        });
+      } else {
+        (value as PanelEntityRef[]).forEach((ref, i) => {
+          if (i > 0) dd.append(", ");
+          dd.appendChild(refElement(ref));
+          if (ref.meta) dd.append(` ${ref.meta}`);
+        });
+      }
+
+      list.append(dt, dd);
+    }
+    sectionEl.appendChild(list);
+    card.appendChild(sectionEl);
   }
-  card.appendChild(list);
 
   if (extra) card.appendChild(extra);
 

@@ -190,6 +190,171 @@ describe("mountPanel", () => {
     expect(panel.querySelector(".panel-card__subtitle")?.textContent).toBe("Иванов Иван Иванович");
   });
 
+  it("имя на втором языке стоит в шапке сразу под заголовком, а не отдельным блоком после неё", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    const titles = panel.querySelector(".panel-card__head .panel-card__titles");
+    expect(titles?.children[0]?.tagName).toBe("H3");
+    expect(titles?.children[1]?.className).toBe("panel-card__subtitle");
+  });
+
+  it("карточка автора разделена на «Общее», «Приватное» и «Служебное»", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    const sections = new Map(
+      [...panel.querySelectorAll(".panel-section")].map((section) => [
+        section.querySelector(".panel-section__title")?.textContent,
+        section,
+      ]),
+    );
+    expect([...sections.keys()]).toEqual(["Общее", "Приватное", "Служебное"]);
+
+    const general = sections.get("Общее");
+    expect(general?.textContent).toContain("Департамент");
+    expect(general?.querySelector("a[href='https://openalex.org/A5000000001']")).not.toBeNull();
+    expect(general?.textContent).toContain("Топ соавторов");
+
+    const privateSection = sections.get("Приватное");
+    expect(privateSection?.querySelector("a[href='mailto:ivanov@example.edu']")).not.toBeNull();
+    expect(
+      privateSection?.querySelector("a[href='https://orcid.org/0000-0001-2345-6789']"),
+    ).not.toBeNull();
+    expect(privateSection?.textContent).toContain("к.т.н.");
+
+    const service = sections.get("Служебное");
+    expect(service?.textContent).toContain("Ключ");
+    expect(service?.textContent).toContain("A1");
+    // created_at "2026-08-14T10:23:45.123Z" — дата в формате ru-RU, без сырой ISO-строки.
+    expect(service?.textContent).toContain("14.08.2026");
+    expect(service?.textContent).not.toContain("T10:23");
+  });
+
+  it("пока authors-detail не пришёл, индикатор загрузки стоит в «Приватном», а служебные ключ/тип видны сразу", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const titles = [...panel.querySelectorAll(".panel-section__title")].map((el) => el.textContent);
+    expect(titles).toEqual(["Общее", "Приватное", "Служебное"]);
+    const privateSection = panel.querySelectorAll(".panel-section")[1];
+    expect(privateSection?.querySelector(".loading-indicator")).not.toBeNull();
+    expect(panel.querySelectorAll(".panel-section")[2]?.textContent).toContain("A1");
+  });
+
+  it("аффилиации с одним названием склеиваются в один пункт: ссылка на ROR, диапазон лет и источники", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    // A1: "Sample University" от OpenAlex (2023, 2024) и от ORCID (2021); "Other Institute" без ROR и лет.
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    const dt = [...panel.querySelectorAll("dt")].find((el) => el.textContent === "Аффилиации");
+    const items = [...(dt?.nextElementSibling?.querySelectorAll("li") ?? [])];
+    expect(items.map((li) => li.textContent)).toEqual([
+      "Sample University 2021–2024 · OpenAlex, ORCID",
+      "Other Institute (OpenAlex)",
+    ]);
+    expect(items[0]?.querySelector("a")?.getAttribute("href")).toBe("https://ror.org/0sample01");
+  });
+
+  it("публикации автора — по одной на строку, с позицией автора и отметкой «автор для переписки»", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    // A1: P1 — позиция 1, corresponding; P2 — позиция 3; у P5 роли в detail нет.
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    const dt = [...panel.querySelectorAll("dt")].find((el) => el.textContent === "Публикации");
+    expect(dt?.classList.contains("panel-row--block")).toBe(true);
+    const byPub = new Map(
+      [...(dt?.nextElementSibling?.querySelectorAll("li") ?? [])].map((li) => [
+        li.querySelector("button.panel-entity-ref")?.textContent,
+        li.querySelector(".panel-list__meta")?.textContent ?? null,
+      ]),
+    );
+    expect(byPub.get("P1")).toBe("#1 · автор для переписки");
+    expect(byPub.get("P2")).toBe("#3");
+    expect(byPub.get("P5")).toBeNull();
+  });
+
+  it("карточка автора не падает на authors-detail.json, сгенерированном до появления pub_roles/created_at/updated_at", async () => {
+    const data = await loadSampleGraphData();
+    const [a1] = await loadSampleAuthorDetails();
+    if (!a1) throw new Error("фикстура должна содержать автора A1");
+    const staleA1: AuthorDetail = { ...a1 };
+    delete staleA1.pub_roles;
+    delete staleA1.created_at;
+    delete staleA1.updated_at;
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, indexDetailsByKey([staleA1]), NO_REPO_DETAILS);
+
+    expect(panel.querySelector("h3")?.textContent).toBe("Иванов Иван Иванович");
+    const pubsDt = [...panel.querySelectorAll("dt")].find((el) => el.textContent === "Публикации");
+    const pubsList = pubsDt?.nextElementSibling;
+    expect(pubsList?.textContent).toContain("P1");
+    expect(pubsList?.querySelector(".panel-list__meta")).toBeNull();
+    expect(panel.textContent).not.toContain("Создан");
+  });
+
+  it("длинный список показывает первые 10 пунктов и кнопку «+ ещё N», по клику — все", async () => {
+    const data = await loadSampleGraphData();
+    const [a1] = await loadSampleAuthorDetails();
+    if (!a1) throw new Error("фикстура должна содержать автора A1");
+    const variants = Array.from({ length: 13 }, (_, i) => `Variant ${i + 1}`);
+    const authorDetails = indexDetailsByKey([
+      { ...a1, name_variants: { openalex: variants, orcid: [] } },
+    ]);
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    const dt = [...panel.querySelectorAll("dt")].find(
+      (el) => el.textContent === "Варианты написания (OpenAlex)",
+    );
+    const list = dt?.nextElementSibling?.querySelector(".panel-list");
+    const more = list?.querySelector<HTMLButtonElement>(".panel-list__more");
+    expect(list?.querySelectorAll("li")).toHaveLength(11); // 10 вариантов + пункт с кнопкой
+    expect(more?.textContent).toBe("+ ещё 3");
+
+    more?.click();
+
+    expect(list?.querySelector(".panel-list__more")).toBeNull();
+    expect([...(list?.querySelectorAll("li") ?? [])].map((li) => li.textContent)).toEqual(variants);
+  });
+
   it("карточка автора БЕЗ domержённого detail (только сокращённая подпись узла) не показывает подзаголовок", async () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];

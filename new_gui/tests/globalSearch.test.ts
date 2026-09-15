@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PubDetail, RepoDetail } from "../src/contracts/graph";
 import { mountGlobalSearch } from "../src/features/globalSearch";
 import { Store, type AppState } from "../src/core/state";
@@ -177,6 +177,31 @@ describe("mountGlobalSearch", () => {
     expect(store.get().tab).toBe(1);
     expect(store.get().selection).toEqual({ kind: "node", key: "A1" });
     expect((document.getElementById("global-search") as HTMLElement).hidden).toBe(true); // закрылось после выбора
+  });
+
+  it("окно поиска закрывается после выбора, даже если другой подписчик Store упал на новом selection", async () => {
+    // Регрессия: упавшая на выбранном узле панель прерывала store.set(), и
+    // close() после него не вызывался — камера подлетала, а поиск оставался открытым.
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState());
+    store.subscribe(() => {
+      throw new Error("подписчик упал");
+    });
+    mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    document
+      .getElementById("global-search-trigger")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const input = document.getElementById("global-search-input") as HTMLInputElement;
+    input.value = "Иванов";
+    input.dispatchEvent(new Event("input"));
+    document.querySelector<HTMLButtonElement>("#global-search-results .tab-list-item")?.click();
+
+    expect(store.get().selection).toEqual({ kind: "node", key: "A1" });
+    expect((document.getElementById("global-search") as HTMLElement).hidden).toBe(true);
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 
   it("выбор департамента пишет selection dept, не трогая tab", async () => {

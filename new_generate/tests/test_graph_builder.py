@@ -22,7 +22,8 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
                  "first_name_en": "Ivan", "second_name_en": None, "surname_en": "Ivanov",
                  "name_ru": "Иванов Иван", "name_variants": [], "degree": "к.т.н.", "github": "ivanov", "orcid": None,
                  "openalex_id": "A123", "google_scholar": None, "openreview": None, "email": "ivanov@itmo.ru",
-                 "affiliations": '[{"name": "ITMO"}]'},
+                 "affiliations": '[{"name": "ITMO"}]',
+                 "created_at": "2026-08-14T10:23:45.123Z", "updated_at": "2026-09-01T08:00:00.5Z"},
             ],
             "publications": [
                 {"id": "P1", "title": "Т" * 250, "journal": "Ж", "doi": "10.1/x",
@@ -38,7 +39,7 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
                  "has_readme": True, "license": "MIT", "contributors": ["ivanov"], "owner_type": "user"},
             ],
             "departments": [{"id": "d1", "name_ru": "Кафедра", "name_en": "Dept"}],
-            "authorship": [{"pid": "P1", "per": "A1"}],
+            "authorship": [{"pid": "P1", "per": "A1", "position": 2, "is_corresponding": True}],
             "person_depts": [{"per": "A1", "did": "d1"}],
             "pub_depts": [{"pid": "P1", "did": "d1"}],
             "repo_pubs": [{"rid": "R1", "pid": "P1"}],
@@ -59,6 +60,18 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
         self.assertEqual(author_detail["openalex_id"], "A123")
         self.assertEqual(author_detail["email"], "ivanov@itmo.ru")
         self.assertEqual(author_detail["affiliations"], [{"name": "ITMO"}])  # JSON-text parsed
+        self.assertEqual(author_detail["created_at"], "2026-08-14T10:23:45.123Z")
+        self.assertEqual(author_detail["updated_at"], "2026-09-01T08:00:00.5Z")
+
+    def test_author_detail_carries_position_and_corresponding_per_publication(self):
+        db = self._sample_db()
+        db["publications"].append({**db["publications"][0], "id": "P2"})
+        db["authorship"].append({"pid": "P2", "per": "A1", "position": 1, "is_corresponding": None})
+        _summary, detail = GraphDataBuilder(db, seed=1).build()
+        self.assertEqual(
+            detail["authors"][0]["pub_roles"],
+            {"P1": {"position": 2, "corresponding": True}, "P2": {"position": 1, "corresponding": False}},
+        )
 
     def test_summary_label_is_the_full_form_not_the_truncated_public_one(self):
         # graph-data.json is one shared file across build variants (see

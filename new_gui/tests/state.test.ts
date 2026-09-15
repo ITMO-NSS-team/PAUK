@@ -53,6 +53,22 @@ describe("Store", () => {
     expect(second).toHaveBeenCalledTimes(1);
   });
 
+  it("упавший подписчик не мешает остальным получить состояние, а ошибка логируется", () => {
+    const store = new Store<Counter>({ a: 1, b: 2 });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const after = vi.fn();
+    store.subscribe(() => {
+      throw new Error("подписчик упал");
+    });
+    store.subscribe(after);
+
+    expect(() => store.set({ a: 5 })).not.toThrow();
+
+    expect(after).toHaveBeenCalledWith({ a: 5, b: 2 });
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    consoleError.mockRestore();
+  });
+
   it("notify() зовёт подписчиков с текущим состоянием, не меняя его", () => {
     const store = new Store<Counter>({ a: 1, b: 2 });
     const listener = vi.fn();

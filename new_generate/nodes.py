@@ -182,6 +182,12 @@ class AuthorNodeBuilder:
         # mismatch, so count unique ids, not the raw list length.
         pubs_count = {per: len(set(self.authorship.author_pubs.get(per, []))) for per in self.assignment.static_depts}
         rank_a = dense_rank(pubs_count)
+        pub_roles: dict[str, dict[str, dict]] = {}
+        for rel in self.db["authorship"]:
+            pub_roles.setdefault(rel["per"], {})[rel["pid"]] = {
+                "position": rel.get("position"),
+                "corresponding": bool(rel.get("is_corresponding")),
+            }
         summary: list[dict] = []
         detail: list[dict] = []
         for row in self.db["persons"]:
@@ -235,6 +241,10 @@ class AuthorNodeBuilder:
                     "openreview": row.get("openreview") or "",
                     "email": row.get("email") or "",
                     "affiliations": _parse_json_list(row.get("affiliations")),
+                    # Per-publication author position and corresponding flag, keyed by publication id.
+                    "pub_roles": pub_roles.get(pid_, {}),
+                    "created_at": row.get("created_at") or "",
+                    "updated_at": row.get("updated_at") or "",
                 }
             )
         return summary, detail

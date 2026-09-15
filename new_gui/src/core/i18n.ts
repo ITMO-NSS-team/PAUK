@@ -100,6 +100,13 @@ export type LocaleKey =
   | "chart.reposByStars"
   | "field.doi"
   | "field.code"
+  | "field.createdAt"
+  | "field.updatedAt"
+  | "field.corresponding"
+  | "section.general"
+  | "section.private"
+  | "section.service"
+  | "panel.showMore"
   | "search.placeholder"
   | "search.pubsCountShort"
   | "search.trigger"
@@ -179,6 +186,13 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.total": "Всего",
     "field.doi": "DOI",
     "field.code": "Код",
+    "field.createdAt": "Создан",
+    "field.updatedAt": "Обновлён",
+    "field.corresponding": "автор для переписки",
+    "section.general": "Общее",
+    "section.private": "Приватное",
+    "section.service": "Служебное",
+    "panel.showMore": "+ ещё {n}",
     "overview.title": "Обзор",
     "overview.avgPubsPerAuthor": "Публикаций на автора (среднее)",
     "overview.knownYear": "Известен год",
@@ -272,6 +286,13 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.total": "Total",
     "field.doi": "DOI",
     "field.code": "Code",
+    "field.createdAt": "Created",
+    "field.updatedAt": "Updated",
+    "field.corresponding": "corresponding",
+    "section.general": "General",
+    "section.private": "Private",
+    "section.service": "Service",
+    "panel.showMore": "+ {n} more",
     "overview.title": "Overview",
     "overview.avgPubsPerAuthor": "Publications per author (avg.)",
     "overview.knownYear": "Known year",

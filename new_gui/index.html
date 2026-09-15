@@ -625,6 +625,9 @@
         gap: 8px;
         margin: 0 0 12px;
       }
+      .panel-card__titles {
+        min-width: 0;
+      }
       /* min-width: 0 — без него длинный заголовок (например, полное
          название публикации, core/data.ts::nodeLabel() не обрезает его для
          панели в отличие от карты) не сжимается внутри флекс-строки и либо
@@ -654,7 +657,7 @@
          PanelCardOptions.subtitle) — мельче и серым, прямая просьба: для
          EN-интерфейса сверху английское имя, под ним русское, и наоборот. */
       .panel-card__subtitle {
-        margin: 0 0 12px;
+        margin: 2px 0 0;
         font-size: 12px;
         color: var(--muted);
         overflow-wrap: break-word;
@@ -688,23 +691,18 @@
       #panel dd:last-of-type {
         border-bottom: none;
       }
+      /* Внешние ссылки (DOI/GitHub/ORCID — открываются в новой вкладке)
+         подчёркнуты всегда, ссылки на сущности графа (.panel-entity-ref
+         ниже) — только при наведении: так они различимы без значка. */
       #panel a {
         color: var(--accent);
-      }
-      /* "↗" отличает ВНЕШНИЕ ссылки (DOI/GitHub/ORCID — открываются в
-         новой вкладке) от .panel-entity-ref ниже (тот же цвет, но остаётся
-         внутри приложения) — иначе визуально неотличимы, хотя ведут себя
-         совсем по-разному. */
-      #panel dd a::after {
-        content: " ↗";
-        font-size: 0.85em;
+        text-decoration: underline;
       }
       /* Ссылка на ДРУГУЮ сущность графа внутри карточки (features/panels.ts::PanelEntityRef)
-         — визуально то же самое, что и внешняя <a> выше (тот же цвет), но
-         это настоящая <button>: клик не открывает вкладку, а делает эту
-         сущность новым store.selection ("прослеживать связи" одним кликом,
-         см. map/build.ts::flyToSelection). font/цвет наследуются от dd, а не
-         от браузерного дефолта кнопки. */
+         — настоящая <button>: клик не открывает вкладку, а делает эту
+         сущность новым store.selection. font/цвет наследуются от dd, а не
+         от браузерного дефолта кнопки; text-align: left — иначе
+         многострочная подпись кнопки центрируется. */
       .panel-entity-ref {
         font: inherit;
         color: var(--accent);
@@ -712,19 +710,64 @@
         border: none;
         padding: 0;
         cursor: pointer;
+        text-align: left;
         text-decoration: none;
       }
       .panel-entity-ref:hover {
         text-decoration: underline;
       }
 
+      /* Разделы карточки автора (Общее/Приватное/Служебное). */
+      .panel-section + .panel-section {
+        margin-top: 16px;
+      }
+      /* Длинное поле-список (features/panels.ts::PanelList): подпись и
+         значение занимают обе колонки сетки, значения — по одному на строку. */
+      #panel dt.panel-row--block,
+      #panel dd.panel-row--block {
+        grid-column: 1 / -1;
+      }
+      #panel dt.panel-row--block {
+        padding-bottom: 4px;
+        border-bottom: none;
+      }
+      #panel dd.panel-row--block {
+        padding-top: 0;
+      }
+      .panel-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        overflow-wrap: anywhere;
+      }
+      .panel-list__meta {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .panel-list__more {
+        padding: 0;
+        border: none;
+        background: none;
+        color: var(--muted);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .panel-list__more:hover {
+        color: var(--accent);
+      }
+
       /* Простые графики "Обзора" (features/panels.ts::buildBarChart) — DOM +
          CSS вместо canvas/SVG: ширина .chart-bar-row__fill в процентах от
-         максимума ряда, вся "координатная система" — один инлайновый
-         style="width: N%" на общий рендер-цикл не завязана вообще. */
+         максимума ряда. Без своего бокового отступа — #panel уже даёт его,
+         иначе график и заголовок уезжают к центру относительно полей. */
       .panel-chart {
-        padding: 4px 16px 14px;
+        padding: 14px 0 0;
       }
+      .panel-section__title,
       .panel-chart h4 {
         margin: 0 0 8px;
         font-size: 11px;
