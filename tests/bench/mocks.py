@@ -4,13 +4,19 @@ in-memory Neo4j stand-in that records what the loader would upsert."""
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import defaultdict
 
 import requests
 
 from pauk.graph.client import _merge_duplicate_properties
 from pauk.models import Person
-from pauk.pipeline.stages.author_names import RussianNamesCatalog, to_cyrillic
+from pauk.pipeline.stages.author_names import (
+    _CYR_TO_LAT,
+    RussianNamesCatalog,
+    required_name_field_issues,
+    to_cyrillic,
+)
 
 
 def _http_404(url: str) -> requests.HTTPError:
@@ -133,10 +139,54 @@ class MockOpenRouterClient:
         `universe` dict itself, which build_universe() doesn't touch."""
         self.last_response = None
         self.last_usage = None
+        self.last_error = None
         self._catalog = RussianNamesCatalog([
             dict(zip(("name_ru", "surname", "name", "patronymic", "degree"), row.split(","), strict=True))
             for row in catalog_rows
         ])
+
+    @staticmethod
+    def _without_diacritics(value: str) -> str:
+        return "".join(
+            char
+            for char in unicodedata.normalize("NFKD", value)
+            if not unicodedata.combining(char)
+        )
+
+    @staticmethod
+    def _to_latin(value: str | None) -> str | None:
+        if not value:
+            return None
+        result = []
+        for char in value:
+            replacement = _CYR_TO_LAT.get(char.casefold())
+            if replacement is None:
+                result.append(char)
+            elif char.isupper():
+                result.append(replacement.capitalize())
+            else:
+                result.append(replacement)
+        return "".join(result)
+
+    @staticmethod
+    def _split_name(value: str) -> tuple[str | None, str | None]:
+        words = value.split()
+        if len(words) < 2:
+            return None, None
+        surname_start = 1
+        while surname_start < len(words) - 1:
+            initial = words[surname_start].strip(".-")
+            if len(initial) != 1 or not initial.isalpha():
+                break
+            surname_start += 1
+        return " ".join(words[:surname_start]), " ".join(words[surname_start:])
+
+    def _reply(self, result: dict) -> dict:
+        issues = required_name_field_issues(result)
+        if issues:
+            raise AssertionError(f"MockOpenRouterClient generated invalid required name fields: {issues}")
+        self.last_response = result
+        return result
 
     def chat_json(self, prompt: str) -> dict | None:
         match = self._RAW_NAME_RE.search(prompt)
@@ -146,42 +196,29 @@ class MockOpenRouterClient:
             surname_ru = (row.get("surname") or "").strip() or None
             first_ru = (row.get("name") or "").strip() or None
             second_ru = (row.get("patronymic") or "").strip() or None
-            return {
+            first_en, surname_en = self._split_name(self._to_latin(name_raw) or "")
+            return self._reply({
                 "matched_candidate": 0,
                 "surname_ru": surname_ru, "first_name_ru": first_ru, "second_name_ru": second_ru,
-                "surname_en": surname_ru, "first_name_en": first_ru, "second_name_en": second_ru,
+                "surname_en": surname_en,
+                "first_name_en": first_en,
+                "second_name_en": self._to_latin(second_ru),
                 "reason": "mock: exact catalog match",
-            }
-        words_ru = to_cyrillic(name_raw).split()
-        words_en = name_raw.split()
-        return {
+            })
+        latin_name = self._to_latin(name_raw) or ""
+        russian_name = to_cyrillic(self._without_diacritics(name_raw))
+        first_ru, surname_ru = self._split_name(russian_name)
+        first_en, surname_en = self._split_name(latin_name)
+        return self._reply({
             "matched_candidate": None,
-            "surname_ru": words_ru[-1] if words_ru else None,
-            "first_name_ru": words_ru[0] if len(words_ru) > 1 else None,
+            "surname_ru": surname_ru,
+            "first_name_ru": first_ru,
             "second_name_ru": None,
-            "surname_en": words_en[-1] if words_en else None,
-            "first_name_en": words_en[0] if len(words_en) > 1 else None,
+            "surname_en": surname_en,
+            "first_name_en": first_en,
             "second_name_en": None,
             "reason": "mock: no catalog match, transliterated",
-        }
-
-
-class MockLinkRelevanceClient:
-    """Classifies the synthetic bench code citations without an LLM call."""
-
-    def __init__(self) -> None:
-        self.last_response = None
-        self.last_usage = None
-        self.last_error = None
-
-    def chat_json(self, prompt: str) -> dict:
-        result = {
-            "is_authors_artifact": True,
-            "confidence": 1.0,
-            "reason": "mock: synthetic benchmark repository",
-        }
-        self.last_response = result
-        return result
+        })
 
 
 class UnexpectedNetworkClient:
