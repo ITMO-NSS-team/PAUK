@@ -9,6 +9,7 @@ from pauk.graph.extract import NODE_REGISTRY, extract_relationships
 from pauk.models import Department, Organization, Person, Publication
 from pauk.models.processing import ProcessingStatus
 from pauk.models.relations import Authorship
+from pauk.pipeline.stages.base import PreparedSelection
 from pauk.pipeline.stages.departments import DepartmentsStage
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
@@ -461,6 +462,53 @@ class DepartmentContextAliasTest(unittest.TestCase):
             self.assertEqual(departments["Faculty of Physics"].context_aliases, ["Department of Physics"])
             matched = {p.id: p for p in prepared.read_models("persons", Person)}["P1"]
             self.assertTrue(matched.department_ids)
+
+
+class CoverageLogTest(unittest.TestCase):
+    """The "matched N of M" line is about the catalogue, so it may only appear
+    when the pass actually looked at every author."""
+
+    LOGGER = "pauk.pipeline.stages.departments"
+
+    def _stage(self, root: Path, *, selection=None, prepared=None):
+        static = root / "static"
+        static.mkdir(parents=True, exist_ok=True)
+        (static / "departments.jsonl").write_text(
+            Department(id="d1", name_en="Faculty of Physics").model_dump_json(), encoding="utf-8")
+        db = mongomock.MongoClient()["pauk_test"]
+        if prepared is None:
+            persons = [
+                Person(id=f"P{n}", is_itmo=True,
+                       authored=[Authorship(publication_id="W1",
+                                            affiliation="Faculty of Physics, ITMO University")])
+                for n in (1, 2)
+            ]
+            prepared = _prepare(db, persons, [Publication(id="W1", title="t")])
+        return prepared, DepartmentsStage(prepared, RawStore(db, "sample"),
+                                          config=Settings(data_dir=root), selection=selection)
+
+    def test_full_pass_reports_catalogue_coverage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, stage = self._stage(Path(tmp))
+            with self.assertLogs(self.LOGGER, level="INFO") as logs:
+                stage.run()
+            self.assertTrue(any("Matched 1 of 1 catalogue departments" in line for line in logs.output))
+
+    def test_scoped_pass_stays_quiet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, stage = self._stage(Path(tmp),
+                                   selection=PreparedSelection("persons", frozenset({"P1"})))
+            with self.assertNoLogs(self.LOGGER, level="INFO"):
+                stage.run()
+
+    def test_resumed_pass_stays_quiet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prepared, stage = self._stage(root)
+            stage.run()
+            _, resumed = self._stage(root, prepared=prepared)
+            with self.assertNoLogs(self.LOGGER, level="INFO"):
+                resumed.run()
 
 
 if __name__ == "__main__":

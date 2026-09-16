@@ -113,7 +113,12 @@ class DepartmentsStage(EnrichmentStage):
                 result_count=len(matched),
             )
             changed += 1
-        logger.info("Matched %d of %d catalogue departments", len(seen), len(departments))
+        # Only a pass that looked at every author says anything about catalogue
+        # coverage. A scoped run, or a resumed one where most rows are already
+        # completed, sees a handful of people, and the same line would read as
+        # though coverage had collapsed.
+        if len(candidates) == len(people):
+            logger.info("Matched %d of %d catalogue departments", len(seen), len(departments))
         self.prepared.write_models("persons", people)
         self.prepared.write_models("departments", departments)
         self.prepared.write_models("organizations", organizations)
