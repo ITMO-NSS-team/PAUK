@@ -171,8 +171,6 @@ def _name_list(value) -> list[str]:
 def build_graph_data(db, seed: int, public: bool = False):
     dept_name = {row["id"]: (row["name_ru"] or row["name_en"] or "") for row in db["departments"]}
     dept_name_en = {row["id"]: (row["name_en"] or "") for row in db["departments"]}
-    # Author spellings of a unit name, so the map can be searched by the form
-    # people actually write ("SCAMT") and not only by the official one.
     dept_variants = {row["id"]: _name_list(row.get("name_variants")) for row in db["departments"]}
 
     # --- authorship: only publications with at least one ITMO author ----------
@@ -670,6 +668,23 @@ def build_graph_data(db, seed: int, public: bool = False):
     }
 
 
+def _code_urls(value: object) -> list[str]:
+    """Normalize the current JSON-text contract and legacy graph values."""
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [url for url in value if isinstance(url, str) and url]
+    if not isinstance(value, str):
+        return []
+    try:
+        decoded = json.loads(value)
+    except json.JSONDecodeError:
+        return [value]
+    if isinstance(decoded, list):
+        return [url for url in decoded if isinstance(url, str) and url]
+    return [decoded] if isinstance(decoded, str) and decoded else []
+
+
 def build_search_detail(db, graph):
     """Publication details for graph-search.js (loaded after the map)."""
     pub_ids = {p["key"] for p in graph["pubs"]}
@@ -679,10 +694,7 @@ def build_search_detail(db, graph):
         if pid not in pub_ids:
             continue
         code_url = row["code_url"]
-        try:
-            urls = json.loads(code_url) if code_url else []
-        except json.JSONDecodeError:
-            urls = []
+        urls = _code_urls(code_url)
         title = row["title"] or ""
         if len(title) > 200:
             title = title[:199] + "…"
@@ -693,7 +705,7 @@ def build_search_detail(db, graph):
                 "journal": row["journal"] or "",
                 "doi": row["doi"] or "",
                 "has_code": bool(row["has_code"]),
-                "code_url": urls if isinstance(urls, list) else [urls],
+                "code_url": urls,
             }
         )
     return detail
