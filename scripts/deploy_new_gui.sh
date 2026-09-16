@@ -11,7 +11,7 @@ REMOTE_HOST="einsteinium.nsslab"
 REMOTE="asteb@${REMOTE_HOST}"
 REMOTE_DIR="pauk-new-gui"
 SCREEN_NAME="pauk-new-gui"
-PORT="${PORT:-8502}"
+PORT="${PORT:-8510}"
 
 root="$(git rev-parse --show-toplevel)"
 data_dir="$root/data/gui/private"
