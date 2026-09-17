@@ -156,9 +156,7 @@ class ModelVerdict:
             raise ValueError("confidence must be between 0.5 and 1")
         if not isinstance(self.reason, str):
             raise ValueError("reason must be a string")
-        if len(self.support) > 3 or not all(
-            isinstance(value, str) for value in self.support
-        ):
+        if len(self.support) > 3 or not all(isinstance(value, str) for value in self.support):
             raise ValueError("support must contain at most three strings")
         if len(self.risk) > 3 or not all(isinstance(value, str) for value in self.risk):
             raise ValueError("risk must contain at most three strings")
@@ -237,9 +235,7 @@ class SecondStageContext:
             },
         }
         if self.impact_not_identity_evidence is not None:
-            payload["impact_not_identity_evidence"] = dict(
-                self.impact_not_identity_evidence
-            )
+            payload["impact_not_identity_evidence"] = dict(self.impact_not_identity_evidence)
         return payload
 
 
@@ -251,9 +247,7 @@ class Resolution:
     reason: str = ""
 
 
-def parse_first_stage_response(
-    payload: Mapping[str, Any], expected_id: int
-) -> ModelVerdict:
+def parse_first_stage_response(payload: Mapping[str, Any], expected_id: int) -> ModelVerdict:
     """Validate the first model's batch-shaped JSON response."""
     results = payload.get("results")
     if not isinstance(results, list) or len(results) != 1:
@@ -264,9 +258,7 @@ def parse_first_stage_response(
     return _model_verdict(result, verdict_field="duplicate")
 
 
-def parse_second_stage_response(
-    payload: Mapping[str, Any], expected_id: int
-) -> ModelVerdict:
+def parse_second_stage_response(payload: Mapping[str, Any], expected_id: int) -> ModelVerdict:
     """Validate the independent judge's JSON response."""
     if payload.get("id") != expected_id:
         raise ValueError("second-stage response id mismatch")
@@ -414,9 +406,7 @@ def _identifier_relation(first: str | None, second: str | None) -> str:
 
 def _tokens(value: str) -> list[str]:
     value = unicodedata.normalize("NFKD", value)
-    value = "".join(
-        character for character in value if not unicodedata.combining(character)
-    )
+    value = "".join(character for character in value if not unicodedata.combining(character))
     return re.findall(r"[a-z]+", value.casefold().translate(_CYRILLIC_TO_LATIN))
 
 
@@ -431,17 +421,11 @@ def _token_alignment(first: list[str], second: list[str]) -> dict[str, float]:
         for right_index, right in enumerate(second):
             if left == right:
                 score = 1.0
-            elif (len(left) == 1 and right.startswith(left)) or (
-                len(right) == 1 and left.startswith(right)
-            ):
+            elif (len(left) == 1 and right.startswith(left)) or (len(right) == 1 and left.startswith(right)):
                 score = 0.85
             else:
                 similarity = SequenceMatcher(None, left, right).ratio()
-                score = (
-                    0.70
-                    if min(len(left), len(right)) >= 4 and similarity >= 0.86
-                    else 0.0
-                )
+                score = 0.70 if min(len(left), len(right)) >= 4 and similarity >= 0.86 else 0.0
             if score:
                 candidates.append((score, left_index, right_index))
 
@@ -459,14 +443,9 @@ def _token_alignment(first: list[str], second: list[str]) -> dict[str, float]:
     return {
         "token_coverage_min": count / max(1, min(len(first), len(second))),
         "token_coverage_max": count / max(1, max(len(first), len(second))),
-        "token_match_score": sum(item[0] for item in matches)
-        / max(1, max(len(first), len(second))),
-        "shared_long_tokens": float(
-            sum(len(left) > 1 and len(right) > 1 for _, left, right in matches)
-        ),
-        "initial_expansions": float(
-            sum((len(left) == 1) ^ (len(right) == 1) for _, left, right in matches)
-        ),
+        "token_match_score": sum(item[0] for item in matches) / max(1, max(len(first), len(second))),
+        "shared_long_tokens": float(sum(len(left) > 1 and len(right) > 1 for _, left, right in matches)),
+        "initial_expansions": float(sum((len(left) == 1) ^ (len(right) == 1) for _, left, right in matches)),
         "unmatched_tokens": float(len(first) + len(second) - 2 * count),
     }
 
@@ -485,37 +464,25 @@ def feature_vector(evidence: PairEvidence) -> dict[str, float]:
     orcid_b = _normalize_orcid(evidence.orcid_b)
     same_orcid = int(bool(orcid_a) and orcid_a == orcid_b)
     orcid_conflict = int(bool(orcid_a) and bool(orcid_b) and orcid_a != orcid_b)
-    same_staff = int(
-        bool(evidence.staff_id_a) and evidence.staff_id_a == evidence.staff_id_b
-    )
+    same_staff = int(bool(evidence.staff_id_a) and evidence.staff_id_a == evidence.staff_id_b)
     staff_conflict = int(
-        bool(evidence.staff_id_a)
-        and bool(evidence.staff_id_b)
-        and evidence.staff_id_a != evidence.staff_id_b
+        bool(evidence.staff_id_a) and bool(evidence.staff_id_b) and evidence.staff_id_a != evidence.staff_id_b
     )
     fallback_count = sum(
-        identifier.startswith(("name_", "orcid_"))
-        for identifier in (evidence.person_a, evidence.person_b)
+        identifier.startswith(("name_", "orcid_")) for identifier in (evidence.person_a, evidence.person_b)
     )
     shared_coauthors = math.log1p(evidence.shared_coauthors)
     works_min = min(evidence.works_a, evidence.works_b)
     works_ratio = works_min / max(1, max(evidence.works_a, evidence.works_b))
-    surname_rarity = 1 / math.log2(
-        2 + evidence.surname_occurrences_a + evidence.surname_occurrences_b
-    )
+    surname_rarity = 1 / math.log2(2 + evidence.surname_occurrences_a + evidence.surname_occurrences_b)
 
     values: dict[str, float] = {
-        "name_similarity": SequenceMatcher(
-            None, normalized_first, normalized_second
-        ).ratio(),
-        "token_jaccard": len(first_set & second_set)
-        / max(1, len(first_set | second_set)),
+        "name_similarity": SequenceMatcher(None, normalized_first, normalized_second).ratio(),
+        "token_jaccard": len(first_set & second_set) / max(1, len(first_set | second_set)),
         "exact_name": float(normalized_first == normalized_second),
         "same_tokens": float(sorted(first) == sorted(second)),
         "surname_equal": float(bool(surname_a) and surname_a == surname_b),
-        "first_initial_equal": float(
-            bool(first) and bool(second) and first[0][0] == second[0][0]
-        ),
+        "first_initial_equal": float(bool(first) and bool(second) and first[0][0] == second[0][0]),
         "initial_count": float(sum(len(token) == 1 for token in first + second)),
         "full_token_min": float(min(len(full_a), len(full_b))),
         "same_orcid": float(same_orcid),
@@ -525,15 +492,11 @@ def feature_vector(evidence: PairEvidence) -> dict[str, float]:
         "staff_conflict": float(staff_conflict),
         "trusted_catalog_count": float(
             sum(
-                status == "trusted_staff_identity"
-                for status in (evidence.catalog_status_a, evidence.catalog_status_b)
+                status == "trusted_staff_identity" for status in (evidence.catalog_status_a, evidence.catalog_status_b)
             )
         ),
         "display_only_count": float(
-            sum(
-                status == "display_match_only"
-                for status in (evidence.catalog_status_a, evidence.catalog_status_b)
-            )
+            sum(status == "display_match_only" for status in (evidence.catalog_status_a, evidence.catalog_status_b))
         ),
         "fallback_count": float(fallback_count),
         "shared_coauthors": shared_coauthors,
@@ -554,22 +517,15 @@ def feature_vector(evidence: PairEvidence) -> dict[str, float]:
         )
     )
     values["strong_name"] = float(
-        values["same_tokens"] == 1
-        or (values["surname_equal"] == 1 and values["name_similarity"] >= 0.82)
+        values["same_tokens"] == 1 or (values["surname_equal"] == 1 and values["name_similarity"] >= 0.82)
     )
-    values["initials_only_pair"] = float(
-        values["initial_count"] >= 2 and values["full_token_min"] <= 1
-    )
+    values["initials_only_pair"] = float(values["initial_count"] >= 2 and values["full_token_min"] <= 1)
     values["orcid_x_name"] = values["same_orcid"] * values["strong_name"]
     values["name_x_coauthors"] = values["strong_name"] * values["shared_coauthors"]
-    values["initials_x_coauthors"] = (
-        values["initials_only_pair"] * values["shared_coauthors"]
-    )
+    values["initials_x_coauthors"] = values["initials_only_pair"] * values["shared_coauthors"]
     values["fallback_x_name"] = min(values["fallback_count"], 1) * values["strong_name"]
     values["rare_x_name"] = values["surname_rarity"] * values["strong_name"]
-    values["name_x_department"] = values["strong_name"] * min(
-        values["shared_departments"], 1
-    )
+    values["name_x_department"] = values["strong_name"] * min(values["shared_departments"], 1)
     values["name_x_joint_work"] = values["strong_name"] * min(values["joint_works"], 1)
     values["weak_orcid_only"] = float(
         values["same_orcid"] == 1
@@ -578,9 +534,7 @@ def feature_vector(evidence: PairEvidence) -> dict[str, float]:
         and evidence.shared_fields <= 1
         and fallback_count == 0
     )
-    values["anonymous"] = float(
-        "anonymous" in f"{evidence.name_a} {evidence.name_b}".casefold()
-    )
+    values["anonymous"] = float("anonymous" in f"{evidence.name_a} {evidence.name_b}".casefold())
     values["evidence_families"] = float(
         sum(
             (
@@ -595,18 +549,10 @@ def feature_vector(evidence: PairEvidence) -> dict[str, float]:
         )
     )
     values.update(_token_alignment(first, second))
-    values["compatible_name"] = float(
-        values["token_coverage_min"] >= 0.66 and values["shared_long_tokens"] >= 1
-    )
-    values["rare_compatible_name"] = (
-        values["compatible_name"] * values["surname_rarity"]
-    )
-    values["name_x_joint_v2"] = values["compatible_name"] * min(
-        values["joint_works"], 1
-    )
-    values["name_x_coauthors_v2"] = values["compatible_name"] * min(
-        values["shared_coauthors"], 2
-    )
+    values["compatible_name"] = float(values["token_coverage_min"] >= 0.66 and values["shared_long_tokens"] >= 1)
+    values["rare_compatible_name"] = values["compatible_name"] * values["surname_rarity"]
+    values["name_x_joint_v2"] = values["compatible_name"] * min(values["joint_works"], 1)
+    values["name_x_coauthors_v2"] = values["compatible_name"] * min(values["shared_coauthors"], 2)
     return {name: float(values[name]) for name in MODEL_FEATURES}
 
 
@@ -623,22 +569,16 @@ def first_stage_payload(pair_id: int, evidence: PairEvidence) -> dict[str, Any]:
                     "name": evidence.name_a,
                     "works_in_snapshot": evidence.works_a,
                     "catalog_status": evidence.catalog_status_a,
-                    "fallback_record": evidence.person_a.startswith(
-                        ("name_", "orcid_")
-                    ),
+                    "fallback_record": evidence.person_a.startswith(("name_", "orcid_")),
                 },
                 "b": {
                     "name": evidence.name_b,
                     "works_in_snapshot": evidence.works_b,
                     "catalog_status": evidence.catalog_status_b,
-                    "fallback_record": evidence.person_b.startswith(
-                        ("name_", "orcid_")
-                    ),
+                    "fallback_record": evidence.person_b.startswith(("name_", "orcid_")),
                 },
                 "orcid": _identifier_relation(orcid_a, orcid_b),
-                "staff_identity": _identifier_relation(
-                    evidence.staff_id_a, evidence.staff_id_b
-                ),
+                "staff_identity": _identifier_relation(evidence.staff_id_a, evidence.staff_id_b),
                 "shared_coauthors": evidence.shared_coauthors,
                 "shared_departments": evidence.shared_departments,
                 "shared_publications": evidence.shared_publications,
@@ -653,8 +593,7 @@ def first_stage_payload(pair_id: int, evidence: PairEvidence) -> dict[str, Any]:
 def logistic_probability(evidence: PairEvidence) -> float:
     features = feature_vector(evidence)
     logit = _MODEL_INTERCEPT + sum(
-        ((features[name] - mean) / scale) * coefficient
-        for name, (mean, scale, coefficient) in _MODEL_TERMS.items()
+        ((features[name] - mean) / scale) * coefficient for name, (mean, scale, coefficient) in _MODEL_TERMS.items()
     )
     if logit >= 0:
         return 1 / (1 + math.exp(-logit))
@@ -667,11 +606,7 @@ def _hard_veto(evidence: PairEvidence) -> str | None:
     orcid_b = _normalize_orcid(evidence.orcid_b)
     if orcid_a and orcid_b and orcid_a != orcid_b:
         return "conflicting ORCID"
-    if (
-        evidence.staff_id_a
-        and evidence.staff_id_b
-        and evidence.staff_id_a != evidence.staff_id_b
-    ):
+    if evidence.staff_id_a and evidence.staff_id_b and evidence.staff_id_a != evidence.staff_id_b:
         return "conflicting staff identity"
     if evidence.profile_conflict:
         return "conflicting profile identifier"
@@ -682,9 +617,7 @@ def _hard_veto(evidence: PairEvidence) -> str | None:
     return None
 
 
-def resolve_pair(
-    evidence: PairEvidence, policy: ResolverPolicy = DEFAULT_POLICY
-) -> Resolution:
+def resolve_pair(evidence: PairEvidence, policy: ResolverPolicy = DEFAULT_POLICY) -> Resolution:
     """Apply vetoes, trusted identifiers and configurable confidence zones."""
     probability = logistic_probability(evidence)
     if reason := _hard_veto(evidence):
@@ -707,12 +640,8 @@ def apply_first_verdict(resolution: Resolution, verdict: ModelVerdict) -> Resolu
     if resolution.decision is not Decision.FIRST_MODEL:
         raise ValueError("first verdict requires a first-model resolution")
     if verdict.duplicate:
-        return Resolution(
-            Decision.SECOND_MODEL, "qwen_second", resolution.probability, verdict.reason
-        )
-    return Resolution(
-        Decision.SEPARATE, "qwen_first_separate", resolution.probability, verdict.reason
-    )
+        return Resolution(Decision.SECOND_MODEL, "qwen_second", resolution.probability, verdict.reason)
+    return Resolution(Decision.SEPARATE, "qwen_first_separate", resolution.probability, verdict.reason)
 
 
 def apply_second_verdict(resolution: Resolution, verdict: ModelVerdict) -> Resolution:

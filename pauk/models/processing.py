@@ -12,6 +12,12 @@ class ProcessingStatus(StrEnum):
     FAILED = "failed"
 
 
+class ClassificationStatus(StrEnum):
+    PENDING = "pending"
+    CLASSIFIED = "classified"
+    FAILED = "failed"
+
+
 class ProcessingState(BaseModel):
     status: ProcessingStatus = ProcessingStatus.NOT_STARTED
     # The identifier used for this attempt.  A completed result for one DOI,

@@ -8,7 +8,7 @@ import mongomock
 
 from pauk.cache.graph_snapshot import write_snapshot
 from pauk.gui import rebuild
-from pauk.gui.generate_data import write_graph_files
+from pauk.gui.generate_data import _code_urls, write_graph_files
 from pauk.jobs import locks
 from pauk.jobs.models import GRAPH
 from pauk.settings import Settings
@@ -17,8 +17,8 @@ from pauk.settings import Settings
 def snapshot() -> dict[str, list]:
     """A graph snapshot shaped exactly the way `load_db` writes one.
 
-    Persons and departments come back keyed by column name, everything else
-    as positional tuples — mixing the two up is the kind of thing that only
+    Growing node rows come back keyed by column name, while relationship rows
+    remain positional tuples. Mixing the two up is the kind of thing that only
     shows when the map comes out empty.
     """
     return {
@@ -32,11 +32,16 @@ def snapshot() -> dict[str, list]:
              "orcid": "0000-0002-1825-0097"},
         ],
         "publications": [
-            ("W1", "Статья про графы", "Журнал", "10.1000/x", "2024-05-01", 2024, True,
-             "https://github.com/org/repo"),
+            {"id": "W1", "title": "Статья про графы", "journal": "Журнал",
+             "doi": "10.1000/x", "publication_date": "2024-05-01", "year": 2024,
+             "has_code": True, "code_url": "https://github.com/org/repo", "fields": []},
         ],
         "repositories": [
-            ("R1", "repo", "https://github.com/org/repo", "описание", 42, "octocat"),
+            {"id": "R1", "name": "repo", "url": "https://github.com/org/repo",
+             "description": "описание", "stars_num": 42, "owner": "octocat",
+             "owner_type": "user", "language": "Python", "topics": [],
+             "last_updated": "", "license": "", "archived": False,
+             "forks_num": 0, "is_fork": False},
         ],
         "departments": [{"id": "D1", "name_ru": "Кафедра", "name_en": "Department"}],
         "authorship": [("W1", "A1")],
@@ -63,6 +68,20 @@ class WriteGraphFilesTest(unittest.TestCase):
     def build(self, public=False, out=None):
         out = out or self.tmp / ("public" if public else "private")
         return out, write_graph_files(self.snapshot, out, seed=42, public=public)
+
+    def test_code_urls_accept_current_and_legacy_graph_values(self):
+        self.assertEqual(
+            _code_urls('["https://github.com/org/one", "https://github.com/org/two"]'),
+            ["https://github.com/org/one", "https://github.com/org/two"],
+        )
+        self.assertEqual(
+            _code_urls("https://github.com/org/legacy"),
+            ["https://github.com/org/legacy"],
+        )
+        self.assertEqual(
+            _code_urls(["https://github.com/org/native"]),
+            ["https://github.com/org/native"],
+        )
 
     def test_it_writes_both_files(self):
         out, _ = self.build()
@@ -256,14 +275,22 @@ class EmptyGraphTest(unittest.TestCase):
 
     def test_a_publication_with_no_itmo_author_builds(self):
         db = self.blank()
-        db["publications"] = [("W1", "Статья", None, None, None, 2024, False, None)]
+        db["publications"] = [
+            {"id": "W1", "title": "Статья", "journal": None, "doi": None,
+             "publication_date": None, "year": 2024, "has_code": False,
+             "code_url": None, "fields": []},
+        ]
         self.assertEqual(self.build(db)["map_pubs"], 0)
 
     def test_departments_without_people_build(self):
         db = self.blank()
         db["departments"] = [{"id": f"D{n}", "name_ru": f"Кафедра {n}", "name_en": ""}
                              for n in range(4)]
-        db["publications"] = [("W1", "Статья", None, None, None, 2024, False, None)]
+        db["publications"] = [
+            {"id": "W1", "title": "Статья", "journal": None, "doi": None,
+             "publication_date": None, "year": 2024, "has_code": False,
+             "code_url": None, "fields": []},
+        ]
         db["pub_depts"] = [("W1", "D0")]
         self.assertEqual(self.build(db)["map_authors"], 0)
 

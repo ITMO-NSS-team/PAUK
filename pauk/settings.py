@@ -26,6 +26,21 @@ class Settings:
     openreview_password: str = os.getenv("OPENREVIEW_PASSWORD", "")
     openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
     llm_model: str = os.getenv("PAUK_LLM_MODEL", "qwen/qwen-2.5-72b-instruct")
+    person_resolution_enabled: bool = os.getenv(
+        "PAUK_PERSON_RESOLUTION_ENABLED", "true"
+    ).lower() in ("1", "true", "yes")
+    person_resolution_model: str = os.getenv(
+        "PAUK_PERSON_RESOLUTION_MODEL", "qwen/qwen3-next-80b-a3b-instruct"
+    )
+    person_resolution_concurrency: int = int(
+        os.getenv("PAUK_PERSON_RESOLUTION_CONCURRENCY", "8")
+    )
+    person_resolution_separate_below: float = float(
+        os.getenv("PAUK_PERSON_RESOLUTION_SEPARATE_BELOW", "0.05")
+    )
+    person_resolution_merge_from: float = float(
+        os.getenv("PAUK_PERSON_RESOLUTION_MERGE_FROM", "0.99")
+    )
     openrouter_proxy_url: str = os.getenv("OPENROUTER_PROXY_URL", "")
     neo4j_uri: str = os.getenv("NEO4J_URI", "bolt://localhost:7687")
     neo4j_user: str = os.getenv("NEO4J_USER", "neo4j")

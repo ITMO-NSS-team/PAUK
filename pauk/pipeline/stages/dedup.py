@@ -858,14 +858,45 @@ class DedupStage(EnrichmentStage):
 
     def _dedup_persons(self) -> tuple[int, int]:
         people = list(self.prepared.read_models("persons", Person))
-        groups, report = plan_person_merges(
-            people, self._trusted_orcids(people), self._person_scope(people),
-            fields_of={
-                publication.id: set(publication.fields)
-                for publication in self.prepared.read_models("publications", Publication)
-                if publication.fields
-            },
-            staff_ids=self._staff_ids(people))
+        fields_of = {
+            publication.id: set(publication.fields)
+            for publication in self.prepared.read_models("publications", Publication)
+            if publication.fields
+        }
+        trusted_orcids = self._trusted_orcids(people)
+        staff_ids = self._staff_ids(people)
+        aliases = {
+            merged_id: person.id
+            for person in people
+            for merged_id in person.merged_ids
+        }
+        if self.config.person_resolution_enabled:
+            from pauk.graph.person_resolution import ResolverPolicy
+            from pauk.pipeline import person_resolution_review
+            from pauk.pipeline.person_resolution import OpenRouterResolutionModels
+            from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
+
+            groups, report = plan_person_merges_resolved(
+                people,
+                trusted_orcids,
+                in_scope=self._person_scope(people),
+                fields_of=fields_of,
+                staff_ids=staff_ids,
+                decisions=person_resolution_review.decisions(self.prepared.db, aliases),
+                models=OpenRouterResolutionModels(self.config, self.prepared.db, self.prepared.group),
+                policy=ResolverPolicy(
+                    separate_below=self.config.person_resolution_separate_below,
+                    merge_from=self.config.person_resolution_merge_from,
+                ),
+            )
+        else:
+            groups, report = plan_person_merges(
+                people,
+                trusted_orcids,
+                self._person_scope(people),
+                fields_of=fields_of,
+                staff_ids=staff_ids,
+            )
 
         removed: set[str] = set()
         for canonical, duplicates in groups:
@@ -883,6 +914,14 @@ class DedupStage(EnrichmentStage):
             self.prepared.write_models("persons", people)
 
         held = sum(1 for row in report if row["status"] == "held")
+        if self.config.person_resolution_enabled:
+            aliases = {
+                merged_id: person.id
+                for person in people
+                for merged_id in person.merged_ids
+            }
+            person_resolution_review.record(self.prepared.db, report, source="stage")
+            person_resolution_review.mark_applied(self.prepared.db, aliases)
         report_path = self.config.audit_dir / self.prepared.group / CANDIDATES_FILENAME
         with AtomicWriter(report_path) as fh:
             for row in report:

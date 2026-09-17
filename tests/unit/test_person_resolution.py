@@ -90,9 +90,7 @@ class PersonResolutionTest(unittest.TestCase):
         self.assertEqual(result.route, "same_orcid")
 
     def test_policy_thresholds_are_configurable(self):
-        result = resolve_pair(
-            evidence(), ResolverPolicy(separate_below=0.3, merge_from=1.0)
-        )
+        result = resolve_pair(evidence(), ResolverPolicy(separate_below=0.3, merge_from=1.0))
 
         self.assertEqual(result.decision, Decision.FIRST_MODEL)
 
@@ -148,14 +146,10 @@ class PersonResolutionTest(unittest.TestCase):
         )
         self.assertEqual(initial.decision, Decision.FIRST_MODEL)
 
-        second = apply_first_verdict(
-            initial, ModelVerdict(True, 0.91, "compatible name")
-        )
+        second = apply_first_verdict(initial, ModelVerdict(True, 0.91, "compatible name"))
         self.assertEqual(second.decision, Decision.SECOND_MODEL)
 
-        rejected = apply_second_verdict(
-            second, ModelVerdict(False, 0.87, "no independent support")
-        )
+        rejected = apply_second_verdict(second, ModelVerdict(False, 0.87, "no independent support"))
         self.assertEqual(rejected.decision, Decision.SEPARATE)
         self.assertEqual(rejected.route, "qwen_second_separate")
 
@@ -200,11 +194,7 @@ class PersonResolutionTest(unittest.TestCase):
 
     def test_model_response_contracts_are_strict(self):
         first = parse_first_stage_response(
-            {
-                "results": [
-                    {"id": 7, "duplicate": True, "confidence": 0.93, "reason": "match"}
-                ]
-            },
+            {"results": [{"id": 7, "duplicate": True, "confidence": 0.93, "reason": "match"}]},
             7,
         )
         second = parse_second_stage_response(
@@ -239,9 +229,7 @@ class PersonResolutionTest(unittest.TestCase):
                 aliases=("Dmitrii V. Denisov",),
                 works=10,
             ),
-            researcher_b=ResearcherContext(
-                person_id="A2", name="Dmitrii V. Denisov", works=8
-            ),
+            researcher_b=ResearcherContext(person_id="A2", name="Dmitrii V. Denisov", works=8),
             trusted_orcid_relation="one_missing",
             staff_identity_relation="both_missing",
             shared_work_ids=("W1", "W2"),
@@ -278,9 +266,7 @@ class PersonResolutionTest(unittest.TestCase):
             )
         )
 
-        result = apply_first_verdict(
-            initial, ModelVerdict(False, 0.78, "insufficient evidence")
-        )
+        result = apply_first_verdict(initial, ModelVerdict(False, 0.78, "insufficient evidence"))
 
         self.assertEqual(result.decision, Decision.SEPARATE)
         self.assertEqual(result.route, "qwen_first_separate")

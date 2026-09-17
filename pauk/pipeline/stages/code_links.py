@@ -10,7 +10,7 @@ from urllib.parse import urlencode, urlparse
 
 import fitz
 
-from pauk.models import CodeLink, LinkOccurrence, Publication, RepoLink
+from pauk.models import ClassificationStatus, CodeLink, LinkOccurrence, Publication, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.redaction import redact_text
 from pauk.sources.base import HttpClient
@@ -175,6 +175,28 @@ def _collect_occurrences(
     return dict(occurrences)
 
 
+def _preserve_pdf_occurrences(
+    occurrences_by_url: dict[str, list[LinkOccurrence]],
+    previous: RepoLink | None,
+) -> dict[str, list[LinkOccurrence]]:
+    """Keep evidence from the last readable PDF when a retry cannot read it."""
+    if previous is None:
+        return occurrences_by_url
+    for link in previous.links:
+        preserved = [occ for occ in link.occurrences if occ.page_number is not None]
+        if not preserved:
+            continue
+        current = occurrences_by_url.setdefault(link.url, [])
+        seen = {(occ.page_number, occ.context) for occ in current}
+        for occurrence in preserved:
+            key = (occurrence.page_number, occurrence.context)
+            if key in seen:
+                continue
+            seen.add(key)
+            current.append(occurrence)
+    return occurrences_by_url
+
+
 def _archived_repository_url(publication: Publication) -> str | None:
     """The repository a software or dataset deposit is an archive of.
 
@@ -226,6 +248,10 @@ class CodeLinksStage(EnrichmentStage):
             occurrences_by_url = _collect_occurrences(
                 _normalize_ligatures(pub.abstract or ""), pdf_page_occurrences
             )
+            if pdf_error:
+                occurrences_by_url = _preserve_pdf_occurrences(
+                    occurrences_by_url, links_by_publication.get(pub.id)
+                )
             if archived and archived not in occurrences_by_url:
                 # The deposit's own archived repo takes priority - it's what
                 # code_url should point at, same as before this stage read PDFs.
@@ -234,8 +260,10 @@ class CodeLinksStage(EnrichmentStage):
                     **occurrences_by_url,
                 }
             urls = list(occurrences_by_url)
-            pub.has_code = bool(urls)
-            pub.code_url = urls[0] if urls else None
+            # Replacing the evidence invalidates any verdict made from the
+            # previous contexts; the next link_relevance pass must judge the
+            # new set even when that stage had already completed.
+            pub.processing.pop("link_relevance", None)
             pub.processing[self.name] = ProcessingState(
                 status=ProcessingStatus.FAILED
                 if pdf_error
@@ -254,6 +282,7 @@ class CodeLinksStage(EnrichmentStage):
                         occurrences=occurrences,
                         **(
                             {
+                                "classification_status": ClassificationStatus.CLASSIFIED,
                                 "is_relevant": True,
                                 "llm_confidence": 1.0,
                                 "llm_reason": ARCHIVED_DEPOSIT_REASON,

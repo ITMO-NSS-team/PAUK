@@ -77,20 +77,29 @@ def load_db(driver) -> dict[str, list]:
         "       p.orcid AS orcid",
     )
 
-    db["publications"] = cypher(
+    # cypher_dict for the same reason as repositories: the row grows, and
+    # positional unpacking of it is spread across generate_data.py.
+    db["publications"] = cypher_dict(
         driver,
         "MATCH (pub:Publication) "
         "RETURN pub.id AS id, pub.title AS title, pub.journal AS journal, "
         "       pub.doi AS doi, toString(pub.publication_date) AS publication_date, "
-        "       pub.year AS year, pub.has_code AS has_code, pub.code_url AS code_url",
+        "       pub.year AS year, pub.has_code AS has_code, pub.code_url AS code_url, "
+        "       pub.fields AS fields",
     )
 
-    db["repositories"] = cypher(
+    # cypher_dict, not cypher: this row grew six columns in one change, and
+    # positional unpacking of it lives in four places in generate_data.py.
+    db["repositories"] = cypher_dict(
         driver,
         "MATCH (r:Repository) "
         "OPTIONAL MATCH (r)-[:OWNED_BY]->(gh:GitHubProfile) "
         "RETURN r.id AS id, r.name AS name, r.url AS url, "
-        "       r.description AS description, r.stars_num AS stars_num, gh.login AS owner",
+        "       r.description AS description, r.stars_num AS stars_num, gh.login AS owner, "
+        "       gh.type AS owner_type, r.language AS language, r.topics AS topics, "
+        "       toString(r.last_updated) AS last_updated, r.license AS license, "
+        "       r.archived AS archived, r.forks_num AS forks_num, "
+        "       r.is_fork AS is_fork",
     )
 
     db["departments"] = cypher_dict(

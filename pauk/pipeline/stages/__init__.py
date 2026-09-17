@@ -7,6 +7,7 @@ from .github_match import GitHubMatchStage
 from .link_relevance import LinkRelevanceStage
 from .pdf import PdfStage
 from .persons import PersonsStage
+from .repo_people import RepoPeopleStage
 from .repositories import RepositoriesStage
 from .social_graph import SocialGraphStage
 
@@ -29,6 +30,7 @@ from .social_graph import SocialGraphStage
 # again, until a run finds nothing new.
 ALL_STAGES = (
     PdfStage, PersonsStage, DepartmentsStage, CodeLinksStage, LinkRelevanceStage,
-    EmailsStage, RepositoriesStage, DedupStage, GitHubMatchStage, AuthorNamesStage,
+    EmailsStage, RepositoriesStage, RepoPeopleStage, DedupStage, GitHubMatchStage,
+    AuthorNamesStage,
 )
 OPTIONAL_STAGES = (SocialGraphStage,)

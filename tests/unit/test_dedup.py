@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import mongomock
 
@@ -12,6 +13,7 @@ from pauk.graph.dedup import (
 )
 from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import ENTITY_FILES
+from pauk.graph.person_resolution import ModelVerdict
 from pauk.models import (
     Affiliation,
     Person,
@@ -68,7 +70,7 @@ class DedupStageTest(unittest.TestCase):
         # the raw/prepared Mongo migration.
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.config = Settings(data_dir=Path(tmp.name))
+        self.config = Settings(data_dir=Path(tmp.name), person_resolution_enabled=False)
 
     def run_stage(self, people, publications=(), catalog_rows=None):
         if catalog_rows is not None:
@@ -402,7 +404,7 @@ class PublicationDedupTest(unittest.TestCase):
         self.db = mongomock.MongoClient()["pauk_test"]
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.config = Settings(data_dir=Path(tmp.name))
+        self.config = Settings(data_dir=Path(tmp.name), person_resolution_enabled=False)
 
     def run_stage(self, publications, people=(), repositories=(), repo_links=()):
         self.prepared = PreparedStore(self.db, "sample")
@@ -592,7 +594,7 @@ class RepositoryDedupTest(unittest.TestCase):
         self.db = mongomock.MongoClient()["pauk_test"]
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.config = Settings(data_dir=Path(tmp.name))
+        self.config = Settings(data_dir=Path(tmp.name), person_resolution_enabled=False)
 
     def run_stage(self, repositories):
         self.prepared = PreparedStore(self.db, "sample")
@@ -727,6 +729,27 @@ class GraphDedupTest(unittest.TestCase):
         (applied,) = [row for row in report if row["status"] == "merged"]
         self.assertEqual((applied["person_a"], applied["merged_into"], applied["rules"]),
                          ("X1", "Y1", ["same_name"]))
+
+    def test_graph_pass_uses_the_confidence_resolver_when_models_are_supplied(self):
+        client = RecordingNeo4jClient()
+        self.load_new_group(client, "q1", [publication("W1", "Paper one")],
+                            [person("X1", "Nikolay O. Nikitin", ["W1"])])
+        self.load_new_group(client, "q2", [publication("W2", "Paper two")],
+                            [person("Y1", "Nikolay Nikitin", ["W2"])])
+        models = SimpleNamespace(
+            first_many=lambda items: {
+                pair_id: ModelVerdict(True, 0.9) for pair_id, _ in items
+            },
+            second_many=lambda contexts: {
+                context.pair_id: ModelVerdict(True, 0.9) for context in contexts
+            },
+        )
+
+        removed, report = dedup_graph_persons(client, {}, models=models)
+
+        self.assertEqual(removed, 1)
+        (applied,) = [row for row in report if row["status"] == "merged"]
+        self.assertEqual(applied["rules"], ["qwen_second_merge"])
 
     def test_staff_catalog_folds_spellings_across_groups(self):
         # Two periods, two spellings, nothing in common but the employee.

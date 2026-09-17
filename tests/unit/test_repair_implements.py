@@ -30,12 +30,18 @@ def repo_doc(repo_id, url, *, cited_urls=(), publication_ids=(), groups=("sample
 
 
 def links_doc(publication_id, *links):
+    records = []
+    for url, verdict, *status in links:
+        record = {"url": url, "is_relevant": verdict}
+        if status:
+            record["classification_status"] = status[0]
+        records.append(record)
     return {"_id": publication_id, "publication_id": publication_id,
-            "links": [{"url": url, "is_relevant": verdict} for url, verdict in links],
+            "links": records,
             "groups": ["sample"]}
 
 
-class IrrelevantClaimsTest(unittest.TestCase):
+class UnsupportedClaimsTest(unittest.TestCase):
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
         self.repos = self.db[PreparedStore.COLLECTIONS["repositories"]]
@@ -46,15 +52,38 @@ class IrrelevantClaimsTest(unittest.TestCase):
                                        "https://github.com/scikit-learn/scikit-learn",
                                        publication_ids=["W1"]))
         self.links.insert_one(links_doc("W1", ("https://github.com/scikit-learn/scikit-learn", False)))
-        self.assertEqual(repair_implements.irrelevant_claims(self.db),
+        self.assertEqual(repair_implements.unsupported_claims(self.db),
                          {"github_scikit-learn_scikit-learn": {"W1"}})
+
+    def test_a_classified_uncertain_link_loses_its_claim(self):
+        self.repos.insert_one(repo_doc("github_lab_tool", "https://github.com/lab/tool",
+                                       publication_ids=["W1"]))
+        self.links.insert_one(links_doc(
+            "W1", ("https://github.com/lab/tool", None, "classified")))
+        self.assertEqual(repair_implements.unsupported_claims(self.db),
+                         {"github_lab_tool": {"W1"}})
+
+    def test_a_pending_link_is_left_for_retry(self):
+        self.repos.insert_one(repo_doc("github_lab_tool", "https://github.com/lab/tool",
+                                       publication_ids=["W1"]))
+        self.links.insert_one(links_doc("W1", ("https://github.com/lab/tool", None)))
+        self.assertEqual(repair_implements.unsupported_claims(self.db),
+                         {"github_lab_tool": set()})
+
+    def test_a_failed_link_is_left_for_retry(self):
+        self.repos.insert_one(repo_doc("github_lab_tool", "https://github.com/lab/tool",
+                                       publication_ids=["W1"]))
+        self.links.insert_one(links_doc(
+            "W1", ("https://github.com/lab/tool", None, "failed")))
+        self.assertEqual(repair_implements.unsupported_claims(self.db),
+                         {"github_lab_tool": set()})
 
     def test_one_relevant_link_keeps_the_claim(self):
         self.repos.insert_one(repo_doc("github_lab_tool", "https://github.com/lab/tool",
                                        publication_ids=["W1"]))
         self.links.insert_one(links_doc(
             "W1", ("https://github.com/lab/tool", False), ("https://github.com/lab/tool", True)))
-        self.assertEqual(repair_implements.irrelevant_claims(self.db)["github_lab_tool"], set())
+        self.assertEqual(repair_implements.unsupported_claims(self.db)["github_lab_tool"], set())
 
     def test_a_renamed_repository_is_found_by_the_url_it_was_cited_as(self):
         # The stage re-keys the row to the name GitHub redirects to, so the
@@ -65,7 +94,7 @@ class IrrelevantClaimsTest(unittest.TestCase):
             cited_urls=["https://github.com/lab/old-name", "https://github.com/lab/new-name"],
             publication_ids=["W1"]))
         self.links.insert_one(links_doc("W1", ("https://github.com/Lab/old-name/", False)))
-        self.assertEqual(repair_implements.irrelevant_claims(self.db),
+        self.assertEqual(repair_implements.unsupported_claims(self.db),
                          {"github_lab_new-name": {"W1"}})
 
 

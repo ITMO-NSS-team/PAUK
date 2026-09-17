@@ -50,8 +50,8 @@ def setUpModule():  # noqa: N802 - unittest's required hook name
             f"testcontainers not installed ({_IMPORT_ERROR}); "
             "run with --with 'testcontainers[neo4j]' to include these tests"
         )
-    _container = Neo4jContainer(image="neo4j:5-community", password=_PASSWORD)
     try:
+        _container = Neo4jContainer(image="neo4j:5-community", password=_PASSWORD)
         _container.start()
     except Exception as exc:  # Docker daemon not running, no permission, image pull failure, etc.
         raise unittest.SkipTest(f"could not start a Neo4j container: {exc}") from exc
@@ -262,6 +262,71 @@ class PromoteLinkCandidatesIntegrationTest(Neo4jIntegrationTestCase):
             ).single()
         self.assertIsNotNone(record)  # relationship moved onto the real repository
         self.assertEqual(record["props"]["context"], ["intro"])  # properties preserved across the move
+
+
+class SyncImplementsIntegrationTest(Neo4jIntegrationTestCase):
+    def test_only_relationships_outside_the_confirmed_set_are_deleted(self):
+        _raw_client.upsert_nodes_batch("Publication", [("pub1", {})])
+        _raw_client.upsert_nodes_batch("Repository", [
+            ("authors-repo", {"url": "https://github.com/org/authors-repo"}),
+            ("dependency", {"url": "https://github.com/org/dependency"}),
+        ])
+        _raw_client.upsert_relationships_batch(
+            "Repository",
+            "Publication",
+            "IMPLEMENTS",
+            [("authors-repo", "pub1", {}), ("dependency", "pub1", {})],
+        )
+        audited, sink = self._audited()
+
+        removed = audited.sync_implements_relationships_batch([
+            ("pub1", ["authors-repo"]),
+        ])
+
+        self.assertEqual(removed, 1)
+        with _raw_client.driver.session() as session:
+            repositories = session.run(
+                "MATCH (repository:Repository)-[:IMPLEMENTS]->(:Publication {id: 'pub1'}) "
+                "RETURN repository.id AS id ORDER BY id"
+            ).value("id")
+        self.assertEqual(repositories, ["authors-repo"])
+        [entry] = sink.entries
+        self.assertEqual(entry.operation, "sync_implements_relationships")
+
+
+class NullPropertyRemovalIntegrationTest(Neo4jIntegrationTestCase):
+    def test_set_map_null_removes_stale_node_and_relationship_properties(self):
+        _raw_client.upsert_nodes_batch("Publication", [(
+            "pub1",
+            {"code_url": '["https://github.com/org/repo"]'},
+        )])
+        _raw_client.upsert_nodes_batch("Repository", [(
+            "repo1",
+            {"url": "https://github.com/org/repo"},
+        )])
+        _raw_client.upsert_relationships_batch(
+            "Publication",
+            "Repository",
+            "MENTIONS_LINK",
+            [("pub1", "repo1", {"is_relevant": True})],
+        )
+
+        _raw_client.upsert_nodes_batch("Publication", [("pub1", {"code_url": None})])
+        _raw_client.upsert_relationships_batch(
+            "Publication",
+            "Repository",
+            "MENTIONS_LINK",
+            [("pub1", "repo1", {"is_relevant": None})],
+        )
+
+        publication = self._node_props("pub1")
+        self.assertNotIn("code_url", publication)
+        with _raw_client.driver.session() as session:
+            relationship = session.run(
+                "MATCH (:Publication {id: 'pub1'})-[r:MENTIONS_LINK]->"
+                "(:Repository {id: 'repo1'}) RETURN properties(r) AS props"
+            ).single()["props"]
+        self.assertNotIn("is_relevant", relationship)
 
 
 class JSONLAuditSinkIntegrationTest(Neo4jIntegrationTestCase):

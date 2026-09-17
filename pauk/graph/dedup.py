@@ -22,10 +22,14 @@ from datetime import date
 
 from pymongo.database import Database
 
+from pauk.graph.person_resolution import DEFAULT_POLICY, ResolverPolicy
 from pauk.jobs.locks import held
 from pauk.jobs.models import GRAPH
 from pauk.models import Authorship, Person
+from pauk.pipeline import person_resolution_review
 from pauk.pipeline.normalize import _merge_person
+from pauk.pipeline.person_resolution import OpenRouterResolutionModels
+from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
 from pauk.pipeline.stages.author_names import RussianNamesCatalog, catalog_path
 from pauk.pipeline.stages.dedup import (
     PLACEHOLDER_TITLES,
@@ -157,8 +161,14 @@ def collect_raw_orcids(mongo_db: Database) -> dict[str, str | None]:
     return orcids
 
 
-def dedup_graph_persons(client, raw_orcids: dict[str, str | None],
-                        catalog: RussianNamesCatalog | None = None) -> tuple[int, list[dict]]:
+def dedup_graph_persons(
+    client,
+    raw_orcids: dict[str, str | None],
+    catalog: RussianNamesCatalog | None = None,
+    decisions: dict[frozenset[str], str] | None = None,
+    models=None,
+    policy: ResolverPolicy = DEFAULT_POLICY,
+) -> tuple[int, list[dict]]:
     """Fold duplicate Person nodes across all published groups.
 
     Args:
@@ -196,12 +206,16 @@ def dedup_graph_persons(client, raw_orcids: dict[str, str | None],
         )
         for row in client.fetch_persons_for_dedup()
     ]
-    trusted_orcid = {
-        person.id: raw_orcids.get(person.id, person.orcid) for person in people
-    }
-    groups, report = plan_person_merges(
-        people, trusted_orcid, fields_of=client.fetch_publication_fields(),
-        staff_ids=staff_identities(catalog, people))
+    trusted_orcid = {person.id: raw_orcids.get(person.id, person.orcid) for person in people}
+    planner = plan_person_merges_resolved if models is not None else plan_person_merges
+    options = {"models": models, "policy": policy, "decisions": decisions} if models is not None else {}
+    groups, report = planner(
+        people,
+        trusted_orcid,
+        fields_of=client.fetch_publication_fields(),
+        staff_ids=staff_identities(catalog, people),
+        **options,
+    )
 
     merges: list[tuple[str, str]] = []
     canonical_nodes: list[tuple[str, dict]] = []
@@ -407,13 +421,25 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         config.cache_dir.mkdir(parents=True, exist_ok=True)
         catalog = RussianNamesCatalog.load_if_present(catalog_path(config))
         if catalog is None:
-            logger.info("graph dedup: no staff catalog at %s — merging on names and profiles alone",
-                        catalog_path(config))
+            logger.info(
+                "graph dedup: no staff catalog at %s — merging on names and profiles alone", catalog_path(config)
+            )
+        folded = client.fetch_merged_id_map("Person")
+        models = OpenRouterResolutionModels(config, mongo_db, "__graph__") if config.person_resolution_enabled else None
         # A fold deletes a node, and the review journal records the decision
         # but not what the node held. The audit entry does.
         with actor_context("etl-pipeline", source="dedup-graph"):
             persons_removed, person_report = dedup_graph_persons(
-                client, collect_raw_orcids(mongo_db), catalog)
+                client,
+                collect_raw_orcids(mongo_db),
+                catalog,
+                decisions=person_resolution_review.decisions(mongo_db, folded),
+                models=models,
+                policy=ResolverPolicy(
+                    separate_below=config.person_resolution_separate_below,
+                    merge_from=config.person_resolution_merge_from,
+                ),
+            )
             publications_removed, publication_report = dedup_graph_publications(client)
             repositories_removed, repository_report = dedup_graph_repositories(client)
 
@@ -422,6 +448,9 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
             for row in (*person_report, *publication_report, *repository_report)
         ]
         held = sum(1 for row in report if row["status"] == "held")
+        if config.person_resolution_enabled:
+            person_resolution_review.record(mongo_db, person_report, source="graph")
+            person_resolution_review.mark_applied(mongo_db, client.fetch_merged_id_map("Person"))
         journal_path = config.cache_dir / CANDIDATES_FILENAME
         with AtomicWriter(journal_path) as fh:
             for row in report:
