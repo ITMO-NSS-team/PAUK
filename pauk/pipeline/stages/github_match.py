@@ -90,7 +90,7 @@ ITMO_IDENTITY_PATTERN = re.compile(r"\b(?:itmo|итмо)\b", re.I)
 # The city remains useful but is only a weak person-matching signal. Require
 # Petersburg too: a bare "Sankt" used to accept unrelated profile text.
 PETERSBURG_PATTERN = re.compile(
-    r"\b(?:saint|st\.?|sankt)[-\s]*peters?burg\b|\bсанкт[-\s]?петербург\b",
+    r"\b(?:saint|st\.?|sankt)[-\s]*peters?burg\b|\bсанкт[-\s]?петербург",
     re.I,
 )
 

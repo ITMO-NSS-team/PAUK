@@ -68,7 +68,9 @@ class ItmoOrganizationStatusTest(unittest.TestCase):
 
     def test_city_only_is_a_possible_organization_not_a_seed(self):
         for location in ("Saint Petersburg", "Санкт-Петербург", "St.Petersburg",
-                         "Sankt-Peterburg", "СанктПетербург"):
+                         "Sankt-Peterburg", "СанктПетербург", "St Petersburg",
+                         "Saint-Petersburg", "г. Санкт-Петербург",
+                         "живёт в Санкт-Петербурге", "из Санкт-Петербурга"):
             with self.subTest(location=location):
                 given = profile("some-lab", account_type="organization", location=location)
                 self.assertEqual(itmo_organization_status("some-lab", given, self.CATALOG),

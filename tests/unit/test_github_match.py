@@ -402,7 +402,18 @@ class ItmoInTextTest(unittest.TestCase):
     def test_the_spellings_social_graph_added_are_recognised_here(self):
         for text in ("Россия, Санкт Петербург", "Санкт-Петербург",
                      "Russia, St. Petersburg", "St-Petersburg", "Sankt Petersburg",
-                     "St.Petersburg", "Sankt-Peterburg", "СанктПетербург"):
+                     "St.Petersburg", "Sankt-Peterburg", "СанктПетербург",
+                     "Saint-Petersburg", "SaintPetersburg", "St Petersburg", "StPetersburg",
+                     "Sankt Peterburg", "Saint Peterburg", "SAINT PETERSBURG",
+                     "saint petersburg", "САНКТ-ПЕТЕРБУРГ"):
+            with self.subTest(text=text):
+                self.assertTrue(ITMO_IN_TEXT.search(text))
+
+    def test_russian_case_endings_are_still_the_city(self):
+        for text in ("в Санкт-Петербурге", "из Санкт-Петербурга", "по Санкт-Петербургу",
+                     "о Санкт-Петербурге", "Санкт-Петербурге", "г. Санкт-Петербург",
+                     "Санкт-Петербургский политехнический университет",
+                     "Лаборатория, Санкт-Петербурга, Россия"):
             with self.subTest(text=text):
                 self.assertTrue(ITMO_IN_TEXT.search(text))
 
