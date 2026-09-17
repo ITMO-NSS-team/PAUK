@@ -19,6 +19,7 @@ from pauk.graph.person_resolution import (
     apply_second_verdict,
     resolve_pair,
 )
+from pauk.graph.person_resolution_model import LogisticModel
 from pauk.models import Person
 
 SAME = "same"
@@ -35,6 +36,7 @@ def plan_person_merges_resolved(
     decisions: dict[frozenset[str], str] | None = None,
     models=None,
     policy: ResolverPolicy = DEFAULT_POLICY,
+    logreg_model: LogisticModel | None = None,
 ) -> tuple[list[tuple[Person, list[Person]]], list[dict]]:
     """Plan folds with LogReg and two independent model verdicts."""
     # Imported lazily to avoid a module cycle: DedupStage calls this adapter,
@@ -124,7 +126,7 @@ def plan_person_merges_resolved(
             "shared_departments": evidence.shared_departments,
             "shared_publications": evidence.shared_publications,
             "shared_fields": sorted(shared_fields),
-            "logreg_probability": round(resolve_pair(evidence, policy).probability, 6),
+            "logreg_probability": round(resolve_pair(evidence, policy, logreg_model).probability, 6),
             "route": route,
             "held_because": [reason],
         }
@@ -181,7 +183,7 @@ def plan_person_merges_resolved(
             initials_conflict=_initials_conflict(first, second),
         )
         pair_data[pair_id] = (first, second, evidence, shared_coauthors, shared_fields)
-        resolution = resolve_pair(evidence, policy)
+        resolution = resolve_pair(evidence, policy, logreg_model)
         if resolution.decision is Decision.MERGE:
             plan_merge(first, second, resolution.route)
         elif resolution.decision is Decision.FIRST_MODEL:
@@ -223,7 +225,7 @@ def plan_person_merges_resolved(
         if verdict is None:
             hold(first, second, evidence, shared_fields, "qwen_first", "first model unavailable")
             continue
-        resolution = apply_first_verdict(resolve_pair(evidence, policy), verdict)
+        resolution = apply_first_verdict(resolve_pair(evidence, policy, logreg_model), verdict)
         if resolution.decision is Decision.SEPARATE:
             hold(
                 first,
@@ -254,7 +256,7 @@ def plan_person_merges_resolved(
                     for coauthor_id in sorted(shared_coauthors)[:12]
                 ),
                 shared_fields=tuple(sorted(shared_fields)[:12]),
-                logreg_probability=resolve_pair(evidence, policy).probability,
+                logreg_probability=resolve_pair(evidence, policy, logreg_model).probability,
                 first_verdict=verdict,
                 impact_not_identity_evidence={
                     "distinct_neighbors_a": len(coauthors_a - coauthors_b),
@@ -274,7 +276,7 @@ def plan_person_merges_resolved(
             hold(first, second, evidence, shared_fields, "qwen_second", "second model unavailable")
             continue
         resolution = apply_second_verdict(
-            apply_first_verdict(resolve_pair(evidence, policy), first_positive[pair_id]),
+            apply_first_verdict(resolve_pair(evidence, policy, logreg_model), first_positive[pair_id]),
             verdict,
         )
         if resolution.decision is Decision.MERGE:

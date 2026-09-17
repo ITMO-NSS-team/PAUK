@@ -871,7 +871,8 @@ class DedupStage(EnrichmentStage):
             for merged_id in person.merged_ids
         }
         if self.config.person_resolution_enabled:
-            from pauk.graph.person_resolution import ResolverPolicy
+            from pauk.graph.person_resolution import MODEL_FEATURES, ResolverPolicy
+            from pauk.graph.person_resolution_model import load_logistic_model
             from pauk.pipeline import person_resolution_review
             from pauk.pipeline.person_resolution import OpenRouterResolutionModels
             from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
@@ -887,6 +888,10 @@ class DedupStage(EnrichmentStage):
                 policy=ResolverPolicy(
                     separate_below=self.config.person_resolution_separate_below,
                     merge_from=self.config.person_resolution_merge_from,
+                ),
+                logreg_model=load_logistic_model(
+                    self.config.person_resolution_logreg_model_path,
+                    MODEL_FEATURES,
                 ),
             )
         else:

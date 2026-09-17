@@ -62,12 +62,13 @@ ORCID внутри одной группы и т.п.) — отклоняется
 ### Confidence-based resolver
 
 Новый алгоритм используется и стадией `dedup` внутри группы, и командой
-`pauk dedup graph` вместо прежней эвристики. В `graph/person_resolution.py`
-зафиксированы коэффициенты LogReg, prompt-контракты обоих Qwen-этапов,
-сериализация доказательств и конечный автомат решений. Вызовы моделей,
-кэширование и журналирование находятся в `pipeline/person_resolution.py`,
-а сбор признаков и построение плана слияний — в
-`pipeline/person_resolution_planner.py`.
+`pauk dedup graph` вместо прежней эвристики. `graph/person_resolution.py`
+содержит признаки, prompt-контракты обоих Qwen-этапов, сериализацию
+доказательств и конечный автомат решений. Обученные параметры LogReg лежат
+отдельно в `graph/artifacts/person_resolution_logreg.pkl` и валидируются при
+загрузке. Вызовы моделей, кэширование и журналирование находятся в
+`pipeline/person_resolution.py`, а сбор признаков и построение плана слияний —
+в `pipeline/person_resolution_planner.py`.
 
 ```mermaid
 flowchart LR
@@ -87,10 +88,14 @@ preview использует `0.05 / 0.99`, другой режим задаёт
 `ResolverPolicy`.
 
 Настройки окружения: `PAUK_PERSON_RESOLUTION_ENABLED`,
-`PAUK_PERSON_RESOLUTION_MODEL`, `PAUK_PERSON_RESOLUTION_CONCURRENCY`,
+`PAUK_PERSON_RESOLUTION_MODEL`, `PAUK_PERSON_RESOLUTION_LOGREG_MODEL_PATH`,
+`PAUK_PERSON_RESOLUTION_CONCURRENCY`,
 `PAUK_PERSON_RESOLUTION_SEPARATE_BELOW` и
 `PAUK_PERSON_RESOLUTION_MERGE_FROM`. Если ключ OpenRouter отсутствует или
 ответ модели невалиден, пара не сливается и остаётся со статусом `held`.
+Чтобы заменить LogReg, достаточно положить новый доверенный pickle-артефакт
+той же схемы и указать путь в `PAUK_PERSON_RESOLUTION_LOGREG_MODEL_PATH`;
+порядок и количество признаков проверяются до первого решения.
 
 После появления модуля ручного ревью из PR #177 пары со статусом `held`
 автоматически записываются в его очередь, а решения оператора учитываются в

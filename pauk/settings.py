@@ -16,6 +16,14 @@ load_dotenv(ROOT_DIR / ".env")
 MAP_DIR = Path(__file__).resolve().parent / "gui" / "data"
 
 
+def _path_setting(name: str, default: Path) -> Path:
+    configured = os.getenv(name)
+    if not configured:
+        return default
+    path = Path(configured)
+    return path if path.is_absolute() else ROOT_DIR / path
+
+
 @dataclass(frozen=True)
 class Settings:
     data_dir: Path = Path(os.getenv("PAUK_DATA_DIR") or ROOT_DIR / "data")
@@ -31,6 +39,10 @@ class Settings:
     ).lower() in ("1", "true", "yes")
     person_resolution_model: str = os.getenv(
         "PAUK_PERSON_RESOLUTION_MODEL", "qwen/qwen3-next-80b-a3b-instruct"
+    )
+    person_resolution_logreg_model_path: Path = _path_setting(
+        "PAUK_PERSON_RESOLUTION_LOGREG_MODEL_PATH",
+        ROOT_DIR / "pauk" / "graph" / "artifacts" / "person_resolution_logreg.pkl",
     )
     person_resolution_concurrency: int = int(
         os.getenv("PAUK_PERSON_RESOLUTION_CONCURRENCY", "8")

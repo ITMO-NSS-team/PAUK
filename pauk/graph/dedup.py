@@ -22,7 +22,8 @@ from datetime import date
 
 from pymongo.database import Database
 
-from pauk.graph.person_resolution import DEFAULT_POLICY, ResolverPolicy
+from pauk.graph.person_resolution import DEFAULT_POLICY, MODEL_FEATURES, ResolverPolicy
+from pauk.graph.person_resolution_model import LogisticModel, load_logistic_model
 from pauk.jobs.locks import held
 from pauk.jobs.models import GRAPH
 from pauk.models import Authorship, Person
@@ -168,6 +169,7 @@ def dedup_graph_persons(
     decisions: dict[frozenset[str], str] | None = None,
     models=None,
     policy: ResolverPolicy = DEFAULT_POLICY,
+    logreg_model: LogisticModel | None = None,
 ) -> tuple[int, list[dict]]:
     """Fold duplicate Person nodes across all published groups.
 
@@ -208,7 +210,11 @@ def dedup_graph_persons(
     ]
     trusted_orcid = {person.id: raw_orcids.get(person.id, person.orcid) for person in people}
     planner = plan_person_merges_resolved if models is not None else plan_person_merges
-    options = {"models": models, "policy": policy, "decisions": decisions} if models is not None else {}
+    options = (
+        {"models": models, "policy": policy, "decisions": decisions, "logreg_model": logreg_model}
+        if models is not None
+        else {}
+    )
     groups, report = planner(
         people,
         trusted_orcid,
@@ -426,6 +432,11 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
             )
         folded = client.fetch_merged_id_map("Person")
         models = OpenRouterResolutionModels(config, mongo_db, "__graph__") if config.person_resolution_enabled else None
+        logreg_model = (
+            load_logistic_model(config.person_resolution_logreg_model_path, MODEL_FEATURES)
+            if config.person_resolution_enabled
+            else None
+        )
         # A fold deletes a node, and the review journal records the decision
         # but not what the node held. The audit entry does.
         with actor_context("etl-pipeline", source="dedup-graph"):
@@ -439,6 +450,7 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
                     separate_below=config.person_resolution_separate_below,
                     merge_from=config.person_resolution_merge_from,
                 ),
+                logreg_model=logreg_model,
             )
             publications_removed, publication_report = dedup_graph_publications(client)
             repositories_removed, repository_report = dedup_graph_repositories(client)
