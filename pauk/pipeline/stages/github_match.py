@@ -85,19 +85,20 @@ CORROBORATING = ("itmo_profile", "itmo_email", "login_surname", "owner", "org_it
 STRONG = ("email_exact", "login_surname", "owner")
 
 # ITMO in a profile, as a word: "RITMO, University of Oslo" is a Norwegian
-# centre whose name contains the same four letters. The city appears in every
-# spelling its labs happen to use: "Saint Petersburg", "St. Petersburg",
-# "St-Petersburg", and the Cyrillic form with either a hyphen or a space.
-#
-# social_graph applies the same test to organizations, and imports this one
-# rather than keeping its own: two copies drifted apart once already, and the
-# stages then disagreed about whether an account is ITMO's.
-ITMO_IN_TEXT = re.compile(
-    r"\bitmo\b"
-    r"|\b(?:saint|st)\.?[-\s]?petersburg\b"
-    r"|\bsankt"
-    r"|санкт[-\s]?петербург",
+# centre whose name contains the same four letters. This is strong enough to
+# make an organization a social_graph seed.
+ITMO_IDENTITY_PATTERN = re.compile(r"\b(?:itmo|итмо)\b", re.I)
+
+# The city remains useful but is only a weak person-matching signal. Require
+# Petersburg too: a bare "Sankt" used to accept unrelated profile text.
+PETERSBURG_PATTERN = re.compile(
+    r"\b(?:saint|st\.?|sankt)[-\s]*peters?burg\b|\bсанкт[-\s]?петербург",
     re.I,
+)
+
+# github_match deliberately combines the strong and weak profile signals.
+ITMO_IN_TEXT = re.compile(
+    f"{ITMO_IDENTITY_PATTERN.pattern}|{PETERSBURG_PATTERN.pattern}", re.I,
 )
 
 ITMO_EMAIL_DOMAIN = "@itmo.ru"
@@ -357,7 +358,7 @@ class GitHubMatchStage(EnrichmentStage):
         """Harvested accounts, aggregated across every repository they appear on."""
         by_url = {repository.url: repository for repository in repositories}
         owners = {repository.owner_login for repository in repositories if repository.owner_login}
-        itmo_orgs = {owner.lower() for owner in owners if ITMO_IN_TEXT.search(owner or "")}
+        itmo_orgs = {owner.lower() for owner in owners if ITMO_IDENTITY_PATTERN.search(owner)}
 
         accounts: dict[str, dict] = {}
         for profile in profiles:
