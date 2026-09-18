@@ -89,7 +89,10 @@ def bench(tmp_path_factory) -> SimpleNamespace:
         "name_ru,surname,name,patronymic,degree\n"
         + "".join(f"{row}\n" for row in RUSSIAN_NAMES_CATALOG), encoding="utf-8")
 
-    config = Settings(data_dir=data_dir)
+    # This benchmark covers the legacy deterministic fixture. The enabled
+    # resolver and its review routing have dedicated unit tests with model
+    # verdicts, so the offline benchmark must not depend on an LLM API key.
+    config = Settings(data_dir=data_dir, person_resolution_enabled=False)
     db = mongomock.MongoClient()["pauk_test"]
     raw = RawStore(db, GROUP)
     prepared = PreparedStore(db, GROUP)
