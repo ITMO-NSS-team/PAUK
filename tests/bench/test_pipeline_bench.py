@@ -33,6 +33,7 @@ from tests.bench.mocks import (
     MockOpenAlexClient,
     MockOpenRouterClient,
     MockOrcidClient,
+    MockPdfHttpClient,
     RecordingNeo4jClient,
 )
 from tests.bench.universe import (
@@ -108,6 +109,7 @@ def bench(tmp_path_factory) -> SimpleNamespace:
         mock.patch("pauk.pipeline.stages.persons.OpenAlexClient", lambda *a, **k: MockOpenAlexClient(universe)),
         mock.patch("pauk.pipeline.stages.persons.CrossrefClient", lambda *a, **k: MockCrossrefClient(universe)),
         mock.patch("pauk.pipeline.stages.persons.OrcidClient", lambda *a, **k: MockOrcidClient(universe)),
+        mock.patch("pauk.pipeline.stages.code_links.HttpClient", lambda *a, **k: MockPdfHttpClient()),
         mock.patch("pauk.pipeline.stages.author_names.OpenRouterClient",
                    lambda *a, **k: MockOpenRouterClient(RUSSIAN_NAMES_CATALOG)),
         mock.patch("pauk.pipeline.stages.link_relevance.OpenRouterClient",
