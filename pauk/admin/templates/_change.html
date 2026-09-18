@@ -1,0 +1,15 @@
+{# Одно изменение поля: что было и что стало.
+
+   Один макрос на четыре страницы — журнал, карточка узла, удалённая
+   запись и ручные решения показывают одно и то же, и разъезжались бы
+   по оформлению при каждой правке одной из них. #}
+{% macro change(field, was, now) %}
+<div class="change">
+  <b>{{ field }}</b>
+  {# Значения нет — не показываем прочерк: при создании нечему было
+     пропадать, при удалении нечему появляться. #}
+  {% if was is not none %}<span class="was">{{ was }}</span>{% endif %}
+  {% if now is not none %}<span class="now">{{ now }}</span>{% endif %}
+  {% if was is none and now is none %}<span class="muted">—</span>{% endif %}
+</div>
+{% endmacro %}

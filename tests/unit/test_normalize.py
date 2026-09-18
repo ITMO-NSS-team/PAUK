@@ -200,6 +200,22 @@ class NormalizeTest(unittest.TestCase):
                          "Optical probing in monolayer WSe2 via diffraction")
         self.assertEqual(publication.abstract, "Grown on CaF2/Si(111) in vacuo")
 
+    def test_elibrary_markup_is_stripped_from_titles(self):
+        # Journals deposited through elibrary spell subscripts and
+        # superscripts in its own markup instead of HTML.
+        raw = RawStore(self.db, "sample")
+        raw.append("openalex_works", {
+            "id": "https://openalex.org/W1", "authorships": [],
+            "title": ("Luminescence of AgInS-=SUB=-2-=/SUB=-/ZnS in hybrid complex"
+                      " CaCO-=SUB=-3-=/SUB=--Fe-=SUB=-3-=/SUB=-O-=SUB=-4-=/SUB=-"
+                      "-=SUP=-*-=/SUP=-"),
+        }, {"work_id": "W1"})
+        prepared = PreparedStore(self.db, "sample")
+        OpenAlexNormalizer(raw, prepared).run()
+        publication = next(prepared.read_models("publications", Publication))
+        self.assertEqual(publication.title,
+                         "Luminescence of AgInS2/ZnS in hybrid complex CaCO3-Fe3O4*")
+
     def test_a_formula_keeps_a_space_that_is_its_own_element(self):
         # Publishers spell "ab initio" out letter by letter, with the gap
         # carried by <mml:mo> </mml:mo> — that space is content, not layout.
@@ -318,7 +334,9 @@ class NormalizeTest(unittest.TestCase):
             "id": "https://openalex.org/W1", "title": "Paper", "authorships": [],
         }, {"work_id": "W1"})
         prepared = PreparedStore(self.db, "sample")
-        prepared.write_models("publications", [Publication(id="W1", title="old", has_code=True)])
+        prepared.write_models("publications", [
+            Publication(id="W1", title="old", has_code=True, full_text="page one")
+        ])
         prepared.write_models("repositories", [
             Repository(id="github_org_repo", name="repo", url="https://github.com/org/repo")
         ])
@@ -328,6 +346,8 @@ class NormalizeTest(unittest.TestCase):
         OpenAlexNormalizer(raw, prepared).run()
         publication = next(prepared.read_models("publications", Publication))
         self.assertEqual((publication.title, publication.has_code), ("Paper", True))
+        # The PDF text has no source in the raw work to be rebuilt from.
+        self.assertEqual(publication.full_text, "page one")
         self.assertEqual(len(list(prepared.read_models("repositories", Repository))), 1)
         self.assertEqual(len(list(prepared.read_models("repo_links", RepoLink))), 1)
 

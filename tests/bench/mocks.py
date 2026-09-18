@@ -66,6 +66,28 @@ class MockGitHubClient:
     def has_readme(self, owner: str, name: str) -> bool:
         return True
 
+    # The people half of the GitHub API, used by repo_people. These answer
+    # empty, and that is not coverage of that stage: the universe models no
+    # contributors and no commits, so nothing in repo_people below the owner
+    # is exercised — bot filtering, git identities, the noreply-email skip.
+    # Modelling the people behind a repository moves GitHubProfile counts and
+    # the github_match candidate pool, so it is its own change.
+    #
+    # What they are here for is the bench's first promise, "no network": until
+    # repo_people was split out of repositories it reached the API through a
+    # patched client, and unpatched it fetches contributors, three pages of
+    # commits and a profile for each of the 80 repositories in the fixture.
+    def contributors(self, owner: str, name: str) -> list[dict]:
+        self.calls.append((owner, name))
+        return []
+
+    def commits(self, owner: str, name: str, pages: int) -> list[dict]:
+        self.calls.append((owner, name))
+        return []
+
+    def get_user(self, login: str) -> dict:
+        return {}
+
 
 class MockCrossrefClient:
     def __init__(self, universe: dict) -> None:
@@ -144,6 +166,24 @@ class MockOpenRouterClient:
         }
 
 
+class MockLinkRelevanceClient:
+    """Classifies the synthetic bench code citations without an LLM call."""
+
+    def __init__(self) -> None:
+        self.last_response = None
+        self.last_usage = None
+        self.last_error = None
+
+    def chat_json(self, prompt: str) -> dict:
+        result = {
+            "is_authors_artifact": True,
+            "confidence": 1.0,
+            "reason": "mock: synthetic benchmark repository",
+        }
+        self.last_response = result
+        return result
+
+
 class UnexpectedNetworkClient:
     """Any call means a stage tried the network although it shouldn't have."""
 
@@ -168,13 +208,22 @@ class RecordingNeo4jClient:
         self.edges: dict[tuple[str, str, str, str, str], dict] = {}
         self.unresolved: list[tuple[str, str, str, str, str]] = []
 
+    @staticmethod
+    def _set_properties(target: dict, properties: dict) -> None:
+        """Mirror Neo4j SET += semantics, where a scalar null removes a property."""
+        for key, value in properties.items():
+            if value is None:
+                target.pop(key, None)
+            else:
+                target[key] = value
+
     # --- Neo4jClient interface -------------------------------------------------
     def upsert_nodes_batch(self, labels, nodes) -> None:
         label_str = ":".join(labels) if isinstance(labels, list) else labels
         primary = label_str.split(":")[0]
         for node_id, props in nodes:
             clean = {k: v for k, v in props.items() if k not in ("id", "created_at", "updated_at")}
-            self.nodes[primary].setdefault(node_id, {}).update(clean)
+            self._set_properties(self.nodes[primary].setdefault(node_id, {}), clean)
 
     def upsert_person_nodes_batch(self, nodes) -> None:
         for node_id, props in nodes:
@@ -197,11 +246,28 @@ class RecordingNeo4jClient:
                              for node in self.nodes.get(tgt_primary, {}).values())
             if src_ok and tgt_ok:
                 key = (src_primary, rel_type, tgt_primary, src_id, tgt_id)
-                self.edges.setdefault(key, {}).update(props)
+                self._set_properties(self.edges.setdefault(key, {}), props)
                 matched += 1
             else:
                 self.unresolved.append((src_label, rel_type, tgt_label, src_id, tgt_id))
         return matched
+
+    def sync_implements_relationships_batch(self, publications) -> int:
+        removed = 0
+        for publication_id, repository_ids in publications:
+            desired = set(repository_ids)
+            for key in list(self.edges):
+                src_label, rel_type, tgt_label, src_id, tgt_id = key
+                if (
+                    src_label == "Repository"
+                    and rel_type == "IMPLEMENTS"
+                    and tgt_label == "Publication"
+                    and tgt_id == publication_id
+                    and src_id not in desired
+                ):
+                    del self.edges[key]
+                    removed += 1
+        return removed
 
     def promote_link_candidates_batch(self, candidates) -> None:
         """Mirror of Neo4jClient.promote_link_candidates_batch: move

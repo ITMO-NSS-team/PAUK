@@ -193,7 +193,12 @@ def load_db(driver) -> dict[str, list]:
         "r.has_readme AS has_readme, "
         "r.license AS license, "
         "r.contributors AS contributors, "
-        # "gh.login AS owner, "
+        "r.language AS language, "
+        "r.topics AS topics, "
+        "r.archived AS archived, "
+        "r.forks_num AS forks_num, "
+        "r.is_fork AS is_fork, "
+        "gh.login AS owner, "
         # "gh.name AS owner_name, "  # TODO: decide is it necessary + why not nameS + classification by type
         # "gh.html_url AS owner_html_url, "
         # "gh.description AS owner_description, "
@@ -202,7 +207,7 @@ def load_db(driver) -> dict[str, list]:
         "gh.type AS owner_type, "
         # service
         "toString(r.access_date) AS access_date, "
-        # "toString(r.last_updated) AS last_updated, "  # STUB
+        "toString(r.last_updated) AS last_updated, "
         "toString(r.created_at) AS created_at, "
         "toString(r.updated_at) AS updated_at",
     )

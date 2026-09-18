@@ -69,6 +69,8 @@ def fa2_layout(graph: nx.Graph, max_iter: int, seed: int) -> dict[str, tuple[flo
     Returns:
         Raw (not yet fitted) coordinates for every node of `graph`.
     """
+    if graph.number_of_nodes() == 0:  # fa2_modified can't build a matrix of an empty graph
+        return {}
     rng = np.random.default_rng(seed)
     start = {n: (float(x), float(y)) for n, (x, y) in zip(graph, rng.random((graph.number_of_nodes(), 2)), strict=True)}
     return ForceAtlas2(verbose=False).forceatlas2_networkx_layout(
@@ -92,6 +94,8 @@ def spread_min_distance(
     Returns:
         The same ids, coordinates spread apart and rounded to 0.1.
     """
+    if not pos:  # cKDTree refuses an empty array - an empty graph is an empty map, not a failure
+        return {}
     keys = list(pos)
     P = np.array([pos[k] for k in keys], dtype=float)
     rng = np.random.RandomState(seed)

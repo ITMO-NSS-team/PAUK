@@ -17,6 +17,10 @@ dependencies = [
     "tqdm>=4.67.1",
     "watchdog>=6.0.0",
     "fa2-modified>=0.4",
+    "fastapi>=0.141.1",
+    "uvicorn>=0.52.4",
+    "jinja2>=3.1.6",
+    "python-multipart>=0.0.32",
 ]
 
 [project.scripts]
@@ -31,6 +35,7 @@ packages = ["pauk"]
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.12.0",
     "mongomock>=4.3.0",
     "ruff>=0.14.0",
 ]

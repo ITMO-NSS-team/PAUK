@@ -15,6 +15,8 @@ data/static/russian_names.csv
 data/cache/*
 data/pdf/*
 data/audit/*
+data/reports/*
+data/backups/*
 !data/cache/.gitkeep
 !data/audit/.gitkeep
 
@@ -25,6 +27,8 @@ data/gui/private/*
 data/gui/public/*
 !data/gui/private/.gitkeep
 !data/gui/public/.gitkeep
+
+docs/reports/*
 
 *.egg-info/
 dist/
@@ -43,6 +47,7 @@ logs/
 
 graphify-out/
 .graphifyignore
+.coverage
 
 # Database dumps and pre-write snapshots — large, never committed.
 data/backups/

@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 ROOT_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT_DIR / ".env")
 
-
 @dataclass(frozen=True)
 class Settings:
     data_dir: Path = Path(os.getenv("PAUK_DATA_DIR") or ROOT_DIR / "data")
@@ -18,7 +17,7 @@ class Settings:
     openreview_username: str = os.getenv("OPENREVIEW_USERNAME", "")
     openreview_password: str = os.getenv("OPENREVIEW_PASSWORD", "")
     openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
-    llm_model: str = os.getenv("PAUK_LLM_MODEL", "anthropic/claude-haiku-4.5")
+    llm_model: str = os.getenv("PAUK_LLM_MODEL", "qwen/qwen-2.5-72b-instruct")
     openrouter_proxy_url: str = os.getenv("OPENROUTER_PROXY_URL", "")
     neo4j_uri: str = os.getenv("NEO4J_URI", "bolt://localhost:7687")
     neo4j_user: str = os.getenv("NEO4J_USER", "neo4j")
@@ -27,6 +26,10 @@ class Settings:
     mongo_db: str = os.getenv("MONGO_DB", "pauk")
     request_timeout: int = int(os.getenv("PAUK_REQUEST_TIMEOUT", "30"))
     openreview_priority_fields: str = os.getenv("PAUK_OPENREVIEW_PRIORITY_FIELDS", "Computer Science")
+    # The admin panel's session cookie. Off by default so the panel works
+    # over plain HTTP inside the VPN; turn it on wherever it is served
+    # over TLS, and the browser stops sending the cookie unencrypted.
+    admin_secure_cookie: bool = os.getenv("PAUK_ADMIN_SECURE_COOKIE", "").lower() in ("1", "true", "yes")
     pdf_crawler_url: str = os.getenv("PAUK_PDF_CRAWLER_URL", "")
     # Official ITMO staff records (personal data — never committed).
     # None means <static_dir>/russian_names.csv.

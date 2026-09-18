@@ -138,7 +138,7 @@ def dump_json(data, path: Path) -> None:
     logger.info("Wrote %s (%.1f MB)", path, path.stat().st_size / 1e6)
 
 
-def write_site_data(snapshot: Path, out_dir: Path, seed: int) -> None:
+def write_site_data(snapshot: Path, out_dir: Path, seed: int) -> dict[str, int]:
     """Builds the site data from a snapshot and writes it into `out_dir` -
     what `pauk gui build` runs.
 
@@ -146,6 +146,10 @@ def write_site_data(snapshot: Path, out_dir: Path, seed: int) -> None:
         snapshot: Graph snapshot taken by `pauk cache export`.
         out_dir: Base folder - `public/` and `private/` live inside it.
         seed: ForceAtlas2 layout seed.
+
+    Returns:
+        What went onto the map - `map_authors`/`map_pubs`/`map_repos`/
+        `map_departments`/`map_edges` (the admin panel shows these after a rebuild).
     """
     from pauk.cache.graph_snapshot import read_snapshot
 
@@ -167,10 +171,15 @@ def write_site_data(snapshot: Path, out_dir: Path, seed: int) -> None:
     dump_json(summary, public_dir / "graph-data.json")
     dump_json(summary, private_dir / "graph-data.json")
     for kind, rows in detail.items():
-        if not rows:
-            continue
         dump_json(rows, private_dir / f"{kind}-detail.json")
         if kind != "authors":
             dump_json(rows, public_dir / f"{kind}-detail.json")
 
     logger.info("Done in %.1f s", time.time() - t0)
+    return {
+        "map_authors": len(summary["authors"]),
+        "map_pubs": len(summary["pubs"]),
+        "map_repos": len(summary["repos"]),
+        "map_departments": len(summary["departments"]),
+        "map_edges": len(summary["all_edges"]),
+    }

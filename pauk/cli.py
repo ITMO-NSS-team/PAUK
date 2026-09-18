@@ -7,6 +7,10 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from pymongo.errors import ServerSelectionTimeoutError
+
+from pauk.admin import cli as admin_cli
+from pauk.jobs.locks import Busy
 from pauk.logging import configure_logging
 from pauk.pipeline.collect import Collector
 from pauk.pipeline.enrich import Enricher
@@ -159,6 +163,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_pipeline_parsers(sub)
     _add_cache_parsers(sub)
     _add_gui_parsers(sub)
+    admin_cli.add_parser(sub)
     return parser
 
 
@@ -263,11 +268,45 @@ def _cmd_gui(args, parser: argparse.ArgumentParser) -> None:
     write_site_data(path, args.out_dir or settings.gui_dir, args.seed)
 
 
+def _cmd_admin(args) -> None:
+    # `schema` only prints the whitelists; it reaches neither database,
+    # so it stays usable without one running.
+    if args.admin_command == "schema":
+        admin_cli.run(args, settings, None)
+        return
+    mongo = get_mongo_client(settings)
+    try:
+        db = mongo[settings.mongo_db]
+        # A database that is simply not running is the most common way these
+        # commands fail, and pymongo reports it as a thirty-second timeout
+        # ending in a page of driver frames. Say what happened instead, before
+        # anything prompts for a password that has nowhere to go.
+        try:
+            ensure_indexes(db)
+        except ServerSelectionTimeoutError:
+            raise SystemExit(
+                f"cannot reach MongoDB at {settings.mongo_uri}.\n"
+                "Start it, for example:\n"
+                "  docker run -d --name pauk-mongo -p 27017:27017 "
+                "-v pauk-mongo-data:/data/db mongo:7") from None
+        admin_cli.run(args, settings, db)
+    finally:
+        mongo.close()
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
     configure_logging(args.verbose)
+    try:
+        _dispatch(args, parser)
+    except Busy as error:
+        # Something else holds the graph or the group. Waiting is the
+        # answer, and a stack trace does not say so.
+        raise SystemExit(str(error)) from None
 
+
+def _dispatch(args, parser: argparse.ArgumentParser) -> None:
     if args.command == "run":
         _cmd_run(args)
     elif args.command == "collect":
@@ -284,6 +323,8 @@ def main() -> None:
         _cmd_cache(args, parser)
     elif args.command == "gui":
         _cmd_gui(args, parser)
+    elif args.command == "admin":
+        _cmd_admin(args)
     else:
         parser.error(f"unknown command: {args.command}")
 
