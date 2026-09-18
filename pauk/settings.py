@@ -14,8 +14,6 @@ class Settings:
     data_dir: Path = Path(os.getenv("PAUK_DATA_DIR") or ROOT_DIR / "data")
     openalex_api_key: str = os.getenv("OPENALEX_API_KEY", "")
     github_token: str = os.getenv("GITHUB_TOKEN", "")
-    openreview_username: str = os.getenv("OPENREVIEW_USERNAME", "")
-    openreview_password: str = os.getenv("OPENREVIEW_PASSWORD", "")
     openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
     llm_model: str = os.getenv("PAUK_LLM_MODEL", "qwen/qwen-2.5-72b-instruct")
     openrouter_proxy_url: str = os.getenv("OPENROUTER_PROXY_URL", "")
@@ -25,7 +23,6 @@ class Settings:
     mongo_uri: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
     mongo_db: str = os.getenv("MONGO_DB", "pauk")
     request_timeout: int = int(os.getenv("PAUK_REQUEST_TIMEOUT", "30"))
-    openreview_priority_fields: str = os.getenv("PAUK_OPENREVIEW_PRIORITY_FIELDS", "Computer Science")
     # The admin panel's session cookie. Off by default so the panel works
     # over plain HTTP inside the VPN; turn it on wherever it is served
     # over TLS, and the browser stops sending the cookie unencrypted.
@@ -62,10 +59,6 @@ class Settings:
     @property
     def gui_dir(self) -> Path:
         return self.data_dir / "gui"
-
-    @property
-    def openreview_priority_field_set(self) -> frozenset[str]:
-        return frozenset(field.strip().casefold() for field in self.openreview_priority_fields.split(",") if field.strip())
 
 
 settings = Settings()

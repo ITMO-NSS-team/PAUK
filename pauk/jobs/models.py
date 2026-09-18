@@ -22,6 +22,8 @@ class JobKind(StrEnum):
     PUBLISH = "publish"
     DEDUP = "dedup"
     MAP = "map"
+    PRUNE = "prune"
+    HEALTH = "health"
     #: Collect, publish and rebuild the map, in that order, as one job.
     #: Not three jobs queued together: publishing needs a group, and at the
     #: moment the queue is filled that group has no rows yet.
@@ -93,6 +95,22 @@ class DedupPayload(BaseModel):
     """Nothing to choose: dedup runs over every published group."""
 
 
+class HealthPayload(BaseModel):
+    """Nothing to choose: the checks run over the whole graph."""
+
+
+class PrunePayload(BaseModel):
+    """Whether to remove what the comparison finds, or only count it.
+
+    Off by default, and the page asks before turning it on. The first run
+    on a graph that has never been compared lists everything a person ever
+    added before their additions were written down, and that list is meant
+    to be read rather than acted on.
+    """
+
+    apply: bool = False
+
+
 class MapPayload(BaseModel):
     # No public/private switch: every rebuild writes both builds at once.
     seed: int = 42
@@ -109,6 +127,8 @@ PAYLOADS: dict[JobKind, type[BaseModel]] = {
     JobKind.PUBLISH: PublishPayload,
     JobKind.DEDUP: DedupPayload,
     JobKind.MAP: MapPayload,
+    JobKind.PRUNE: PrunePayload,
+    JobKind.HEALTH: HealthPayload,
     JobKind.PIPELINE: PipelinePayload,
 }
 
@@ -135,6 +155,9 @@ class Job(BaseModel):
     result: dict[str, int] = Field(default_factory=dict)
     error: str | None = None
     cancel_requested: bool = False
+    #: Where inside the run it is: the step by name, and how many of how
+    #: many are behind it. Absent until something reports.
+    progress: dict | None = None
 
     @property
     def is_final(self) -> bool:

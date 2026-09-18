@@ -43,7 +43,7 @@ def snapshot() -> dict[str, list]:
              "name_ru": "Петров Иван Петрович", "name_en": "Ivan Petrov",
              "name_variants": ["И. П. Петров"], "other_names": [], "degree": "к.т.н.",
              "github": "octocat", "orcid": "0000-0002-1825-0097", "google_scholar": None,
-             "openreview": None, "email": None, "affiliations": "[]"},
+             "email": None, "affiliations": "[]"},
         ],
         "publications": [publication()],
         "repositories": [
@@ -104,8 +104,8 @@ class WriteSiteDataTest(unittest.TestCase):
         # would be a new map, not an updated one.
         first, _ = self.build(self.tmp / "one")
         second, _ = self.build(self.tmp / "two")
-        self.assertEqual((first / "private" / "graph-data.json").read_text(),
-                         (second / "private" / "graph-data.json").read_text())
+        self.assertEqual((first / "private" / "graph-data.json").read_text(encoding="utf-8"),
+                         (second / "private" / "graph-data.json").read_text(encoding="utf-8"))
 
 
 class RebuildMapTest(unittest.TestCase):

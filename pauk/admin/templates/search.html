@@ -25,21 +25,40 @@
   </p>
 {% else %}
   <p class="muted" style="margin:-8px 0 12px">
-    {% if query %}Найдено: {{ rows|length }}.
-    {% else %}Показаны {{ rows|length }} {{ rows|length|plural("узел", "узла", "узлов") }} по возрастанию
-      идентификатора{% if rows|length == limit %}, это первые {{ limit }}{% endif %}.
-    {% endif %}
+    {% if query %}Найдено: {{ rows|length }}{% if page > 1 or more %}
+      на этой странице{% endif %}.
+    {% else %}Показаны {{ rows|length }} {{ rows|length|plural("узел", "узла", "узлов") }}
+      по возрастанию идентификатора.{% endif %}
+    {% if page > 1 or more %} Страница {{ page }}.{% endif %}
   </p>
-  <div class="card">
-    <table>
+  <div class="card scroll">
+    {# Ширины заданы, иначе длинный идентификатор ужимает колонку до буквы
+       в строке, а адрес LinkCandidate растягивает таблицу за экран. #}
+    <table class="fixed">
+      <colgroup>
+        <col style="width:16rem">{% for f in fields %}<col>{% endfor %}
+      </colgroup>
       <tr><th>id</th>{% for f in fields %}<th>{{ f }}</th>{% endfor %}</tr>
       {% for row in rows %}
       <tr>
-        <td class="val"><a href="/nodes/{{ label }}/{{ row.id | urlencode }}">{{ row.id }}</a></td>
-        {% for f in fields %}<td>{{ row[f] if row[f] is not none else "" }}</td>{% endfor %}
+        <td class="val"><a href="/nodes/{{ label }}/{{ row.id | urlencode }}"
+          >{{ row.id }}</a></td>
+        {% for f in fields %}
+        <td><span class="clip{% if row[f]|string|is_long %} clipped{% endif %}">{{
+          row[f] if row[f] is not none else "" }}</span></td>
+        {% endfor %}
       </tr>
       {% endfor %}
     </table>
   </div>
+
+{% if page > 1 or more %}
+<p style="margin-top:14px">
+  {% set qs = "?q=" ~ query|urlencode %}
+  {% if page > 1 %}<a href="/nodes/{{ label }}{{ qs }}&page={{ page - 1 }}"><- назад</a>{% endif %}
+  {% if more %}<a href="/nodes/{{ label }}{{ qs }}&page={{ page + 1 }}"
+     style="margin-left:14px">вперёд -></a>{% endif %}
+</p>
+{% endif %}
 {% endif %}
 {% endblock %}

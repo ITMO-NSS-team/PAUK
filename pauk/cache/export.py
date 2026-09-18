@@ -125,7 +125,6 @@ def load_db(driver) -> dict[str, list]:
         "p.github AS github, "
         "p.orcid AS orcid, "
         "p.google_scholar AS google_scholar, "
-        "p.openreview AS openreview, "
         "p.email AS email, "
         "p.affiliations AS affiliations, "
         # stubs

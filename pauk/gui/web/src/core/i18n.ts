@@ -69,7 +69,6 @@ export type LocaleKey =
   | "field.hasReadme"
   | "field.openalexId"
   | "field.googleScholar"
-  | "field.openreview"
   | "field.email"
   | "field.affiliations"
   | "field.pubType"
@@ -170,7 +169,6 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.hasReadme": "Есть README",
     "field.openalexId": "OpenAlex",
     "field.googleScholar": "Google Scholar",
-    "field.openreview": "OpenReview",
     "field.email": "Email",
     "field.affiliations": "Аффилиации",
     "field.pubType": "Тип публикации",
@@ -279,7 +277,6 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.hasReadme": "Has README",
     "field.openalexId": "OpenAlex",
     "field.googleScholar": "Google Scholar",
-    "field.openreview": "OpenReview",
     "field.email": "Email",
     "field.affiliations": "Affiliations",
     "field.pubType": "Publication type",

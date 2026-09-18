@@ -10,6 +10,7 @@ from pauk.pipeline.stages import social_graph
 from pauk.pipeline.stages.github_match import (
     ITMO_IN_TEXT,
     MATCHES_FILENAME,
+    PETERSBURG_PATTERN,
     GitHubMatchStage,
     confidence,
     decide,
@@ -19,7 +20,7 @@ from pauk.pipeline.stages.github_match import (
     score_account,
 )
 from pauk.settings import Settings
-from pauk.storage import PreparedStore, RawStore
+from pauk.storage import PreparedStore, RawStore, review
 
 
 def person(pid, name, *, itmo=True, email=None, emails=(), variants=(), other=(),
@@ -200,6 +201,19 @@ class ConfidenceTest(unittest.TestCase):
 
 
 class GitHubMatchStageTest(unittest.TestCase):
+    def test_organization_login_requires_itmo_identity_to_corroborate_a_match(self):
+        for owner, matched in (("saint-petersburg-ai", False), ("ITMO-NCCR", True)):
+            with self.subTest(owner=owner):
+                repo = repository(owner, "tool")
+                _, people = self.run_stage(
+                    [person("A1", "Ivan Petrov")],
+                    [profile("someone", name="Ivan Petrov", repos=[repo.url])],
+                    [repo],
+                )
+                self.assertEqual(people["A1"].github, "someone" if matched else None)
+                entry = self.journal()[0]
+                self.assertEqual("org_itmo" in entry["signals"], matched)
+
     def run_stage(self, people, profiles, repositories):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -392,26 +406,158 @@ class GitHubMatchStageTest(unittest.TestCase):
 
 
 class ItmoInTextTest(unittest.TestCase):
-    """One pattern for both stages that ask whether a profile says ITMO.
+    """Person matching keeps the city signal; organization seeding does not."""
 
-    There used to be two, byte-identical, and only one of them grew the
-    spellings the labs actually use. The stages then disagreed: social_graph
-    followed an organization located in "Санкт Петербург", github_match did
-    not credit the same account with itmo_profile.
-    """
-
-    def test_the_two_stages_share_one_pattern(self):
-        self.assertIs(ITMO_IN_TEXT, social_graph.ITMO_IN_TEXT)
+    def test_social_graph_uses_the_stricter_identity_pattern(self):
+        self.assertIsNot(ITMO_IN_TEXT, social_graph.ITMO_IDENTITY_PATTERN)
+        self.assertFalse(social_graph.ITMO_IDENTITY_PATTERN.search("Saint Petersburg"))
 
     def test_the_spellings_social_graph_added_are_recognised_here(self):
         for text in ("Россия, Санкт Петербург", "Санкт-Петербург",
-                     "Russia, St. Petersburg", "St-Petersburg", "Sankt-Peterburg"):
+                     "Russia, St. Petersburg", "St-Petersburg", "Sankt Petersburg",
+                     "St.Petersburg", "Sankt-Peterburg", "СанктПетербург",
+                     "Saint-Petersburg", "SaintPetersburg", "St Petersburg", "StPetersburg",
+                     "Sankt Peterburg", "Saint Peterburg", "SAINT PETERSBURG",
+                     "saint petersburg", "САНКТ-ПЕТЕРБУРГ"):
             with self.subTest(text=text):
                 self.assertTrue(ITMO_IN_TEXT.search(text))
+
+    def test_russian_case_endings_are_still_the_city(self):
+        for text in ("в Санкт-Петербурге", "из Санкт-Петербурга", "по Санкт-Петербургу",
+                     "о Санкт-Петербурге", "Санкт-Петербурге", "г. Санкт-Петербург",
+                     "Санкт-Петербургский политехнический университет",
+                     "Лаборатория, Санкт-Петербурга, Россия"):
+            with self.subTest(text=text):
+                self.assertTrue(ITMO_IN_TEXT.search(text))
+
+    def test_bare_sankt_is_not_a_city_signal(self):
+        self.assertFalse(PETERSBURG_PATTERN.search("Sankt Gallenkirch"))
 
     def test_itmo_as_a_word_still_wins_and_ritmo_still_does_not(self):
         self.assertTrue(ITMO_IN_TEXT.search("ITMO University"))
         self.assertFalse(ITMO_IN_TEXT.search("RITMO, University of Oslo"))
+
+
+class GitHubReviewTest(unittest.TestCase):
+    """Accounts the signals cannot settle, and what a person decides about them.
+
+    The rules already produce a "review" verdict; until now nobody read it.
+    An answer has to reach them on the next run, both ways round: applying a
+    match they would only have shown, and stopping one they would have made.
+    """
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.config = Settings(data_dir=Path(tmp.name))
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.prepared = PreparedStore(self.db, "sample")
+        self.raw = RawStore(self.db, "sample")
+
+    def run_stage(self, people, profiles, repositories=()):
+        self.prepared.write_models("persons", people)
+        self.prepared.write_models("github_profiles", profiles)
+        self.prepared.write_models("repositories", repositories)
+        result = GitHubMatchStage(self.prepared, self.raw, self.config).run()
+        return result, {p.id: p for p in self.prepared.read_models("persons", Person)}
+
+    def unsure(self):
+        """A name that matches exactly and nothing else backing it up."""
+        return ([person("A1", "Stanislav Shtuka")],
+                [profile("XieN-N", name="Stanislav Shtuka")])
+
+    def test_an_account_nobody_can_place_becomes_a_question(self):
+        result, people = self.run_stage(*self.unsure())
+        self.assertEqual(result["github_review"], 1)
+        self.assertIsNone(people["A1"].github)
+        (question,) = review.questions(self.db)
+        self.assertEqual(question["kind"], review.GITHUB)
+        self.assertEqual(question["members"], ["A1", "XieN-N"])
+        self.assertEqual(question["evidence"]["login"], "XieN-N")
+        self.assertEqual(question["evidence"]["person"], "A1")
+
+    def test_the_question_says_what_is_missing(self):
+        self.run_stage(*self.unsure())
+        (question,) = review.questions(self.db)
+        self.assertEqual(question["evidence"]["held_because"],
+                         ["the name matches exactly and nothing else backs it"])
+
+    def test_confirming_it_links_the_account(self):
+        self.run_stage(*self.unsure())
+        review.record_verdict(self.db, review.GITHUB, ["A1", "XieN-N"], review.SAME,
+                              actor="user:roman")
+        result, people = self.run_stage(*self.unsure())
+        self.assertEqual(result["github_matched"], 1)
+        self.assertEqual(people["A1"].github, "XieN-N")
+
+    def test_rejecting_it_keeps_the_account_off(self):
+        self.run_stage(*self.unsure())
+        review.record_verdict(self.db, review.GITHUB, ["A1", "XieN-N"], review.DIFFERENT,
+                              actor="user:roman")
+        result, people = self.run_stage(*self.unsure())
+        self.assertIsNone(people["A1"].github)
+        self.assertEqual(result["github_review"], 0)
+
+    def test_an_answered_account_is_not_asked_again(self):
+        self.run_stage(*self.unsure())
+        review.record_verdict(self.db, review.GITHUB, ["A1", "XieN-N"], review.DIFFERENT)
+        self.run_stage(*self.unsure())
+        self.assertEqual(review.count(self.db, answered=False), 0)
+
+    def test_a_rejection_holds_against_a_match_the_rules_would_now_make(self):
+        # The signals grew: the account turns out to carry the surname and
+        # to own the repository, which on their own would settle it.
+        self.run_stage(*self.unsure())
+        review.record_verdict(self.db, review.GITHUB, ["A1", "shtuka"], review.DIFFERENT,
+                              actor="user:roman")
+        result, people = self.run_stage(
+            [person("A1", "Stanislav Shtuka")],
+            [profile("shtuka", name="Stanislav Shtuka", company="ITMO University")])
+        self.assertIsNone(people["A1"].github)
+        self.assertEqual(result["github_matched"], 0)
+        (disputed,) = review.questions(self.db, disputed=True)
+        self.assertEqual(disputed["members"], ["A1", "shtuka"])
+
+    def test_an_answer_about_an_account_is_not_an_answer_about_people(self):
+        # decisions() feeds the person merge rules. An account paired with a
+        # person is not two records of one researcher, and must not reach it.
+        self.run_stage(*self.unsure())
+        review.record_verdict(self.db, review.GITHUB, ["A1", "XieN-N"], review.SAME)
+        self.assertEqual(review.decisions(self.db), {})
+        self.assertEqual(review.github_decisions(self.db),
+                         {frozenset({"XieN-N", "A1"}): review.SAME})
+
+    def test_the_journal_marks_what_a_person_decided(self):
+        # A row reading "rejected" beside signals that say otherwise needs
+        # to say who overruled whom.
+        self.run_stage(*self.unsure())
+        review.record_verdict(self.db, review.GITHUB, ["A1", "XieN-N"], review.DIFFERENT)
+        self.run_stage(*self.unsure())
+        path = self.config.audit_dir / self.prepared.group / MATCHES_FILENAME
+        rows = [json.loads(line) for line in
+                path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        (row,) = rows
+        self.assertEqual((row["decision"], row["rule"]), ("rejected", "manual"))
+
+    def test_an_answer_survives_its_person_being_folded(self):
+        # The dedup merges B into A. The answer is stored about B, and an id
+        # nothing carries any more used to lose it — silently linking an
+        # account somebody had refused.
+        self.run_stage(*self.unsure())
+        review.record_verdict(self.db, review.GITHUB, ["A1", "XieN-N"], review.DIFFERENT,
+                              actor="user:katya")
+        survivor = person("A2", "Stanislav Shtuka")
+        survivor.merged_ids = ["A1"]
+        _, people = self.run_stage([survivor], [profile("XieN-N", name="Stanislav Shtuka")])
+        self.assertIsNone(people["A2"].github)
+
+    def test_and_the_question_is_not_put_again(self):
+        self.run_stage(*self.unsure())
+        review.record_verdict(self.db, review.GITHUB, ["A1", "XieN-N"], review.DIFFERENT)
+        survivor = person("A2", "Stanislav Shtuka")
+        survivor.merged_ids = ["A1"]
+        self.run_stage([survivor], [profile("XieN-N", name="Stanislav Shtuka")])
+        self.assertEqual(review.count(self.db, answered=False), 0)
 
 
 if __name__ == "__main__":

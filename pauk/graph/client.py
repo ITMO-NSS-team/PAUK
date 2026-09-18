@@ -56,6 +56,13 @@ def _merge_duplicate_properties(label: str, canonical: dict, duplicate: dict) ->
             if isinstance(duplicate_value, list):
                 current = canonical_value if isinstance(canonical_value, list) else []
                 merged = _union_values(current, duplicate_value)
+                if key == "merged_ids":
+                    # A stale entry on the duplicate can name the survivor
+                    # itself, and the union would make the node its own
+                    # alias. mutations.merge_nodes guards the list it
+                    # writes; this is the same guard on the list the fold
+                    # merges into it.
+                    merged = [value for value in merged if value != canonical.get("id")]
                 if merged != canonical_value:
                     updates[key] = merged
         elif key in json_list_fields:
@@ -407,7 +414,7 @@ class Neo4jClient:
             OPTIONAL MATCH (p)-[:BELONGS_TO]->(d:Department)
             RETURN p.id AS id, p.openalex_id AS openalex_id, p.name_raw AS name_raw,
                    p.name_variants AS name_variants, p.orcid AS orcid, p.email AS email,
-                   p.github AS github, p.openreview AS openreview,
+                   p.github AS github,
                    p.google_scholar AS google_scholar, p.merged_ids AS merged_ids,
                    coalesce(p.is_itmo, false) AS is_itmo,
                    collect(DISTINCT w.id) AS publication_ids,
@@ -465,6 +472,39 @@ class Neo4jClient:
         with self.driver.session() as session:
             return session.execute_read(
                 lambda tx: [dict(record) for record in tx.run(query)])
+
+    def fetch_node_ids(self, label: str) -> set[str]:
+        """Every id the graph holds under one label.
+
+        For comparing the graph against the source it was built from. The
+        whole set at once rather than a page at a time: the comparison is
+        set arithmetic, and half of it is meaningless.
+        """
+        query = cast(LiteralString, f"MATCH (n:{label}) RETURN n.id AS id")
+        with self.driver.session(default_access_mode="READ") as session:
+            return session.execute_read(
+                lambda tx: {record["id"] for record in tx.run(query) if record["id"] is not None})
+
+    def fetch_relationship_pairs(self, src_label: str, rel_type: str, tgt_label: str,
+                                 tgt_match_prop: str = "id") -> set[tuple[str, str]]:
+        """Every edge of one triple, as the loader would name it.
+
+        The far end is reported by whatever the loader matches it on — a
+        url for a Repository, a login for a GitHubProfile — so the answer
+        can be compared with what the prepared rows ask for without
+        translating either side.
+        """
+        query = cast(
+            LiteralString,
+            f"""
+            MATCH (src:{src_label})-[:{rel_type}]->(tgt:{tgt_label})
+            RETURN src.id AS src_id, tgt.{tgt_match_prop} AS tgt_id
+            """,
+        )
+        with self.driver.session(default_access_mode="READ") as session:
+            return session.execute_read(lambda tx: {
+                (record["src_id"], record["tgt_id"]) for record in tx.run(query)
+                if record["src_id"] is not None and record["tgt_id"] is not None})
 
     def fetch_merged_id_map(self, label: str) -> dict[str, str]:
         """Map of merged-away id to canonical id stored on `label` nodes.
@@ -614,7 +654,8 @@ class Neo4jClient:
             row = session.execute_read(lambda tx: tx.run(query).single())
         return int(row["total"]) if row else 0
 
-    def list_nodes(self, label: str, fields: list[str], limit: int = 50) -> list[dict]:
+    def list_nodes(self, label: str, fields: list[str], limit: int = 50,
+                   skip: int = 0) -> list[dict]:
         """The first nodes of a label, in id order.
 
         What the panel shows before anything is typed: on a small graph it
@@ -624,15 +665,18 @@ class Neo4jClient:
             label: Node label, interpolated into Cypher — whitelist only.
             fields: Property names to return, also interpolated.
             limit: How many rows to bring back.
+            skip: How many to pass over first, for paging.
         """
         returned = ", ".join(f"n.{name} AS {name}" for name in fields)
-        text = f"MATCH (n:{label}) RETURN n.id AS id, {returned} ORDER BY id LIMIT $limit"
+        text = (f"MATCH (n:{label}) RETURN n.id AS id, {returned} "
+                f"ORDER BY id SKIP $skip LIMIT $limit")
         with self.driver.session() as session:
             rows = session.execute_read(
-                lambda tx: list(tx.run(cast(LiteralString, text), limit=limit)))
+                lambda tx: list(tx.run(cast(LiteralString, text), limit=limit, skip=skip)))
         return [dict(row) for row in rows]
 
-    def search_nodes(self, label: str, fields: list[str], query: str, limit: int = 50) -> list[dict]:
+    def search_nodes(self, label: str, fields: list[str], query: str, limit: int = 50,
+                     skip: int = 0) -> list[dict]:
         """Nodes of one label whose text matches, for the panel's search box.
 
         Case-insensitive substring match across the fields the caller
@@ -646,6 +690,7 @@ class Neo4jClient:
                 whitelist only.
             query: What the user typed.
             limit: How many rows to bring back.
+            skip: How many to pass over first, for paging.
 
         Returns:
             One dict per node: its `id` plus the searched fields.
@@ -655,12 +700,12 @@ class Neo4jClient:
         text = (
             f"MATCH (n:{label}) WHERE n.id = $exact OR {conditions} "
             f"RETURN n.id AS id, {returned}, (n.id = $exact) AS exact "
-            f"ORDER BY exact DESC, id LIMIT $limit"
+            f"ORDER BY exact DESC, id SKIP $skip LIMIT $limit"
         )
         with self.driver.session() as session:
             rows = session.execute_read(
                 lambda tx: list(tx.run(cast(LiteralString, text), needle=query.lower(),
-                                       exact=query, limit=limit)))
+                                       exact=query, limit=limit, skip=skip)))
         return [dict(row) for row in rows]
 
     def fetch_node_relationships(self, label: str, node_id: str) -> list[dict]:

@@ -239,7 +239,6 @@ class AuthorNodeBuilder:
                     "github": row["github"] or "",
                     "orcid": row.get("orcid") or "",
                     "google_scholar": row.get("google_scholar") or "",
-                    "openreview": row.get("openreview") or "",
                     "email": row.get("email") or "",
                     "affiliations": _parse_json_list(row.get("affiliations")),
                     # Per-publication author position and corresponding flag, keyed by publication id.

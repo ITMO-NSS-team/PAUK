@@ -26,6 +26,9 @@ export interface Department {
   n_authors: number;
   n_pubs: number;
   n_repos: number;
+  // Другие написания названия (варианты из каталога) — только для поиска.
+  // Нет в graph-data.json, собранном до их появления.
+  name_variants?: string[];
 }
 
 export interface AuthorNode {
@@ -82,7 +85,6 @@ export interface AuthorDetail {
   github: string;
   orcid: string;
   google_scholar: string;
-  openreview: string;
   email: string;
   affiliations: Affiliation[];
   // Три поля ниже необязательные: authors-detail.json, сгенерированный до их

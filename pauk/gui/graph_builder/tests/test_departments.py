@@ -123,6 +123,16 @@ class BuildDepartmentTableTest(unittest.TestCase):
         self.assertEqual(table.g("d1"), 0)
         self.assertEqual(table.g("d2"), 1)
 
+    def test_department_rows_carry_their_name_variants_for_search(self):
+        assignment = _assignment_stub(author_dept={"a1": "d1", "a2": "d2"}, pub_primary={}, repo_dept={})
+        authorship = Authorship(pub_authors={}, author_pubs={}, pubs_rows=[], pub_ids=set())
+        # A hand-edited field from the admin panel can be a bare string, not a list.
+        db = {"repositories": [], "departments": [{"id": "d1", "name_variants": ["ФПИиКТ", ""]},
+                                                  {"id": "d2", "name_variants": "SCAMT"}]}
+        table = DepartmentAssigner(db, authorship).build_table({"d1": "А", "d2": "Б"}, {"d1": "A", "d2": "B"}, assignment)
+        by_name = {row["name"]: row["name_variants"] for row in table.departments}
+        self.assertEqual(by_name, {"А": ["ФПИиКТ"], "Б": ["SCAMT"], "Без департамента": []})
+
     def test_no_department_bucket_is_last(self):
         assignment = _assignment_stub(author_dept={"a1": "d1"}, pub_primary={}, repo_dept={})
         authorship = Authorship(pub_authors={}, author_pubs={}, pubs_rows=[], pub_ids=set())

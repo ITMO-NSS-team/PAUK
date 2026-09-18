@@ -25,7 +25,7 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
                 {"id": "A1", "first_name_ru": "Иван", "second_name_ru": None, "surname_ru": "Иванов",
                  "first_name_en": "Ivan", "second_name_en": None, "surname_en": "Ivanov",
                  "name_ru": "Иванов Иван", "name_variants": [], "degree": "к.т.н.", "github": "ivanov", "orcid": None,
-                 "openalex_id": "A123", "google_scholar": None, "openreview": None, "email": "ivanov@itmo.ru",
+                 "openalex_id": "A123", "google_scholar": None, "email": "ivanov@itmo.ru",
                  "affiliations": '[{"name": "ITMO"}]',
                  "created_at": "2026-08-14T10:23:45.123Z", "updated_at": "2026-09-01T08:00:00.5Z"},
             ],

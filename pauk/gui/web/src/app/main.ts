@@ -277,7 +277,7 @@ function renderApp(data: GraphData): void {
     repoDetailsByKey,
   );
   mountFilters(store);
-  mountGlobalSearch(store, data, pubDetailsByKey, repoDetailsByKey);
+  mountGlobalSearch(store, data, pubDetailsByKey, repoDetailsByKey, authorDetailsByKey);
   mountUrlSync(store, data);
 
   console.info("Граф отрисован (списки видны сразу, detail-файлы догружаются):", {

@@ -203,7 +203,7 @@ function codeLink(url: string): PanelLink {
 
 /**
  * Строит ссылку на профиль Google Scholar из `AuthorDetail.google_scholar`
- * (уже полный URL, в отличие от `orcid`/`openreview`/`openalex_id`, которые
+ * (уже полный URL, в отличие от `orcid`/`openalex_id`, которые
  * приходят голыми id) — с проверкой схемы (см. {@link safeHref}). Текст
  * ссылки — фиксированное "Google Scholar", а не сам URL: он длинный и с
  * query-параметрами, нечитаем в узкой карточке.
@@ -235,17 +235,6 @@ function openalexUrlLink(url: string): PanelLink {
  */
 function openalexIdLink(id: string): PanelLink {
   return { kind: "link", href: `https://openalex.org/${id}`, text: id };
-}
-
-/**
- * Строит ссылку на профиль автора на OpenReview по его id
- * (`AuthorDetail.openreview`, например `"~Ivan_Ivanov1"`) — схема
- * захардкожена нами, как и у {@link orcidLink}, проверка не нужна.
- *
- * @param id - `AuthorDetail.openreview`.
- */
-function openreviewLink(id: string): PanelLink {
-  return { kind: "link", href: `https://openreview.net/profile?id=${id}`, text: id };
 }
 
 /**
@@ -870,11 +859,6 @@ export function mountPanel(
               [googleScholarLink(authorDetail.google_scholar)],
             ]);
           }
-          if (authorDetail.openreview)
-            privateRows.push([
-              t("field.openreview", lang),
-              [openreviewLink(authorDetail.openreview)],
-            ]);
           if (authorDetail.email)
             privateRows.push([t("field.email", lang), [emailLink(authorDetail.email)]]);
           if (authorDetail.affiliations.length > 0) {

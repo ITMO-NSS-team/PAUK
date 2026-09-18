@@ -7,7 +7,7 @@ lives in `docs/`, not duplicated here.
 ## What this project is
 
 PAUK collects ITMO's publications from OpenAlex, enriches them (Crossref,
-ORCID, OpenReview, GitHub), finds code links in them, and loads the result
+ORCID, GitHub), finds code links in them, and loads the result
 into Neo4j. `pauk/gui/` renders an interactive map of that graph.
 
 One Python package, `pauk/`. Full architecture starts at

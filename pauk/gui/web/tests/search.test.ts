@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { PubDetail, RepoDetail } from "../src/contracts/graph";
 import { indexDetailsByKey } from "../src/core/data";
 import { buildSearchIndex, deptHitKey, parseDeptHitKey, searchHits } from "../src/features/search";
-import { loadSampleGraphData, loadSamplePubDetails, loadSampleRepoDetails } from "./fixtures";
+import {
+  loadSampleAuthorDetails,
+  loadSampleGraphData,
+  loadSamplePubDetails,
+  loadSampleRepoDetails,
+} from "./fixtures";
 
 // Логика поиска (эта, чисто функциональная часть) переиспользуется
 // features/globalSearch.ts (глобальное окно поиска по всем видам сразу,
@@ -24,7 +29,8 @@ describe("buildSearchIndex", () => {
     const data = await loadSampleGraphData();
     const index = buildSearchIndex(data, "ru", NO_PUB_DETAILS, NO_REPO_DETAILS);
 
-    const total = data.authors.length + data.repos.length + data.pubs.length + data.departments.length;
+    const total =
+      data.authors.length + data.repos.length + data.pubs.length + data.departments.length;
     expect(index).toHaveLength(total);
     expect(index.some((hit) => hit.kind === "dept")).toBe(true);
   });
@@ -79,5 +85,44 @@ describe("searchHits", () => {
 
     const hits = searchHits(index, author.label.slice(0, 3).toUpperCase());
     expect(hits.some((hit) => hit.key === author.key)).toBe(true);
+  });
+});
+
+describe("поиск по всем написаниям", () => {
+  it("автора, показанного по-русски, находит латиницей — по name_en и вариантам из authors-detail", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    const index = buildSearchIndex(data, "ru", NO_PUB_DETAILS, NO_REPO_DETAILS, authorDetails);
+
+    // A1: name_en "Ivan Ivanov", варианты OpenAlex "Ivanov Ivan", ORCID "I. Ivanov".
+    for (const query of ["ivan ivanov", "ivanov ivan", "i. ivanov", "иванов иван иванович"]) {
+      expect(searchHits(index, query).map((hit) => hit.key)).toContain("A1");
+    }
+    // Написания только ищутся, подпись результата — по-прежнему на языке интерфейса.
+    expect(searchHits(index, "ivan ivanov").find((hit) => hit.key === "A1")?.label).not.toContain(
+      "Ivan",
+    );
+  });
+
+  it("без authors-detail (публичная сборка) автора находит по подписи на другом языке", async () => {
+    const data = await loadSampleGraphData();
+    const index = buildSearchIndex(data, "ru", NO_PUB_DETAILS, NO_REPO_DETAILS);
+    const [author] = data.authors;
+    if (!author) throw new Error("во фикстуре должен быть автор");
+    expect(searchHits(index, author.label_en).map((hit) => hit.key)).toContain(author.key);
+  });
+
+  it("департамент находит по английскому названию и по вариантам названия", async () => {
+    const sample = await loadSampleGraphData();
+    const data = {
+      ...sample,
+      departments: sample.departments.map((d) =>
+        d.id === 0 ? { ...d, name_variants: ["ИПС"] } : d,
+      ),
+    };
+    const index = buildSearchIndex(data, "ru", NO_PUB_DETAILS, NO_REPO_DETAILS);
+    const deptKey = deptHitKey(0);
+    expect(searchHits(index, "applied systems").map((hit) => hit.key)).toContain(deptKey);
+    expect(searchHits(index, "ипс").map((hit) => hit.key)).toContain(deptKey);
   });
 });

@@ -38,6 +38,24 @@ def golden_color(i: int) -> str:
     return f"#{round(r * 255):02x}{round(g * 255):02x}{round(b * 255):02x}"
 
 
+def name_list(value: object) -> list[str]:
+    """Names a row carries, as a list.
+
+    The admin panel writes back whatever was typed into the box when it does
+    not parse as JSON, so a hand-edited field can arrive as a bare string.
+    Iterating that would turn "SCAMT" into five one-letter names.
+
+    Example:
+        >>> name_list("SCAMT"), name_list(["a", "", None]), name_list(None)
+        (['SCAMT'], ['a'], [])
+    """
+    if isinstance(value, str):
+        return [value] if value else []
+    if isinstance(value, list):
+        return [v for v in value if isinstance(v, str) and v]
+    return []
+
+
 def majority_dept(dept_lists: Iterable[Iterable[str]]) -> str | None:
     """Department by majority vote; ties break by id, not by global
     popularity - that would create a "rich get richer" feedback loop
@@ -260,6 +278,9 @@ class DepartmentAssigner:
         n_auth = Counter(g(d) for d in assignment.author_dept.values())
         n_pub = Counter(g(assignment.pub_primary[p]) for p in authorship.pub_ids)
         n_repo = Counter(g(assignment.repo_dept[r["id"]]) for r in db["repositories"])
+        # Other spellings of a department's name (catalog variants) - only for
+        # search on the site, never shown.
+        variants = {row["id"]: name_list(row.get("name_variants")) for row in db.get("departments", [])}
 
         # One row per real department, in sorted order (ordered), with dense
         # id/color/the three counts.
@@ -273,6 +294,7 @@ class DepartmentAssigner:
                 "n_authors": n_auth[gid[d]],
                 "n_pubs": n_pub[gid[d]],
                 "n_repos": n_repo[gid[d]],
+                "name_variants": variants.get(d, []),
             }
             for d in ordered
         ]
@@ -288,6 +310,7 @@ class DepartmentAssigner:
                 "n_authors": n_auth[no_dept_gid],
                 "n_pubs": n_pub[no_dept_gid],
                 "n_repos": n_repo[no_dept_gid],
+                "name_variants": [],
             }
         )
         logger.info('Departments: %d (+ "%s")', len(ordered), NO_DEPT_NAME)

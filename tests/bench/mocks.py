@@ -11,10 +11,26 @@ import requests
 from pauk.graph.client import _merge_duplicate_properties
 from pauk.models import Person
 from pauk.pipeline.stages.author_names import RussianNamesCatalog, to_cyrillic
+from pauk.sources.base import HttpRequestError
 
 
 def _http_404(url: str) -> requests.HTTPError:
     return requests.HTTPError(f"404 Client Error: Not Found for url: {url}")
+
+
+class NetworkAccessDenied(BaseException):
+    """A bench test reached for a live socket.
+
+    Deliberately not an Exception subclass - see conftest.py, which raises
+    this from every requests.Session.send as a backstop against stages
+    whose client nobody patched. Several stages wrap their client calls in
+    `except Exception` to turn a real failure into a FAILED row instead of
+    crashing the run (repositories.py's per-organization lookup, emails.py's
+    _from_homepage, code_links.py's _pdf_pages), so an Exception subclass
+    raised here would be caught by that same code and silently swallowed -
+    the suite would stay green while quietly making a live call.
+    BaseException passes straight through instead.
+    """
 
 
 class MockOpenAlexClient:
@@ -166,32 +182,23 @@ class MockOpenRouterClient:
         }
 
 
-class MockLinkRelevanceClient:
-    """Classifies the synthetic bench code citations without an LLM call."""
+class MockPdfHttpClient:
+    """Stands in for code_links.py's raw HttpClient.
 
-    def __init__(self) -> None:
-        self.last_response = None
-        self.last_usage = None
-        self.last_error = None
-
-    def chat_json(self, prompt: str) -> dict:
-        result = {
-            "is_authors_artifact": True,
-            "confidence": 1.0,
-            "reason": "mock: synthetic benchmark repository",
-        }
-        self.last_response = result
-        return result
-
-
-class UnexpectedNetworkClient:
-    """Any call means a stage tried the network although it shouldn't have."""
+    The stage's own PDF-fetch fallback (used when a publication carries a
+    pdf_url but the universe models no actual PDF bytes for it, e.g. W020's
+    "https://example.org/w20.pdf") always fails, the same way the real
+    HttpClient would on a 404 - code_links._pdf_pages already treats that as
+    an ordinary, expected failure and falls back to the abstract. Reaching
+    example.org for that verdict is a real network call in every bench run
+    that just happened to be harmless; this makes the same outcome local.
+    """
 
     def __init__(self, *args, **kwargs) -> None:
         pass
 
-    def __getattr__(self, name: str):
-        raise AssertionError(f"unexpected external call: {name}")
+    def get_bytes(self, url: str, **kwargs) -> bytes:
+        raise HttpRequestError("GET", url, status_code=404)
 
 
 class RecordingNeo4jClient:
@@ -327,7 +334,7 @@ class RecordingNeo4jClient:
                 "id": person_id,
                 **{field: props.get(field) for field in (
                     "openalex_id", "name_raw", "name_variants", "orcid", "email",
-                    "github", "openreview", "google_scholar", "merged_ids")},
+                    "github", "google_scholar", "merged_ids")},
                 "is_itmo": bool(props.get("is_itmo")),
                 "publication_ids": sorted({
                     tgt_id for (src_primary, rel_type, _tgt, src_id, tgt_id) in self.edges

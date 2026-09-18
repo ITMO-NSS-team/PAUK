@@ -3,7 +3,7 @@
 // индекс строится здесь же, в браузере, из уже загруженного GraphData
 // (ровно как и в старом search.js).
 
-import type { GraphData, PubDetail, RepoDetail } from "../../contracts/graph";
+import type { AuthorDetail, GraphData, PubDetail, RepoDetail } from "../../contracts/graph";
 import type { SearchHit } from "../../contracts/search";
 import { githubShortPath, nodeLabel } from "../../core/data";
 import { localize, t, type Lang } from "../../core/i18n";
@@ -60,6 +60,10 @@ export function parseDeptHitKey(key: string): number {
  * @param repoDetails - карта описаний/владельцев/ссылок репозиториев — `RepoNode` своего
  *   `url` больше не несёт (см. `contracts/graph.ts::RepoDetail`), а короткому пути на
  *   GitHub в `sub` результата взять его больше неоткуда.
+ * @param authorDetails - личные данные авторов: полное имя и варианты написания
+ *   идут в `terms`, чтобы автор находился в любом алфавите, какой бы подписью он
+ *   ни был показан. Пустая карта (публичная сборка, файл ещё не пришёл) — ищем
+ *   по подписям на обоих языках.
  * @returns Список результатов поиска всех видов, в порядке author → repo → pub → dept.
  *
  * @example
@@ -72,6 +76,7 @@ export function buildSearchIndex(
   lang: Lang,
   pubDetails: Map<string, PubDetail>,
   repoDetails: Map<string, RepoDetail>,
+  authorDetails = new Map<string, AuthorDetail>(),
 ): SearchHit[] {
   const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
   const deptName = (id: number): string => {
@@ -84,6 +89,14 @@ export function buildSearchIndex(
     kind: "author",
     label: localize(author.label, author.label_en, lang),
     sub: `${deptName(author.dept)} · ${author.pubs_count} ${t("search.pubsCountShort", lang)}`,
+    terms: spellings([
+      author.label,
+      author.label_en,
+      authorDetails.get(author.key)?.name_ru,
+      authorDetails.get(author.key)?.name_en,
+      ...(authorDetails.get(author.key)?.name_variants.openalex ?? []),
+      ...(authorDetails.get(author.key)?.name_variants.orcid ?? []),
+    ]),
   }));
 
   const repoHits: SearchHit[] = data.repos.map((repo) => {
@@ -106,7 +119,10 @@ export function buildSearchIndex(
     label: nodeLabel(pub, lang, pubDetails),
     // Журнал добавляется, только если для публикации нашлась запись в
     // pubDetails — без неё (как и раньше) остаются год и департамент.
-    sub: [pub.year, deptName(pub.dept), pubDetails.get(pub.key)?.journal].filter(Boolean).join(" · ") || null,
+    sub:
+      [pub.year, deptName(pub.dept), pubDetails.get(pub.key)?.journal]
+        .filter(Boolean)
+        .join(" · ") || null,
   }));
 
   const deptHits: SearchHit[] = data.departments.map((dept) => ({
@@ -114,14 +130,15 @@ export function buildSearchIndex(
     kind: "dept",
     label: localize(dept.name, dept.name_en, lang),
     sub: null,
+    terms: spellings([dept.name, dept.name_en, ...(dept.name_variants ?? [])]),
   }));
 
   return [...authorHits, ...repoHits, ...pubHits, ...deptHits];
 }
 
 /**
- * Фильтрует индекс результатов поиска по подстроке в названии или в `sub`,
- * без учёта регистра. Пустой запрос даёт пустой список результатов (а не
+ * Фильтрует индекс результатов поиска по подстроке в названии, в `sub` или в
+ * других написаниях (`terms`), без учёта регистра. Пустой запрос даёт пустой список результатов (а не
  * "показать всё") — так же вело себя старое полноэкранное окно поиска.
  *
  * @param index - индекс результатов (см. {@link buildSearchIndex}).
@@ -140,6 +157,17 @@ export function searchHits(index: SearchHit[], query: string): SearchHit[] {
   if (!needle) return [];
 
   return index.filter(
-    (hit) => hit.label.toLowerCase().includes(needle) || (hit.sub?.toLowerCase().includes(needle) ?? false),
+    (hit) =>
+      hit.label.toLowerCase().includes(needle) ||
+      (hit.sub?.toLowerCase().includes(needle) ?? false) ||
+      (hit.terms?.includes(needle) ?? false),
   );
+}
+
+/** Все непустые написания одной строкой в нижнем регистре — поле `terms` результата. */
+function spellings(names: (string | undefined)[]): string {
+  return names
+    .filter((name): name is string => Boolean(name))
+    .join("\n")
+    .toLowerCase();
 }

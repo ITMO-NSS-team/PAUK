@@ -187,7 +187,6 @@ def _merge_person(base: Person, extra: Person) -> Person:
         "degree",
         "github",
         "google_scholar",
-        "openreview",
         "thesis",
     ):
         if getattr(base, field) is None:

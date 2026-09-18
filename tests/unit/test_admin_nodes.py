@@ -13,7 +13,10 @@ from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key
 from pauk.graph.mutations import RELATIONSHIPS, MutationError
 from pauk.graph.overrides import (
     COLLECTION,
+    CREATE,
+    LINK,
     active_overrides,
+    apply_overrides,
     record_override,
     tombstoned_relationships,
 )
@@ -24,7 +27,7 @@ from tests.unit.test_mutations import FakeGraph
 class FakePanelGraph(FakeGraph):
     """FakeGraph plus the two reads the node screens need."""
 
-    def search_nodes(self, label, fields, query, limit=50):
+    def search_nodes(self, label, fields, query, limit=50, skip=0):
         needle = query.lower()
         found = []
         for (node_label, node_id), props in self.nodes.items():
@@ -37,15 +40,15 @@ class FakePanelGraph(FakeGraph):
                 row.update({name: props.get(name) for name in fields})
                 found.append(row)
         found.sort(key=lambda row: (not row["exact"], row["id"]))
-        return found[:limit]
+        return found[skip:skip + limit]
 
     def close(self):
         """The panel closes its client per request; the real one has this."""
 
-    def list_nodes(self, label, fields, limit=50):
+    def list_nodes(self, label, fields, limit=50, skip=0):
         rows = [{"id": node_id, **{name: props.get(name) for name in fields}}
                 for (node_label, node_id), props in self.nodes.items() if node_label == label]
-        return sorted(rows, key=lambda row: row["id"])[:limit]
+        return sorted(rows, key=lambda row: row["id"])[skip:skip + limit]
 
     def _by_match(self, label, match_value):
         """The node an edge points at, found the way the loader finds it.
@@ -135,13 +138,45 @@ class NodeScreenTest(unittest.TestCase):
         self.assertIn("A2", body)
         self.assertIn("Показаны 2", body)
 
-    def test_the_listing_says_when_it_is_only_the_first_page(self):
+    def fill_two_pages(self):
         from pauk.graph.mutations import SEARCH_LIMIT
         for n in range(SEARCH_LIMIT + 10):
             self.graph.nodes[("Repository", f"R{n:03}")] = {"id": f"R{n:03}", "url": f"u{n}"}
+        return SEARCH_LIMIT
+
+    def test_a_long_listing_offers_the_next_page(self):
+        # Before, it stopped at the cap and said so, and there was no way
+        # to see the rest at all.
+        self.fill_two_pages()
         self.sign_in()
         body = self.client.get("/nodes/Repository").text
-        self.assertIn(f"первые {SEARCH_LIMIT}", body)
+        self.assertIn("page=2", body)
+        self.assertIn("Страница 1", body)
+
+    def test_and_the_next_page_holds_what_the_first_one_cut(self):
+        limit = self.fill_two_pages()
+        self.sign_in()
+        body = self.client.get("/nodes/Repository", params={"page": 2}).text
+        self.assertIn(f"R{limit:03}", body)
+        self.assertIn("назад", body)
+
+    def test_the_last_page_does_not_offer_another(self):
+        self.fill_two_pages()
+        self.sign_in()
+        self.assertNotIn("page=3", self.client.get("/nodes/Repository", params={"page": 2}).text)
+
+    def test_a_value_with_nowhere_to_break_is_wrapped(self):
+        # An address without a single space has nowhere to break: unwrapped,
+        # it ran out of its column and over the one beside it.
+        long_url = "reijgerigji9ejrgoijergijerigjierjgijergijerignerngoinergnierngijreoi"
+        self.graph.add("LinkCandidate", "L1", url=long_url, host="a" * 90)
+        self.sign_in()
+        body = self.client.get("/nodes/LinkCandidate").text
+        self.assertIn(f'class="clip">{long_url}', body)
+
+    def test_a_short_listing_says_nothing_about_pages(self):
+        self.sign_in()
+        self.assertNotIn("Страница", self.client.get("/nodes/Person").text)
 
     def test_an_empty_label_says_so_rather_than_showing_a_blank_page(self):
         self.sign_in()
@@ -276,12 +311,15 @@ class RelationshipScreenTest(unittest.TestCase):
         self.assertEqual(response.status_code, 303)
         self.assertIn(("Person", "AUTHORED", "Publication", "A1", "W1"), self.graph.relationships)
 
-    def test_a_created_link_needs_no_override_to_survive_publishing(self):
-        # The loader never removes edges it does not know about, so there
-        # is nothing for a decision to reapply.
+    def test_a_created_link_is_claimed_as_somebody_decision(self):
+        # Nothing ever reapplies it — publishing leaves an edge it has no
+        # row for alone. It is written down so a prune can tell it from an
+        # edge the pipeline made and has since stopped making.
         csrf = self.sign_in()
         self.client.post("/nodes/Person/rel/add/A1", data=self.link_data(csrf))
-        self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
+        (claim,) = list(self.db[COLLECTION].find())
+        self.assertEqual((claim["kind"], claim["op"], claim["active"]),
+                         ("rel", LINK, True))
 
     def test_a_relationship_outside_the_eleven_known_triples_is_refused(self):
         # A malformed triple is a 400 — the form cannot produce one, so it
@@ -397,12 +435,17 @@ class CreateNodeTest(unittest.TestCase):
         self.assertEqual(response.headers["location"], "/nodes/Person/A9?created=1")
         self.assertEqual(self.graph.nodes[("Person", "A9")]["name_en"], "New Person")
 
-    def test_a_hand_made_node_needs_no_override_to_survive_publishing(self):
-        # The loader only touches ids it has rows for, so an invented id is
-        # never overwritten and there is nothing to reapply.
+    def test_a_hand_made_node_is_claimed_as_somebody_decision(self):
+        # The loader only touches ids it has rows for, so nothing has to
+        # reapply this. It is written down because no row will ever explain
+        # the record, and a prune would take it for a leftover.
         csrf = self.sign_in()
-        self.client.post("/nodes/Person/new", data={"csrf": csrf, "id": "A9"})
-        self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
+        self.client.post("/nodes/Person/new", data={"csrf": csrf, "id": "A9",
+                                                    "name_ru": "Новый"})
+        (claim,) = list(self.db[COLLECTION].find())
+        self.assertEqual((claim["op"], claim["target_id"], claim["active"]),
+                         (CREATE, "A9", True))
+        self.assertEqual(claim["fields"], {"name_ru": "Новый"})
 
     def test_a_node_without_an_id_is_refused(self):
         csrf = self.sign_in()
@@ -1270,11 +1313,93 @@ class EveryWritePathIsGuardedTest(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         self.assertIn("не откатилась", response.json()["detail"])
 
-    def test_linking_needs_no_guard(self):
-        # It records no decision, so there is no second write to fail: a
-        # link made by hand survives publishing on its own.
-        response = self.client.post("/nodes/Person/rel/add/A1", data={
-            "csrf": self.csrf, "triple": "Person|AUTHORED|Publication",
-            "other_id": "W1"})
-        self.assertEqual(response.status_code, 303)
-        self.assertEqual(self.db[COLLECTION].count_documents({}), 0)
+    def test_linking_takes_the_link_away_again(self):
+        # The link is claimed as somebody's decision, so there is a second
+        # write to fail — and an unclaimed link is one a prune removes.
+        with patch.object(nodes, "record_relationship_override", self.unreachable):
+            response = self.client.post("/nodes/Person/rel/add/A1", data={
+                "csrf": self.csrf, "triple": "Person|AUTHORED|Publication",
+                "other_id": "W1"})
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn(("Person", "AUTHORED", "Publication", "A1", "W1"),
+                         self.graph.relationships)
+
+
+class HandMadeIsClaimedTest(unittest.TestCase):
+    """What a person adds has to be distinguishable from what a run left.
+
+    Publishing never removes a node or an edge it has no row for, so until
+    now nothing recorded either of them: there was nothing to reapply. A
+    prune changes that — it removes what no row explains — and then "no row
+    explains it" covers both a leftover and somebody's deliberate work.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        self.graph.add("Person", "A1", name_en="Ivan Petrov")
+        self.graph.add("Publication", "W1", title="paper")
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.csrf = self.db[SESSIONS].find_one(
+            {"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
+
+    def claims(self):
+        return [(row.get("kind", "node"), row["op"], row["target_id"])
+                for row in self.db[COLLECTION].find({"active": True})]
+
+    def test_a_record_somebody_typed_in_is_claimed(self):
+        self.client.post("/nodes/Person/new", data={"csrf": self.csrf, "id": "A9"})
+        self.assertEqual(self.claims(), [("node", CREATE, "A9")])
+
+    def test_a_link_somebody_made_is_claimed(self):
+        self.client.post("/nodes/Person/rel/add/A1", data={
+            "csrf": self.csrf, "triple": "Person|AUTHORED|Publication", "other_id": "W1"})
+        self.assertEqual(self.claims(), [("rel", LINK, "W1")])
+
+    def test_a_claim_is_not_an_instruction(self):
+        # apply_overrides must not read "somebody added this link" as
+        # "remove this link", which is what the only other kind of
+        # relationship decision means.
+        self.client.post("/nodes/Person/rel/add/A1", data={
+            "csrf": self.csrf, "triple": "Person|AUTHORED|Publication", "other_id": "W1"})
+        apply_overrides(self.graph, self.db)
+        self.assertIn(("Person", "AUTHORED", "Publication", "A1", "W1"),
+                      self.graph.relationships)
+
+    def test_a_claimed_record_keeps_its_fields_through_a_reapply(self):
+        self.client.post("/nodes/Person/new",
+                         data={"csrf": self.csrf, "id": "A9", "name_ru": "Новый"})
+        self.graph.nodes[("Person", "A9")]["name_ru"] = "Затёрли"
+        apply_overrides(self.graph, self.db)
+        self.assertEqual(self.graph.nodes[("Person", "A9")]["name_ru"], "Новый")
+
+    def test_a_record_with_no_fields_is_still_claimed(self):
+        # An id and nothing else is a legitimate record to invent, and a
+        # "set" decision with no fields is refused — so this used to be the
+        # one case a claim could not be written for.
+        self.client.post("/nodes/LinkCandidate/new", data={"csrf": self.csrf, "id": "L9"})
+        self.assertEqual(self.claims(), [("node", CREATE, "L9")])
+
+    def test_editing_the_record_leaves_it_claimed(self):
+        self.client.post("/nodes/Person/new", data={"csrf": self.csrf, "id": "A9"})
+        self.client.post("/nodes/Person/A9", data={"csrf": self.csrf, "name_ru": "Правка"})
+        self.assertEqual(self.claims(), [("node", CREATE, "A9")])
+
+    def test_and_the_decisions_page_offers_no_undo_for_it(self):
+        # An edit used to turn the claim into an undoable "set", and the
+        # undo took the claim with it; the next prune removed the record.
+        self.client.post("/nodes/Person/new", data={"csrf": self.csrf, "id": "A9"})
+        self.client.post("/nodes/Person/A9", data={"csrf": self.csrf, "name_ru": "Правка"})
+        self.assertNotIn('action="/overrides/undo"', self.client.get("/overrides").text)
+
+    def test_a_forged_undo_of_the_claim_is_refused(self):
+        self.client.post("/nodes/Person/new", data={"csrf": self.csrf, "id": "A9"})
+        response = self.client.post("/overrides/undo", data={
+            "csrf": self.csrf, "kind": "node", "op": CREATE,
+            "label": "Person", "target_id": "A9"})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.claims(), [("node", CREATE, "A9")])

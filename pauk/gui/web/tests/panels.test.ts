@@ -539,7 +539,7 @@ describe("mountPanel", () => {
     expect(orcidLink?.textContent).toBe("0000-0001-2345-6789");
   });
 
-  it("карточка автора показывает OpenAlex/Google Scholar/OpenReview/email/аффилиации, когда они заполнены", async () => {
+  it("карточка автора показывает OpenAlex/Google Scholar/email/аффилиации, когда они заполнены", async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     // A1 в authors-detail.sample.json — все эти поля заполнены.
@@ -559,11 +559,6 @@ describe("mountPanel", () => {
       "a[href='https://scholar.google.com/citations?user=sample1']",
     ) as HTMLAnchorElement | null;
     expect(scholarLink?.textContent).toBe("Google Scholar");
-
-    const openreviewLink = panel.querySelector(
-      "a[href='https://openreview.net/profile?id=~Ivan_Ivanov1']",
-    ) as HTMLAnchorElement | null;
-    expect(openreviewLink?.textContent).toBe("~Ivan_Ivanov1");
 
     const mailLinks = [...panel.querySelectorAll("a[href^='mailto:']")] as HTMLAnchorElement[];
     expect(mailLinks.map((a) => a.textContent)).toEqual(["ivanov@example.edu"]);

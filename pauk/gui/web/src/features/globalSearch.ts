@@ -5,7 +5,7 @@
 // см. map/build.ts::addDeptLabelAnchors) — на реальных данных департаментов
 // около 60, найти нужный "на глаз" по подписям на карте нереально.
 
-import type { GraphData, PubDetail, RepoDetail } from "../contracts/graph";
+import type { AuthorDetail, GraphData, PubDetail, RepoDetail } from "../contracts/graph";
 import type { SearchHit } from "../contracts/search";
 import { SEARCH_CONFIG } from "../core/config";
 import { requireElement } from "../core/dom";
@@ -34,6 +34,7 @@ import { buildSearchIndex, parseDeptHitKey, searchHits } from "./search";
  * @param data - данные графа.
  * @param pubDetails - карта деталей публикаций (для настоящих названий публикаций в результатах).
  * @param repoDetails - карта описаний/владельцев/ссылок репозиториев (для короткого пути на GitHub в результатах).
+ * @param authorDetails - личные данные авторов (другие написания имени для поиска); догружается фоном, индекс перестраивается при каждом открытии окна.
  * @returns Функция отписки (unmount) — снимает обработчик клавиатуры.
  */
 export function mountGlobalSearch(
@@ -41,6 +42,7 @@ export function mountGlobalSearch(
   data: GraphData,
   pubDetails: Map<string, PubDetail>,
   repoDetails: Map<string, RepoDetail>,
+  authorDetails = new Map<string, AuthorDetail>(),
 ): () => void {
   const trigger = requireElement("global-search-trigger");
   const overlay = requireElement("global-search");
@@ -54,7 +56,7 @@ export function mountGlobalSearch(
   function buildIndex(): SearchHit[] {
     const { lang, filters } = store.get();
     const shown = { ...data, authors: visibleAuthors(data, filters) };
-    return buildSearchIndex(shown, lang, pubDetails, repoDetails);
+    return buildSearchIndex(shown, lang, pubDetails, repoDetails, authorDetails);
   }
   let index = buildIndex();
 

@@ -8,4 +8,6 @@ export interface SearchHit {
   kind: NodeKind | "dept";
   label: string;
   sub: string | null;
+  // Другие написания (RU/EN, варианты имени) — по ним тоже ищем, но не показываем.
+  terms?: string;
 }

@@ -365,7 +365,12 @@ class AuditedNeo4jClient:
         entries = []
         for entity_id in before_by_id.keys() | after_by_id.keys():
             diff, kind = _diff_props(before_by_id.get(entity_id), after_by_id.get(entity_id))
-            if not diff:
+            if not diff and kind == "updated":
+                # A write that changed nothing is not worth a line. Coming
+                # into existence and going out of it are, even with nothing
+                # to show field by field — and most relationships carry no
+                # properties at all, so linking and unlinking used to leave
+                # the journal completely silent.
                 continue
             entries.append(AuditEntry(now, actor, source, operation, entity_type, entity_id, kind, diff))
         self._record(entries)

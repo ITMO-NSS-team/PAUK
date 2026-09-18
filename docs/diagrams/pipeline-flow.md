@@ -10,14 +10,13 @@ flowchart TD
         OA["OpenAlex API"]
         CR["Crossref API"]
         ORC["ORCID API"]
-        ORV["OpenReview API"]
         GH["GitHub API"]
         LLM["OpenRouter LLM"]
         PDFC["PDF-Crawler-Service<br/>(опционально, PAUK_PDF_CRAWLER_URL)"]
     end
 
     subgraph MONGO["MongoDB"]
-        RAW[("raw<br/>openalex_works, openalex_authors,<br/>crossref, orcid, openreview, github")]
+        RAW[("raw<br/>openalex_works, openalex_authors,<br/>crossref, orcid, github")]
         PUB[("publications")]
         PER[("persons")]
         DEP[("departments")]
@@ -56,8 +55,7 @@ flowchart TD
     S2 -->|"GET author"| OA
     S2 -->|"GET works по DOI"| CR
     S2 -->|"GET record"| ORC
-    S2 -->|"GET profile"| ORV
-    S2 -->|"append: crossref, openalex_authors,<br/>orcid, openreview"| RAW
+    S2 -->|"append: crossref, openalex_authors,<br/>orcid"| RAW
     S3 --> STATIC
     DEP <--> S3
     PER <--> S3
