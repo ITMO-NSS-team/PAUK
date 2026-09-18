@@ -73,7 +73,12 @@ def _read_data(handle: BinaryIO) -> Any:
 
 
 @lru_cache(maxsize=8)
-def _load_model_cached(path: str, expected_features: tuple[str, ...]) -> LogisticModel:
+def _load_model_cached(
+    path: str,
+    expected_features: tuple[str, ...],
+    _mtime_ns: int,
+    _size: int,
+) -> LogisticModel:
     artifact_path = Path(path)
     try:
         with artifact_path.open("rb") as handle:
@@ -115,4 +120,14 @@ def load_logistic_model(
     """Load a trusted local artifact and validate it before inference."""
     if not expected_features:
         raise ModelArtifactError("expected feature schema is required")
-    return _load_model_cached(str(Path(path).resolve()), expected_features)
+    artifact_path = Path(path).resolve()
+    try:
+        metadata = artifact_path.stat()
+    except OSError as exc:
+        raise ModelArtifactError(f"cannot read model artifact: {artifact_path}") from exc
+    return _load_model_cached(
+        str(artifact_path),
+        expected_features,
+        metadata.st_mtime_ns,
+        metadata.st_size,
+    )

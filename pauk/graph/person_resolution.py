@@ -399,6 +399,7 @@ def feature_vector(evidence: PairEvidence) -> dict[str, float]:
     second = _tokens(evidence.name_b)
     normalized_first = " ".join(first)
     normalized_second = " ".join(second)
+    comparable_names = bool(first and second)
     first_set, second_set = set(first), set(second)
     surname_a, surname_b = _surname(first), _surname(second)
     full_a = [token for token in first if len(token) > 1]
@@ -422,8 +423,8 @@ def feature_vector(evidence: PairEvidence) -> dict[str, float]:
     values: dict[str, float] = {
         "name_similarity": SequenceMatcher(None, normalized_first, normalized_second).ratio(),
         "token_jaccard": len(first_set & second_set) / max(1, len(first_set | second_set)),
-        "exact_name": float(normalized_first == normalized_second),
-        "same_tokens": float(sorted(first) == sorted(second)),
+        "exact_name": float(comparable_names and normalized_first == normalized_second),
+        "same_tokens": float(comparable_names and sorted(first) == sorted(second)),
         "surname_equal": float(bool(surname_a) and surname_a == surname_b),
         "first_initial_equal": float(bool(first) and bool(second) and first[0][0] == second[0][0]),
         "initial_count": float(sum(len(token) == 1 for token in first + second)),
@@ -540,6 +541,8 @@ def logistic_probability(evidence: PairEvidence, model: LogisticModel | None = N
 
 
 def _hard_veto(evidence: PairEvidence) -> str | None:
+    if not _tokens(evidence.name_a) or not _tokens(evidence.name_b):
+        return "no comparable name"
     orcid_a = _normalize_orcid(evidence.orcid_a)
     orcid_b = _normalize_orcid(evidence.orcid_b)
     if orcid_a and orcid_b and orcid_a != orcid_b:

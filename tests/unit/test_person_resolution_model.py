@@ -1,3 +1,4 @@
+import os
 import pickle
 import tempfile
 import unittest
@@ -55,6 +56,22 @@ class PersonResolutionModelTest(unittest.TestCase):
         features = dict.fromkeys(MODEL_FEATURES, 0.0)
 
         self.assertEqual(model.probability(features), 0.5)
+
+    def test_replacing_an_artifact_at_the_same_path_invalidates_the_cache(self):
+        path = self.write_artifact(artifact(intercept=0.0))
+        features = dict.fromkeys(MODEL_FEATURES, 0.0)
+        first = load_logistic_model(path, MODEL_FEATURES)
+        original = path.stat()
+
+        path.write_bytes(pickle.dumps(artifact(intercept=2.0), protocol=4))
+        os.utime(
+            path,
+            ns=(original.st_atime_ns, original.st_mtime_ns + 1_000_000_000),
+        )
+        second = load_logistic_model(path, MODEL_FEATURES)
+
+        self.assertEqual(first.probability(features), 0.5)
+        self.assertGreater(second.probability(features), 0.8)
 
     def test_feature_schema_mismatch_fails_before_inference(self):
         path = self.write_artifact(artifact(MODEL_FEATURES[:-1]))

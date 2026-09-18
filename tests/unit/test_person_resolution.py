@@ -58,6 +58,18 @@ class PersonResolutionTest(unittest.TestCase):
         self.assertEqual(result.route, "hard_veto")
         self.assertEqual(result.reason, "conflicting ORCID")
 
+    def test_names_without_comparable_tokens_are_a_hard_veto(self):
+        for name_a, name_b in (("李明", "李明"), ("李明", "王芳"), ("", "")):
+            with self.subTest(name_a=name_a, name_b=name_b):
+                features = feature_vector(evidence(name_a=name_a, name_b=name_b))
+                self.assertEqual(features["exact_name"], 0)
+                self.assertEqual(features["same_tokens"], 0)
+
+                result = resolve_pair(evidence(name_a=name_a, name_b=name_b))
+                self.assertEqual(result.decision, Decision.SEPARATE)
+                self.assertEqual(result.route, "hard_veto")
+                self.assertEqual(result.reason, "no comparable name")
+
     def test_matching_trusted_identifier_overrides_probability_zone(self):
         result = resolve_pair(
             evidence(
