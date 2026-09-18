@@ -27,6 +27,7 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
       showNoDeptAuthors: true,
       showNoDeptPubs: true,
       showExternalAuthors: false,
+      showIsolatedAuthors: true,
       edgeZoomThreshold: 0.4,
       showRegions: { 1: false, 2: false, 3: false },
       regionZoomThreshold: 0.25,
@@ -60,6 +61,24 @@ describe("mountPanel", () => {
     // authorDetails пуст (detail ещё не пришёл) — доля ORCID/GitHub/email
     // не считается от нуля к нулю, а показывает индикатор загрузки.
     expect(panel.querySelectorAll(".loading-indicator").length).toBeGreaterThan(0);
+  });
+
+  it("«Обзор» вкладки авторов считает всех авторов, с разбивкой ИТМО/внешние, даже когда внешние скрыты фильтром", async () => {
+    const sample = await loadSampleGraphData();
+    const data = {
+      ...sample,
+      authors: sample.authors.map((a, i) => (i === 0 ? { ...a, is_itmo: false } : a)),
+    };
+    const store = new Store<AppState>(initialState({ tab: 1 })); // showExternalAuthors: false
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const rows = [...panel.querySelectorAll("dt")].map((dt) => [
+      dt.textContent,
+      dt.nextElementSibling?.textContent,
+    ]);
+    expect(rows).toContainEqual(["Авторов", String(data.authors.length)]);
+    expect(rows).toContainEqual(["Из ИТМО", String(data.authors.length - 1)]);
+    expect(rows).toContainEqual(["Внешних", "1"]);
   });
 
   it("«Обзор» вкладки репозиториев — число репозиториев, доля с README/лицензией", async () => {

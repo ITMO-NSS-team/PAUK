@@ -4,10 +4,10 @@
 дальше читает `pauk/gui/`.
 
 **Какие файлы задействует:** `pauk/cache/export.py`, `graph_snapshot.py`,
-`freshness.py`, `__init__.py`.
+`inspect.py`, `__init__.py`.
 
 Единственное место в `pauk/gui`-цепочке, которое реально ходит в Neo4j.
-Всё остальное (`pauk/gui/graph_builder.py`)
+Всё остальное (`pauk/gui/graph_builder/builder.py`)
 читает результат этого шага с диска, не базу.
 
 ## `export.py`
@@ -32,20 +32,18 @@
 `load_db()` возвращает плоский словарь из восьми ключей:
 `persons`/`publications`/`repositories`/`departments`/`authorship`/
 `person_depts`/`pub_depts`/`repo_pubs`/`repo_persons`/`repo_depts` — ровно
-то, что `pauk/gui/graph_builder.py::GraphDataBuilder` ожидает на входе.
+то, что `pauk/gui/graph_builder/builder.py::GraphDataBuilder` ожидает на входе.
 Департаменты авторов и владельцы репозиториев — не плоские колонки в
 графовой модели, а связи (`BELONGS_TO`, `OWNED_BY`), поэтому здесь они
 отдельными запросами через `OPTIONAL MATCH`.
 
 ## `graph_snapshot.py`
 
-`write_snapshot`/`read_snapshot` — конверт вокруг `load_db()`'s словаря:
-`schema_version`, `generated_at`, `graph`. `read_snapshot` кидает
-`ValueError`, если версия схемы не совпадает — снепшот от старой версии
-кода не будет молча скормлен в несовместимый `graph_builder.py`.
-
-## `freshness.py`
-
-`is_fresh(path, max_age)` — сравнивает mtime файла снепшота с TTL,
-заготовка под предупреждение о том, что снепшот пора пересобрать
-(`pauk cache export`).
+`write_snapshot`/`read_snapshot` — запись (атомарно) и чтение плоского
+словаря `load_db()` как JSON; `read_snapshot` кидает `ValueError`, если
+верхний уровень файла не объект. Снепшот пишется в
+`data/cache/graph_snapshot_<дд-мм-гггг>.json` (`dated_snapshot_path`), и
+`latest_snapshot` находит самый свежий по дате в имени — его по умолчанию
+берут `pauk cache inspect` и `pauk gui build`, а `gui build` пишет путь
+выбранного снепшота в лог. Отдельной проверки "снепшот протух" по TTL нет:
+дата видна в имени файла.

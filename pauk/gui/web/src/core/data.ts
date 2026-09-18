@@ -8,7 +8,7 @@ type GraphNode = AuthorNode | RepoNode | PubNode;
  * Загружает `graph-data.json` по сети и проверяет его форму в dev-режиме
  * через {@link assertGraphData}. Голый JSON, без обёртки `window.GRAPH=...;`
  * — та обёртка была нужна только старому GUI (подключение через
- * `<script>` без сборщика), `pauk/gui/graph_builder.py` пишет обычный
+ * `<script>` без сборщика), `pauk/gui/graph_builder/builder.py` пишет обычный
  * `.json`, поэтому здесь просто `response.json()`.
  *
  * @param url - адрес файла `graph-data.json` (например, из Vite dev-сервера прокси или статики).
@@ -35,7 +35,7 @@ export async function loadGraphData(url: string): Promise<GraphData> {
  * полями-массивами разной вложенности.
  *
  * Файла может не быть вовсе (например, `authors-detail.json` в публичной,
- * покинувшей корпоративную сеть сборке — см. `pauk/gui/graph_builder.py`
+ * покинувшей корпоративную сеть сборке — см. `pauk/gui/graph_builder/builder.py`
  * про то, что этот файл пишется только в `private/`) — тогда `!response.ok`
  * бросает Error, а app/main.ts уже ловит её через `.catch()` на каждую из
  * трёх фоновых загрузок, не роняя приложение.
@@ -108,7 +108,7 @@ export function mergeDetailsInto<T extends { key: string }>(target: Map<string, 
  *   - у одного из обязательных полей (`departments`, `authors`, `repos`,
  *     `pubs`, `coauth_edges`, `repo_edges`, `pub_edges`) нет массива;
  *   - у первого автора нет `key`/`label_en` нужного типа (признак того, что
- *     `graph_builder.py` поменял форму `AuthorNode`).
+ *     `builder.py` поменял форму `AuthorNode`).
  *
  * Ничего не делает и не бросает исключений, если данные прошли все
  * проверки — используется как type assertion (`asserts data is GraphData`),
@@ -144,7 +144,7 @@ export function assertGraphData(data: unknown): asserts data is GraphData {
   const firstAuthor = (graph.authors as unknown[])[0] as Record<string, unknown> | undefined;
   if (firstAuthor && (typeof firstAuthor.label_en !== "string" || typeof firstAuthor.key !== "string")) {
     throw new Error(
-      "assertGraphData: форма AuthorNode разошлась с контрактом (нет key/label_en) — проверь graph_builder.py",
+      "assertGraphData: форма AuthorNode разошлась с контрактом (нет key/label_en) — проверь builder.py",
     );
   }
 }

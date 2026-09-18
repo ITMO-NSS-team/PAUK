@@ -142,12 +142,23 @@ def _add_cache_parsers(sub: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_gui_parsers(sub: argparse._SubParsersAction) -> None:
+    """Registers `gui build` - snapshot -> layout -> JSON for the site (pauk/gui/web)."""
+    p = sub.add_parser("gui")
+    gui_sub = p.add_subparsers(dest="gui_command", required=True)
+    p = gui_sub.add_parser("build", help="build the site data (layout + JSON) from a graph snapshot")
+    p.add_argument("--cache", type=Path, help="snapshot file (default: newest in cache_dir)")
+    p.add_argument("--out-dir", type=Path, help="public/ and private/ go inside it (default: gui_dir)")
+    p.add_argument("--seed", type=int, default=42, help="ForceAtlas2 layout seed")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="pauk")
     parser.add_argument("--verbose", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)
     _add_pipeline_parsers(sub)
     _add_cache_parsers(sub)
+    _add_gui_parsers(sub)
     return parser
 
 
@@ -241,6 +252,17 @@ def _cmd_cache(args, parser: argparse.ArgumentParser) -> None:
         parser.error(f"unknown cache command: {args.cache_command}")
 
 
+def _cmd_gui(args, parser: argparse.ArgumentParser) -> None:
+    if args.gui_command != "build":
+        parser.error(f"unknown gui command: {args.gui_command}")
+    from pauk.cache.graph_snapshot import latest_snapshot
+    from pauk.gui.graph_builder.builder import write_site_data
+
+    path = args.cache or latest_snapshot(settings.cache_dir)
+    logger.info("gui build: %s", path)
+    write_site_data(path, args.out_dir or settings.gui_dir, args.seed)
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -260,6 +282,8 @@ def main() -> None:
         _cmd_dedup()
     elif args.command == "cache":
         _cmd_cache(args, parser)
+    elif args.command == "gui":
+        _cmd_gui(args, parser)
     else:
         parser.error(f"unknown command: {args.command}")
 

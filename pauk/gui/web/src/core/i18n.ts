@@ -94,6 +94,8 @@ export type LocaleKey =
   | "field.total"
   | "overview.title"
   | "overview.avgPubsPerAuthor"
+  | "overview.itmoAuthors"
+  | "overview.externalAuthors"
   | "overview.knownYear"
   | "chart.authorsByDept"
   | "chart.pubsByYear"
@@ -122,6 +124,7 @@ export type LocaleKey =
   | "filter.yearMax"
   | "filter.showNoDept"
   | "filter.showExternal"
+  | "filter.showIsolated"
   | "filter.edgeZoom"
   | "filter.showRegions"
   | "filter.regionZoom"
@@ -203,6 +206,8 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "panel.showLess": "− свернуть",
     "overview.title": "Обзор",
     "overview.avgPubsPerAuthor": "Публикаций на автора (среднее)",
+    "overview.itmoAuthors": "Из ИТМО",
+    "overview.externalAuthors": "Внешних",
     "overview.knownYear": "Известен год",
     "chart.authorsByDept": "Авторы по департаментам",
     "chart.pubsByYear": "Публикации по годам",
@@ -220,6 +225,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "filter.yearMax": "До года",
     "filter.showNoDept": "Показывать без департамента",
     "filter.showExternal": "Показывать внешних авторов",
+    "filter.showIsolated": "Показывать авторов без связей",
     "filter.edgeZoom": "Порог показа рёбер",
     "filter.showRegions": "Регионы департаментов",
     "filter.regionZoom": "Порог показа регионов",
@@ -243,7 +249,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "start.error": "Ошибка загрузки.",
     "start.errorFetch": "Не удалось загрузить данные графа",
     "start.errorFetchHint":
-      'Проверьте, что "python -m pauk.gui.graph_builder" сгенерировал файлы в data/gui/private.',
+      'Проверьте, что "pauk gui build" сгенерировал файлы в data/gui/private.',
     "start.errorRender":
       "Данные графа загрузились, но при отрисовке произошла ошибка. Подробности — в консоли браузера (F12).",
   },
@@ -309,6 +315,8 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "panel.showLess": "− show less",
     "overview.title": "Overview",
     "overview.avgPubsPerAuthor": "Publications per author (avg.)",
+    "overview.itmoAuthors": "From ITMO",
+    "overview.externalAuthors": "External",
     "overview.knownYear": "Known year",
     "chart.authorsByDept": "Authors by department",
     "chart.pubsByYear": "Publications by year",
@@ -326,6 +334,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "filter.yearMax": "Up to year",
     "filter.showNoDept": "Show without department",
     "filter.showExternal": "Show external authors",
+    "filter.showIsolated": "Show authors without links",
     "filter.edgeZoom": "Edge visibility threshold",
     "filter.showRegions": "Department regions",
     "filter.regionZoom": "Region visibility threshold",
@@ -343,7 +352,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "start.error": "Loading error.",
     "start.errorFetch": "Failed to load the graph data",
     "start.errorFetchHint":
-      'Make sure "python -m pauk.gui.graph_builder" has generated the files in data/gui/private.',
+      'Make sure "pauk gui build" has generated the files in data/gui/private.',
     "start.errorRender":
       "The graph data loaded, but something failed while rendering it. See the browser console (F12) for details.",
   },

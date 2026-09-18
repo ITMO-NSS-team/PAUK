@@ -66,7 +66,8 @@ class EdgeBuilder:
         # and the same input snapshot (content is identical, just reordered).
         dept_pair_w: dict[tuple[int, int], int] = defaultdict(int)
         for pid in sorted(authorship.pub_ids):
-            ds = sorted({table.g(assignment.author_dept[per]) for per in authorship.pub_authors[pid]} - {table.no_dept_gid})
+            itmo_authors = [per for per in authorship.pub_authors[pid] if per not in authorship.external_ids]
+            ds = sorted({table.g(assignment.author_dept[per]) for per in itmo_authors} - {table.no_dept_gid})
             for a, b in combinations(ds, 2):
                 dept_pair_w[(a, b)] += 1
         dept_edges = [{"s": a, "t": b, "w": w} for (a, b), w in dept_pair_w.items()]
@@ -87,7 +88,7 @@ class EdgeBuilder:
             {"s": row["rid"], "t": row["pid"]} for row in db["repo_pubs"] if row["pid"] in authorship.pub_ids
         ]
         # Author-publication directly (AUTHORED), ITMO and external authors
-        # alike - db["authorship"] is already cut down to pub_ids in graph_builder.py.
+        # alike - db["authorship"] is already cut down to pub_ids in builder.py.
         all_edges = [{"s": row["per"], "t": row["pid"]} for row in db["authorship"]]
 
         logger.info(

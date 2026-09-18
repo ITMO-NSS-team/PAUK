@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import unittest
 
-from pauk.gui.authorship import Authorship
-from pauk.gui.departments import DepartmentAssignment, DepartmentTable
-from pauk.gui.edges import EdgeBuilder
-from pauk.gui.layout import Layout
+from pauk.gui.graph_builder.authorship import Authorship
+from pauk.gui.graph_builder.departments import DepartmentAssignment, DepartmentTable
+from pauk.gui.graph_builder.edges import EdgeBuilder
+from pauk.gui.graph_builder.layout import Layout
 
 
 def _layout(**overrides) -> Layout:

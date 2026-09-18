@@ -98,7 +98,7 @@ class DepartmentTable:
 class DepartmentAssigner:
     """Assigns a department to every entity and builds the final table for
     the frontend - two methods instead of two free functions, because both
-    share the same context (`db`/`authorship`) and graph_builder.py calls
+    share the same context (`db`/`authorship`) and builder.py calls
     them back to back exactly once per run.
     """
 

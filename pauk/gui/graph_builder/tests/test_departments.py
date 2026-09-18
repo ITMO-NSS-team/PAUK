@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import unittest
 
-from pauk.gui.authorship import Authorship
-from pauk.gui.departments import DepartmentAssigner, DepartmentAssignment, golden_color, majority_dept
+from pauk.gui.graph_builder.authorship import Authorship
+from pauk.gui.graph_builder.departments import DepartmentAssigner, DepartmentAssignment, golden_color, majority_dept
 
 
 class GoldenColorTest(unittest.TestCase):

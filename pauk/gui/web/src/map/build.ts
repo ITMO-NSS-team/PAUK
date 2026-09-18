@@ -78,9 +78,9 @@ function truncateLabel(label: string, maxLength: number): string {
 
 /**
  * Id синтетического департамента "Без департамента" (см.
- * `pauk/gui/departments.py`), если он есть в данных — определяется по
+ * `pauk/gui/graph_builder/departments.py`), если он есть в данных — определяется по
  * цвету ({@link NO_DEPT_COLOR}, должен совпадать с
- * `pauk/gui/config.py::NO_DEPT_COLOR`), а не по имени: имя локализуется
+ * `pauk/gui/graph_builder/config.py::NO_DEPT_COLOR`), а не по имени: имя локализуется
  * и могло бы разъехаться между ru/en, цвет — техническая константа.
  *
  * @param data - данные графа.
@@ -92,19 +92,82 @@ export function noDeptId(data: GraphData): number | null {
   return data.departments.find((dept) => dept.color === NO_DEPT_COLOR)?.id ?? null;
 }
 
+const isolatedByData = new WeakMap<GraphData, Map<boolean, Set<string>>>();
+
 /**
- * Авторы без внешних соавторов, если `filters.showExternalAuthors` выключен.
- * Общий для карты, списка вкладки, поиска и "Обзора" — внешний автор
- * скрыт везде одинаково.
+ * Авторы "без связей": не больше одной публикации, ни одного соавтора и ни
+ * одного репозитория. Соавторы считаются среди тех, кто сейчас может быть
+ * на карте: внешние — только при `withExternal` (фильтр
+ * `showExternalAuthors`), так что автор, у которого соавторы только
+ * внешние, "без связей", пока внешние скрыты. Считается один раз на пару
+ * (`data`, `withExternal`).
  *
- * @param authors - авторы (обычно `data.authors`).
- * @param filters - текущие фильтры.
- * @returns Авторы, которых сейчас нужно показывать.
+ * @param data - данные графа.
+ * @param withExternal - считать ли внешних соавторов связью.
+ * @returns Ключи таких авторов.
  */
-export function visibleAuthors(authors: AuthorNode[], filters: Filters): AuthorNode[] {
-  return filters.showExternalAuthors
-    ? authors
-    : authors.filter((author) => author.is_itmo !== false);
+export function isolatedAuthors(data: GraphData, withExternal: boolean): Set<string> {
+  const byMode = isolatedByData.get(data) ?? new Map<boolean, Set<string>>();
+  isolatedByData.set(data, byMode);
+  const cached = byMode.get(withExternal);
+  if (cached) return cached;
+
+  const counted = new Set(
+    data.authors.filter((a) => withExternal || a.is_itmo !== false).map((a) => a.key),
+  );
+  const withRepo = new Set(data.repo_author_edges.map((edge) => edge.t));
+  const pubAuthors = new Map<string, string[]>();
+  for (const { s, t } of data.all_edges) {
+    if (counted.has(s)) pubAuthors.set(t, [...(pubAuthors.get(t) ?? []), s]);
+  }
+  const withCoauthor = new Set<string>();
+  for (const authors of pubAuthors.values()) {
+    if (authors.length > 1) authors.forEach((key) => withCoauthor.add(key));
+  }
+
+  const isolated = new Set(
+    data.authors
+      .filter(
+        (a) =>
+          counted.has(a.key) &&
+          a.pubs_count <= 1 &&
+          !withRepo.has(a.key) &&
+          !withCoauthor.has(a.key),
+      )
+      .map((a) => a.key),
+  );
+  byMode.set(withExternal, isolated);
+  return isolated;
+}
+
+/**
+ * Показывать ли автора при текущих фильтрах: внешние — только с
+ * `filters.showExternalAuthors`, "без связей" ({@link isolatedAuthors}) —
+ * только с `filters.showIsolatedAuthors`. Общий для карты, списка вкладки и
+ * поиска — автор скрыт везде одинаково ("Обзор" считает всех).
+ *
+ * @param data - данные графа.
+ * @param author - автор.
+ * @param filters - текущие фильтры.
+ * @returns `true`, если автора нужно показывать.
+ */
+export function isAuthorShown(data: GraphData, author: AuthorNode, filters: Filters): boolean {
+  if (author.is_itmo === false && !filters.showExternalAuthors) return false;
+  return (
+    filters.showIsolatedAuthors ||
+    !isolatedAuthors(data, filters.showExternalAuthors).has(author.key)
+  );
+}
+
+/**
+ * Авторы, которых сейчас нужно показывать, см. {@link isAuthorShown}.
+ *
+ * @param data - данные графа.
+ * @param filters - текущие фильтры.
+ * @returns Видимые авторы.
+ */
+export function visibleAuthors(data: GraphData, filters: Filters): AuthorNode[] {
+  return data.authors.filter((author) => isAuthorShown(data, author, filters));
 }
 
 /**
@@ -126,7 +189,7 @@ export function tabGraphNodes(data: GraphData, tab: TabId, filters: Filters): Gr
   const excludedDept = noDeptId(data);
   switch (tab) {
     case 1: {
-      const authors = visibleAuthors(data.authors, filters);
+      const authors = visibleAuthors(data, filters);
       return filters.showNoDeptAuthors ? authors : authors.filter((a) => a.dept !== excludedDept);
     }
     case 2:

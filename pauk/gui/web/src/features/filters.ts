@@ -6,6 +6,7 @@
 
 import type { GraphData } from "../contracts/graph";
 import { FILTER_CONFIG } from "../core/config";
+import { isolatedAuthors } from "../map/build";
 import { requireElement } from "../core/dom";
 import { t, type Lang } from "../core/i18n";
 import type { AppState, Store } from "../core/state";
@@ -190,6 +191,11 @@ export function mountFilters(store: Store<AppState>): () => void {
           checked: filters.showExternalAuthors,
           onChange: (checked) => setFilter({ showExternalAuthors: checked }),
         }),
+        buildCheckboxRow({
+          label: t("filter.showIsolated", lang),
+          checked: filters.showIsolatedAuthors,
+          onChange: (checked) => setFilter({ showIsolatedAuthors: checked }),
+        }),
       );
     } else if (state.tab === 3) {
       rows.push(
@@ -253,22 +259,34 @@ export function mountFilters(store: Store<AppState>): () => void {
 }
 
 /**
- * Включает `filters.showExternalAuthors`, как только выбран внешний автор
- * (ссылка из карточки публикации, URL): иначе выбор ушёл бы в узел,
- * которого нет на карте. Подписываться нужно раньше
- * `map/build.ts::mountReactiveGraph` — тот сбрасывает выбор узла, которого
- * нет в графе.
+ * Включает фильтр, который прячет выбранного автора (внешние, "без
+ * связей"), как только такой автор выбран — ссылкой из карточки
+ * публикации, из URL: иначе выбор ушёл бы в узел, которого нет на карте.
+ * Подписываться нужно раньше `map/build.ts::mountReactiveGraph` — тот
+ * сбрасывает выбор узла, которого нет в графе.
  *
  * @param store - общий Store приложения.
- * @param data - данные графа (какие авторы внешние).
+ * @param data - данные графа.
  * @returns Функция отписки.
  */
-export function mountExternalAuthorReveal(store: Store<AppState>, data: GraphData): () => void {
+export function mountHiddenAuthorReveal(store: Store<AppState>, data: GraphData): () => void {
   const external = new Set(data.authors.filter((a) => a.is_itmo === false).map((a) => a.key));
   return store.subscribe((state) => {
     const { selection, filters } = state;
-    if (!filters.showExternalAuthors && selection?.kind === "node" && external.has(selection.key)) {
-      store.set({ filters: { ...filters, showExternalAuthors: true } });
+    if (selection?.kind !== "node") return;
+    const needExternal = !filters.showExternalAuthors && external.has(selection.key);
+    // "Без связей" — уже с учётом того, что внешние сейчас будут показаны.
+    const withExternal = filters.showExternalAuthors || needExternal;
+    const needIsolated =
+      !filters.showIsolatedAuthors && isolatedAuthors(data, withExternal).has(selection.key);
+    if (needExternal || needIsolated) {
+      store.set({
+        filters: {
+          ...filters,
+          showExternalAuthors: filters.showExternalAuthors || needExternal,
+          showIsolatedAuthors: filters.showIsolatedAuthors || needIsolated,
+        },
+      });
     }
   });
 }

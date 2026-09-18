@@ -300,6 +300,53 @@ def fa2_blended_layout(
     return pos, stats
 
 
+# Jitter sigma for an external author around their ITMO coauthors (final
+# 0..1000 units), grown with the number of externals sharing the same spot -
+# ~1700 authors of one collaboration paper otherwise pile into one point.
+EXTERNAL_JITTER = 4.0
+
+
+def place_external_authors(
+    pos: Mapping[str, tuple[float, float]], coauth: Mapping[tuple[str, str], int], external_ids: frozenset[str], seed: int
+) -> dict[str, tuple[float, float]]:
+    """Places each external author at the weighted centroid of their ITMO
+    coauthors (weight = shared publications), plus jitter - the ITMO layout
+    stays exactly what it is without them.
+
+    Args:
+        pos: Already laid out ITMO authors.
+        coauth: Coauthor pair -> shared publication count, externals included.
+        external_ids: External authors.
+        seed: Jitter seed.
+
+    Returns:
+        Positions of every external author that has an ITMO coauthor in `pos`.
+    """
+    sums: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0, 0.0])
+    for (a, b), w in coauth.items():
+        for ext, other in ((a, b), (b, a)):
+            if ext in external_ids and other in pos:
+                acc = sums[ext]
+                acc[0] += w * pos[other][0]
+                acc[1] += w * pos[other][1]
+                acc[2] += w
+    anchors = {ext: (x / w, y / w) for ext, (x, y, w) in sums.items()}
+    crowd: dict[tuple[float, float], int] = defaultdict(int)
+    for anchor in anchors.values():
+        crowd[(round(anchor[0]), round(anchor[1]))] += 1
+
+    rng = np.random.default_rng(seed + 2)
+    placed: dict[str, tuple[float, float]] = {}
+    for ext in sorted(anchors):
+        ax, ay = anchors[ext]
+        sigma = EXTERNAL_JITTER * crowd[(round(ax), round(ay))] ** 0.25
+        dx, dy = rng.normal(0.0, sigma, 2)
+        x = min(COORD_MAX, max(COORD_MIN, ax + dx))
+        y = min(COORD_MAX, max(COORD_MIN, ay + dy))
+        placed[ext] = (round(x, 1), round(y, 1))
+    return placed
+
+
 class ForceAtlasLayouter:
     """ForceAtlas2 layout - holds `seed` as state instead of a parameter on
     every individual call (otherwise it threads unchanged through the whole
@@ -345,7 +392,7 @@ class Layout:
     coauth: dict[tuple[str, str], int]
     """Author pairs -> number of shared publications (real, for coauth_edges)."""
     pub_pair_w: dict[tuple[str, str], int]
-    """Publication pairs -> number of shared authors (real, for pub_edges)."""
+    """Publication pairs -> number of shared ITMO authors (real, for pub_edges)."""
     repo_edge_w: dict[tuple[str, str], int]
     """Repository pairs -> number of shared publications (used for both layout and repo_edges - no split here)."""
 
@@ -391,7 +438,14 @@ class GraphLayoutBuilder:
         # (sparse_dept_edges) get blended into it below, and Counter is typed
         # as int-only in typeshed. dict(coauth) copies the real weights as a
         # starting point - everything after this only ADDS synthetic weight on top.
-        author_layout_w: dict[tuple[str, str], float] = dict(coauth)
+        # Layout is ITMO-only: external coauthors outnumber ITMO ~3:1 and
+        # would pull the department clusters apart; they are placed next to
+        # their ITMO coauthors afterwards (place_external_authors).
+        external = self.authorship.external_ids
+        itmo_ids = set(self.assignment.static_depts) - external
+        author_layout_w: dict[tuple[str, str], float] = {
+            (a, b): w for (a, b), w in coauth.items() if a not in external and b not in external
+        }
         # Who worked together on the same repository (CONTRIBUTED_TO) is also
         # reason to pull nodes closer on the map, even though it never
         # reaches coauth_edges (export) - only affects layout.
@@ -403,26 +457,29 @@ class GraphLayoutBuilder:
                 author_layout_w[(a, b)] = author_layout_w.get((a, b), 0) + 1
         # Synthetic weak "same department" edges - see sparse_dept_edges,
         # only so colleagues with zero real connections don't scatter across the map.
-        for pair, w in sparse_dept_edges(set(self.assignment.static_depts), self.assignment.author_dept, rng).items():
+        for pair, w in sparse_dept_edges(itmo_ids, self.assignment.author_dept, rng).items():
             author_layout_w[pair] = author_layout_w.get(pair, 0) + w
 
         t0 = time.time()
         pos_authors, (n_giant, e_giant, n_small, n_single) = layouter.blended(
-            author_layout_w, set(self.assignment.static_depts), FA2_ITERATIONS.authors, MIN_SEPARATION.authors
+            author_layout_w, itmo_ids, FA2_ITERATIONS.authors, MIN_SEPARATION.authors
         )
+        pos_authors.update(place_external_authors(pos_authors, coauth, external, seed))
         logger.info(
             "FA2 authors: giant %d nodes / %d edges, blended in: %d small components + %d singletons, "
             "min-sep %.1f, %.1f s",
             n_giant, e_giant, n_small, n_single, MIN_SEPARATION.authors, time.time() - t0,
         )
 
-        # --- publications: shared authors. The full w>=1 graph is
+        # --- publications: shared ITMO authors. The full w>=1 graph is
         # thousands of edges, so layout uses only the top-K strongest links
         # per publication; export (pub_edges) gets the full pub_pair_w, unclipped.
         # A pair of publications by the same author is an edge, weighted by
         # how many authors they share.
         pub_pair_w: dict[tuple[str, str], int] = defaultdict(int)
-        for _per, plist in self.authorship.author_pubs.items():
+        for per, plist in self.authorship.author_pubs.items():
+            if per in external:
+                continue
             for a, b in combinations(sorted(set(plist)), 2):
                 pub_pair_w[(a, b)] += 1
 

@@ -22,7 +22,7 @@ interface NodeListTabConfig<T extends NodeLike> {
   /** Достаёт список узлов этой вкладки из полного GraphData. */
   items(data: GraphData): T[];
   /** Показывать ли узел при текущих фильтрах — по умолчанию все. */
-  visible?(item: T, state: AppState): boolean;
+  visible?(item: T, state: AppState, data: GraphData): boolean;
   /** Компаратор для Array.prototype.sort — порядок вкладки. */
   compare(a: T, b: T): number;
   /** Основной текст строки списка. */
@@ -136,7 +136,7 @@ export function createNodeListTab<T extends NodeLike>(config: NodeListTabConfig<
         const selectedKey = state.selection?.kind === "node" ? state.selection.key : null;
         const q = query.trim().toLowerCase();
         const shown = config.visible
-          ? sorted.filter((item) => config.visible?.(item, state))
+          ? sorted.filter((item) => config.visible?.(item, state, data))
           : sorted;
         const visible = q
           ? shown.filter((item) => config.label(item, state, pubDetails).toLowerCase().includes(q))

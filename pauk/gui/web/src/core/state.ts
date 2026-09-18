@@ -93,14 +93,19 @@ export interface AppState {
    * - `yearMax` — вкладка "Публикации": скрыть публикации (и их рёбра)
    *   позже этого года.
    * - `showNoDeptAuthors`/`showNoDeptPubs` — показывать ли авторов/публикации
-   *   без реального департамента (у pauk/gui/departments.py для них есть
+   *   без реального департамента (у pauk/gui/graph_builder/departments.py для них есть
    *   синтетическая запись "Без департамента", см. core/config.ts::NO_DEPT_COLOR).
    *   По умолчанию `true` — сегодняшнее поведение не меняется, пока не выключат явно.
    * - `showExternalAuthors` — вкладка "Авторы": показывать ли внешних
    *   соавторов (`AuthorNode.is_itmo === false`) — на карте, в списке и в
    *   поиске. По умолчанию `false`; выбор внешнего автора (ссылка из
    *   карточки публикации, URL) включает фильтр сам, см.
-   *   features/filters.ts::mountExternalAuthorReveal.
+   *   features/filters.ts::mountHiddenAuthorReveal.
+   * - `showIsolatedAuthors` — вкладка "Авторы": показывать ли авторов "без
+   *   связей" (одна публикация, ни соавторов, ни репозиториев; внешние
+   *   соавторы считаются, только пока показаны, см.
+   *   map/build.ts::isolatedAuthors). По умолчанию `false`, выбор такого
+   *   автора включает фильтр сам.
    * - `edgeZoomThreshold` — общий для всех трёх вкладок порог `camera.ratio`
    *   (map/build.ts::applyGraphStyling), выше которого рёбра скрываются
    *   целиком (на сильном отдалении тысячи рёбер сливаются в сплошную
@@ -122,6 +127,7 @@ export interface AppState {
     showNoDeptAuthors: boolean;
     showNoDeptPubs: boolean;
     showExternalAuthors: boolean;
+    showIsolatedAuthors: boolean;
     edgeZoomThreshold: number;
     showRegions: Record<TabId, boolean>;
     regionZoomThreshold: number;

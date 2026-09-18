@@ -46,7 +46,7 @@ PORT=8503 ./scripts/deploy.sh   # если 8501 занят
    (`y/N`): они попадут в сборку.
 2. Проверка, что в `data/gui/private/` есть все четыре JSON (`graph-data`,
    `authors-detail`, `repos-detail`, `pubs-detail`). Сами данные скрипт не
-   генерирует — это `python -m pauk.gui.graph_builder` заранее.
+   генерирует — это `pauk gui build` заранее.
 3. `npm run build` в `pauk/gui/web/` — Vite копирует данные из
    `data/gui/private/` в `dist/`, поэтому на сервер уходит **приватный**
    вариант, с личными полями авторов. Доступ к серверу — только через VPN

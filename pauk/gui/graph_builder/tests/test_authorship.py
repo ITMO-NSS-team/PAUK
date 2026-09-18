@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from pauk.gui.authorship import build_authorship_index
+from pauk.gui.graph_builder.authorship import build_authorship_index
 
 
 class BuildAuthorshipIndexTest(unittest.TestCase):

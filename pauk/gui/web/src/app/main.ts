@@ -12,7 +12,7 @@ import { requireElement, showLoadError } from "../core/dom";
 import { t } from "../core/i18n";
 import { loggedStep } from "../core/log";
 import { isRegionMode, Store, type AppState } from "../core/state";
-import { mountExternalAuthorReveal, mountFilters } from "../features/filters";
+import { mountFilters, mountHiddenAuthorReveal } from "../features/filters";
 import { mountGlobalSearch } from "../features/globalSearch";
 import { mountPanel } from "../features/panels";
 import { mountSelection } from "../features/selection";
@@ -80,6 +80,7 @@ const store = new Store<AppState>({
     showNoDeptAuthors: true,
     showNoDeptPubs: true,
     showExternalAuthors: false,
+    showIsolatedAuthors: false,
     edgeZoomThreshold: FILTER_CONFIG.edgeZoom.default,
     showRegions: { ...FILTER_CONFIG.showRegions },
     regionZoomThreshold: FILTER_CONFIG.regionZoom.default,
@@ -88,7 +89,7 @@ const store = new Store<AppState>({
 });
 
 // Данные приходят из четырёх *.json в корне сайта (см. DATA_CONFIG в
-// core/config.ts) — статика, которую пишет pauk/gui/graph_builder.py в
+// core/config.ts) — статика, которую пишет pauk/gui/graph_builder/builder.py в
 // <repo_root>/data/gui/private (пока работаем только с приватным
 // вариантом — публичный, урезанный, вариант данных подключим отдельно,
 // когда дойдём до скрытия полей/усечения инициалов). Файлов может не
@@ -246,7 +247,7 @@ function renderApp(data: GraphData): void {
   // достаточно менять store.tab/lang/filters, не заботясь о том, что
   // ещё перерисовать.
   // Раньше mountReactiveGraph: тот сбрасывает выбор узла, которого нет в графе.
-  mountExternalAuthorReveal(store, data);
+  mountHiddenAuthorReveal(store, data);
   mountReactiveGraph(renderer, store, data, pubDetailsByKey);
   // Временный инструмент калибровки порогов зума и MAP_CONFIG.node.labelVisibleAtSize —
   // удалить вызов, когда числа подобраны.

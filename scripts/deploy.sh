@@ -23,7 +23,7 @@ fi
 
 for file in graph-data.json authors-detail.json repos-detail.json pubs-detail.json; do
     if [[ ! -f "$data_dir/$file" ]]; then
-        echo "Missing $data_dir/$file - run 'python -m pauk.gui.graph_builder' first." >&2
+        echo "Missing $data_dir/$file - run 'pauk gui build' first." >&2
         exit 1
     fi
 done

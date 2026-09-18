@@ -32,7 +32,6 @@ import {
 import { createLoadingIndicator, requireElement } from "../core/dom";
 import { kindLabel, localize, t } from "../core/i18n";
 import { TAB_FOR_KIND, type AppState, type Selection, type Store } from "../core/state";
-import { visibleAuthors } from "../map/build";
 
 /** Строка карточки ещё не может показать значение — соответствующий
  * `*Detail`-файл (см. {@link AuthorDetail}/{@link RepoDetail}) не домержился
@@ -608,7 +607,9 @@ export function mountPanel(
       tab === 1 ? t("tab.authors", lang) : tab === 2 ? t("tab.repos", lang) : t("tab.pubs", lang);
 
     if (tab === 1) {
-      const authors: AuthorNode[] = visibleAuthors(data.authors, state.filters);
+      // Все авторы, ИТМО и внешние, независимо от фильтра на карте.
+      const authors: AuthorNode[] = data.authors;
+      const external = authors.filter((a) => a.is_itmo === false).length;
       const avgPubs =
         authors.length > 0
           ? (authors.reduce((sum, a) => sum + a.pubs_count, 0) / authors.length).toFixed(1)
@@ -632,6 +633,8 @@ export function mountPanel(
         tabKind,
         untitled([
           [t("field.authorsCount", lang), String(authors.length)],
+          [t("overview.itmoAuthors", lang), String(authors.length - external)],
+          [t("overview.externalAuthors", lang), String(external)],
           [t("field.deptsCount", lang), String(data.departments.length)],
           [t("overview.avgPubsPerAuthor", lang), avgPubs],
           [t("field.orcid", lang), completionRow(withOrcid, withDetail)],
@@ -880,7 +883,7 @@ export function mountPanel(
               { kind: "list", items: affiliationItems(authorDetail.affiliations) },
             ]);
           }
-          // Раздельно по источнику — см. author_variants() в pauk/gui/nodes.py.
+          // Раздельно по источнику — см. author_variants() в pauk/gui/graph_builder/nodes.py.
           if (authorDetail.name_variants.openalex.length > 0) {
             privateRows.push([
               t("field.nameVariantsOpenalex", lang),

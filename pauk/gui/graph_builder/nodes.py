@@ -168,7 +168,7 @@ class AuthorNodeBuilder:
             regardless of build variant - privacy is no longer decided here
             by trimming fields, it's decided outside, by which folder
             `main()` writes the final file into (`authors-detail.json` only
-            ever goes into `private/`, see `graph_builder.py`). The map label
+            ever goes into `private/`, see `builder.py`). The map label
             (`label`/`label_en`) uses `author_label(..., public=False)` -
             full surname + initials ("Фамилия И.О."), not the
             three-letter-truncated public-safe form - readability on the map

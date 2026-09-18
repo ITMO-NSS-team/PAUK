@@ -2,7 +2,7 @@
 // вида радиусов/ширин/отступов/зумов. Смена значения здесь меняет
 // поведение сразу везде, где оно используется, а не в одном месте из
 // нескольких, где оно случайно продублировано. Фронтенд-аналог
-// pauk/gui/config.py генератора (тот же принцип: тюнинг-константы
+// pauk/gui/graph_builder/config.py генератора (тот же принцип: тюнинг-константы
 // отдельно от логики, которая их использует).
 
 export const MAP_CONFIG = {
@@ -144,9 +144,9 @@ export const REGION_CONFIG = {
   labelGap: 4,
 } as const;
 
-// Должно оставаться синхронным с pauk/gui/config.py::NO_DEPT_COLOR —
+// Должно оставаться синхронным с pauk/gui/graph_builder/config.py::NO_DEPT_COLOR —
 // цвет синтетического департамента "Без департамента"
-// (pauk/gui/departments.py), которым помечены авторы/публикации без
+// (pauk/gui/graph_builder/departments.py), которым помечены авторы/публикации без
 // реального департамента. Настоящая межъязыковая связка, а не совпадение:
 // меняется Python-константа — меняется и эта.
 export const NO_DEPT_COLOR = "#8a8f98";
@@ -199,7 +199,7 @@ export const FILTER_CONFIG = {
   debounceMs: 500,
 } as const;
 
-// Пути к настоящим данным (пишет `pauk/gui/graph_builder.py`, по
+// Пути к настоящим данным (пишет `pauk/gui/graph_builder/builder.py`, по
 // умолчанию — прямо в <repo_root>/data/gui/private, без вложенной "data/",
 // см. pauk.settings.Settings.gui_dir). Vite отдаёт содержимое publicDir
 // (см. vite.config.ts) от корня сайта, поэтому файл `graph-data.json`,

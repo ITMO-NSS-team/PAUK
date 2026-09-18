@@ -8,6 +8,7 @@ import { Store, type AppState } from "../src/core/state";
 import { loadSampleGraphData, loadSamplePubDetails } from "./fixtures";
 import {
   deptNodeKey,
+  isolatedAuthors,
   mountReactiveGraph,
   mountZoomDebug,
   parseDeptNodeKey,
@@ -25,6 +26,7 @@ const NO_FILTER = {
   showNoDeptAuthors: true,
   showNoDeptPubs: true,
   showExternalAuthors: false,
+  showIsolatedAuthors: true,
   edgeZoomThreshold: 10,
   showRegions: { 1: false, 2: false, 3: false },
   regionZoomThreshold: 0.25,
@@ -390,6 +392,89 @@ describe("populateGraph на фикстур-данных", () => {
 
     expect(realNodeKeys(hidden)).toEqual(["A2"]);
     expect(realNodeKeys(shown)).toEqual(["A1", "A2"]);
+  });
+
+  it("isolatedAuthors: одна публикация, без соавторов и репозиториев; внешний соавтор — связь, только пока внешние показаны", () => {
+    const data = {
+      authors: [
+        { key: "A1", pubs_count: 1 }, // один на P1, рядом только внешний E1
+        { key: "A2", pubs_count: 1 }, // с A3 на P2
+        { key: "A3", pubs_count: 1 },
+        { key: "A4", pubs_count: 1 }, // один на P3, но есть репозиторий
+        { key: "A5", pubs_count: 2 }, // один, но публикаций две
+        { key: "E1", pubs_count: 1, is_itmo: false },
+      ],
+      all_edges: [
+        { s: "A1", t: "P1" },
+        { s: "E1", t: "P1" },
+        { s: "A2", t: "P2" },
+        { s: "A3", t: "P2" },
+        { s: "A4", t: "P3" },
+        { s: "A5", t: "P4" },
+        { s: "A5", t: "P5" },
+      ],
+      repo_author_edges: [{ s: "R1", t: "A4", role: "owner" }],
+    } as unknown as GraphData;
+
+    // Внешние скрыты: у A1 соавтор только внешний E1 — "без связей"; E1 сам не на карте.
+    expect([...isolatedAuthors(data, false)]).toEqual(["A1"]);
+    // Внешние показаны: A1 и E1 — соавторы друг друга.
+    expect([...isolatedAuthors(data, true)]).toEqual([]);
+  });
+
+  it("авторы без связей скрыты с карты, пока filters.showIsolatedAuthors выключен", () => {
+    const data = dataWithNoDept();
+    const isolated = [...isolatedAuthors(data, NO_FILTER.showExternalAuthors)];
+    if (isolated.length === 0) throw new Error("во фикстуре должен быть автор без связей");
+
+    const hidden = new Graph();
+    populateGraph(
+      hidden,
+      data,
+      "ru",
+      1,
+      { ...NO_FILTER, showIsolatedAuthors: false },
+      NO_PUB_DETAILS,
+    );
+    const shown = new Graph();
+    populateGraph(shown, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
+
+    for (const key of isolated) {
+      expect(realNodeKeys(hidden)).not.toContain(key);
+      expect(realNodeKeys(shown)).toContain(key);
+    }
+  });
+
+  it("автор, у которого соавторы только внешние, появляется вместе с внешними, даже когда «без связей» скрыты", () => {
+    const base = dataWithNoDept();
+    const [author] = base.authors;
+    if (!author) throw new Error("во фикстуре должен быть автор");
+    const external = { ...author, key: "E1", is_itmo: false };
+    const data: GraphData = {
+      ...base,
+      authors: [{ ...author, pubs_count: 1 }, external],
+      all_edges: [
+        { s: author.key, t: "P_SOLO" },
+        { s: "E1", t: "P_SOLO" },
+      ],
+      repo_author_edges: [],
+    };
+    const hideIsolated = { ...NO_FILTER, showIsolatedAuthors: false };
+
+    const externalsOff = new Graph();
+    populateGraph(externalsOff, data, "ru", 1, hideIsolated, NO_PUB_DETAILS);
+    const externalsOn = new Graph();
+    populateGraph(
+      externalsOn,
+      data,
+      "ru",
+      1,
+      { ...hideIsolated, showExternalAuthors: true },
+      NO_PUB_DETAILS,
+    );
+
+    expect(realNodeKeys(externalsOff)).toEqual([]);
+    expect(realNodeKeys(externalsOn)).toEqual([author.key, "E1"]);
   });
 
   it("автор без поля is_itmo (graph-data.json до внешних авторов) считается ИТМО и виден всегда", () => {

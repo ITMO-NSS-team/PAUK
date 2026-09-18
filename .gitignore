@@ -18,7 +18,7 @@ data/audit/*
 !data/cache/.gitkeep
 !data/audit/.gitkeep
 
-# pauk/gui/graph_builder.py --out-dir (по умолчанию — pauk.settings.Settings.gui_dir):
+# pauk/gui/graph_builder/builder.py --out-dir (по умолчанию — pauk.settings.Settings.gui_dir):
 # данные для сайта pauk/gui/web, private — полный, personal-поля включены;
 # public — урезанный вариант для сборки вне корпоративной сети (пока не подключён к сайту).
 data/gui/private/*

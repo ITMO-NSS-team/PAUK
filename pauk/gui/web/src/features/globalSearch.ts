@@ -53,7 +53,7 @@ export function mountGlobalSearch(
   // Внешние авторы ищутся, только когда их показывает фильтр — как и на карте.
   function buildIndex(): SearchHit[] {
     const { lang, filters } = store.get();
-    const shown = { ...data, authors: visibleAuthors(data.authors, filters) };
+    const shown = { ...data, authors: visibleAuthors(data, filters) };
     return buildSearchIndex(shown, lang, pubDetails, repoDetails);
   }
   let index = buildIndex();

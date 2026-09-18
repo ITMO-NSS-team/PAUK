@@ -37,7 +37,7 @@ Neo4j                                        накопление между п�
 Neo4j                                        схлопывает дубли across групп
   │  pauk cache export
 data/cache/graph_snapshot.json               снепшот на диске
-  │  python -m pauk.gui.graph_builder
+  │  pauk gui build
 data/gui/{public,private}/*.json            данные для сайта pauk/gui/web
 ```
 

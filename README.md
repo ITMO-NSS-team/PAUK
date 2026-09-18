@@ -105,6 +105,6 @@ work попал в другую, пересекающуюся группу: су
 
 ```bash
 pauk cache export
-python -m pauk.gui.graph_builder --cache data/cache/graph_snapshot_<дата>.json
+pauk gui build
 cd pauk/gui/web && npm install && npm run dev
 ```

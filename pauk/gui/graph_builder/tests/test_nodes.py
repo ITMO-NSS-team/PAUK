@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from pauk.gui.nodes import _parse_json_list, author_label, author_variants, dense_rank
+from pauk.gui.graph_builder.nodes import _parse_json_list, author_label, author_variants, dense_rank
 
 
 class ParseJsonListTest(unittest.TestCase):

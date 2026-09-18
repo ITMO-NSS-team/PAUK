@@ -1,4 +1,4 @@
-// Формы данных, которые реально отдаёт pauk/gui/graph_builder.py (build_graph_data()).
+// Формы данных, которые реально отдаёт pauk/gui/graph_builder/builder.py (build_graph_data()).
 // Это зеркало Python-кода, а не желаемая форма — если генератор поменяет
 // вывод, сначала правится этот файл, а уже потом код, который на него ссылается.
 //
@@ -48,7 +48,7 @@ export interface AuthorNode {
 
 // Один пункт из OpenAlex/ORCID affiliation-истории автора (new_cache
 // хранит это как JSON-текст на узле Person, pauk/gui его разбирает —
-// см. pauk/gui/nodes.py::_parse_json_list). years — годы, за которые
+// см. pauk/gui/graph_builder/nodes.py::_parse_json_list). years — годы, за которые
 // известна эта аффилиация; source — "openalex" или "orcid".
 export interface Affiliation {
   name: string;
@@ -59,7 +59,7 @@ export interface Affiliation {
 
 // Личные данные автора — отдельным файлом (authors-detail.json). Файл
 // больше не режется по полям в зависимости от сборки (--public/--private
-// новый_generate не знает, см. graph_builder.py) — приватность решается
+// новый_generate не знает, см. builder.py) — приватность решается
 // тем, в какую папку (public/private) этот файл физически попадает при
 // деплое, не содержимым самого файла.
 export interface AuthorDetail {
@@ -165,7 +165,7 @@ export interface Edge {
 
 // В отличие от Edge выше (s/t — строковые ключи author/pub/repo), у
 // dept_edges s/t — это Department.id (сквозной числовой gid, см.
-// graph_builder.py: g() возвращает int, а не строку) — отдельный тип, а не
+// builder.py: g() возвращает int, а не строку) — отдельный тип, а не
 // переиспользование Edge, чтобы не смешивать два разных вида ключей.
 export interface DeptEdge {
   s: number;

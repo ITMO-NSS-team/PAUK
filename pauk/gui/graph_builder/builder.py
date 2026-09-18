@@ -192,6 +192,3 @@ def main() -> None:
 
     logger.info("Done in %.1f s", time.time() - t0)
 
-
-if __name__ == "__main__":
-    main()

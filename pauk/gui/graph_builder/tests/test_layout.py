@@ -5,12 +5,13 @@ from __future__ import annotations
 import random
 import unittest
 
-from pauk.gui.layout import (
+from pauk.gui.graph_builder.layout import (
     ForceAtlasLayouter,
     coauthor_pairs,
     fa2_blended_layout,
     fa2_layout,
     fit_coords,
+    place_external_authors,
     sparse_dept_edges,
     spread_min_distance,
 )
@@ -81,6 +82,25 @@ class SparseDeptEdgesTest(unittest.TestCase):
         edges = sparse_dept_edges(set(dept_of), dept_of, random.Random(1), k=2)
         for a, b in edges:
             self.assertNotIn("nodept", (a, b))
+
+
+class PlaceExternalAuthorsTest(unittest.TestCase):
+    def test_external_lands_near_the_weighted_centroid_of_itmo_coauthors(self):
+        pos = {"A1": (100.0, 100.0), "A2": (400.0, 100.0)}
+        coauth = {("A1", "E1"): 2, ("A2", "E1"): 1}
+        placed = place_external_authors(pos, coauth, frozenset({"E1"}), seed=1)
+        x, y = placed["E1"]
+        self.assertLess(abs(x - 200.0), 20)  # (2*100 + 1*400) / 3
+        self.assertLess(abs(y - 100.0), 20)
+
+    def test_itmo_positions_are_not_touched_and_seed_is_reproducible(self):
+        pos = {"A1": (500.0, 500.0)}
+        coauth = {("A1", f"E{i}"): 1 for i in range(50)}
+        externals = frozenset(f"E{i}" for i in range(50))
+        first = place_external_authors(pos, coauth, externals, seed=3)
+        self.assertEqual(first, place_external_authors(pos, coauth, externals, seed=3))
+        self.assertEqual(set(first), externals)
+        self.assertEqual(pos, {"A1": (500.0, 500.0)})
 
 
 class CoauthorPairsTest(unittest.TestCase):

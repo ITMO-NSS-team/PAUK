@@ -137,6 +137,7 @@ function initialState(overrides: Partial<AppState["filters"]> = {}): AppState {
       showNoDeptAuthors: true,
       showNoDeptPubs: true,
       showExternalAuthors: false,
+      showIsolatedAuthors: true,
       edgeZoomThreshold: 0.25,
       showRegions: { 1: true, 2: false, 3: true },
       regionZoomThreshold: 0.25,

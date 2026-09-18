@@ -94,7 +94,7 @@ def load_db(driver) -> dict[str, list]:
         `repositories`/`departments`/`organizations`/`authorship`/
         `person_depts`/`pub_depts`/`repo_pubs`/`mentions_repos`/
         `mentions_candidates`/`repo_persons`/`repo_depts`. The first ten
-        are what `pauk/gui/graph_builder.py::GraphDataBuilder` expects on
+        are what `pauk/gui/graph_builder/builder.py::GraphDataBuilder` expects on
         input; `organizations`/`mentions_repos`/`mentions_candidates` are
         three newer tables with no consumer in existing code yet.
     """

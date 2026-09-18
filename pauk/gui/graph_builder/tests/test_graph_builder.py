@@ -1,4 +1,4 @@
-"""Unit test for graph_builder.py - an end-to-end check of
+"""Unit test for builder.py - an end-to-end check of
 `GraphDataBuilder` on a small synthetic db in `pauk.cache`'s shape. Stage
 logic (authorship indexing, department assignment, layout, node/edge
 building) is tested separately in `test_authorship.py`/
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import unittest
 
-from pauk.gui.graph_builder import GraphDataBuilder
+from pauk.gui.graph_builder.builder import GraphDataBuilder
 
 
 class BuildGraphDataIntegrationTest(unittest.TestCase):
@@ -102,7 +102,7 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
 
     def test_summary_label_is_the_full_form_not_the_truncated_public_one(self):
         # graph-data.json is one shared file across build variants (see
-        # graph_builder.py on public/private being decided by file location,
+        # builder.py on public/private being decided by file location,
         # not content) - the map label currently uses author_label(...,
         # public=False): full surname ("Иванов", not the old "Ива..") and,
         # with no patronymic in this fixture, the full first name too (see

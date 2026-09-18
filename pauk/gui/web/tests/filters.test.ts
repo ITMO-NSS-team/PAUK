@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FILTER_CONFIG } from "../src/core/config";
 import type { GraphData } from "../src/contracts/graph";
-import { mountExternalAuthorReveal, mountFilters } from "../src/features/filters";
+import { mountFilters, mountHiddenAuthorReveal } from "../src/features/filters";
 import { Store, type AppState } from "../src/core/state";
 
 function initialState(overrides: Partial<AppState> = {}): AppState {
@@ -17,6 +17,7 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
       showNoDeptAuthors: true,
       showNoDeptPubs: true,
       showExternalAuthors: false,
+      showIsolatedAuthors: true,
       edgeZoomThreshold: 0.2,
       showRegions: { 1: false, 2: false, 3: false },
       regionZoomThreshold: 0.25,
@@ -266,30 +267,81 @@ describe("mountFilters", () => {
   });
 });
 
-describe("mountExternalAuthorReveal", () => {
+describe("mountHiddenAuthorReveal", () => {
+  // A1, A2 — ИТМО-соавторы P1; A3 — один на P2, без репозиториев ("без связей"); E1 — внешний.
   const data = {
     authors: [
-      { key: "A1", is_itmo: true },
-      { key: "E1", is_itmo: false },
+      { key: "A1", is_itmo: true, pubs_count: 1 },
+      { key: "A2", is_itmo: true, pubs_count: 1 },
+      { key: "A3", is_itmo: true, pubs_count: 1 },
+      { key: "E1", is_itmo: false, pubs_count: 1 },
     ],
+    all_edges: [
+      { s: "A1", t: "P1" },
+      { s: "A2", t: "P1" },
+      { s: "E1", t: "P1" },
+      { s: "A3", t: "P2" },
+    ],
+    repo_author_edges: [],
   } as unknown as GraphData;
+  const hiddenByDefault = () =>
+    initialState({
+      filters: {
+        ...initialState().filters,
+        showExternalAuthors: false,
+        showIsolatedAuthors: false,
+      },
+    });
 
-  it("выбор скрытого внешнего автора включает фильтр, иначе выбор ушёл бы в пустоту", () => {
-    const store = new Store<AppState>(initialState());
-    mountExternalAuthorReveal(store, data);
+  it("выбор скрытого внешнего автора включает фильтр внешних, иначе выбор ушёл бы в пустоту", () => {
+    const store = new Store<AppState>(hiddenByDefault());
+    mountHiddenAuthorReveal(store, data);
 
     store.set({ selection: { kind: "node", key: "E1" } });
 
     expect(store.get().filters.showExternalAuthors).toBe(true);
+    expect(store.get().filters.showIsolatedAuthors).toBe(false);
     expect(store.get().selection).toEqual({ kind: "node", key: "E1" });
   });
 
-  it("выбор автора из ИТМО фильтр не трогает", () => {
-    const store = new Store<AppState>(initialState());
-    mountExternalAuthorReveal(store, data);
+  it("выбор автора без связей включает фильтр авторов без связей", () => {
+    const store = new Store<AppState>(hiddenByDefault());
+    mountHiddenAuthorReveal(store, data);
+
+    store.set({ selection: { kind: "node", key: "A3" } });
+
+    expect(store.get().filters.showIsolatedAuthors).toBe(true);
+    expect(store.get().filters.showExternalAuthors).toBe(false);
+  });
+
+  it("выбор внешнего соавтора автора «без связей» включает только фильтр внешних — вместе с ним у автора появляется связь", () => {
+    const soloWithExternal = {
+      authors: [
+        { key: "A1", is_itmo: true, pubs_count: 1 },
+        { key: "E1", is_itmo: false, pubs_count: 1 },
+      ],
+      all_edges: [
+        { s: "A1", t: "P1" },
+        { s: "E1", t: "P1" },
+      ],
+      repo_author_edges: [],
+    } as unknown as GraphData;
+    const store = new Store<AppState>(hiddenByDefault());
+    mountHiddenAuthorReveal(store, soloWithExternal);
+
+    store.set({ selection: { kind: "node", key: "E1" } });
+
+    expect(store.get().filters.showExternalAuthors).toBe(true);
+    expect(store.get().filters.showIsolatedAuthors).toBe(false);
+  });
+
+  it("выбор обычного автора из ИТМО фильтры не трогает", () => {
+    const store = new Store<AppState>(hiddenByDefault());
+    mountHiddenAuthorReveal(store, data);
 
     store.set({ selection: { kind: "node", key: "A1" } });
 
     expect(store.get().filters.showExternalAuthors).toBe(false);
+    expect(store.get().filters.showIsolatedAuthors).toBe(false);
   });
 });
