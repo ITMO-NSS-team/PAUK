@@ -77,7 +77,9 @@ class PersonResolutionPipelineTest(unittest.TestCase):
         self.assertEqual(models.second_calls, [])
 
     def test_model_failure_is_safe_and_reviewable(self):
-        groups, report = plan_person_merges_resolved(self.people, {}, models=FakeModels())
+        groups, report = plan_person_merges_resolved(
+            self.people, {}, models=FakeModels()
+        )
 
         self.assertEqual(groups, [])
         self.assertEqual(report[0]["held_because"], ["first model unavailable"])
@@ -127,6 +129,30 @@ class PersonResolutionPipelineTest(unittest.TestCase):
 
         self.assertEqual((groups, report), ([], []))
 
+    def test_a_transitive_component_cannot_bypass_a_human_separate_answer(self):
+        people = [
+            person("A1", "Nikolay Nikitin"),
+            person("A2", "Nikolay O. Nikitin"),
+            person("A3", "N. O. Nikitin"),
+        ]
+
+        groups, report = plan_person_merges_resolved(
+            people,
+            {},
+            decisions={
+                frozenset(("A1", "A2")): SAME,
+                frozenset(("A2", "A3")): SAME,
+                frozenset(("A1", "A3")): DIFFERENT,
+            },
+            models=FakeModels(),
+        )
+
+        self.assertEqual(groups, [])
+        conflict = next(row for row in report if row.get("route") == "manual_conflict")
+        self.assertEqual(conflict["status"], "held")
+        self.assertEqual(conflict["persons"], ["A1", "A2", "A3"])
+        self.assertEqual(conflict["manual_conflicts"], [["A1", "A3"]])
+
 
 class DedupStageWiringTest(unittest.TestCase):
     def setUp(self):
@@ -158,10 +184,14 @@ class DedupStageWiringTest(unittest.TestCase):
 
     @patch("pauk.pipeline.person_resolution.OpenRouterResolutionModels")
     @patch("pauk.pipeline.person_resolution_review._backend")
-    def test_pipeline_uses_the_resolver_and_merges_two_positive_verdicts(self, backend_factory, model_factory):
+    def test_pipeline_uses_the_resolver_and_merges_two_positive_verdicts(
+        self, backend_factory, model_factory
+    ):
         backend = self.review_backend()
         backend_factory.return_value = backend
-        model_factory.return_value = FakeModels(ModelVerdict(True, 0.9), ModelVerdict(True, 0.9))
+        model_factory.return_value = FakeModels(
+            ModelVerdict(True, 0.9), ModelVerdict(True, 0.9)
+        )
 
         result = DedupStage(self.prepared, self.raw, self.config).run()
 
@@ -171,10 +201,14 @@ class DedupStageWiringTest(unittest.TestCase):
 
     @patch("pauk.pipeline.person_resolution.OpenRouterResolutionModels")
     @patch("pauk.pipeline.person_resolution_review._backend")
-    def test_pipeline_sends_a_rejected_pair_to_pr177_review(self, backend_factory, model_factory):
+    def test_pipeline_sends_a_rejected_pair_to_pr177_review(
+        self, backend_factory, model_factory
+    ):
         backend = self.review_backend()
         backend_factory.return_value = backend
-        model_factory.return_value = FakeModels(ModelVerdict(False, 0.9, "different people"))
+        model_factory.return_value = FakeModels(
+            ModelVerdict(False, 0.9, "different people")
+        )
 
         result = DedupStage(self.prepared, self.raw, self.config).run()
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from itertools import combinations
 
 from pauk.graph.person_resolution import (
     DEFAULT_POLICY,
@@ -55,13 +56,18 @@ def plan_person_merges_resolved(
     fields_of = fields_of or {}
     staff_ids = staff_ids or {}
     decisions = decisions or {}
-    publication_ids = {person.id: {authorship.publication_id for authorship in person.authored} for person in people}
+    publication_ids = {
+        person.id: {authorship.publication_id for authorship in person.authored}
+        for person in people
+    }
     publication_authors: dict[str, set[str]] = defaultdict(set)
     for person in people:
         for publication_id in publication_ids[person.id]:
             publication_authors[publication_id].add(person.id)
 
-    def all_coauthors(person_id: str, excluded_works: set[str] | None = None) -> set[str]:
+    def all_coauthors(
+        person_id: str, excluded_works: set[str] | None = None
+    ) -> set[str]:
         found: set[str] = set()
         for publication_id in publication_ids[person_id] - (excluded_works or set()):
             found |= publication_authors.get(publication_id, set())
@@ -74,7 +80,11 @@ def plan_person_merges_resolved(
         return shared - {first_id, second_id}
 
     def research_fields(person_id: str) -> set[str]:
-        return {field for publication_id in publication_ids[person_id] for field in fields_of.get(publication_id, ())}
+        return {
+            field
+            for publication_id in publication_ids[person_id]
+            for field in fields_of.get(publication_id, ())
+        }
 
     surname_counts: Counter[str] = Counter()
     for person in people:
@@ -126,7 +136,9 @@ def plan_person_merges_resolved(
             "shared_departments": evidence.shared_departments,
             "shared_publications": evidence.shared_publications,
             "shared_fields": sorted(shared_fields),
-            "logreg_probability": round(resolve_pair(evidence, policy, logreg_model).probability, 6),
+            "logreg_probability": round(
+                resolve_pair(evidence, policy, logreg_model).probability, 6
+            ),
             "route": route,
             "held_because": [reason],
         }
@@ -142,7 +154,11 @@ def plan_person_merges_resolved(
         first_id, second_id = sorted(members)
         if first_id not in by_id or second_id not in by_id or members in seen:
             continue
-        if in_scope is not None and first_id not in in_scope and second_id not in in_scope:
+        if (
+            in_scope is not None
+            and first_id not in in_scope
+            and second_id not in in_scope
+        ):
             continue
         candidates.append((by_id[first_id], by_id[second_id]))
 
@@ -195,7 +211,9 @@ def plan_person_merges_resolved(
 
     def researcher_context(person: Person) -> ResearcherContext:
         field_counts = Counter(
-            field for publication_id in publication_ids[person.id] for field in fields_of.get(publication_id, ())
+            field
+            for publication_id in publication_ids[person.id]
+            for field in fields_of.get(publication_id, ())
         )
         coauthor_counts = Counter()
         for publication_id in publication_ids[person.id]:
@@ -223,9 +241,18 @@ def plan_person_merges_resolved(
         first, second, evidence, shared_coauthors, shared_fields = pair_data[pair_id]
         verdict = first_results.get(pair_id)
         if verdict is None:
-            hold(first, second, evidence, shared_fields, "qwen_first", "first model unavailable")
+            hold(
+                first,
+                second,
+                evidence,
+                shared_fields,
+                "qwen_first",
+                "first model unavailable",
+            )
             continue
-        resolution = apply_first_verdict(resolve_pair(evidence, policy, logreg_model), verdict)
+        resolution = apply_first_verdict(
+            resolve_pair(evidence, policy, logreg_model), verdict
+        )
         if resolution.decision is Decision.SEPARATE:
             hold(
                 first,
@@ -245,24 +272,35 @@ def plan_person_merges_resolved(
                 pair_id=pair_id,
                 researcher_a=researcher_context(first),
                 researcher_b=researcher_context(second),
-                trusted_orcid_relation=_identifier_relation(evidence.orcid_a, evidence.orcid_b),
-                staff_identity_relation=_identifier_relation(evidence.staff_id_a, evidence.staff_id_b),
-                shared_work_ids=tuple(sorted(publication_ids[first.id] & publication_ids[second.id])[:12]),
+                trusted_orcid_relation=_identifier_relation(
+                    evidence.orcid_a, evidence.orcid_b
+                ),
+                staff_identity_relation=_identifier_relation(
+                    evidence.staff_id_a, evidence.staff_id_b
+                ),
+                shared_work_ids=tuple(
+                    sorted(publication_ids[first.id] & publication_ids[second.id])[:12]
+                ),
                 shared_coauthors=tuple(
                     {
                         "id": coauthor_id,
-                        "name": by_id[coauthor_id].name_raw if coauthor_id in by_id else "",
+                        "name": (
+                            by_id[coauthor_id].name_raw if coauthor_id in by_id else ""
+                        ),
                     }
                     for coauthor_id in sorted(shared_coauthors)[:12]
                 ),
                 shared_fields=tuple(sorted(shared_fields)[:12]),
-                logreg_probability=resolve_pair(evidence, policy, logreg_model).probability,
+                logreg_probability=resolve_pair(
+                    evidence, policy, logreg_model
+                ).probability,
                 first_verdict=verdict,
                 impact_not_identity_evidence={
                     "distinct_neighbors_a": len(coauthors_a - coauthors_b),
                     "distinct_neighbors_b": len(coauthors_b - coauthors_a),
                     "shared_neighbors": len(coauthors_a & coauthors_b),
-                    "potential_cross_neighbor_pairs": len(coauthors_a - coauthors_b) * len(coauthors_b - coauthors_a),
+                    "potential_cross_neighbor_pairs": len(coauthors_a - coauthors_b)
+                    * len(coauthors_b - coauthors_a),
                 },
             )
         )
@@ -273,10 +311,19 @@ def plan_person_merges_resolved(
         first, second, evidence, _shared_coauthors, shared_fields = pair_data[pair_id]
         verdict = second_results.get(pair_id)
         if verdict is None:
-            hold(first, second, evidence, shared_fields, "qwen_second", "second model unavailable")
+            hold(
+                first,
+                second,
+                evidence,
+                shared_fields,
+                "qwen_second",
+                "second model unavailable",
+            )
             continue
         resolution = apply_second_verdict(
-            apply_first_verdict(resolve_pair(evidence, policy, logreg_model), first_positive[pair_id]),
+            apply_first_verdict(
+                resolve_pair(evidence, policy, logreg_model), first_positive[pair_id]
+            ),
             verdict,
         )
         if resolution.decision is Decision.MERGE:
@@ -294,6 +341,27 @@ def plan_person_merges_resolved(
 
     groups: list[tuple[Person, list[Person]]] = []
     for members in _grouped(merge_pairs):
+        manual_conflicts = [
+            tuple(sorted(pair))
+            for pair in combinations(members, 2)
+            if decisions.get(frozenset(pair)) == DIFFERENT
+        ]
+        if manual_conflicts:
+            report.append(
+                {
+                    "status": "held",
+                    "persons": sorted(members),
+                    "names": [by_id[member].name_raw for member in sorted(members)],
+                    "held_because": [
+                        "component contradicts a manual different-people decision"
+                    ],
+                    "manual_conflicts": [
+                        list(pair) for pair in sorted(manual_conflicts)
+                    ],
+                    "route": "manual_conflict",
+                }
+            )
+            continue
         conflict = _group_conflict(members, by_id, trusted_orcid, staff_ids)
         if conflict:
             field, values = conflict
@@ -302,7 +370,9 @@ def plan_person_merges_resolved(
                     "status": "held",
                     "persons": sorted(members),
                     "names": [by_id[member].name_raw for member in sorted(members)],
-                    "held_because": [f"group spans {len(values)} distinct {field} values"],
+                    "held_because": [
+                        f"group spans {len(values)} distinct {field} values"
+                    ],
                     "route": "component_conflict",
                 }
             )
@@ -326,7 +396,13 @@ def plan_person_merges_resolved(
                     "person_b": canonical.id,
                     "name_b": canonical.name_raw,
                     "merged_into": canonical.id,
-                    "rules": sorted({rule for pair, rule in pair_rules.items() if duplicate.id in pair}),
+                    "rules": sorted(
+                        {
+                            rule
+                            for pair, rule in pair_rules.items()
+                            if duplicate.id in pair
+                        }
+                    ),
                 }
             )
     return groups, report
