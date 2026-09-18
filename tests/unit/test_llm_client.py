@@ -39,6 +39,28 @@ class OpenRouterClientLastResponseTest(unittest.TestCase):
         client.chat_json("some prompt")
         self.assertIsNone(client.last_response)
 
+    def test_system_prompt_and_max_tokens_are_kept_with_retry_capable_request(self):
+        client = OpenRouterClient(timeout=5, api_key="key", model="test-model")
+        payload = {"choices": [{"message": {"content": '{"ok": true}'}}]}
+        client.session.post = MagicMock(return_value=self.response(200, payload))
+
+        result = client.chat_json(
+            "user prompt",
+            system_prompt="system prompt",
+            max_tokens=321,
+        )
+
+        self.assertEqual(result, {"ok": True})
+        body = client.session.post.call_args.kwargs["json"]
+        self.assertEqual(
+            body["messages"],
+            [
+                {"role": "system", "content": "system prompt"},
+                {"role": "user", "content": "user prompt"},
+            ],
+        )
+        self.assertEqual(body["max_tokens"], 321)
+
     @patch("pauk.sources.llm.time.sleep", return_value=None)
     def test_retries_a_network_failure_then_succeeds(self, sleep):
         client = OpenRouterClient(timeout=5, api_key="key", model="test-model")

@@ -47,7 +47,13 @@ class OpenRouterClient(HttpClient):
         self.last_response: Any | None = None
         self.last_error: str | None = None
 
-    def chat_json(self, prompt: str) -> dict | None:
+    def chat_json(
+        self,
+        prompt: str,
+        *,
+        system_prompt: str | None = None,
+        max_tokens: int | None = None,
+    ) -> dict | None:
         """POST one user message, return the parsed JSON reply or None.
 
         None on: no API key, exhausted network/transient-HTTP retries,
@@ -64,18 +70,26 @@ class OpenRouterClient(HttpClient):
             self.last_error = "OPENROUTER_API_KEY not set"
             logger.warning("OpenRouter: OPENROUTER_API_KEY not set, skipping request")
             return None
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        body = {
+            "model": self.model,
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+            "temperature": 0,
+        }
+        if max_tokens is not None:
+            body["max_tokens"] = max_tokens
+
         response = None
         for attempt in range(_TRANSIENT_RETRIES + 1):
             try:
                 response = self.session.post(
                     OPENROUTER_URL,
                     headers={"Authorization": f"Bearer {self.api_key}"},
-                    json={
-                        "model": self.model,
-                        "messages": [{"role": "user", "content": prompt}],
-                        "response_format": {"type": "json_object"},
-                        "temperature": 0,
-                    },
+                    json=body,
                     timeout=self.timeout,
                     proxies=self.proxies,
                 )

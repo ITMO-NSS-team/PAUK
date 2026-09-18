@@ -7,6 +7,9 @@ from pauk.graph.load import _drop_tombstoned
 from pauk.graph.mutations import MutationError, UnknownEntity
 from pauk.graph.overrides import (
     COLLECTION,
+    CREATE,
+    DELETE,
+    SET,
     active_overrides,
     apply_overrides,
     deactivate_override,
@@ -476,7 +479,71 @@ class WithdrawingADeletionKeepsTheEditTest(unittest.TestCase):
         self.assertTrue(deactivate_override(db, "Person", "A2", only_op="delete"))
         self.assertFalse(db[COLLECTION].find_one({"_id": "node:Person:A2"})["active"])
 
+    def test_an_edit_after_that_is_an_edit_and_not_the_deletion_again(self):
+        # Switched off whole, the document still says "delete". An edit
+        # switches it back on, and it must not come back on as a tombstone
+        # that removes the record at the next publish.
+        db = mongomock.MongoClient()["pauk_other"]
+        record_override(db, "Person", "A2", DELETE, actor="user:roman",
+                        snapshot={"name_ru": "Петров"})
+        deactivate_override(db, "Person", "A2", only_op=DELETE)
+        record_override(db, "Person", "A2", SET, {"name_ru": "Петров П."}, actor="user:roman")
+        self.assertEqual(tombstoned_ids(db, "Person"), set())
+        self.assertEqual(db[COLLECTION].find_one({"_id": "node:Person:A2"})["op"], SET)
+
     def test_withdrawing_the_edit_itself_switches_it_off(self):
         deactivate_override(self.db, "Person", "A1", only_op="delete")
         self.assertTrue(deactivate_override(self.db, "Person", "A1"))
         self.assertFalse(self.document()["active"])
+
+
+class HandMadeRecordStaysClaimedTest(unittest.TestCase):
+    """A record a person added stays claimed whatever is done to it next.
+
+    The claim is what keeps a prune from removing a record no prepared row
+    explains. An edit used to overwrite it with a plain "set", and undoing
+    the edit then switched the claim off with it; a delete and a restore
+    turned it into a "set" the same way.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        record_override(self.db, "Department", "D9", CREATE, {"name_ru": "Новая лаборатория"},
+                        actor="user:roman")
+
+    def document(self, node_id="D9"):
+        return self.db[COLLECTION].find_one({"_id": f"node:Department:{node_id}"})
+
+    def test_an_edit_keeps_it_a_claim(self):
+        record_override(self.db, "Department", "D9", SET, {"name_en": "New lab"},
+                        actor="user:roman", auto_value={"name_en": None})
+        row = self.document()
+        self.assertEqual(row["op"], CREATE)
+        self.assertEqual(row["fields"], {"name_ru": "Новая лаборатория", "name_en": "New lab"})
+
+    def test_so_an_undo_aimed_at_the_edit_finds_nothing_to_switch_off(self):
+        record_override(self.db, "Department", "D9", SET, {"name_en": "New lab"},
+                        actor="user:roman")
+        self.assertFalse(deactivate_override(self.db, "Department", "D9", only_op=SET))
+        self.assertTrue(self.document()["active"])
+
+    def test_a_restore_after_a_delete_brings_the_claim_back(self):
+        record_override(self.db, "Department", "D9", DELETE, actor="user:roman",
+                        snapshot={"name_ru": "Новая лаборатория"})
+        self.assertTrue(deactivate_override(self.db, "Department", "D9", only_op=DELETE))
+        row = self.document()
+        self.assertTrue(row["active"])
+        self.assertEqual(row["op"], CREATE)
+
+    def test_even_for_a_record_created_with_no_fields(self):
+        # Without fields the restore took the other branch and switched the
+        # whole decision off.
+        record_override(self.db, "Department", "D8", CREATE, {}, actor="user:roman")
+        record_override(self.db, "Department", "D8", DELETE, actor="user:roman")
+        deactivate_override(self.db, "Department", "D8", only_op=DELETE)
+        self.assertTrue(self.document("D8")["active"])
+
+    def test_a_record_the_pipeline_made_is_still_only_edited(self):
+        record_override(self.db, "Department", "D1", SET, {"name_ru": "Кафедра"},
+                        actor="user:roman")
+        self.assertEqual(self.document("D1")["op"], SET)

@@ -1,5 +1,6 @@
 import unittest
 
+from pauk.graph.client import _merge_duplicate_properties
 from pauk.graph.extract import NODE_REGISTRY
 from pauk.graph.mutations import (
     NODE_FIELDS,
@@ -26,6 +27,11 @@ class FakeGraph:
     Mirrors the parts manual edits rely on, including the `updated_at`
     the real client stamps on every write — the optimistic check is built
     on it, so a fake without it would let a broken check pass.
+
+    Kept level with the real client on purpose. Every gap between the two
+    has hidden a real bug at least once — `updated_at`, the property fill a
+    fold does, a node listed among its own `merged_ids` — so a behaviour
+    the client gains belongs here too.
     """
 
     def __init__(self):
@@ -93,11 +99,34 @@ class FakeGraph:
         return removed
 
     def merge_person_nodes_batch(self, merges):
+        """Fold duplicates, moving their edges the way the real client does.
+
+        A double that only deleted the node left the duplicate's edges
+        pointing at nothing, which is a graph the real client never produces.
+        The survivor also takes over the fields it had none of, through the
+        real client's own rule — undoing a fold is mostly about giving those
+        back, and a double that skipped them could not fail.
+        """
         self.calls.append("merge_person_nodes_batch")
         removed = 0
-        for duplicate_id, _canonical_id in merges:
-            if self.nodes.pop(("Person", duplicate_id), None) is not None:
-                removed += 1
+        for duplicate_id, canonical_id in merges:
+            duplicate = self.nodes.get(("Person", duplicate_id))
+            canonical = self.nodes.get(("Person", canonical_id))
+            if duplicate is not None and canonical is not None:
+                canonical.update(_merge_duplicate_properties("Person", canonical, duplicate))
+            if self.nodes.pop(("Person", duplicate_id), None) is None:
+                continue
+            removed += 1
+            for key in list(self.relationships):
+                src_label, rel_type, tgt_label, src_id, tgt_id = key
+                if src_label == "Person" and src_id == duplicate_id:
+                    props = self.relationships.pop(key)
+                    self.relationships.setdefault(
+                        (src_label, rel_type, tgt_label, canonical_id, tgt_id), props)
+                elif tgt_label == "Person" and tgt_id == duplicate_id:
+                    props = self.relationships.pop(key)
+                    self.relationships.setdefault(
+                        (src_label, rel_type, tgt_label, src_id, canonical_id), props)
         return removed
 
     # The rest of the loader's surface, so load_prepared_rows can run
@@ -129,8 +158,41 @@ class FakeGraph:
     def promote_link_candidates_batch(self, candidates):
         self.calls.append("promote_link_candidates_batch")
 
+    def fetch_node_ids(self, label):
+        return {node_id for (node_label, node_id) in self.nodes if node_label == label}
+
+    def fetch_relationship_pairs(self, src_label, rel_type, tgt_label, tgt_match_prop="id"):
+        """Edges of one triple, the way the real query reports them.
+
+        Both ends have to exist: the real one is a MATCH on two nodes, and
+        an edge in this dict whose far end was never created would be a
+        graph the driver cannot produce.
+        """
+        def node(label, match_value):
+            for (node_label, node_id), props in self.nodes.items():
+                if node_label != label:
+                    continue
+                if match_value == (node_id if tgt_match_prop == "id"
+                                   else props.get(tgt_match_prop)):
+                    return True
+            return False
+
+        return {
+            (src_id, tgt_id)
+            for source, rel, target, src_id, tgt_id in self.relationships
+            if (source, rel, target) == (src_label, rel_type, tgt_label)
+            and (src_label, src_id) in self.nodes and node(tgt_label, tgt_id)
+        }
+
     def fetch_merged_id_map(self, label):
-        return {}
+        """Aliases the way the real client reads them: off the nodes.
+
+        An empty map made a publish unable to re-fold anything, so nothing
+        that depends on `merged_ids` outliving a run could be tested here.
+        """
+        return {alias: node_id
+                for (node_label, node_id), props in self.nodes.items() if node_label == label
+                for alias in props.get("merged_ids") or []}
 
 
 class WhitelistTest(unittest.TestCase):

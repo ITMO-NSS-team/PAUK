@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from pauk.admin import deps, feed
 from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key
+from pauk.graph.overrides import CREATE, active_overrides
 from pauk.settings import Settings
 from tests.unit.test_admin_nodes import FakePanelGraph
 
@@ -240,12 +241,12 @@ class RestoreTest(unittest.TestCase):
 
     def test_creating_the_same_id_by_hand_also_withdraws_it(self):
         # Typing the id into the create form says just as plainly that the
-        # record is wanted.
-        from pauk.graph.overrides import active_overrides
+        # record is wanted. What is left in force is the claim that a person
+        # made it, not the decision to delete it.
         csrf = self.sign_in()
         self.client.post("/nodes/LinkCandidate/new",
                          data={"csrf": csrf, "id": "L1", "url": "https://new.test"})
-        self.assertEqual(active_overrides(self.db), [])
+        self.assertEqual([row["op"] for row in active_overrides(self.db)], [CREATE])
 
     def test_a_node_the_feed_cannot_describe_is_not_restorable(self):
         csrf = self.sign_in()
@@ -439,3 +440,147 @@ class ChangeLookTest(unittest.TestCase):
         page = self.client.get("/audit").text
         self.assertIn("без разбора по полям", page)
         self.assertEqual(self.blocks(), [])
+
+
+class FoldedOnArrivalTest(unittest.TestCase):
+    """A long value comes down already folded.
+
+    The script used to measure every value after the page had been painted,
+    so a screenful of article text appeared in full and collapsed under the
+    reader a moment later. The server knows the length; the browser should
+    not have to find out.
+    """
+
+    LONG = "1 УДК 005.94 Роль больших языковых моделей в управлении знаниями. " * 6
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        self.graph = FakePanelGraph()
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_for] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def feed(self, value):
+        self.db[feed.COLLECTION].delete_many({})
+        self.db[feed.COLLECTION].insert_one(entry(diff={"full_text": [None, value]}))
+        return self.client.get("/audit").text
+
+    def test_a_long_value_arrives_folded(self):
+        body = self.feed(self.LONG)
+        self.assertIn('class="now clipped"', body)
+
+    def test_a_short_value_does_not(self):
+        # Folding it would send the browser a box to un-fold, which is the
+        # flash the mark exists to avoid, only backwards.
+        body = self.feed("Пётр")
+        self.assertIn('class="now"', body)
+        # In the markup only: the word also appears in the script itself.
+        self.assertNotIn('class="now clipped"', body)
+
+    def test_the_page_carries_no_measuring_pass(self):
+        # The script must not walk every value on the page: with a few
+        # hundred of them that is a forced layout each time.
+        body = self.feed(self.LONG)
+        self.assertNotIn('querySelectorAll(".was, .now, .clip")', body)
+        self.assertIn('querySelectorAll(".clipped")', body)
+
+
+class FeedFiltersTest(unittest.TestCase):
+    """Narrowing the feed by date, and reading it forwards."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.db[feed.COLLECTION].insert_many([
+            entry(timestamp="2026-08-20T09:00:00", entity_id="A1"),
+            entry(timestamp="2026-08-22T10:00:00", entity_id="A2"),
+            entry(timestamp="2026-08-22T23:30:00", entity_id="A3"),
+            entry(timestamp="2026-08-25T11:00:00", entity_id="A4"),
+        ])
+
+    def ids(self, **filters):
+        return [row["entity_id"] for row in feed.entries(self.db, **filters)]
+
+    def test_a_range_holds_both_of_its_days_whole(self):
+        # An entry at half past eleven at night is still that day's entry.
+        self.assertEqual(self.ids(since="2026-08-22", until="2026-08-22"),
+                         ["A3", "A2"])
+
+    def test_an_open_ended_range_works_either_way(self):
+        self.assertEqual(self.ids(since="2026-08-22"), ["A4", "A3", "A2"])
+        self.assertEqual(self.ids(until="2026-08-22"), ["A3", "A2", "A1"])
+
+    def test_the_feed_can_be_read_forwards(self):
+        # What happened first is what somebody retracing a run wants.
+        self.assertEqual(self.ids(oldest_first=True), ["A1", "A2", "A3", "A4"])
+
+    def test_the_total_counts_what_the_page_shows(self):
+        # The two used to translate the filter names separately, and a page
+        # and a total that disagree send somebody looking for missing rows.
+        for filters in ({"kind": "updated"}, {"since": "2026-08-22"},
+                        {"actor": "user:roman", "until": "2026-08-20"}):
+            with self.subTest(**filters):
+                self.assertEqual(feed.count(self.db, **filters),
+                                 len(feed.entries(self.db, **filters)))
+
+    def test_the_page_offers_the_new_filters(self):
+        create_user(self.db, "roman", "hunter2", role="editor")
+        client = TestClient(build(Settings(), self.db), follow_redirects=False)
+        client.post("/login", data={"login": "roman", "password": "hunter2"})
+        body = client.get("/audit", params={"since": "2026-08-22", "order": "old"}).text
+        self.assertIn('name="since" value="2026-08-22"', body)
+        self.assertIn("Всего: 3", body)
+        self.assertIn('value="old" selected', body)
+
+
+class TrimTest(unittest.TestCase):
+    """The feed is the one collection nothing ever shortened.
+
+    Every edit writes a line and every publish a summary per batch, so it
+    grows for as long as the service runs. Trimming has to be something a
+    person asks for and can see the size of first.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.db[feed.COLLECTION].insert_many([
+            entry(timestamp="2024-01-01T10:00:00", entity_id="OLD"),
+            entry(timestamp="2025-06-01T10:00:00", entity_id="OLDER"),
+            entry(timestamp="2026-09-01T10:00:00", entity_id="RECENT"),
+        ])
+
+    def ids(self):
+        return sorted(row["entity_id"] for row in self.db[feed.COLLECTION].find())
+
+    def test_counting_changes_nothing(self):
+        result = feed.trim(self.db, "2026-01-01T00:00:00")
+        self.assertEqual(result, {"audit_matched": 2, "audit_removed": 0})
+        self.assertEqual(self.ids(), ["OLD", "OLDER", "RECENT"])
+
+    def test_applying_removes_what_it_counted(self):
+        result = feed.trim(self.db, "2026-01-01T00:00:00", apply=True)
+        self.assertEqual(result, {"audit_matched": 2, "audit_removed": 2})
+        self.assertEqual(self.ids(), ["RECENT"])
+
+    def test_the_cutoff_is_compared_as_text_because_the_stamps_are(self):
+        # ISO 8601 sorts the same by text and by time, which is the whole
+        # reason the entries are stamped this way.
+        feed.trim(self.db, "2025-01-01T00:00:00", apply=True)
+        self.assertEqual(self.ids(), ["OLDER", "RECENT"])
+
+    def test_nothing_old_enough_means_nothing_happens(self):
+        self.assertEqual(feed.trim(self.db, "2000-01-01T00:00:00", apply=True),
+                         {"audit_matched": 0, "audit_removed": 0})
+        self.assertEqual(len(self.ids()), 3)
+
+    def test_the_default_age_is_a_date_in_the_past(self):
+        cutoff = feed.older_than(feed.KEEP_DAYS)
+        self.assertLess(cutoff, feed.older_than(0))
+
+    def test_what_is_left_is_still_readable(self):
+        # The indexes and the filters read the same documents afterwards;
+        # trimming must not leave the feed in a shape the page cannot show.
+        feed.trim(self.db, "2026-01-01T00:00:00", apply=True)
+        self.assertEqual(feed.count(self.db), 1)
+        self.assertEqual(len(feed.entries(self.db)), 1)

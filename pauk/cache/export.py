@@ -104,7 +104,8 @@ def load_db(driver) -> dict[str, list]:
 
     db["departments"] = cypher_dict(
         driver,
-        "MATCH (d:Department) RETURN d.id AS id, d.name_ru AS name_ru, d.name_en AS name_en",
+        "MATCH (d:Department) RETURN d.id AS id, d.name_ru AS name_ru, d.name_en AS name_en, "
+        "       d.name_variants AS name_variants",
     )
 
     db["authorship"] = cypher(

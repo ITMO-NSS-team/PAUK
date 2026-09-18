@@ -33,8 +33,8 @@ from tests.bench.mocks import (
     MockOpenAlexClient,
     MockOpenRouterClient,
     MockOrcidClient,
+    MockPdfHttpClient,
     RecordingNeo4jClient,
-    UnexpectedNetworkClient,
 )
 from tests.bench.universe import (
     ARCHIVE_AUTHOR_AFFILIATION,
@@ -89,7 +89,10 @@ def bench(tmp_path_factory) -> SimpleNamespace:
         "name_ru,surname,name,patronymic,degree\n"
         + "".join(f"{row}\n" for row in RUSSIAN_NAMES_CATALOG), encoding="utf-8")
 
-    config = Settings(data_dir=data_dir)
+    # This benchmark covers the legacy deterministic fixture. The enabled
+    # resolver and its review routing have dedicated unit tests with model
+    # verdicts, so the offline benchmark must not depend on an LLM API key.
+    config = Settings(data_dir=data_dir, person_resolution_enabled=False)
     db = mongomock.MongoClient()["pauk_test"]
     raw = RawStore(db, GROUP)
     prepared = PreparedStore(db, GROUP)
@@ -109,7 +112,7 @@ def bench(tmp_path_factory) -> SimpleNamespace:
         mock.patch("pauk.pipeline.stages.persons.OpenAlexClient", lambda *a, **k: MockOpenAlexClient(universe)),
         mock.patch("pauk.pipeline.stages.persons.CrossrefClient", lambda *a, **k: MockCrossrefClient(universe)),
         mock.patch("pauk.pipeline.stages.persons.OrcidClient", lambda *a, **k: MockOrcidClient(universe)),
-        mock.patch("pauk.pipeline.stages.persons.OpenReviewClient", lambda *a, **k: UnexpectedNetworkClient()),
+        mock.patch("pauk.pipeline.stages.code_links.HttpClient", lambda *a, **k: MockPdfHttpClient()),
         mock.patch("pauk.pipeline.stages.author_names.OpenRouterClient",
                    lambda *a, **k: MockOpenRouterClient(RUSSIAN_NAMES_CATALOG)),
         mock.patch("pauk.pipeline.stages.link_relevance.OpenRouterClient",
