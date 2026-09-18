@@ -16,6 +16,7 @@ from pauk.graph.overrides import (
     CREATE,
     LINK,
     active_overrides,
+    apply_overrides,
     record_override,
     tombstoned_relationships,
 )
@@ -165,8 +166,8 @@ class NodeScreenTest(unittest.TestCase):
         self.assertNotIn("page=3", self.client.get("/nodes/Repository", params={"page": 2}).text)
 
     def test_a_value_with_nowhere_to_break_is_wrapped(self):
-        # Адрес без единого пробела переносить негде: без обёртки он
-        # вылезал за свою колонку и ложился поверх соседней.
+        # An address without a single space has nowhere to break: unwrapped,
+        # it ran out of its column and over the one beside it.
         long_url = "reijgerigji9ejrgoijergijerigjierjgijergijerignerngoinergnierngijreoi"
         self.graph.add("LinkCandidate", "L1", url=long_url, host="a" * 90)
         self.sign_in()
@@ -1363,7 +1364,6 @@ class HandMadeIsClaimedTest(unittest.TestCase):
         # apply_overrides must not read "somebody added this link" as
         # "remove this link", which is what the only other kind of
         # relationship decision means.
-        from pauk.graph.overrides import apply_overrides
         self.client.post("/nodes/Person/rel/add/A1", data={
             "csrf": self.csrf, "triple": "Person|AUTHORED|Publication", "other_id": "W1"})
         apply_overrides(self.graph, self.db)
@@ -1371,7 +1371,6 @@ class HandMadeIsClaimedTest(unittest.TestCase):
                       self.graph.relationships)
 
     def test_a_claimed_record_keeps_its_fields_through_a_reapply(self):
-        from pauk.graph.overrides import apply_overrides
         self.client.post("/nodes/Person/new",
                          data={"csrf": self.csrf, "id": "A9", "name_ru": "Новый"})
         self.graph.nodes[("Person", "A9")]["name_ru"] = "Затёрли"
@@ -1384,3 +1383,23 @@ class HandMadeIsClaimedTest(unittest.TestCase):
         # one case a claim could not be written for.
         self.client.post("/nodes/LinkCandidate/new", data={"csrf": self.csrf, "id": "L9"})
         self.assertEqual(self.claims(), [("node", CREATE, "L9")])
+
+    def test_editing_the_record_leaves_it_claimed(self):
+        self.client.post("/nodes/Person/new", data={"csrf": self.csrf, "id": "A9"})
+        self.client.post("/nodes/Person/A9", data={"csrf": self.csrf, "name_ru": "Правка"})
+        self.assertEqual(self.claims(), [("node", CREATE, "A9")])
+
+    def test_and_the_decisions_page_offers_no_undo_for_it(self):
+        # An edit used to turn the claim into an undoable "set", and the
+        # undo took the claim with it; the next prune removed the record.
+        self.client.post("/nodes/Person/new", data={"csrf": self.csrf, "id": "A9"})
+        self.client.post("/nodes/Person/A9", data={"csrf": self.csrf, "name_ru": "Правка"})
+        self.assertNotIn('action="/overrides/undo"', self.client.get("/overrides").text)
+
+    def test_a_forged_undo_of_the_claim_is_refused(self):
+        self.client.post("/nodes/Person/new", data={"csrf": self.csrf, "id": "A9"})
+        response = self.client.post("/overrides/undo", data={
+            "csrf": self.csrf, "kind": "node", "op": CREATE,
+            "label": "Person", "target_id": "A9"})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.claims(), [("node", CREATE, "A9")])

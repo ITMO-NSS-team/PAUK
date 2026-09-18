@@ -10,6 +10,7 @@ apart first and the answer is rewritten only if it did (`split_back`).
 from __future__ import annotations
 
 import logging
+import re
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -23,6 +24,7 @@ from pauk.admin.deps import (
     MaybeGraph,
     Session,
     StoresReady,
+    plural,
     templates,
 )
 from pauk.graph.mutations import MutationError, NotFound, merge_nodes, read_node
@@ -72,17 +74,24 @@ WORDS = {
 }
 
 
-def _reason_words(reason: str) -> str:
-    """A held_because line in the words the page uses for it.
+#: A group's reason is composed when it is refused, so it is matched rather
+#: than looked up. The field can be two words ("staff record").
+GROUP_SPANS = re.compile(r"group spans (\d+) distinct (.+) values")
 
-    A group's reason is composed at the moment it is refused ("group spans
-    2 distinct ORCID values"), so it cannot be looked up whole.
-    """
+#: Identity fields a refused group can disagree on, where the page says
+#: them differently from the code.
+FIELD_WORDS = {"staff record": "«запись в каталоге»"}
+
+
+def _reason_words(reason: str) -> str:
+    """A held_because line in the words the page uses for it."""
     if reason in WORDS:
         return WORDS[reason]
-    if reason.startswith("group spans"):
-        parts = reason.split()
-        return f"в группе {parts[2]} разных значения поля {parts[-2]}"
+    spans = GROUP_SPANS.fullmatch(reason)
+    if spans:
+        count, field = int(spans.group(1)), spans.group(2)
+        values = plural(count, "разное значение", "разных значения", "разных значений")
+        return f"в группе {count} {values} поля {FIELD_WORDS.get(field, field)}"
     return reason
 
 
@@ -147,13 +156,13 @@ def _shown(row: dict) -> dict:
     return {
         "id": row["_id"],
         "kind": row["kind"],
+        # Named on the row rather than left to the buttons to imply: the
+        # table holds four kinds of question one after another, and the
+        # names under each do not say which one it is.
+        "asks": _asks(row),
         # A flag rather than the constant in the template: a page comparing
         # kind to a literal was already wrong once, and silently — it put
         # the "one person" button on a group, which the route then refused.
-        # Названо в строке, а не выводится из набора кнопок: в таблице
-        # четыре разных вопроса подряд, и по подписям под именами не
-        # понять, про что этот.
-        "asks": _asks(row),
         "is_group": row["kind"] == review.GROUP,
         "is_github": row["kind"] == review.GITHUB,
         "is_staff": row["kind"] == review.STAFF,
@@ -184,6 +193,15 @@ def _shown(row: dict) -> dict:
         "disputed_at": row.get("disputed_at"),
         "disputed_rule": RULES.get(row.get("disputed_rule"), row.get("disputed_rule")),
     }
+
+
+def _tab(value: object, default: str) -> str:
+    """A tab a form sent back, if it is one.
+
+    It goes straight into the address the form is sent back to, and a value
+    carrying "&" or "#" would add to that address whatever it liked.
+    """
+    return value if value in TABS else default
 
 
 @router.get("/review", response_class=HTMLResponse)
@@ -272,7 +290,7 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
     kind = str(form.get("kind", review.PAIR))
     members = [part for part in str(form.get("members", "")).split(",") if part]
     verdict = str(form.get("verdict", ""))
-    tab = str(form.get("tab", "pressing"))
+    tab = _tab(form.get("tab"), "pressing")
     note = str(form.get("note", "")).strip()
 
     def back(problem: str = "", done: str = ""):
@@ -348,7 +366,7 @@ async def split_back(request: Request, user: Editor, db: Db, graph: MaybeGraph,
     form = await request.form()
     kind = str(form.get("kind", review.PAIR))
     members = [part for part in str(form.get("members", "")).split(",") if part]
-    tab = str(form.get("tab", "answered"))
+    tab = _tab(form.get("tab"), "answered")
 
     def back(problem: str = "", done: str = ""):
         query = f"?tab={tab}"
@@ -367,7 +385,11 @@ async def split_back(request: Request, user: Editor, db: Db, graph: MaybeGraph,
     # Before the graph is touched, not after: an undo the store would then
     # refuse to record leaves the pair apart in the graph and "one person"
     # in the queue, and the next run puts them back together.
-    if not review.applied(db, kind, members):
+    try:
+        applied = review.applied(db, kind, members)
+    except review.ReviewError as error:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
+    if not applied:
         return back("Это решение ничего не сливало, разделять нечего.")
     try:
         split_person(graph, db, members)
@@ -406,5 +428,5 @@ async def withdraw(request: Request, user: Editor, db: Db, _: CsrfChecked, __: S
     if not dropped:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "такого вопроса нет")
     logger.info("%s withdrew the answer about %s %s", user.actor, kind, members)
-    return RedirectResponse(f"/review?tab={form.get('tab', 'answered')}",
+    return RedirectResponse(f"/review?tab={_tab(form.get('tab'), 'answered')}",
                             status_code=status.HTTP_303_SEE_OTHER)

@@ -56,6 +56,17 @@ class HistoryTest(unittest.TestCase):
         newest = source.history(self.db, "Person", "A1")[0]
         self.assertEqual(newest["changes"], [("name_raw", ("Ivan", "Ivan Smirnov"))])
 
+    def test_a_row_that_is_gone_is_not_read_as_every_field_wiped(self):
+        # Rows are deleted — a fold removes the ones it swallows — while
+        # their archive stays. What replaced the last version is not known,
+        # and comparing it with nothing reported a run that emptied the
+        # record.
+        self.fill()
+        self.db[PreparedStore.COLLECTIONS["persons"]].delete_one({"_id": "A1"})
+        rows = source.history(self.db, "Person", "A1")
+        self.assertEqual([row["group"] for row in rows], ["период-1"])
+        self.assertEqual(rows[0]["changes"], [("orcid", (None, "0000-1"))])
+
     def test_an_older_change_is_against_the_version_that_replaced_it(self):
         self.fill()
         older = source.history(self.db, "Person", "A1")[1]
@@ -103,6 +114,7 @@ class HistoryTest(unittest.TestCase):
             archived("persons", "A4", version, {"id": "A4", "name_raw": f"v{version}"},
                      f"период-{version}", f"2026-0{version}-01T10:00:00")
             for version in range(1, 6)])
+        self.store.write_rows("persons", [{"id": "A4", "name_raw": "v6"}])
         rows = source.history(self.db, "Person", "A4", limit=2)
         self.assertEqual([row["group"] for row in rows], ["период-5", "период-4"])
         self.assertEqual(source.count(self.db, "Person", "A4"), 5)
@@ -136,6 +148,12 @@ class HistoryOnThePageTest(unittest.TestCase):
         body = self.body()
         self.assertIn("2026-08-30__from_2026-03-01", body)
         self.assertIn("0000-0002", body)
+
+    def test_a_single_version_with_its_row_gone_says_so(self):
+        self.db[source.REVISIONS].insert_one(
+            archived("persons", "A1", 1, {"id": "A1", "orcid": None},
+                     "2026-08-30__from_2026-03-01", "2026-08-30T12:00:00"))
+        self.assertIn("разобрать её нечем", self.body())
 
     def test_it_is_not_the_same_block_as_the_graph_journal(self):
         # Two questions about one record: what people did to the graph, and

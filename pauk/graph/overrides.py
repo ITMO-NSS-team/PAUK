@@ -70,6 +70,15 @@ def _now() -> datetime:
     return moment.replace(microsecond=moment.microsecond // 1000 * 1000)
 
 
+def _made_by_hand(row: dict | None) -> bool:
+    """Whether a node decision is about a record a person added.
+
+    The operation alone does not say: a deletion overwrites it. The `op`
+    check covers decisions written before the marker existed.
+    """
+    return bool(row) and bool(row.get("created") or row.get("op") == CREATE)
+
+
 def override_id(label: str, target_id: str) -> str:
     """Deterministic key, so editing the same node twice updates one document."""
     return f"node:{label}:{target_id}"
@@ -143,7 +152,6 @@ def record_override(db: Database, label: str, target_id: str, op: str,
             "kind": "node",
             "label": label,
             "target_id": target_id,
-            "op": op,
             "actor": actor,
             "active": True,
             "updated_at": now,
@@ -151,6 +159,16 @@ def record_override(db: Database, label: str, target_id: str, op: str,
         },
         "$setOnInsert": {"created_at": now},
     }
+    if op == SET:
+        # Settled by the conditional write below: an edit to a record a
+        # person added leaves it a claim on that record.
+        update["$setOnInsert"]["op"] = SET
+    else:
+        update["$set"]["op"] = op
+    if op == CREATE:
+        # Sticky, unlike `op`: a deletion overwrites the operation, and a
+        # restore has to know what to turn the decision back into.
+        update["$set"]["created"] = True
     if snapshot:
         update["$set"]["snapshot"] = snapshot
     if note:
@@ -158,6 +176,13 @@ def record_override(db: Database, label: str, target_id: str, op: str,
     else:
         update["$setOnInsert"]["note"] = ""
     db[COLLECTION].update_one({"_id": document_id}, update, upsert=True)
+    if op == SET:
+        # Anything but a claim becomes an edit. A claim stays one: stored as
+        # a plain "set", it would go with the edit when the edit was undone,
+        # and a prune would then remove a record no prepared row explains.
+        # A second write rather than a read first, for the reason above.
+        db[COLLECTION].update_one({"_id": document_id, "op": {"$ne": CREATE}},
+                                  {"$set": {"op": SET}})
 
     # The automatic value is recorded once per field — the first edit is the
     # one that replaced what the pipeline produced. A conditional update per
@@ -282,13 +307,16 @@ def deactivate_override(db: Database, label: str, target_id: str,
         return False
     if only_op is not None and row.get("op") != only_op:
         return False
-    if row.get("op") == DELETE and row.get("fields"):
+    if row.get("op") == DELETE and (row.get("fields") or _made_by_hand(row)):
         # The deletion goes, the edit stays. The snapshot goes with the
         # deletion: it describes a node that is no longer deleted, and a
-        # later delete writes its own.
+        # later delete writes its own. A record a person added goes back to
+        # being claimed, fields or none: switched off, the claim would be
+        # gone and the next prune would remove what was just restored.
         db[COLLECTION].update_one(
             {"_id": document_id},
-            {"$set": {"op": SET, "updated_at": _now()}, "$unset": {"snapshot": ""}})
+            {"$set": {"op": CREATE if _made_by_hand(row) else SET, "updated_at": _now()},
+             "$unset": {"snapshot": ""}})
         return True
     db[COLLECTION].update_one(
         {"_id": document_id}, {"$set": {"active": False, "updated_at": _now()}})

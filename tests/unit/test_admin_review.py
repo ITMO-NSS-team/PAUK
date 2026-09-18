@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from pauk.admin import deps
 from pauk.admin.app import build
 from pauk.admin.auth import create_user
+from pauk.admin.review_routes import _reason_words
 from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import ENTITY_FILES
 from pauk.graph.mutations import merge_nodes
@@ -135,6 +136,16 @@ class ReviewPageTest(unittest.TestCase):
         first = body.index("Ivan Smirnov")
         self.assertLess(first, body.index("Zinaida Orlova"))
         self.assertLess(body.index("A0", first - 400), body.index("Zinaida Orlova"))
+
+    def test_a_two_word_field_is_named_whole(self):
+        # "group spans 2 distinct staff record values" used to come out as
+        # "поля record": the field was read as the word before "values".
+        self.assertEqual(_reason_words("group spans 2 distinct staff record values"),
+                         "в группе 2 разных значения поля «запись в каталоге»")
+
+    def test_the_count_agrees_with_its_noun(self):
+        self.assertEqual(_reason_words("group spans 5 distinct email values"),
+                         "в группе 5 разных значений поля email")
 
     def test_the_reason_is_shown_in_russian(self):
         self.sign_in()
@@ -854,6 +865,29 @@ class SplitBackTest(unittest.TestCase):
         self.assertIn("problem=", location)
         (row,) = review.questions(self.db, answered=True)
         self.assertEqual(row["verdict"], review.SAME)
+
+    def test_a_folded_answer_cannot_be_withdrawn_behind_the_pages_back(self):
+        # The page offers no withdraw here; a request made without it would
+        # leave one node for two people and the question open for ever.
+        self.fold()
+        response = self.client.post("/review/withdraw", data={
+            "csrf": self.csrf(), "kind": review.PAIR, "members": "A1,A2"})
+        self.assertEqual(response.status_code, 400)
+        (row,) = review.questions(self.db, answered=True)
+        self.assertEqual(row["verdict"], review.SAME)
+
+    def test_a_malformed_pair_is_a_bad_request_not_a_crash(self):
+        response = self.client.post("/review/split-back", data={
+            "csrf": self.csrf(), "kind": review.PAIR, "members": "A1"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_the_tab_sent_back_is_only_ever_a_tab(self):
+        # It goes straight into the address the form returns to.
+        self.fold()
+        location = self.client.post("/review/split-back", data={
+            "csrf": self.csrf(), "kind": review.PAIR, "members": "A1,A2",
+            "tab": "answered&problem=подделка"}).headers["location"]
+        self.assertTrue(location.startswith("/review?tab=answered&done="), location)
 
     def test_a_viewer_cannot_split_anything(self):
         self.fold()

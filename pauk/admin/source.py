@@ -93,13 +93,21 @@ def history(db: Database, label: str, node_id: str, limit: int = PAGE) -> list[d
     if not archived:
         return []
     archived.reverse()
-    live = db[PreparedStore.COLLECTIONS[entity]].find_one({"_id": node_id}) or {}
+    live = db[PreparedStore.COLLECTIONS[entity]].find_one({"_id": node_id})
 
     changes = []
     for index, row in enumerate(archived):
         # What replaced this version: the next one filed, or the row as it
         # is now when this is the last one filed.
-        after = archived[index + 1]["snapshot"] if index + 1 < len(archived) else live
+        if index + 1 < len(archived):
+            after = archived[index + 1]["snapshot"]
+        elif live is not None:
+            after = live
+        else:
+            # The row is gone, so what replaced the last version is not
+            # known. Compared with nothing, every field would read as wiped
+            # by a run that did no such thing.
+            continue
         changes.append({
             "when": row.get("replaced_at", ""),
             "group": row.get("replaced_by_group", ""),

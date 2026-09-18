@@ -35,8 +35,8 @@ POLL_SECONDS = 5.0
 BEAT_SECONDS = 60.0
 
 
-#: Asked between phases of a job that has more than one. Returns True when
-#: somebody pressed cancel while the run was under way.
+#: Returns True when somebody pressed cancel while the run was under way.
+#: Asked between the phases of a pipeline, and by `Report` at every step.
 Stop = Callable[[], bool]
 
 #: Told which part of the run is under way, by name and by how many of how
@@ -63,11 +63,18 @@ def _publish(config: Settings, db: Database, payload, stop: Stop,
              report: Report) -> dict[str, int]:
     from pauk.graph.load import load_jsonl_group
     report("выкладка в граф")
+
+    def rows(step: str, done: int, total: int) -> None:
+        # The load counts rows, and the page reads the counts as stages
+        # ("stage 3 of 10"), so the rows go into the label — the same as a
+        # stage's own (see pauk.pipeline.enrich._inside).
+        report(f"{step} {done}/{total}" if total else step)
+
     # The reporter goes in, so the load says how far it has got and can be
     # stopped between two chunks. Given up halfway it leaves the group
     # loaded in part; the next publish finishes it, because every write in
     # there is a MERGE.
-    return load_jsonl_group(config, db, payload.group, report=report)
+    return load_jsonl_group(config, db, payload.group, report=rows)
 
 
 def _dedup(config: Settings, db: Database, payload, stop: Stop,
@@ -129,7 +136,7 @@ PHASES = ("сбор", "публикация", "карта")
 
 
 class Cancelled(Exception):
-    """A job that was asked to stop, and did, between two of its phases."""
+    """A job that was asked to stop, and did, at the next step it reported."""
 
 
 def _pipeline(config: Settings, db: Database, payload, stop: Stop,
@@ -146,8 +153,9 @@ def _pipeline(config: Settings, db: Database, payload, stop: Stop,
     all of it would stop every other run from touching it.
 
     Raises:
-        Cancelled: Somebody pressed cancel. Checked between phases only —
-            a phase is never abandoned half-written.
+        Cancelled: Somebody pressed cancel. Checked between the phases and,
+            through `report`, at every step inside them — never in the
+            middle of one.
     """
     def during(phase: int) -> Report:
         """The worker's reporter, with the phase this run is in attached.

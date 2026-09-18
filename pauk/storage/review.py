@@ -374,9 +374,17 @@ def withdraw(db: Database, kind: str, members: list[str]) -> bool:
     rules never held, and withdrawing one left a row in the queue with no
     reason and nothing to decide on. A held question always says why it was
     held; that is what tells the two apart.
+
+    Raises:
+        ReviewError: The answer has already folded two records into one.
     """
     key = question_id(kind, members)
     asked = db[COLLECTION].find_one({"_id": key})
+    if asked is not None and asked.get("applied_at"):
+        # The records are one node by now. Dropping the answer would leave
+        # them folded with the question open, and nothing would ever fold
+        # or ask about them again.
+        raise ReviewError(f"{key} has been folded; take it apart instead (record_undo)")
     if asked is not None and not (asked.get("evidence") or {}).get("held_because"):
         return db[COLLECTION].delete_one({"_id": key}).deleted_count > 0
     result = db[COLLECTION].update_one(

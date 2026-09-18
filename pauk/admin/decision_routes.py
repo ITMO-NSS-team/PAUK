@@ -24,6 +24,7 @@ from pauk.graph.mutations import (
     update_node,
 )
 from pauk.graph.overrides import (
+    CREATE,
     DELETE,
     LINK,
     SET,
@@ -95,11 +96,19 @@ async def undo(request: Request, user: Editor, db: Db, graph: Graph,
                                                        only_op=DELETE)
         else:
             label, node_id = str(form["label"]), str(form["target_id"])
+            if op == CREATE:
+                # The same as a link: a claim on a record somebody added,
+                # taken back by deleting the record on its own page.
+                raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                    "заведённую вручную запись снимают удалением на её карточке")
             if op == DELETE:
                 snapshot = decisions.deleted_fields(db, label, node_id)
             elif op == SET:
                 back = decisions.source_of_truth(db, label, node_id)
-            dropped = deactivate_override(db, label, node_id)
+            # Only the decision the page showed. It may have become another
+            # one since the page was drawn, and switching off whatever is
+            # there now could drop a claim nobody asked to drop.
+            dropped = deactivate_override(db, label, node_id, only_op=op or None)
     except KeyError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "не хватает данных о решении") from None
     if not dropped:

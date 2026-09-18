@@ -578,6 +578,20 @@ class ProgressTest(unittest.TestCase):
             return {}
         self.assertIsNone(self.run_step(JobKind.PUBLISH, step).progress)
 
+    def test_a_publish_counts_rows_in_the_label_not_as_stages(self):
+        # The page reads done/total as "stage 3 of 10". Passed straight
+        # through, a publish's rows read as "stage 501 of 2000".
+        def load(config, db, group, report=None):
+            report("выкладка узлов", 500, 2000)
+            return {}
+
+        job = store.enqueue(self.db, JobKind.PUBLISH, {"group": "2024"})
+        with patch("pauk.graph.load.load_jsonl_group", load):
+            self.worker.run_once()
+        progress = store.read(self.db, job.id).progress
+        self.assertEqual((progress["step"], progress["done"], progress["total"]),
+                         ("выкладка узлов 500/2000", 0, 0))
+
     def test_a_finished_run_is_not_asked_where_it_is(self):
         # Reporting into a settled job would say a finished run is still
         # somewhere inside itself.
