@@ -45,7 +45,7 @@ class ItmoOrganizationStatusTest(unittest.TestCase):
             if profile_kwargs else None
         return itmo_organization_status(login, given, catalog)
 
-    def test_a_catalogued_organization_is_followed(self):
+    def test_a_catalogued_organization_is_confirmed(self):
         # Its profile says nothing and its login gives nothing away; the
         # curated list is the only thing that knows.
         self.assertEqual(self.judge("LicAiBeerLab"), ("confirmed", "catalog"))
@@ -75,10 +75,6 @@ class ItmoOrganizationStatusTest(unittest.TestCase):
                 given = profile("some-lab", account_type="organization", location=location)
                 self.assertEqual(itmo_organization_status("some-lab", given, self.CATALOG),
                                  ("possible", "petersburg"))
-                self.assertEqual(
-                    itmo_organization_status("some-lab", given, self.CATALOG),
-                    ("possible", "petersburg"),
-                )
 
     def test_description_and_company_are_strong_evidence(self):
         self.assertEqual(self.judge("lab", bio="Laboratory at ITMO University"), ("confirmed", "profile"))
@@ -104,6 +100,13 @@ class ItmoOrganizationStatusTest(unittest.TestCase):
                 self.assertEqual(self.judge(text), ("not_confirmed", ""))
                 for field in ("name", "bio", "company"):
                     self.assertEqual(self.judge("lab", **{field: text}), ("not_confirmed", ""))
+
+    def test_contributor_evidence_is_case_insensitive(self):
+        self.assertEqual(itmo_organization_status(
+            "Some-Lab", None, self.CATALOG,
+            repositories=[repository("some-LAB", "tool", contributors=["ipetrov"])],
+            confirmed={"IPetrov"},
+        ), ("possible", "itmo_contributor"))
 
     def test_contributor_evidence_and_precedence(self):
         repos = [repository("google", "lib", contributors=["ipetrov"])]
@@ -148,6 +151,41 @@ class SocialGraphStageTest(unittest.TestCase):
             [person("A1", "Ivan Petrov", github="ipetrov"), person("A2", "Maria S.")],
             [], [])
         self.assertEqual(seeds, ["ipetrov"])
+
+    def test_catalogued_organization_is_a_seed(self):
+        for profiles in ([], [profile("LicAiBeerLab", account_type=None)],
+                         [profile("LicAiBeerLab", account_type="organization")]):
+            with self.subTest(profiles=profiles):
+                self.build([], [repository("LicAiBeerLab", "tool")], profiles)
+                self.config.static_dir.mkdir(parents=True, exist_ok=True)
+                (self.config.static_dir / "itmo_github_orgs.json").write_text(
+                    json.dumps({"organizations": [{"login": "LicAiBeerLab"}]}), encoding="utf-8",
+                )
+                stage = SocialGraphStage(self.prepared, self.raw, self.config)
+                self.assertEqual(stage._seeds(
+                    [], [repository("LicAiBeerLab", "tool")], {p.id: p for p in profiles},
+                ), ["LicAiBeerLab"])
+
+    def test_catalogue_does_not_override_a_personal_account_type(self):
+        self.build([], [], [])
+        self.config.static_dir.mkdir(parents=True, exist_ok=True)
+        (self.config.static_dir / "itmo_github_orgs.json").write_text(
+            json.dumps({"organizations": [{"login": "LicAiBeerLab"}]}), encoding="utf-8",
+        )
+        given = profile("LicAiBeerLab")
+        stage = SocialGraphStage(self.prepared, self.raw, self.config)
+        self.assertEqual(stage._seeds(
+            [], [repository("LicAiBeerLab", "tool")], {given.id: given},
+        ), [])
+
+    def test_uncatalogued_owner_without_a_profile_is_not_a_seed(self):
+        self.assertEqual(self.seeds_for([], [repository("itmo-lab", "tool")], []), [])
+
+    def test_petersburg_organization_is_not_a_seed(self):
+        self.assertEqual(self.seeds_for(
+            [], [repository("some-lab", "tool")],
+            [profile("some-lab", account_type="organization", location="Saint Petersburg")],
+        ), [])
 
     def test_cyrillic_substring_is_not_a_seed(self):
         self.assertEqual(self.seeds_for(

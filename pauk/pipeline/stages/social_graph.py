@@ -58,7 +58,8 @@ def itmo_organization_status(login: str, profile: GitHubProfile | None,
     is intentionally diagnostic: a city or contributor can guide a review, but cannot make
     us walk every Saint Petersburg organization.
     """
-    if login.lower() in catalog:
+    login_lower = login.lower()
+    if login_lower in catalog:
         return "confirmed", "catalog"
     if ITMO_IDENTITY_PATTERN.search(login):
         return "confirmed", "login"
@@ -73,9 +74,10 @@ def itmo_organization_status(login: str, profile: GitHubProfile | None,
     )))
     if PETERSBURG_PATTERN.search(weak_text):
         return "possible", "petersburg"
+    confirmed_lower = {item.lower() for item in confirmed}
     if any(
-        repository.owner_login == login
-        and any(contributor in confirmed for contributor in repository.contributors)
+        (repository.owner_login or "").lower() == login_lower
+        and any(contributor.lower() in confirmed_lower for contributor in repository.contributors)
         for repository in repositories
     ):
         # An employee may contribute to upstream projects outside ITMO.
@@ -98,7 +100,11 @@ class SocialGraphStage(EnrichmentStage):
         organizations = []
         for login in owner_logins:
             profile = profiles.get(f"github_{login.lower()}")
-            if (profile or GitHubProfile(id="", login=login)).type != "organization":
+            account_type = profile.type if profile else None
+            # The curated catalogue identifies organizations even before a profile is fetched.
+            if account_type != "organization" and not (
+                account_type is None and login.lower() in catalog
+            ):
                 continue
             status, reason = itmo_organization_status(
                 login, profile, catalog, repositories=repositories, confirmed=confirmed,

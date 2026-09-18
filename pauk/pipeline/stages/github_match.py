@@ -301,7 +301,7 @@ class GitHubMatchStage(EnrichmentStage):
         """Harvested accounts, aggregated across every repository they appear on."""
         by_url = {repository.url: repository for repository in repositories}
         owners = {repository.owner_login for repository in repositories if repository.owner_login}
-        itmo_orgs = {owner.lower() for owner in owners if ITMO_IN_TEXT.search(owner or "")}
+        itmo_orgs = {owner.lower() for owner in owners if ITMO_IDENTITY_PATTERN.search(owner)}
 
         accounts: dict[str, dict] = {}
         for profile in profiles:

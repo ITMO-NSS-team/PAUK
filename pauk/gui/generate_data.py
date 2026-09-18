@@ -156,9 +156,22 @@ def repo_cluster_keys(repo_ids, dept_of, org_of, field_of, min_size=REPO_CLUSTER
     }
 
 
+def _name_list(value) -> list[str]:
+    """Names a row carries, as a list.
+
+    The admin panel writes back whatever was typed into the box when it does not
+    parse as JSON, so a hand-edited field can arrive as a bare string. Iterating
+    that would turn "SCAMT" into five one-letter names.
+    """
+    if isinstance(value, str):
+        return [value] if value else []
+    return [v for v in (value or []) if v]
+
+
 def build_graph_data(db, seed: int, public: bool = False):
     dept_name = {row["id"]: (row["name_ru"] or row["name_en"] or "") for row in db["departments"]}
     dept_name_en = {row["id"]: (row["name_en"] or "") for row in db["departments"]}
+    dept_variants = {row["id"]: _name_list(row.get("name_variants")) for row in db["departments"]}
 
     # --- authorship: only publications with at least one ITMO author ----------
     pub_authors = defaultdict(list)
@@ -273,6 +286,7 @@ def build_graph_data(db, seed: int, public: bool = False):
             "id": gid[d],
             "name": dept_name[d],
             "name_en": dept_name_en[d],
+            "name_variants": dept_variants[d],
             "color": golden_color(gid[d]),
             "n": n_auth[gid[d]] + n_pub[gid[d]] + n_repo[gid[d]],
             "n_authors": n_auth[gid[d]],
@@ -286,6 +300,7 @@ def build_graph_data(db, seed: int, public: bool = False):
             "id": no_dept_gid,
             "name": NO_DEPT_NAME,
             "name_en": NO_DEPT_NAME_EN,
+            "name_variants": [],
             "color": NO_DEPT_COLOR,
             "n": n_auth[no_dept_gid] + n_pub[no_dept_gid] + n_repo[no_dept_gid],
             "n_authors": n_auth[no_dept_gid],
@@ -653,6 +668,23 @@ def build_graph_data(db, seed: int, public: bool = False):
     }
 
 
+def _code_urls(value: object) -> list[str]:
+    """Normalize the current JSON-text contract and legacy graph values."""
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [url for url in value if isinstance(url, str) and url]
+    if not isinstance(value, str):
+        return []
+    try:
+        decoded = json.loads(value)
+    except json.JSONDecodeError:
+        return [value]
+    if isinstance(decoded, list):
+        return [url for url in decoded if isinstance(url, str) and url]
+    return [decoded] if isinstance(decoded, str) and decoded else []
+
+
 def build_search_detail(db, graph):
     """Publication details for graph-search.js (loaded after the map)."""
     pub_ids = {p["key"] for p in graph["pubs"]}
@@ -662,10 +694,7 @@ def build_search_detail(db, graph):
         if pid not in pub_ids:
             continue
         code_url = row["code_url"]
-        try:
-            urls = json.loads(code_url) if code_url else []
-        except json.JSONDecodeError:
-            urls = []
+        urls = _code_urls(code_url)
         title = row["title"] or ""
         if len(title) > 200:
             title = title[:199] + "…"
@@ -676,7 +705,7 @@ def build_search_detail(db, graph):
                 "journal": row["journal"] or "",
                 "doi": row["doi"] or "",
                 "has_code": bool(row["has_code"]),
-                "code_url": urls if isinstance(urls, list) else [urls],
+                "code_url": urls,
             }
         )
     return detail

@@ -201,6 +201,19 @@ class ConfidenceTest(unittest.TestCase):
 
 
 class GitHubMatchStageTest(unittest.TestCase):
+    def test_organization_login_requires_itmo_identity_to_corroborate_a_match(self):
+        for owner, matched in (("saint-petersburg-ai", False), ("ITMO-NCCR", True)):
+            with self.subTest(owner=owner):
+                repo = repository(owner, "tool")
+                _, people = self.run_stage(
+                    [person("A1", "Ivan Petrov")],
+                    [profile("someone", name="Ivan Petrov", repos=[repo.url])],
+                    [repo],
+                )
+                self.assertEqual(people["A1"].github, "someone" if matched else None)
+                entry = self.journal()[0]
+                self.assertEqual("org_itmo" in entry["signals"], matched)
+
     def run_stage(self, people, profiles, repositories):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

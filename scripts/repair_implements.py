@@ -1,13 +1,13 @@
-"""Remove IMPLEMENTS claims that came from links judged to be someone else's tool.
+"""Remove IMPLEMENTS claims not backed by a classified positive link.
 
-The fix in `repositories.py` stops new ones from appearing, but it cannot undo
-what is already stored: `publication_ids` only ever grows — the stage appends
-to it and never clears it — so every claim recorded before the fix stays until
-something removes it.
+The fix in `repositories.py` stops new claims from appearing and refreshes the
+ones it sees, but historical rows remain until that stage is rerun or this
+repair removes them.
 
 The rule is subtractive on purpose. A publication id is dropped only when
-*every* link from that publication to this repository was judged
-`is_relevant=False`; anything else is left exactly as it is. That matters
+*every* link from that publication to this repository was classified and none
+has `is_relevant=true`. Thus both `false` and a classified `null` remove an old
+claim, while `pending` and `failed` preserve it for a safe retry. This matters
 because `publication_ids` has a second source: repositories imported from the
 curated CSV carry ids that no `repo_links` row mentions at all. Recomputing the
 field from `repo_links` would silently erase those curated claims, which is why
@@ -32,7 +32,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
-from pauk.models import Repository
+from pauk.models import ClassificationStatus, CodeLink, Repository
 from pauk.pipeline.stages.repositories import GITHUB_HOSTS
 from pauk.settings import settings
 from pauk.storage import PreparedStore
@@ -69,14 +69,21 @@ def url_to_repo_id(db) -> dict[str, str]:
     return index
 
 
-def irrelevant_claims(db) -> dict[str, set[str]]:
-    """Per repository, the publications whose every link to it was judged False.
+def _is_classified(link: dict) -> bool:
+    return (
+        CodeLink.model_validate(link).classification_status
+        == ClassificationStatus.CLASSIFIED
+    )
+
+
+def unsupported_claims(db) -> dict[str, set[str]]:
+    """Claims whose links were all classified and none confirmed authorship.
 
     A publication that links the same repository twice — once as a dependency
     and once as its own code — keeps the claim: one relevant link is enough.
     """
     known = url_to_repo_id(db)
-    verdicts: dict[str, dict[str, set[bool | None]]] = defaultdict(lambda: defaultdict(set))
+    evidence: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
     for row in db[PreparedStore.COLLECTIONS["repo_links"]].find({}, {"publication_id": 1, "links": 1}):
         publication = row.get("publication_id")
         if not publication:
@@ -87,10 +94,15 @@ def irrelevant_claims(db) -> dict[str, set[str]]:
             # never became a repository row at all, which own no claim anyway.
             repo_id = known.get(normalize_repo_url(url)) or repo_id_from_url(url)
             if repo_id:
-                verdicts[repo_id][publication].add(link.get("is_relevant"))
+                evidence[repo_id][publication].append(link)
     return {
-        repo_id: {pub for pub, seen in per_pub.items() if seen == {False}}
-        for repo_id, per_pub in verdicts.items()
+        repo_id: {
+            publication
+            for publication, links in per_publication.items()
+            if all(_is_classified(link) for link in links)
+            and not any(link.get("is_relevant") is True for link in links)
+        }
+        for repo_id, per_publication in evidence.items()
     }
 
 
@@ -107,7 +119,7 @@ def main() -> int:
     skipped: list[str] = []
     complete = False
     try:
-        drop = irrelevant_claims(db)
+        drop = unsupported_claims(db)
         collection = db[PreparedStore.COLLECTIONS["repositories"]]
         for doc in collection.find({}):
             stored = list(doc.get("publication_ids") or [])
