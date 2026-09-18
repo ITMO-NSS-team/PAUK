@@ -1,4 +1,3 @@
-import logging
 import re
 from datetime import UTC, datetime
 
@@ -8,12 +7,9 @@ from pauk.pipeline.normalize import ITMO_ROR_ID
 from pauk.redaction import redact_text
 from pauk.sources import OpenAlexClient
 from pauk.sources.crossref import CrossrefClient
-from pauk.sources.openreview import OpenReviewClient
 from pauk.sources.orcid import OrcidClient
 
 from .base import EnrichmentStage
-
-logger = logging.getLogger(__name__)
 
 
 def _openalex_affiliations(payload: dict) -> list[Affiliation]:
@@ -165,12 +161,10 @@ def _affiliation_for_year(affiliations: list[Affiliation], year: int | None) -> 
 
 class PersonsStage(EnrichmentStage):
     name = "persons"
-    progress_label = "Authors: enriching profiles from OpenAlex, ORCID, and OpenReview"
+    progress_label = "Authors: enriching profiles from OpenAlex and ORCID"
     crossref_name = "crossref"
     openalex_name = "openalex_author"
     orcid_name = "orcid"
-    openreview_name = "openreview"
-    openreview_batch_size = 1000
 
     def _people_in_scope(self, people: list[Person]) -> list[Person]:
         if self.selection is None:
@@ -215,62 +209,6 @@ class PersonsStage(EnrichmentStage):
 
     def _save_person(self, person: Person) -> None:
         self.prepared.upsert_models("persons", [person])
-
-    @staticmethod
-    def _profile_matches(person: Person, profile: dict) -> bool:
-        content = profile.get("content") or {}
-        profile_orcid = (content.get("orcid") or "").rstrip("/").split("/")[-1]
-        emails = [
-            *(content.get("emails") or []), *(content.get("emailsConfirmed") or []),
-            *(profile.get("confirmedEmails") or []), profile.get("email") or "",
-        ]
-        return profile_orcid == person.orcid or any(str(email).endswith("@itmo.ru") for email in emails)
-
-    @staticmethod
-    def _apply_profile(person: Person, profile: dict) -> None:
-        content = profile.get("content") or {}
-        person.openreview = profile.get("id")
-        person.github = person.github or (content.get("github") or "").rstrip("/").split("/")[-1] or None
-        person.google_scholar = person.google_scholar or content.get("gscholar")
-
-    def _name_phase(self, person: Person, publications: dict[str, Publication]) -> str:
-        fields = {
-            field.casefold() for authorship in person.authored
-            for field in (publications.get(authorship.publication_id).fields if publications.get(authorship.publication_id) else [])
-        }
-        return "name_cs_ml" if fields & self.config.openreview_priority_field_set else "name_remaining"
-
-    def _run_name_searches(self, people: list[Person], phase: str, client: OpenReviewClient) -> tuple[int, int]:
-        candidates = [
-            person for person in people
-            if (state := person.processing.get(self.openreview_name))
-            and state.phase == phase and person.name_raw
-            and self._needs_source(state, person.name_raw.casefold())
-        ]
-        changed = found = 0
-        for person in self.progress(candidates, total=len(candidates), label=f"OpenReview: {phase}"):
-            state = person.processing.get(self.openreview_name)
-            key = person.name_raw.casefold()
-            try:
-                payload = client.search(person.name_raw)
-                self.raw.append("openreview", payload, {"method": "name_search", "phase": phase, "term": person.name_raw})
-                profile = next((p for p in payload.get("profiles", []) if self._profile_matches(person, p)), None)
-                if profile:
-                    self._apply_profile(person, profile)
-                    found += 1
-                person.processing[self.openreview_name] = ProcessingState(
-                    status=ProcessingStatus.COMPLETED if profile else ProcessingStatus.COMPLETED_EMPTY,
-                    request_key=key, phase=phase, attempts=self._next_attempt(state),
-                    finished_at=datetime.now(UTC), result_count=int(bool(profile)),
-                )
-            except Exception as exc:
-                person.processing[self.openreview_name] = ProcessingState(
-                    status=ProcessingStatus.FAILED, request_key=key, phase=phase,
-                    attempts=self._next_attempt(state), finished_at=datetime.now(UTC), error=redact_text(exc),
-                )
-            self._save_person(person)
-            changed += 1
-        return changed, found
 
     def run(self) -> dict[str, int]:
         people = list(self.prepared.read_models("persons", Person))
@@ -376,59 +314,4 @@ class PersonsStage(EnrichmentStage):
                 self._save_person(person)
                 changed += 1
 
-        openreview_found = openreview_changed = 0
-        if self.config.openreview_username and self.config.openreview_password:
-            client = OpenReviewClient(self.config.request_timeout, self.config.openreview_username,
-                                      self.config.openreview_password)
-            eligible_itmo = [person for person in eligible_people if person.is_itmo]
-            by_email: dict[str, list[Person]] = {}
-            for person in eligible_itmo:
-                state = person.processing.get(self.openreview_name)
-                if person.email and (self.force or state is None or state.phase in (None, "email")):
-                    by_email.setdefault(person.email.casefold(), []).append(person)
-                elif not person.email and (self.force or state is None):
-                    person.processing[self.openreview_name] = ProcessingState(status=ProcessingStatus.NOT_STARTED,
-                        phase=self._name_phase(person, publications), attempts=state.attempts if state else 0)
-                    self._save_person(person)
-            with self.progress_bar(total=sum(map(len, by_email.values())), label="OpenReview: email batches") as bar:
-                emails = list(by_email)
-                for start in range(0, len(emails), self.openreview_batch_size):
-                    batch = emails[start:start + self.openreview_batch_size]
-                    try:
-                        payload = client.search_emails(batch)
-                        self.raw.append("openreview", payload, {"method": "email_batch", "phase": "email", "emails": batch})
-                        profiles = payload.get("profiles", [])
-                        for email in batch:
-                            profile = next((p for p in profiles if email in {str(p.get("email") or "").casefold(),
-                                *(str(value).casefold() for value in ((p.get("content") or {}).get("emails") or [])),
-                                *(str(value).casefold() for value in (p.get("confirmedEmails") or []))}), None)
-                            for person in by_email[email]:
-                                state = person.processing.get(self.openreview_name)
-                                if profile:
-                                    self._apply_profile(person, profile)
-                                    person.processing[self.openreview_name] = ProcessingState(status=ProcessingStatus.COMPLETED,
-                                        request_key=email, phase="email", attempts=self._next_attempt(state),
-                                        finished_at=datetime.now(UTC), result_count=1)
-                                    openreview_found += 1
-                                else:
-                                    person.processing[self.openreview_name] = ProcessingState(status=ProcessingStatus.NOT_STARTED,
-                                        request_key=email, phase=self._name_phase(person, publications), attempts=self._next_attempt(state))
-                                self._save_person(person)
-                                openreview_changed += 1
-                    except Exception as exc:
-                        for email in batch:
-                            for person in by_email[email]:
-                                state = person.processing.get(self.openreview_name)
-                                person.processing[self.openreview_name] = ProcessingState(status=ProcessingStatus.FAILED,
-                                    request_key=email, phase="email", attempts=self._next_attempt(state),
-                                    finished_at=datetime.now(UTC), error=redact_text(exc))
-                                self._save_person(person)
-                                openreview_changed += 1
-                    bar.update(sum(len(by_email[email]) for email in batch))
-            logger.info("OpenReview email: processed=%d, found=%d", openreview_changed, openreview_found)
-            for phase in ("name_cs_ml", "name_remaining"):
-                phase_changed, phase_found = self._run_name_searches(eligible_itmo, phase, client)
-                openreview_changed += phase_changed
-                openreview_found += phase_found
-                logger.info("OpenReview %s: processed=%d, found=%d", phase, phase_changed, phase_found)
-        return {"persons": changed + openreview_changed, "crossref": crossref_changed, "openreview": openreview_found}
+        return {"persons": changed, "crossref": crossref_changed}

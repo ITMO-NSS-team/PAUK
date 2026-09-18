@@ -36,7 +36,7 @@ Persons
     produce.
 
     An explicitly different identity field (ORCID, email, GitHub login,
-    OpenReview id, Google Scholar id, staff record) always keeps a pair
+    Google Scholar id, staff record) always keeps a pair
     separate — two official records are two employees. Pairs
     with weaker evidence — a variant match without a shared coauthor, a
     namesake outside ITMO, a single-token name, an identical name with
@@ -157,7 +157,7 @@ def _variant_set(person: Person) -> set[str]:
 
 # Identity fields a person can carry explicitly; two persons differing in any
 # of them are two real people no matter how similar their names are.
-PROFILE_FIELDS = ("email", "github", "openreview", "google_scholar")
+PROFILE_FIELDS = ("email", "github", "google_scholar")
 
 
 def _profiles_conflict(first: Person, second: Person) -> bool:

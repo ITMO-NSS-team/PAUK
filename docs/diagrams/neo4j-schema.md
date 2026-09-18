@@ -16,7 +16,6 @@ classDiagram
         +degree
         +github
         +google_scholar
-        +openreview
         +thesis
         +other_names
         +homepage

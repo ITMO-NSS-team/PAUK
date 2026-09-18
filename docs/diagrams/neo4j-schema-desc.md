@@ -38,7 +38,6 @@
 * **`degree`** (`String`) — учёная степень (только у ИТМО-персон).
 * **`github`** (`String`) — профиль GitHub (только у ИТМО-персон).
 * **`google_scholar`** (`String`) — профиль Google Scholar (только у ИТМО-персон).
-* **`openreview`** (`String`) — профиль OpenReview (только у ИТМО-персон).
 * **`thesis`** (`String`) — диссертация / квалификационная работа (только у ИТМО-персон).
 * **`scopus_id`** (`String`) — идентификатор Scopus.
 * **`researcher_id`** (`String`) — Web of Science ResearcherID.
