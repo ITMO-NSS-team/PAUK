@@ -74,12 +74,6 @@
 |---|---|---|
 | `repair_implements.py` | Снимает исторические притязания `IMPLEMENTS`, если все ссылки на репозиторий классифицированы и ни одна не имеет `is_relevant=true`; `pending`/`failed` не трогает | Mongo |
 | `prune_stranger_profiles.py` | Удаляет GitHub-профили, добытые только с репозиториев, которые никто не реализует | Mongo |
-| `prune_graph_to_mongo.py` | Удаляет из графа то, чего в Mongo больше нет: рёбра `IMPLEMENTS` и узлы `GitHubProfile` | Neo4j |
-
-`prune_graph_to_mongo.py` — обход [#145](https://github.com/ITMO-NSS-team/PAUK/issues/145):
-`publish graph` работает только на `MERGE` и не удаляет ничего, поэтому
-витрина расходится с источником молча. Когда #145 починят, скрипт нужно
-удалить, а не оставлять «на всякий случай».
 
 ## Каталоги и оценка качества
 

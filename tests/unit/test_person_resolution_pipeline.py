@@ -1,8 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import mongomock
 
@@ -15,7 +14,7 @@ from pauk.pipeline.person_resolution_planner import (
 )
 from pauk.pipeline.stages.dedup import DedupStage
 from pauk.settings import Settings
-from pauk.storage import PreparedStore, RawStore
+from pauk.storage import PreparedStore, RawStore, review
 
 
 def person(person_id: str, name: str, *, orcid: str | None = None) -> Person:
@@ -173,22 +172,10 @@ class DedupStageWiringTest(unittest.TestCase):
             ],
         )
 
-    @staticmethod
-    def review_backend():
-        return SimpleNamespace(
-            decisions=Mock(return_value={}),
-            record_held=Mock(),
-            record_disputed=Mock(),
-            mark_applied_merges=Mock(),
-        )
-
     @patch("pauk.pipeline.person_resolution.OpenRouterResolutionModels")
-    @patch("pauk.pipeline.person_resolution_review._backend")
     def test_pipeline_uses_the_resolver_and_merges_two_positive_verdicts(
-        self, backend_factory, model_factory
+        self, model_factory
     ):
-        backend = self.review_backend()
-        backend_factory.return_value = backend
         model_factory.return_value = FakeModels(
             ModelVerdict(True, 0.9), ModelVerdict(True, 0.9)
         )
@@ -196,16 +183,12 @@ class DedupStageWiringTest(unittest.TestCase):
         result = DedupStage(self.prepared, self.raw, self.config).run()
 
         self.assertEqual(result["dedup_merged"], 1)
-        backend.record_held.assert_called_once()
-        backend.mark_applied_merges.assert_called_once()
+        self.assertEqual(review.questions(self.db), [])
 
     @patch("pauk.pipeline.person_resolution.OpenRouterResolutionModels")
-    @patch("pauk.pipeline.person_resolution_review._backend")
-    def test_pipeline_sends_a_rejected_pair_to_pr177_review(
-        self, backend_factory, model_factory
+    def test_pipeline_sends_a_rejected_pair_to_review_panel(
+        self, model_factory
     ):
-        backend = self.review_backend()
-        backend_factory.return_value = backend
         model_factory.return_value = FakeModels(
             ModelVerdict(False, 0.9, "different people")
         )
@@ -214,9 +197,10 @@ class DedupStageWiringTest(unittest.TestCase):
 
         self.assertEqual(result["dedup_merged"], 0)
         self.assertEqual(result["dedup_candidates"], 1)
-        report = backend.record_held.call_args.args[1]
-        self.assertEqual(report[0]["status"], "held")
-        self.assertEqual({report[0]["person_a"], report[0]["person_b"]}, {"A1", "A2"})
+        (question,) = review.questions(self.db)
+        self.assertEqual(question["kind"], review.PAIR)
+        self.assertEqual(question["members"], ["A1", "A2"])
+        self.assertEqual(question["evidence"]["route"], "qwen_first_separate")
 
     def test_conflicting_orcid_never_reaches_a_model_or_queue(self):
         people = [

@@ -1,6 +1,23 @@
 {% extends "base.html" %}
+
+{# Итог прогона — это счётчики, и у полного конвейера их за сорок. Столбцом
+   в сорок строк он выдавливает соседние ячейки и хоронит всё остальное в
+   истории, поэтому длинный прячется под сводку. #}
+{% macro numbers(rows) %}{% for name, value in rows %}<div><b>{{ name }}</b>: {{ value }}</div>{% endfor %}{% endmacro %}
+{% macro result(rows, open_upto) %}
+{%- if rows|length > open_upto %}
+<details>
+  <summary class="muted">{{ rows|length }} {{ rows|length|plural("число", "числа", "чисел") }}</summary>
+  <div style="margin-top:6px">{{ numbers(rows) }}</div>
+</details>
+{%- else %}{{ numbers(rows) }}{% endif %}
+{% endmacro %}
+
 {% block content %}
-<h1>Задачи</h1>
+<h1>Пайплайн</h1>
+
+{% set problem = request.query_params.get("problem") %}
+{% if problem %}<p class="note bad">{{ problem }}</p>{% endif %}
 <p class="muted" style="margin:-8px 0 22px">
   Выполняет процесс <code>pauk admin worker</code>
 </p>
@@ -113,6 +130,11 @@
     </div>
   </div>
 
+</details>
+
+{# Ни дедуп, ни сверка не входят в конвейер: он их не запускает. Внутри
+   свёрнутого списка шагов их принимали за части прогона и не находили. #}
+<div class="pair">
   <div class="card aside">
     <div class="head">
       <b>Дедупликация графа</b>
@@ -135,25 +157,69 @@
       });
     </script>
   </div>
-</details>
+
+  <div class="card aside">
+    <div class="head">
+      <b>Сверка с источником</b>
+      {% if last_done.prune %}<span class="ago">последний раз {{ last_done.prune|moment }}</span>{% endif %}
+    </div>
+    <p class="muted">Публикация умеет только добавлять, поэтому запись, удалённая
+      из Mongo, и связь, которую строка перестала заявлять, остаются в графе.
+      Здесь они находятся. Заведённое и связанное вручную не трогается — оно
+      записано в ручных решениях.</p>
+    <form method="post" action="/jobs" id="prune-form">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="kind" value="prune">
+      {# Сначала посчитать, потом убрать: на графе, который ни разу не
+         сверяли, в список попадёт и то, что заводили руками до того, как
+         это стали записывать. #}
+      <div><label><input type="checkbox" name="apply" value="true"> убрать найденное,
+        а не только посчитать</label></div>
+      <div style="margin-top:8px"><button type="submit">Запустить</button></div>
+    </form>
+    <script>
+      document.getElementById("prune-form")?.addEventListener("submit", (event) => {
+        const form = event.currentTarget;
+        if (form.apply.checked &&
+            !confirm("Убрать из графа всё, чего нет в источнике?\n\nСначала лучше запустить без галочки и посмотреть список в результате задачи.")) {
+          event.preventDefault();
+        }
+      });
+    </script>
+  </div>
+</div>
 {% endif %}
 
 {% if under_way %}
 <div class="card live">
   <b><span class="pulse"></span>Сейчас идёт</b>
   <table style="margin-top:12px">
-    <tr><th>что</th><th>кто запросил</th><th>начата</th><th>отклик</th>
+    <tr><th>что</th><th>кто запросил</th><th>начата</th><th>отклик</th><th>где сейчас</th>
       {% if user.can_run %}<th></th>{% endif %}</tr>
     {% for job in under_way %}
     <tr>
       <td><b>{{ job.kind }}</b>
-        {% if job.payload %}<br><span class="muted">{% for name, value in job.payload %}{{ name }}={{ value }} {% endfor %}</span>{% endif %}
+        {% if job.payload %}
+        {% for line in job.payload %}<br><span class="muted">{{ line }}</span>{% endfor %}
+        {% endif %}
       </td>
       <td>{{ job.actor }}<br><span class="muted">{{ job.worker or "ещё не взята" }}</span></td>
       <td class="val" style="white-space:nowrap">{{ (job.started_at or job.created_at)|moment }}</td>
       <td class="val" style="white-space:nowrap">{{ job.heartbeat_at|moment or "—" }}
         {% if job.stale %}<br><span class="kind kind-deleted">не отвечает</span>
         {% elif job.cancel_requested %}<br><span class="muted">просили остановить</span>{% endif %}
+      </td>
+      <td>
+        {% if job.phases %}
+        <div class="phases" aria-hidden="true">
+          {% for state in job.phases %}<span class="{{ state }}"></span>{% endfor %}
+        </div>
+        {% endif %}
+        {% if job.progress %}
+          {{ job.progress.step }}
+          {% if job.progress.total %}<br><span class="muted">этап
+            {{ job.progress.done + 1 }} из {{ job.progress.total }}</span>{% endif %}
+        {% else %}<span class="muted">—</span>{% endif %}
       </td>
       {% if user.can_run %}
       <td style="width:1%">
@@ -162,6 +228,15 @@
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="job_id" value="{{ job.id }}">
           <button type="submit" class="ghost">отменить</button>
+        </form>
+        {% endif %}
+        {# Молчащую задачу можно закрыть, не дожидаясь воркера: если её
+           ресурс свободен, выполнять её некому. #}
+        {% if job.stale %}
+        <form method="post" action="/jobs/give-up" style="margin-top:6px">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="job_id" value="{{ job.id }}">
+          <button type="submit" class="ghost">закрыть</button>
         </form>
         {% endif %}
       </td>
@@ -224,7 +299,9 @@
     <tr>
       <td class="val" style="white-space:nowrap">{{ job.created_at|moment }}</td>
       <td>{{ job.kind }}
-        {% if job.payload %}<br><span class="muted">{% for name, value in job.payload %}{{ name }}={{ value }} {% endfor %}</span>{% endif %}
+        {% if job.payload %}
+        {% for line in job.payload %}<br><span class="muted">{{ line }}</span>{% endfor %}
+        {% endif %}
       </td>
       <td>{{ job.actor }}</td>
       <td>{{ job.state_ru }}
@@ -232,13 +309,22 @@
       </td>
       <td>
         {% if job.error %}<span class="note bad" style="display:block">{{ job.error }}</span>
-        {% elif job.result %}{% for name, value in job.result %}<div><b>{{ name }}</b>: {{ value }}</div>{% endfor %}
+        {% elif job.result %}{{ result(job.result, result_open_upto) }}
         {% else %}<span class="muted">—</span>{% endif %}
         {% if user.can_run and job.state not in final and not job.cancel_requested %}
         <form method="post" action="/jobs/cancel" style="margin-top:6px">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="job_id" value="{{ job.id }}">
           <button type="submit" class="ghost">отменить</button>
+        </form>
+        {% endif %}
+        {# Нагрузка лежит в самой задаче, поэтому повтор ничего не просит
+           вписывать заново — а именно там ошибаются в датах. #}
+        {% if user.can_run and job.state in final %}
+        <form method="post" action="/jobs/repeat" style="margin-top:6px">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="job_id" value="{{ job.id }}">
+          <button type="submit" class="ghost">повторить</button>
         </form>
         {% endif %}
       </td>

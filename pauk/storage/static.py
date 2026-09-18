@@ -88,9 +88,10 @@ class StaticStore:
         """Logins of ITMO's GitHub organizations, lowercased.
 
         Only for the ones whose own profile gives nothing to recognise them by;
-        an organization that names ITMO or its city is matched without being
-        listed. Missing file means an empty list, not an error - the catalogue
-        is an aid, and the rules work without it.
+        an organization that names ITMO is matched without being listed.
+
+        A missing file means an empty list, not an error: the catalogue is an aid,
+        and the rules work without it.
         """
         path = self.root / "itmo_github_orgs.json"
         if not path.exists():

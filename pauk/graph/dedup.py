@@ -27,7 +27,6 @@ from pauk.graph.person_resolution_model import LogisticModel, load_logistic_mode
 from pauk.jobs.locks import held
 from pauk.jobs.models import GRAPH
 from pauk.models import Authorship, Person
-from pauk.pipeline import person_resolution_review
 from pauk.pipeline.normalize import _merge_person
 from pauk.pipeline.person_resolution import OpenRouterResolutionModels
 from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
@@ -43,6 +42,7 @@ from pauk.pipeline.stages.dedup import (
     staff_identities,
 )
 from pauk.settings import Settings
+from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
 from pauk.urls import normalize_repo_url
 
@@ -167,6 +167,7 @@ def dedup_graph_persons(
     raw_orcids: dict[str, str | None],
     catalog: RussianNamesCatalog | None = None,
     decisions: dict[frozenset[str], str] | None = None,
+    chosen: dict[str, str] | None = None,
     models=None,
     policy: ResolverPolicy = DEFAULT_POLICY,
     logreg_model: LogisticModel | None = None,
@@ -181,6 +182,11 @@ def dedup_graph_persons(
             it. This is where it pays off most: person records split across
             groups reach each other here for the first time, and the
             catalog reconciles spellings no shared coauthor corroborates.
+        decisions: Answers people gave about pairs the rules held back, read
+            by the caller because this function is given a graph client and
+            no database.
+        chosen: Catalog records people picked for the names the catalog
+            cannot tell apart, read by the caller for the same reason.
 
     Returns:
         (removed, report): the number of folded nodes and the review
@@ -197,7 +203,6 @@ def dedup_graph_persons(
             orcid=row.get("orcid"),
             email=row.get("email"),
             github=row.get("github"),
-            openreview=row.get("openreview"),
             google_scholar=row.get("google_scholar"),
             merged_ids=list(row.get("merged_ids") or []),
             department_ids=list(row.get("department_ids") or []),
@@ -213,13 +218,13 @@ def dedup_graph_persons(
     options = (
         {"models": models, "policy": policy, "decisions": decisions, "logreg_model": logreg_model}
         if models is not None
-        else {}
+        else {"decisions": decisions}
     )
     groups, report = planner(
         people,
         trusted_orcid,
         fields_of=client.fetch_publication_fields(),
-        staff_ids=staff_identities(catalog, people),
+        staff_ids=staff_identities(catalog, people, chosen),
         **options,
     )
 
@@ -431,6 +436,7 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
                 "graph dedup: no staff catalog at %s — merging on names and profiles alone", catalog_path(config)
             )
         folded = client.fetch_merged_id_map("Person")
+        answers = review.decisions(mongo_db, folded)
         models = OpenRouterResolutionModels(config, mongo_db, "__graph__") if config.person_resolution_enabled else None
         logreg_model = (
             load_logistic_model(config.person_resolution_logreg_model_path, MODEL_FEATURES)
@@ -444,7 +450,8 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
                 client,
                 collect_raw_orcids(mongo_db),
                 catalog,
-                decisions=person_resolution_review.decisions(mongo_db, folded),
+                decisions=answers,
+                chosen=review.staff_choices(mongo_db, folded),
                 models=models,
                 policy=ResolverPolicy(
                     separate_below=config.person_resolution_separate_below,
@@ -460,9 +467,14 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
             for row in (*person_report, *publication_report, *repository_report)
         ]
         held = sum(1 for row in report if row["status"] == "held")
-        if config.person_resolution_enabled:
-            person_resolution_review.record(mongo_db, person_report, source="graph")
-            person_resolution_review.mark_applied(mongo_db, client.fetch_merged_id_map("Person"))
+        # Only the person rows: publications and repositories are folded on
+        # a DOI or a url and never hold anything back, so there is nothing
+        # to ask about and no pair of people to key a question on.
+        review.record_held(mongo_db, person_report, source=review.GRAPH)
+        review.record_disputed(mongo_db, person_report)
+        # Re-read, not the map from before the pass: what this pass folded
+        # is exactly the difference between the two.
+        review.mark_applied_merges(mongo_db, client.fetch_merged_id_map("Person"))
         journal_path = config.cache_dir / CANDIDATES_FILENAME
         with AtomicWriter(journal_path) as fh:
             for row in report:

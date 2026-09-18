@@ -65,7 +65,7 @@ function searchHits(q, withDepts) {
   if (withDepts) {
     for (const d of DATA.departments) {
       if (d.name === "Без департамента") continue;
-      const dll = [d.name, d.name_en].filter(Boolean).join(" ").toLowerCase();
+      const dll = [d.name, d.name_en, ...(d.name_variants || [])].filter(Boolean).join(" ").toLowerCase();
       if (tokens.every(t => dll.includes(t)))
         hits.push({ key: d.id, kind: "dept", label: deptDisplayName(d), ll: dll, sub: null });
     }

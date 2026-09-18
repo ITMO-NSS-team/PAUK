@@ -4,6 +4,7 @@ import mongomock
 
 from pauk.models import Publication
 from pauk.storage import PreparedStore
+from pauk.storage.prepared import REVISIONS, trim_revisions
 
 
 class PreparedStoreTest(unittest.TestCase):
@@ -128,3 +129,53 @@ class PreparedStoreTest(unittest.TestCase):
         store.write_models("publications", [Publication(id="W1", title="Paper")])
         [row] = list(store.read_rows("publications"))
         self.assertNotIn("_version", row)
+
+
+class TrimRevisionsTest(unittest.TestCase):
+    """The archive of replaced rows is the other history that only grows.
+
+    Every real change files the whole previous document, and nothing has
+    ever removed one: in a working database it can outweigh the rows it is
+    the history of.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.db[REVISIONS].insert_many([
+            {"entity_type": "persons", "entity_id": "A1", "version": 1,
+             "snapshot": {}, "replaced_at": "2024-01-01T10:00:00"},
+            {"entity_type": "persons", "entity_id": "A1", "version": 2,
+             "snapshot": {}, "replaced_at": "2025-06-01T10:00:00"},
+            {"entity_type": "publications", "entity_id": "W1", "version": 1,
+             "snapshot": {}, "replaced_at": "2026-09-01T10:00:00"},
+        ])
+
+    def left(self):
+        return sorted((row["entity_id"], row["version"]) for row in self.db[REVISIONS].find())
+
+    def test_counting_changes_nothing(self):
+        self.assertEqual(trim_revisions(self.db, "2026-01-01T00:00:00"),
+                         {"revisions_matched": 2, "revisions_removed": 0})
+        self.assertEqual(len(self.left()), 3)
+
+    def test_applying_removes_what_it_counted(self):
+        self.assertEqual(trim_revisions(self.db, "2026-01-01T00:00:00", apply=True),
+                         {"revisions_matched": 2, "revisions_removed": 2})
+        self.assertEqual(self.left(), [("W1", 1)])
+
+    def test_the_cutoff_is_compared_as_text_because_the_stamps_are(self):
+        trim_revisions(self.db, "2025-01-01T00:00:00", apply=True)
+        self.assertEqual(self.left(), [("A1", 2), ("W1", 1)])
+
+    def test_nothing_old_enough_means_nothing_happens(self):
+        self.assertEqual(trim_revisions(self.db, "2000-01-01T00:00:00", apply=True),
+                         {"revisions_matched": 0, "revisions_removed": 0})
+        self.assertEqual(len(self.left()), 3)
+
+    def test_a_row_still_being_versioned_is_not_disturbed(self):
+        # What is trimmed is history. The live document and its _version
+        # live in the prepared collection and are not touched here.
+        store = PreparedStore(self.db, "sample")
+        store.write_rows("persons", [{"id": "A1", "name_raw": "Ivan"}])
+        trim_revisions(self.db, "2030-01-01T00:00:00", apply=True)
+        self.assertEqual(self.db.persons.find_one({"_id": "A1"})["name_raw"], "Ivan")

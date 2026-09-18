@@ -26,7 +26,7 @@ Mongo и Neo4j (на Linux - `free -g`). Наличие ключей прове�
 `.env` (раздел 1).
 
 Для полного круга нужны `OPENALEX_API_KEY`, `GITHUB_TOKEN`,
-`OPENREVIEW_USERNAME`/`OPENREVIEW_PASSWORD`, `OPENROUTER_API_KEY`
+`OPENROUTER_API_KEY`
 (+ `OPENROUTER_PROXY_URL`, если OpenRouter недоступен из сети напрямую).
 
 ## 1. Копия БД
@@ -66,8 +66,6 @@ NEO4J_USER=neo4j
 NEO4J_PASSWORD=testtest
 OPENALEX_API_KEY=<ключ>
 GITHUB_TOKEN=<ключ>
-OPENREVIEW_USERNAME=<логин>
-OPENREVIEW_PASSWORD=<пароль>
 OPENROUTER_API_KEY=<ключ>
 OPENROUTER_PROXY_URL=<url, если OpenRouter недоступен из сети напрямую>
 ```
@@ -75,7 +73,7 @@ OPENROUTER_PROXY_URL=<url, если OpenRouter недоступен из сет�
 Проверить, что окружение смотрит на копию и ключи на месте (адреса - локальные, ключи - `True`):
 
 ```bash
-uv run python -c "from pauk.settings import settings as s; print('db:', s.mongo_uri, s.neo4j_uri); print('keys:', {k:bool(getattr(s,k)) for k in ['openalex_api_key','github_token','openreview_username','openreview_password','openrouter_api_key']})"
+uv run python -c "from pauk.settings import settings as s; print('db:', s.mongo_uri, s.neo4j_uri); print('keys:', {k:bool(getattr(s,k)) for k in ['openalex_api_key','github_token','openrouter_api_key']})"
 ```
 
 ## 2. Сбор и обогащение

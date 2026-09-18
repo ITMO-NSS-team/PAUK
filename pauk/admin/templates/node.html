@@ -101,6 +101,39 @@
   {% else %}<p class="muted">Правок не было.</p>{% endif %}
 </div>
 
+<h1 style="margin-top:32px">Что говорил источник
+  <span class="muted">{{ source_versions }}</span></h1>
+<p class="muted" style="margin:-8px 0 14px">
+  Не правки в графе, а решения самого пайплайна: как менялась строка в Mongo,
+  из которой эта запись публикуется, и какой прогон её переписал.
+</p>
+<div class="card">
+  {% if source_history %}
+  <table>
+    <tr><th>когда</th><th>какой прогон</th><th>что изменилось</th></tr>
+    {% for row in source_history %}
+    <tr>
+      <td class="val" style="white-space:nowrap">{{ row.when[:19]|replace("T", " ") }}</td>
+      <td class="val">{{ row.group }}</td>
+      <td>
+        {% for field, pair in row.changes %}{{ show.change(field, pair[0], pair[1]) }}
+        {% else %}<span class="muted">только служебные поля</span>
+        {% endfor %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% elif source_versions %}
+  <p class="muted">История есть, но разобрать её нечем: строки этой записи
+    в Mongo уже нет.</p>
+  {% else %}
+  <p class="muted">Источник эту запись ни разу не переписывал.
+    {# Ни одной версии бывает по двум причинам, и они разные: строку собрали
+       один раз и с тех пор не трогали, либо запись вообще завели руками. #}
+    Либо её собрали один раз, либо завели вручную, и строки в Mongo у неё нет.</p>
+  {% endif %}
+</div>
+
 {% if user.can_write and (links.outgoing or links.incoming) %}
 <div class="card" style="margin-top:20px">
   <b>Связать с другим узлом</b>

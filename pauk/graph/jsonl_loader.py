@@ -11,16 +11,34 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from collections.abc import Callable
 
 from pauk.urls import normalize_repo_url
 
 from .audit import AuditedNeo4jClient
 from .client import Neo4jClient, chunked
-from .extract import NODE_REGISTRY, extract_node, extract_relationships
+from .extract import NODE_REGISTRY, extract_node, extract_relationships, person_spec
 
 __all__ = ["extract_repo_links", "load_prepared_rows", "normalize_repo_url"]
 
 logger = logging.getLogger(__name__)
+
+#: Told which part of the load is under way and how far it has got. The
+#: worker passes its own reporter, which raises when somebody has asked the
+#: run to stop — see pauk/jobs/worker.py.
+Progress = Callable[[str, int, int], None]
+
+
+def _tick(report: Progress | None, step: str, done: int, total: int) -> None:
+    """Say how far the load has got, and let a cancel through.
+
+    Also the only seam where a publish can be given up: between two chunks,
+    with everything before them already written. What is left behind is a
+    group loaded in part, which the next publish finishes — every write here
+    is a MERGE, so repeating it costs time and changes nothing else.
+    """
+    if report is not None:
+        report(step, done, total)
 
 
 FILE_SPECS: dict[str, str] = {
@@ -133,11 +151,43 @@ def extract_repo_links(
     return candidate_nodes, repo_edges, candidate_edges, candidate_promotions
 
 
+def _keep_graph_merges(client, label: str, nodes: list[tuple[str, dict]]) -> int:
+    """Add back the folded-away ids the graph knows and the rows do not.
+
+    A fold made on the graph — the graph-wide dedup pass, or a pair
+    confirmed in the review queue — writes `merged_ids` onto the surviving
+    node and nowhere else. Publishing that node from its row would replace
+    the list with the row's own, `fetch_merged_id_map` would stop resolving
+    the folded id, and the duplicate below would be recreated with all of
+    its relationships. The fold would be silently undone by a republish.
+
+    Returns:
+        How many nodes kept an id their row does not carry.
+    """
+    if not nodes:
+        return 0
+    held: dict[str, list[str]] = defaultdict(list)
+    for alias, canonical in client.fetch_merged_id_map(label).items():
+        if alias != canonical:
+            held[canonical].append(alias)
+    kept = 0
+    for node_id, props in nodes:
+        known = props.get("merged_ids") or []
+        extra = [alias for alias in held.get(node_id, ()) if alias not in known]
+        if extra:
+            props["merged_ids"] = [*known, *extra]
+            kept += 1
+    if kept:
+        logger.info("nodes (:%s): %d node(s) kept a fold their row does not carry", label, kept)
+    return kept
+
+
 def load_prepared_rows(
     client: Neo4jClient | AuditedNeo4jClient,
     rows_by_file: dict[str, list[dict]],
     dropped_relationships: set[tuple[str, str, str, str, str]] | None = None,
     dropped_candidates: set[str] | None = None,
+    report: Progress | None = None,
 ) -> None:
     """Load prepared entity rows into Neo4j, however they were sourced.
 
@@ -227,14 +277,12 @@ def load_prepared_rows(
             logger.info("%s: skipped %d failed (never enriched) row(s)", filename, skipped_failed)
 
     # Persons share a single file but is_itmo picks which relationship
-    # whitelist applies (external persons never get BELONGS_TO/CONTRIBUTED_TO
-    # - see extract.py's itmo_person/external_person specs). The node itself
-    # always carries the single :Person label; is_itmo travels as a sticky
-    # property (see upsert_person_nodes_batch).
+    # whitelist applies (person_spec). The node itself always carries the
+    # single :Person label; is_itmo travels as a sticky property (see
+    # upsert_person_nodes_batch).
     person_merges: list[tuple[str, str]] = []
     for row in rows_by_file.get("persons.jsonl") or ():
-        is_itmo = bool(row.get("is_itmo"))
-        spec = NODE_REGISTRY["itmo_person" if is_itmo else "external_person"]
+        spec = person_spec(row)
         _labels, node = extract_node(row, spec)
         person_nodes.append(node)
         for merged_id in row.get("merged_ids") or []:
@@ -266,13 +314,25 @@ def load_prepared_rows(
     else:
         logger.info("repo_links.jsonl: no rows, skipping")
 
+    # Before anything is written: the three labels that can be folded carry
+    # merges the prepared rows have never seen.
+    _keep_graph_merges(client, "Person", person_nodes)
+    for label in ("Publication", "Repository"):
+        _keep_graph_merges(client, label, node_batches.get(label) or [])
+
+    node_total = len(person_nodes) + sum(len(nodes) for nodes in node_batches.values())
+    written = 0
     for labels, nodes in node_batches.items():
         for chunk in chunked(nodes):
             client.upsert_nodes_batch(labels, chunk)
+            written += len(chunk)
+            _tick(report, "выкладка узлов", written, node_total)
         logger.info("nodes (:%s): loaded %d", labels, len(nodes))
 
     for chunk in chunked(person_nodes):
         client.upsert_person_nodes_batch(chunk)
+        written += len(chunk)
+        _tick(report, "выкладка узлов", written, node_total)
     itmo_count = sum(1 for _, props in person_nodes if props.get("is_itmo"))
     logger.info(
         "nodes (:Person): loaded %d (itmo=%d, external=%d)",
@@ -295,6 +355,8 @@ def load_prepared_rows(
     for chunk in chunked(node_merges["repository"]):
         client.merge_repository_nodes_batch(chunk)
 
+    rel_total = sum(len(rels) for rels in rel_batches.values())
+    linked = 0
     for (src_label, tgt_label, rel_type, tgt_match_prop), rels in rel_batches.items():
         if dropped_relationships:
             kept = [(src_id, tgt_id, props) for src_id, tgt_id, props in rels
@@ -302,9 +364,14 @@ def load_prepared_rows(
             if len(kept) != len(rels):
                 logger.info("relationships (:%s)-[:%s]->(:%s): %d skipped as unlinked by hand",
                             src_label, rel_type, tgt_label, len(rels) - len(kept))
+                # Counted as done, or the progress would stop short of its
+                # total by however many edges somebody had unlinked.
+                linked += len(rels) - len(kept)
             rels = kept
         for chunk in chunked(rels):
             client.upsert_relationships_batch(src_label, tgt_label, rel_type, chunk, tgt_match_prop)
+            linked += len(chunk)
+            _tick(report, "выкладка связей", linked, rel_total)
         logger.info("relationships (:%s)-[:%s]->(:%s): requested %d", src_label, rel_type, tgt_label, len(rels))
 
     # A group published before a graph-wide dedup still carries rows for
