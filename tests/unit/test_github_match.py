@@ -10,6 +10,7 @@ from pauk.pipeline.stages import social_graph
 from pauk.pipeline.stages.github_match import (
     ITMO_IN_TEXT,
     MATCHES_FILENAME,
+    PETERSBURG_PATTERN,
     GitHubMatchStage,
     confidence,
     decide,
@@ -200,6 +201,19 @@ class ConfidenceTest(unittest.TestCase):
 
 
 class GitHubMatchStageTest(unittest.TestCase):
+    def test_organization_login_requires_itmo_identity_to_corroborate_a_match(self):
+        for owner, matched in (("saint-petersburg-ai", False), ("ITMO-NCCR", True)):
+            with self.subTest(owner=owner):
+                repo = repository(owner, "tool")
+                _, people = self.run_stage(
+                    [person("A1", "Ivan Petrov")],
+                    [profile("someone", name="Ivan Petrov", repos=[repo.url])],
+                    [repo],
+                )
+                self.assertEqual(people["A1"].github, "someone" if matched else None)
+                entry = self.journal()[0]
+                self.assertEqual("org_itmo" in entry["signals"], matched)
+
     def run_stage(self, people, profiles, repositories):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -392,22 +406,32 @@ class GitHubMatchStageTest(unittest.TestCase):
 
 
 class ItmoInTextTest(unittest.TestCase):
-    """One pattern for both stages that ask whether a profile says ITMO.
+    """Person matching keeps the city signal; organization seeding does not."""
 
-    There used to be two, byte-identical, and only one of them grew the
-    spellings the labs actually use. The stages then disagreed: social_graph
-    followed an organization located in "Санкт Петербург", github_match did
-    not credit the same account with itmo_profile.
-    """
-
-    def test_the_two_stages_share_one_pattern(self):
-        self.assertIs(ITMO_IN_TEXT, social_graph.ITMO_IN_TEXT)
+    def test_social_graph_uses_the_stricter_identity_pattern(self):
+        self.assertIsNot(ITMO_IN_TEXT, social_graph.ITMO_IDENTITY_PATTERN)
+        self.assertFalse(social_graph.ITMO_IDENTITY_PATTERN.search("Saint Petersburg"))
 
     def test_the_spellings_social_graph_added_are_recognised_here(self):
         for text in ("Россия, Санкт Петербург", "Санкт-Петербург",
-                     "Russia, St. Petersburg", "St-Petersburg", "Sankt-Peterburg"):
+                     "Russia, St. Petersburg", "St-Petersburg", "Sankt Petersburg",
+                     "St.Petersburg", "Sankt-Peterburg", "СанктПетербург",
+                     "Saint-Petersburg", "SaintPetersburg", "St Petersburg", "StPetersburg",
+                     "Sankt Peterburg", "Saint Peterburg", "SAINT PETERSBURG",
+                     "saint petersburg", "САНКТ-ПЕТЕРБУРГ"):
             with self.subTest(text=text):
                 self.assertTrue(ITMO_IN_TEXT.search(text))
+
+    def test_russian_case_endings_are_still_the_city(self):
+        for text in ("в Санкт-Петербурге", "из Санкт-Петербурга", "по Санкт-Петербургу",
+                     "о Санкт-Петербурге", "Санкт-Петербурге", "г. Санкт-Петербург",
+                     "Санкт-Петербургский политехнический университет",
+                     "Лаборатория, Санкт-Петербурга, Россия"):
+            with self.subTest(text=text):
+                self.assertTrue(ITMO_IN_TEXT.search(text))
+
+    def test_bare_sankt_is_not_a_city_signal(self):
+        self.assertFalse(PETERSBURG_PATTERN.search("Sankt Gallenkirch"))
 
     def test_itmo_as_a_word_still_wins_and_ritmo_still_does_not(self):
         self.assertTrue(ITMO_IN_TEXT.search("ITMO University"))

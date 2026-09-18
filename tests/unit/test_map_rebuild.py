@@ -138,8 +138,8 @@ class WriteGraphFilesTest(unittest.TestCase):
         # would be a new map, not an updated one.
         first, _ = self.build(out=self.tmp / "one")
         second, _ = self.build(out=self.tmp / "two")
-        self.assertEqual((first / "graph-data.js").read_text(),
-                         (second / "graph-data.js").read_text())
+        self.assertEqual((first / "graph-data.js").read_text(encoding="utf-8"),
+                         (second / "graph-data.js").read_text(encoding="utf-8"))
 
 
 class RebuildMapTest(unittest.TestCase):
