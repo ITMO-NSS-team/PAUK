@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Здоровье БД</h1>
+
+{% set queued = request.query_params.get("queued") %}
+{% if queued %}
+<p class="note">Проверки поставлены в очередь. Результат появится здесь, когда воркер их выполнит.</p>
+{% endif %}
+
+{% if computed_at %}
+<p class="muted" style="margin:-8px 0 18px">
+  Считаны {{ computed_at[:19]|replace("T", " ") }}
+  {%- if totals.nodes %}, в графе было {{ totals.nodes }} узлов и {{ totals.rels }} связей{% endif %}.
+</p>
+{% endif %}
+
+<div class="card" style="margin-bottom:20px">
+  <div class="row" style="justify-content:space-between; align-items:center; margin:0">
+    <div>
+      {% if computed_at %}
+      <div class="verdict">
+        <span class="tally bad"><b>{{ verdict.fail }}</b> плохо</span>
+        <span class="tally mid"><b>{{ verdict.warn }}</b> внимание</span>
+        <span class="tally good"><b>{{ verdict.ok }}</b> в порядке</span>
+        {% if verdict.error %}
+        <span class="tally bad"><b>{{ verdict.error }}</b> не выполнились</span>{% endif %}
+      </div>
+      {% else %}
+      <span class="muted">Пусто. Нажмите «Посчитать» и проверки пройдут по графу.</span>
+      {% endif %}
+    </div>
+    {% if user.can_run %}
+    <form method="post" action="/jobs">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="kind" value="health">
+      <button type="submit">{% if computed_at %}Пересчитать{% else %}Посчитать{% endif %}</button>
+    </form>
+    {% else %}
+    <span class="muted">пересчёт за администратором</span>
+    {% endif %}
+  </div>
+</div>
+
+{% for group in groups %}
+<h1 style="margin-top:28px">{{ group.name }}
+  <span class="muted">{{ group.checks|length }}</span></h1>
+<div class="card">
+  <table class="fixed">
+    <colgroup><col><col style="width:9rem"><col style="width:9rem"></colgroup>
+    {% for check in group.checks %}
+    <tr>
+      <td>
+        {# Ссылка только там, где есть что открыть: у проверки на нуле
+           показывать нечего, а упавшая покажет ту же ошибку второй раз. #}
+        {% if openable(check) %}
+        <a href="/health/{{ check.id }}"><b>{{ check.title }}</b></a>
+        {% else %}<b>{{ check.title }}</b>{% endif %}
+        {% if check.hint %}<br><span class="muted">{{ check.hint }}</span>{% endif %}
+      </td>
+      <td class="val" style="text-align:right">
+        {{ check.n if check.n is not none else "—" }}
+        {% if check.n and check.pct is not none %}
+        <br><span class="muted">{{ check.pct }}% из {{ check.of }}</span>
+        {% elif check.of == 0 %}
+        {# Ноль из ноля — не «в порядке», а «нечего было проверять». Проверки
+           на метках, которых в графе не стало, выглядели зелёными ровно так. #}
+        <br><span class="muted">не из чего считать</span>
+        {% endif %}
+      </td>
+      <td>
+        <span class="kind {% if check.status == 'ok' %}kind-created
+              {%- elif check.status == 'warn' %}kind-updated{% else %}kind-deleted{% endif %}">
+          {{ words[check.status] }}</span>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endfor %}
+{% endblock %}

@@ -24,7 +24,9 @@ from pauk.graph.mutations import (
     update_node,
 )
 from pauk.graph.overrides import (
+    CREATE,
     DELETE,
+    LINK,
     SET,
     apply_overrides,
     deactivate_override,
@@ -81,16 +83,32 @@ async def undo(request: Request, user: Editor, db: Db, graph: Graph,
     back: dict = {}
     try:
         if kind == "rel":
+            if op == LINK:
+                # A link somebody added is a claim, not an instruction: it
+                # is taken back by removing the link, which has its own
+                # button on the record's page. Anything else about a
+                # relationship is the removal, which is what this undoes.
+                raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                    "добавленную вручную связь снимают на карточке записи")
             triple = (str(form["src_label"]), str(form["rel_type"]), str(form["tgt_label"]))
             src_id, tgt_id = str(form["src_id"]), str(form["target_id"])
-            dropped = deactivate_relationship_override(db, *triple, src_id, tgt_id)
+            dropped = deactivate_relationship_override(db, *triple, src_id, tgt_id,
+                                                       only_op=DELETE)
         else:
             label, node_id = str(form["label"]), str(form["target_id"])
+            if op == CREATE:
+                # The same as a link: a claim on a record somebody added,
+                # taken back by deleting the record on its own page.
+                raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                    "заведённую вручную запись снимают удалением на её карточке")
             if op == DELETE:
                 snapshot = decisions.deleted_fields(db, label, node_id)
             elif op == SET:
                 back = decisions.source_of_truth(db, label, node_id)
-            dropped = deactivate_override(db, label, node_id)
+            # Only the decision the page showed. It may have become another
+            # one since the page was drawn, and switching off whatever is
+            # there now could drop a claim nobody asked to drop.
+            dropped = deactivate_override(db, label, node_id, only_op=op or None)
     except KeyError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "не хватает данных о решении") from None
     if not dropped:

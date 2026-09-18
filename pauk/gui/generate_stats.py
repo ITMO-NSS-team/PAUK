@@ -64,8 +64,12 @@ def _jsonable(v):
 NODE_COUNTS = [
     ("Публикации", "Publications", "MATCH (p:Publication) RETURN count(p)"),
     ("Персоны всего", "People total", "MATCH (p:Person) RETURN count(p)"),
-    ("— сотрудники ИТМО", "— ITMO staff", "MATCH (p:Person:Itmo) RETURN count(p)"),
-    ("— внешние соавторы", "— external co-authors", "MATCH (p:Person:External) RETURN count(p)"),
+    # Not a label: the loader writes one :Person and carries ITMO membership
+    # as a sticky property — see the note in checks.py.
+    ("— сотрудники ИТМО", "— ITMO staff",
+     "MATCH (p:Person) WHERE p.is_itmo RETURN count(p)"),
+    ("— внешние соавторы", "— external co-authors",
+     "MATCH (p:Person) WHERE NOT coalesce(p.is_itmo, false) RETURN count(p)"),
     ("Департаменты", "Departments", "MATCH (d:Department) RETURN count(d)"),
     ("Репозитории", "Repositories", "MATCH (r:Repository) RETURN count(r)"),
     ("GitHub-профили", "GitHub profiles", "MATCH (g:GitHubProfile) RETURN count(g)"),
@@ -116,15 +120,31 @@ def status_for(n, denom, warn, fail):
     return "ok"
 
 
+#: Publications with at least one ITMO author: the note under the
+#: publication count, and the only ones that reach the map.
+ON_MAP = ("MATCH (p:Publication) WHERE EXISTS { (p)<-[:AUTHORED]-(a:Person) WHERE a.is_itmo } "
+          "RETURN count(p)")
+
+YEARS = """MATCH (p:Publication) WHERE p.year IS NOT NULL
+           RETURN p.year AS year, count(*) AS n ORDER BY year"""
+
+TOP_DEPTS = """MATCH (d:Department)<-[:BELONGS_TO]-(p:Person) WHERE p.is_itmo
+               WITH d, count(p) AS n ORDER BY n DESC LIMIT 8
+               RETURN coalesce(d.name_ru, d.name_en) AS name, d.name_en AS name_en, n"""
+
+#: Everything this module asks the graph besides the checks themselves. A
+#: list, so a test can walk it the way it walks CHECKS: the labels here had
+#: drifted from the schema too, and showed zeros without a word.
+QUERIES = [cypher for _label, _label_en, cypher in NODE_COUNTS] + [ON_MAP, YEARS, TOP_DEPTS]
+
+
 def collect(drv):
     nodes = [
         {"label": label, "label_en": label_en, "n": scalar(drv, cy)}
         for label, label_en, cy in NODE_COUNTS
     ]
 
-    on_map = scalar(
-        drv, "MATCH (p:Publication) WHERE (p)<-[:AUTHORED]-(:Person:Itmo) RETURN count(p)"
-    )
+    on_map = scalar(drv, ON_MAP)
     for row in nodes:
         if row["label"] == "Публикации":
             row["note"] = f"на карте {on_map}"
@@ -191,17 +211,8 @@ def collect(drv):
             }
         )
 
-    years = rows(
-        drv,
-        """MATCH (p:Publication) WHERE p.year IS NOT NULL
-                         RETURN p.year AS year, count(*) AS n ORDER BY year""",
-    )
-    depts = rows(
-        drv,
-        """MATCH (d:Department)<-[:BELONGS_TO]-(p:Person:Itmo)
-                         WITH d, count(p) AS n ORDER BY n DESC LIMIT 8
-                         RETURN coalesce(d.name_ru, d.name_en) AS name, d.name_en AS name_en, n""",
-    )
+    years = rows(drv, YEARS)
+    depts = rows(drv, TOP_DEPTS)
 
     return {
         "generated_at": datetime.now(UTC).astimezone().strftime("%d.%m.%Y %H:%M"),

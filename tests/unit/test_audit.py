@@ -175,6 +175,57 @@ class UpsertRelationshipsDiffTest(unittest.TestCase):
         self.assertEqual(entry.change_kind, "created")
 
 
+class LinkWithoutPropertiesTest(unittest.TestCase):
+    """Most relationships carry no properties, and used to leave no trace.
+
+    BELONGS_TO, IMPLEMENTS, PART_OF and the rest are bare edges: the diff
+    between "there is one" and "there is none" has no fields in it, and an
+    entry with an empty diff was dropped as a no-op write. Linking a person
+    to a department by hand, or unlinking them, was invisible in the
+    journal — the one screen that exists to answer "who did this".
+    """
+
+    def setUp(self):
+        self.fake = FakeNeo4jClient()
+        self.fake.delete_relationships_batch = lambda s, t, r, pairs, m="id": len(pairs)
+        self.fake.relationships_matched = 1
+        self.sink = InMemorySink()
+        self.client = AuditedNeo4jClient(self.fake, self.sink)
+
+    def test_linking_is_recorded(self):
+        with patch.object(AuditedNeo4jClient, "_fetch_rel_props",
+                          side_effect=[{}, {"A1 -> D1": {}}]):
+            self.client.upsert_relationships_batch(
+                "Person", "Department", "BELONGS_TO", [("A1", "D1", {})])
+        (entry,) = self.sink.entries
+        self.assertEqual(entry.entity_type, "(Person)-[:BELONGS_TO]->(Department)")
+        self.assertEqual((entry.entity_id, entry.change_kind), ("A1 -> D1", "created"))
+
+    def test_unlinking_is_recorded(self):
+        with patch.object(AuditedNeo4jClient, "_fetch_rel_props",
+                          side_effect=[{"A1 -> D1": {}}, {}]):
+            self.client.delete_relationships_batch(
+                "Person", "Department", "BELONGS_TO", [("A1", "D1")])
+        (entry,) = self.sink.entries
+        self.assertEqual((entry.entity_id, entry.change_kind), ("A1 -> D1", "deleted"))
+
+    def test_a_write_that_changed_nothing_still_says_nothing(self):
+        # The guard this relaxes is worth keeping for what it was for: a
+        # publish rewrites every edge it knows on every run.
+        with patch.object(AuditedNeo4jClient, "_fetch_rel_props",
+                          side_effect=[{"A1 -> D1": {}}, {"A1 -> D1": {}}]):
+            self.client.upsert_relationships_batch(
+                "Person", "Department", "BELONGS_TO", [("A1", "D1", {})])
+        self.assertEqual(self.sink.entries, [])
+
+    def test_an_edge_whose_target_does_not_exist_is_not_invented(self):
+        # Nothing matched, so nothing was written and nothing happened.
+        with patch.object(AuditedNeo4jClient, "_fetch_rel_props", side_effect=[{}, {}]):
+            self.client.upsert_relationships_batch(
+                "Person", "Department", "BELONGS_TO", [("A1", "D9", {})])
+        self.assertEqual(self.sink.entries, [])
+
+
 class SyncImplementsAuditTest(unittest.TestCase):
     def test_removed_relationships_are_recorded_as_a_bulk_change(self):
         client, fake, sink = audited_client()
