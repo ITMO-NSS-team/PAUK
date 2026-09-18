@@ -1,0 +1,1109 @@
+import { beforeEach, describe, expect, it } from "vitest";
+import type { AuthorDetail, PubDetail, RepoDetail } from "../src/contracts/graph";
+import { indexDetailsByKey, mergeDetailsInto } from "../src/core/data";
+import { Store, type AppState } from "../src/core/state";
+import { mountPanel } from "../src/features/panels";
+import {
+  loadSampleAuthorDetails,
+  loadSampleGraphData,
+  loadSamplePubDetails,
+  loadSampleRepoDetails,
+} from "./fixtures";
+
+const NO_PUB_DETAILS = new Map<string, PubDetail>();
+const NO_AUTHOR_DETAILS = new Map<string, AuthorDetail>();
+const NO_REPO_DETAILS = new Map<string, RepoDetail>();
+
+function initialState(overrides: Partial<AppState> = {}): AppState {
+  return {
+    screen: "app",
+    tab: 1,
+    lang: "ru",
+    selection: null,
+    filters: {
+      minCoauth: 1,
+      minSharedAuthors: 1,
+      yearMax: 2026,
+      showNoDeptAuthors: true,
+      showNoDeptPubs: true,
+      showExternalAuthors: false,
+      edgeZoomThreshold: 0.4,
+      showRegions: { 1: false, 2: false, 3: false },
+      regionZoomThreshold: 0.25,
+      regionMinNodes: 10,
+    },
+    ...overrides,
+  };
+}
+
+describe("mountPanel", () => {
+  let panel: HTMLElement;
+
+  beforeEach(() => {
+    panel = document.createElement("div");
+    panel.id = "panel";
+    document.body.appendChild(panel);
+    return () => panel.remove();
+  });
+
+  it("«Обзор» вкладки авторов — число авторов/департаментов, среднее публикаций, заполненность полей — LOADING, пока detail пуст", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState({ tab: 1 }));
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.hidden).toBe(false);
+    expect(panel.querySelector("h3")?.textContent).toBe("Обзор");
+    expect(panel.textContent).toContain(String(data.authors.length));
+    expect(panel.textContent).toContain(String(data.departments.length));
+    const avgPubs = data.authors.reduce((sum, a) => sum + a.pubs_count, 0) / data.authors.length;
+    expect(panel.textContent).toContain(avgPubs.toFixed(1));
+    // authorDetails пуст (detail ещё не пришёл) — доля ORCID/GitHub/email
+    // не считается от нуля к нулю, а показывает индикатор загрузки.
+    expect(panel.querySelectorAll(".loading-indicator").length).toBeGreaterThan(0);
+  });
+
+  it("«Обзор» вкладки репозиториев — число репозиториев, доля с README/лицензией", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState({ tab: 2 }));
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.textContent).toContain(String(data.repos.length));
+    expect(panel.querySelectorAll(".loading-indicator").length).toBeGreaterThan(0);
+  });
+
+  it("«Обзор» вкладки публикаций — число публикаций, доля с известным годом/DOI/аннотацией", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState({ tab: 3 }));
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.textContent).toContain(String(data.pubs.length));
+    const withKnownYear = data.pubs.filter((p) => p.year !== null).length;
+    const knownYearPercent = Math.round((withKnownYear / data.pubs.length) * 100);
+    expect(panel.textContent).toContain(`${knownYearPercent}%`); // известен год считается сразу, не ждёт pubDetails
+    expect(panel.querySelectorAll(".loading-indicator").length).toBeGreaterThan(0); // DOI/аннотация — ждут pubDetails
+  });
+
+  it("«Обзор» вкладки авторов — график «Авторы по департаментам», не топ конкретных авторов", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState({ tab: 1 }));
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const chart = panel.querySelector(".panel-chart");
+    if (!chart) throw new Error("карточка «Обзор» должна содержать график");
+    expect(chart.querySelector("h4")?.textContent).toBe("Авторы по департаментам");
+    // Фикстура: A1/A2/A6 — деп. 0, A3/A4/A8 — деп. 1, A5/A7 — деп. 2.
+    const rows = [...chart.querySelectorAll(".chart-bar-row")];
+    expect(rows).toHaveLength(3);
+    const byLabel = new Map(
+      rows.map((row) => [
+        row.querySelector(".chart-bar-row__label")?.textContent,
+        row.querySelector(".chart-bar-row__value")?.textContent,
+      ]),
+    );
+    expect(byLabel.get("Институт прикладных систем")).toBe("3");
+    expect(byLabel.get("Лаборатория анализа данных")).toBe("3");
+    expect(byLabel.get("Центр робототехники")).toBe("2");
+  });
+
+  it("«Обзор» вкладки публикаций — график «Публикации по годам», в хронологическом порядке, без публикаций с неизвестным годом", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState({ tab: 3 }));
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const chart = panel.querySelector(".panel-chart");
+    if (!chart) throw new Error("карточка «Обзор» должна содержать график");
+    expect(chart.querySelector("h4")?.textContent).toBe("Публикации по годам");
+    // Фикстура: 2021×1, 2022×1, 2023×1, 2024×2 (P1,P6), P2 — год неизвестен, в график не входит.
+    const labels = [...chart.querySelectorAll(".chart-bar-row__label")].map((el) => el.textContent);
+    expect(labels).toEqual(["2021", "2022", "2023", "2024"]); // хронологический порядок, не по величине
+    const values = [...chart.querySelectorAll(".chart-bar-row__value")].map((el) => el.textContent);
+    expect(values).toEqual(["1", "1", "1", "2"]);
+  });
+
+  it("«Обзор» вкладки репозиториев — график «Репозитории по звёздам» корзинами, не топ конкретных репозиториев", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState({ tab: 2 }));
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const chart = panel.querySelector(".panel-chart");
+    if (!chart) throw new Error("карточка «Обзор» должна содержать график");
+    expect(chart.querySelector("h4")?.textContent).toBe("Репозитории по звёздам");
+    // Фикстура: R4=3,R2=7 -> "1–9" (2); R3=15,R5=21,R1=42 -> "10–99" (3); остальные корзины пусты.
+    const byLabel = new Map(
+      [...chart.querySelectorAll(".chart-bar-row")].map((row) => [
+        row.querySelector(".chart-bar-row__label")?.textContent,
+        row.querySelector(".chart-bar-row__value")?.textContent,
+      ]),
+    );
+    expect(byLabel.get("0")).toBe("0");
+    expect(byLabel.get("1–9")).toBe("2");
+    expect(byLabel.get("10–99")).toBe("3");
+    expect(byLabel.get("100–999")).toBe("0");
+    expect(byLabel.get("1000+")).toBe("0");
+    // Ни один репозиторий не назван по имени в графике — только корзины, никаких кликабельных ссылок на конкретные сущности.
+    expect(chart.querySelector("button.panel-entity-ref")).toBeNull();
+  });
+
+  it("показывает карточку узла с полями, специфичными для автора", async () => {
+    const data = await loadSampleGraphData();
+    const author = data.authors[0];
+    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: author.key },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.hidden).toBe(false);
+    expect(panel.querySelector("h3")?.textContent).toBe(author.label);
+    expect(panel.textContent).toContain(String(author.pubs_count));
+  });
+
+  it("карточка автора показывает бейдж «Автор» и кнопку «← Обзор»", async () => {
+    const data = await loadSampleGraphData();
+    const author = data.authors[0];
+    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: author.key },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.querySelector(".panel-kind")?.textContent).toBe("Автор");
+    expect(panel.querySelector(".panel-back")?.textContent).toBe("← Обзор");
+  });
+
+  it("карточка автора после domержа detail показывает имя на ВТОРОМ языке под заголовком (мельче, серым)", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    // A1 в authors-detail.sample.json: name_ru "Иванов Иван Иванович", name_en "Ivan Ivanov" — разные строки.
+    const store = new Store<AppState>({
+      ...initialState({ lang: "ru" }),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    expect(panel.querySelector("h3")?.textContent).toBe("Иванов Иван Иванович"); // основной язык (ru) — заголовок
+    expect(panel.querySelector(".panel-card__subtitle")?.textContent).toBe("Ivan Ivanov"); // второй язык — под заголовком
+
+    store.set({ lang: "en" });
+    expect(panel.querySelector("h3")?.textContent).toBe("Ivan Ivanov"); // сменили язык — заголовок и подзаголовок меняются местами
+    expect(panel.querySelector(".panel-card__subtitle")?.textContent).toBe("Иванов Иван Иванович");
+  });
+
+  it("имя на втором языке стоит в шапке сразу под заголовком, а не отдельным блоком после неё", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    const titles = panel.querySelector(".panel-card__head .panel-card__titles");
+    expect(titles?.children[0]?.tagName).toBe("H3");
+    expect(titles?.children[1]?.className).toBe("panel-card__subtitle");
+  });
+
+  it("карточка автора разделена на «Общее», «Приватное» и «Служебное»", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    const sections = new Map(
+      [...panel.querySelectorAll(".panel-section")].map((section) => [
+        section.querySelector(".panel-section__title")?.textContent,
+        section,
+      ]),
+    );
+    expect([...sections.keys()]).toEqual(["Общее", "Приватное", "Служебное"]);
+
+    const general = sections.get("Общее");
+    expect(general?.textContent).toContain("Департамент");
+    expect(general?.querySelector("a[href='https://openalex.org/A5000000001']")).not.toBeNull();
+    expect(general?.textContent).toContain("Топ соавторов");
+
+    const privateSection = sections.get("Приватное");
+    expect(privateSection?.querySelector("a[href='mailto:ivanov@example.edu']")).not.toBeNull();
+    expect(
+      privateSection?.querySelector("a[href='https://orcid.org/0000-0001-2345-6789']"),
+    ).not.toBeNull();
+    expect(privateSection?.textContent).toContain("к.т.н.");
+
+    const service = sections.get("Служебное");
+    expect(service?.textContent).toContain("Ключ");
+    expect(service?.textContent).toContain("A1");
+    // created_at "2026-08-14T10:23:45.123Z" — дата в формате ru-RU, без сырой ISO-строки.
+    expect(service?.textContent).toContain("14.08.2026");
+    expect(service?.textContent).not.toContain("T10:23");
+  });
+
+  it("пока authors-detail не пришёл, индикатор загрузки стоит в «Приватном», а служебные ключ/тип видны сразу", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const titles = [...panel.querySelectorAll(".panel-section__title")].map((el) => el.textContent);
+    expect(titles).toEqual(["Общее", "Приватное", "Служебное"]);
+    const privateSection = panel.querySelectorAll(".panel-section")[1];
+    expect(privateSection?.querySelector(".loading-indicator")).not.toBeNull();
+    expect(panel.querySelectorAll(".panel-section")[2]?.textContent).toContain("A1");
+  });
+
+  it("аффилиации с одним названием склеиваются в один пункт: ссылка на ROR, диапазон лет и источники", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    // A1: "Sample University" от OpenAlex (2023, 2024) и от ORCID (2021); "Other Institute" без ROR и лет.
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    const dt = [...panel.querySelectorAll("dt")].find((el) => el.textContent === "Аффилиации");
+    const items = [...(dt?.nextElementSibling?.querySelectorAll("li") ?? [])];
+    expect(items.map((li) => li.textContent)).toEqual([
+      "Sample University 2021–2024 · OpenAlex, ORCID",
+      "Other Institute OpenAlex",
+    ]);
+    expect(items[0]?.querySelector("a")?.getAttribute("href")).toBe("https://ror.org/0sample01");
+    // Без ROR — не ссылка, но источник так же отдельным серым суффиксом, а не в скобках.
+    expect(items[1]?.querySelector("a")).toBeNull();
+    expect(items[1]?.querySelector(".panel-list__meta")?.textContent).toBe("OpenAlex");
+  });
+
+  it("публикации автора — по одной на строку, с позицией автора и отметкой «автор для переписки»", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    // A1: P1 — позиция 1, corresponding; P2 — позиция 3; у P5 роли в detail нет.
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    const dt = [...panel.querySelectorAll("dt")].find((el) => el.textContent === "Публикации");
+    expect(dt?.classList.contains("panel-row--block")).toBe(true);
+    const byPub = new Map(
+      [...(dt?.nextElementSibling?.querySelectorAll("li") ?? [])].map((li) => [
+        li.querySelector("button.panel-entity-ref")?.textContent,
+        li.querySelector(".panel-list__meta")?.textContent ?? null,
+      ]),
+    );
+    expect(byPub.get("P1")).toBe("1-й автор · автор для переписки");
+    expect(byPub.get("P2")).toBe("3-й автор");
+    expect(byPub.get("P5")).toBeNull();
+  });
+
+  it("карточка автора не падает на authors-detail.json, сгенерированном до появления pub_roles/created_at/updated_at", async () => {
+    const data = await loadSampleGraphData();
+    const [a1] = await loadSampleAuthorDetails();
+    if (!a1) throw new Error("фикстура должна содержать автора A1");
+    const staleA1: AuthorDetail = { ...a1 };
+    delete staleA1.pub_roles;
+    delete staleA1.created_at;
+    delete staleA1.updated_at;
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, indexDetailsByKey([staleA1]), NO_REPO_DETAILS);
+
+    expect(panel.querySelector("h3")?.textContent).toBe("Иванов Иван Иванович");
+    const pubsDt = [...panel.querySelectorAll("dt")].find((el) => el.textContent === "Публикации");
+    const pubsList = pubsDt?.nextElementSibling;
+    expect(pubsList?.textContent).toContain("P1");
+    expect(pubsList?.querySelector(".panel-list__meta")).toBeNull();
+    expect(panel.textContent).not.toContain("Создан");
+  });
+
+  it("длинный список: первые 10 и «+ ещё N», по клику — все и «свернуть», повторный клик — снова 10", async () => {
+    const data = await loadSampleGraphData();
+    const [a1] = await loadSampleAuthorDetails();
+    if (!a1) throw new Error("фикстура должна содержать автора A1");
+    const variants = Array.from({ length: 13 }, (_, i) => `Variant ${i + 1}`);
+    const authorDetails = indexDetailsByKey([
+      { ...a1, name_variants: { openalex: variants, orcid: [] } },
+    ]);
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    const dt = [...panel.querySelectorAll("dt")].find(
+      (el) => el.textContent === "Варианты написания (OpenAlex)",
+    );
+    const list = dt?.nextElementSibling?.querySelector(".panel-list");
+    const toggle = () => list?.querySelector<HTMLButtonElement>(".panel-list__more");
+    const itemTexts = () =>
+      [...(list?.querySelectorAll("li") ?? [])]
+        .filter((li) => !li.querySelector(".panel-list__more"))
+        .map((li) => li.textContent);
+
+    expect(itemTexts()).toEqual(variants.slice(0, 10));
+    expect(toggle()?.textContent).toBe("+ ещё 3");
+
+    toggle()?.click();
+    expect(itemTexts()).toEqual(variants);
+    expect(toggle()?.textContent).toBe("− свернуть");
+
+    toggle()?.click();
+    expect(itemTexts()).toEqual(variants.slice(0, 10));
+    expect(toggle()?.textContent).toBe("+ ещё 3");
+  });
+
+  it("карточка автора БЕЗ domержённого detail (только сокращённая подпись узла) не показывает подзаголовок", async () => {
+    const data = await loadSampleGraphData();
+    const author = data.authors[0];
+    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: author.key },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.querySelector(".panel-card__subtitle")).toBeNull();
+  });
+
+  it("клик по «← Обзор» сбрасывает selection и возвращает карточку «Обзор»", async () => {
+    const data = await loadSampleGraphData();
+    const author = data.authors[0];
+    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: author.key },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    const back = panel.querySelector<HTMLButtonElement>(".panel-back");
+    if (!back) throw new Error("на карточке автора должна быть кнопка «← Обзор»");
+
+    back.click();
+
+    expect(store.get().selection).toBeNull();
+    expect(panel.querySelector("h3")?.textContent).toBe("Обзор");
+  });
+
+  it("«Обзор» показывает бейдж текущей вкладки, но НЕ показывает кнопку «← Обзор» — возвращаться уже некуда", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>(initialState()); // selection: null, tab: 1
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.querySelector(".panel-kind")?.textContent).toBe("Авторы");
+    expect(panel.querySelector(".panel-back")).toBeNull();
+  });
+
+  it("карточка автора показывает его публикации и топ соавторов по убыванию веса", async () => {
+    const data = await loadSampleGraphData();
+    // A1 во фикстуре: публикации P1, P2, P5 (all_edges); соавторы A2 (w=2) и A3 (w=1).
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.textContent).toContain("P1");
+    expect(panel.textContent).toContain("P2");
+    expect(panel.textContent).toContain("P5");
+
+    const text = panel.textContent ?? "";
+    const coauthorsRow = text.indexOf("Топ соавторов");
+    expect(coauthorsRow).toBeGreaterThan(-1);
+    // A2 (вес 2) должен идти раньше A3 (вес 1) — сортировка по убыванию веса.
+    expect(text.indexOf("Петрова А.С.")).toBeGreaterThan(coauthorsRow);
+    expect(text.indexOf("Петрова А.С.")).toBeLessThan(text.indexOf("Сидоров П."));
+  });
+
+  it("клик по соавтору в карточке автора делает его новым selection — 'прослеживать связи' одним кликом", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const coauthorButton = [...panel.querySelectorAll("button.panel-entity-ref")].find(
+      (button) => button.textContent === "Петрова А.С.",
+    ) as HTMLButtonElement | undefined;
+    if (!coauthorButton)
+      throw new Error("кнопка-ссылка на соавтора А2 (Петрова А.С.) должна быть в карточке");
+
+    coauthorButton.click();
+
+    expect(store.get().selection).toEqual({ kind: "node", key: "A2" });
+    expect(store.get().tab).toBe(1); // тот же вид сущности — вкладка не переключается зря
+  });
+
+  it("клик по публикации в карточке автора делает её новым selection И переключает вкладку на 'Публикации'", async () => {
+    // Регрессия: publication — узел ДРУГОГО вида, чем текущая вкладка
+    // (автор, tab=1) — если tab не переключить вместе с selection, узла
+    // P1 не будет в графе текущей (авторской) вкладки, и камера
+    // (map/build.ts::flyToSelection) тихо не найдёт его координаты —
+    // "анимация переноса с панели на граф работает только для авторов".
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>({
+      ...initialState({ tab: 1 }),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const pubButton = [...panel.querySelectorAll("button.panel-entity-ref")].find(
+      (button) => button.textContent === "P1",
+    ) as HTMLButtonElement | undefined;
+    if (!pubButton) throw new Error("кнопка-ссылка на публикацию P1 должна быть в карточке");
+
+    pubButton.click();
+
+    expect(store.get().selection).toEqual({ kind: "node", key: "P1" });
+    expect(store.get().tab).toBe(3);
+  });
+
+  it("внешние ссылки (GitHub/ORCID) остаются <a>, не кнопками — открываются в новой вкладке, а не меняют selection", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    const githubLink = panel.querySelector("a[href='https://github.com/ivanov-ii']");
+    expect(githubLink?.tagName).toBe("A");
+    expect(githubLink?.getAttribute("target")).toBe("_blank");
+  });
+
+  it("карточка автора показывает GitHub, ORCID и учёную степень, когда они заполнены", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    // A1 в authors-detail.sample.json — degree/github/orcid заполнены.
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    expect(panel.textContent).toContain("к.т.н.");
+
+    const githubLink = panel.querySelector(
+      "a[href='https://github.com/ivanov-ii']",
+    ) as HTMLAnchorElement | null;
+    expect(githubLink?.textContent).toBe("ivanov-ii");
+
+    const orcidLink = panel.querySelector(
+      "a[href='https://orcid.org/0000-0001-2345-6789']",
+    ) as HTMLAnchorElement | null;
+    expect(orcidLink?.textContent).toBe("0000-0001-2345-6789");
+  });
+
+  it("карточка автора показывает OpenAlex/Google Scholar/OpenReview/email/аффилиации, когда они заполнены", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    // A1 в authors-detail.sample.json — все эти поля заполнены.
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    const openalexLink = panel.querySelector(
+      "a[href='https://openalex.org/A5000000001']",
+    ) as HTMLAnchorElement | null;
+    expect(openalexLink?.textContent).toBe("A5000000001");
+
+    const scholarLink = panel.querySelector(
+      "a[href='https://scholar.google.com/citations?user=sample1']",
+    ) as HTMLAnchorElement | null;
+    expect(scholarLink?.textContent).toBe("Google Scholar");
+
+    const openreviewLink = panel.querySelector(
+      "a[href='https://openreview.net/profile?id=~Ivan_Ivanov1']",
+    ) as HTMLAnchorElement | null;
+    expect(openreviewLink?.textContent).toBe("~Ivan_Ivanov1");
+
+    const mailLinks = [...panel.querySelectorAll("a[href^='mailto:']")] as HTMLAnchorElement[];
+    expect(mailLinks.map((a) => a.textContent)).toEqual(["ivanov@example.edu"]);
+
+    expect(panel.textContent).toContain("Sample University");
+  });
+
+  it("не показывает строки GitHub/ORCID/степени у автора без этих полей", async () => {
+    const data = await loadSampleGraphData();
+    // A2 в authors-detail.sample.json - запись ЕСТЬ (detail пришёл), но
+    // degree/github/orcid в ней пустые строки. Специально не NO_AUTHOR_DETAILS
+    // (пустая карта) - та проверяла бы другой сценарий, "detail ещё не
+    // пришёл" (индикатор загрузки), а не "поля реально пустые".
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A2" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    expect(panel.querySelector("a[href^='https://github.com/']")).toBeNull();
+    expect(panel.querySelector("a[href^='https://orcid.org/']")).toBeNull();
+    expect(panel.querySelector(".loading-indicator")).toBeNull();
+  });
+
+  it("карточка автора показывает его репозитории (repo_author_edges)", async () => {
+    const data = await loadSampleGraphData();
+    // A1 во фикстуре — maintainer репозитория R1 (repo_author_edges).
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const r1 = data.repos.find((repo) => repo.key === "R1");
+    if (!r1) throw new Error("фикстура должна содержать репозиторий R1");
+    expect(panel.textContent).toContain(r1.label);
+  });
+
+  it("не показывает строку репозиториев у автора без единого repo_author_edges", async () => {
+    const data = await loadSampleGraphData();
+    // A2 во фикстуре ни в одном repo_author_edges не участвует.
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A2" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.textContent).not.toContain("Репозитории");
+  });
+
+  it("карточка автора показывает варианты имени раздельно по источнику (OpenAlex/ORCID), когда они есть", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    // A1 в authors-detail.sample.json — openalex: ["Ivanov Ivan"], orcid: ["I. Ivanov"].
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    expect(panel.textContent).toContain("Варианты написания (OpenAlex)");
+    expect(panel.textContent).toContain("Ivanov Ivan");
+    expect(panel.textContent).toContain("Варианты написания (ORCID)");
+    expect(panel.textContent).toContain("I. Ivanov");
+  });
+
+  it("не показывает строки вариантов имени у автора без name_variants ни по одному источнику", async () => {
+    const data = await loadSampleGraphData();
+    // A2 в authors-detail.sample.json - detail пришёл, openalex/orcid пустые.
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A2" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    expect(panel.textContent).not.toContain("Варианты написания");
+  });
+
+  it("заголовок карточки автора — полное имя (name_ru/name_en) на текущем языке, как только detail пришёл", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    // A1 в authors-detail.sample.json — name_ru: "Иванов Иван Иванович", name_en: "Ivan Ivanov".
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+    expect(panel.querySelector("h3")?.textContent).toBe("Иванов Иван Иванович");
+
+    store.set({ lang: "en" });
+    expect(panel.querySelector("h3")?.textContent).toBe("Ivan Ivanov");
+  });
+
+  it("заголовок карточки автора остаётся сокращённой подписью, пока detail не пришёл", async () => {
+    const data = await loadSampleGraphData();
+    const author = data.authors.find((a) => a.key === "A1");
+    if (!author) throw new Error("фикстура должна содержать автора A1");
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.querySelector("h3")?.textContent).toBe(author.label);
+  });
+
+  it("заголовок карточки автора остаётся сокращённой подписью, если полное имя пустое, даже когда detail уже пришёл", async () => {
+    const data = await loadSampleGraphData();
+    const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
+    // A2 в authors-detail.sample.json — detail пришёл, но name_ru/name_en пустые.
+    const author2 = data.authors.find((a) => a.key === "A2");
+    if (!author2) throw new Error("фикстура должна содержать автора A2");
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A2" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+
+    expect(panel.querySelector("h3")?.textContent).toBe(author2.label);
+  });
+
+  it("карточка репозитория показывает участников с ролью и публикации репозитория", async () => {
+    const data = await loadSampleGraphData();
+    // R1 во фикстуре: A1 — maintainer (repo_author_edges), P1 — его публикация (repo_pub_edges).
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "R1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.textContent).toContain("Участники");
+    expect(panel.textContent).toContain("Иванов И.И. (maintainer)");
+    expect(panel.textContent).toContain("P1");
+  });
+
+  it("карточка репозитория показывает описание (RepoDetail.description)", async () => {
+    const data = await loadSampleGraphData();
+    const repoDetails = indexDetailsByKey(await loadSampleRepoDetails());
+    const repoDetail = repoDetails.get("R1");
+    if (!repoDetail) throw new Error("repos-detail.sample.json должен содержать репозиторий R1");
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "R1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, repoDetails);
+
+    expect(panel.textContent).toContain(repoDetail.description);
+  });
+
+  it("карточка репозитория показывает тип владельца, лицензию и наличие README", async () => {
+    const data = await loadSampleGraphData();
+    // R1 во фикстуре: has_readme=true, license="MIT", owner_type="organization".
+    const repoDetails = indexDetailsByKey(await loadSampleRepoDetails());
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "R1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, repoDetails);
+
+    expect(panel.textContent).toContain("organization");
+    expect(panel.textContent).toContain("MIT");
+    expect(panel.textContent).toContain("✓");
+  });
+
+  it("не показывает строку лицензии у репозитория без неё (R2 во фикстуре)", async () => {
+    const data = await loadSampleGraphData();
+    const repoDetails = indexDetailsByKey(await loadSampleRepoDetails());
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "R2" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, repoDetails);
+
+    expect(panel.textContent).not.toContain("Лицензия");
+  });
+
+  it("не показывает строки участников/публикаций у репозитория без единой связи", async () => {
+    const data = await loadSampleGraphData();
+    // R4 во фикстуре не встречается ни в одном repo_pub_edges.
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "R4" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.textContent).not.toContain("Публикации");
+  });
+
+  it("карточка публикации показывает список её авторов (all_edges)", async () => {
+    const data = await loadSampleGraphData();
+    // P1 во фикстуре: авторы A1 и A2 (all_edges).
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "P1" },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.textContent).toContain("Иванов И.И.");
+    expect(panel.textContent).toContain("Петрова А.С.");
+  });
+
+  it("показывает настоящее название публикации из pubDetails, а не её ключ", async () => {
+    const data = await loadSampleGraphData();
+    const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
+    const pub = data.pubs[0];
+    if (!pub) throw new Error("фикстура должна содержать хотя бы одну публикацию");
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: pub.key },
+    });
+
+    mountPanel(store, data, pubDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const title = panel.querySelector("h3")?.textContent;
+    expect(title).toBe(pubDetails.get(pub.key)?.label);
+    expect(title).not.toBe(pub.key);
+  });
+
+  it("карточка публикации показывает тип, направления, аннотацию и ссылку на OpenAlex", async () => {
+    const data = await loadSampleGraphData();
+    const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
+    // P1 во фикстуре: type="article", fields=["Computer Science"], abstract непустой.
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "P1" },
+    });
+
+    mountPanel(store, data, pubDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.textContent).toContain("article");
+    expect(panel.textContent).toContain("Computer Science");
+    expect(panel.textContent).toContain("Краткое описание метода раскладки графов.");
+
+    const openalexLink = panel.querySelector(
+      "a[href='https://openalex.org/W1000000001']",
+    ) as HTMLAnchorElement | null;
+    expect(openalexLink?.textContent).toBe("OpenAlex");
+  });
+
+  it("показывает DOI и ссылку на код как кликабельные <a>, когда есть pubDetails и нет связанного репозитория", async () => {
+    const data = await loadSampleGraphData();
+    const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
+    // P4 во фикстуре — has_code: true, один code_url, и НЕ участвует ни в
+    // одном repo_pub_edges (в отличие от P1) — код показываем как ссылку.
+    const detail = pubDetails.get("P4");
+    if (!detail?.has_code || detail.code_url.length === 0) {
+      throw new Error(
+        "фикстура pubs-detail.sample.json должна содержать P4 с has_code и хотя бы одним code_url",
+      );
+    }
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "P4" },
+    });
+
+    mountPanel(store, data, pubDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const doiLink = panel.querySelector("a[href^='https://doi.org/']") as HTMLAnchorElement | null;
+    expect(doiLink?.textContent).toBe(detail.doi);
+    expect(doiLink?.target).toBe("_blank");
+    expect(doiLink?.rel).toContain("noopener");
+
+    const codeLink = panel.querySelector(
+      `a[href="${detail.code_url[0]}"]`,
+    ) as HTMLAnchorElement | null;
+    expect(codeLink?.textContent).toBe(detail.code_url[0]?.replace("https://github.com/", ""));
+  });
+
+  it("показывает ссылку на связанный репозиторий ВМЕСТО code_url, когда публикация связана с репозиторием (repo_pub_edges)", async () => {
+    const data = await loadSampleGraphData();
+    const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
+    // P1 во фикстуре связана с R1 (repo_pub_edges) и одновременно имеет
+    // свой code_url в pubDetails — репозиторий должен победить.
+    const detail = pubDetails.get("P1");
+    if (!detail?.has_code || detail.code_url.length === 0) {
+      throw new Error("фикстура pubs-detail.sample.json должна содержать P1 с has_code и code_url");
+    }
+    const repo = data.repos.find((r) => r.key === "R1");
+    if (!repo) throw new Error("фикстура должна содержать репозиторий R1");
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "P1" },
+    });
+
+    mountPanel(store, data, pubDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.textContent).toContain(repo.label);
+    expect(panel.querySelector(`a[href="${detail.code_url[0]}"]`)).toBeNull();
+  });
+
+  it("заменяет code_url с небезопасной схемой (javascript:) на about:blank вместо того, чтобы класть её в href", async () => {
+    const data = await loadSampleGraphData();
+    // P2 — специально не P1: P1 связана с репозиторием через repo_pub_edges,
+    // и тогда ссылка на репозиторий заслонила бы собой code_url целиком,
+    // а этому тесту нужно, чтобы код реально дошёл до ветки с codeLink().
+    const pub = data.pubs.find((p) => p.key === "P2");
+    if (!pub) throw new Error("фикстура должна содержать публикацию P2");
+    const malicious: PubDetail = {
+      key: pub.key,
+      label: "Тестовая публикация",
+      journal: "",
+      doi: "",
+      has_code: true,
+      code_url: ["javascript:alert(1)"],
+      type: "",
+      fields: [],
+      funding: [],
+      versions: [],
+      openalex_url: "",
+      abstract: "",
+    };
+    const pubDetails = new Map([[pub.key, malicious]]);
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: pub.key },
+    });
+
+    mountPanel(store, data, pubDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const codeLink = panel.querySelector(`dd a`) as HTMLAnchorElement | null;
+    expect(codeLink?.getAttribute("href")).toBe("about:blank");
+  });
+
+  it("не показывает строку кода, когда has_code === false, но DOI всё равно показывает", async () => {
+    const data = await loadSampleGraphData();
+    const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
+    // P2 во фикстуре — has_code: false, code_url пуст, но doi есть.
+    const detail = pubDetails.get("P2");
+    if (!detail || detail.has_code)
+      throw new Error("фикстура должна содержать P2 с has_code: false");
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "P2" },
+    });
+
+    mountPanel(store, data, pubDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.querySelector("a[href^='https://doi.org/']")).not.toBeNull();
+    expect(panel.textContent).not.toContain("Код");
+  });
+
+  it("показывает карточку ребра с обоими концами и весом", async () => {
+    const data = await loadSampleGraphData();
+    const edge = data.coauth_edges[0];
+    if (!edge) throw new Error("фикстура должна содержать хотя бы одно coauth-ребро");
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "edge", s: edge.s, t: edge.t, w: edge.w },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.hidden).toBe(false);
+    expect(panel.textContent).toContain(String(edge.w));
+  });
+
+  it("клик по 'От'/'К' в карточке ребра переходит к этому узлу", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "edge", s: "A1", t: "A2", w: 2 },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const toButton = [...panel.querySelectorAll("button.panel-entity-ref")].find(
+      (button) => button.textContent === "Петрова А.С.",
+    ) as HTMLButtonElement | undefined;
+    if (!toButton)
+      throw new Error("кнопка-ссылка на 'К' (А2, Петрова А.С.) должна быть в карточке ребра");
+
+    toButton.click();
+
+    expect(store.get().selection).toEqual({ kind: "node", key: "A2" });
+  });
+
+  it("карточка ребра автор-автор показывает список общих публикаций", async () => {
+    const data = await loadSampleGraphData();
+    // A1-A2 во фикстуре: w=2, и ровно две реально общие публикации (P1, P5) —
+    // согласовано с all_edges, а не просто совпадающее число.
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "edge", s: "A1", t: "A2", w: 2 },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.textContent).toContain("Общие публикации");
+    expect(panel.textContent).toContain("P1");
+    expect(panel.textContent).toContain("P5");
+  });
+
+  it("карточка ребра публикация-публикация показывает список общих авторов", async () => {
+    const data = await loadSampleGraphData();
+    // P1-P2 во фикстуре: w=1, общий автор — A1 (Иванов И.И.).
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "edge", s: "P1", t: "P2", w: 1 },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.textContent).toContain("Общие авторы");
+    expect(panel.textContent).toContain("Иванов И.И.");
+  });
+
+  it("не показывает строку общих публикаций, когда общих публикаций реально нет", async () => {
+    const data = await loadSampleGraphData();
+    // A3-A4 во фикстуре: вес есть (соавторство посчитано иначе), но по
+    // all_edges общих публикаций нет вообще — строка не должна появляться.
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "edge", s: "A3", t: "A4", w: 1 },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.textContent).not.toContain("Общие публикации");
+  });
+
+  it("показывает карточку департамента со сводными числами", async () => {
+    const data = await loadSampleGraphData();
+    const dept = data.departments[0];
+    if (!dept) throw new Error("фикстура должна содержать хотя бы один департамент");
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "dept", id: dept.id },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    expect(panel.hidden).toBe(false);
+    expect(panel.querySelector("h3")?.textContent).toBe(dept.name);
+    expect(panel.textContent).toContain(String(dept.n_authors));
+    expect(panel.textContent).toContain(String(dept.n_repos));
+    expect(panel.querySelector(".panel-kind")?.textContent).toBe("Департамент");
+    expect(panel.querySelector(".panel-back")?.textContent).toBe("← Обзор");
+  });
+
+  it("карточка департамента показывает связанные департаменты по убыванию веса (dept_edges)", async () => {
+    const data = await loadSampleGraphData();
+    // Департамент 0 во фикстуре связан с 1 (w=2) и 2 (w=1) — 1 должен идти первым.
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "dept", id: 0 } });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const dept1 = data.departments.find((d) => d.id === 1);
+    const dept2 = data.departments.find((d) => d.id === 2);
+    if (!dept1 || !dept2) throw new Error("фикстура должна содержать департаменты 1 и 2");
+
+    const text = panel.textContent ?? "";
+    expect(text).toContain("Связанные департаменты");
+    const dt = [...panel.querySelectorAll("dt")].find(
+      (el) => el.textContent === "Связанные департаменты",
+    );
+    expect(dt?.classList.contains("panel-row--block")).toBe(true); // список с «+ ещё N», а не через запятую
+    expect(text.indexOf(dept1.name)).toBeGreaterThan(-1);
+    expect(text.indexOf(dept1.name)).toBeLessThan(text.indexOf(dept2.name));
+  });
+
+  it("клик по связанному департаменту делает его новым selection", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "dept", id: 0 } });
+    const dept1 = data.departments.find((d) => d.id === 1);
+    if (!dept1) throw new Error("фикстура должна содержать департамент 1");
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const dept1Button = [...panel.querySelectorAll("button.panel-entity-ref")].find(
+      (button) => button.textContent === dept1.name,
+    ) as HTMLButtonElement | undefined;
+    if (!dept1Button) throw new Error("кнопка-ссылка на департамент 1 должна быть в карточке");
+
+    dept1Button.click();
+
+    expect(store.get().selection).toEqual({ kind: "dept", id: 1 });
+  });
+
+  it("возвращается к карточке «Обзор», когда selection сбрасывают в null", async () => {
+    const data = await loadSampleGraphData();
+    const author = data.authors[0];
+    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: author.key },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    expect(panel.querySelector("h3")?.textContent).toBe(author.label);
+
+    store.set({ selection: null });
+    expect(panel.hidden).toBe(false);
+    expect(panel.querySelector("h3")?.textContent).toBe("Обзор");
+  });
+
+  it("показывает индикатор загрузки, пока authorDetails ещё пуст (файл не домержился)", async () => {
+    const data = await loadSampleGraphData();
+    const author = data.authors[0];
+    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: author.key },
+    });
+
+    // Пустая карта - ровно то состояние, в котором app/main.ts передаёт
+    // authorDetails фичам ДО того, как пришёл authors-detail.json.
+    mountPanel(store, data, NO_PUB_DETAILS, new Map(), NO_REPO_DETAILS);
+
+    expect(panel.querySelector(".loading-indicator")).not.toBeNull();
+    expect(panel.textContent).toContain("Подробнее");
+  });
+
+  it("после того как authorDetails домержился и пришёл store.notify(), индикатор сменяется реальными полями", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: "A1" },
+    });
+    const authorDetails = new Map<string, AuthorDetail>(); // пуст на момент монтирования
+
+    mountPanel(store, data, NO_PUB_DETAILS, authorDetails, NO_REPO_DETAILS);
+    expect(panel.querySelector(".loading-indicator")).not.toBeNull();
+
+    // Имитация того, что делает app/main.ts, когда приходит authors-detail.json:
+    // мержим в ТУ ЖЕ карту (не создаём новую) и зовём notify().
+    mergeDetailsInto(authorDetails, await loadSampleAuthorDetails());
+    store.notify();
+
+    expect(panel.querySelector(".loading-indicator")).toBeNull();
+    expect(panel.textContent).toContain("к.т.н."); // A1.degree из authors-detail.sample.json
+  });
+
+  it("показывает индикатор загрузки для репозитория, пока repoDetails ещё пуст", async () => {
+    const data = await loadSampleGraphData();
+    const repo = data.repos[0];
+    if (!repo) throw new Error("фикстура должна содержать хотя бы один репозиторий");
+    const store = new Store<AppState>({
+      ...initialState(),
+      selection: { kind: "node", key: repo.key },
+    });
+
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, new Map());
+
+    expect(panel.querySelector(".loading-indicator")).not.toBeNull();
+  });
+});
