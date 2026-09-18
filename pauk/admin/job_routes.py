@@ -261,8 +261,6 @@ def _map_options(form) -> dict:
     an empty string, so the model's own default applies.
     """
     options: dict = {}
-    if form.get("public") is not None:
-        options["public"] = str(form.get("public"))
     seed = str(form.get("seed", "")).strip()
     if seed:
         options["seed"] = seed

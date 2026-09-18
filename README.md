@@ -105,10 +105,10 @@ work попал в другую, пересекающуюся группу: су
 ## GUI
 
 Визуализация расположена в `pauk/gui`. После загрузки данных в Neo4j можно
-сгенерировать статические данные и запустить веб-интерфейс:
+снять снепшот, сгенерировать данные для сайта и запустить его:
 
 ```bash
-python -m pauk.gui.generate_data
-python -m pauk.gui.generate_stats
-python -m pauk.gui.serve
+pauk cache export
+pauk gui build
+cd pauk/gui/web && npm install && npm run dev
 ```

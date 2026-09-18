@@ -111,17 +111,16 @@ uv run pauk dedup graph                         # по всему графу
 ## 4. Обновление web
 
 ```bash
-uv run pauk cache export                        # -> data/cache/graph_snapshot.json
-uv run python -m pauk.gui.generate_data         # -> pauk/gui/data/private/graph-data.js, graph-search.js
-uv run python -m pauk.gui.generate_stats        # -> pauk/gui/data/private/graph-stats.js
-uv run python -m pauk.gui.serve                 # порт 8501
+uv run pauk cache export                        # -> data/cache/graph_snapshot_<дата>.json
+uv run pauk gui build                           # -> data/gui/{public,private}/*.json
+cd pauk/gui/web && npm install && npm run dev   # локально
+./scripts/deploy.sh                             # на сервер, порт 8501
 ```
 
-После правок графа пересобирать web этой же цепочкой; открыть `http://localhost:8501`.
+После правок графа пересобирать web этой же цепочкой.
 
 ## 5. Проверка
 
-- Health-таб на странице (`http://localhost:8501`) -> «Пересчитать» (проверки `pauk/gui/checks.py`).
 - Счётчики графа:
 
   ```bash
@@ -153,7 +152,7 @@ uv run python -m pauk.gui.serve                 # порт 8501
 | только конкретные id | `--input ids.txt --entity <entity>` |
 | группа недопубликована | `uv run pauk publish graph --group <группа>` |
 | дубли после доливки | `uv run pauk dedup graph` |
-| граф изменился, web устарел | `cache export -> generate_data -> generate_stats` |
+| граф изменился, web устарел | `cache export -> gui build` |
 
 `--entity` принимает ключи `PreparedStore.COLLECTIONS`: publications, persons,
 departments, organizations, repositories, github_profiles, repo_links.
@@ -175,8 +174,8 @@ docker rm -f pauk-mongo-copy pauk-neo4j-copy
 [ ] 1. дамп -> restore в локальный Mongo -> локальный Neo4j; env на копию, проверить
 [ ] 2. pauk run --from … --to … --name testrun
 [ ] 3. pauk publish graph --group testrun ; pauk dedup graph
-[ ] 4. cache export ; generate_data ; generate_stats ; serve
-[ ] 5. health-таб ; счётчики графа
+[ ] 4. cache export ; gui build ; deploy.sh
+[ ] 5. счётчики графа
 [ ] 6. догон точечно при недоборе
 [ ] 7. проверка на копии пройдена -> повторить на проде
 ```

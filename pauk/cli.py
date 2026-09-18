@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import argparse
 import logging
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 from pymongo.errors import ServerSelectionTimeoutError
 
@@ -21,6 +24,8 @@ from pauk.sources import OpenAlexClient
 from pauk.storage import PreparedStore, RawStore, ensure_indexes, get_mongo_client
 from pauk.storage.naming import group_name, validate_group
 
+logger = logging.getLogger("pauk.cli")
+
 
 def _selector(args):
     if args.work:
@@ -34,12 +39,14 @@ def _selector(args):
 
 def _group(args) -> str:
     selector = _selector(args)
-    return validate_group(group_name(
-        work_id=selector.work_id if isinstance(selector, WorkSelector) else None,
-        date_from=selector.date_from if isinstance(selector, PeriodSelector) else None,
-        date_to=selector.date_to if isinstance(selector, PeriodSelector) else None,
-        name=args.name,
-    ))
+    return validate_group(
+        group_name(
+            work_id=selector.work_id if isinstance(selector, WorkSelector) else None,
+            date_from=selector.date_from if isinstance(selector, PeriodSelector) else None,
+            date_to=selector.date_to if isinstance(selector, PeriodSelector) else None,
+            name=args.name,
+        )
+    )
 
 
 def _selection_from_input(path: str, entity: str) -> PreparedSelection:
@@ -49,18 +56,30 @@ def _selection_from_input(path: str, entity: str) -> PreparedSelection:
     return PreparedSelection(entity, ids)
 
 
-logger = logging.getLogger("pauk.cli")
-
-
 def _log_result(action: str, group: str | None, result: dict) -> None:
     summary = ", ".join(f"{key}={value}" for key, value in result.items()) or "nothing to do"
     logger.info("%s: %s", f"{action} {group}" if group else action, summary)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(prog="pauk")
-    parser.add_argument("--verbose", action="store_true")
-    sub = parser.add_subparsers(dest="command", required=True)
+@contextmanager
+def _mongo_db() -> Generator[Any, None, None]:
+    """Opens a Mongo connection for the duration of one command, runs
+    ensure_indexes() once, closes on exit - shared by every command that
+    touches Mongo (run/collect/normalize/enrich/publish/dedup) instead of
+    each repeating its own try/finally.
+    """
+    mongo = get_mongo_client(settings)
+    try:
+        db = mongo[settings.mongo_db]
+        ensure_indexes(db)
+        yield db
+    finally:
+        mongo.close()
+
+
+def _add_pipeline_parsers(sub: argparse._SubParsersAction) -> None:
+    """Registers the OpenAlex/Mongo pipeline subcommands: run, collect,
+    normalize, enrich, publish, dedup."""
     for name in ("run", "collect"):
         p = sub.add_parser(name)
         p.add_argument("--work")
@@ -72,109 +91,242 @@ def main() -> None:
     p.add_argument("--group", required=True)
     p = sub.add_parser("enrich")
     p.add_argument("stage", nargs="?", default="all")
-    p.add_argument("--force", action="store_true",
-                   help="reprocess rows whose stage already completed (e.g. after a fix)")
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help="reprocess rows whose stage already completed (e.g. after a fix)",
+    )
     p.add_argument("--group", required=True)
     p.add_argument("--input", help="path to a file of ids (one per line) to scope this run to")
-    p.add_argument("--entity", choices=list(PreparedStore.COLLECTIONS),
-                   help="entity the --input ids belong to (required together with --input)")
+    p.add_argument(
+        "--entity",
+        choices=list(PreparedStore.COLLECTIONS),
+        help="entity the --input ids belong to (required together with --input)",
+    )
     p = sub.add_parser("publish")
     p.add_argument("target", choices=["graph"])
     p.add_argument("--group", required=True)
     p = sub.add_parser("dedup")
-    p.add_argument("target", choices=["graph"],
-                   help="deduplicate persons across every published group in the graph")
+    p.add_argument(
+        "target",
+        choices=["graph"],
+        help="deduplicate persons across every published group in the graph",
+    )
+
+
+def _add_cache_parsers(sub: argparse._SubParsersAction) -> None:
+    """Registers `cache export`/`cache inspect` - the Neo4j snapshot subcommands."""
     p = sub.add_parser("cache")
     cache_sub = p.add_subparsers(dest="cache_command", required=True)
-    p = cache_sub.add_parser("export")
-    p.add_argument("--output", type=Path)
+    p = cache_sub.add_parser("export", help="snapshot the graph from Neo4j to a file")
+    p.add_argument("--output", type=Path, help="default: cache_dir/graph_snapshot_<date>.json")
+    p = cache_sub.add_parser(
+        "inspect",
+        help="print table sizes / field stats / sample rows from a snapshot",
+        usage="pauk cache inspect [-h] [path_to_snapshot] [--table TABLE] [--sample SAMPLE]",
+    )
+    p.add_argument(
+        "snapshot",
+        type=Path,
+        nargs="?",
+        default=None,
+        metavar="path_to_snapshot",
+        help="snapshot file (default: newest in cache_dir)",
+    )
+
+    p.add_argument(
+        "--table",
+        help="name of the table to inspect (run 'pauk cache inspect' with no flags to see the table names)",
+    )
+    p.add_argument(
+        "--sample",
+        type=int,
+        default=0,
+        help="print N sample rows from --table instead of its field stats",
+    )
+
+
+def _add_gui_parsers(sub: argparse._SubParsersAction) -> None:
+    """Registers `gui build` - snapshot -> layout -> JSON for the site (pauk/gui/web)."""
+    p = sub.add_parser("gui")
+    gui_sub = p.add_subparsers(dest="gui_command", required=True)
+    p = gui_sub.add_parser("build", help="build the site data (layout + JSON) from a graph snapshot")
+    p.add_argument("--cache", type=Path, help="snapshot file (default: newest in cache_dir)")
+    p.add_argument("--out-dir", type=Path, help="public/ and private/ go inside it (default: gui_dir)")
+    p.add_argument("--seed", type=int, default=42, help="ForceAtlas2 layout seed")
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="pauk")
+    parser.add_argument("--verbose", action="store_true")
+    sub = parser.add_subparsers(dest="command", required=True)
+    _add_pipeline_parsers(sub)
+    _add_cache_parsers(sub)
+    _add_gui_parsers(sub)
     admin_cli.add_parser(sub)
+    return parser
+
+
+def _cmd_run(args) -> None:
+    with _mongo_db() as db:
+        group = _group(args)
+        _log_result("run", group, PipelineRunner(settings, group, db).run(_selector(args)))
+
+
+def _cmd_collect(args) -> None:
+    with _mongo_db() as db:
+        group = _group(args)
+        count = Collector(
+            OpenAlexClient(settings.request_timeout, settings.openalex_api_key), RawStore(db, group)
+        ).collect(_selector(args))
+        _log_result("collect", group, {"raw_works": count})
+
+
+def _cmd_normalize(args) -> None:
+    with _mongo_db() as db:
+        group = validate_group(args.group)
+        result = OpenAlexNormalizer(RawStore(db, group), PreparedStore(db, group)).run()
+        _log_result("normalize", group, result)
+
+
+def _cmd_enrich(args, parser: argparse.ArgumentParser) -> None:
+    # social_graph is not in ALL_STAGES — it runs by name only, so the check
+    # has to know the optional ones too.
+    known = {stage.name for stage in (*ALL_STAGES, *OPTIONAL_STAGES)}
+    if args.stage != "all" and args.stage not in known:
+        parser.error(f"unknown enrichment stage: {args.stage}")
+    if bool(args.input) != bool(args.entity):
+        parser.error("--input requires --entity (and vice versa)")
+    with _mongo_db() as db:
+        group = validate_group(args.group)
+        selection = _selection_from_input(args.input, args.entity) if args.input else None
+        result = Enricher(PreparedStore(db, group), RawStore(db, group), settings).run(
+            args.stage, selection, args.force
+        )
+        _log_result(f"enrich {args.stage}", group, result)
+
+
+def _cmd_publish(args) -> None:
+    from pauk.graph.load import load_jsonl_group
+
+    with _mongo_db() as db:
+        group = validate_group(args.group)
+        load_jsonl_group(settings, db, group)
+        logger.info("publish graph %s: done", group)
+
+
+def _cmd_dedup() -> None:
+    # args.target only ever validates as "graph" (argparse choices=["graph"])
+    # - nothing branches on it, there is no other target to dispatch on.
+    from pauk.graph.dedup import run_graph_dedup
+
+    with _mongo_db() as db:
+        _log_result("dedup graph", None, run_graph_dedup(settings, db))
+
+
+def _cmd_cache_export(args) -> None:
+    from pauk.cache import GraphSnapshotExporter
+
+    path = GraphSnapshotExporter(settings).export(args.output)
+    logger.info("cache export: %s", path)
+
+
+def _cmd_cache_inspect(args, parser: argparse.ArgumentParser) -> None:
+    from pauk.cache.graph_snapshot import latest_snapshot, read_snapshot
+    from pauk.cache.inspect import describe_table, sample_rows, summarize
+
+    path = args.snapshot or latest_snapshot(settings.cache_dir)
+    logger.info("cache inspect: %s", path)
+    graph = read_snapshot(path)
+    if args.table is None:
+        summarize(graph)
+    elif args.table not in graph:
+        parser.error(f"unknown table: {args.table!r}. Available: {', '.join(graph)}")
+    elif args.sample:
+        sample_rows(graph[args.table], args.sample)
+    else:
+        describe_table(graph[args.table], args.table)
+
+
+def _cmd_cache(args, parser: argparse.ArgumentParser) -> None:
+    if args.cache_command == "export":
+        _cmd_cache_export(args)
+    elif args.cache_command == "inspect":
+        _cmd_cache_inspect(args, parser)
+    else:
+        parser.error(f"unknown cache command: {args.cache_command}")
+
+
+def _cmd_gui(args, parser: argparse.ArgumentParser) -> None:
+    if args.gui_command != "build":
+        parser.error(f"unknown gui command: {args.gui_command}")
+    from pauk.cache.graph_snapshot import latest_snapshot
+    from pauk.gui.graph_builder.builder import write_site_data
+
+    path = args.cache or latest_snapshot(settings.cache_dir)
+    logger.info("gui build: %s", path)
+    write_site_data(path, args.out_dir or settings.gui_dir, args.seed)
+
+
+def _cmd_admin(args) -> None:
+    # `schema` only prints the whitelists; it reaches neither database,
+    # so it stays usable without one running.
+    if args.admin_command == "schema":
+        admin_cli.run(args, settings, None)
+        return
+    mongo = get_mongo_client(settings)
+    try:
+        db = mongo[settings.mongo_db]
+        # A database that is simply not running is the most common way these
+        # commands fail, and pymongo reports it as a thirty-second timeout
+        # ending in a page of driver frames. Say what happened instead, before
+        # anything prompts for a password that has nowhere to go.
+        try:
+            ensure_indexes(db)
+        except ServerSelectionTimeoutError:
+            raise SystemExit(
+                f"cannot reach MongoDB at {settings.mongo_uri}.\n"
+                "Start it, for example:\n"
+                "  docker run -d --name pauk-mongo -p 27017:27017 "
+                "-v pauk-mongo-data:/data/db mongo:7") from None
+        admin_cli.run(args, settings, db)
+    finally:
+        mongo.close()
+
+
+def main() -> None:
+    parser = _build_parser()
     args = parser.parse_args()
     configure_logging(args.verbose)
+    try:
+        _dispatch(args, parser)
+    except Busy as error:
+        # Something else holds the graph or the group. Waiting is the
+        # answer, and a stack trace does not say so.
+        raise SystemExit(str(error)) from None
 
-    if args.command in ("run", "collect", "normalize", "enrich", "publish"):
-        mongo = get_mongo_client(settings)
-        try:
-            db = mongo[settings.mongo_db]
-            ensure_indexes(db)
-            if args.command == "run":
-                group = _group(args)
-                _log_result("run", group, PipelineRunner(settings, group, db).run(_selector(args)))
-            elif args.command == "collect":
-                group = _group(args)
-                count = Collector(
-                    OpenAlexClient(settings.request_timeout, settings.openalex_api_key),
-                    RawStore(db, group)).collect(_selector(args))
-                _log_result("collect", group, {"raw_works": count})
-            elif args.command == "normalize":
-                group = validate_group(args.group)
-                result = OpenAlexNormalizer(RawStore(db, group), PreparedStore(db, group)).run()
-                _log_result("normalize", group, result)
-            elif args.command == "enrich":
-                # social_graph is not in ALL_STAGES — it runs by name only,
-                # so the check has to know the optional ones too.
-                known = {stage.name for stage in (*ALL_STAGES, *OPTIONAL_STAGES)}
-                if args.stage != "all" and args.stage not in known:
-                    parser.error(f"unknown enrichment stage: {args.stage}")
-                if bool(args.input) != bool(args.entity):
-                    parser.error("--input requires --entity (and vice versa)")
-                group = validate_group(args.group)
-                selection = _selection_from_input(args.input, args.entity) if args.input else None
-                result = Enricher(PreparedStore(db, group), RawStore(db, group), settings) \
-                    .run(args.stage, selection, args.force)
-                _log_result(f"enrich {args.stage}", group, result)
-            else:
-                from pauk.graph.load import load_jsonl_group
-                group = validate_group(args.group)
-                load_jsonl_group(settings, db, group)
-                logger.info("publish graph %s: done", group)
-        except Busy as error:
-            # Something else holds the graph or the group. Waiting is the
-            # answer, and a stack trace does not say so.
-            raise SystemExit(str(error)) from None
-        finally:
-            mongo.close()
-    elif args.command == "admin":
-        # `schema` only prints the whitelists; it reaches neither database,
-        # so it stays usable without one running.
-        if args.admin_command == "schema":
-            admin_cli.run(args, settings, None)
-        else:
-            mongo = get_mongo_client(settings)
-            try:
-                db = mongo[settings.mongo_db]
-                # A database that is simply not running is the most common
-                # way these commands fail, and pymongo reports it as a
-                # thirty-second timeout ending in a page of driver frames.
-                # Say what happened instead, before anything prompts for a
-                # password that has nowhere to go.
-                try:
-                    ensure_indexes(db)
-                except ServerSelectionTimeoutError:
-                    raise SystemExit(
-                        f"cannot reach MongoDB at {settings.mongo_uri}.\n"
-                        "Start it, for example:\n"
-                        "  docker run -d --name pauk-mongo -p 27017:27017 "
-                        "-v pauk-mongo-data:/data/db mongo:7") from None
-                admin_cli.run(args, settings, db)
-            finally:
-                mongo.close()
+
+def _dispatch(args, parser: argparse.ArgumentParser) -> None:
+    if args.command == "run":
+        _cmd_run(args)
+    elif args.command == "collect":
+        _cmd_collect(args)
+    elif args.command == "normalize":
+        _cmd_normalize(args)
+    elif args.command == "enrich":
+        _cmd_enrich(args, parser)
+    elif args.command == "publish":
+        _cmd_publish(args)
     elif args.command == "dedup":
-        from pauk.graph.dedup import run_graph_dedup
-        mongo = get_mongo_client(settings)
-        try:
-            db = mongo[settings.mongo_db]
-            ensure_indexes(db)
-            try:
-                _log_result("dedup graph", None, run_graph_dedup(settings, db))
-            except Busy as error:
-                raise SystemExit(str(error)) from None
-        finally:
-            mongo.close()
+        _cmd_dedup()
+    elif args.command == "cache":
+        _cmd_cache(args, parser)
+    elif args.command == "gui":
+        _cmd_gui(args, parser)
+    elif args.command == "admin":
+        _cmd_admin(args)
     else:
-        from pauk.cache import GraphSnapshotExporter
-        path = GraphSnapshotExporter(settings).export(args.output)
-        logger.info("cache export: %s", path)
+        parser.error(f"unknown command: {args.command}")
 
 
 if __name__ == "__main__":

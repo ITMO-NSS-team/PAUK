@@ -196,7 +196,18 @@ pauk cache export [--output <путь>]
 
 Снимает снепшот текущего состояния графа в
 `data/cache/graph_snapshot.json` (или указанный путь) — готовит вход для
-`pauk.gui.generate_data`. См. [cache.md](cache.md).
+`pauk gui build`. См. [cache.md](cache.md).
+
+## `gui build`
+
+```
+pauk gui build [--cache <снепшот>] [--out-dir <папка>] [--seed 42]
+```
+
+Снепшот → раскладка → JSON для сайта `pauk/gui/web`
+(`pauk/gui/graph_builder/builder.py::write_site_data`). По умолчанию берёт
+самый свежий снепшот из `cache_dir` и пишет в `gui_dir`
+(`data/gui/{public,private}`). См. [gui.md](gui.md).
 
 ## `--input`: точечный выбор строк у `enrich`
 

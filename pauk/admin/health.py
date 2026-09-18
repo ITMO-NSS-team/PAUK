@@ -1,12 +1,8 @@
 """The graph's own health, as the panel keeps and reads it.
 
-The checks themselves live in `pauk.gui.checks` and are run by
-`pauk.gui.generate_stats` — one set of definitions for the map's tab and
-for this page, because two would answer differently about the same graph
-within a month.
-
-What is here is the part the panel needs and the map does not: somewhere to
-keep the last answer. Thirty-two checks are thirty-two counts plus their
+The checks themselves live in `pauk.admin.checks` and are run by
+`pauk.admin.graph_stats`; this module is the part that keeps the last
+answer. Thirty-two checks are thirty-two counts plus their
 denominators, several of them regex scans over every person, and a page
 that ran them on every open would be a page nobody opens twice. So a run
 writes the answer down and the page reads it, with the time it was taken
@@ -25,7 +21,7 @@ from typing import Any
 
 from pymongo.database import Database
 
-from pauk.gui.generate_stats import collect_examples
+from pauk.admin.graph_stats import collect_examples
 
 logger = logging.getLogger("pauk.admin")
 
@@ -52,7 +48,7 @@ def rows_behind(client, check_id: str, limit: int) -> dict:
 
     Reaches for the raw driver, which routes otherwise never do. The reason
     is that these queries are not the panel's: they are written in
-    `pauk.gui.checks` as Cypher, against the whole graph, and the client's
+    `pauk.admin.checks` as Cypher, against the whole graph, and the client's
     whitelist of labels and fields has nothing to offer them. Kept in one
     place so the reach is visible and explained rather than repeated.
 

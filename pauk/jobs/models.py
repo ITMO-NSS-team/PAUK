@@ -112,14 +112,13 @@ class PrunePayload(BaseModel):
 
 
 class MapPayload(BaseModel):
-    public: bool = False
+    # No public/private switch: every rebuild writes both builds at once.
     seed: int = 42
 
 
 class PipelinePayload(CollectPayload):
     """The collection run, plus what to do with what it found."""
 
-    public: bool = False
     seed: int = 42
 
 

@@ -29,7 +29,7 @@ flowchart TD
     AUDIT[("data/audit/&lt;group&gt;/dedup_candidates.jsonl<br/>журнал решений dedup")]
     NEO[("Neo4j")]
     CACHE[("data/cache/graph_snapshot.json")]
-    WEB[("статика: graph-data.js, graph-search.js")]
+    WEB[("data/gui: graph-data.json + *-detail.json")]
 
     CLI_COLLECT["pauk collect"] -->|"GET works по ROR ИТМО / id"| OA
     OA -->|"append: openalex_works"| RAW
@@ -89,9 +89,8 @@ flowchart TD
 
     CLI_CACHE["pauk cache export"] --> NEO
     CLI_CACHE --> CACHE
-    GUIGEN["pauk.gui.generate_data /<br/>generate_stats"] --> CACHE
+    GUIGEN["pauk.gui.graph_builder"] --> CACHE
     GUIGEN --> WEB
-    SERVE["pauk.gui.serve"] --> WEB
 ```
 
 `pauk run` = `collect → normalize → enrich` (все стадии) одним вызовом,

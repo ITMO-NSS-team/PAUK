@@ -1,20 +1,35 @@
 #!/usr/bin/env bash
-# Redeploy pauk.gui.serve on the lab server: pull latest main, restart the
-# screen session. Requires the ssh key access to REMOTE already set up.
+# Deploy the site (pauk/gui/web) to the lab server: build it locally (with the
+# private data from data/gui/private), rsync it over, restart a screen
+# session serving it with python3 http.server.
+# Requires the ssh key access to REMOTE already set up and the lab VPN on.
 
 set -euo pipefail
 
 REMOTE_HOST="einsteinium.nsslab"
 REMOTE="asteb@${REMOTE_HOST}"
-REMOTE_DIR="PAUK"
+REMOTE_DIR="pauk-gui"
 SCREEN_NAME="pauk"
+PORT="${PORT:-8501}"
 
-branch="$(git rev-parse --abbrev-ref HEAD)"
-if [[ "$branch" != "main" ]]; then
-    echo "Current branch - '$branch', not 'main'. The 'main' branch will get pulled on the server anyway."
+root="$(git rev-parse --show-toplevel)"
+data_dir="$root/data/gui/private"
+
+if [[ -n "$(git status --porcelain)" ]]; then
+    echo "There are uncommitted changes - they will end up in the build."
     read -r -p "Continue? [y/N] " reply
     [[ "$reply" =~ ^[Yy]$ ]] || exit 1
 fi
+
+for file in graph-data.json authors-detail.json repos-detail.json pubs-detail.json; do
+    if [[ ! -f "$data_dir/$file" ]]; then
+        echo "Missing $data_dir/$file - run 'pauk gui build' first." >&2
+        exit 1
+    fi
+done
+
+echo "==> build pauk/gui/web"
+(cd "$root/pauk/gui/web" && npm run build)
 
 echo "==> ping $REMOTE_HOST"
 if ! ping -c 1 -W 2 "$REMOTE_HOST" > /dev/null 2>&1; then
@@ -28,29 +43,31 @@ if ! ssh -o ConnectTimeout=5 "$REMOTE" true; then
     exit 1
 fi
 
-echo "==> git pull on server"
-ssh "$REMOTE" bash -l <<EOF
-cd $REMOTE_DIR && git pull origin main
-EOF
+echo "==> rsync dist to $REMOTE:$REMOTE_DIR"
+rsync -avz --delete "$root/pauk/gui/web/dist/" "$REMOTE:$REMOTE_DIR/"
 
-read -r -p "Sync local private/ data to server? [y/N] " reply
-if [[ "$reply" =~ ^[Yy]$ ]]; then
-    echo "==> rsync private data"
-    rsync -avz --delete "$(git rev-parse --show-toplevel)/pauk/gui/data/private/" \
-        "$REMOTE:$REMOTE_DIR/pauk/gui/data/private/"
+echo "==> restart screen '$SCREEN_NAME' on port $PORT"
+ssh "$REMOTE" bash -l <<EOF
+set -e
+if ! command -v python3 > /dev/null; then
+    echo "python3 not found on the server." >&2
+    exit 1
 fi
-
-echo "==> restart screen '$SCREEN_NAME'"
-ssh "$REMOTE" bash -l <<EOF
+python3 --version
 if screen -list | grep -q '\.${SCREEN_NAME}[[:space:]]'; then
     screen -S $SCREEN_NAME -X quit
 fi
-cd $REMOTE_DIR && screen -dmS $SCREEN_NAME uv run python -m pauk.gui.serve
-sleep 1
+# cd instead of --directory: that flag needs Python 3.7+. The server's own
+# output goes to a log outside the served folder, so a crash is diagnosable.
+log="\$HOME/${SCREEN_NAME}.log"
+cd "\$HOME/$REMOTE_DIR"
+screen -dmS $SCREEN_NAME sh -c "python3 -m http.server $PORT > '\$log' 2>&1"
+sleep 2
 if ! screen -list | grep -q '\.${SCREEN_NAME}[[:space:]]'; then
-    echo "Screen session didn't stay up - check 'uv' is on PATH on the server." >&2
+    echo "Screen session didn't stay up. Server output (\$log):" >&2
+    tail -n 20 "\$log" >&2
     exit 1
 fi
 EOF
 
-echo "==> done: http://${REMOTE_HOST}:8501"
+echo "==> done: http://${REMOTE_HOST}:${PORT}"

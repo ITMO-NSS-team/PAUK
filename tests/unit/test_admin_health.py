@@ -1,6 +1,6 @@
 """The graph's health as a page in the panel.
 
-The checks are the map's, and so is the code that runs them. What is tested
+The checks and the code that runs them are `pauk.admin.checks`/`graph_stats`. What is tested
 here is the part that is the panel's: keeping the last answer, showing the
 worst of it first, and going to the graph only for the rows behind one
 check.
