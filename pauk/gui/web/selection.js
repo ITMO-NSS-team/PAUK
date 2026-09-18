@@ -81,9 +81,9 @@ function clearAll() {
   selected = null; selectedDept = null;
   map.getSource("sel-edges").setData(empty());
   map.getSource("sel-points").setData(empty());
-  if (tab === 1 || tab === 3) {
-    map.setPaintProperty("dept-edges", "line-opacity", DEPT_EDGE_OPACITY);
-    map.setPaintProperty("dept-fill",  "fill-opacity", FILL_OPACITY);
+  if (tab === 1 || tab === 2 || tab === 3) {
+    map.setPaintProperty("dept-fill", "fill-opacity", FILL_OPACITY);
+    if (tab !== 2) map.setPaintProperty("dept-edges", "line-opacity", DEPT_EDGE_OPACITY);
   }
   map.setPaintProperty("authors", "icon-opacity", NODE_OPACITY);
   map.setPaintProperty("repos",   "icon-opacity", tab === 2 ? 1 : NODE_OPACITY);

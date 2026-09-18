@@ -4,7 +4,7 @@
 внешний API.
 
 **Какие файлы задействует:** `pauk/sources/base.py`, `openalex.py`,
-`github.py`, `crossref.py`, `orcid.py`, `openreview.py`.
+`github.py`, `crossref.py`, `orcid.py`.
 
 Тонкие обёртки, каждая знает только свой API. Все наследуются от общего
 `base.py::HttpClient` — раньше в проекте было 4 несогласованных
@@ -35,13 +35,6 @@ health-check краулера в `code_links.py` идёт с `retries=0` — э�
 | `github.py` | `GitHubClient` | `get_repository`, `has_readme` (отдельный вызов — основной payload репозитория наличие README не сообщает) |
 | `crossref.py` | `CrossrefClient` | `get_work(doi)` — используется `PersonsStage` для backfill ORCID по фамилии |
 | `orcid.py` | `OrcidClient` | `get_record(orcid)` |
-| `openreview.py` | `OpenReviewClient` | `search(term)`, с ленивым логином (`_login()` только когда реально нужен токен, не в конструкторе) |
-
-Ни один клиент не padает молча на отсутствующих кредах: `OpenReviewClient`
-просто не логинится без `username`/`password` (см.
-[pipeline/persons.md](pipeline/persons.md) — вызывающий код сам решает,
-пропускать ли шаг), остальные не требуют авторизации вовсе или используют
-`GITHUB_TOKEN`, если он задан.
 
 ## PDF-Crawler-Service — не в этом пакете
 

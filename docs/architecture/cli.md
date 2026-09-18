@@ -59,8 +59,10 @@ pauk enrich [stage] --group <group> [--input <файл-с-id> --entity <сущн
 ```
 
 `stage` — имя одного этапа (`pdf`, `persons`, `departments`, `code_links`,
-`repositories`, `dedup`) или `all` (по умолчанию, все по порядку — порядок
-задан `ALL_STAGES` в `pipeline/stages/__init__.py`). `--group` обязателен
+`link_relevance`, `emails`, `repositories`, `dedup`, `github_match`,
+`author_names`; опционально — `social_graph`) или `all` (по умолчанию,
+все основные этапы по порядку — порядок задан `ALL_STAGES` в
+`pipeline/stages/__init__.py`). `--group` обязателен
 всегда. `--input` (вместе с `--entity`) сужает прогон до конкретных id —
 файл, по одному id на строке (тот же формат, что у `--works-file` для
 `collect`); `--entity` — имя одной из шести prepared-сущностей

@@ -1,8 +1,9 @@
 from datetime import date
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .processing import ProcessingState
+from .processing import ClassificationStatus, ProcessingState
 
 
 class GitHubProfile(BaseModel):
@@ -26,6 +27,12 @@ class GitHubProfile(BaseModel):
     emails: list[str] = Field(default_factory=list)
     commit_names: list[str] = Field(default_factory=list)
     repos: list[str] = Field(default_factory=list)
+    # Whether GET /users/{login} has actually answered for this account. The
+    # repositories stage writes a stub profile from the nested owner object,
+    # which carries a login, a URL and a type and nothing else; without a
+    # marker of its own that stub is indistinguishable from a fetched profile
+    # whose optional fields GitHub happens to leave empty.
+    profile_fetched: bool = False
 
 
 class LinkCandidate(BaseModel):
@@ -43,9 +50,21 @@ class CodeLink(BaseModel):
     url: str
     host: str | None = None
     occurrences: list[LinkOccurrence] = Field(default_factory=list)
+    classification_status: ClassificationStatus = ClassificationStatus.PENDING
     is_relevant: bool | None = None
     llm_confidence: float | None = None
     llm_reason: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def infer_legacy_classification_status(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or data.get("classification_status") is not None:
+            return data
+        values = dict(data)
+        verdict_fields = ("is_relevant", "llm_confidence", "llm_reason")
+        if any(values.get(field) is not None for field in verdict_fields):
+            values["classification_status"] = ClassificationStatus.CLASSIFIED
+        return values
 
 
 class Repository(BaseModel):
@@ -68,9 +87,18 @@ class Repository(BaseModel):
     stars_num: int | None = None
     last_updated: date | None = None
     license: str | None = None
+    # Everything below arrives in the same GET /repos/{owner}/{name} body as
+    # the fields above — no extra request, no extra rate limit.
+    topics: list[str] = Field(default_factory=list)
+    language: str | None = None
+    forks_num: int | None = None
+    archived: bool | None = None
+    is_fork: bool | None = None
     contributors: list[str] = Field(default_factory=list)
     owner_login: str | None = None
     department_ids: list[str] = Field(default_factory=list)
+    # Publications whose authors produced this repository. Plain citations
+    # stay in RepoLink and become MENTIONS_LINK relationships instead.
     publication_ids: list[str] = Field(default_factory=list)
     processing: dict[str, ProcessingState] = Field(default_factory=dict, alias="_processing")
 

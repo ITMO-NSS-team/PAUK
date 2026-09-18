@@ -33,8 +33,8 @@ from tests.bench.mocks import (
     MockOpenAlexClient,
     MockOpenRouterClient,
     MockOrcidClient,
+    MockPdfHttpClient,
     RecordingNeo4jClient,
-    UnexpectedNetworkClient,
 )
 from tests.bench.universe import (
     ARCHIVE_AUTHOR_AFFILIATION,
@@ -103,10 +103,13 @@ def bench(tmp_path_factory) -> SimpleNamespace:
     github = MockGitHubClient(universe)
     patches = (
         mock.patch("pauk.pipeline.stages.repositories.GitHubClient", lambda *a, **k: github),
+        # repo_people imports GitHubClient for itself; unpatched, the bench
+        # spends the whole fixture on live calls to api.github.com.
+        mock.patch("pauk.pipeline.stages.repo_people.GitHubClient", lambda *a, **k: github),
         mock.patch("pauk.pipeline.stages.persons.OpenAlexClient", lambda *a, **k: MockOpenAlexClient(universe)),
         mock.patch("pauk.pipeline.stages.persons.CrossrefClient", lambda *a, **k: MockCrossrefClient(universe)),
         mock.patch("pauk.pipeline.stages.persons.OrcidClient", lambda *a, **k: MockOrcidClient(universe)),
-        mock.patch("pauk.pipeline.stages.persons.OpenReviewClient", lambda *a, **k: UnexpectedNetworkClient()),
+        mock.patch("pauk.pipeline.stages.code_links.HttpClient", lambda *a, **k: MockPdfHttpClient()),
         mock.patch("pauk.pipeline.stages.author_names.OpenRouterClient",
                    lambda *a, **k: MockOpenRouterClient(RUSSIAN_NAMES_CATALOG)),
         mock.patch("pauk.pipeline.stages.link_relevance.OpenRouterClient",
@@ -204,9 +207,15 @@ def test_untitled_and_dateless_work(bench):
 
 
 def test_url_junk_is_stripped(bench):
-    assert bench.publications["W7000000001"].code_url == "https://github.com/BenchOrg1/AlphaTool"
-    assert bench.publications["W7000000002"].code_url == "https://github.com/BenchOrg1/beta-kit"
-    assert bench.publications["W7000000003"].code_url == "https://github.com/BenchOrg1/GammaLib"
+    assert json.loads(bench.publications["W7000000001"].code_url) == [
+        "https://github.com/BenchOrg1/AlphaTool"
+    ]
+    assert json.loads(bench.publications["W7000000002"].code_url) == [
+        "https://github.com/BenchOrg1/beta-kit"
+    ]
+    assert json.loads(bench.publications["W7000000003"].code_url) == [
+        "https://github.com/BenchOrg1/GammaLib"
+    ]
 
 
 def test_non_github_urls_are_ignored(bench):
@@ -463,7 +472,7 @@ def test_an_organization_in_an_author_slot_never_becomes_a_person(bench):
 def test_a_release_archive_points_at_the_repository_it_archives(bench):
     # The deposit cites no URL: the repository is named in its title.
     deposit = bench.publications[ARCHIVE_WORK]
-    assert deposit.code_url == ARCHIVE_REPO_URL
+    assert json.loads(deposit.code_url) == [ARCHIVE_REPO_URL]
     (link,) = bench.repo_links[ARCHIVE_WORK].links
     assert link.llm_reason == "repository_archived_by_this_deposit"
     repository = bench.repositories[ARCHIVE_REPO_ID]

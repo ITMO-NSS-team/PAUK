@@ -1,6 +1,10 @@
 "use strict";
 
 const MIN_HULL_NODES = 10;
+// There are 409 repositories against ~9k authors, so a department that is a
+// visible region on the authors' map is a handful of dots on this one.
+const MIN_HULL_NODES_REPOS = 4;
+const minHullNodes = () => (tab === 2 ? MIN_HULL_NODES_REPOS : MIN_HULL_NODES);
 const BACKBONE_N     = 35;
 // Hull is drawn around a department's largest spatial island only (see
 // dominantIsland) — members scattered across unrelated clusters would
@@ -111,16 +115,18 @@ var deptCentroid = new Map();
 function buildHullFeatures() {
   const byDept = new Map();
   tabNodes().forEach(n => {
-    if (!byDept.has(n.dept)) byDept.set(n.dept, []);
-    byDept.get(n.dept).push(P(n.key));
+    const gid = groupIdOf(n);
+    if (!byDept.has(gid)) byDept.set(gid, []);
+    byDept.get(gid).push(P(n.key));
   });
 
   deptCentroid = new Map();
   tabNodes().forEach(n => {
-    if (!byDept.has(n.dept)) return;
+    const gid = groupIdOf(n);
+    if (!byDept.has(gid)) return;
     const [x, y] = P(n.key);
-    if (!deptCentroid.has(n.dept)) deptCentroid.set(n.dept, [0, 0, 0]);
-    const acc = deptCentroid.get(n.dept);
+    if (!deptCentroid.has(gid)) deptCentroid.set(gid, [0, 0, 0]);
+    const acc = deptCentroid.get(gid);
     acc[0] += x; acc[1] += y; acc[2]++;
   });
   deptCentroid.forEach((acc, did) => {
@@ -129,10 +135,13 @@ function buildHullFeatures() {
 
   const cands = [];
   byDept.forEach((pts, did) => {
-    const d = deptById.get(did);
-    if (!d || d.name === "Без департамента" || pts.length < MIN_HULL_NODES) return;
+    const d = groupById(did);
+    const minNodes = minHullNodes();
+    // "kind: none" is the repositories tab's own catch-all, the same idea as
+    // the department table's "Без департамента" — neither gets a territory.
+    if (!d || d.kind === "none" || d.name === "Без департамента" || pts.length < minNodes) return;
     const core = dominantIsland(pts);
-    if (core.length < MIN_HULL_NODES) return;
+    if (core.length < minNodes) return;
     const outline = concaveOutline(core);
     if (outline.length < 3) return;
     const [cx, cy] = d3.polygonCentroid(outline);

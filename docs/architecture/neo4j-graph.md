@@ -40,12 +40,24 @@
 (:Repository) -[:OWNED_BY]->     (:GitHubProfile)
 ```
 
+`Repository` несёт, кроме `name`/`url`/`description`/`stars_num`, ещё
+`topics`/`language`/`forks_num`/`archived`/`is_fork`/`license`/`last_updated` —
+всё это приходит в том же теле ответа `GET /repos/{owner}/{name}`, что и
+основные поля, и стоит ноль дополнительных запросов
+([pipeline/repositories.md](pipeline/repositories.md)).
+
 `AUTHORED` несёт `position`/`affiliation`/`affiliation_source`/
 `is_corresponding`; `CONTRIBUTED_TO` — `role`; `MENTIONS_LINK` — `context`
 (список), `page_number` (список, `0` = абстракт — Neo4j не хранит `null`
 внутри массива-свойства, поэтому сентинел не `None`, см.
 [pipeline/code-links.md](pipeline/code-links.md)), `is_relevant`,
-`llm_confidence`, `llm_reason`.
+`classification_status`, `llm_confidence`, `llm_reason`.
+
+`MENTIONS_LINK` фиксирует сам факт присутствия ссылки и создаётся при
+`is_relevant=true`, `false` и `null`. `IMPLEMENTS` имеет более сильную
+семантику: репозиторий является подтверждённым авторским результатом
+публикации, поэтому строится только из `Repository.publication_ids`, куда
+попадают ссылки с `is_relevant=true`.
 
 `CONTRIBUTED_TO` строит стадия `github_match`: подтверждённый аккаунт —
 это тот же человек, поэтому репозитории аккаунта становятся его работой.
@@ -131,6 +143,13 @@ prepared JSONL. `NodeSpec` несёт белый список простых с�
 И `fetch_merged_id_map` на каждый лейбл: если этот конкретный publish
 принёс id, который граф-дедуп уже когда-то схлопнул в другой узел —
 перефолдить сразу, не дожидаясь следующего `pauk dedup graph`.
+
+После загрузки и схлопывания алиасов `sync_implements_relationships_batch`
+сверяет существующие `IMPLEMENTS` с полным набором подтверждённых
+репозиториев публикации. Устаревшие рёбра удаляются только для публикаций,
+у которых `link_relevance` завершился как `completed`/`completed_empty`.
+Статус `failed` ничего не удаляет: временная ошибка модели не должна
+уничтожать последнее подтверждённое состояние графа.
 
 ## `client.py` — как говорим с Neo4j
 

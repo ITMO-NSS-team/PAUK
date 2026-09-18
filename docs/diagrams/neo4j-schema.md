@@ -16,7 +16,6 @@ classDiagram
         +degree
         +github
         +google_scholar
-        +openreview
         +thesis
         +other_names
         +homepage
@@ -116,7 +115,7 @@ classDiagram
 `is_corresponding`; `CONTRIBUTED_TO` — `role` (`owner` или `contributor`),
 её строит стадия `github_match`; `MENTIONS_LINK` — `context`
 (список), `page_number` (список, `0` = абстракт), `is_relevant`,
-`llm_confidence`, `llm_reason`. Подробности и уникальные ключи — в
+`classification_status`, `llm_confidence`, `llm_reason`. Подробности и уникальные ключи — в
 [`../architecture/neo4j-graph.md`](../architecture/neo4j-graph.md).
 
 Иерархия подразделений рекурсивна: подразделение `PART_OF` своего родителя —
