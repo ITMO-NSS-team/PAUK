@@ -407,7 +407,7 @@ class Neo4jClient:
             OPTIONAL MATCH (p)-[:BELONGS_TO]->(d:Department)
             RETURN p.id AS id, p.openalex_id AS openalex_id, p.name_raw AS name_raw,
                    p.name_variants AS name_variants, p.orcid AS orcid, p.email AS email,
-                   p.github AS github, p.openreview AS openreview,
+                   p.github AS github,
                    p.google_scholar AS google_scholar, p.merged_ids AS merged_ids,
                    coalesce(p.is_itmo, false) AS is_itmo,
                    collect(DISTINCT w.id) AS publication_ids,

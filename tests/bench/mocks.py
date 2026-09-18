@@ -182,34 +182,6 @@ class MockOpenRouterClient:
         }
 
 
-class MockLinkRelevanceClient:
-    """Classifies the synthetic bench code citations without an LLM call."""
-
-    def __init__(self) -> None:
-        self.last_response = None
-        self.last_usage = None
-        self.last_error = None
-
-    def chat_json(self, prompt: str) -> dict:
-        result = {
-            "is_authors_artifact": True,
-            "confidence": 1.0,
-            "reason": "mock: synthetic benchmark repository",
-        }
-        self.last_response = result
-        return result
-
-
-class UnexpectedNetworkClient:
-    """Any call means a stage tried the network although it shouldn't have."""
-
-    def __init__(self, *args, **kwargs) -> None:
-        pass
-
-    def __getattr__(self, name: str):
-        raise NetworkAccessDenied(f"unexpected external call: {name}")
-
-
 class MockPdfHttpClient:
     """Stands in for code_links.py's raw HttpClient.
 
@@ -362,7 +334,7 @@ class RecordingNeo4jClient:
                 "id": person_id,
                 **{field: props.get(field) for field in (
                     "openalex_id", "name_raw", "name_variants", "orcid", "email",
-                    "github", "openreview", "google_scholar", "merged_ids")},
+                    "github", "google_scholar", "merged_ids")},
                 "is_itmo": bool(props.get("is_itmo")),
                 "publication_ids": sorted({
                     tgt_id for (src_primary, rel_type, _tgt, src_id, tgt_id) in self.edges

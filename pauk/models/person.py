@@ -42,7 +42,6 @@ class Person(BaseModel):
     emails: list[str] = Field(default_factory=list)
     github: str | None = None
     google_scholar: str | None = None
-    openreview: str | None = None
     thesis: str | None = None
     department_ids: list[str] = Field(default_factory=list)
     affiliations: list[Affiliation] = Field(default_factory=list)
