@@ -7,7 +7,7 @@
 `freshness.py`, `__init__.py`.
 
 Единственное место в `pauk/gui`-цепочке, которое реально ходит в Neo4j.
-Всё остальное (`generate_data.py`, `serve.py` за исключением `/api/stats`)
+Всё остальное (`pauk/gui/graph_builder.py`)
 читает результат этого шага с диска, не базу.
 
 ## `export.py`
@@ -32,7 +32,7 @@
 `load_db()` возвращает плоский словарь из восьми ключей:
 `persons`/`publications`/`repositories`/`departments`/`authorship`/
 `person_depts`/`pub_depts`/`repo_pubs`/`repo_persons`/`repo_depts` — ровно
-то, что `generate_data.py::build_graph_data()` ожидает на входе.
+то, что `pauk/gui/graph_builder.py::GraphDataBuilder` ожидает на входе.
 Департаменты авторов и владельцы репозиториев — не плоские колонки в
 графовой модели, а связи (`BELONGS_TO`, `OWNED_BY`), поэтому здесь они
 отдельными запросами через `OPTIONAL MATCH`.
@@ -42,7 +42,7 @@
 `write_snapshot`/`read_snapshot` — конверт вокруг `load_db()`'s словаря:
 `schema_version`, `generated_at`, `graph`. `read_snapshot` кидает
 `ValueError`, если версия схемы не совпадает — снепшот от старой версии
-кода не будет молча скормлен в несовместимый `generate_data.py`.
+кода не будет молча скормлен в несовместимый `graph_builder.py`.
 
 ## `freshness.py`
 

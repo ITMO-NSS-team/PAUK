@@ -1,228 +1,1142 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PAUK</title>
-  <link rel="icon" type="image/png" href="vendor/icons/pauk-frame.png" />
-  <link rel="stylesheet" href="vendor/maplibre-gl.css" />
-  <link rel="stylesheet" href="style.css" />
-  <!-- Preloaded for first paint (preloader/tab bar) — style.css discovers it too late otherwise. -->
-  <link rel="preload" href="vendor/fonts/inter-cyrillic.woff2" as="font" type="font/woff2" crossorigin />
-  <!-- Dark theme paused (toggle hidden in style.css); restore this line + drop display:none to bring it back. -->
-  <!-- <script>document.documentElement.setAttribute("data-theme","dark");</script> -->
-</head>
-<body>
-  <div id="boot-screen">
-    <img class="boot-spider" src="vendor/icons/pauk-frame-8x.png" alt="" />
-    <div class="boot-title">PAUK</div>
-    <div class="boot-progress"><div class="boot-progress-bar" id="boot-progress-bar"></div></div>
-    <div class="boot-status" id="boot-status"></div>
-  </div>
-
-  <div id="welcome-modal" class="hidden">
-    <svg id="welcome-burst" class="welcome-burst" aria-hidden="true"></svg>
-    <div class="welcome-hero">
-      <a class="welcome-badge" href="https://github.com/ITMO-NSS-team/PAUK" target="_blank" rel="noopener noreferrer"><span data-i18n="welcome.badge">Открытый проект ИТМО</span> <span class="welcome-badge-arrow">›</span></a>
-      <h1 class="welcome-title" data-i18n-html="welcome.title">Карта соавторства<br />и открытого кода ИТМО</h1>
-      <p class="welcome-subtitle" data-i18n="welcome.subtitle">
-        Публикации, авторы и департаменты ИТМО — и связанные с ними open-source репозитории на GitHub.
-      </p>
-      <div class="welcome-lang" id="welcome-lang">
-        <button class="welcome-lang-btn" data-lang="ru" title="Русский" aria-label="Русский">🇷🇺</button>
-        <button class="welcome-lang-btn" data-lang="en" title="English" aria-label="English">🇬🇧</button>
-      </div>
-      <button id="welcome-close" class="welcome-cta">
-        <span data-i18n="welcome.cta">Смотреть карту</span>
-        <span class="welcome-cta-arrow">→</span>
-      </button>
-      <div class="welcome-modes" data-i18n="welcome.modes">Персоналии · Публикации · Репозитории · Поиск</div>
-    </div>
-  </div>
-
-  <!-- Not deferred: the deferred scripts below block on graph-data.js's download. -->
-  <script>
-  (function () {
-    var params = new URLSearchParams(location.search);
-    var hasDeepLink = !!(params.get("kind") && (params.get("key") || params.get("id") !== null));
-    window._pauk_hasDeepLink = hasDeepLink;
-    if (hasDeepLink) document.getElementById("welcome-modal").style.display = "none";
-
-    // i18n.js hasn't run yet — read localStorage directly instead of LANG/setLang.
-    var currentLang = localStorage.getItem("pauk-lang") || "en";
-    document.querySelectorAll(".welcome-lang-btn").forEach(function (btn) {
-      if (btn.getAttribute("data-lang") === currentLang) btn.classList.add("active");
-      btn.addEventListener("click", function () { setLang(btn.getAttribute("data-lang")); });
-    });
-
-    var bar = document.getElementById("boot-progress-bar");
-    var status = document.getElementById("boot-status");
-    var STAGE_TEXT = {
-      loading:   { ru: "Загрузка данных…", en: "Loading data…" },
-      rendering: { ru: "Отрисовка карты…", en: "Rendering the map…" },
-      error: {
-        ru: "Данные не найдены. Запустите generate_data.py и перезапустите сервер.",
-        en: "Data not found. Run generate_data.py and restart the server.",
-      },
-    };
-    function setStage(key) {
-      if (status) status.textContent = (STAGE_TEXT[key] || {})[currentLang] || STAGE_TEXT[key].ru;
-    }
-    function setProgress(frac) {
-      if (bar) bar.style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + "%";
-    }
-    window._pauk_setProgress = setProgress;
-    setStage("loading");
-
-    // Backstop: if the boot screen is still up after a generous timeout, say so.
-    setTimeout(function () {
-      var boot = document.getElementById("boot-screen");
-      if (boot && !boot.classList.contains("hidden")) setStage("error");
-    }, 30000);
-
-    // res.ok works everywhere fetch() does; only the byte-level bar needs ReadableStream.
-    if (window.fetch) {
-      fetch("graph-data.js").then(function (res) {
-        if (!res.ok) { setStage("error"); return; }
-        if (!window.ReadableStream || !res.body) { setProgress(0.85); setStage("rendering"); return; }
-        var total = +res.headers.get("content-length") || 0;
-        var reader = res.body.getReader(), loaded = 0;
-        (function pump() {
-          reader.read().then(function (r) {
-            if (r.done) { setStage("rendering"); return; }
-            loaded += r.value.length;
-            if (total) setProgress(Math.min(0.92, loaded / total));
-            pump();
-          });
-        })();
-      }).catch(function () { setProgress(0.85); setStage("rendering"); });
-    } else {
-      setProgress(0.85);
-    }
-
-    function buildWelcomeBurst() {
-      var svg = document.getElementById("welcome-burst");
-      if (!svg) return;
-      var w = window.innerWidth, h = window.innerHeight;
-      svg.setAttribute("viewBox", "0 0 " + w + " " + h);
-      var cx = w / 2, cy = h / 2;
-      var n = Math.max(48, Math.round(w / 22));
-      var rx = Math.min(w * 0.17, 230);
-      var ry = Math.min(h * 0.26, 190);
-      var maxLen = Math.max(w, h) * 0.5;
-      var s = "";
-      for (var k = 0; k < n; k++) {
-        var angle = (k / n) * Math.PI * 2;
-        var ux = Math.cos(angle), uy = Math.sin(angle);
-        var len = maxLen * (0.45 + Math.random() * 0.55);
-        var x1 = cx + ux * rx, y1 = cy + uy * ry;
-        var x2 = cx + ux * (rx + len), y2 = cy + uy * (ry + len);
-        var op = (0.25 + Math.random() * 0.5).toFixed(2);
-        s += '<line x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '" stroke-opacity="' + op + '"/>';
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PAUK</title>
+    <!-- Фирменный значок паука (src/assets/icons/ — общая папка под такие
+         файлы) — та же картинка, что "pauk-frame" в старом GUI,
+         восьмикратно увеличенная версия (152×136) для чёткости на favicon,
+         а не исходные 19×17 (там браузер апскейлил бы сам, размыто). Vite
+         сам находит и хеширует такие локальные пути в href при сборке — не
+         нужен отдельный public/ (тот здесь уже занят под настоящие данные,
+         см. vite.config.ts::publicDir). -->
+    <link rel="icon" type="image/png" href="./src/assets/icons/pauk-frame-8x.png" />
+    <!-- Inter — тот же выбор, что у большинства тёмных дата-дашбордов
+         (тот же дух, что у Obsidian, на который ориентируется вся палитра
+         выше): читаемый плотный текст на маленьком размере (13px в панели,
+         12px в кнопках вкладок), в отличие от system-ui не "гуляет" между
+         ОС. Только реально используемые в CSS ниже начертания (400-800),
+         не весь диапазон "про запас". system-ui в font-family всё ещё
+         первый фолбэк в момент до подгрузки шрифта и на случай, если
+         Google Fonts недоступен (см. font-family ниже) — сайт не должен
+         визуально ломаться без интернета до этого домена. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* Единая тёмная палитра ("Obsidian"-стиль) — единственное место, где
+         живут цвета вёрстки, дальше везде var(--...). --surface совпадает с
+         MAP_CONFIG.backgroundColor (#202020, core/config.ts) намеренно —
+         сайдбар/панель и canvas графа читаются как один тон, а не два
+         рассинхронизированных источника цвета (DOM-токены и canvas-конфиг
+         остаются двумя разными механизмами не просто так, см. память
+         проекта про design tokens — но значения выбраны совпадающими). */
+      :root {
+        --bg: #181818;
+        --surface: #202020;
+        --surface-2: #2a2a2a;
+        --border: #333333;
+        --text: #dcdcdc;
+        --muted: #8a8a8a;
+        --accent: #ff7f50;
+        --accent-soft: rgba(255, 127, 80, 0.18);
+        --danger-bg: #2a1414;
+        --danger-border: #e03131;
+        --danger-text: #ffb3b3;
       }
-      svg.innerHTML = s;
-    }
-    window._pauk_buildWelcomeBurst = buildWelcomeBurst;
-    if (!hasDeepLink) buildWelcomeBurst();
-    var _burstResizeTimer = null;
-    window.addEventListener("resize", function () {
-      if (document.getElementById("welcome-modal").classList.contains("hidden")) return;
-      clearTimeout(_burstResizeTimer);
-      _burstResizeTimer = setTimeout(buildWelcomeBurst, 120);
-    });
-  })();
-  </script>
 
-  <div id="map"></div>
-  <canvas id="overlay"></canvas>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font-family: "Inter", system-ui, sans-serif;
+        color-scheme: dark;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+      }
 
-  <header id="topbar">
-    <div id="tab-toggle">
-      <button data-tab="1" class="active" data-i18n="tab.people">Персоналии</button><button data-tab="3" data-i18n="tab.pubs">Публикации</button><button data-tab="2" data-i18n="tab.repos">Репозитории</button><button data-tab="4" data-i18n="tab.search">Поиск</button><button data-tab="5" data-i18n="tab.health">Здоровье БД</button>
+      /* Единое кольцо фокуса для клавиатурной навигации — раньше нигде на
+         сайте не было ни одного :focus-visible, только браузерный дефолт
+         (у Chrome он на тёмном фоне почти не виден). Один общий селектор
+         на все интерактивные элементы, а не per-компонентный дубль —
+         "чтобы человеку или агенту просто было находить" относится и к
+         навигации с клавиатуры/через DOM, не только к мыши. */
+      button:focus-visible,
+      a:focus-visible,
+      input:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      /* Чекбокс переключателя ("Показывать без департамента") — тот же
+         фирменный паук в цвет акцента, что и у бегунка ползунков ниже,
+         вместо родной галочки браузера: appearance: none убирает нативный
+         рендер целиком (accent-color тут уже не подходит — она красит
+         родной чекмарк, а картинкой его не подменить). Пустой квадрат с
+         рамкой — когда не отмечено, паук проступает — когда отмечено;
+         background-size 70%, а не "contain" (как у бегунка ниже) —
+         значку нужен небольшой отступ от рамки, иначе он утыкается в неё
+         впритык и выглядит зажатым. */
+      input[type="checkbox"] {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 16px;
+        height: 16px;
+        margin: 0;
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        background-color: var(--surface-2);
+        cursor: pointer;
+        vertical-align: middle;
+      }
+      input[type="checkbox"]:checked {
+        border-color: var(--accent);
+        background: var(--surface-2) url("./src/assets/icons/pauk-frame-accent.png") center / 70%
+          no-repeat;
+      }
+      /* Общее кольцо фокуса (:focus-visible выше) поверх и так уже
+         говорящей рамки/паука — лишнее, прямая просьба ("не обводи кнопку,
+         паука хватает"). Только у чекбокса: у остальных интерактивных
+         элементов кольцо остаётся — там ничего другого не показывает,
+         что на них фокус. И :focus, и :focus-visible (не только второе) —
+         чекбоксы во многих браузерах считаются "focus-visible" уже при
+         клике мышью, не только с клавиатуры, обе формы фокуса нужно
+         погасить. box-shadow — отдельно от outline: часть браузеров
+         (в т.ч. Safari) рисует дефолтный ободок фокуса на form-элементах
+         через него, а не через outline, одного "outline: none" было
+         недостаточно. !important — этот селектор должен побеждать даже
+         непредвиденные более специфичные правила извне. */
+      input[type="checkbox"]:focus,
+      input[type="checkbox"]:focus-visible {
+        outline: none !important;
+        box-shadow: none !important;
+      }
+      /* Бегунок ползунков-фильтров (features/filters.ts) — фирменный
+         значок паука в цвет акцента (src/assets/icons/pauk-frame-accent.png)
+         вместо родного кружка/овала браузера: тот был заметно шире самой дорожки и
+         визуально спорил с остальным интерфейсом (прямая жалоба). Дорожка
+         (::-webkit-slider-runnable-track/::-moz-range-track) рисуется
+         отдельно — без appearance: none на самом input ею занимался бы
+         браузер, а вместе с бегунком её нужно красить в тон дорожкам
+         фильтров, а не в системный синий. Дублирование между -webkit- и
+         -moz- версиями не сократить: это два разных набора псевдоэлементов,
+         не единый стандарт (Firefox не понимает ::-webkit-*, Chrome/Safari —
+         ::-moz-*), у CSS нет способа описать "бегунок диапазона" один раз. */
+      input[type="range"] {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 100%;
+        background: transparent;
+        cursor: pointer;
+      }
+      input[type="range"]::-webkit-slider-runnable-track {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border);
+      }
+      input[type="range"]::-webkit-slider-thumb {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 16px;
+        height: 16px;
+        margin-top: -6px; /* центрирует 16px бегунок относительно 4px дорожки: (4 - 16) / 2 */
+        background: url("./src/assets/icons/pauk-frame-accent.png") center / contain no-repeat;
+      }
+      input[type="range"]::-moz-range-track {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border);
+      }
+      input[type="range"]::-moz-range-thumb {
+        width: 16px;
+        height: 16px;
+        border: none;
+        border-radius: 0;
+        background: url("./src/assets/icons/pauk-frame-accent.png") center / contain no-repeat;
+      }
+
+      /* Плавные, но короткие переходы для того, что и так меняется по
+         hover/клику в сайдбаре (кнопка меню, поиска, вкладок, строк
+         списка) — один общий селектор, а не per-компонентный transition в
+         каждом правиле ниже. 0.12s — заметно, но не "залипает" при быстрой
+         прокрутке списка мышью по строкам. */
+      #brand,
+      #global-search-trigger,
+      #tab-buttons button,
+      .tab-list-item {
+        transition:
+          background-color 0.12s ease,
+          color 0.12s ease,
+          border-color 0.12s ease;
+      }
+
+      /* Общая раскладка страницы: сайдбар со списком слева, карта
+         посередине, панель информации справа — все три одной высоты,
+         карта занимает всё оставшееся место. НЕ прячется через
+         display: none, пока показано меню, хотя features/start.ts и
+         ставит на нём атрибут [hidden] (тот здесь намеренно не имеет
+         визуального эффекта — специфичность `#app { display: flex }`
+         выше специфичности браузерного правила для [hidden]): Sigma
+         конструируется сразу после загрузки данных (app/main.ts), ей
+         нужны настоящие ненулевые размеры #map в этот момент, а не
+         схлопнутый до 0×0 контейнер. #menu — непрозрачный fixed-оверлей
+         с более высоким z-index (см. ниже), поэтому меню всё равно
+         визуально полностью перекрывает #app, тем же способом, что
+         раньше делал #welcome-modal. */
+      #app {
+        display: flex;
+        height: 100%;
+      }
+      /* overflow-x: hidden — подстраховка: если внутри забудут про
+         min-width: 0 на новом flex-элементе (как уже дважды случалось —
+         см. .filter-row input и .tab-list-item__label ниже), контент
+         обрежется по границе сайдбара, а не вылезет поверх карты. */
+      #sidebar {
+        width: 280px;
+        flex-shrink: 0;
+        overflow-x: hidden;
+        display: flex;
+        flex-direction: column;
+        background: var(--surface);
+        border-right: 1px solid var(--border);
+      }
+      /* Подписи-разделители секций сайдбара — сейчас только "Фильтры" и
+         "Быстрый поиск" (у поиска/выбора графа убрали, мешались, прямая
+         жалоба). Тот же стиль, что у заголовка карточки "Обзор" (#panel h3
+         ниже — жирный, обычный цвет текста, без капса и разрядки), просто
+         мельче: обе — заголовки одного уровня по смыслу (подпись раздела),
+         разного размера только потому, что здесь это вспомогательная
+         подпись в узком сайдбаре, а не главный заголовок панели. БЕЗ
+         своего фона (был темнее сайдбара — "сильно выделяется", прямая
+         жалоба) — просто текст. padding-bottom: 0 — весь отступ СНИЗУ даёт
+         padding-top следующего блока (#filter-bar/.tab-search ниже — у
+         обоих одно и то же число, специально совпадающее — прямая просьба
+         "между Quick Search и Search такой же [отступ], как между Filters
+         и Edge"), а не сумма "низ подписи + верх следующего блока" сразу
+         из двух источников, как было раньше. */
+      .sidebar-section-label {
+        padding: 8px 12px 0;
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 700;
+      }
+      /* position: relative — точка отсчёта для map/build.ts::mountZoomDebug
+         (position: absolute внутри), чтобы индикатор зума лежал поверх
+         самой карты, а не всего viewport (в котором left:12px попал бы в
+         область сайдбара). */
+      #map {
+        flex: 1;
+        min-width: 0;
+        position: relative;
+      }
+
+      /* Заголовок сайдбара — кликабелен, возвращает в меню
+         (features/start.ts, store.set({ screen: "menu" })). Единственный
+         путь назад в меню из обычного интерфейса. */
+      #brand {
+        display: block;
+        width: 100%;
+        padding: 12px;
+        border: none;
+        border-bottom: 1px solid var(--border);
+        background: none;
+        color: var(--text);
+        font-size: 14px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        text-align: left;
+        cursor: pointer;
+      }
+      #brand:hover {
+        background: var(--surface-2);
+      }
+
+      /* Кнопка входа в глобальный поиск (features/globalSearch.ts) — тот
+         же визуальный вес, что и #brand, тем же способом открывается
+         клавишей "/" (см. там же), кнопка — для тех, кто не знает про
+         горячую клавишу. Единственный способ найти ДЕПАРТАМЕНТ — у него
+         нет своей вкладки/узла-кнопки на карте, всего департаментов
+         на реальных данных ~60, найти нужный на глаз на карте нереально. */
+      #global-search-trigger {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 8px 12px;
+        border: none;
+        border-bottom: 1px solid var(--border);
+        background: none;
+        color: var(--muted);
+        font-size: 12px;
+        text-align: left;
+        cursor: pointer;
+      }
+      #global-search-trigger:hover {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      /* Значок лупы перед подписью — без него кнопка выглядела как
+         обычный текстовый пункт меню, а не как вход в поиск, узнаваемый с
+         одного взгляда (тот же язык, что у поля поиска внутри самого окна,
+         см. .global-search-input). ::before, не текст в JS
+         (features/globalSearch.ts) — чисто декоративный элемент разметки.
+         SVG через mask (не символ Юникода "⌕" — тот почти нигде не входит
+         в шрифты, включая подключённый Inter, и рисовался пустым
+         прямоугольником, "значок поиска сломан"), background-color:
+         currentColor — цвет и его transition при hover берутся из самого
+         текста кнопки, отдельно красить не нужно. */
+      #global-search-trigger::before {
+        content: "";
+        width: 13px;
+        height: 13px;
+        flex-shrink: 0;
+        background-color: currentColor;
+        -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='10' cy='10' r='6.5'/%3E%3Cline x1='20' y1='20' x2='15' y2='15'/%3E%3C/svg%3E")
+          center / contain no-repeat;
+        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='10' cy='10' r='6.5'/%3E%3Cline x1='20' y1='20' x2='15' y2='15'/%3E%3C/svg%3E")
+          center / contain no-repeat;
+      }
+      /* margin-left: auto, а не justify-content: space-between на всём
+         триггере — тот растащил бы иконку/подпись/хинт на три угла кнопки
+         с пустотой посередине (три flex-элемента, не два), а тут нужно,
+         чтобы иконка с подписью оставались рядом слева, и только хинт "/"
+         уезжал направо. */
+      .global-search-trigger__hint {
+        margin-left: auto;
+        padding: 1px 6px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 11px;
+      }
+
+      /* Окно глобального поиска — полноэкранный оверлей поверх ВСЕГО,
+         включая меню (z-index больше, чем у #menu) — доступен и с меню, и
+         из приложения, клавишей "/" в любой момент. */
+      #global-search {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding-top: 12vh;
+        background: rgba(0, 0, 0, 0.55);
+      }
+      #global-search[hidden] {
+        display: none;
+      }
+      .global-search-box {
+        width: min(560px, calc(100vw - 32px));
+        max-height: 60vh;
+        display: flex;
+        flex-direction: column;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+        overflow: hidden;
+      }
+      .global-search-input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 16px;
+        border: none;
+        border-bottom: 1px solid var(--border);
+        background: none;
+        color: var(--text);
+        font-size: 16px;
+      }
+      #global-search-results {
+        overflow-y: auto;
+      }
+      /* Заголовок подсказки "Департаменты" на пустом запросе
+         (features/globalSearch.ts) — объясняет, откуда взялся список,
+         когда пользователь ещё ничего не вводил. */
+      .global-search-hint {
+        padding: 10px 12px 4px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      /* Кнопки переключения вкладок — по одной на каждый TabModule из
+         features/tabs/index.ts. "Здоровье БД" из старого GUI сознательно
+         не переносим — для неё кнопки нет и не будет. */
+      #tab-buttons {
+        display: flex;
+        border-bottom: 1px solid var(--border);
+      }
+      #tab-buttons button {
+        flex: 1;
+        padding: 10px 4px;
+        border: none;
+        background: none;
+        color: var(--muted);
+        font-size: 12px;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+      }
+      #tab-buttons button.tab-button--active {
+        color: var(--text);
+        border-bottom-color: var(--accent);
+        font-weight: 600;
+      }
+
+      /* Регуляторы порогов фильтрации (features/filters.ts) — общий зум
+         рёбер виден на любой вкладке, вкладко-специфичные (соавторство,
+         общие авторы, год, "без департамента") — только там, где применимы
+         (сейчас 1 и 3). gap заметно больше, чем внутри одной строки
+         регулятора (.filter-row ниже) — прямая просьба развести РАЗНЫЕ
+         фильтры между собой, а не просто "побольше воздуха" в принципе. */
+      #filter-bar {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        /* padding-top: 16px — заметный отступ от подписи "Фильтры" до
+           первого регулятора (прямая просьба "побольше"), совпадает с
+           padding-top у .tab-search ниже (тот же зазор между "Быстрый
+           поиск" и полем ввода, прямая просьба сделать одинаково). */
+        padding: 16px 12px 10px;
+        border-bottom: 1px solid var(--border);
+      }
+      #filter-bar[hidden] {
+        display: none;
+      }
+      .filter-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+      }
+      .filter-row__label {
+        flex-shrink: 0;
+        color: var(--muted);
+      }
+      /* min-width: 0 обязателен — без него flex-элемент с nowrap-содержимым
+         (тут это встроенный вид ползунка) не сжимается меньше своей
+         "естественной" ширины и выталкивает строку за пределы сайдбара,
+         когда подпись слева длинная (например "Мин. общих авторов"). */
+      .filter-row input[type="range"] {
+        flex: 1;
+        min-width: 0;
+      }
+      .filter-row__value {
+        flex-shrink: 0;
+        min-width: 2.5em;
+        text-align: right;
+        color: var(--text);
+      }
+
+      /* Список карточек внутри активной вкладки — отрисовывается через
+         core/render.ts::renderList(), см. features/tabs/authors.ts. */
+      #tab-content {
+        flex: 1;
+        overflow-y: auto;
+      }
+      /* Поле поиска по сущностям ТЕКУЩЕЙ вкладки (features/tabs/nodeListTab.ts)
+         — под фильтрами, над списком (см. #filter-bar выше). Sticky —
+         не должно скроллиться вместе со списком, иначе для правки запроса
+         пришлось бы скроллить назад наверх. */
+      .tab-search {
+        position: sticky;
+        top: 0;
+        width: 100%;
+        box-sizing: border-box;
+        /* padding-top: 16px — тот же отступ, что у #filter-bar выше, между
+           подписью "Быстрый поиск" и самим полем (прямая просьба сделать
+           как у "Фильтры"/"Edge visibility threshold"). */
+        padding: 16px 12px 8px;
+        border: none;
+        border-bottom: 1px solid var(--border);
+        font-size: 13px;
+        background: var(--surface);
+        color: var(--text);
+      }
+      /* Общее кольцо фокуса (:focus-visible в самом начале файла) рисуется
+         СНАРУЖИ рамки элемента (outline-offset: 2px) — у поля поиска
+         вкладки это заезжало на подпись "Быстрый поиск" прямо над ним,
+         визуально сливаясь с ней в одну кляксу (прямая жалоба, скриншот).
+         Вместо кольца — просто перекрашиваем УЖЕ существующую нижнюю
+         границу поля в акцентный цвет: индикатор фокуса виден, но строго
+         внутри собственных границ поля, наружу не вылезает. */
+      .tab-search:focus-visible {
+        outline: none;
+        border-bottom-color: var(--accent);
+      }
+      .tab-list-item {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        width: 100%;
+        padding: 8px 12px;
+        border: none;
+        border-bottom: 1px solid var(--border);
+        background: none;
+        color: var(--text);
+        font-size: 13px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .tab-list-item:hover {
+        background: var(--surface-2);
+      }
+      .tab-list-item--selected {
+        background: var(--accent-soft);
+      }
+      /* min-width: 0 — та же причина, что у .filter-row input выше: без
+         него текст с white-space: nowrap не сжимается и вылезает за край
+         строки (в поиске это выглядело как "буквы не отображаются" —
+         текст на самом деле рисовался, просто за пределами видимой
+         ширины сайдбара). */
+      .tab-list-item__label {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .tab-list-item__meta {
+        flex-shrink: 0;
+        color: var(--muted);
+      }
+      /* "Ничего не найдено" (features/tabs/nodeListTab.ts) — раньше пустой
+         результат поиска выглядел как пустая/сломанная страница, без
+         единой подсказки, что список просто отфильтрован в ноль. */
+      .tab-empty {
+        padding: 24px 12px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      /* Постраничное переключение списка вкладки (features/tabs/nodeListTab.ts)
+         — список обрезан до TAB_LIST_CONFIG.pageSize строк за раз (на
+         реальных данных — тысячи авторов/публикаций, отрисовывать/скроллить
+         их все разом незачем), "‹ N / M ›" под списком — прямая просьба
+         "чтобы можно было также их крутить в листе". Пустой div (не hidden),
+         когда страница одна — чтобы список не дёргался по высоте, покажется
+         пагинация или нет, решает сам JS. */
+      .tab-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-top: 1px solid var(--border);
+      }
+      .tab-pagination__button {
+        width: 26px;
+        height: 26px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface-2);
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .tab-pagination__button:hover:not(:disabled) {
+        border-color: var(--accent);
+      }
+      .tab-pagination__button:disabled {
+        color: var(--muted);
+        cursor: default;
+        opacity: 0.5;
+      }
+      .tab-pagination__status {
+        min-width: 3.5em;
+        text-align: center;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      /* В обычных вкладках meta — короткое число ("42", "★ 15", "2024"),
+         поэтому в один ряд с подписью оно умещается нормально. В
+         глобальном поиске (features/globalSearch.ts, .search-results ниже)
+         meta — целая строка вида "Институт прикладных систем · 4 публ.",
+         и рядом с длинной подписью в одну строку оба не влезают: подпись
+         сжималась почти до нуля и рвалась по одной букве на строку.
+         Решение — не бороться за одну строку, а класть подпись и meta
+         друг под другом, как заголовок и подзаголовок результата поиска. */
+      .search-results .tab-list-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+      }
+      .search-results .tab-list-item__label {
+        white-space: normal;
+      }
+      .search-results .tab-list-item__meta {
+        font-size: 12px;
+      }
+
+      /* Панель информации о выбранном (или "Обзор" по умолчанию) — третья
+         flex-колонка #app, того же вида и ширины, что и #sidebar, только
+         зеркально (граница слева, а не справа). Раньше была плавающей
+         карточкой поверх карты (position: absolute) — теперь полноценный
+         сайдбар, по прямой просьбе ("такой же панелью как и слева с таким
+         же размером"). */
+      #panel {
+        width: 280px;
+        flex-shrink: 0;
+        overflow-y: auto;
+        background: var(--surface);
+        border-left: 1px solid var(--border);
+        padding: 16px;
+        color: var(--text);
+        font-size: 13px;
+      }
+      #panel[hidden] {
+        display: none;
+      }
+      /* "← Обзор" (features/panels.ts::buildCard) — единственный путь
+         вернуться к сводке, не сбрасывая selection каким-то окольным путём
+         (клик по пустому месту карты, смена вкладки и т.п.). Отсутствует
+         на самой карточке "Обзор" — там уже некуда возвращаться. */
+      .panel-back {
+        display: block;
+        margin: 0 0 10px;
+        padding: 0;
+        border: none;
+        background: none;
+        color: var(--muted);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .panel-back:hover {
+        color: var(--accent);
+      }
+      /* Заголовок + бейдж вида сущности в одной строке — после того, как
+         почти любое поле карточки стало кликабельной ссылкой на другую
+         сущность (см. .panel-entity-ref ниже), лишний ориентир "на что я
+         сейчас смотрю" не помешает. */
+      .panel-card__head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 0 0 12px;
+      }
+      .panel-card__titles {
+        min-width: 0;
+      }
+      /* min-width: 0 — без него длинный заголовок (например, полное
+         название публикации, core/data.ts::nodeLabel() не обрезает его для
+         панели в отличие от карты) не сжимается внутри флекс-строки и либо
+         выталкивает .panel-kind за пределы панели, либо не переносится на
+         новую строку вовсе — тот же нюанс, что уже дважды случался в этом
+         файле (.filter-row input, .tab-list-item__label). */
+      #panel h3 {
+        margin: 0;
+        min-width: 0;
+        font-size: 15px;
+        line-height: 1.3;
+        overflow-wrap: break-word;
+      }
+      .panel-kind {
+        flex-shrink: 0;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: var(--surface-2);
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        white-space: nowrap;
+      }
+      /* Имя на ВТОРОМ языке под заголовком карточки автора (features/panels.ts,
+         PanelCardOptions.subtitle) — мельче и серым, прямая просьба: для
+         EN-интерфейса сверху английское имя, под ним русское, и наоборот. */
+      .panel-card__subtitle {
+        margin: 2px 0 0;
+        font-size: 12px;
+        color: var(--muted);
+        overflow-wrap: break-word;
+      }
+      /* Строки-пары "подпись — значение" в виде мини-таблицы с разделителями
+         — раньше это был просто gap между строками без единого визуального
+         "конца" одной пары и "начала" следующей, тем более на длинных
+         значениях (аннотация публикации, список из 10 кликабельных ссылок),
+         занимающих несколько строк. */
+      #panel dl {
+        margin: 0;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0 12px;
+      }
+      #panel dt,
+      #panel dd {
+        padding: 7px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      #panel dt {
+        color: var(--muted);
+      }
+      #panel dd {
+        margin: 0;
+        line-height: 1.45;
+      }
+      /* Последняя пара строки — без нижней границы, чтобы список не
+         заканчивался "висящей" линией перед пустым местом до конца панели. */
+      #panel dt:last-of-type,
+      #panel dd:last-of-type {
+        border-bottom: none;
+      }
+      /* Внешние ссылки (DOI/GitHub/ORCID — открываются в новой вкладке)
+         подчёркнуты всегда, ссылки на сущности графа (.panel-entity-ref
+         ниже) — только при наведении: так они различимы без значка. */
+      #panel a {
+        color: var(--accent);
+        text-decoration: underline;
+      }
+      /* Ссылка на ДРУГУЮ сущность графа внутри карточки (features/panels.ts::PanelEntityRef)
+         — настоящая <button>: клик не открывает вкладку, а делает эту
+         сущность новым store.selection. font/цвет наследуются от dd, а не
+         от браузерного дефолта кнопки; text-align: left — иначе
+         многострочная подпись кнопки центрируется. */
+      .panel-entity-ref {
+        font: inherit;
+        color: var(--accent);
+        background: none;
+        border: none;
+        padding: 0;
+        cursor: pointer;
+        text-align: left;
+        text-decoration: none;
+      }
+      .panel-entity-ref:hover {
+        text-decoration: underline;
+      }
+
+      /* Разделы карточки автора (Общее/Приватное/Служебное). */
+      .panel-section + .panel-section {
+        margin-top: 16px;
+      }
+      /* Длинное поле-список (features/panels.ts::PanelList): подпись и
+         значение занимают обе колонки сетки, значения — по одному на строку. */
+      #panel dt.panel-row--block,
+      #panel dd.panel-row--block {
+        grid-column: 1 / -1;
+      }
+      /* Увеличенные отступы сверху и снизу — чтобы соседние длинные поля
+         (например, варианты имени и аффилиации) не сливались в один список. */
+      #panel dt.panel-row--block {
+        padding-top: 16px;
+        padding-bottom: 6px;
+        border-bottom: none;
+      }
+      #panel dt.panel-row--block:first-child {
+        padding-top: 7px;
+      }
+      #panel dd.panel-row--block {
+        padding-top: 0;
+        padding-bottom: 12px;
+      }
+      /* Пункты разделены линией, как строки списка в поиске (.tab-list-item). */
+      .panel-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        overflow-wrap: anywhere;
+      }
+      .panel-list li {
+        padding: 6px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .panel-list li:first-child {
+        padding-top: 0;
+      }
+      .panel-list li:last-child {
+        padding-bottom: 0;
+        border-bottom: none;
+      }
+      .panel-list__meta {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .panel-list__more {
+        padding: 0;
+        border: none;
+        background: none;
+        color: var(--muted);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .panel-list__more:hover {
+        color: var(--accent);
+      }
+
+      /* Простые графики "Обзора" (features/panels.ts::buildBarChart) — DOM +
+         CSS вместо canvas/SVG: ширина .chart-bar-row__fill в процентах от
+         максимума ряда. Без своего бокового отступа — #panel уже даёт его,
+         иначе график и заголовок уезжают к центру относительно полей. */
+      .panel-chart {
+        padding: 14px 0 0;
+      }
+      .panel-section__title,
+      .panel-chart h4 {
+        margin: 0 0 8px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .chart-bar-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        padding: 3px 0;
+      }
+      .chart-bar-row__label {
+        flex: 0 0 auto;
+        width: 88px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--muted);
+      }
+      .chart-bar-row__track {
+        flex: 1;
+        min-width: 0;
+        height: 8px;
+        border-radius: 4px;
+        background: var(--surface-2);
+        overflow: hidden;
+      }
+      .chart-bar-row__fill {
+        height: 100%;
+        background: var(--accent);
+        border-radius: inherit;
+        transition: width 0.2s ease-out;
+      }
+      .chart-bar-row__value {
+        flex: 0 0 auto;
+        min-width: 2em;
+        text-align: right;
+        color: var(--text);
+      }
+
+      /* Индикатор "ещё грузится" (core/dom.ts::createLoadingIndicator) —
+         показывается в строке карточки вместо значения, пока detail-файл
+         автора/репозитория не домержился (features/panels.ts). Пульсация,
+         не вращение — квадрат, а не спиннер, специально попроще. */
+      .loading-indicator {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        background: var(--muted);
+        border-radius: 2px;
+        animation: loading-pulse 1s ease-in-out infinite;
+      }
+      @keyframes loading-pulse {
+        0%,
+        100% {
+          opacity: 0.35;
+          transform: scale(0.8);
+        }
+        50% {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+
+      /* Сообщение о неудачной загрузке graph-data.json (app/main.ts) — если
+         его нет вовсе, пока никто не прогнал pauk/gui/graph_builder.py,
+         страница иначе выглядела бы просто пустой (кнопки вкладок есть,
+         карта белая, ни списков, ни ошибки) без единой подсказки, что не
+         так. В отличие от .loading-indicator в карточке — это не "ещё
+         грузится", а "не загрузится вообще, пока данных нет на диске". */
+      #load-error {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        max-width: 420px;
+        padding: 16px 20px;
+        background: var(--danger-bg);
+        border: 1px solid var(--danger-border);
+        border-radius: 8px;
+        color: var(--danger-text);
+        font-size: 13px;
+        text-align: center;
+      }
+      #load-error[hidden] {
+        display: none;
+      }
+
+      /* ---------- стартовый экран (features/start.ts) ---------- */
+      /* boot-screen виден с первого кадра (не ждёт JS), пока грузится
+         graph-data.json — прогресс идёт по стадиям (loading/rendering), не
+         побайтово, см. features/start.ts::STAGE_PROGRESS. */
+      #boot-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background: var(--bg);
+        transition: opacity 0.35s ease;
+      }
+      #boot-screen[hidden] {
+        display: none;
+      }
+      .boot-title {
+        font-size: 24px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        color: var(--text);
+      }
+      .boot-progress {
+        width: 180px;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border);
+        overflow: hidden;
+      }
+      .boot-progress-bar {
+        height: 100%;
+        width: 0%;
+        background: var(--accent);
+        transition: width 0.2s ease-out;
+        border-radius: inherit;
+      }
+      .boot-status {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+
+      /* Меню (features/start.ts) — не одноразовый онбординг, а настоящий
+         экран приложения (AppState.screen === "menu"): выбор языка и
+         вкладки. Показывается на каждой загрузке страницы без tab= в URL,
+         и на него всегда можно вернуться кликом по #brand в сайдбаре. */
+      #menu {
+        position: fixed;
+        inset: 0;
+        z-index: 26;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        /* Лёгкий радиальный градиент вместо плоской заливки — первый
+           экран, который видит вообще каждый, стоит того, чтобы не быть
+           одним сплошным цветом. --surface в центре светлее --bg по краям
+           совпадает с уже существующим отношением этих двух токенов
+           (сайдбар/панель светлее фона), а не вводит третий новый цвет. */
+        background: radial-gradient(
+          ellipse 900px 700px at 50% 40%,
+          var(--surface) 0%,
+          var(--bg) 70%
+        );
+      }
+      #menu[hidden] {
+        display: none;
+      }
+      .menu-hero {
+        text-align: center;
+        max-width: 560px;
+        padding: 20px;
+      }
+      .menu-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 7px 14px 7px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        text-decoration: none;
+        margin-bottom: 24px;
+        transition: border-color 0.12s ease;
+      }
+      .menu-badge:hover {
+        border-color: var(--accent);
+      }
+      .menu-badge-arrow {
+        color: var(--muted);
+      }
+      .menu-title {
+        font-size: clamp(28px, 4vw, 44px);
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        line-height: 1.15;
+        color: var(--text);
+        margin: 0 0 16px;
+      }
+      .menu-subtitle {
+        font-size: 15px;
+        line-height: 1.55;
+        color: var(--muted);
+        margin: 0 auto 28px;
+        max-width: 460px;
+      }
+      /* Один вход в приложение (всегда на первую вкладку) — отдельные
+         кнопки выбора вкладки на меню убраны по прямой просьбе. */
+      .menu-cta {
+        padding: 12px 22px;
+        background: var(--accent);
+        color: #ffffff;
+        border: none;
+        border-radius: 10px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        transition:
+          transform 0.12s ease,
+          box-shadow 0.12s ease,
+          filter 0.12s ease;
+      }
+      /* filter: brightness(), не отдельный hex-цвет "посветлее" — единственный
+         источник цвета остаётся --accent (core/config.ts::MAP_CONFIG держит
+         тот же принцип для canvas-стороны — см. память проекта про design
+         tokens). Лёгкий подъём + мягкое свечение вместо голого opacity —
+         то же ощущение "нажимаемой" кнопки, что и было, но не выглядит
+         просто "притушенным". */
+      .menu-cta:hover {
+        filter: brightness(1.08);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px var(--accent-soft);
+      }
+      .menu-cta:active {
+        transform: translateY(0);
+      }
+      /* Языковые кнопки — переехали сюда из бывшего #lang-toggle. */
+      .menu-lang {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin-top: 20px;
+      }
+      .menu-lang button {
+        padding: 6px 14px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition:
+          color 0.12s ease,
+          border-color 0.12s ease;
+      }
+      .menu-lang button:hover {
+        color: var(--text);
+      }
+      .menu-lang button.menu-lang--active {
+        color: var(--text);
+        border-color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Стартовый экран (features/start.ts) — виден с первого кадра, до
+         того как JS вообще успевает что-то смонтировать. -->
+    <div id="boot-screen">
+      <div class="boot-title">PAUK</div>
+      <div class="boot-progress"><div class="boot-progress-bar" id="boot-progress-bar"></div></div>
+      <div class="boot-status" id="boot-status"></div>
     </div>
-    <div class="topbar-right">
-      <button class="theme-toggle" id="theme-toggle" title="Светлая / тёмная тема" aria-label="Переключить тему">
-        <svg class="theme-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="4"/>
-          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
-        </svg>
-        <span class="theme-track"><span class="theme-thumb"></span></span>
-        <svg class="theme-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>
-        </svg>
-      </button>
-    </div>
-  </header>
-
-  <!-- left: search + filter -->
-  <aside id="left-panel">
-    <div class="card">
-      <div class="card-label" data-i18n="tab.search">Поиск</div>
-      <div class="search-box">
-        <input id="search" type="text" placeholder="Автор, репозиторий или публикация" data-i18n-placeholder="search.placeholder" autocomplete="off" />
-        <button id="search-clear" class="search-clear" type="button" title="Очистить" data-i18n-title="search.clear">×</button>
+    <!-- Меню (features/start.ts) — видимость переключается им же по
+         AppState.screen, hidden здесь только страховка на первый кадр до
+         запуска JS (тот же смысл, что был у #welcome-modal). -->
+    <div id="menu" hidden>
+      <div class="menu-hero">
+        <a
+          class="menu-badge"
+          href="https://github.com/ITMO-NSS-team/PAUK"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <span id="menu-badge-text"></span> <span class="menu-badge-arrow">›</span>
+        </a>
+        <h1 class="menu-title" id="menu-title"></h1>
+        <p class="menu-subtitle" id="menu-subtitle"></p>
+        <!-- Один вход в приложение (всегда на первую вкладку) — не три
+             отдельные кнопки выбора вкладки, как было раньше (убрано по
+             прямой просьбе). Текст ставит features/start.ts. -->
+        <button type="button" id="menu-enter" class="menu-cta"></button>
+        <div class="menu-lang">
+          <button type="button" data-lang="ru">RU</button>
+          <button type="button" data-lang="en">EN</button>
+        </div>
       </div>
-      <div class="search-loading-hint" data-i18n="search.loadingHint">Индекс публикаций ещё загружается — авторы и репозитории уже доступны</div>
-      <div id="search-results"></div>
     </div>
-    <div class="card" id="edge-filter-card" style="display:none;margin-top:10px">
-      <div class="card-label" id="edge-filter-label">Мин. совм. публикаций</div>
-      <div class="edge-filter-row">
-        <input type="range" id="edge-threshold" min="1" max="30" value="1" />
-        <span id="edge-threshold-val">1</span>
+
+    <!-- hidden ставит и снимает features/start.ts по AppState.screen, но
+         визуально это ни на что не влияет (см. #app в <style> выше) —
+         #map должен иметь настоящие ненулевые размеры уже в момент
+         конструирования Sigma, даже если сейчас показано меню. -->
+    <div id="app" hidden>
+      <aside id="sidebar">
+        <!-- Клик возвращает в меню (features/start.ts) — текст ("← Меню"/
+             "← Menu") ставит сама features/start.ts::render() под язык,
+             статика здесь — только запасной вариант до первого рендера. -->
+        <button type="button" id="brand">← Menu</button>
+        <!-- Открывает глобальный поиск (features/globalSearch.ts) — тот же
+             результат, что и клавиша "/" в любой момент. Единственный
+             способ найти департамент: у него нет своей вкладки/узла-кнопки
+             на карте. Текст ставит сама фича (локализация + горячая клавиша).
+             Своей подписи-раздела больше нет (была лишней — кнопка и так
+             говорит "Search everything", прямая жалоба "мешаются"). -->
+        <button type="button" id="global-search-trigger"></button>
+        <!-- data-tab на каждой кнопке — единственное, что нужно
+             features/tabs/index.ts::mountTabs() для переключения. Своей
+             подписи-раздела больше нет — по той же причине, что и у поиска
+             выше. -->
+        <nav id="tab-buttons">
+          <button type="button" data-tab="1">Авторы</button>
+          <button type="button" data-tab="3">Публикации</button>
+          <button type="button" data-tab="2">Репозитории</button>
+        </nav>
+        <!-- Подпись-раздел "Фильтры"/"Filters" (текст ставит
+             features/filters.ts под язык) — единственная оставшаяся из
+             трёх (у поиска/выбора графа убрали, мешались, прямая жалоба). -->
+        <div class="sidebar-section-label" id="filters-section-label"></div>
+        <!-- Заполняется через features/filters.ts::mountFilters(); пусто и
+             скрыто, пока не смонтирована активная вкладка с фильтром. -->
+        <div id="filter-bar" hidden></div>
+        <!-- Подпись-раздел "Быстрый поиск"/"Quick Search" и сам список
+             (features/tabs/nodeListTab.ts::createNodeListTab строит их сама
+             при монтировании вкладки — здесь только пустой контейнер). -->
+        <div id="tab-content"></div>
+      </aside>
+      <div id="map"></div>
+      <!-- Карточка с информацией о выбранном узле (или карточка "Обзор" по
+           умолчанию, пока ничего не выбрано) — заполняется через
+           features/panels.ts::mountPanel(). hidden снимается им же сразу
+           при монтировании, до этого момента (загрузка фикстур) не показываем
+           пустую рамку. -->
+      <aside id="panel" hidden></aside>
+    </div>
+    <!-- Глобальный поиск (features/globalSearch.ts) — ВНЕ #app и #menu:
+         открывается клавишей "/" из любого экрана (z-index выше обоих). -->
+    <div id="global-search" hidden>
+      <div class="global-search-box">
+        <input type="search" id="global-search-input" class="global-search-input" />
+        <div id="global-search-results" class="search-results"></div>
       </div>
-      <div style="font-size:11px;color:var(--faint);margin-top:6px" data-i18n="filter.edgesOnly">только отображение рёбер</div>
     </div>
-    <div class="card" id="year-filter-card" style="display:none;margin-top:10px">
-      <div class="card-label" data-i18n="filter.pubsByYear">Публикации по год</div>
-      <div class="edge-filter-row">
-        <input type="range" id="year-from" min="2020" max="2026" value="2026" />
-        <span id="year-from-val" style="font-size:16px;font-weight:800;color:var(--text);min-width:36px;text-align:right">2026</span>
-      </div>
-    </div>
-  </aside>
-
-  <!-- right: mode description + overview / node card -->
-  <aside id="right-panel">
-    <div id="overview" class="card"></div>
-    <div id="detail" class="card hidden">
-      <button id="detail-close" title="закрыть" data-i18n-title="detail.close">×</button>
-      <div id="detail-body"></div>
-    </div>
-  </aside>
-
-  <!-- Tab 4: search page (full-screen, on top of the map) -->
-  <div id="search-page">
-    <div id="sp-search-bar">
-      <div class="search-box" id="sp-search-box">
-        <input id="sp-input" type="text" placeholder="Поиск автора, публикации или департамента…" data-i18n-placeholder="search.spPlaceholder" autocomplete="off" />
-        <button id="sp-clear" class="search-clear" type="button" title="Очистить" data-i18n-title="search.clear">×</button>
-      </div>
-      <div class="search-loading-hint" data-i18n="search.loadingHint">Индекс публикаций ещё загружается — авторы и репозитории уже доступны</div>
-      <div id="sp-results"></div>
-    </div>
-    <div id="sp-main"></div>
-  </div>
-
-  <!-- Tab 5: DB stats + health checks (full-screen, on top of the map) -->
-  <div id="stats-page"></div>
-
-  <script defer src="vendor/maplibre-gl.js"></script>
-  <script defer src="vendor/d3.min.js"></script>
-  <script defer src="graph-data.js"></script>
-  <script defer src="i18n.js"></script>
-  <script defer src="core.js"></script>
-  <script defer src="build.js"></script>
-  <script defer src="overlay.js"></script>
-  <script defer src="panels.js"></script>
-  <script defer src="selection.js"></script>
-  <script defer src="tab-authors.js"></script>
-  <script defer src="tab-repos.js"></script>
-  <script defer src="tab-pubs.js"></script>
-  <script defer src="graph-stats.js"></script>
-  <script defer src="tab-stats.js"></script>
-  <script defer src="search.js"></script>
-  <script defer src="main.js"></script>
-  <script defer src="graph-search.js"></script>
-</body>
+    <!-- Показывается только если graph-data.json вообще не загрузился
+         (см. комментарий в <style> выше) — app/main.ts снимает hidden. -->
+    <div id="load-error" hidden></div>
+    <script type="module" src="/src/app/main.ts"></script>
+  </body>
 </html>

@@ -1,5 +1,4 @@
-"""Static web visualization, built from a Neo4j graph snapshot.
-
-Neo4j itself is only touched by pauk/cache/export.py — this package reads
-the resulting snapshot file, not the database.
+"""pauk.gui - the site: `graph_builder.py` turns a `pauk.cache` snapshot into
+layout + JSON (a lightweight summary for the map plus per-entity-type detail
+files, see its docstring); `web/` is the TypeScript frontend that renders them.
 """

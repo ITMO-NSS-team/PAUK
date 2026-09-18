@@ -102,7 +102,7 @@ pauk cache export [--output <путь>]
 
 Снимает снепшот текущего состояния графа в
 `data/cache/graph_snapshot.json` (или указанный путь) — готовит вход для
-`pauk.gui.generate_data`. См. [cache.md](cache.md).
+`pauk.gui.graph_builder`. См. [cache.md](cache.md).
 
 ## `--input`: точечный выбор строк у `enrich`
 

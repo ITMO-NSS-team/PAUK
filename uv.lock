@@ -170,6 +170,29 @@ wheels = [
 ]
 
 [[package]]
+name = "fa2-modified"
+version = "0.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "scipy" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1b/9d/d5a82a5e0709d09652dfff63c11ac3cb0c3b5a4e69ee32196f9d5edea4c7/fa2_modified-0.4.tar.gz", hash = "sha256:13aae915d666ba5f897ea890705f2d0100987915a605e0ae503c817dd55e0451", size = 508690, upload-time = "2025-10-27T12:59:41.842Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ac/01/549434d18ea35c2561d7dbc8880c251394f2d4c2a79a8dda88dc096e42ba/fa2_modified-0.4-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:4ae4da607676f48e97c622862ad437342e6a587933fd4e4f0df930ec5bbf67ef", size = 215960, upload-time = "2025-10-27T12:59:22.189Z" },
+    { url = "https://files.pythonhosted.org/packages/80/a1/6be525b63e59aafe3be8cdbfbd4889272d8ed5c276c65da343729b5254fd/fa2_modified-0.4-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:4da2d78f349fa0900d334ca64edd29183e2e42b3399d7902e5f8f5ae6be5e295", size = 213082, upload-time = "2025-10-27T12:59:23.036Z" },
+    { url = "https://files.pythonhosted.org/packages/e8/b3/e78c0e022ab6ea40b69a1388ec619c14d801b7c4317842bf78959bbc1556/fa2_modified-0.4-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:1b676a5e8702a29abcd61cbe15e0db8b92b455674d42424ea045f7495fa10bf3", size = 620815, upload-time = "2025-10-27T12:59:23.949Z" },
+    { url = "https://files.pythonhosted.org/packages/68/f1/6fcd89e495892dc94efa57028c0e8654e29a315187bbd604111e55529f17/fa2_modified-0.4-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:d591e5c1686675983acee99f3958348c86271082a1d8b856c89ecc8b01c5647b", size = 615405, upload-time = "2025-10-27T12:59:24.974Z" },
+    { url = "https://files.pythonhosted.org/packages/fc/9b/1ca0a8c8ff34419f8ffc0cc36183baaf0e44e09fa6ad57ec3bc73ae51ca3/fa2_modified-0.4-cp312-cp312-win_amd64.whl", hash = "sha256:b1ac8cfe72927dedb647a66307d20ff02347646cf984ecd1ddea3b4213089a62", size = 202161, upload-time = "2025-10-27T12:59:26.191Z" },
+    { url = "https://files.pythonhosted.org/packages/2f/cd/8dbae62bb082f269707cada08629b070bf5effbb099137e32cb547b59c44/fa2_modified-0.4-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:f68f12a962f08a229b19c8b0e1279441bff6029f1ab33cb23cd857fc8d5fab9c", size = 214917, upload-time = "2025-10-27T12:59:27.295Z" },
+    { url = "https://files.pythonhosted.org/packages/17/3c/87207f6838eb8369ab791fdfc74ecbfa77ba140659850c1762f1f2bb6505/fa2_modified-0.4-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:1d124f7b73034ffd76777c2089e3be8b2b34ea09913eda721fca946e33f9254d", size = 211794, upload-time = "2025-10-27T12:59:28.148Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/ac/d9d7bcb047ccc4e7b85cca027bd844fde84e10b841de6e46d60ca2030d48/fa2_modified-0.4-cp313-cp313-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:e98d04cbfeb3a0d931d786c2f736c60fcbff647a21da25b467e79378e1831582", size = 608978, upload-time = "2025-10-27T12:59:29.047Z" },
+    { url = "https://files.pythonhosted.org/packages/70/6b/13d7591a31e11f5aff7b47429677676af27fed128cc1dd5f623e936a97de/fa2_modified-0.4-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:bad475fbbe2bb0498d636a72781d62d2847294437444762d4bc55a9a7bd3e15a", size = 605501, upload-time = "2025-10-27T12:59:30.019Z" },
+    { url = "https://files.pythonhosted.org/packages/70/7d/00b848a050f7bdb8caac8ab2d1ddcb856109bfc49529a6868a31ec964c54/fa2_modified-0.4-cp313-cp313-win_amd64.whl", hash = "sha256:433ccbf242db03db3348c9f7ea019742550b05520dca1bc53e095e890b29788d", size = 201217, upload-time = "2025-10-27T12:59:30.871Z" },
+]
+
+[[package]]
 name = "idna"
 version = "3.18"
 source = { registry = "https://pypi.org/simple" }
@@ -300,6 +323,7 @@ name = "pauk"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "fa2-modified" },
     { name = "neo4j" },
     { name = "networkx" },
     { name = "pydantic" },
@@ -320,6 +344,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "fa2-modified", specifier = ">=0.4" },
     { name = "neo4j", specifier = ">=6.2.0" },
     { name = "networkx", specifier = ">=3.6.1" },
     { name = "pydantic", specifier = ">=2.13.4" },

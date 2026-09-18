@@ -124,6 +124,17 @@ class LoadDbTest(unittest.TestCase):
         self.assertNotIn(":Itmo", combined)
         self.assertIn("{is_itmo: true}", combined)
 
+    def test_persons_and_authorship_include_external_authors(self):
+        # External coauthors are on the map too (hidden by default), so both
+        # tables take every Person and carry is_itmo instead of filtering by it.
+        driver = SequentialFakeDriver([[] for _ in TABLE_ORDER])
+        load_db(driver)
+        persons_query = driver.queries[TABLE_ORDER.index("persons")]
+        authorship_query = driver.queries[TABLE_ORDER.index("authorship")]
+        self.assertIn("MATCH (p:Person) ", persons_query)
+        self.assertIn("AS is_itmo", persons_query)
+        self.assertIn("MATCH (p:Person)-[rel:AUTHORED]->", authorship_query)
+
 
 class GraphSnapshotExporterTest(unittest.TestCase):
     def test_export_rejects_empty_neo4j_password(self):

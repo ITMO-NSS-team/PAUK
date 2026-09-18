@@ -16,6 +16,7 @@ dependencies = [
     "scipy>=1.17.1",
     "tqdm>=4.67.1",
     "watchdog>=6.0.0",
+    "fa2-modified>=0.4",
 ]
 
 [project.scripts]

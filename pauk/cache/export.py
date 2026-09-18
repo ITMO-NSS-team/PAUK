@@ -94,7 +94,7 @@ def load_db(driver) -> dict[str, list]:
         `repositories`/`departments`/`organizations`/`authorship`/
         `person_depts`/`pub_depts`/`repo_pubs`/`mentions_repos`/
         `mentions_candidates`/`repo_persons`/`repo_depts`. The first ten
-        are what `pauk/gui/generate_data.py::build_graph_data()` expects on
+        are what `pauk/gui/graph_builder.py::GraphDataBuilder` expects on
         input; `organizations`/`mentions_repos`/`mentions_candidates` are
         three newer tables with no consumer in existing code yet.
     """
@@ -102,10 +102,11 @@ def load_db(driver) -> dict[str, list]:
 
     db["persons"] = cypher_dict(
         driver,
-        "MATCH (p:Person {is_itmo: true}) "
+        "MATCH (p:Person) "
         "RETURN "
         # required
         "p.id AS id, "
+        "coalesce(p.is_itmo, false) AS is_itmo, "
         # public
         "p.openalex_id AS openalex_id, "
         # both (split into public/private)
@@ -239,7 +240,7 @@ def load_db(driver) -> dict[str, list]:
 
     db["authorship"] = cypher_dict(
         driver,
-        "MATCH (p:Person {is_itmo: true})-[rel:AUTHORED]->(pub:Publication) "
+        "MATCH (p:Person)-[rel:AUTHORED]->(pub:Publication) "
         "RETURN "
         # required
         "pub.id AS pid, "
