@@ -27,7 +27,7 @@ CLI/disk writes.
   across build variants; flip back to `public=True` there for an actual
   public deploy), and `authors-detail.json` always holds every person field
   (private ones included), untrimmed. Public/private is decided not by content but by disk
-  location: `main()` writes `graph-data.json`/`repos-detail.json`/
+  location: `write_site_data()` writes `graph-data.json`/`repos-detail.json`/
   `pubs-detail.json` into `public/` (no personal field lives there), and
   `authors-detail.json` only into `private/`. For local development (today's
   only consumer, `pauk/gui/web`, serves static files from ONE folder -
@@ -41,7 +41,6 @@ CLI/disk writes.
 
 from __future__ import annotations
 
-import argparse
 import json
 import logging
 import time
@@ -139,40 +138,24 @@ def dump_json(data, path: Path) -> None:
     logger.info("Wrote %s (%.1f MB)", path, path.stat().st_size / 1e6)
 
 
-def main() -> None:
-    # Imports inside the function, not at module level: both are only
-    # needed for the CLI (main()), not for build() - which can be called
-    # with an already-built db in memory, without going through settings.
+def write_site_data(snapshot: Path, out_dir: Path, seed: int) -> None:
+    """Builds the site data from a snapshot and writes it into `out_dir` -
+    what `pauk gui build` runs.
+
+    Args:
+        snapshot: Graph snapshot taken by `pauk cache export`.
+        out_dir: Base folder - `public/` and `private/` live inside it.
+        seed: ForceAtlas2 layout seed.
+    """
     from pauk.cache.graph_snapshot import read_snapshot
-    from pauk.settings import settings
 
-    parser = argparse.ArgumentParser(description="Generates static data for pauk/gui/web")
-    parser.add_argument(
-        "--out-dir",
-        type=Path,
-        default=None,
-        help="base folder - public/ and private/ live inside it (defaults to pauk.settings.Settings.gui_dir)",
-    )
-    parser.add_argument("--seed", type=int, default=42, help="FA2 layout seed")
-    parser.add_argument(
-        "--cache", type=Path, required=True, help="path to a graph snapshot, taken by 'pauk cache export'"
-    )
-    args = parser.parse_args()
-    # The default is only computed if --out-dir wasn't passed explicitly -
-    # so the user can always override the path by hand, but by default the
-    # data lands where pauk/gui/web picks it up from (see pauk.settings.gui_dir).
-    if args.out_dir is None:
-        args.out_dir = settings.gui_dir
-    public_dir = args.out_dir / "public"
-    private_dir = args.out_dir / "private"
-
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    public_dir = out_dir / "public"
+    private_dir = out_dir / "private"
     public_dir.mkdir(parents=True, exist_ok=True)  # exist_ok - a second run into the same folder shouldn't fail
     private_dir.mkdir(parents=True, exist_ok=True)
 
     t0 = time.time()
-    db = read_snapshot(args.cache)
-    summary, detail = GraphDataBuilder(db, seed=args.seed).build()
+    summary, detail = GraphDataBuilder(read_snapshot(snapshot), seed=seed).build()
 
     # graph-data.json and the detail files with no personal fields go into
     # public (safe to deploy externally), and are ADDITIONALLY duplicated
@@ -191,4 +174,3 @@ def main() -> None:
             dump_json(rows, public_dir / f"{kind}-detail.json")
 
     logger.info("Done in %.1f s", time.time() - t0)
-

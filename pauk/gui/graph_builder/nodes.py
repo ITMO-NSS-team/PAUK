@@ -167,7 +167,7 @@ class AuthorNodeBuilder:
             `detail` into `authors-detail.json`. Both hold the SAME data
             regardless of build variant - privacy is no longer decided here
             by trimming fields, it's decided outside, by which folder
-            `main()` writes the final file into (`authors-detail.json` only
+            `write_site_data()` writes the final file into (`authors-detail.json` only
             ever goes into `private/`, see `builder.py`). The map label
             (`label`/`label_en`) uses `author_label(..., public=False)` -
             full surname + initials ("Фамилия И.О."), not the

@@ -8,9 +8,13 @@ the shape (summary/detail split), not specific layout numbers.
 
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
-from pauk.gui.graph_builder.builder import GraphDataBuilder
+from pauk.cache.graph_snapshot import write_snapshot
+from pauk.gui.graph_builder.builder import GraphDataBuilder, write_site_data
 
 
 class BuildGraphDataIntegrationTest(unittest.TestCase):
@@ -160,3 +164,18 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
             set(repo_detail), {"key", "description", "url", "has_readme", "license", "contributors", "owner_type"}
         )
         self.assertEqual(repo_detail["contributors"], ["ivanov"])
+
+
+class WriteSiteDataTest(unittest.TestCase):
+    def test_personal_author_detail_only_goes_to_private(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            snapshot = Path(tmp) / "snapshot.json"
+            write_snapshot(snapshot, BuildGraphDataIntegrationTest._sample_db())
+            write_site_data(snapshot, Path(tmp) / "gui", seed=1)
+
+            public = {p.name for p in (Path(tmp) / "gui" / "public").iterdir()}
+            private = {p.name for p in (Path(tmp) / "gui" / "private").iterdir()}
+            self.assertEqual(public, {"graph-data.json", "repos-detail.json", "pubs-detail.json"})
+            self.assertEqual(private, public | {"authors-detail.json"})
+            graph = json.loads((Path(tmp) / "gui" / "private" / "graph-data.json").read_text(encoding="utf-8"))
+            self.assertEqual([a["key"] for a in graph["authors"]], ["A1"])
