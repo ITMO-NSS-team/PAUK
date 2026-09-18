@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from pauk.admin import deps, feed
 from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key
+from pauk.graph.overrides import CREATE, active_overrides
 from pauk.settings import Settings
 from tests.unit.test_admin_nodes import FakePanelGraph
 
@@ -242,7 +243,6 @@ class RestoreTest(unittest.TestCase):
         # Typing the id into the create form says just as plainly that the
         # record is wanted. What is left in force is the claim that a person
         # made it, not the decision to delete it.
-        from pauk.graph.overrides import CREATE, active_overrides
         csrf = self.sign_in()
         self.client.post("/nodes/LinkCandidate/new",
                          data={"csrf": csrf, "id": "L1", "url": "https://new.test"})
@@ -476,7 +476,7 @@ class FoldedOnArrivalTest(unittest.TestCase):
         # flash the mark exists to avoid, only backwards.
         body = self.feed("Пётр")
         self.assertIn('class="now"', body)
-        # Только в разметке: слово стоит и в самом скрипте.
+        # In the markup only: the word also appears in the script itself.
         self.assertNotIn('class="now clipped"', body)
 
     def test_the_page_carries_no_measuring_pass(self):

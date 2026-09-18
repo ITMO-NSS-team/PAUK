@@ -64,8 +64,8 @@ def _jsonable(v):
 NODE_COUNTS = [
     ("Публикации", "Publications", "MATCH (p:Publication) RETURN count(p)"),
     ("Персоны всего", "People total", "MATCH (p:Person) RETURN count(p)"),
-    # Не метки: загрузчик ставит одну :Person, а принадлежность к ИТМО
-    # носит липким свойством — см. комментарий в checks.py.
+    # Not a label: the loader writes one :Person and carries ITMO membership
+    # as a sticky property — see the note in checks.py.
     ("— сотрудники ИТМО", "— ITMO staff",
      "MATCH (p:Person) WHERE p.is_itmo RETURN count(p)"),
     ("— внешние соавторы", "— external co-authors",
@@ -120,8 +120,8 @@ def status_for(n, denom, warn, fail):
     return "ok"
 
 
-#: Публикации, у которых есть хоть один автор из ИТМО, — примечание к
-#: счётчику публикаций и единственное, что попадает на карту.
+#: Publications with at least one ITMO author: the note under the
+#: publication count, and the only ones that reach the map.
 ON_MAP = ("MATCH (p:Publication) WHERE EXISTS { (p)<-[:AUTHORED]-(a:Person) WHERE a.is_itmo } "
           "RETURN count(p)")
 
@@ -132,9 +132,9 @@ TOP_DEPTS = """MATCH (d:Department)<-[:BELONGS_TO]-(p:Person) WHERE p.is_itmo
                WITH d, count(p) AS n ORDER BY n DESC LIMIT 8
                RETURN coalesce(d.name_ru, d.name_en) AS name, d.name_en AS name_en, n"""
 
-#: Всё, что этот модуль спрашивает у графа помимо самих проверок. Списком,
-#: чтобы тест мог пройтись по ним так же, как по CHECKS: метки тут уже
-#: расходились со схемой и молча показывали нули.
+#: Everything this module asks the graph besides the checks themselves. A
+#: list, so a test can walk it the way it walks CHECKS: the labels here had
+#: drifted from the schema too, and showed zeros without a word.
 QUERIES = [cypher for _label, _label_en, cypher in NODE_COUNTS] + [ON_MAP, YEARS, TOP_DEPTS]
 
 

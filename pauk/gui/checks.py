@@ -53,11 +53,11 @@ GROUP_EN = {
 CYR, LAT = r"\\p{IsCyrillic}", r"\\p{IsLatin}"
 RU_NAME_FIELDS = "[p.surname_ru, p.first_name_ru, p.second_name_ru]"
 
-# Раньше сотрудник отличался меткой (:Person:Itmo) от внешнего автора
-# (:Person:External). Меток больше нет: загрузчик ставит одну :Person, а
-# принадлежность к ИТМО носит липким свойством is_itmo — см. itmo_person и
-# external_person в pauk/graph/extract.py. Проверки, оставшиеся на метках,
-# молча считали ноль из нуля и показывали «ок» (#150).
+# Staff used to be told from external authors by a label (:Person:Itmo
+# against :Person:External). The labels are gone: the loader writes a single
+# :Person and carries ITMO membership as the sticky is_itmo property — see
+# itmo_person and external_person in pauk/graph/extract.py. Checks left on
+# the labels counted zero out of zero and reported "ok" (#150).
 _ITMO_TOTAL = "MATCH (p:Person) WHERE p.is_itmo RETURN count(p)"
 _PUB_TOTAL = "MATCH (p:Publication) RETURN count(p)"
 _DEPT_TOTAL = "MATCH (d:Department) RETURN count(d)"
@@ -66,9 +66,10 @@ _PARTS = (
     "trim(coalesce(p.surname_ru,'') + ' ' + coalesce(p.first_name_ru,'') "
     "+ ' ' + coalesce(p.second_name_ru,''))"
 )
-# Имя по-русски для таблицы примеров. Сначала собранное пайплайном целиком,
-# иначе склеенное из частей: части бывают пустыми у всех сразу — тогда
-# столбец из них выходит колонкой прочерков и не говорит ничего.
+# The Russian name for the examples table. The one the pipeline assembled
+# whole comes first, the parts glued together second: the parts can be empty
+# for everybody at once, and a column built from them alone is a column of
+# dashes.
 _FIO = f"coalesce(p.name_ru, CASE WHEN {_PARTS} <> '' THEN {_PARTS} ELSE null END, '—')"
 
 _PUB_YEAR = "toInteger(left(toString(p.publication_date), 4))"

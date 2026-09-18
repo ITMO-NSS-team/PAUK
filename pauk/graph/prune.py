@@ -270,8 +270,6 @@ def apply(client, plan_to_apply: Plan) -> dict[str, int]:
     return {"pruned_relationships": edges, "pruned_nodes": nodes}
 
 
-
-
 def run(client, mongo_db: Database, apply_it: bool = False,
         report: Callable[[str], None] | None = None) -> Plan:
     """Compare, and remove what the comparison found if that is what was asked.

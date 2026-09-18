@@ -31,13 +31,13 @@ logger = logging.getLogger("pauk.admin")
 
 router = APIRouter()
 
-# What each kind and state is called on the page. `JobKind.PUBLISH` is a
-# name for the code, not for a reader.
-#: Сколько чисел в итоге задачи показывать сразу. Дальше — под сводку: у
-#: полного конвейера их за сорок, и столбцом в сорок строк они выдавливают
-#: соседние ячейки.
+#: How many numbers of a run's result are shown open. Past that they fold
+#: under a summary: a full pipeline hands back forty, and a column forty
+#: lines tall pushes every other cell of the history out of sight.
 RESULT_OPEN_UPTO = 12
 
+# What each kind and state is called on the page. `JobKind.PUBLISH` is a
+# name for the code, not for a reader.
 KINDS = {
     JobKind.PIPELINE: "весь конвейер",
     JobKind.COLLECT: "сбор",
@@ -78,9 +78,9 @@ def _shown(job) -> dict:
         # такая задача так и висела бы «идёт» без всяких оговорок.
         "stale": store.is_quiet(job),
         "progress": job.progress,
-        # Одна полоска на фазу конвейера: пройденные закрашены, идущая
-        # отмечена, остальные пусты. Только у конвейера — у одиночной
-        # задачи делить нечего.
+        # One segment per pipeline phase: the ones behind filled, the one
+        # under way marked. A single-step job gets none — there is nothing
+        # to divide.
         "phases": _phases(job),
         # Sorted so two renders list the counts the same way.
         "result": sorted((job.result or {}).items()),
@@ -88,9 +88,9 @@ def _shown(job) -> dict:
     }
 
 
-#: Поля полезной нагрузки словами страницы. Голое `seed=42` рядом с
-#: законченным прогоном ничего не говорит, а `public=False` читается
-#: ровно наоборот тому, что значит.
+#: Payload fields in the page's words. A bare `seed=42` beside a finished
+#: run says nothing, and `public=False` reads as the opposite of what it
+#: means.
 PAYLOAD_WORDS = {
     "group": "группа",
     "date_from": "с",
@@ -101,14 +101,14 @@ PAYLOAD_WORDS = {
 
 
 def _payload_lines(kind, payload: dict) -> list[str]:
-    """Чем задача была запущена, по строке на параметр.
+    """What a run was started with, one line per setting.
 
-    Пустые поля не показываются: `work_id=None` у прогона за период — это
-    не параметр, а его отсутствие.
+    Empty fields are left out: `work_id=None` on a run over a period is not
+    a setting but the absence of one.
     """
     if JobKind(kind) is JobKind.PRUNE:
-        # «apply=False» рядом с успешной задачей читается как «ничего не
-        # нашли», хотя значит «нашли и не тронули».
+        # "apply=False" beside a finished run reads as "found nothing",
+        # when it means "found it and left it alone".
         return ["убрать найденное" if payload.get("apply")
                 else "только посчитать, ничего не удалять"]
     lines = []

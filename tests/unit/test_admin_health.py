@@ -147,13 +147,13 @@ class PageTest(unittest.TestCase):
         self.assertNotIn("/health/pub_no_abstract", body)
 
     def test_a_clean_check_does_not_repeat_a_zero_as_a_share(self):
-        # «0» и «0.0% из 189» рядом — одно и то же дважды.
+        # "0" beside "0.0% из 189" says the same thing twice.
         health.save(self.db, {"checks": [check("clean", n=0, of=189, pct=0.0)]})
         self.assertNotIn("0.0%", self.client.get("/health").text)
 
     def test_but_a_check_with_nothing_to_measure_says_so(self):
-        # Иначе «ноль из ноля» не отличить от честного нуля, а это разница
-        # между «всё хорошо» и «проверка ничего не проверяет».
+        # Otherwise zero out of zero looks like an honest zero, and that is
+        # the difference between "all is well" and "the check checks nothing".
         health.save(self.db, {"checks": [check("empty", n=0, of=0, pct=None)]})
         self.assertIn("не из чего считать", self.client.get("/health").text)
 

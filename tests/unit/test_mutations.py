@@ -27,6 +27,11 @@ class FakeGraph:
     Mirrors the parts manual edits rely on, including the `updated_at`
     the real client stamps on every write — the optimistic check is built
     on it, so a fake without it would let a broken check pass.
+
+    Kept level with the real client on purpose. Every gap between the two
+    has hidden a real bug at least once — `updated_at`, the property fill a
+    fold does, a node listed among its own `merged_ids` — so a behaviour
+    the client gains belongs here too.
     """
 
     def __init__(self):
