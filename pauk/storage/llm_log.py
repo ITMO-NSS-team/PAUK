@@ -16,7 +16,7 @@ class LlmLogStore:
 
     def record(
         self, *, group: str, model: str, prompt: str,
-        raw_response: dict[str, Any] | None, parsed: dict[str, Any] | None,
+        raw_response: Any | None, parsed: dict[str, Any] | None,
         usage: dict[str, Any] | None, error: str | None, context: dict[str, Any],
     ) -> None:
         self.collection.insert_one({

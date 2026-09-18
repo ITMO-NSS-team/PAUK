@@ -158,6 +158,18 @@ uv run python -m pauk.gui.serve                 # порт 8501
 `--entity` принимает ключи `PreparedStore.COLLECTIONS`: publications, persons,
 departments, organizations, repositories, github_profiles, repo_links.
 
+Исторически некорректные `author_names=completed` сначала планируются read-only
+скриптом, потому что `Person` глобальна и один общий файл с одной группой не
+охватит все id:
+
+```bash
+uv run python scripts/plan_author_names_repair.py --out data/reports/author-names-repair
+```
+
+Перед выполнением напечатанных скриптом команд снять `snapshot_mongo.py`.
+Команды запускать последовательно, после них повторно проверить планировщиком
+нулевой остаток, опубликовать затронутые группы и пересобрать cache/web.
+
 ## 7. Промоут в прод
 
 После проверки на копии повторить разделы 2-5 с прод-окружением: в `.env` репозитория вернуть прод-адреса БД (из серверного `.env`) вместо локальных.
