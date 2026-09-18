@@ -60,6 +60,21 @@ def _make_pdf_with_hyperlink(visible_text: str, uri: str, page_text: str = "") -
 
 
 class StagesTest(unittest.TestCase):
+    @patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_candidates_without_legacy_url_replace_bad_cache(self, http_client):
+        config = Settings(data_dir=self.root / "data", pdf_crawler_url="")
+        prepared = PreparedStore(self.db, "sample")
+        prepared.write_models("publications", [Publication(
+            id="W1", title="t", pdf_urls=["https://example.org/paper.pdf"],
+        )])
+        config.pdf_dir.mkdir(parents=True, exist_ok=True)
+        (config.pdf_dir / "W1.pdf").write_bytes(b"<html>old error</html>")
+        valid_pdf = _make_pdf_bytes(["https://github.com/org/repo"])
+        http_client.return_value.get_bytes.return_value = valid_pdf
+        CodeLinksStage(prepared, RawStore(self.db, "sample"), config=config).run()
+        http_client.return_value.get_bytes.assert_called_once_with("https://example.org/paper.pdf")
+        self.assertEqual((config.pdf_dir / "W1.pdf").read_bytes(), valid_pdf)
+
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
         tmp = tempfile.TemporaryDirectory()
@@ -578,6 +593,44 @@ class StagesTest(unittest.TestCase):
         rows = {row.id: row for row in prepared.read_models("publications", Publication)}
         self.assertIn("code_links", rows["W1"].processing)
         self.assertNotIn("code_links", rows["W2"].processing)
+
+    @patch("pauk.pipeline.stages.code_links.HttpClient")
+    def test_pdf_candidates_and_crawler_fallback(self, http_client):
+        valid_pdf = _make_pdf_bytes(["Code: https://github.com/org/repo"])
+        for crawler, responses in [
+            (False, [RuntimeError("403"), valid_pdf]),
+            (False, [b"<html>error</html>", valid_pdf]),
+            (True, [b"ok", RuntimeError("403"), b"<html>error</html>", valid_pdf]),
+            (True, [b"ok", RuntimeError("403"), b"<html>error</html>", RuntimeError("timeout")]),
+        ]:
+            with self.subTest(crawler=crawler, failure=isinstance(responses[-1], Exception)):
+                self.db.drop_collection("publications")
+                self.db.drop_collection("pdfs")
+                with tempfile.TemporaryDirectory() as folder:
+                    config = Settings(data_dir=Path(folder),
+                                      pdf_crawler_url="http://crawler/api" if crawler else "")
+                    prepared = PreparedStore(self.db, "sample")
+                    prepared.write_models("publications", [Publication(
+                        id="W1", title="t", doi="https://doi.org/10.1/test",
+                        pdf_url="https://example.org/first.pdf",
+                        pdf_urls=["https://example.org/first.pdf", "https://example.org/second.pdf"],
+                    )])
+                    http_client.return_value.get_bytes.reset_mock()
+                    http_client.return_value.get_bytes.side_effect = responses
+                    CodeLinksStage(prepared, RawStore(self.db, "sample"), config=config).run()
+                    calls = http_client.return_value.get_bytes.call_args_list
+                    direct = calls[1:] if crawler else calls
+                    self.assertEqual(direct[0].args[0], "https://example.org/first.pdf")
+                    self.assertEqual(direct[1].args[0], "https://example.org/second.pdf")
+                    self.assertEqual(len(calls), len(responses))
+                    [pub] = list(prepared.read_models("publications", Publication))
+                    if isinstance(responses[-1], Exception):
+                        self.assertEqual(pub.processing["code_links"].status, ProcessingStatus.FAILED)
+                        self.assertFalse((config.pdf_dir / "W1.pdf").exists())
+                        self.assertIsNone(self.db.pdfs.find_one({"_id": "W1"}))
+                    else:
+                        self.assertEqual(pub.processing["code_links"].status, ProcessingStatus.COMPLETED)
+                        self.assertEqual((config.pdf_dir / "W1.pdf").read_bytes(), valid_pdf)
 
     @patch("pauk.pipeline.stages.code_links.HttpClient")
     def test_code_links_extracts_from_pdf_and_caches_the_download(self, http_client):

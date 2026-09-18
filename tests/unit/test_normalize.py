@@ -4,12 +4,47 @@ import mongomock
 
 from pauk.models import Authorship, CodeLink, Person, Publication, PublicationVersion, RepoLink, Repository
 from pauk.pipeline.normalize import OpenAlexNormalizer
+from pauk.pipeline.stages import ALL_STAGES
+from pauk.pipeline.stages.dedup import _merge_publication
 from pauk.storage import PreparedStore, RawStore
 
 
 class NormalizeTest(unittest.TestCase):
+    def test_pdf_stage_removed_and_candidates_survive_merge(self):
+        self.assertNotIn("pdf", [stage.name for stage in ALL_STAGES])
+        base = Publication(id="W1", title="t", pdf_urls=["https://example.org/a.pdf"])
+        extra = Publication(id="W2", title="t", pdf_url="https://example.org/b.pdf",
+                            pdf_urls=["https://example.org/a.pdf", "https://example.org/c.pdf"])
+        merged = _merge_publication(base, extra)
+        self.assertEqual(set(merged.pdf_candidates()), {
+            "https://example.org/a.pdf", "https://example.org/b.pdf", "https://example.org/c.pdf",
+        })
+        self.assertEqual(merged.versions[0].pdf_urls, extra.pdf_candidates())
+
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
+
+    def test_pdf_candidates_preserve_order_and_legacy_links(self):
+        raw = RawStore(self.db, "sample")
+        prepared = PreparedStore(self.db, "sample")
+        prepared.write_models("publications", [Publication(
+            id="W1", title="old", pdf_url="https://example.org/legacy.pdf")])
+        raw.append("openalex_works", {
+            "id": "https://openalex.org/W1", "title": "Paper",
+            "best_oa_location": {"pdf_url": "https://example.org/best.pdf"},
+            "locations": [None, {}, {"pdf_url": ""},
+                          {"pdf_url": "https://example.org/other.pdf"},
+                          {"pdf_url": "https://example.org/best.pdf"}],
+        }, {})
+        OpenAlexNormalizer(raw, prepared).run()
+        [pub] = list(prepared.read_models("publications", Publication))
+        self.assertEqual(pub.pdf_candidates(), [
+            "https://example.org/best.pdf", "https://example.org/other.pdf",
+            "https://example.org/legacy.pdf",
+        ])
+        OpenAlexNormalizer(raw, prepared).run()
+        [again] = list(prepared.read_models("publications", Publication))
+        self.assertEqual(again.pdf_candidates(), pub.pdf_candidates())
 
     def test_openalex_work_creates_publication_and_all_authors(self):
         raw = RawStore(self.db, "sample")

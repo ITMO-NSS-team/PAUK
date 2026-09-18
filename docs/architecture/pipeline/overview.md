@@ -70,7 +70,7 @@ id), `WorksFileSelector` (файл со списком id, по одному н�
 
 `Enricher.run(stage_name, selection, force)` — прогоняет один этап или
 все (`ALL_STAGES`, порядок фиксирован в `pipeline/stages/__init__.py`:
-`pdf → persons → departments → code_links → link_relevance → emails →
+`persons → departments → code_links → link_relevance → emails →
 repositories → repo_people → dedup → github_match → author_names`).
 Блокировки на группу больше нет — атомарность на уровне документа даёт
 сама MongoDB (см. [../storage.md](../storage.md)).
@@ -102,7 +102,7 @@ repositories → repo_people → dedup → github_match → author_names`).
   публикациями.
 
 Каждый стейдж — отдельный файл, см. соседние заметки:
-[pdf.md](pdf.md), [persons.md](persons.md), [departments.md](departments.md),
+[persons.md](persons.md), [departments.md](departments.md),
 [code-links.md](code-links.md), [emails.md](emails.md),
 [repositories.md](repositories.md), [repo-people.md](repo-people.md),
 [dedup.md](dedup.md),

@@ -40,17 +40,15 @@ flowchart TD
 
     subgraph ENRICH["pauk enrich — стадии по порядку"]
         direction TB
-        S1["1. pdf<br/>помечает наличие pdf_url"]
-        S2["2. persons<br/>аффилиации, ORCID, профили"]
-        S3["3. departments<br/>сопоставление по каталогу"]
-        S4["4. code_links<br/>ссылки на код из PDF / абстракта"]
-        S5["5. link_relevance<br/>LLM-классификация ссылок"]
-        S6["6. repositories<br/>метаданные GitHub"]
-        S7["7. dedup<br/>локальное слияние дублей"]
-        S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
+        S2["1. persons<br/>аффилиации, ORCID, профили"]
+        S3["2. departments<br/>сопоставление по каталогу"]
+        S4["3. code_links<br/>ссылки на код из PDF / абстракта"]
+        S5["4. link_relevance<br/>LLM-классификация ссылок"]
+        S6["5. repositories<br/>метаданные GitHub"]
+        S7["6. dedup<br/>локальное слияние дублей"]
+        S2 --> S3 --> S4 --> S5 --> S6 --> S7
     end
 
-    PUB <--> S1
     PER <--> S2
     S2 -->|"GET author"| OA
     S2 -->|"GET works по DOI"| CR
@@ -62,7 +60,7 @@ flowchart TD
     PUB <--> S3
     PUB <--> S4
     RL <--> S4
-    S4 -->|"скачать PDF, если нет pdf_url"| PDFC
+    S4 -->|"скачать PDF, если прямые кандидаты не дали PDF"| PDFC
     RL <--> S5
     S5 -->|"классифицировать ссылку"| LLM
     REPO <--> S6

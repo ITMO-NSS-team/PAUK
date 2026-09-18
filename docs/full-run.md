@@ -95,7 +95,7 @@ uv run pauk enrich --group testrun
 ```
 
 Стадии (порядок исполнения):
-`pdf -> persons -> departments -> code_links -> link_relevance -> emails -> repositories -> dedup -> github_match -> author_names` (+ `social_graph`, опционально). Одна стадия: `uv run pauk enrich <stage> --group testrun`.
+`persons -> departments -> code_links -> link_relevance -> emails -> repositories -> dedup -> github_match -> author_names` (+ `social_graph`, опционально). Одна стадия: `uv run pauk enrich <stage> --group testrun`.
 
 Стадия `dedup` сворачивает дубли внутри одной группы. Дедуп всего графа - отдельная команда в разделе 3.
 

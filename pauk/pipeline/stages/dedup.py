@@ -652,6 +652,7 @@ def _version_of(publication: Publication,
         year=publication.year,
         openalex_url=publication.openalex_url,
         pdf_url=publication.pdf_url,
+        pdf_urls=publication.pdf_candidates(),
         abstract=publication.abstract,
         authors=list(authors),
     )
@@ -673,6 +674,7 @@ def _merge_versions(*sources: Iterable[PublicationVersion]) -> list[PublicationV
                     setattr(existing, field, getattr(version, field))
             if not existing.authors:
                 existing.authors = version.authors
+            existing.pdf_urls = _union(existing.pdf_urls, version.pdf_urls)
     return list(merged.values())
 
 
@@ -686,6 +688,7 @@ def _merge_publication(base: Publication, extra: Publication,
     an abstract or a PDF link present on only one record is never lost.
     """
     base.has_code = base.has_code or extra.has_code
+    base.pdf_urls = _union(base.pdf_candidates(), extra.pdf_candidates())
     base.versions = _merge_versions(base.versions, extra.versions,
                                     [_version_of(extra, extra_authors)])
     base.merged_ids = _union(base.merged_ids, extra.merged_ids)

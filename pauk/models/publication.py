@@ -38,6 +38,7 @@ class PublicationVersion(BaseModel):
     year: int | None = None
     openalex_url: str | None = None
     pdf_url: str | None = None
+    pdf_urls: list[str] = Field(default_factory=list)
     abstract: str | None = None
     authors: list[VersionAuthor] = Field(default_factory=list)
 
@@ -66,6 +67,7 @@ class Publication(BaseModel):
     funding: list[Funding] = Field(default_factory=list)
     openalex_url: str | None = None
     pdf_url: str | None = None
+    pdf_urls: list[str] = Field(default_factory=list)
     abstract: str | None = None
     full_text: str | None = None
     department_ids: list[str] = Field(default_factory=list)
@@ -75,3 +77,7 @@ class Publication(BaseModel):
     versions: list[PublicationVersion] = Field(default_factory=list)
     merged_ids: list[str] = Field(default_factory=list)
     processing: dict[str, ProcessingState] = Field(default_factory=dict, alias="_processing")
+
+    def pdf_candidates(self) -> list[str]:
+        """Include the legacy scalar so existing prepared rows remain usable."""
+        return list(dict.fromkeys(url for url in [self.pdf_url, *self.pdf_urls] if url))

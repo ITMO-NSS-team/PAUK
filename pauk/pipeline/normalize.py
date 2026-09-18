@@ -273,6 +273,10 @@ class OpenAlexNormalizer:
                     year=int(pub_date[:4]) if pub_date else None,
                     journal=source.get("display_name"),
                     pdf_url=(work.get("best_oa_location") or {}).get("pdf_url"),
+                    pdf_urls=list(dict.fromkeys(
+                        url for location in [work.get("best_oa_location"), *(work.get("locations") or [])]
+                        if (url := (location or {}).get("pdf_url"))
+                    )),
                     abstract=_abstract(work),
                     funding=_funding(work),
                 )
@@ -286,6 +290,10 @@ class OpenAlexNormalizer:
                     normalized_publication.versions = existing_publication.versions
                     normalized_publication.merged_ids = existing_publication.merged_ids
                     normalized_publication.processing = existing_publication.processing
+                    normalized_publication.pdf_urls = list(dict.fromkeys([
+                        *normalized_publication.pdf_urls, *existing_publication.pdf_candidates(),
+                    ]))
+                normalized_publication.processing.pop("pdf", None)
                 publications[work_id] = normalized_publication
             external_kept = 0
             for position, authorship in enumerate(work.get("authorships") or [], start=1):
