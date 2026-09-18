@@ -143,10 +143,27 @@ def _fields(work: dict) -> list[str]:
 
 
 def _funding(work: dict) -> list[Funding]:
-    return [
-        Funding(funder=grant.get("funder_display_name"), grant_id=grant.get("grant_id"))
-        for grant in work.get("grants") or []
-    ]
+    funders = work.get("funders") or []
+    entries: dict[tuple[str | None, str | None], Funding] = {}
+    represented_ids = set()
+    for award in work.get("awards") or []:
+        funder_id = award.get("funder_id")
+        name = award.get("funder_display_name") or None
+        grant_id = award.get("funder_award_id") or None
+        if name or grant_id:
+            entries.setdefault((name, grant_id), Funding(funder=name, grant_id=grant_id))
+            if funder_id:
+                represented_ids.add(funder_id)
+    # Funders without an award still describe funding, but an award's funder
+    # must not also produce a redundant entry with an unknown grant number.
+    for funder in funders:
+        name = funder.get("display_name")
+        if name and funder.get("id") not in represented_ids:
+            entries.setdefault((name, None), Funding(funder=name))
+    # A funder-only record adds no information when its numbered grants
+    # are already present, regardless of their order in the source.
+    named_grant_funders = {name for name, grant_id in entries if name and grant_id}
+    return [entry for (name, grant_id), entry in entries.items() if grant_id or name not in named_grant_funders]
 
 
 def _canonical_person_id(person: Person) -> str:
