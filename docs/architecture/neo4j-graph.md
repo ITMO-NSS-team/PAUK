@@ -53,6 +53,12 @@
 [pipeline/code-links.md](pipeline/code-links.md)), `is_relevant`,
 `classification_status`, `llm_confidence`, `llm_reason`.
 
+Для ссылок, извлечённых с учётом альтернатив переносов, `MENTIONS_LINK`
+также хранит `url_ambiguous`, `candidate_urls` (плоский список строк) и
+`availability`. Неоднозначное вхождение не подтверждает авторский
+репозиторий: `is_relevant` ребра остаётся `null`, и оно не создаёт
+`IMPLEMENTS`. Исходный фрагмент переноса хранится в prepared-данных.
+
 `MENTIONS_LINK` фиксирует сам факт присутствия ссылки и создаётся при
 `is_relevant=true`, `false` и `null`. `IMPLEMENTS` имеет более сильную
 семантику: репозиторий является подтверждённым авторским результатом
