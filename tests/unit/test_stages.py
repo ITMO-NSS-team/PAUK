@@ -1065,20 +1065,16 @@ class OwnerProfileIsFetchedTest(unittest.TestCase):
         self.assertEqual(calls, 0)
         self.assertTrue(profiles["alice"].profile_fetched)
 
-    def test_a_profile_stored_before_the_marker_counts_as_fetched(self):
-        # Written by the pipeline that always called the endpoint. Re-fetching
-        # every such profile once would cost an hour of GitHub's quota.
+    def test_a_profile_without_the_marker_is_fetched_despite_its_fields(self):
         self.prepared.write_models("github_profiles", [
             GitHubProfile(id="github_alice", login="alice", name="Alice Ivanova",
-                          html_url="https://github.com/alice", type="user")])
+                          html_url="https://github.com/alice", type="user",
+                          emails=["commit@example.org"], commit_names=["Commit Name"])])
         calls, _ = self._run_both_stages()
-        self.assertEqual(calls, 0)
+        self.assertEqual(calls, 1)
 
     def test_a_failed_fetch_leaves_the_account_open_for_another_attempt(self):
-        # GitHub answering 502 is not evidence about the account, so the
-        # marker must stay down. Whether the repository is revisited at all is
-        # the stage's own `needs_attempt` question, which a completed row
-        # answers no — so the retry is observed on the next visit it does make.
+        # An ordinary rerun must retry even when commit identities are present.
         with patch("pauk.pipeline.stages.repositories.GitHubClient") as client:
             client.return_value.get_repository.return_value = self.PAYLOAD
             client.return_value.has_readme.return_value = True
@@ -1087,19 +1083,25 @@ class OwnerProfileIsFetchedTest(unittest.TestCase):
         with patch("pauk.pipeline.stages.repo_people.GitHubClient") as client:
             client.return_value.contributors.return_value = [
                 {"login": "alice", "type": "User"}]
-            client.return_value.commits.return_value = []
+            client.return_value.commits.return_value = [
+                {"author": {"login": "alice"},
+                 "commit": {"author": {"name": "Alice", "email": "alice@example.org"}}}]
             client.return_value.get_user.side_effect = RuntimeError("502")
             RepoPeopleStage(self.prepared, self.raw).run()
         profiles = {p.login: p
                     for p in self.prepared.read_models("github_profiles", GitHubProfile)}
         self.assertFalse(profiles["alice"].profile_fetched)
+        repo = next(self.prepared.read_models("repositories", Repository))
+        self.assertEqual(repo.processing["repo_people"].status, ProcessingStatus.FAILED)
+        self.assertIn("502", repo.processing["repo_people"].error)
 
         with patch("pauk.pipeline.stages.repo_people.GitHubClient") as client:
             client.return_value.contributors.return_value = [
                 {"login": "alice", "type": "User"}]
             client.return_value.commits.return_value = []
             client.return_value.get_user.return_value = self.USER
-            RepoPeopleStage(self.prepared, self.raw, force=True).run()
+            RepoPeopleStage(self.prepared, self.raw).run()
+            client.return_value.get_user.assert_called_once_with("alice")
         profiles = {p.login: p
                     for p in self.prepared.read_models("github_profiles", GitHubProfile)}
         self.assertTrue(profiles["alice"].profile_fetched)
@@ -1289,12 +1291,13 @@ class GithubUrlRegexTest(unittest.TestCase):
     def test_rejoins_a_repo_name_split_by_a_hyphenated_line_wrap(self):
         text = "https://github.com/org/detec-\ntron2 rocks"
         found = _occurrences_in_text(text, None)
-        self.assertEqual(list(found), ["https://github.com/org/detectron2"])
+        self.assertEqual(list(found), ["https://github.com/org/detectron2", "https://github.com/org/detec-tron2"])
 
     def test_rejoins_an_owner_name_split_by_a_hyphenated_line_wrap(self):
         text = "https://github.com/facebook-\nresearch/detectron2 is great"
         found = _occurrences_in_text(text, None)
-        self.assertEqual(list(found), ["https://github.com/facebookresearch/detectron2"])
+        self.assertEqual(list(found), ["https://github.com/facebookresearch/detectron2",
+                                       "https://github.com/facebook-research/detectron2"])
 
     def test_does_not_glue_the_next_sentence_onto_a_url_at_a_plain_line_break(self):
         # No hyphen at the break: nothing distinguishes a mid-URL wrap from an

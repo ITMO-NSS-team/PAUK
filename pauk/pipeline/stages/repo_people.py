@@ -71,25 +71,8 @@ def _git_identities(commits: list[dict]) -> dict[str, tuple[set[str], set[str]]]
 
 
 def _is_filled(profile: GitHubProfile | None) -> bool:
-    """Whether a stored profile already carries what GET /users/{login} adds.
-
-    An account reached from a second repository, or on a re-run, has nothing
-    new to learn from the endpoint. In the August 2026 run all 5059 profiles
-    already existed and all 5188 calls were spent re-fetching them.
-
-    Asking `html_url` instead would never fetch a repository owner at all: the
-    repositories stage writes that field into the owner stub itself, so the
-    gate would close on data this pipeline just made up.
-    """
-    if profile is None:
-        return False
-    if profile.profile_fetched:
-        return True
-    # Profiles stored before the marker existed. The stage that wrote them
-    # always called the endpoint, and the owner stub they could be confused
-    # with carries none of these fields.
-    return any((profile.name, profile.description, profile.location,
-                profile.company, profile.emails, profile.commit_names))
+    """Commit identities and owner stubs do not prove a successful user request."""
+    return profile is not None and profile.profile_fetched
 
 
 class RepoPeopleStage(EnrichmentStage):
@@ -143,11 +126,8 @@ class RepoPeopleStage(EnrichmentStage):
             payload: dict = {}
             fetched = known.profile_fetched if known else False
             if self.force or not _is_filled(known):
-                try:
-                    payload = client.get_user(login)
-                    fetched = True
-                except Exception:
-                    payload = {}
+                payload = client.get_user(login)
+                fetched = True
                 self.raw.append("github_user", payload, {"login": login})
             profile_email = (payload.get("email") or "").strip().lower()
             if profile_email and NOREPLY_EMAIL not in profile_email:
