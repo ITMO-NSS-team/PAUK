@@ -1,0 +1,178 @@
+[
+  {
+    "id": "https://openalex.org/W7172214022",
+    "awards": [
+      {
+        "id": "https://openalex.org/G1639986404",
+        "display_name": null,
+        "funder_award_id": "QU-  APC-2026",
+        "funder_id": "https://openalex.org/F4320324403",
+        "funder_display_name": "Qassim University"
+      }
+    ],
+    "funders": [
+      {
+        "id": "https://openalex.org/F4320324403",
+        "display_name": "Qassim University",
+        "ror": "https://ror.org/01wsfe280"
+      },
+      {
+        "id": "https://openalex.org/F4320327649",
+        "display_name": "ITMO University",
+        "ror": "https://ror.org/04txgxn49"
+      }
+    ]
+  },
+  {
+    "id": "https://openalex.org/W7172384132",
+    "awards": [
+      {
+        "id": "https://openalex.org/G1545741145",
+        "display_name": null,
+        "funder_award_id": "2026ZZTS0236",
+        "funder_id": "https://openalex.org/F4320335880",
+        "funder_display_name": "Fundamental Research Funds for Central Universities of the Central South University"
+      },
+      {
+        "id": "https://openalex.org/G2660040051",
+        "display_name": null,
+        "funder_award_id": "52475499",
+        "funder_id": "https://openalex.org/F4320321001",
+        "funder_display_name": "National Natural Science Foundation of China"
+      },
+      {
+        "id": "https://openalex.org/G3284699317",
+        "display_name": null,
+        "funder_award_id": "52222513",
+        "funder_id": "https://openalex.org/F4320321001",
+        "funder_display_name": "National Natural Science Foundation of China"
+      },
+      {
+        "id": "https://openalex.org/G3999995307",
+        "display_name": null,
+        "funder_award_id": "92580114",
+        "funder_id": "https://openalex.org/F4320321001",
+        "funder_display_name": "National Natural Science Foundation of China"
+      },
+      {
+        "id": "https://openalex.org/G6105721110",
+        "display_name": null,
+        "funder_award_id": "2023YFB4604200",
+        "funder_id": "https://openalex.org/F4320335777",
+        "funder_display_name": "National Key Research and Development Program of China"
+      },
+      {
+        "id": "https://openalex.org/G771693262",
+        "display_name": "面向红外隐身的微纳结构热辐射调控机理及飞秒激光制造方法研究",
+        "funder_award_id": "2025JJ30016",
+        "funder_id": "https://openalex.org/F4320322843",
+        "funder_display_name": "Natural Science Foundation of Hunan Province"
+      },
+      {
+        "id": "https://openalex.org/G8437892537",
+        "display_name": null,
+        "funder_award_id": "525B2076",
+        "funder_id": "https://openalex.org/F4320321001",
+        "funder_display_name": "National Natural Science Foundation of China"
+      }
+    ],
+    "funders": [
+      {
+        "id": "https://openalex.org/F4320321001",
+        "display_name": "National Natural Science Foundation of China",
+        "ror": "https://ror.org/01h0zpd94"
+      },
+      {
+        "id": "https://openalex.org/F4320322843",
+        "display_name": "Natural Science Foundation of Hunan Province",
+        "ror": null
+      },
+      {
+        "id": "https://openalex.org/F4320335777",
+        "display_name": "National Key Research and Development Program of China",
+        "ror": null
+      },
+      {
+        "id": "https://openalex.org/F4320335880",
+        "display_name": "Fundamental Research Funds for Central Universities of the Central South University",
+        "ror": null
+      }
+    ]
+  },
+  {
+    "id": "https://openalex.org/W4387377944",
+    "awards": [
+      {
+        "id": "https://openalex.org/G1242160709",
+        "display_name": null,
+        "funder_award_id": "NATO.SPS.MYP.G5860",
+        "funder_id": "https://openalex.org/F4320320317",
+        "funder_display_name": "North Atlantic Treaty Organization"
+      },
+      {
+        "id": "https://openalex.org/G2527383457",
+        "display_name": null,
+        "funder_award_id": "Priority 2030",
+        "funder_id": "https://openalex.org/F4320324261",
+        "funder_display_name": "National Research University Higher School of Economics"
+      },
+      {
+        "id": "https://openalex.org/G3032613336",
+        "display_name": "Quantum nonlinear optics with 2D materials",
+        "funder_award_id": "EP/V00171X/1",
+        "funder_id": "https://openalex.org/F4320334627",
+        "funder_display_name": "Engineering and Physical Sciences Research Council"
+      },
+      {
+        "id": "https://openalex.org/G3894453268",
+        "display_name": null,
+        "funder_award_id": "EP/X017222/1",
+        "funder_id": "https://openalex.org/F4320334627",
+        "funder_display_name": "Engineering and Physical Sciences Research Council"
+      },
+      {
+        "id": "https://openalex.org/G4326863293",
+        "display_name": "2D polaritons for optoelectronic devices and networks",
+        "funder_award_id": "EP/X017222/1",
+        "funder_id": "https://openalex.org/F4320334627",
+        "funder_display_name": "Engineering and Physical Sciences Research Council"
+      },
+      {
+        "id": "https://openalex.org/G683491246",
+        "display_name": null,
+        "funder_award_id": "EP/V00171X/1",
+        "funder_id": "https://openalex.org/F4320334627",
+        "funder_display_name": "Engineering and Physical Sciences Research Council"
+      },
+      {
+        "id": "https://openalex.org/G842190044",
+        "display_name": null,
+        "funder_award_id": "075-15-2021-589",
+        "funder_id": "https://openalex.org/F4320327494",
+        "funder_display_name": "Ministry of Science and Higher Education of the Russian Federation"
+      }
+    ],
+    "funders": [
+      {
+        "id": "https://openalex.org/F4320320317",
+        "display_name": "North Atlantic Treaty Organization",
+        "ror": "https://ror.org/05xagc088"
+      },
+      {
+        "id": "https://openalex.org/F4320324261",
+        "display_name": "National Research University Higher School of Economics",
+        "ror": "https://ror.org/055f7t516"
+      },
+      {
+        "id": "https://openalex.org/F4320327494",
+        "display_name": "Ministry of Science and Higher Education of the Russian Federation",
+        "ror": null
+      },
+      {
+        "id": "https://openalex.org/F4320334627",
+        "display_name": "Engineering and Physical Sciences Research Council",
+        "ror": "https://ror.org/0439y7842"
+      }
+    ]
+  }
+]

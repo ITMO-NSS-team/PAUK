@@ -48,7 +48,7 @@ class ReviewPageTest(unittest.TestCase):
     def test_the_default_tab_holds_back_the_long_pile(self):
         self.sign_in()
         body = self.client.get("/review").text
-        # The pair worth asking about and the refused group, not the 
+        # The pair worth asking about and the refused group, not the
         # "only one is ITMO" pair.
         self.assertIn("A1", body)
         self.assertNotIn("A4", body)

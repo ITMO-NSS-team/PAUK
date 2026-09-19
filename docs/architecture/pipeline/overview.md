@@ -38,6 +38,14 @@ id), `WorksFileSelector` (файл со списком id, по одному н�
 Разбирает `openalex_works` (raw, MongoDB) в `Publication`/`Person`. Не тривиальный
 проход — здесь же живёт:
 
+- **Финансирование** (`_funding`) — из `awards` берёт `funder_display_name`
+  и `funder_award_id` напрямую в `Funding.funder` и `Funding.grant_id`.
+  Дополнительные организации из `funders`, не представленные в `awards`
+  по `awards.funder_id = funders.id`, сохраняются с `grant_id=None`.
+  Одинаковая пара названия фонда и номера гранта сохраняется один раз;
+  запись без номера опускается, если у того же названия фонда есть запись
+  с номером. Разные номера одного фонда сохраняются отдельными элементами
+  списка. Номера сохраняются без изменения; полностью пустые записи пропускаются.
 - **Очистка publisher-разметки** (`_clean_markup`) — химия/физика
   депонируют формулы MathML/HTML-тегами (`<mml:math>`, `<sub>`), OpenAlex
   отдаёт заголовок как есть. Формула схлопывается в текст без внутренних
@@ -106,7 +114,10 @@ repositories → repo_people → dedup → github_match → author_names`).
 [code-links.md](code-links.md), [emails.md](emails.md),
 [repositories.md](repositories.md), [repo-people.md](repo-people.md),
 [dedup.md](dedup.md),
-[github-match.md](github-match.md), [social-graph.md](social-graph.md).
+[github-match.md](github-match.md), [author-names.md](author-names.md),
+[social-graph.md](social-graph.md). Заметка про `author_names` также описывает
+отдельный LLM-контракт, повторные попытки и ремонт исторически некорректных
+`completed`.
 
 ## Резюмируемость
 

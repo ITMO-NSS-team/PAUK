@@ -253,9 +253,10 @@ Mongo-часть (`pdfs` — плоская коллекция, не GridFS) п�
 
 Полный запрос/ответ каждого вызова LLM — отдельная коллекция **на
 каждое применение**, не одна общая с полем-тегом:
-`llm_logs_link_relevance` для единственной сейчас точки вызова
-(`pauk/pipeline/stages/link_relevance.py`), по тому же паттерну для
-будущих (`llm_logs_dedup`, `llm_logs_departments`, ...).
+`llm_logs_link_relevance` для классификации ссылок и
+`llm_logs_author_names` для разделения имён. По тому же паттерну будущие
+точки вызова получают собственные коллекции (`llm_logs_dedup`,
+`llm_logs_departments`, ...).
 
 ```python
 llm_log = LlmLogStore(self.prepared.db, "llm_logs_link_relevance")
@@ -267,8 +268,9 @@ llm_log.record(
 
 Логируется каждый вызов целиком, без диф-фильтрации, в отличие от
 prepared-версионирования — каждый LLM-вызов уже сам по себе отдельное
-реальное событие (стадия и так вызывает LLM только на действительно
-непроверенных строках), фильтровать нечего.
+реальное событие. `author_names` пишет отдельный документ и для
+корректирующего семантического повтора; номер находится в
+`context.response_attempt`.
 
 `OpenRouterClient.last_response` (`pauk/sources/llm.py`) — сырое тело
 ответа OpenRouter с последнего `chat_json()`, тем же паттерном, что уже

@@ -547,4 +547,3 @@ class HandMadeRecordStaysClaimedTest(unittest.TestCase):
         record_override(self.db, "Department", "D1", SET, {"name_ru": "Кафедра"},
                         actor="user:roman")
         self.assertEqual(self.document("D1")["op"], SET)
-
