@@ -37,7 +37,7 @@ class PublicationVersion(BaseModel):
     publication_date: date | None = None
     year: int | None = None
     openalex_url: str | None = None
-    pdf_url: str | None = None
+    pdf_urls: list[str] = Field(default_factory=list)
     abstract: str | None = None
     authors: list[VersionAuthor] = Field(default_factory=list)
 
@@ -65,7 +65,7 @@ class Publication(BaseModel):
     code_url: str | None = None
     funding: list[Funding] = Field(default_factory=list)
     openalex_url: str | None = None
-    pdf_url: str | None = None
+    pdf_urls: list[str] = Field(default_factory=list)
     abstract: str | None = None
     full_text: str | None = None
     department_ids: list[str] = Field(default_factory=list)

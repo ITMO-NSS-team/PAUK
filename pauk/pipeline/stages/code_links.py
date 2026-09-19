@@ -181,6 +181,8 @@ def _pdf_page_occurrences(
 def _extract_pdf(data: bytes) -> tuple[list[str], list[dict[str, LinkOccurrence]]]:
     """Per-page text (for full_text) and per-page link occurrences."""
     with fitz.open(stream=data, filetype="pdf") as doc:
+        if not doc.is_pdf or doc.page_count == 0:
+            raise ValueError("Response is not a non-empty PDF document")
         pages: list[str] = []
         page_occurrences: list[dict[str, LinkOccurrence]] = []
         for page in doc:
@@ -292,7 +294,7 @@ class CodeLinksStage(EnrichmentStage):
         for pub in self.progress(candidates, total=len(candidates)):
             state = pub.processing.get(self.name)
             archived = _archived_repository_url(pub)
-            needs_pdf = bool(pub.pdf_url) or (self.crawler_available and bool(pub.doi))
+            needs_pdf = bool(pub.pdf_urls) or (self.crawler_available and bool(pub.doi))
             if needs_pdf:
                 pdf_pages, pdf_page_occurrences, pdf_error = self._pdf_pages(pub)
             else:
@@ -376,7 +378,7 @@ class CodeLinksStage(EnrichmentStage):
     ) -> tuple[list[str], list[dict[str, LinkOccurrence]], str | None]:
         """Download (if not already cached) and extract per-page text + link occurrences.
 
-        Prefers pub.pdf_url; if OpenAlex supplied none, falls back to the
+        Tries every direct PDF candidate before falling back to the
         PDF-Crawler-Service (resolves a PDF from the DOI - arXiv, Unpaywall,
         publisher pages, ...) when it's configured and reachable.
 
@@ -385,21 +387,27 @@ class CodeLinksStage(EnrichmentStage):
         non-open-access PDF) — the caller still falls back to the
         abstract-only result rather than losing it.
         """
-        via_crawler = not pub.pdf_url
-        if pub.pdf_url:
-            source_url = pub.pdf_url
-        elif self.crawler_available and pub.doi:
-            source_url = f"{self.config.pdf_crawler_url}/download?" + urlencode({"url": pub.doi})
-        else:
-            return [], [], None
-        try:
-            if self.pdf_store.exists(pub.id):
-                pdf_bytes = self.pdf_store.read(pub.id)
-            else:
-                kwargs = {"timeout": CRAWLER_DOWNLOAD_TIMEOUT, "retries": 0} if via_crawler else {}
+        errors = []
+        if self.pdf_store.exists(pub.id):
+            try:
+                pages, occurrences = _extract_pdf(self.pdf_store.read(pub.id))
+                return pages, occurrences, None
+            except Exception as exc:
+                errors.append(redact_text(exc))
+
+        sources = [(url, {}) for url in pub.pdf_urls]
+        if self.crawler_available and pub.doi:
+            sources.append((
+                f"{self.config.pdf_crawler_url}/download?" + urlencode({"url": pub.doi}),
+                {"timeout": CRAWLER_DOWNLOAD_TIMEOUT, "retries": 0},
+            ))
+        for source_url, kwargs in sources:
+            try:
                 pdf_bytes = self.http.get_bytes(source_url, **kwargs)
+                pages, occurrences = _extract_pdf(pdf_bytes)
+                # Error pages must never poison the cache for subsequent attempts.
                 self.pdf_store.save(pub.id, pdf_bytes)
-            pages, page_occurrences = _extract_pdf(pdf_bytes)
-            return pages, page_occurrences, None
-        except Exception as exc:
-            return [], [], redact_text(exc)
+                return pages, occurrences, None
+            except Exception as exc:
+                errors.append(redact_text(exc))
+        return [], [], "; ".join(errors) or None

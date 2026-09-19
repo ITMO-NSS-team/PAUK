@@ -27,6 +27,9 @@ Pydantic-модели того, что лежит в `data/prepared/<group>/*.js
   `MENTIONS_LINK`-связей в граф идёт через `repo_links.jsonl`
   (`RepoLink`/`CodeLink`), см. [neo4j-graph.md](neo4j-graph.md).
   `versions`/`merged_ids` — журнал слияний, см. ниже.
+  `pdf_urls` — уникальные кандидаты из `best_oa_location` и `locations`,
+  в порядке загрузки. Кандидаты объединяются при
+  повторной нормализации и дедупликации.
 - **`PublicationVersion`** — одна запись OpenAlex, слитая в эту публикацию
   дедупом: препринт, версия записи, дубликат при переиндексации OpenAlex.
   Хранит title/doi/journal/дату/абстракт/авторов **этой конкретной

@@ -241,7 +241,7 @@ class MockPdfHttpClient:
     """Stands in for code_links.py's raw HttpClient.
 
     The stage's own PDF-fetch fallback (used when a publication carries a
-    pdf_url but the universe models no actual PDF bytes for it, e.g. W020's
+    pdf_urls but the universe models no actual PDF bytes for it, e.g. W020's
     "https://example.org/w20.pdf") always fails, the same way the real
     HttpClient would on a 404 - code_links._pdf_pages already treats that as
     an ordinary, expected failure and falls back to the abstract. Reaching
@@ -425,7 +425,7 @@ class RecordingNeo4jClient:
                 "id": publication_id,
                 **{field: props.get(field) for field in (
                     "type", "doi", "title", "journal", "publication_date", "year",
-                    "openalex_url", "pdf_url", "abstract", "versions", "merged_ids")},
+                    "openalex_url", "pdf_urls", "abstract", "versions", "merged_ids")},
                 "author_count": len(authors),
                 "authors": authors,
             })
