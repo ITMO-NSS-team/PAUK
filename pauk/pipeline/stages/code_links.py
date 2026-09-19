@@ -238,7 +238,7 @@ class CodeLinksStage(EnrichmentStage):
         for pub in self.progress(candidates, total=len(candidates)):
             state = pub.processing.get(self.name)
             archived = _archived_repository_url(pub)
-            needs_pdf = bool(pub.pdf_candidates()) or (self.crawler_available and bool(pub.doi))
+            needs_pdf = bool(pub.pdf_urls) or (self.crawler_available and bool(pub.doi))
             if needs_pdf:
                 pdf_pages, pdf_page_occurrences, pdf_error = self._pdf_pages(pub)
             else:
@@ -339,7 +339,7 @@ class CodeLinksStage(EnrichmentStage):
             except Exception as exc:
                 errors.append(redact_text(exc))
 
-        sources = [(url, {}) for url in pub.pdf_candidates()]
+        sources = [(url, {}) for url in pub.pdf_urls]
         if self.crawler_available and pub.doi:
             sources.append((
                 f"{self.config.pdf_crawler_url}/download?" + urlencode({"url": pub.doi}),

@@ -141,7 +141,7 @@ CHECKS = [
         hint_en="Code links are found by searching abstracts — some repositories go undiscovered.",
         examples="""MATCH (p:Publication) WHERE p.abstract IS NULL OR p.abstract = ''
             RETURN p.id AS id, p.title AS `Заголовок`, p.year AS `Год`,
-                   p.doi AS `DOI`, p.pdf_url AS `PDF`
+                   p.doi AS `DOI`, head(p.pdf_urls) AS `PDF`
             ORDER BY p.year DESC LIMIT $lim""",
     ),
     Check(

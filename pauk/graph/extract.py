@@ -226,7 +226,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "code_url",
             "funding",
             "openalex_url",
-            "pdf_url",
+            "pdf_urls",
             "abstract",
             "full_text",
             "versions",

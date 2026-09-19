@@ -81,7 +81,7 @@ PAPER_COLUMNS = [
     "publication_id",
     "title",
     "doi",
-    "pdf_url",
+    "pdf_urls",
     "local_pdf",
     "has_abstract",
 ]
@@ -250,7 +250,7 @@ def export_papers(
     for pub in store.read_models("publications", Publication):
         # Only papers whose PDF the annotator can actually open - a recall
         # sample over papers with no retrievable full text measures nothing.
-        if not (pub.pdf_url or pub.full_text):
+        if not (pub.pdf_urls or pub.full_text):
             continue
         local_pdf = settings.pdf_dir / store.group / f"{pub.id}.pdf"
         row = {
@@ -259,7 +259,7 @@ def export_papers(
             "publication_id": pub.id,
             "title": pub.title or "",
             "doi": pub.doi or "",
-            "pdf_url": pub.pdf_url or "",
+            "pdf_urls": " ".join(pub.pdf_urls),
             "local_pdf": str(local_pdf) if local_pdf.exists() else "",
             "has_abstract": "yes" if pub.abstract else "no",
         }

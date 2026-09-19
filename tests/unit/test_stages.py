@@ -612,7 +612,6 @@ class StagesTest(unittest.TestCase):
                     prepared = PreparedStore(self.db, "sample")
                     prepared.write_models("publications", [Publication(
                         id="W1", title="t", doi="https://doi.org/10.1/test",
-                        pdf_url="https://example.org/first.pdf",
                         pdf_urls=["https://example.org/first.pdf", "https://example.org/second.pdf"],
                     )])
                     http_client.return_value.get_bytes.reset_mock()
@@ -643,7 +642,7 @@ class StagesTest(unittest.TestCase):
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
         prepared.write_models("publications", [
-            Publication(id="W1", title="t", pdf_url="https://example.org/w1.pdf"),
+            Publication(id="W1", title="t", pdf_urls=["https://example.org/w1.pdf"]),
         ])
         CodeLinksStage(prepared, raw, config=config).run()
 
@@ -674,7 +673,7 @@ class StagesTest(unittest.TestCase):
         raw = RawStore(self.db, "sample")
         prepared.write_models("publications", [
             Publication(id="W1", title="t", abstract="Code at https://github.com/org/repo.",
-                        pdf_url="https://example.org/w1.pdf"),
+                        pdf_urls=["https://example.org/w1.pdf"]),
         ])
         CodeLinksStage(prepared, raw, config=config).run()
         [link] = [link for row in prepared.read_models("repo_links", RepoLink) for link in row.links]
@@ -690,7 +689,7 @@ class StagesTest(unittest.TestCase):
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
         prepared.write_models("publications", [
-            Publication(id="W1", title="t", pdf_url="https://example.org/w1.pdf"),
+            Publication(id="W1", title="t", pdf_urls=["https://example.org/w1.pdf"]),
         ])
         CodeLinksStage(prepared, raw, config=config).run()
         [link] = [link for row in prepared.read_models("repo_links", RepoLink) for link in row.links]
@@ -712,7 +711,7 @@ class StagesTest(unittest.TestCase):
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
         prepared.write_models("publications", [
-            Publication(id="W1", title="t", pdf_url="https://example.org/w1.pdf"),
+            Publication(id="W1", title="t", pdf_urls=["https://example.org/w1.pdf"]),
         ])
         CodeLinksStage(prepared, raw, config=config).run()
         [link] = [link for row in prepared.read_models("repo_links", RepoLink) for link in row.links]
@@ -730,7 +729,7 @@ class StagesTest(unittest.TestCase):
         raw = RawStore(self.db, "sample")
         prepared.write_models("publications", [
             Publication(id="W1", title="t", abstract="https://github.com/org/repo",
-                        pdf_url="https://example.org/w1.pdf"),
+                        pdf_urls=["https://example.org/w1.pdf"]),
         ])
         CodeLinksStage(prepared, raw, config=config).run()
 
@@ -760,7 +759,7 @@ class StagesTest(unittest.TestCase):
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
         prepared.write_models("publications", [
-            Publication(id="W1", title="t", pdf_url="https://example.org/w1.pdf"),
+            Publication(id="W1", title="t", pdf_urls=["https://example.org/w1.pdf"]),
         ])
         CodeLinksStage(prepared, raw, config=config).run()
 
@@ -789,7 +788,7 @@ class StagesTest(unittest.TestCase):
         self.assertIn("Our code is available", context or "")
 
     @patch("pauk.pipeline.stages.code_links.HttpClient")
-    def test_code_links_falls_back_to_crawler_when_no_pdf_url(self, http_client):
+    def test_code_links_falls_back_to_crawler_when_no_pdf_urls(self, http_client):
         pdf_bytes = _make_pdf_bytes(["From the crawler: https://github.com/org/repo"])
 
         def get_bytes(url, retries=3, timeout=None):
