@@ -45,6 +45,7 @@ class Settings:
     person_resolution_concurrency: int = int(
         os.getenv("PAUK_PERSON_RESOLUTION_CONCURRENCY", "8")
     )
+    author_names_concurrency: int = int(os.getenv("PAUK_AUTHOR_NAMES_CONCURRENCY", "8"))
     person_resolution_separate_below: float = float(
         os.getenv("PAUK_PERSON_RESOLUTION_SEPARATE_BELOW", "0.05")
     )
