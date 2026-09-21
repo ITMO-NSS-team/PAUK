@@ -12,9 +12,10 @@ import hashlib
 import json
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from typing import Any
 
 from pymongo.database import Database
 
@@ -36,6 +37,8 @@ logger = logging.getLogger(__name__)
 
 CACHE_COLLECTION = "llm_person_resolution_cache"
 LOG_COLLECTION = "llm_logs_person_resolution"
+FIRST_STAGE = "qwen_first"
+SECOND_STAGE = "qwen_second"
 
 
 @dataclass(frozen=True)
@@ -59,6 +62,32 @@ class _Result:
     cache_hit: bool
 
 
+def cache_payload(stage: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    """The request as the cache keys it.
+
+    A pair's number is where the answer comes back, not evidence about
+    anybody: it is handed out by counting pairs, so one merge upstream
+    renumbers the rest and every stored verdict stops matching. The person
+    ids inside each side stay - those do say who is being compared.
+    """
+    if stage == FIRST_STAGE:
+        pairs = payload.get("pairs")
+        if not isinstance(pairs, list):
+            return dict(payload)
+        return {**payload, "pairs": [{**pair, "id": 0} for pair in pairs]}
+    return {**payload, "id": 0}
+
+
+def _renumbered(stage: str, parsed: Mapping[str, Any], pair_id: int) -> dict[str, Any]:
+    """A stored answer, addressed to the number this run uses."""
+    if stage == FIRST_STAGE:
+        results = parsed.get("results")
+        if not isinstance(results, list) or len(results) != 1 or not isinstance(results[0], Mapping):
+            return dict(parsed)
+        return {**parsed, "results": [{**results[0], "id": pair_id}]}
+    return {**parsed, "id": pair_id}
+
+
 class OpenRouterResolutionModels:
     """Runs the two Qwen stages with bounded concurrency and a Mongo cache."""
 
@@ -76,7 +105,7 @@ class OpenRouterResolutionModels:
         requests = [
             _Request(
                 pair_id=pair_id,
-                stage="qwen_first",
+                stage=FIRST_STAGE,
                 system_prompt=FIRST_STAGE_SYSTEM_PROMPT,
                 payload=first_stage_payload(pair_id, evidence),
                 max_tokens=160,
@@ -90,7 +119,7 @@ class OpenRouterResolutionModels:
         requests = [
             _Request(
                 pair_id=context.pair_id,
-                stage="qwen_second",
+                stage=SECOND_STAGE,
                 system_prompt=SECOND_STAGE_SYSTEM_PROMPT,
                 payload=context.as_payload(),
                 max_tokens=220,
@@ -118,7 +147,7 @@ class OpenRouterResolutionModels:
                 "model": self.model,
                 "stage": request.stage,
                 "system": request.system_prompt,
-                "payload": request.payload,
+                "payload": cache_payload(request.stage, request.payload),
             },
             ensure_ascii=False,
             sort_keys=True,
@@ -130,8 +159,9 @@ class OpenRouterResolutionModels:
         fingerprint = self._fingerprint(request)
         cached = self._cache.find_one({"_id": fingerprint, "model": self.model})
         if cached and isinstance(cached.get("parsed"), dict):
+            parsed = _renumbered(request.stage, cached["parsed"], request.pair_id)
             try:
-                verdict = request.parser(cached["parsed"], request.pair_id)
+                verdict = request.parser(parsed, request.pair_id)
             except ValueError:
                 verdict = None
             else:
@@ -139,7 +169,7 @@ class OpenRouterResolutionModels:
                     request,
                     verdict,
                     cached.get("raw_response"),
-                    cached["parsed"],
+                    parsed,
                     cached.get("usage"),
                     None,
                     True,
@@ -208,17 +238,24 @@ class OpenRouterResolutionModels:
         if not self.config.openrouter_api_key:
             results = [self._invoke(request) for request in requests]
         else:
-            with ThreadPoolExecutor(max_workers=min(self.workers, len(requests))) as pool:
-                futures = [pool.submit(self._invoke, request) for request in requests]
-                for number, future in enumerate(as_completed(futures), 1):
-                    results.append(future.result())
-                    if number % 50 == 0 or number == len(futures):
-                        logger.info(
-                            "person resolution %s: %d/%d",
-                            requests[0].stage,
-                            number,
-                            len(futures),
-                        )
+            # A block at a time rather than one pool over every pair: the
+            # pool waits for whatever it has queued, so submitting all of
+            # them means an interrupt keeps paying for calls nobody reads.
+            done = 0
+            for start in range(0, len(requests), self.workers * 8):
+                block = requests[start:start + self.workers * 8]
+                with ThreadPoolExecutor(max_workers=min(self.workers, len(block))) as pool:
+                    futures = [pool.submit(self._invoke, request) for request in block]
+                    for future in as_completed(futures):
+                        results.append(future.result())
+                        done += 1
+                        if done % 50 == 0 or done == len(requests):
+                            logger.info(
+                                "person resolution %s: %d/%d",
+                                requests[0].stage,
+                                done,
+                                len(requests),
+                            )
 
         for result in results:
             self._log.record(
