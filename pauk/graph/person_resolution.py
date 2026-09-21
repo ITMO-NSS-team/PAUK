@@ -558,6 +558,22 @@ def _hard_veto(evidence: PairEvidence) -> str | None:
     return None
 
 
+def _incompatible_surnames(evidence: PairEvidence) -> bool:
+    """Different surnames with nothing in the graph to back a merge.
+
+    Initials match any word that starts with the same letter, so a pair like
+    "A. V. Shashkin" and "Alexander Vinogradov" reaches full token coverage
+    and scores above the merge threshold on the name alone.
+    """
+    surname_a = _surname(_tokens(evidence.name_a))
+    surname_b = _surname(_tokens(evidence.name_b))
+    if not surname_a or not surname_b or surname_a == surname_b:
+        return False
+    if SequenceMatcher(None, surname_a, surname_b).ratio() >= 0.86:
+        return False
+    return not evidence.shared_publications and not evidence.shared_coauthors
+
+
 def resolve_pair(
     evidence: PairEvidence,
     policy: ResolverPolicy = DEFAULT_POLICY,
@@ -574,6 +590,8 @@ def resolve_pair(
     if evidence.staff_id_a and evidence.staff_id_a == evidence.staff_id_b:
         return Resolution(Decision.MERGE, "same_staff", probability)
     if probability >= policy.merge_from:
+        if _incompatible_surnames(evidence):
+            return Resolution(Decision.FIRST_MODEL, "surname_mismatch", probability)
         return Resolution(Decision.MERGE, "logreg_high", probability)
     if probability < policy.separate_below:
         return Resolution(Decision.SEPARATE, "logreg_low", probability)

@@ -25,7 +25,7 @@ from pauk.models import (
     Repository,
 )
 from pauk.pipeline.stages.author_names import RussianNamesCatalog
-from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage
+from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage, _paired_persons
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore, review
 from tests.bench.mocks import RecordingNeo4jClient
@@ -1001,6 +1001,41 @@ class LoaderPersonMergeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BlockingTest(unittest.TestCase):
+    def pairs(self, people):
+        return {frozenset((first.id, second.id)) for first, second in _paired_persons(people, None)}
+
+    def test_shared_initials_do_not_make_a_pair(self):
+        people = [
+            person("A1", "A.A. Ivanov", ["W1"]),
+            person("A2", "A.A. Petrov", ["W2"]),
+            person("A3", "K Yu Shugurov", ["W3"]),
+            person("A4", "S.Yu. Kopaev", ["W4"]),
+        ]
+        self.assertEqual(self.pairs(people), set())
+
+    def test_a_shared_surname_still_makes_a_pair(self):
+        people = [
+            person("A1", "Ivan Petrov", ["W1"]),
+            person("A2", "I. Petrov", ["W2"]),
+        ]
+        self.assertEqual(self.pairs(people), {frozenset(("A1", "A2"))})
+
+    def test_a_name_variant_still_makes_a_pair(self):
+        people = [
+            person("A1", "A.A. Ivanov", ["W1"]),
+            person("A2", "A.A. Petrov", ["W2"], variants=["Alexey Ivanov"]),
+        ]
+        self.assertEqual(self.pairs(people), {frozenset(("A1", "A2"))})
+
+    def test_a_shared_orcid_pairs_names_with_nothing_in_common(self):
+        people = [
+            person("A1", "A.A. Ivanov", ["W1"], orcid="0000-0001"),
+            person("A2", "Alexey Smirnov", ["W2"], orcid="0000-0001"),
+        ]
+        self.assertEqual(self.pairs(people), {frozenset(("A1", "A2"))})
 
 
 class ReviewDecisionsTest(unittest.TestCase):
