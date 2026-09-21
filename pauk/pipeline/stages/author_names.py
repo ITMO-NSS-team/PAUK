@@ -1077,8 +1077,8 @@ class AuthorNamesStage(EnrichmentStage):
 
             # A free, deterministic lookup for the one field the LLM never
             # produces: an exact/initials catalog match names one employee
-            # unambiguously, unlike the broader candidate net below, which
-            # deliberately includes namesakes for the LLM to weigh.
+            # unambiguously, unlike the broader candidate net ask() builds,
+            # which deliberately includes namesakes for the LLM to weigh.
             row = catalog.match(person)
             if row is not None:
                 person.degree = person.degree or (row.get("degree") or "").strip() or None
