@@ -159,6 +159,24 @@ def _norm_doi(doi: str | None) -> str | None:
     return value.rstrip("/") or None
 
 
+_NAME_PUNCT = re.compile(r"[^\w]", re.UNICODE)
+
+
+def _name_tokens(name: str | None) -> list[str]:
+    """Name tokens worth blocking on: initials carry no identity of their own.
+
+    Punctuation goes before the length check, so "A.A." collapses to a
+    two-letter token and drops out instead of bucketing every author who
+    happens to share those initials.
+    """
+    tokens = []
+    for token in _norm_name(name).split():
+        stripped = _NAME_PUNCT.sub("", token)
+        if len(stripped) > 2:
+            tokens.append(stripped)
+    return tokens
+
+
 def _variant_set(person: Person) -> set[str]:
     return {_norm_name(variant) for variant in person.name_variants if _norm_name(variant)}
 
@@ -237,9 +255,8 @@ def _paired_persons(people: list[Person], in_scope: set[str] | None,
         if staff_id:
             by_staff.setdefault(staff_id, []).append(person)
         for name in (person.name_raw, *person.name_variants):
-            for token in _norm_name(name).replace(",", " ").split():
-                if len(token) > 2:
-                    by_token.setdefault(token, []).append(person)
+            for token in _name_tokens(name):
+                by_token.setdefault(token, []).append(person)
 
     emitted: set[tuple[str, str]] = set()
     for bucket in (*by_orcid.values(), *by_token.values(), *by_staff.values()):
