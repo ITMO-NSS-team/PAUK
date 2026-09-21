@@ -1,4 +1,6 @@
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -51,7 +53,9 @@ class AuthorNamesStageTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name)
-        self.config = Settings(data_dir=root)
+        # The fake answers from a queue, so these cases read call order:
+        # one worker. Parallel work has its own test below.
+        self.config = Settings(data_dir=root, author_names_concurrency=1)
         self.config.static_dir.mkdir(parents=True)
         (self.config.static_dir / "russian_names.csv").write_text(
             CATALOG_HEADER + "".join(f"{row}\n" for row in catalog_rows), encoding="utf-8")
@@ -703,6 +707,73 @@ class StaffIdentityTest(unittest.TestCase):
             ("Никитин Андрей Алексеевич", "Никитин", "Андрей", "Алексеевич", ""),
             ("Никитин Андрей Викторович", "Никитин", "Андрей", "Викторович", ""))
         self.assertIsNone(catalog.staff_id(person("A1", "Andrey Nikitin")))
+
+
+class _ThreadedFakeClient:
+    """A fake that answers from the prompt instead of a call queue, so the
+    reply is right whichever worker happens to make the call. Records the
+    threads it was used from."""
+
+    threads: set = set()
+
+    def __init__(self, *args, **kwargs) -> None:
+        del args, kwargs
+        self.last_response = None
+        self.last_usage = None
+        self.last_error = None
+
+    def chat_json(self, prompt):
+        _ThreadedFakeClient.threads.add(threading.current_thread().name)
+        time.sleep(0.05)
+        for latin, cyrillic in (("Petrov", "Петров"), ("Sidorov", "Сидоров"),
+                                ("Smirnov", "Смирнов"), ("Volkov", "Волков")):
+            if latin in prompt:
+                return {
+                    "matched_candidate": None,
+                    "surname_ru": cyrillic, "first_name_ru": "Иван",
+                    "surname_en": latin, "first_name_en": "Ivan",
+                    "reason": "",
+                }
+        return None
+
+
+class ParallelAuthorNamesTest(unittest.TestCase):
+    def run_stage(self, people, concurrency):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        config = Settings(data_dir=root, author_names_concurrency=concurrency)
+        config.static_dir.mkdir(parents=True)
+        (config.static_dir / "russian_names.csv").write_text(CATALOG_HEADER, encoding="utf-8")
+        db = mongomock.MongoClient()["pauk_test"]
+        prepared = PreparedStore(db, "sample")
+        prepared.write_models("persons", people)
+        _ThreadedFakeClient.threads = set()
+        with patch("pauk.pipeline.stages.author_names.OpenRouterClient", _ThreadedFakeClient):
+            result = AuthorNamesStage(prepared, RawStore(db, "sample"), config).run()
+        return result, {p.id: p for p in prepared.read_models("persons", Person)}
+
+    def test_every_author_keeps_their_own_answer_across_workers(self):
+        people = [person("A1", "Ivan Petrov"), person("A2", "Ivan Sidorov"),
+                  person("A3", "Ivan Smirnov"), person("A4", "Ivan Volkov")]
+
+        result, rows = self.run_stage(people, concurrency=4)
+
+        self.assertEqual(result["author_names"], 4)
+        self.assertEqual(rows["A1"].surname_ru, "Петров")
+        self.assertEqual(rows["A2"].surname_ru, "Сидоров")
+        self.assertEqual(rows["A3"].surname_ru, "Смирнов")
+        self.assertEqual(rows["A4"].surname_ru, "Волков")
+        self.assertGreater(len(_ThreadedFakeClient.threads), 1)
+
+    def test_one_worker_is_the_same_stage(self):
+        result, rows = self.run_stage(
+            [person("A1", "Ivan Petrov"), person("A2", "Ivan Sidorov")], concurrency=1)
+
+        self.assertEqual(result["author_names"], 2)
+        self.assertEqual(rows["A1"].surname_ru, "Петров")
+        self.assertEqual(rows["A2"].surname_ru, "Сидоров")
+        self.assertEqual(len(_ThreadedFakeClient.threads), 1)
 
 
 if __name__ == "__main__":

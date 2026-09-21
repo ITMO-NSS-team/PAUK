@@ -63,8 +63,10 @@ import csv
 import difflib
 import logging
 import re
+import threading
 import unicodedata
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -1037,15 +1039,33 @@ class AuthorNamesStage(EnrichmentStage):
                 "names_failed": 0,
             }
 
-        client = OpenRouterClient(
-            self.config.request_timeout,
-            self.config.openrouter_api_key,
-            self.config.llm_model,
-            self.config.openrouter_proxy_url,
-        )
         llm_log = LlmLogStore(self.prepared.db, "llm_logs_author_names")
+        local = threading.local()
+
+        def client_for_thread() -> OpenRouterClient:
+            # One client per worker: chat_json() leaves the response, usage
+            # and error on the instance, and a shared one would hand a
+            # thread another author's answer without saying so.
+            if not hasattr(local, "client"):
+                local.client = OpenRouterClient(
+                    self.config.request_timeout,
+                    self.config.openrouter_api_key,
+                    self.config.llm_model,
+                    self.config.openrouter_proxy_url,
+                )
+            return local.client
+
+        def ask(person: Person) -> tuple[Person, dict | None, bool, str | None]:
+            person_candidates = _name_split_candidates(catalog, person)
+            prompt = _build_name_split_prompt(person, person_candidates)
+            parsed, second_name_corrected, llm_error = self._request_name_split(
+                client_for_thread(), llm_log, person, person_candidates, prompt
+            )
+            return person, parsed, second_name_corrected, llm_error
+
         changed = matched = dropped = failed = 0
-        for person in self.progress(candidates, total=len(candidates)):
+        asked = []
+        for person in candidates:
             state = person.processing.get(self.name)
             if not person.name_raw:
                 person.processing[self.name] = self._state(
@@ -1057,17 +1077,33 @@ class AuthorNamesStage(EnrichmentStage):
 
             # A free, deterministic lookup for the one field the LLM never
             # produces: an exact/initials catalog match names one employee
-            # unambiguously, unlike the broader candidate net below, which
-            # deliberately includes namesakes for the LLM to weigh.
+            # unambiguously, unlike the broader candidate net ask() builds,
+            # which deliberately includes namesakes for the LLM to weigh.
             row = catalog.match(person)
             if row is not None:
                 person.degree = person.degree or (row.get("degree") or "").strip() or None
+            asked.append(person)
 
-            person_candidates = _name_split_candidates(catalog, person)
-            prompt = _build_name_split_prompt(person, person_candidates)
-            parsed, second_name_corrected, llm_error = self._request_name_split(
-                client, llm_log, person, person_candidates, prompt
-            )
+        workers = max(1, self.config.author_names_concurrency)
+
+        def answers() -> Iterator[tuple[Person, dict | None, bool, str | None]]:
+            if workers == 1:
+                yield from (ask(person) for person in asked)
+                return
+            # A block at a time rather than one pool over every author: an
+            # interrupt then waits for the calls in flight, not for a queue
+            # of thousands, and the same bound keeps memory flat.
+            for start in range(0, len(asked), workers * 8):
+                block = asked[start:start + workers * 8]
+                with ThreadPoolExecutor(max_workers=min(workers, len(block))) as pool:
+                    futures = [pool.submit(ask, person) for person in block]
+                    for future in as_completed(futures):
+                        yield future.result()
+
+        for person, parsed, second_name_corrected, llm_error in self.progress(
+            answers(), total=len(asked)
+        ):
+            state = person.processing.get(self.name)
             if parsed is None:
                 # Reverse transliteration for name_ru, same as before this
                 # stage called an LLM at all - guessing the parts from word
