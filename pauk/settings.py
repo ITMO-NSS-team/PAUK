@@ -47,10 +47,10 @@ class Settings:
     )
     author_names_concurrency: int = int(os.getenv("PAUK_AUTHOR_NAMES_CONCURRENCY", "8"))
     person_resolution_separate_below: float = float(
-        os.getenv("PAUK_PERSON_RESOLUTION_SEPARATE_BELOW", "0.05")
+        os.getenv("PAUK_PERSON_RESOLUTION_SEPARATE_BELOW", "0.0624531492")
     )
     person_resolution_merge_from: float = float(
-        os.getenv("PAUK_PERSON_RESOLUTION_MERGE_FROM", "0.99")
+        os.getenv("PAUK_PERSON_RESOLUTION_MERGE_FROM", "0.977407873")
     )
     openrouter_proxy_url: str = os.getenv("OPENROUTER_PROXY_URL", "")
     neo4j_uri: str = os.getenv("NEO4J_URI", "bolt://localhost:7687")
