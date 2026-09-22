@@ -43,13 +43,45 @@ class PersonResolutionTest(unittest.TestCase):
         features = feature_vector(evidence())
 
         self.assertEqual(tuple(features), MODEL_FEATURES)
-        self.assertEqual(len(features), 46)
+        self.assertEqual(len(features), 49)
         self.assertAlmostEqual(features["shared_coauthors"], 1.0986122886681098)
         self.assertEqual(features["surname_equal"], 1)
         self.assertEqual(features["compatible_name"], 1)
+        self.assertEqual(features["long_token_compatible"], 1)
+        self.assertEqual(features["remaining_long_token_conflict"], 0)
+
+    def test_long_token_features_ignore_name_order(self):
+        features = feature_vector(
+            evidence(name_a="Valentin Malykh", name_b="Malykh, Valentin")
+        )
+
+        self.assertEqual(features["surname_equal"], 0)
+        self.assertEqual(features["long_token_compatible"], 1)
+        self.assertEqual(features["remaining_long_token_conflict"], 0)
+
+    def test_long_token_features_tolerate_transliteration_spelling(self):
+        features = feature_vector(
+            evidence(name_a="E. A. Zernitskaya", name_b="Ekaterina Zernitckaia")
+        )
+
+        self.assertGreater(features["long_token_similarity_max"], 0.8)
+        self.assertEqual(features["long_token_compatible"], 1)
+
+    def test_remaining_full_names_expose_namesakes(self):
+        features = feature_vector(evidence(name_a="Ivan Petrov", name_b="Igor Petrov"))
+
+        self.assertEqual(features["long_token_compatible"], 1)
+        self.assertEqual(features["remaining_long_token_conflict"], 1)
+
+    def test_initials_cannot_fake_a_compatible_long_token(self):
+        features = feature_vector(
+            evidence(name_a="A. V. Shashkin", name_b="Alexander Vinogradov")
+        )
+
+        self.assertEqual(features["long_token_compatible"], 0)
 
     def test_probability_is_stable_for_a_known_feature_vector(self):
-        self.assertAlmostEqual(logistic_probability(evidence()), 0.9006393934, places=9)
+        self.assertAlmostEqual(logistic_probability(evidence()), 0.9951826138, places=9)
 
     def test_conflicting_identifier_is_a_hard_veto(self):
         result = resolve_pair(evidence(orcid_a="0000-0001", orcid_b="0000-0002"))
@@ -142,7 +174,7 @@ class PersonResolutionTest(unittest.TestCase):
         self.assertEqual(result.decision, Decision.MERGE)
         self.assertEqual(result.route, "logreg_high")
 
-    def test_different_surnames_are_never_merged_on_the_name_alone(self):
+    def test_different_full_names_are_never_merged_on_initials_alone(self):
         result = resolve_pair(
             evidence(
                 person_a="name_1",
@@ -156,48 +188,59 @@ class PersonResolutionTest(unittest.TestCase):
                 works_b=1,
                 surname_occurrences_a=1,
                 surname_occurrences_b=1,
-            )
+            ),
+            ResolverPolicy(separate_below=0.0, merge_from=0.02),
         )
 
-        self.assertGreaterEqual(result.probability, 0.99)
         self.assertEqual(result.decision, Decision.FIRST_MODEL)
         self.assertEqual(result.route, "surname_mismatch")
 
-    def test_a_transliterated_surname_is_not_a_mismatch(self):
+    def test_conflicting_remaining_full_names_require_model_review(self):
         result = resolve_pair(
             evidence(
-                person_a="name_1",
-                name_a="Aleksey Grigorev",
-                name_b="A.S. Grigoriev",
+                name_a="Andrey V. Lyamin",
+                name_b="Andrey Volchek",
                 shared_coauthors=0,
-                shared_departments=0,
-                shared_fields=0,
                 shared_publications=0,
-                works_a=3,
-                works_b=1,
-                surname_occurrences_a=1,
-                surname_occurrences_b=1,
-            )
+            ),
+            ResolverPolicy(separate_below=0.0, merge_from=0.02),
+        )
+
+        self.assertEqual(result.decision, Decision.FIRST_MODEL)
+        self.assertEqual(result.route, "surname_mismatch")
+
+    def test_name_order_does_not_create_a_surname_mismatch(self):
+        result = resolve_pair(
+            evidence(name_a="Valentin Malykh", name_b="Malykh, Valentin"),
+            ResolverPolicy(separate_below=0.0, merge_from=0.02),
         )
 
         self.assertEqual(result.decision, Decision.MERGE)
         self.assertEqual(result.route, "logreg_high")
 
-    def test_a_joint_work_still_allows_a_merge_across_surnames(self):
+    def test_a_transliterated_surname_is_not_a_mismatch(self):
         result = resolve_pair(
             evidence(
-                person_a="name_1",
+                name_a="Aleksey Grigorev",
+                name_b="A.S. Grigoriev",
+                shared_coauthors=0,
+                shared_publications=0,
+            ),
+            ResolverPolicy(separate_below=0.0, merge_from=0.02),
+        )
+
+        self.assertEqual(result.decision, Decision.MERGE)
+        self.assertEqual(result.route, "logreg_high")
+
+    def test_a_joint_work_allows_a_merge_despite_a_name_conflict(self):
+        result = resolve_pair(
+            evidence(
                 name_a="A. V. Shashkin",
                 name_b="Alexander Vinogradov",
                 shared_coauthors=0,
-                shared_departments=0,
-                shared_fields=0,
                 shared_publications=2,
-                works_a=3,
-                works_b=1,
-                surname_occurrences_a=1,
-                surname_occurrences_b=1,
-            )
+            ),
+            ResolverPolicy(separate_below=0.0, merge_from=0.02),
         )
 
         self.assertEqual(result.decision, Decision.MERGE)

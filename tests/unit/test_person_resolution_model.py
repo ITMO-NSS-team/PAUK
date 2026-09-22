@@ -49,7 +49,7 @@ class PersonResolutionModelTest(unittest.TestCase):
             surname_occurrences_b=5,
         )
 
-        self.assertAlmostEqual(logistic_probability(evidence, model), 0.9006393934, places=9)
+        self.assertAlmostEqual(logistic_probability(evidence, model), 0.9951826138, places=9)
 
     def test_model_can_be_replaced_without_changing_code(self):
         model = load_logistic_model(self.write_artifact(artifact(intercept=0.0)), MODEL_FEATURES)
