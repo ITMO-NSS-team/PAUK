@@ -1097,8 +1097,14 @@ class AuthorNamesStage(EnrichmentStage):
                 block = asked[start:start + workers * 8]
                 with ThreadPoolExecutor(max_workers=min(workers, len(block))) as pool:
                     futures = [pool.submit(ask, person) for person in block]
-                    for future in as_completed(futures):
-                        yield future.result()
+                    try:
+                        for future in as_completed(futures):
+                            yield future.result()
+                    except BaseException:
+                        # Same as the resolver: an interrupt drops the queue
+                        # instead of paying for a block nobody will read.
+                        pool.shutdown(wait=False, cancel_futures=True)
+                        raise
 
         for person, parsed, second_name_corrected, llm_error in self.progress(
             answers(), total=len(asked)

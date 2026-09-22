@@ -246,16 +246,23 @@ class OpenRouterResolutionModels:
                 block = requests[start:start + self.workers * 8]
                 with ThreadPoolExecutor(max_workers=min(self.workers, len(block))) as pool:
                     futures = [pool.submit(self._invoke, request) for request in block]
-                    for future in as_completed(futures):
-                        results.append(future.result())
-                        done += 1
-                        if done % 50 == 0 or done == len(requests):
-                            logger.info(
-                                "person resolution %s: %d/%d",
-                                requests[0].stage,
-                                done,
-                                len(requests),
-                            )
+                    try:
+                        for future in as_completed(futures):
+                            results.append(future.result())
+                            done += 1
+                            if done % 50 == 0 or done == len(requests):
+                                logger.info(
+                                    "person resolution %s: %d/%d",
+                                    requests[0].stage,
+                                    done,
+                                    len(requests),
+                                )
+                    except BaseException:
+                        # Ctrl-C has to drop what is still queued: leaving it
+                        # to the pool's own shutdown would pay for a whole
+                        # block of answers nobody is going to read.
+                        pool.shutdown(wait=False, cancel_futures=True)
+                        raise
 
         for result in results:
             self._log.record(

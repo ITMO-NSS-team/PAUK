@@ -295,6 +295,23 @@ class ResolverBatchingTest(unittest.TestCase):
             person_b=f"B{number}", name_b=f"I. Petrov{number}",
         )
 
+    def test_an_interrupt_drops_the_rest_of_the_block(self):
+        # The pool waits for everything it has queued, so without cancelling
+        # the pending futures Ctrl-C still pays for the whole block.
+        models = self.models(workers=1)
+        items = [(number, self.evidence(number)) for number in range(8)]
+        started = []
+
+        def invoke(request):
+            started.append(request.pair_id)
+            raise KeyboardInterrupt
+
+        with patch.object(OpenRouterResolutionModels, "_invoke", side_effect=invoke, autospec=False):
+            with self.assertRaises(KeyboardInterrupt):
+                models.first_many(items)
+
+        self.assertLess(len(started), len(items))
+
     def test_every_pair_is_answered_across_several_blocks(self):
         models = self.models(workers=2)
         items = [(number, self.evidence(number)) for number in range(30)]
