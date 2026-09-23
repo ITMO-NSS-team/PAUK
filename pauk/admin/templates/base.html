@@ -10,7 +10,7 @@
 <body>
 {% if user %}
 <header>
-  {# Логотип — кнопка на главную страницу.#}
+  {# Логотип – кнопка на главную страницу.#}
   <a href="/" class="logo" title="На главную"><img src="/assets/icons/pauk-frame.png" alt="Admin PAUK"></a>
   <a href="/audit" class="section {% if request.url.path.startswith('/audit') %}on{% endif %}">
     Журнал правок
