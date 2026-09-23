@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Deploy the site (pauk/gui/web) to the lab server: build it locally (with the
 # private data from data/gui/private), rsync it over, restart a screen
-# session serving it with python3 http.server.
+# session serving it with scripts/serve_static.py (http.server plus
+# precompressed .gz files).
 # Requires the ssh key access to REMOTE already set up and the lab VPN on.
 
 set -euo pipefail
@@ -31,6 +32,13 @@ done
 echo "==> build pauk/gui/web"
 (cd "$root/pauk/gui/web" && npm run build)
 
+# serve_static.py sends these instead of the originals to browsers that
+# accept gzip - the JSON shrinks about five times. PDFs and images are
+# already compressed, gzip wouldn't gain anything on them.
+echo "==> gzip text files in dist"
+find "$root/pauk/gui/web/dist" -type f \( -name '*.json' -o -name '*.js' -o -name '*.css' -o -name '*.html' \) \
+    -exec gzip -kf -9 {} +
+
 echo "==> ping $REMOTE_HOST"
 if ! ping -c 1 -W 2 "$REMOTE_HOST" > /dev/null 2>&1; then
     echo "The server isn't responding to pings - check your VPN." >&2
@@ -45,6 +53,8 @@ fi
 
 echo "==> rsync dist to $REMOTE:$REMOTE_DIR"
 rsync -avz --delete "$root/pauk/gui/web/dist/" "$REMOTE:$REMOTE_DIR/"
+# Next to the site folder, not inside it - the server script itself isn't served.
+rsync -avz "$root/scripts/serve_static.py" "$REMOTE:serve_static.py"
 
 echo "==> restart screen '$SCREEN_NAME' on port $PORT"
 ssh "$REMOTE" bash -l <<EOF
@@ -61,7 +71,7 @@ fi
 # output goes to a log outside the served folder, so a crash is diagnosable.
 log="\$HOME/${SCREEN_NAME}.log"
 cd "\$HOME/$REMOTE_DIR"
-screen -dmS $SCREEN_NAME sh -c "python3 -m http.server $PORT > '\$log' 2>&1"
+screen -dmS $SCREEN_NAME sh -c "python3 \$HOME/serve_static.py $PORT > '\$log' 2>&1"
 sleep 2
 if ! screen -list | grep -q '\.${SCREEN_NAME}[[:space:]]'; then
     echo "Screen session didn't stay up. Server output (\$log):" >&2

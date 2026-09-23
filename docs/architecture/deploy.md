@@ -8,7 +8,7 @@
 
 Карта крутится на `einsteinium.nsslab` (`ssh asteb@einsteinium.nsslab`,
 доступ по SSH-ключу, доступ по VPN лаборатории): статика из `~/pauk-gui/`
-раздаётся `python3 -m http.server` в `screen`-сессии `pauk`, порт по
+раздаётся `~/serve_static.py` (`scripts/serve_static.py`) в `screen`-сессии `pauk`, порт по
 умолчанию **8501** — `http://einsteinium.nsslab:8501`.
 
 Своего юнита systemd у раздачи нет: `screen`-сессия не переживает
@@ -53,8 +53,10 @@ PORT=8503 ./scripts/deploy.sh   # если 8501 занят
    лаборатории.
 4. `ping` до хоста — явная проверка VPN, а не невнятный таймаут SSH позже;
    `ssh -o ConnectTimeout=5 ... true` — проверка, что ключ принимается.
-5. `rsync -avz --delete pauk/gui/web/dist/ → ~/pauk-gui/`.
-6. Перезапуск `screen`-сессии `pauk` (`python3 -m http.server`) через
+5. `rsync -avz --delete pauk/gui/web/dist/ → ~/pauk-gui/` и
+   `scripts/serve_static.py → ~/serve_static.py` (рядом с папкой сайта, не
+   внутри — сам скрипт не раздаётся).
+6. Перезапуск `screen`-сессии `pauk` (`python3 ~/serve_static.py <порт>`) через
    `ssh ... bash -l <<EOF` (**логин-шелл**, чтобы подхватились
    `.bashrc`/`.profile`). Существующая сессия с тем же именем гасится
    явной проверкой `screen -list | grep -q '\.pauk[[:space:]]'` — без неё
@@ -63,9 +65,15 @@ PORT=8503 ./scripts/deploy.sh   # если 8501 занят
    поднялась; если нет, скрипт печатает хвост `~/pauk.log` на сервере
    (например, `Address already in use`).
 
-`python3 -m http.server` не сжимает ответы: первая загрузка страницы —
-около 36 МБ JSON. Повторные заходы дешевле — сервер отвечает `304` на
-неизменённые файлы.
+Между сборкой и `ping` скрипт делает `gzip -k` для JSON/JS/CSS/HTML в
+`dist/`. `serve_static.py` — тот же `http.server` на стандартной
+библиотеке, только если браузер принимает gzip и рядом с файлом лежит
+`.gz`, отдаёт его с `Content-Encoding: gzip`: данные сайта уходят примерно
+в 5 раз меньше (80 МБ → 16 МБ на сегодняшних данных, `graph-data.json`,
+который блокирует первую отрисовку, — 12.8 → 2.2 МБ). PDF и картинки не
+сжимаются — они уже сжаты. Повторные заходы отвечают `304` на
+неизменённые файлы. Скрипт без зависимостей и без синтаксиса новее
+Python 3.6 — версия python3 на сервере не зафиксирована.
 
 ## PDF-Crawler-Service — не часть этого репозитория
 
