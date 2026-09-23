@@ -21,6 +21,7 @@ import { MAP_CONFIG, REGION_CONFIG } from "../core/config";
 import { localize } from "../core/i18n";
 import { isRegionMode, type AppState, type Store } from "../core/state";
 import { groupIdOf, groupsById } from "../core/data";
+import { themeById } from "../core/themes";
 import { noDeptId, tabGraphNodes } from "./build";
 
 /** Узел, участвующий в построении регионов, в координатах раскладки. */
@@ -458,7 +459,7 @@ export function mountRegions(
     labels.textBaseline = "middle";
     labels.lineJoin = "round";
     labels.lineWidth = MAP_CONFIG.node.labelHaloWidth;
-    labels.strokeStyle = MAP_CONFIG.node.labelHaloColor;
+    labels.strokeStyle = themeById(store.get().theme).map.labelHalo;
     const lineHeight = cfg.labelSize * cfg.labelLineHeight;
     const placed: { left: number; top: number; right: number; bottom: number }[] = [];
 

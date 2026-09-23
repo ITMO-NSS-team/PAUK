@@ -996,10 +996,12 @@ export function mountPanel(
         }
 
         const contributors = repoContributorRefsOf(node.key, lang);
-        if (contributors.length > 0) rows.push([t("field.contributors", lang), contributors]);
+        if (contributors.length > 0)
+          rows.push([t("field.contributors", lang), { kind: "list", items: contributors }]);
 
         const repoPubs = repoPubKeysOf(node.key);
-        if (repoPubs.length > 0) rows.push([t("tab.pubs", lang), entityRefsOf(repoPubs, lang)]);
+        if (repoPubs.length > 0)
+          rows.push([t("tab.pubs", lang), { kind: "list", items: entityRefsOf(repoPubs, lang) }]);
       }
       if (node.kind === "pub") {
         rows.push([

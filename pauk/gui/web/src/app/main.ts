@@ -12,12 +12,14 @@ import { requireElement, showLoadError } from "../core/dom";
 import { t } from "../core/i18n";
 import { loggedStep } from "../core/log";
 import { isRegionMode, Store, type AppState } from "../core/state";
+import { themeById } from "../core/themes";
 import { mountFilters, mountHiddenAuthorReveal } from "../features/filters";
 import { mountGlobalSearch } from "../features/globalSearch";
 import { mountPanel } from "../features/panels";
 import { mountSelection } from "../features/selection";
 import { mountStart } from "../features/start";
 import { mountTabs } from "../features/tabs";
+import { mountThemePicker } from "../features/themePicker";
 import { mountUrlSync } from "../features/urlSync";
 import { mountReactiveGraph, mountZoomDebug, populateGraph } from "../map/build";
 import { mountRegions } from "../map/regions";
@@ -55,7 +57,7 @@ function drawHaloedNodeLabel(
 
   context.lineJoin = "round";
   context.lineWidth = MAP_CONFIG.node.labelHaloWidth;
-  context.strokeStyle = MAP_CONFIG.node.labelHaloColor;
+  context.strokeStyle = themeById(store.get().theme).map.labelHalo;
   context.strokeText(data.label, x, y);
 
   context.fillStyle = data.color;
@@ -72,6 +74,7 @@ const store = new Store<AppState>({
   screen: "menu",
   tab: 1,
   lang: "en",
+  theme: "dark",
   selection: null,
   filters: {
     minCoauth: 1,
@@ -86,6 +89,15 @@ const store = new Store<AppState>({
     regionZoomThreshold: FILTER_CONFIG.regionZoom.default,
     regionMinNodes: FILTER_CONFIG.regionMinNodes.default,
   },
+});
+
+// До загрузки данных — меню и boot-экран сразу в цветах темы.
+themeById(store.get().theme).apply(document.documentElement);
+let appliedTheme = store.get().theme;
+store.subscribe((state) => {
+  if (state.theme === appliedTheme) return;
+  appliedTheme = state.theme;
+  themeById(state.theme).apply(document.documentElement);
 });
 
 // Данные приходят из четырёх *.json в корне сайта (см. DATA_CONFIG в
@@ -131,6 +143,7 @@ function loadDetailsInto<T extends { key: string }>(
 // монтируется сразу, до первого fetch: boot-screen должен быть виден с
 // первого кадра, а не появиться с задержкой.
 const start = mountStart(store);
+mountThemePicker(store);
 start.setBootStage("loading");
 
 // Приоритетная загрузка: сперва graph-data.json — этого одного достаточно,
@@ -205,7 +218,7 @@ function renderApp(data: GraphData): void {
   // отличие от MapLibre, где источники/слои добавлялись в пустую карту
   // уже после её асинхронной инициализации).
   const container = requireElement("map");
-  container.style.background = MAP_CONFIG.backgroundColor;
+  container.style.background = themeById(store.get().theme).map.background;
 
   const graph = new Graph();
   const initial = store.get();
@@ -249,6 +262,15 @@ function renderApp(data: GraphData): void {
   // Раньше mountReactiveGraph: тот сбрасывает выбор узла, которого нет в графе.
   mountHiddenAuthorReveal(store, data);
   mountReactiveGraph(renderer, store, data, pubDetailsByKey);
+  // Цвета карты читаются из темы при каждой отрисовке (reducers, подписи,
+  // регионы) — на смену темы достаточно фона контейнера и перерисовки.
+  let mapTheme = initial.theme;
+  store.subscribe((state) => {
+    if (state.theme === mapTheme) return;
+    mapTheme = state.theme;
+    container.style.background = themeById(state.theme).map.background;
+    renderer.refresh();
+  });
   // Временный инструмент калибровки порогов зума и MAP_CONFIG.node.labelVisibleAtSize —
   // удалить вызов, когда числа подобраны.
   mountZoomDebug(renderer);

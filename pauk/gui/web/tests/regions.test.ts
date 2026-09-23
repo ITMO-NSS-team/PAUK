@@ -129,6 +129,7 @@ function initialState(overrides: Partial<AppState["filters"]> = {}): AppState {
     screen: "app",
     tab: 1,
     lang: "ru",
+    theme: "dark",
     selection: null,
     filters: {
       minCoauth: 1,

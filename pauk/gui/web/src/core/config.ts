@@ -6,10 +6,6 @@
 // отдельно от логики, которая их использует).
 
 export const MAP_CONFIG = {
-  // Фон холста — Sigma сама фон не красит (это голый WebGL-canvas, не
-  // MapLibre-стиль со слоем "background"), поэтому цвет ставится прямо на
-  // DOM-контейнер при монтировании (см. map/build.ts).
-  backgroundColor: "#202020",
   // Отступ от края холста при автоматическом вписывании графа в область
   // просмотра (Sigma settings.stagePadding, autoRescale/autoCenter — оба
   // включены по умолчанию). minZoom/maxZoom/initialZoom старого MapLibre-
@@ -59,17 +55,13 @@ export const MAP_CONFIG = {
     // перенесено: у Sigma NodeDisplayData нет отдельных stroke-полей у
     // дефолтного circle-рендерера узла — понадобится свой NodeProgram,
     // если эффект окажется реально нужен, не блокирует переезд.
-    // Цвет узла, который НЕ фокус и НЕ его сосед (см. applyGraphStyling в
-    // map/build.ts) — полупрозрачный, а не сплошной серый: должен выглядеть
-    // "замыленным", будто отошёл на фон, а не просто перекрашенным.
-    dimColor: "rgba(74, 74, 74, 0.45)",
     // Подпись узла красится В ЦВЕТ ЕГО ДЕПАРТАМЕНТА (не одним общим цветом
     // на все узлы) — свой defaultDrawNodeLabel в app/main.ts читает
     // data.color (тот же цвет, что и у самого узла) вместо штатного
-    // Sigma settings.labelColor. labelHalo* ниже — обводка вокруг текста
+    // Sigma settings.labelColor. labelHaloWidth ниже — обводка вокруг текста
     // (Canvas2D context.strokeText до fillText), чтобы цветной текст не
-    // терялся на фоне того же цвета, что и близкие узлы/рёбра.
-    labelHaloColor: "#ffffff",
+    // терялся на фоне того же цвета, что и близкие узлы/рёбра. Цвета
+    // фона/рёбер/обводки — в теме (core/themes), не здесь.
     labelHaloWidth: 3,
     // Sigma settings.labelRenderedSizeThreshold (app/main.ts) — минимальный
     // экранный размер узла (в пикселях, зум уже учтён самой Sigma), при
@@ -92,16 +84,8 @@ export const MAP_CONFIG = {
   },
 
   edge: {
-    // rgba, не голый hex + отдельная "opacity": у Sigma EdgeDisplayData
-    // нет отдельного свойства прозрачности (только label/size/color/hidden/
-    // forceLabel/zIndex/type) — альфа-канал теперь часть самого цвета.
-    // Более прозрачный и тоньше, чем было изначально ("рёбра слишком
-    // толстые, белый цвет выделяется" — прямая жалоба).
-    color: "rgba(157, 157, 157, 0.35)",
-    // Выбранное ребро — та же идея, что и node.radiusSelected: делаем
-    // ярче обычного, но не полностью непрозрачным сплошным светло-серым
-    // (читалось как "белое пятно" на тёмном фоне).
-    colorSelected: "rgba(157, 157, 157, 0.75)",
+    // Тоньше, чем было изначально ("рёбра слишком толстые" — прямая
+    // жалоба); цвета рёбер — в теме (core/themes::ThemeMapColors).
     width: 0.4,
     widthSelected: 1.4,
   },

@@ -78,6 +78,8 @@ export interface AppState {
   tab: TabId;
   /** Текущий язык интерфейса и данных. */
   lang: "ru" | "en";
+  /** Id темы оформления из core/themes (`Theme.id`). */
+  theme: string;
   /** Что сейчас выбрано (узел/ребро/департамент) — читается панелью информации, картой и списками вкладок. */
   selection: Selection;
   /**

@@ -19,6 +19,7 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
     screen: "app",
     tab: 1,
     lang: "ru",
+    theme: "dark",
     selection: null,
     filters: {
       minCoauth: 1,
@@ -703,6 +704,11 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain("Участники");
     expect(panel.textContent).toContain("Иванов И.И. (maintainer)");
     expect(panel.textContent).toContain("P1");
+    // Участники и публикации — списком, по элементу на строку, как у автора.
+    for (const label of ["Участники", "Публикации"]) {
+      const dt = [...panel.querySelectorAll("dt")].find((el) => el.textContent === label);
+      expect(dt?.nextElementSibling?.querySelector(".panel-list")).not.toBeNull();
+    }
   });
 
   it("карточка репозитория показывает описание (RepoDetail.description)", async () => {

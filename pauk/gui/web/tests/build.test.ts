@@ -3,6 +3,7 @@ import type Sigma from "sigma";
 import { describe, expect, it, vi } from "vitest";
 import type { GraphData, PubDetail } from "../src/contracts/graph";
 import { MAP_CONFIG, NO_DEPT_COLOR } from "../src/core/config";
+import { darkTheme } from "../src/core/themes/dark";
 import { indexDetailsByKey } from "../src/core/data";
 import { Store, type AppState } from "../src/core/state";
 import { loadSampleGraphData, loadSamplePubDetails } from "./fixtures";
@@ -46,7 +47,7 @@ const NODE_BASE = {
 };
 const EDGE_BASE = {
   size: MAP_CONFIG.edge.width,
-  color: MAP_CONFIG.edge.color,
+  color: darkTheme.map.edge,
   label: null,
   hidden: false,
   forceLabel: false,
@@ -59,6 +60,7 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
     screen: "app",
     tab: 1,
     lang: "ru",
+    theme: "dark",
     selection: null,
     filters: NO_FILTER,
     ...overrides,
@@ -614,7 +616,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
       forceLabel: true,
     });
     expect(nodeReducer("A3", NODE_BASE)).toMatchObject({
-      color: MAP_CONFIG.node.dimColor,
+      color: darkTheme.map.dimNode,
       label: "",
     }); // не сосед — притушен
   });
@@ -674,7 +676,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     expect(a3).toMatchObject({ color: NODE_BASE.color, size: NODE_BASE.size });
     expect(a3).not.toHaveProperty("forceLabel", true);
     expect(nodeReducer("A1", NODE_BASE)).toMatchObject({
-      color: MAP_CONFIG.node.dimColor,
+      color: darkTheme.map.dimNode,
       label: "",
     }); // не сосед — притушен
 
@@ -725,7 +727,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     expect(a3).not.toHaveProperty("forceLabel", true); // но подпись НЕ форсирована — сосед наведения, не выбора
     expect(edgeReducer(edgeA3A4, EDGE_BASE)).toMatchObject({ color: EDGE_BASE.color }); // ребро наведения тоже видно
     expect(nodeReducer("A5", NODE_BASE)).toMatchObject({
-      color: MAP_CONFIG.node.dimColor,
+      color: darkTheme.map.dimNode,
       label: "",
     }); // ни то ни другое — притушен
   });
@@ -754,7 +756,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     });
     expect(nodeReducer("A1", NODE_BASE)).not.toMatchObject({ highlighted: true });
     expect(nodeReducer("A3", NODE_BASE)).toMatchObject({
-      color: MAP_CONFIG.node.dimColor,
+      color: darkTheme.map.dimNode,
       label: "",
     });
 
@@ -785,7 +787,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
       expect(res).not.toHaveProperty("highlighted", true); // это два конца ребра, не "сам выбор" узла
     }
     expect(nodeReducer("A3", NODE_BASE)).toMatchObject({
-      color: MAP_CONFIG.node.dimColor,
+      color: darkTheme.map.dimNode,
       label: "",
     });
   });
@@ -869,7 +871,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     if (!edgeKey) throw new Error("граф должен содержать хотя бы одно ребро");
 
     expect(edgeReducer(edgeKey, EDGE_BASE)).toMatchObject({
-      color: MAP_CONFIG.edge.colorSelected,
+      color: darkTheme.map.edgeSelected,
       size: MAP_CONFIG.edge.widthSelected,
     });
   });

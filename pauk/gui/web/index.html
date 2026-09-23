@@ -28,13 +28,10 @@
       rel="stylesheet"
     />
     <style>
-      /* Единая тёмная палитра ("Obsidian"-стиль) — единственное место, где
-         живут цвета вёрстки, дальше везде var(--...). --surface совпадает с
-         MAP_CONFIG.backgroundColor (#202020, core/config.ts) намеренно —
-         сайдбар/панель и canvas графа читаются как один тон, а не два
-         рассинхронизированных источника цвета (DOM-токены и canvas-конфиг
-         остаются двумя разными механизмами не просто так, см. память
-         проекта про design tokens — но значения выбраны совпадающими). */
+      /* Источник правды для цветов — темы в src/core/themes/ (Theme.apply
+         перезаписывает эти переменные на <html>). Здесь копия тёмной темы
+         только на первый кадр, до выполнения скрипта, чтобы boot-экран не
+         мигнул без цветов. */
       :root {
         --bg: #181818;
         --surface: #202020;
@@ -670,7 +667,9 @@
       #panel dl {
         margin: 0;
         display: grid;
-        grid-template-columns: auto 1fr;
+        /* minmax(0, ...) — иначе колонка значения не уже самого длинного
+           неразрывного слова (ключ/URL репозитория) и уезжает за край панели. */
+        grid-template-columns: auto minmax(0, 1fr);
         gap: 0 12px;
       }
       #panel dt,
@@ -684,6 +683,7 @@
       #panel dd {
         margin: 0;
         line-height: 1.45;
+        overflow-wrap: anywhere;
       }
       /* Последняя пара строки — без нижней границы, чтобы список не
          заканчивался "висящей" линией перед пустым местом до конца панели. */
@@ -731,7 +731,7 @@
          (например, варианты имени и аффилиации) не сливались в один список. */
       #panel dt.panel-row--block {
         padding-top: 16px;
-        padding-bottom: 6px;
+        padding-bottom: 10px;
         border-bottom: none;
       }
       #panel dt.panel-row--block:first-child {
@@ -1040,6 +1040,9 @@
       .menu-lang button:hover {
         color: var(--text);
       }
+      .menu-theme {
+        margin-top: 8px;
+      }
       .menu-lang button.menu-lang--active {
         color: var(--text);
         border-color: var(--accent);
@@ -1077,6 +1080,8 @@
           <button type="button" data-lang="ru">RU</button>
           <button type="button" data-lang="en">EN</button>
         </div>
+        <!-- Кнопки тем строит features/themePicker.ts из core/themes::THEMES. -->
+        <div class="menu-lang menu-theme" id="menu-theme"></div>
       </div>
     </div>
 

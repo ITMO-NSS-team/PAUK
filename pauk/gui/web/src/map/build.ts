@@ -17,6 +17,7 @@ import type { AuthorNode, Edge, GraphData, PubDetail, PubNode, RepoNode } from "
 import { MAP_CONFIG, NO_DEPT_COLOR } from "../core/config";
 import { groupIdOf, groupsById, nodeLabel } from "../core/data";
 import { localize, type Lang } from "../core/i18n";
+import { themeById } from "../core/themes";
 import { isRegionMode, type AppState, type Selection, type Store, type TabId } from "../core/state";
 
 type GraphNode = AuthorNode | RepoNode | PubNode;
@@ -277,7 +278,6 @@ export function populateGraph(
     // нет (просто обновит атрибуты уже существующего ребра тем же значением).
     graph.mergeEdge(edge.s, edge.t, {
       size: MAP_CONFIG.edge.width,
-      color: MAP_CONFIG.edge.color,
       weight: edge.w,
     });
   }
@@ -350,7 +350,6 @@ function addDeptLabelAnchors(
     if (!graph.hasNode(deptNodeKey(edge.s)) || !graph.hasNode(deptNodeKey(edge.t))) continue;
     graph.mergeEdge(deptNodeKey(edge.s), deptNodeKey(edge.t), {
       size: MAP_CONFIG.edge.width,
-      color: MAP_CONFIG.edge.color,
       weight: edge.w,
     });
   }
@@ -402,7 +401,7 @@ function addDeptLabelAnchors(
  *    (не наведения) дополнительно получают принудительную подпись
  *    (`forceLabel: true`), не зависящую от {@link MAP_CONFIG.node.labelVisibleAtSize}.
  *    Всё, что не подходит ни под одно из условий выше, — тускнеет в {@link
- *    MAP_CONFIG.node.dimColor} (полупрозрачный — "замылить", а не сплошной
+ *    ThemeMapColors.dimNode} (полупрозрачный — "замылить", а не сплошной
  *    серый) и теряет подпись. Рёбра, не касающиеся ни выбора, ни
  *    наведения, при этом `hidden: true` целиком — "остальные рёбра убрать",
  *    прямая просьба. Смена выбора (клик по новому узлу) сама снимает
@@ -549,7 +548,7 @@ function applyGraphStyling(
         // лишняя "каша" подписей при простом движении мыши.
         if (isNeighborOfSelection || isSelectedEdgeEndpoint) res.forceLabel = true;
       } else {
-        res.color = MAP_CONFIG.node.dimColor;
+        res.color = themeById(store.get().theme).map.dimNode;
         res.label = "";
       }
     }
@@ -573,7 +572,11 @@ function applyGraphStyling(
       ((s === selection.s && t === selection.t) || (s === selection.t && t === selection.s));
 
     if (isSelectedEdge) {
-      return { ...data, color: MAP_CONFIG.edge.colorSelected, size: MAP_CONFIG.edge.widthSelected };
+      return {
+        ...data,
+        color: themeById(store.get().theme).map.edgeSelected,
+        size: MAP_CONFIG.edge.widthSelected,
+      };
     }
 
     // Видно, если ребро касается ВЫБОРА, НАВЕДЕНИЯ, ИЛИ одного из двух
@@ -600,7 +603,7 @@ function applyGraphStyling(
       return { ...data, hidden: true };
     }
 
-    return data;
+    return { ...data, color: themeById(store.get().theme).map.edge };
   });
 
   return {
