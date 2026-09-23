@@ -47,6 +47,7 @@ from pauk.graph.mutations import (
     create_relationship,
     delete_node,
     delete_relationship,
+    folded_into,
     node_relationships,
     read_node,
     search_nodes,
@@ -308,11 +309,24 @@ async def restore(label: str, node_id: str, user: Editor,
 
 @router.get("/nodes/{label}/{node_id:path}", response_class=HTMLResponse)
 def show(request: Request, label: str, node_id: str, user: CurrentUser,
-         session: Session, graph: Graph, db: Db):
+         session: Session, graph: Graph, db: Db, folded: str = ""):
     _known_label(label)
     try:
         props = read_node(graph, label, node_id)
-    except NotFound as error:
+    except NotFound:
+        # An id folded into another record has no node of its own, and the
+        # things that name it were written before the fold: a question in
+        # the review queue, a line in the feed. Send the reader to the
+        # record that answers for it, saying which id brought them here.
+        survivor = folded_into(graph, label, node_id)
+        if survivor:
+            # Both ids go through the encoding rules of the place they land
+            # in: `_node_url` for the path, and the query value escaped
+            # whole — an id can be an address of its own, with "?" and "&"
+            # in it, and pasted raw it would rewrite the query.
+            return RedirectResponse(
+                _node_url(label, survivor, f"folded={quote(node_id, safe='')}"),
+                status_code=status.HTTP_303_SEE_OTHER)
         # Links in the feed outlive the nodes they point at: an entry about
         # a deletion still names the id. Answer with what is known about it
         # instead of a bare 404 — the question is "what happened to it",
@@ -320,11 +334,11 @@ def show(request: Request, label: str, node_id: str, user: CurrentUser,
         gone = feed.history(db, label, node_id, limit=20)
         # The feed is history; what the record can be restored from is the
         # snapshot on the decision. Either one is reason enough to show the
-        # page: gating on the feed alone hid the restore button behind a
-        # 404 whenever the snapshot was there and the feed was not.
+        # restore button: gating on the feed alone hid it whenever the
+        # snapshot was there and the feed was not. The page itself is shown
+        # either way — a reader who followed a dead link is owed a sentence
+        # saying so, not the JSON of an unhandled error.
         restorable = decisions.deleted_fields(db, label, node_id)
-        if not gone and not restorable:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from None
         return templates.TemplateResponse(request, "gone.html", {
             "user": user, "csrf": session["csrf"], "label": label, "node_id": node_id,
             "history": gone, "restorable": restorable,
@@ -334,6 +348,10 @@ def show(request: Request, label: str, node_id: str, user: CurrentUser,
     return templates.TemplateResponse(request, "node.html", {
         "user": user, "csrf": session["csrf"], "label": label, "node_id": node_id,
         "props": props, "editable": editable, "reserved": sorted(RESERVED_FIELDS),
+        # Only an id this record really swallowed is named back: the value
+        # arrives in the address, and a page that repeated whatever it was
+        # given would state a fold that never happened.
+        "folded": folded if folded in (props.get("merged_ids") or []) else "",
         "relationships": _worded(node_relationships(graph, label, node_id), label),
         "history": feed.history(db, label, node_id, limit=10),
         "source_history": source.history(db, label, node_id),
