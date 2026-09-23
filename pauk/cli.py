@@ -114,12 +114,29 @@ def _add_pipeline_parsers(sub: argparse._SubParsersAction) -> None:
     )
 
 
+def _snapshot_groups(value: str) -> list[str]:
+    """`--only persons,repos` -> `["persons", "repos"]`, unknown names rejected by argparse."""
+    from pauk.cache.export import SNAPSHOT_GROUPS
+
+    groups = [part.strip() for part in value.split(",") if part.strip()]
+    unknown = [group for group in groups if group not in SNAPSHOT_GROUPS]
+    if unknown or not groups:
+        raise argparse.ArgumentTypeError(f"unknown group(s) {unknown}, choose from: {', '.join(SNAPSHOT_GROUPS)}")
+    return groups
+
+
 def _add_cache_parsers(sub: argparse._SubParsersAction) -> None:
     """Registers `cache export`/`cache inspect` - the Neo4j snapshot subcommands."""
     p = sub.add_parser("cache")
     cache_sub = p.add_subparsers(dest="cache_command", required=True)
     p = cache_sub.add_parser("export", help="snapshot the graph from Neo4j to a file")
     p.add_argument("--output", type=Path, help="default: cache_dir/graph_snapshot_<date>.json")
+    p.add_argument(
+        "--only",
+        type=_snapshot_groups,
+        help="re-read only these comma-separated groups, the rest from the newest snapshot: "
+        "persons, publications, repos, departments, organizations",
+    )
     p = cache_sub.add_parser(
         "inspect",
         help="print table sizes / field stats / sample rows from a snapshot",
@@ -227,7 +244,7 @@ def _cmd_dedup() -> None:
 def _cmd_cache_export(args) -> None:
     from pauk.cache import GraphSnapshotExporter
 
-    path = GraphSnapshotExporter(settings).export(args.output)
+    path = GraphSnapshotExporter(settings).export(args.output, only=args.only)
     logger.info("cache export: %s", path)
 
 

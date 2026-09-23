@@ -191,12 +191,14 @@ pauk admin trim [--keep-days N] [--apply]
 ## `cache export`
 
 ```
-pauk cache export [--output <путь>]
+pauk cache export [--output <путь>] [--only <группа>[,<группа>...]]
 ```
 
 Снимает снепшот текущего состояния графа в
-`data/cache/graph_snapshot.json` (или указанный путь) — готовит вход для
-`pauk gui build`. См. [cache.md](cache.md).
+`data/cache/graph_snapshot_<дата>.json` (или указанный путь) — готовит вход для
+`pauk gui build`. `--only repos` (и `persons`, `publications`,
+`departments`, `organizations`) перечитывает из Neo4j только таблицы этой
+сущности, остальное берёт из самого свежего снепшота. См. [cache.md](cache.md).
 
 ## `gui build`
 

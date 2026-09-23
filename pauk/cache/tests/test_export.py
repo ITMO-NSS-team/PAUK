@@ -7,12 +7,15 @@ the real graph model (that needs a real database, out of scope here).
 
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from neo4j.exceptions import ServiceUnavailable
 
-from pauk.cache.export import GraphSnapshotExporter, cypher_dict, load_db
+from pauk.cache.export import SNAPSHOT_GROUPS, GraphSnapshotExporter, cypher_dict, load_db
 from pauk.settings import Settings
 
 
@@ -134,6 +137,97 @@ class LoadDbTest(unittest.TestCase):
         self.assertIn("MATCH (p:Person) ", persons_query)
         self.assertIn("AS is_itmo", persons_query)
         self.assertIn("MATCH (p:Person)-[rel:AUTHORED]->", authorship_query)
+
+
+class LoadDbSubsetTest(unittest.TestCase):
+    def test_runs_only_the_requested_queries(self):
+        driver = SequentialFakeDriver([[{"table": "repositories"}], [{"table": "repo_pubs"}]])
+        db = load_db(driver, {"repo_pubs", "repositories"})
+        self.assertEqual(db, {"repositories": [{"table": "repositories"}], "repo_pubs": [{"table": "repo_pubs"}]})
+        self.assertEqual(len(driver.queries), 2)
+
+    def test_unknown_table_is_an_error_not_an_empty_result(self):
+        with self.assertRaises(ValueError):
+            load_db(SequentialFakeDriver([]), {"repos"})
+
+
+class SnapshotGroupsTest(unittest.TestCase):
+    def test_groups_cover_every_table_and_nothing_else(self):
+        covered = {table for tables in SNAPSHOT_GROUPS.values() for table in tables}
+        self.assertEqual(covered, set(TABLE_ORDER))
+
+    def test_each_entity_group_takes_every_relationship_table_that_references_it(self):
+        # Deleting a repository removes its IMPLEMENTS/CONTRIBUTED_TO/
+        # DEVELOPED_BY/MENTIONS_LINK edges too - all of those must be re-read.
+        self.assertTrue(
+            {"repositories", "repo_pubs", "repo_persons", "repo_depts", "mentions_repos"} <= set(SNAPSHOT_GROUPS["repos"])
+        )
+        self.assertTrue({"persons", "authorship", "person_depts", "repo_persons"} <= set(SNAPSHOT_GROUPS["persons"]))
+
+
+class FakeDriverWithLifecycle(SequentialFakeDriver):
+    def verify_connectivity(self):
+        pass
+
+    def close(self):
+        pass
+
+
+class PartialExportTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.config = Settings(neo4j_password="x", data_dir=Path(self.tmp.name))
+        self.cache_dir = self.config.cache_dir
+        self.cache_dir.mkdir()
+        self.base = {name: [{"from": "base", "table": name}] for name in TABLE_ORDER}
+        self.base["repositories"] = [{"id": "R1"}, {"id": "R2"}]
+        self.base_path = self.cache_dir / "graph_snapshot_01-09-2026.json"
+        self.base_path.write_text(json.dumps(self.base))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def export(self, responses, only, output):
+        driver = FakeDriverWithLifecycle(responses)
+        with mock.patch("pauk.cache.export.GraphDatabase.driver", return_value=driver):
+            GraphSnapshotExporter(self.config).export(output, only=only)
+        return driver
+
+    def test_repos_replaces_repo_tables_and_keeps_the_rest_from_the_newest_snapshot(self):
+        # One repository was deleted along with its edges.
+        fresh = {"repositories": [{"id": "R1"}], "repo_pubs": [], "mentions_repos": [], "repo_persons": [], "repo_depts": []}
+        order = [name for name in TABLE_ORDER if name in fresh]
+        output = self.cache_dir / "graph_snapshot_02-09-2026.json"
+
+        driver = self.export([fresh[name] for name in order], ["repos"], output)
+
+        result = json.loads(output.read_text())
+        self.assertEqual(set(result), set(TABLE_ORDER))
+        for name in TABLE_ORDER:
+            self.assertEqual(result[name], fresh.get(name, self.base[name]), name)
+        self.assertEqual(len(driver.queries), len(fresh))
+        self.assertEqual(json.loads(self.base_path.read_text()), self.base)  # base snapshot untouched
+
+    def test_several_groups_share_tables_without_querying_them_twice(self):
+        tables = set(SNAPSHOT_GROUPS["repos"]) | set(SNAPSHOT_GROUPS["persons"])
+        output = self.cache_dir / "graph_snapshot_02-09-2026.json"
+        driver = self.export([[] for name in TABLE_ORDER if name in tables], ["repos", "persons"], output)
+        self.assertEqual(len(driver.queries), len(tables))
+
+    def test_no_snapshot_to_base_on_is_an_error(self):
+        self.base_path.unlink()
+        with self.assertRaises(FileNotFoundError):
+            self.export([], ["repos"], self.cache_dir / "out.json")
+
+    def test_base_missing_a_table_that_is_not_re_read_is_an_error(self):
+        del self.base["authorship"]
+        self.base_path.write_text(json.dumps(self.base))
+        with self.assertRaises(ValueError):
+            self.export([], ["repos"], self.cache_dir / "out.json")
+
+    def test_unknown_group_is_an_error(self):
+        with self.assertRaises(ValueError):
+            self.export([], ["repositories"], self.cache_dir / "out.json")
 
 
 class GraphSnapshotExporterTest(unittest.TestCase):

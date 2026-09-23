@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable, Collection
+from functools import partial
 from pathlib import Path
 
 from neo4j import GraphDatabase
@@ -11,11 +13,30 @@ from neo4j.exceptions import ServiceUnavailable, SessionExpired, TransientError
 
 from pauk.settings import Settings
 
-from .graph_snapshot import dated_snapshot_path, write_snapshot
+from .graph_snapshot import dated_snapshot_path, latest_snapshot, read_snapshot, write_snapshot
 
 logger = logging.getLogger(__name__)
 
 CYPHER_RETRIES = 5
+
+SNAPSHOT_GROUPS: dict[str, tuple[str, ...]] = {
+    "persons": ("persons", "authorship", "person_depts", "repo_persons"),
+    "publications": (
+        "publications",
+        "authorship",
+        "pub_depts",
+        "repo_pubs",
+        "mentions_repos",
+        "mentions_candidates",
+    ),
+    "repos": ("repositories", "repo_pubs", "repo_persons", "repo_depts", "mentions_repos"),
+    "departments": ("departments", "person_depts", "pub_depts", "repo_depts"),
+    "organizations": ("organizations",),
+}
+"""`pauk cache export --only <group>`: each entity with every table that
+references it, so deleting a node and its relationships is fully picked up
+(a person removed from `persons` but left in `authorship` would be a dangling
+edge)."""
 
 CYPHER_RETRY_BACKOFF_STEP_SECONDS = 5
 """Linear backoff step between retries (5, 10, 15, ... seconds)."""
@@ -83,11 +104,12 @@ def cypher_dict(driver, query, **params) -> list[dict]:
     return [r.data() for r in _execute_retrying(driver, query, **params)]
 
 
-def load_db(driver) -> dict[str, list]:
+def load_db(driver, tables: Collection[str] | None = None) -> dict[str, list]:
     """Reads the whole graph into the flat structures `build_graph_data()` expects.
 
     Args:
         driver: An open Neo4j driver.
+        tables: Only these tables (names as in the result); `None` - all of them.
 
     Returns:
         A flat dict of thirteen keys: `persons`/`publications`/
@@ -98,9 +120,11 @@ def load_db(driver) -> dict[str, list]:
         input; `organizations`/`mentions_repos`/`mentions_candidates` are
         three newer tables with no consumer in existing code yet.
     """
-    db: dict[str, list] = {}
+    # Deferred so `tables` can pick a subset without running the rest.
+    queries: dict[str, Callable[[], list[dict]]] = {}
 
-    db["persons"] = cypher_dict(
+    queries["persons"] = partial(
+        cypher_dict,
         driver,
         "MATCH (p:Person) "
         "RETURN "
@@ -152,7 +176,8 @@ def load_db(driver) -> dict[str, list]:
         "toString(p.updated_at) AS updated_at",
     )
 
-    db["publications"] = cypher_dict(
+    queries["publications"] = partial(
+        cypher_dict,
         driver,
         "MATCH (pub:Publication) "
         "RETURN "
@@ -177,7 +202,8 @@ def load_db(driver) -> dict[str, list]:
         "toString(pub.updated_at) AS updated_at",
     )
 
-    db["repositories"] = cypher_dict(
+    queries["repositories"] = partial(
+        cypher_dict,
         driver,
         "MATCH (r:Repository) "
         "OPTIONAL MATCH (r)-[:OWNED_BY]->(gh:GitHubProfile) "
@@ -211,7 +237,8 @@ def load_db(driver) -> dict[str, list]:
         "toString(r.updated_at) AS updated_at",
     )
 
-    db["departments"] = cypher_dict(
+    queries["departments"] = partial(
+        cypher_dict,
         driver,
         "MATCH (d:Department) "
         "OPTIONAL MATCH (d)-[:PART_OF]->(parent) "
@@ -228,7 +255,8 @@ def load_db(driver) -> dict[str, list]:
         # "labels(parent)[0] AS parent_kind"
     )
 
-    db["organizations"] = cypher_dict(
+    queries["organizations"] = partial(
+        cypher_dict,
         driver,
         "MATCH (o:Organization) "
         "RETURN "
@@ -242,7 +270,8 @@ def load_db(driver) -> dict[str, list]:
         "o.type AS type",
     )
 
-    db["authorship"] = cypher_dict(
+    queries["authorship"] = partial(
+        cypher_dict,
         driver,
         "MATCH (p:Person)-[rel:AUTHORED]->(pub:Publication) "
         "RETURN "
@@ -254,7 +283,8 @@ def load_db(driver) -> dict[str, list]:
         "rel.is_corresponding AS is_corresponding",
     )
 
-    db["person_depts"] = cypher_dict(
+    queries["person_depts"] = partial(
+        cypher_dict,
         driver,
         "MATCH (p:Person {is_itmo: true})-[:BELONGS_TO]->(d:Department) "
         "RETURN "
@@ -263,7 +293,8 @@ def load_db(driver) -> dict[str, list]:
         "d.id AS did",
     )
 
-    db["pub_depts"] = cypher_dict(
+    queries["pub_depts"] = partial(
+        cypher_dict,
         driver,
         "MATCH (pub:Publication)-[:PRODUCED_BY]->(d:Department) "
         "RETURN "
@@ -273,7 +304,8 @@ def load_db(driver) -> dict[str, list]:
         "ORDER BY d.id",
     )
 
-    db["repo_pubs"] = cypher_dict(
+    queries["repo_pubs"] = partial(
+        cypher_dict,
         driver,
         "MATCH (r:Repository)-[:IMPLEMENTS]->(pub:Publication) "
         "RETURN "
@@ -282,7 +314,8 @@ def load_db(driver) -> dict[str, list]:
         "pub.id AS pid",
     )
 
-    db["mentions_repos"] = cypher_dict(
+    queries["mentions_repos"] = partial(
+        cypher_dict,
         driver,
         "MATCH (pub:Publication)-[rel:MENTIONS_LINK]->(r:Repository) "
         "RETURN "
@@ -293,7 +326,8 @@ def load_db(driver) -> dict[str, list]:
         "rel.is_relevant AS is_relevant",
     )
 
-    db["mentions_candidates"] = cypher_dict(
+    queries["mentions_candidates"] = partial(
+        cypher_dict,
         driver,
         "MATCH (pub:Publication)-[rel:MENTIONS_LINK]->(lc:LinkCandidate) "
         "RETURN "
@@ -305,7 +339,8 @@ def load_db(driver) -> dict[str, list]:
         "rel.is_relevant AS is_relevant",
     )
 
-    db["repo_persons"] = cypher_dict(
+    queries["repo_persons"] = partial(
+        cypher_dict,
         driver,
         "MATCH (p:Person {is_itmo: true})-[rel:CONTRIBUTED_TO]->(r:Repository) "
         "RETURN "
@@ -316,7 +351,8 @@ def load_db(driver) -> dict[str, list]:
         "rel.role AS role",
     )
 
-    db["repo_depts"] = cypher_dict(
+    queries["repo_depts"] = partial(
+        cypher_dict,
         driver,
         "MATCH (r:Repository)-[:DEVELOPED_BY]->(d:Department) "
         "RETURN "
@@ -326,7 +362,10 @@ def load_db(driver) -> dict[str, list]:
         "ORDER BY d.id",
     )
 
-    return db
+    unknown = set(tables or ()) - queries.keys()
+    if unknown:
+        raise ValueError(f"unknown snapshot tables: {sorted(unknown)}")
+    return {name: query() for name, query in queries.items() if tables is None or name in tables}
 
 
 class GraphSnapshotExporter:
@@ -341,21 +380,41 @@ class GraphSnapshotExporter:
         """
         self.config = config
 
-    def export(self, path: Path | None = None) -> Path:
+    def export(self, path: Path | None = None, only: Collection[str] | None = None) -> Path:
         """Snapshots the graph from Neo4j and atomically writes it to disk.
 
         Args:
             path: Where to write the snapshot. Defaults to a dated file in
                 `cache_dir` (see `dated_snapshot_path`).
+            only: `SNAPSHOT_GROUPS` keys. Re-reads just their tables and takes
+                every other table from the newest snapshot in `cache_dir`,
+                which is left untouched; `None` - the whole graph.
 
         Returns:
             The final path the snapshot was written to.
 
         Raises:
-            ValueError: the Neo4j password is empty (`NEO4J_PASSWORD` unset).
+            ValueError: the Neo4j password is empty (`NEO4J_PASSWORD` unset),
+                an unknown group, or the base snapshot lacks a table that
+                isn't being re-read.
+            FileNotFoundError: `only` is given but there is no snapshot to base it on.
         """
         if not self.config.neo4j_password:
             raise ValueError("Neo4j password is empty - set NEO4J_PASSWORD in .env")
+        base: dict[str, list] = {}
+        tables: set[str] | None = None
+        if only:
+            unknown = set(only) - SNAPSHOT_GROUPS.keys()
+            if unknown:
+                raise ValueError(f"unknown snapshot groups: {sorted(unknown)}, known: {sorted(SNAPSHOT_GROUPS)}")
+            tables = {table for group in only for table in SNAPSHOT_GROUPS[group]}
+            base_path = latest_snapshot(self.config.cache_dir)
+            base = read_snapshot(base_path)
+            all_tables = {table for group in SNAPSHOT_GROUPS.values() for table in group}
+            missing = all_tables - tables - base.keys()
+            if missing:
+                raise ValueError(f"{base_path} has no {sorted(missing)} - run a full 'pauk cache export'")
+            logger.info("cache export --only %s: re-reading %s, the rest from %s", ",".join(only), sorted(tables), base_path)
 
         # .resolve() so a relative --output doesn't silently depend on the
         # working directory the command happened to run from.
@@ -366,7 +425,11 @@ class GraphSnapshotExporter:
         )
         try:
             driver.verify_connectivity()  # fail fast with a clear error, not on the first real query
-            write_snapshot(target, load_db(driver))
+            fresh = load_db(driver, tables)
+            for name, rows in fresh.items():
+                if name in base:
+                    logger.info("  %s: %d -> %d rows", name, len(base[name]), len(rows))
+            write_snapshot(target, {**base, **fresh})
         finally:
             driver.close()
         return target
