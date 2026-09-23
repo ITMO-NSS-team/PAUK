@@ -69,6 +69,7 @@ export type LocaleKey =
   | "field.hasReadme"
   | "field.documents"
   | "field.repoVia"
+  | "field.implemented"
   | "field.groupWhy"
   | `group.kind.${"org" | "field"}`
   | `group.why.${"org" | "field"}`
@@ -177,6 +178,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.hasReadme": "Есть README",
     "field.documents": "Документы",
     "field.repoVia": "Связаны через",
+    "field.implemented": "реализовано",
     "field.groupWhy": "Почему вместе",
     "group.kind.org": "GitHub-организация",
     "group.kind.field": "Область",
@@ -300,6 +302,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.hasReadme": "Has README",
     "field.documents": "Documents",
     "field.repoVia": "Linked by",
+    "field.implemented": "implemented",
     "field.groupWhy": "Why together",
     "group.kind.org": "GitHub organization",
     "group.kind.field": "Field",

@@ -95,6 +95,11 @@ interface PanelSection {
   rows: PanelRow[];
 }
 
+/** Ключ узла, на который ведёт ссылка (у ссылки на департамент — пусто). */
+function refKey(ref: PanelEntityRef): string {
+  return ref.selection.kind === "node" ? ref.selection.key : "";
+}
+
 /** Карточка из одного раздела без заголовка — для карточек, которые на разделы не делятся. */
 function untitled(rows: PanelRow[]): PanelSection[] {
   return [{ title: null, rows }];
@@ -347,6 +352,43 @@ export function mountPanel(
       store.notify();
     })
     .catch((error: unknown) => console.warn("reports/index.json:", error));
+
+  // ponytail: static file from paper_analysis run.json, move onto the IMPLEMENTS edge if this stays
+  const implementationRates = new Map<
+    string,
+    { implemented: number; total: number; pct: number }
+  >();
+  fetch(DATA_CONFIG.implementationRatesUrl)
+    .then((response) =>
+      response.ok
+        ? (response.json() as Promise<
+            { pub: string; repo: string; implemented: number; total: number; pct: number }[]
+          >)
+        : [],
+    )
+    .then((rows) => {
+      for (const { pub, repo, ...rate } of rows)
+        implementationRates.set(`${repo}\u0000${pub}`, rate);
+      store.notify();
+    })
+    .catch((error: unknown) => console.warn("implementation-rates.json:", error));
+
+  /** Ссылки на репозиторий/публикацию пары с implementation rate в `meta`: "реализовано 32/57 · 56%". */
+  function withImplementationRate(
+    refs: PanelEntityRef[],
+    pairKeyOf: (ref: PanelEntityRef) => string,
+    lang: AppState["lang"],
+  ): PanelEntityRef[] {
+    return refs.map((ref) => {
+      const rate = implementationRates.get(pairKeyOf(ref));
+      return rate
+        ? {
+            ...ref,
+            meta: `${t("field.implemented", lang)} ${rate.implemented}/${rate.total} · ${rate.pct}%`,
+          }
+        : ref;
+    });
+  }
 
   function reportLinksOf(repoUrl: string, lang: AppState["lang"]): PanelLink[] {
     const name = repoUrl.replace(/\/+$/, "").split("/").pop()?.toLowerCase() ?? "";
@@ -1001,7 +1043,17 @@ export function mountPanel(
 
         const repoPubs = repoPubKeysOf(node.key);
         if (repoPubs.length > 0)
-          rows.push([t("tab.pubs", lang), { kind: "list", items: entityRefsOf(repoPubs, lang) }]);
+          rows.push([
+            t("tab.pubs", lang),
+            {
+              kind: "list",
+              items: withImplementationRate(
+                entityRefsOf(repoPubs, lang),
+                (ref) => `${node.key}\u0000${refKey(ref)}`,
+                lang,
+              ),
+            },
+          ]);
       }
       if (node.kind === "pub") {
         rows.push([
@@ -1025,7 +1077,17 @@ export function mountPanel(
         // ещё и code_url незачем.
         const pubRepoKeys = (pubRepoIndex.get(node.key) ?? []).slice(0, PANEL_CONFIG.listLimit);
         if (pubRepoKeys.length > 0) {
-          rows.push([t("tab.repos", lang), entityRefsOf(pubRepoKeys, lang)]);
+          rows.push([
+            t("tab.repos", lang),
+            {
+              kind: "list",
+              items: withImplementationRate(
+                entityRefsOf(pubRepoKeys, lang),
+                (ref) => `${refKey(ref)}\u0000${node.key}`,
+                lang,
+              ),
+            },
+          ]);
         } else if (detail?.has_code && detail.code_url.length > 0) {
           rows.push([t("field.code", lang), detail.code_url.map(codeLink)]);
         }

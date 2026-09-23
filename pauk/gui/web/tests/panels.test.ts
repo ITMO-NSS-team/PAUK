@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthorDetail, PubDetail, RepoDetail } from "../src/contracts/graph";
 import { indexDetailsByKey, mergeDetailsInto } from "../src/core/data";
 import { Store, type AppState } from "../src/core/state";
@@ -709,6 +709,37 @@ describe("mountPanel", () => {
       const dt = [...panel.querySelectorAll("dt")].find((el) => el.textContent === label);
       expect(dt?.nextElementSibling?.querySelector(".panel-list")).not.toBeNull();
     }
+  });
+
+  describe("implementation rate пары публикация–репозиторий", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("сначала из чего собран, потом процент — в карточке репозитория и публикации", async () => {
+      const data = await loadSampleGraphData();
+      // R1 во фикстуре реализует P1 (repo_pub_edges).
+      const rates = [{ pub: "P1", repo: "R1", implemented: 32, total: 57, pct: 56 }];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((url: string) =>
+          Promise.resolve(
+            url.includes("implementation-rates")
+              ? new Response(JSON.stringify(rates))
+              : new Response(null, { status: 404 }),
+          ),
+        ),
+      );
+      const store = new Store<AppState>({
+        ...initialState(),
+        selection: { kind: "node", key: "R1" },
+      });
+      mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+      await vi.waitFor(() => expect(panel.textContent).toContain("реализовано 32/57 · 56%"));
+
+      store.set({ selection: { kind: "node", key: "P1" } });
+      expect(panel.textContent).toContain("реализовано 32/57 · 56%");
+    });
   });
 
   it("карточка репозитория показывает описание (RepoDetail.description)", async () => {

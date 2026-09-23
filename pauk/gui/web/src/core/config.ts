@@ -200,6 +200,7 @@ export const DATA_CONFIG = {
   repoDetailsUrl: "/repos-detail.json",
   pubDetailsUrl: "/pubs-detail.json",
   reportsIndexUrl: "/reports/index.json",
+  implementationRatesUrl: "/implementation-rates.json",
 } as const;
 
 // Сколько элементов показывать в списках карточки информации (features/panels.ts)
