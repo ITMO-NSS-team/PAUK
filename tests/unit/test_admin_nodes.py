@@ -640,7 +640,7 @@ class LinkMistakeTest(unittest.TestCase):
     def test_the_form_says_what_to_type_before_the_mistake_happens(self):
         body = self.client.get("/nodes/Repository/R1").text
         self.assertIn("по login", body)
-        self.assertIn("для репозитория — адрес", body)
+        self.assertIn("для репозитория – адрес", body)
 
 
 class LinkDirectionTest(unittest.TestCase):
@@ -685,8 +685,8 @@ class LinkDirectionTest(unittest.TestCase):
         # match_prop describes the target. On an incoming link the target is
         # this node, so telling the person to type a url would be wrong.
         body = self.client.get("/nodes/Repository/R1").text
-        self.assertIn("упомянут в публикации — указать Publication по id", body)
-        self.assertIn("принадлежит аккаунту — указать GitHubProfile по login", body)
+        self.assertIn("упомянут в публикации – указать Publication по id", body)
+        self.assertIn("принадлежит аккаунту – указать GitHubProfile по login", body)
 
     def test_a_node_missing_the_field_the_link_matches_on_says_so(self):
         self.graph.nodes[("Repository", "R2")] = {"id": "R2"}      # без url
