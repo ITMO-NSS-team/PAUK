@@ -115,6 +115,18 @@ describe("parseUrlState", () => {
     });
   });
 
+  it("восстанавливает выбор группы репозиториев (org/field) — её id не из departments", async () => {
+    const data = await loadSampleGraphData();
+    const [dept] = data.departments;
+    if (!dept) throw new Error("в фикстуре нет департаментов");
+    const withGroups = {
+      ...data,
+      repo_groups: [{ ...dept, id: 7, kind: "org" as const, name: "aimclub", name_en: "aimclub" }],
+    };
+    expect(parseUrlState("?tab=repos&sel=dept&id=7", withGroups).selection).toEqual({ kind: "dept", id: 7 });
+    expect(parseUrlState("?tab=repos&sel=dept&id=7", data).selection).toBeNull();
+  });
+
   it("несуществующий id департамента откатывается на null", async () => {
     const data = await loadSampleGraphData();
     expect(parseUrlState("?tab=pubs&sel=dept&id=999", data)).toEqual({ screen: "app", tab: 3, selection: null });

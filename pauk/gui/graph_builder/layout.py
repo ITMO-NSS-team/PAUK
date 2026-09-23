@@ -22,8 +22,8 @@ from fa2_modified import ForceAtlas2
 from scipy.spatial import cKDTree  # type: ignore
 
 from .authorship import Authorship
-from .config import EDGE_THRESHOLDS, FA2_ITERATIONS, MIN_SEPARATION, SYNTHETIC_DEPT_EDGES
-from .departments import DepartmentAssignment
+from .config import EDGE_THRESHOLDS, FA2_ITERATIONS, MIN_SEPARATION, REPO_EDGES, SYNTHETIC_DEPT_EDGES
+from .departments import DepartmentAssignment, repo_owner
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +166,74 @@ def sparse_dept_edges(
             for j in rng.sample(others, min(k, len(others))):
                 edges[(i, j) if i < j else (j, i)] = w
     return edges
+
+
+def groups_of(member_of: Mapping[str, Iterable[str]]) -> list[set[str]]:
+    """Inverts "node -> things it has" into "thing -> nodes that share it".
+
+    Example:
+        >>> sorted(map(sorted, groups_of({"r1": ["p1"], "r2": ["p1", "p2"]})))
+        [['r1', 'r2'], ['r2']]
+    """
+    by_key: dict[str, set[str]] = defaultdict(set)
+    for node, keys in member_of.items():
+        for key in keys:
+            by_key[key].add(node)
+    return [by_key[key] for key in sorted(by_key)]
+
+
+def co_membership_weights(
+    groups: Iterable[Iterable[str]], weight: float, cap: int | None = None
+) -> dict[tuple[str, str], float]:
+    """Projects "these nodes share a thing" onto weighted node-node edges.
+
+    A group of `k` members is a clique of k*(k-1)/2 pairs, so a raw count lets
+    one large group outweigh every small one together. Newman's share -
+    `weight / (k - 1)` per pair - keeps a member's total pull on its group
+    constant regardless of group size: two repositories sharing one
+    publication rank above two of the fifty a lab account happens to hold.
+
+    Args:
+        groups: Node groups, one per shared thing.
+        weight: Signal weight.
+        cap: Groups larger than this are dropped - past some size the shared
+            thing stops being evidence and only smears the layout.
+
+    Returns:
+        `(a, b)` with `a < b` -> summed weight.
+    """
+    pair_w: dict[tuple[str, str], float] = defaultdict(float)
+    for group in groups:
+        members = sorted(set(group))
+        if len(members) < 2 or (cap is not None and len(members) > cap):
+            continue
+        share = weight / (len(members) - 1)
+        for a, b in combinations(members, 2):
+            pair_w[(a, b)] += share
+    return dict(pair_w)
+
+
+def top_k_edges(pair_w: Mapping[tuple[str, str], float], k: int) -> dict[tuple[str, str], float]:
+    """Keeps each node's `k` strongest edges; the result is their union, so a
+    node can still end up with more than `k`.
+
+    Args:
+        pair_w: `(a, b)` with `a < b` -> weight.
+        k: Edges kept per node.
+
+    Returns:
+        The kept subset of `pair_w`.
+    """
+    strongest: dict[str, list[tuple[float, str]]] = defaultdict(list)
+    for (a, b), w in pair_w.items():
+        strongest[a].append((w, b))
+        strongest[b].append((w, a))
+    kept: dict[tuple[str, str], float] = {}
+    for node, lst in strongest.items():
+        lst.sort(key=lambda t: (-t[0], t[1]))
+        for w, other in lst[:k]:
+            kept[(node, other) if node < other else (other, node)] = w
+    return kept
 
 
 def coauthor_pairs(authors: list[str], external_ids: frozenset[str]) -> Iterable[tuple[str, str]]:
@@ -354,11 +422,7 @@ def place_external_authors(
 class ForceAtlasLayouter:
     """ForceAtlas2 layout - holds `seed` as state instead of a parameter on
     every individual call (otherwise it threads unchanged through the whole
-    call chain in `GraphLayoutBuilder`). Two methods, matching the two usage
-    patterns that actually exist in this project: `blended()` for
-    authors/publications (blending small components + spreading
-    collisions), `simple()` for repositories (plain FA2, neither of those -
-    the repository graph is usually sparse enough not to need them).
+    call chain in `GraphLayoutBuilder`).
     """
 
     def __init__(self, seed: int) -> None:
@@ -370,11 +434,6 @@ class ForceAtlasLayouter:
         """FA2 with disconnected components blended in, plus collision spreading."""
         pos, stats = fa2_blended_layout(edge_weights, all_ids, max_iter, self.seed)
         return spread_min_distance(pos, min_sep, self.seed), stats
-
-    def simple(self, graph: nx.Graph, max_iter: int) -> dict[str, tuple[float, float]]:
-        """Plain FA2, no blending/spreading - the graph is already connected
-        or sparse enough not to need either."""
-        return fit_coords(fa2_layout(graph, max_iter, self.seed))
 
 
 @dataclass(frozen=True)
@@ -397,8 +456,10 @@ class Layout:
     """Author pairs -> number of shared publications (real, for coauth_edges)."""
     pub_pair_w: dict[tuple[str, str], int]
     """Publication pairs -> number of shared ITMO authors (real, for pub_edges)."""
-    repo_edge_w: dict[tuple[str, str], int]
-    """Repository pairs -> number of shared publications (used for both layout and repo_edges - no split here)."""
+    repo_edge_w: dict[tuple[str, str], float]
+    """Repository pairs -> summed signal weight after the top-K cut (real, for repo_edges; layout adds department edges)."""
+    repo_edge_via: dict[tuple[str, str], list[str]]
+    """Repository pairs -> which signals linked them (`pub`/`person`/`coauthor`/`owner`)."""
 
 
 class GraphLayoutBuilder:
@@ -425,7 +486,7 @@ class GraphLayoutBuilder:
         Returns:
             `Layout` with positions and export edge weights.
         """
-        rng = random.Random(seed)  # one shared generator for sparse_dept_edges (authors and publications), see the seed+1 note above
+        rng = random.Random(seed)  # one shared generator for sparse_dept_edges (authors, publications, repositories), see the seed+1 note above
         layouter = ForceAtlasLayouter(seed)
 
         # --- authors: shared publications + shared repositories + sparse
@@ -523,29 +584,53 @@ class GraphLayoutBuilder:
             n_giant_p, e_giant_p, n_small_p, n_single_p, MIN_SEPARATION.pubs, time.time() - t0,
         )
 
-        # --- repositories: shared publications (including publications
-        # outside the graph, with zero ITMO authors - a repository still
-        # implements them regardless, hence db["repo_pubs"] as a whole here,
-        # not authorship.pub_ids).
+        # --- repositories: four signals, not just a shared publication (that
+        # one alone leaves ~90% of repositories with no edge, and FA2 has
+        # nothing to lay out). Shared publications count including those
+        # with zero ITMO authors - a repository still implements them.
+        repo_ids = {r["id"] for r in self.db["repositories"]}
         repo_all_pubs: dict[str, set[str]] = defaultdict(set)
         for row in self.db["repo_pubs"]:
-            repo_all_pubs[row["rid"]].add(row["pid"])
-        # Edge weight is simply the number of publications a pair of
-        # repositories share (set intersection); zero shared publications
-        # means no edge at all.
-        repo_edge_w: dict[tuple[str, str], int] = {}
-        for a, b in combinations(sorted(repo_all_pubs), 2):
-            shared = len(repo_all_pubs[a] & repo_all_pubs[b])
-            if shared:
-                repo_edge_w[(a, b)] = shared
+            if row["rid"] in repo_ids:
+                repo_all_pubs[row["rid"]].add(row["pid"])
+        repo_coauthors = {
+            rid: {per for pid in pids for per in self.authorship.pub_authors.get(pid, ()) if per not in external}
+            for rid, pids in repo_all_pubs.items()
+        }
+        owner_of = {r["id"]: [owner] for r in self.db["repositories"] if (owner := repo_owner(r))}
+        signals = {
+            "pub": (repo_all_pubs, REPO_EDGES.w_pub),
+            "person": ({rid: pers for rid, pers in repo_contributors.items() if rid in repo_ids}, REPO_EDGES.w_person),
+            "coauthor": (repo_coauthors, REPO_EDGES.w_coauthor),
+            "owner": (owner_of, REPO_EDGES.w_owner),
+        }
+        repo_edge_w: dict[tuple[str, str], float] = defaultdict(float)
+        repo_edge_via: dict[tuple[str, str], list[str]] = defaultdict(list)
+        for kind, (member_of, weight) in signals.items():
+            for pair, w in co_membership_weights(groups_of(member_of), weight, REPO_EDGES.group_cap).items():
+                repo_edge_w[pair] += w
+                repo_edge_via[pair].append(kind)
+        repo_edge_w = top_k_edges(repo_edge_w, REPO_EDGES.top_k)
 
-        # A plain graph, no blending/spreading (see ForceAtlasLayouter.simple
-        # docstring) - an order of magnitude fewer repositories than
-        # authors/publications, sparse graph.
-        R = nx.Graph()
-        R.add_nodes_from(r["id"] for r in self.db["repositories"])
-        R.add_weighted_edges_from((a, b, w) for (a, b), w in repo_edge_w.items())
-        pos_repos = layouter.simple(R, FA2_ITERATIONS.repos)
+        repo_layout_w = dict(repo_edge_w)
+        for pair, w in sparse_dept_edges(
+            repo_ids,
+            self.assignment.repo_dept,
+            rng,
+            k=SYNTHETIC_DEPT_EDGES.repo_dept_edge_k,
+            weight=SYNTHETIC_DEPT_EDGES.repo_dept_edge_weight,
+        ).items():
+            repo_layout_w[pair] = repo_layout_w.get(pair, 0) + w
+
+        t0 = time.time()
+        pos_repos, (n_giant_r, e_giant_r, n_small_r, n_single_r) = layouter.blended(
+            repo_layout_w, repo_ids, FA2_ITERATIONS.repos, MIN_SEPARATION.repos
+        )
+        logger.info(
+            "FA2 repositories: giant %d nodes / %d edges, blended in: %d small components + %d singletons, "
+            "min-sep %.1f, %.1f s",
+            n_giant_r, e_giant_r, n_small_r, n_single_r, MIN_SEPARATION.repos, time.time() - t0,
+        )
 
         # coauth/pub_pair_w/repo_edge_w are the REAL weights - go both to
         # layout (via author_layout_w/pub_layout_w above) and to export as-is
@@ -557,4 +642,5 @@ class GraphLayoutBuilder:
             coauth=dict(coauth),
             pub_pair_w=dict(pub_pair_w),
             repo_edge_w=repo_edge_w,
+            repo_edge_via={pair: repo_edge_via[pair] for pair in repo_edge_w},
         )

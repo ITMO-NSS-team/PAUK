@@ -20,6 +20,7 @@ import type { GraphData } from "../contracts/graph";
 import { MAP_CONFIG, REGION_CONFIG } from "../core/config";
 import { localize } from "../core/i18n";
 import { isRegionMode, type AppState, type Store } from "../core/state";
+import { groupIdOf, groupsById } from "../core/data";
 import { noDeptId, tabGraphNodes } from "./build";
 
 /** Узел, участвующий в построении регионов, в координатах раскладки. */
@@ -356,9 +357,9 @@ export function mountRegions(
   // Заливка — под рёбрами и узлами; названия — над узлами, иначе их закрывают точки.
   const fillCanvas = renderer.createCanvas("regions", { beforeLayer: "edges" });
   const labelCanvas = renderer.createCanvas("region-labels", { afterLayer: "labels" });
-  const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
+  const deptById = groupsById(data);
   const deptByNode = new Map(
-    [...data.authors, ...data.repos, ...data.pubs].map((node) => [node.key, node.dept]),
+    [...data.authors, ...data.repos, ...data.pubs].map((node) => [node.key, groupIdOf(node)]),
   );
   const excludedDept = noDeptId(data);
 
@@ -367,8 +368,8 @@ export function mountRegions(
 
   function rebuild(state: AppState): void {
     const points = tabGraphNodes(data, state.tab, state.filters)
-      .filter((node) => node.dept !== excludedDept)
-      .map((node) => ({ x: node.gx, y: node.gy, dept: node.dept }));
+      .filter((node) => groupIdOf(node) !== excludedDept)
+      .map((node) => ({ x: node.gx, y: node.gy, dept: groupIdOf(node) }));
     regions = buildRegions(points, state.filters.regionMinNodes);
   }
 

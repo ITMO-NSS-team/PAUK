@@ -7,13 +7,16 @@ import unittest
 
 from pauk.gui.graph_builder.layout import (
     ForceAtlasLayouter,
+    co_membership_weights,
     coauthor_pairs,
     fa2_blended_layout,
     fa2_layout,
     fit_coords,
+    groups_of,
     place_external_authors,
     sparse_dept_edges,
     spread_min_distance,
+    top_k_edges,
 )
 
 
@@ -198,10 +201,25 @@ class ForceAtlasLayouterTest(unittest.TestCase):
         self.assertEqual(set(pos), all_ids)
         self.assertEqual(len(stats), 4)
 
-    def test_simple_positions_every_node(self):
-        import networkx as nx
 
-        graph = nx.Graph()
-        graph.add_weighted_edges_from([("a", "b", 1.0)])
-        pos = ForceAtlasLayouter(seed=1).simple(graph, max_iter=10)
-        self.assertEqual(set(pos), {"a", "b"})
+class RepoEdgeSignalsTest(unittest.TestCase):
+    def test_small_shared_group_outweighs_a_large_one(self):
+        # r1/r2 share one publication; r3..r7 are five repos of one lab account.
+        pair_w = co_membership_weights([{"r1", "r2"}], 3.0)
+        pair_w_owner = co_membership_weights([{"r3", "r4", "r5", "r6", "r7"}], 1.0)
+        self.assertEqual(pair_w, {("r1", "r2"): 3.0})
+        self.assertAlmostEqual(pair_w_owner[("r3", "r4")], 0.25)
+
+    def test_groups_over_the_cap_and_singletons_give_no_edges(self):
+        self.assertEqual(co_membership_weights([{"a"}, {"a", "b", "c"}], 1.0, cap=2), {})
+
+    def test_groups_of_inverts_membership(self):
+        groups = groups_of({"r1": ["p1"], "r2": ["p1", "p2"], "r3": []})
+        self.assertEqual(sorted(map(sorted, groups)), [["r1", "r2"], ["r2"]])
+
+    def test_top_k_keeps_each_nodes_strongest_edges(self):
+        pair_w = {("a", "b"): 3.0, ("a", "c"): 2.0, ("a", "d"): 1.0}
+        # a keeps b; c and d each keep their only edge (to a), so the union keeps all three.
+        self.assertEqual(top_k_edges(pair_w, 1), pair_w)
+        self.assertEqual(top_k_edges({("a", "b"): 3.0, ("a", "c"): 2.0, ("b", "c"): 1.0}, 1),
+                         {("a", "b"): 3.0, ("a", "c"): 2.0})

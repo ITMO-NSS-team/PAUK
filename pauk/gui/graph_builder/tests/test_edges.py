@@ -11,7 +11,7 @@ from pauk.gui.graph_builder.layout import Layout
 
 
 def _layout(**overrides) -> Layout:
-    base = {"pos_authors": {}, "pos_pubs": {}, "pos_repos": {}, "coauth": {}, "pub_pair_w": {}, "repo_edge_w": {}}
+    base = {"pos_authors": {}, "pos_pubs": {}, "pos_repos": {}, "coauth": {}, "pub_pair_w": {}, "repo_edge_w": {}, "repo_edge_via": {}}
     base.update(overrides)
     return Layout(**base)
 
@@ -75,11 +75,11 @@ class WeightThresholdTest(unittest.TestCase):
         db = {"repositories": [], "repo_persons": [], "repo_pubs": [], "authorship": []}
         authorship = Authorship(pub_authors={}, author_pubs={}, pubs_rows=[], pub_ids=set())
         table = DepartmentTable(departments=[], g=lambda _d: 0, no_dept_gid=0)
-        layout = _layout(repo_edge_w={("r1", "r2"): 1})
+        layout = _layout(repo_edge_w={("r1", "r2"): 1 / 3}, repo_edge_via={("r1", "r2"): ["owner"]})
 
         edges = EdgeBuilder(db, authorship, _assignment(), table, layout).build()
 
-        self.assertEqual(edges["repo_edges"], [{"s": "r1", "t": "r2", "w": 1}])
+        self.assertEqual(edges["repo_edges"], [{"s": "r1", "t": "r2", "w": 0.33, "via": ["owner"]}])
 
 
 if __name__ == "__main__":

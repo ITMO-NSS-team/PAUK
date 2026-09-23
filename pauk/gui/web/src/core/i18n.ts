@@ -67,6 +67,14 @@ export type LocaleKey =
   | "field.ownerType"
   | "field.license"
   | "field.hasReadme"
+  | "field.documents"
+  | "field.repoVia"
+  | "field.groupWhy"
+  | `group.kind.${"org" | "field"}`
+  | `group.why.${"org" | "field"}`
+  | `via.${"pub" | "person" | "coauthor" | "owner"}`
+  | "field.workSummary"
+  | "field.report"
   | "field.openalexId"
   | "field.googleScholar"
   | "field.email"
@@ -167,6 +175,21 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.ownerType": "Тип владельца",
     "field.license": "Лицензия",
     "field.hasReadme": "Есть README",
+    "field.documents": "Документы",
+    "field.repoVia": "Связаны через",
+    "field.groupWhy": "Почему вместе",
+    "group.kind.org": "GitHub-организация",
+    "group.kind.field": "Область",
+    "group.why.org":
+      "Департамент неизвестен, репозитории сгруппированы по организации-владельцу на GitHub.",
+    "group.why.field":
+      "Нет ни департамента, ни организации, сгруппированы по области публикаций, которые они реализуют.",
+    "via.pub": "общую публикацию",
+    "via.person": "общего участника ИТМО",
+    "via.coauthor": "соавтора статей",
+    "via.owner": "общего владельца",
+    "field.workSummary": "Сводка работы",
+    "field.report": "Отчет",
     "field.openalexId": "OpenAlex",
     "field.googleScholar": "Google Scholar",
     "field.email": "Email",
@@ -275,6 +298,20 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.ownerType": "Owner type",
     "field.license": "License",
     "field.hasReadme": "Has README",
+    "field.documents": "Documents",
+    "field.repoVia": "Linked by",
+    "field.groupWhy": "Why together",
+    "group.kind.org": "GitHub organization",
+    "group.kind.field": "Field",
+    "group.why.org": "No department is known, grouped by the GitHub organization that owns them.",
+    "group.why.field":
+      "Neither a department nor an organization, grouped by the field of the publications they implement.",
+    "via.pub": "a shared publication",
+    "via.person": "a shared ITMO member",
+    "via.coauthor": "a co-author of their papers",
+    "via.owner": "a shared owner",
+    "field.workSummary": "Work Summary",
+    "field.report": "Report",
     "field.openalexId": "OpenAlex",
     "field.googleScholar": "Google Scholar",
     "field.email": "Email",

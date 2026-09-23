@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { RepoDetail } from "../src/contracts/graph";
-import { assertGraphData, indexByKey, indexDetailsByKey, mergeDetailsInto, nodeLabel } from "../src/core/data";
+import {
+  assertGraphData,
+  groupIdOf,
+  groupsById,
+  indexByKey,
+  indexDetailsByKey,
+  mergeDetailsInto,
+  nodeLabel,
+} from "../src/core/data";
 import { loadSampleAuthorDetails, loadSampleGraphData, loadSampleRepoDetails } from "./fixtures";
 
 describe("loadSampleGraphData", () => {
@@ -86,5 +94,26 @@ describe("mergeDetailsInto", () => {
 
     expect(target.get("custom")?.description).toBe("уже был до мержа");
     expect(target.get("R1")?.description).toBe("новый");
+  });
+});
+
+describe("groupIdOf / groupsById", () => {
+  it("репозиторий красится по group, остальные узлы и старые данные без group — по dept", async () => {
+    const data = await loadSampleGraphData();
+    const [repo] = data.repos;
+    const [author] = data.authors;
+    if (!repo || !author) throw new Error("в фикстуре нет репозитория или автора");
+    expect(groupIdOf({ ...repo, group: 7 })).toBe(7);
+    expect(groupIdOf(repo)).toBe(repo.dept);
+    expect(groupIdOf(author)).toBe(author.dept);
+  });
+
+  it("один индекс на департаменты и группы репозиториев, без repo_groups — только департаменты", async () => {
+    const data = await loadSampleGraphData();
+    const [dept] = data.departments;
+    if (!dept) throw new Error("в фикстуре нет департаментов");
+    const group = { ...dept, id: 7, kind: "field" as const, name: "Physics", name_en: "Physics" };
+    expect(groupsById({ ...data, repo_groups: [group] }).get(7)).toBe(group);
+    expect([...groupsById(data).keys()]).toEqual(data.departments.map((d) => d.id));
   });
 });

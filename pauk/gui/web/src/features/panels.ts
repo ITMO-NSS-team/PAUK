@@ -16,7 +16,7 @@ import type {
   RepoDetail,
   RepoNode,
 } from "../contracts/graph";
-import { PANEL_CONFIG } from "../core/config";
+import { DATA_CONFIG, PANEL_CONFIG } from "../core/config";
 import {
   buildAuthorPubIndex,
   buildAuthorRepoIndex,
@@ -26,6 +26,7 @@ import {
   buildRepoPubIndex,
   githubProfileUrl,
   githubShortPath,
+  groupsById,
   indexByKey,
   nodeLabel,
 } from "../core/data";
@@ -337,10 +338,42 @@ export function mountPanel(
 ): () => void {
   const container = requireElement("panel");
 
+  // ponytail: static PDFs + file list next to the site data, move into repos-detail.json if this stays
+  const reportFiles = new Map<string, string>();
+  fetch(DATA_CONFIG.reportsIndexUrl)
+    .then((response) => (response.ok ? (response.json() as Promise<string[]>) : []))
+    .then((files) => {
+      for (const file of files) reportFiles.set(file.toLowerCase(), file);
+      store.notify();
+    })
+    .catch((error: unknown) => console.warn("reports/index.json:", error));
+
+  function reportLinksOf(repoUrl: string, lang: AppState["lang"]): PanelLink[] {
+    const name = repoUrl.replace(/\/+$/, "").split("/").pop()?.toLowerCase() ?? "";
+    const links: PanelLink[] = [];
+    for (const [suffix, label] of [
+      ["_work_summary.pdf", t("field.workSummary", lang)],
+      ["_report.pdf", t("field.report", lang)],
+    ] as const) {
+      const file = reportFiles.get(name + suffix);
+      if (file)
+        links.push({ kind: "link", href: `/reports/${encodeURIComponent(file)}`, text: label });
+    }
+    return links;
+  }
+
   // Строится один раз при монтировании, а не на каждый рендер — поиск по
   // ключу должен быть мгновенным, а не пересчитывать индекс на каждый клик.
   const index = indexByKey(data);
   const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
+  const groups = groupsById(data);
+  const repoGroupById = new Map((data.repo_groups ?? []).map((group) => [group.id, group]));
+  const repoEdgeVia = new Map(
+    data.repo_edges.flatMap((edge) => [
+      [`${edge.s}\u0000${edge.t}`, edge.via ?? []],
+      [`${edge.t}\u0000${edge.s}`, edge.via ?? []],
+    ]),
+  );
   const { authorPubs, pubAuthors } = buildAuthorPubIndex(data);
   const coauthIndex = buildCoauthIndex(data);
   const authorRepoIndex = buildAuthorRepoIndex(data);
@@ -360,7 +393,7 @@ export function mountPanel(
    */
   function deptRefsOf(ids: number[], lang: AppState["lang"]): PanelEntityRef[] {
     return ids.map((id) => {
-      const dept = deptById.get(id);
+      const dept = groups.get(id);
       const label = dept ? localize(dept.name, dept.name_en, lang) : String(id);
       return { kind: "ref", selection: { kind: "dept", id }, label };
     });
@@ -944,6 +977,8 @@ export function mountPanel(
       }
       if (node.kind === "repo") {
         rows.push([t("field.stars", lang), String(node.stars)]);
+        const group = node.group === undefined ? undefined : repoGroupById.get(node.group);
+        if (group) rows.push([t(`group.kind.${group.kind}`, lang), deptRefsOf([group.id], lang)]);
         // Тот же приём, что и у автора выше: .has(), потому что запись в
         // repos-detail.json есть у каждого репозитория без исключений.
         if (repoDetails.has(node.key)) {
@@ -954,6 +989,8 @@ export function mountPanel(
             rows.push([t("field.ownerType", lang), repoDetail.owner_type]);
           if (repoDetail?.license) rows.push([t("field.license", lang), repoDetail.license]);
           if (repoDetail?.has_readme) rows.push([t("field.hasReadme", lang), "✓"]);
+          const reportLinks = repoDetail ? reportLinksOf(repoDetail.url, lang) : [];
+          if (reportLinks.length > 0) rows.push([t("field.documents", lang), reportLinks]);
         } else {
           rows.push([t("field.loadingDetails", lang), LOADING]);
         }
@@ -1017,6 +1054,12 @@ export function mountPanel(
       // Так же, как и у остальных списков в этом файле, режем до
       // PANEL_CONFIG.listLimit — у активных соавторов общих публикаций
       // может быть больше, чем поместится в карточку.
+      const via = repoEdgeVia.get(`${from.key}\u0000${to.key}`) ?? [];
+      if (via.length > 0)
+        rows.push([
+          t("field.repoVia", lang),
+          via.map((signal) => t(`via.${signal}`, lang)).join(", "),
+        ]);
       if (from.kind === "author" && to.kind === "author") {
         const shared = (authorPubs.get(from.key) ?? [])
           .filter((pub) => (authorPubs.get(to.key) ?? []).includes(pub))
@@ -1034,6 +1077,23 @@ export function mountPanel(
     }
 
     // selection.kind === "dept"
+    const group = repoGroupById.get(selection.id);
+    if (group) {
+      const members = data.repos
+        .filter((repo) => repo.group === group.id)
+        .sort((a, b) => b.stars - a.stars)
+        .map((repo) => repo.key);
+      return show(
+        localize(group.name, group.name_en, lang),
+        t(`group.kind.${group.kind}`, lang),
+        untitled([
+          [t("field.reposCount", lang), String(members.length)],
+          [t("field.groupWhy", lang), t(`group.why.${group.kind}`, lang)],
+          [t("tab.repos", lang), { kind: "list", items: entityRefsOf(members, lang) }],
+        ]),
+        true,
+      );
+    }
     const dept = deptById.get(selection.id);
     if (!dept) return hide();
 

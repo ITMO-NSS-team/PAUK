@@ -215,6 +215,7 @@ export const DATA_CONFIG = {
   authorDetailsUrl: "/authors-detail.json",
   repoDetailsUrl: "/repos-detail.json",
   pubDetailsUrl: "/pubs-detail.json",
+  reportsIndexUrl: "/reports/index.json",
 } as const;
 
 // Сколько элементов показывать в списках карточки информации (features/panels.ts)

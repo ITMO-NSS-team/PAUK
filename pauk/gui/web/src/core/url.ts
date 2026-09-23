@@ -7,7 +7,7 @@
 // стороны, поэтому оно тестируется без единого DOM-события.
 
 import type { Edge, GraphData } from "../contracts/graph";
-import { indexByKey } from "./data";
+import { groupsById, indexByKey } from "./data";
 import { TAB_KIND, type Screen, type Selection, type TabId } from "./state";
 
 /**
@@ -174,7 +174,7 @@ export function parseUrlState(search: string, data: GraphData): { screen: Screen
     }
   } else if (kind === "dept") {
     const id = Number(params.get("id"));
-    if (data.departments.some((dept) => dept.id === id)) return { screen: "app", tab, selection: { kind: "dept", id } };
+    if (groupsById(data).has(id)) return { screen: "app", tab, selection: { kind: "dept", id } };
   }
 
   return { screen: "app", tab, selection: null };

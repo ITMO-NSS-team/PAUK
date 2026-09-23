@@ -105,6 +105,9 @@ export interface RepoNode {
   key: string;
   kind: "repo";
   dept: number;
+  // Цвет на вкладке репозиториев: id департамента либо RepoGroup.id
+  // (org/field), см. departments.py::repo_groups. Нет в старых graph-data.json.
+  group?: number;
   label: string;
   stars: number;
   rank: number;
@@ -163,6 +166,17 @@ export interface Edge {
   s: string;
   t: string;
   w: number;
+  // Только у repo_edges: какие сигналы связали пару репозиториев.
+  via?: RepoEdgeSignal[];
+}
+
+export type RepoEdgeSignal = "pub" | "person" | "coauthor" | "owner";
+
+// Группа репозиториев без департамента — по GitHub-организации или по
+// области публикаций. Форма департамента, чтобы регионы/подписи/выбор
+// работали без отдельной ветки; id не пересекаются с Department.id.
+export interface RepoGroup extends Department {
+  kind: "org" | "field";
 }
 
 // В отличие от Edge выше (s/t — строковые ключи author/pub/repo), у
@@ -189,6 +203,7 @@ export interface UnweightedEdge {
 
 export interface GraphData {
   departments: Department[];
+  repo_groups?: RepoGroup[];
   dept_edges: DeptEdge[];
   authors: AuthorNode[];
   coauth_edges: Edge[];

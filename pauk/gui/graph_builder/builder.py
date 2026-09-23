@@ -47,7 +47,7 @@ import time
 from pathlib import Path
 
 from .authorship import build_authorship_index
-from .departments import DepartmentAssigner
+from .departments import DepartmentAssigner, repo_groups
 from .edges import EdgeBuilder
 from .layout import GraphLayoutBuilder
 from .nodes import AuthorNodeBuilder, PubNodeBuilder, RepoNodeBuilder
@@ -105,6 +105,7 @@ class GraphDataBuilder:
         assigner = DepartmentAssigner(db, authorship)
         assignment = assigner.assign(dept_name)
         table = assigner.build_table(dept_name, dept_name_en, assignment)
+        groups = repo_groups(db, assignment, table)
         layout = GraphLayoutBuilder(db, authorship, assignment).build(self.seed)
 
         # The three node kinds are built independently (their own Builder
@@ -113,7 +114,7 @@ class GraphDataBuilder:
         authors_summary, authors_detail = AuthorNodeBuilder(
             db, authorship, assignment, table, layout.pos_authors
         ).build()
-        repos_summary, repos_detail = RepoNodeBuilder(db, assignment, table, layout.pos_repos).build()
+        repos_summary, repos_detail = RepoNodeBuilder(db, assignment, table, groups.group_of, layout.pos_repos).build()
         pubs_summary, pubs_detail = PubNodeBuilder(authorship, assignment, table, layout.pos_pubs).build()
         edges = EdgeBuilder(db, authorship, assignment, table, layout).build()
 
@@ -122,6 +123,7 @@ class GraphDataBuilder:
         # them, no nested "edges" object in the JSON.
         summary = {
             "departments": table.departments,
+            "repo_groups": groups.groups,
             "authors": authors_summary,
             "repos": repos_summary,
             "pubs": pubs_summary,

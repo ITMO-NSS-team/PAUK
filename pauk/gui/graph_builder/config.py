@@ -61,6 +61,10 @@ class SyntheticDeptEdges:
     """Same idea as `dept_edge_k`, for publications."""
     pub_dept_edge_weight: float = 0.5
     """Weaker than `dept_edge_weight` - publications already have plenty of real edges."""
+    repo_dept_edge_k: int = 2
+    """Same idea as `dept_edge_k`, for repositories."""
+    repo_dept_edge_weight: float = 0.5
+    """Weaker than real repository edges, only holds a department together."""
 
 
 SYNTHETIC_DEPT_EDGES = SyntheticDeptEdges()
@@ -76,9 +80,35 @@ class MinSeparation:
     """Authors are usually far more numerous than publications on the map - points need more breathing room to stay visually distinct."""
     pubs: float = 4.0
     """Fewer publications than authors, so less separation is needed."""
+    repos: float = 6.0
+    """Repository icons are the largest of the three, so they need the most room."""
 
 
 MIN_SEPARATION = MinSeparation()
+
+
+@dataclass(frozen=True)
+class RepoEdges:
+    """Repository-repository edges: one weight per signal, ordered by how
+    much the signal says about the code itself (see `layout.py::repo_edge_signals`)."""
+
+    w_pub: float = 3.0
+    """Both implement the same publication."""
+    w_person: float = 2.0
+    """The same ITMO person contributed to both."""
+    w_coauthor: float = 1.0
+    """Their publications share an ITMO author."""
+    w_owner: float = 1.0
+    """The same GitHub account owns both - a lab account holds both its flagship and its coursework."""
+    group_cap: int = 60
+    """Groups larger than this are noise, not signal (a bot credited on two hundred repositories)."""
+    top_k: int = 12
+    """Strongest edges kept per repository, otherwise dense groups render as solid ink."""
+    group_min: int = 2
+    """Smallest org/field group worth a colour of its own (see `departments.py::repo_groups`)."""
+
+
+REPO_EDGES = RepoEdges()
 
 
 # --- Display placeholders ------------------------------------------------------

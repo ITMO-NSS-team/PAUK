@@ -15,7 +15,7 @@ import type Sigma from "sigma";
 import type { EdgeDisplayData, NodeDisplayData } from "sigma/types";
 import type { AuthorNode, Edge, GraphData, PubDetail, PubNode, RepoNode } from "../contracts/graph";
 import { MAP_CONFIG, NO_DEPT_COLOR } from "../core/config";
-import { nodeLabel } from "../core/data";
+import { groupIdOf, groupsById, nodeLabel } from "../core/data";
 import { localize, type Lang } from "../core/i18n";
 import { isRegionMode, type AppState, type Selection, type Store, type TabId } from "../core/state";
 
@@ -252,15 +252,15 @@ export function populateGraph(
 ): void {
   graph.clear();
 
-  const deptColorById = new Map(data.departments.map((dept) => [dept.id, dept.color]));
+  const groups = groupsById(data);
 
   for (const node of tabGraphNodes(data, tab, filters)) {
     graph.addNode(node.key, {
       x: node.gx,
       y: node.gy,
-      dept: node.dept,
+      dept: groupIdOf(node),
       size: MAP_CONFIG.node.radius,
-      color: deptColorById.get(node.dept) ?? MAP_CONFIG.node.fallbackColor,
+      color: groups.get(groupIdOf(node))?.color ?? MAP_CONFIG.node.fallbackColor,
       label: truncateLabel(nodeLabel(node, lang, pubDetails), MAP_CONFIG.node.labelMaxLength),
     });
   }
@@ -323,12 +323,12 @@ function addDeptLabelAnchors(
 ): void {
   const nodesByDept = new Map<number, GraphNode[]>();
   for (const node of tabGraphNodes(data, tab, filters)) {
-    const list = nodesByDept.get(node.dept) ?? [];
+    const list = nodesByDept.get(groupIdOf(node)) ?? [];
     list.push(node);
-    nodesByDept.set(node.dept, list);
+    nodesByDept.set(groupIdOf(node), list);
   }
 
-  const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
+  const deptById = groupsById(data);
 
   for (const [deptId, nodes] of nodesByDept) {
     const dept = deptById.get(deptId);

@@ -258,11 +258,13 @@ class RepoNodeBuilder:
         db: dict[str, list[dict]],
         assignment: DepartmentAssignment,
         table: DepartmentTable,
+        group_of: dict[str, int],
         pos: dict[str, tuple[float, float]],
     ) -> None:
         self.db = db
         self.assignment = assignment
         self.table = table
+        self.group_of = group_of
         self.pos = pos
 
     def build(self) -> tuple[list[dict], list[dict]]:
@@ -285,6 +287,8 @@ class RepoNodeBuilder:
                     "key": rid,
                     "kind": "repo",
                     "dept": self.table.g(self.assignment.repo_dept[rid]),
+                    # Colour group on the repositories tab, see departments.py::repo_groups.
+                    "group": self.group_of[rid],
                     "label": row["name"] or "",
                     "stars": row["stars_num"] or 0,
                     "rank": rank_r[rid],

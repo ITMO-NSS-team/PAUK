@@ -1,8 +1,40 @@
-import type { AuthorNode, GraphData, PubDetail, PubNode, RepoAuthorEdge, RepoNode } from "../contracts/graph";
+import type {
+  AuthorNode,
+  Department,
+  GraphData,
+  PubDetail,
+  PubNode,
+  RepoAuthorEdge,
+  RepoGroup,
+  RepoNode,
+} from "../contracts/graph";
 import { localize, type Lang } from "./i18n";
 
 /** Любой из трёх видов узлов графа — авторы, репозитории, публикации. */
 type GraphNode = AuthorNode | RepoNode | PubNode;
+
+/**
+ * Группа узла для цвета, регионов и выбора "департамента": у репозитория —
+ * `group` (департамент, GitHub-организация или область), у остальных — `dept`.
+ *
+ * @param node - узел графа.
+ * @returns Id из {@link groupsById}.
+ */
+export function groupIdOf(node: GraphNode): number {
+  return node.kind === "repo" ? (node.group ?? node.dept) : node.dept;
+}
+
+/**
+ * Департаменты и группы репозиториев одним индексом — их id не пересекаются.
+ *
+ * @param data - данные графа.
+ * @returns Map от id к департаменту или группе.
+ */
+export function groupsById(data: GraphData): Map<number, Department | RepoGroup> {
+  return new Map<number, Department | RepoGroup>(
+    [...data.departments, ...(data.repo_groups ?? [])].map((group) => [group.id, group]),
+  );
+}
 
 /**
  * Загружает `graph-data.json` по сети и проверяет его форму в dev-режиме

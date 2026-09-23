@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from .authorship import Authorship
-from .config import NO_DEPT_COLOR, NO_DEPT_NAME, NO_DEPT_NAME_EN
+from .config import NO_DEPT_COLOR, NO_DEPT_NAME, NO_DEPT_NAME_EN, REPO_EDGES
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,18 @@ def name_list(value: object) -> list[str]:
     if isinstance(value, list):
         return [v for v in value if isinstance(v, str) and v]
     return []
+
+
+def repo_owner(row: dict) -> str:
+    """Lowercased GitHub login that owns a repository, `""` if unknown.
+
+    Example:
+        >>> repo_owner({"url": "https://github.com/AimClub/FEDOT"})
+        'aimclub'
+    """
+    # Snapshots taken before `owner` was exported only have the URL.
+    url_parts = (row.get("url") or "").rstrip("/").split("/")
+    return (row.get("owner") or (url_parts[-2] if len(url_parts) >= 2 else "")).lower()
 
 
 def majority_dept(dept_lists: Iterable[Iterable[str]]) -> str | None:
@@ -111,6 +123,17 @@ class DepartmentTable:
     """Graph department id -> dense frontend id (or the "no department" bucket id, if department is falsy)."""
     no_dept_gid: int
     """Dense id of the "no department" bucket."""
+
+
+@dataclass(frozen=True)
+class RepoGroups:
+    """Colour groups of the repositories tab: department, else owning GitHub
+    organization, else field of the implemented publications."""
+
+    groups: list[dict]
+    """Org/field rows for `graph-data.json["repo_groups"]`, shaped like department rows plus `kind`."""
+    group_of: dict[str, int]
+    """Repository -> group id: a department's own dense id, an org/field row id, or the "no department" id."""
 
 
 class DepartmentAssigner:
@@ -196,9 +219,14 @@ class DepartmentAssigner:
             if did in dept_name and did not in repo_dept_rows[rid]:
                 repo_dept_rows[rid].append(did)
 
+        repo_contributors: dict[str, set[str]] = defaultdict(set)
+        for row in db["repo_persons"]:
+            repo_contributors[row["rid"]].add(row["per"])
+
         # Step 6: a repository's primary department - majority vote among the
         # departments of the publications it implements (via repo_pub_map +
-        # pub_primary), falling back to DEVELOPED_BY the same way publications do.
+        # pub_primary), falling back to DEVELOPED_BY the same way publications
+        # do, then to its ITMO contributors' departments.
         repo_dept: dict[str, str | None] = {}
         for row in db["repositories"]:
             rid = row["id"]
@@ -207,6 +235,11 @@ class DepartmentAssigner:
             )
             if primary is None and repo_dept_rows.get(rid):
                 primary = repo_dept_rows[rid][0]
+            if primary is None:
+                # Weaker than the publication it implements - someone can
+                # contribute far outside their own department - so it only
+                # speaks when nothing else does.
+                primary = majority_dept(static_depts.get(per, []) for per in repo_contributors.get(rid, ()))
             repo_dept[rid] = primary
 
         return DepartmentAssignment(
@@ -315,3 +348,80 @@ class DepartmentAssigner:
         )
         logger.info('Departments: %d (+ "%s")', len(ordered), NO_DEPT_NAME)
         return DepartmentTable(departments=departments, g=g, no_dept_gid=no_dept_gid)
+
+
+def repo_groups(db: dict[str, list[dict]], assignment: DepartmentAssignment, table: DepartmentTable) -> RepoGroups:
+    """Groups every repository, strongest claim first: its department, else
+    the GitHub organization that owns it, else the majority field of the
+    publications it implements. A department is known for well under half the
+    repositories, so colouring by department alone leaves most of the tab grey.
+
+    A department group reuses the department's own id, so selecting a
+    department means the same thing on every tab; org/field groups get ids
+    past the department table. An org/field group smaller than
+    `REPO_EDGES.group_min` is no group (a unique hue on a single dot), and
+    its repository falls through to the next tier. A personal account never
+    forms a group - it says who pushed the code, not what it belongs to.
+
+    Args:
+        db: Snapshot.
+        assignment: Result of `DepartmentAssigner.assign()`.
+        table: Result of `DepartmentAssigner.build_table()`.
+
+    Returns:
+        `RepoGroups`.
+    """
+    pub_fields = {row["id"]: row.get("fields") or [] for row in db["publications"]}
+    org_of = {
+        row["id"]: owner
+        for row in db["repositories"]
+        if row.get("owner_type") == "organization" and (owner := repo_owner(row))
+    }
+    field_of = {
+        rid: majority_dept(pub_fields.get(pid, []) for pid in assignment.repo_pub_map.get(rid, []))
+        for rid in (row["id"] for row in db["repositories"])
+    }
+
+    org_size = Counter(org_of.values())
+    keys: dict[str, tuple[str, str] | None] = {}
+    for row in db["repositories"]:
+        rid = row["id"]
+        if assignment.repo_dept[rid]:
+            keys[rid] = None
+        elif org_size[org_of.get(rid, "")] >= REPO_EDGES.group_min:
+            keys[rid] = ("org", org_of[rid])
+        elif field := field_of[rid]:
+            keys[rid] = ("field", field)
+        else:
+            keys[rid] = None
+    size = Counter(k for k in keys.values() if k)
+    kept = sorted((k for k in size if size[k] >= REPO_EDGES.group_min), key=lambda k: (-size[k], k))
+
+    first_id = table.no_dept_gid + 1
+    gid = {k: first_id + i for i, k in enumerate(kept)}
+    groups = [
+        {
+            "id": gid[k],
+            "kind": k[0],
+            "name": k[1],
+            "name_en": k[1],
+            "color": golden_color(gid[k]),
+            "n": size[k],
+            "n_authors": 0,
+            "n_pubs": 0,
+            "n_repos": size[k],
+            "name_variants": [],
+        }
+        for k in kept
+    ]
+    group_of = {
+        rid: gid[k] if k in gid else table.g(assignment.repo_dept[rid]) for rid, k in keys.items()
+    }
+    by_kind = Counter(k[0] for k in keys.values() if k in gid)
+    logger.info(
+        "Repository groups: %d org (%d repos), %d field (%d repos), %d repos in no group",
+        sum(1 for k in kept if k[0] == "org"), by_kind["org"],
+        sum(1 for k in kept if k[0] == "field"), by_kind["field"],
+        sum(1 for g in group_of.values() if g == table.no_dept_gid),
+    )
+    return RepoGroups(groups=groups, group_of=group_of)
