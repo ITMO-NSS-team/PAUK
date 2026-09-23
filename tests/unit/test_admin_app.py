@@ -1,3 +1,4 @@
+import struct
 import threading
 import unittest
 from unittest.mock import patch
@@ -166,6 +167,20 @@ class PanelTest(unittest.TestCase):
             self.assertEqual(
                 self.client.get(f"/assets/fonts/golos-text-{part}.woff2").status_code, 200, part)
         self.assertEqual(self.client.get("/static/panel.css").text.count("@font-face"), 3)
+
+    def test_and_each_of_them_is_a_font_a_browser_will_take(self):
+        # Served with 200 is not the same as usable: the three files sat
+        # here for weeks with junk appended, every browser quietly refused
+        # them, and the panel drew itself in whatever the machine had.
+        # Nobody noticed until a password field turned into empty boxes on a
+        # machine whose fallback font has no bullet. A woff2 states its own
+        # length and table count, and both give the mangling away.
+        for part in ("latin", "cyrillic", "cyrillic-ext"):
+            body = self.client.get(f"/assets/fonts/golos-text-{part}.woff2").content
+            signature, _flavor, length, tables = struct.unpack(">4sIIH", body[:14])
+            self.assertEqual(signature, b"wOF2", part)
+            self.assertEqual(length, len(body), part)
+            self.assertLess(tables, 100, part)
 
     def test_the_panel_offers_no_way_to_create_an_account(self):
         # Accounts come from `pauk admin user add` only; a registration
