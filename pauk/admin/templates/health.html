@@ -62,8 +62,6 @@
         {% if check.n and check.pct is not none %}
         <br><span class="muted">{{ check.pct }}% из {{ check.of }}</span>
         {% elif check.of == 0 %}
-        {# Ноль из ноля — не «в порядке», а «нечего было проверять». Проверки
-           на метках, которых в графе не стало, выглядели зелёными ровно так. #}
         <br><span class="muted">не из чего считать</span>
         {% endif %}
       </td>
