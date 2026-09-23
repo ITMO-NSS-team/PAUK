@@ -167,6 +167,14 @@ th { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: upp
 /* Не только на ячейке: идентификаторы и адреса стоят и в span, а без
    переноса длинная ссылка уезжает в соседний столбец. */
 .val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; word-break: break-word; }
+/* Разрешённый выше перенос отменяет и минимальную ширину колонки: браузер
+   считает, что ей хватит одной буквы, и рядом с широким заголовком
+   идентификатор встаёт по букве в столбик. Пол в одиннадцать символов —
+   длина id вида W7171941820 — возвращает колонке ширину, а перенос внутри
+   неё остаётся для адресов, которым он и был нужен. Плюс горизонтальные
+   отступы ячейки: при box-sizing: border-box они входят в min-width и
+   иначе съели бы два символа из одиннадцати. */
+td.val { min-width: calc(11ch + 20px); }
 tr.ro td { color: var(--muted); }
 .fixed { table-layout: fixed; }
 .card.scroll { overflow-x: auto; }
