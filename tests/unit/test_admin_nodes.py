@@ -27,14 +27,16 @@ from tests.unit.test_mutations import FakeGraph
 class FakePanelGraph(FakeGraph):
     """FakeGraph plus the two reads the node screens need."""
 
-    def search_nodes(self, label, fields, query, limit=50, skip=0):
+    def search_nodes(self, label, fields, searched, query, limit=50, skip=0):
         needle = query.lower()
         found = []
         for (node_label, node_id), props in self.nodes.items():
             if node_label != label:
                 continue
+            # Matched against `searched`, returned as `fields`: the two
+            # differ wherever a listing shows a column the box ignores.
             hit = node_id == query or any(
-                needle in str(props.get(name, "")).lower() for name in fields)
+                needle in str(props.get(name, "")).lower() for name in searched)
             if hit:
                 row = {"id": node_id, "exact": node_id == query}
                 row.update({name: props.get(name) for name in fields})
@@ -45,10 +47,19 @@ class FakePanelGraph(FakeGraph):
     def close(self):
         """The panel closes its client per request; the real one has this."""
 
-    def list_nodes(self, label, fields, limit=50, skip=0):
+    def list_nodes(self, label, fields, limit=50, skip=0, order=None):
         rows = [{"id": node_id, **{name: props.get(name) for name in fields}}
                 for (node_label, node_id), props in self.nodes.items() if node_label == label]
-        return sorted(rows, key=lambda row: row["id"])[skip:skip + limit]
+        if order:
+            # Largest first, and a node without the property sorts last —
+            # the real client says the same with coalesce(..., -1). Zero is
+            # a value, not a gap: `or -1` would have put a repository with
+            # no stars level with one the graph knows nothing about.
+            rows.sort(key=lambda row: (
+                -(row[order] if row.get(order) is not None else -1), row["id"]))
+        else:
+            rows.sort(key=lambda row: row["id"])
+        return rows[skip:skip + limit]
 
     def _by_match(self, label, match_value):
         """The node an edge points at, found the way the loader finds it.
@@ -143,6 +154,78 @@ class NodeScreenTest(unittest.TestCase):
         for n in range(SEARCH_LIMIT + 10):
             self.graph.nodes[("Repository", f"R{n:03}")] = {"id": f"R{n:03}", "url": f"u{n}"}
         return SEARCH_LIMIT
+
+    def add_repositories(self):
+        """Four repositories, numbered against the order they should appear.
+
+        The ids run the other way on purpose: sorted by id this listing
+        comes out exactly backwards, so a test that passes here cannot be
+        passing because nothing sorts anything.
+        """
+        self.graph.add("Repository", "R1", url="u1", name="uncollected")
+        self.graph.add("Repository", "R2", url="u2", name="popular", stars_num=1200)
+        self.graph.add("Repository", "R3", url="u3", name="middling", stars_num=7)
+        self.graph.add("Repository", "R4", url="u4", name="quiet", stars_num=0)
+
+    def listed(self, body, label="Repository"):
+        """The ids down the listing, in the order it shows them.
+
+        Read off the links rather than by searching the page for an id:
+        the same two characters turn up in a CSS class or a token, and a
+        test comparing where substrings fall passes or fails on that.
+        The "create" button has the shape of a row link and no row behind
+        it, so it is dropped rather than counted as the first result.
+        """
+        return [found for found in re.findall(rf'/nodes/{label}/([^"?]+)"', body)
+                if found != "new"]
+
+    def test_the_repository_listing_shows_the_stars(self):
+        self.add_repositories()
+        self.sign_in()
+        body = self.client.get("/nodes/Repository").text
+        self.assertIn("stars_num", body)
+        self.assertIn("1200", body)
+
+    def test_and_puts_the_popular_ones_first(self):
+        # The tab answers "what is popular here". In id order that answer
+        # sits wherever the collection happened to put it.
+        self.add_repositories()
+        self.sign_in()
+        self.assertEqual(self.listed(self.client.get("/nodes/Repository").text),
+                         ["R2", "R3", "R4", "R1"])
+
+    def test_a_repository_with_no_stars_at_all_comes_after_one_with_zero(self):
+        # Zero is a count; a missing property is "never collected". Cypher
+        # sorts null highest, so without care the unknown ones open the
+        # list — and treating the two as one puts them in id order, which
+        # here is the wrong way round.
+        self.add_repositories()
+        self.sign_in()
+        listed = self.listed(self.client.get("/nodes/Repository").text)
+        self.assertLess(listed.index("R4"), listed.index("R1"))
+
+    def test_the_stars_column_is_not_something_the_box_searches(self):
+        # A substring match on a number answers "12" with 1200, and the
+        # hint under the box would be promising a search nobody wrote.
+        self.add_repositories()
+        self.sign_in()
+        body = self.client.get("/nodes/Repository", params={"q": "12"}).text
+        self.assertEqual(self.listed(body), [])
+        self.assertNotIn("stars_num)", body)
+
+    def test_but_a_search_still_shows_the_column(self):
+        self.add_repositories()
+        self.sign_in()
+        body = self.client.get("/nodes/Repository", params={"q": "popular"}).text
+        self.assertEqual(self.listed(body), ["R2"])
+        self.assertIn("1200", body)
+
+    def test_another_label_is_left_in_id_order(self):
+        # Only the repositories are read as a ranking.
+        self.sign_in()
+        body = self.client.get("/nodes/Person").text
+        self.assertIn("по возрастанию идентификатора", body)
+        self.assertEqual(self.listed(body, "Person"), ["A1", "A2"])
 
     def test_a_long_listing_offers_the_next_page(self):
         # Before, it stopped at the cap and said so, and there was no way
