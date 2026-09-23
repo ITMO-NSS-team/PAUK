@@ -192,6 +192,23 @@ def read_node(client: Neo4jClient, label: str, node_id: str) -> dict:
     return props
 
 
+def folded_into(client: Neo4jClient, label: str, node_id: str) -> str | None:
+    """The record this id was folded into, for an id with no node of its own.
+
+    A fold leaves the swallowed id in the survivor's `merged_ids` and
+    nowhere else, while everything written before the fold — a question in
+    the review queue, a line in the change feed, somebody's bookmark — goes
+    on naming it. Reading that is the only way to answer "where did it go".
+
+    Returns:
+        The surviving node's id, or None when no node ever swallowed this
+        one. Not asked whether the id has a node itself: the caller comes
+        here having already failed to find it.
+    """
+    validate_label(label)
+    return client.fetch_canonical_id(label, node_id)
+
+
 def search_nodes(client: Neo4jClient, label: str, query: str, limit: int = 50,
                  skip: int = 0) -> list[dict]:
     """Find nodes of one label by id or by a piece of their name.

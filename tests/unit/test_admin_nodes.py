@@ -192,6 +192,37 @@ class NodeScreenTest(unittest.TestCase):
         self.sign_in()
         self.assertEqual(self.client.get("/nodes/Person/nope").status_code, 404)
 
+    def test_a_missing_node_answers_with_a_page_and_not_with_json(self):
+        # A link out of the review queue used to land on the raw
+        # {"detail": "Person A5050264529 does not exist"} of an unhandled
+        # 404, which says nothing to the person who followed it.
+        self.sign_in()
+        self.assertIn("Этой записи в графе нет", self.client.get("/nodes/Person/nope").text)
+
+    def test_an_id_folded_away_opens_the_record_that_swallowed_it(self):
+        # A question in the queue names the id as it stood when it was
+        # asked; the fold that answered it came later and left that id
+        # only in the survivor's merged_ids.
+        self.graph.nodes[("Person", "A1")]["merged_ids"] = ["A9"]
+        self.sign_in()
+        response = self.client.get("/nodes/Person/A9")
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/nodes/Person/A1?folded=A9")
+
+    def test_and_that_record_says_which_id_led_there(self):
+        self.graph.nodes[("Person", "A1")]["merged_ids"] = ["A9"]
+        self.sign_in()
+        body = self.client.get("/nodes/Person/A1", params={"folded": "A9"}).text
+        self.assertIn("свели с этой", body)
+        self.assertIn('class="val">A9</span>', body)
+
+    def test_a_fold_the_record_does_not_carry_is_not_repeated_back(self):
+        # The id comes in from the address bar. A page that printed
+        # whatever it was handed would state a fold that never happened.
+        self.sign_in()
+        self.assertNotIn("свели с этой",
+                         self.client.get("/nodes/Person/A1", params={"folded": "A9"}).text)
+
     def test_an_edit_reaches_the_graph_and_is_recorded_as_a_decision(self):
         csrf = self.sign_in()
         response = self.client.post("/nodes/Person/A1",

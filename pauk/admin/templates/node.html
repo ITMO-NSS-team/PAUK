@@ -4,6 +4,10 @@
 <h1>{{ label }} <span class="muted">{{ node_id }}</span></h1>
 <p class="muted"><a href="/nodes/{{ label }}"><- к поиску</a></p>
 
+{% if folded %}
+<p class="note">Записи <span class="val">{{ folded }}</span> в графе нет, её свели с этой.
+   Открыта та запись, которая за неё отвечает.</p>
+{% endif %}
 {% if request.query_params.get("error") %}
 <p class="note bad">{{ request.query_params.get("error") }}</p>
 {% endif %}
@@ -32,7 +36,7 @@
       </tr>
       {% endfor %}
       {% for name in reserved %}
-      <tr class="ro"><td>{{ name }}</td><td class="val">{{ props.get(name, "") }} <span class="muted">— не редактируется</span></td></tr>
+      <tr class="ro"><td>{{ name }}</td><td class="val">{{ props.get(name, "") }} <span class="muted">– не редактируется</span></td></tr>
       {% endfor %}
     </table>
     {% if user.can_write %}
@@ -144,17 +148,17 @@
       <select id="triple" name="triple" style="padding:8px 10px; font:inherit; font-size:14px;
               border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text)">
         {% for link in links.outgoing %}
-        <option value="{{ link.key }}">{{ link.forward }} — указать {{ link.tgt_label }} по {{ link.match_prop }}</option>
+        <option value="{{ link.key }}">{{ link.forward }} – указать {{ link.tgt_label }} по {{ link.match_prop }}</option>
         {% endfor %}
         {% for link in links.incoming %}
-        <option value="{{ link.key }}">{{ link.backward }} — указать {{ link.src_label }} по {{ link.match_prop }}</option>
+        <option value="{{ link.key }}">{{ link.backward }} – указать {{ link.src_label }} по {{ link.match_prop }}</option>
         {% endfor %}
       </select>
     </div>
     <div class="grow">
       <label for="other_id">Вторая сторона</label>
       <input type="text" id="other_id" name="other_id" required
-             placeholder="для репозитория — адрес, для аккаунта — логин, иначе идентификатор">
+             placeholder="для репозитория – адрес, для аккаунта – логин, иначе идентификатор">
     </div>
     <button type="submit">Связать</button>
   </form>

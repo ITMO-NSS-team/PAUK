@@ -526,6 +526,33 @@ class Neo4jClient:
             return session.execute_read(
                 lambda tx: {record["merged_id"]: record["canonical_id"] for record in tx.run(query)})
 
+    def fetch_canonical_id(self, label: str, node_id: str) -> str | None:
+        """The node this id was folded into, if it was folded into one.
+
+        Asked about one id rather than taken from `fetch_merged_id_map`: the
+        panel needs this the moment somebody opens an id that has no node,
+        and pulling the whole map of every fold in the graph to answer about
+        one of them would be paid on every such page.
+
+        Returns:
+            The surviving node's id, or None when nothing swallowed this id.
+            A node of its own is not looked for here — the caller has
+            already failed to find one.
+        """
+        query = cast(
+            LiteralString,
+            f"""
+            MATCH (n:{label})
+            WHERE $node_id IN coalesce(n.merged_ids, [])
+            RETURN n.id AS canonical_id
+            LIMIT 1
+            """,
+        )
+        with self.driver.session(default_access_mode="READ") as session:
+            return session.execute_read(
+                lambda tx: next((record["canonical_id"] for record in
+                                 tx.run(query, node_id=node_id)), None))
+
     def merge_person_nodes_batch(self, merges: list[tuple[str, str]]) -> int:
         """Fold duplicate Person nodes into their canonical person."""
         return self._fold_nodes_batch("Person", merges, outgoing=(
