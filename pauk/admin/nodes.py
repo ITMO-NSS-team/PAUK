@@ -35,6 +35,7 @@ from pauk.admin.deps import (
     templates,
 )
 from pauk.graph.mutations import (
+    LIST_ORDER,
     NODE_FIELDS,
     RELATIONSHIPS,
     RESERVED_FIELDS,
@@ -43,6 +44,7 @@ from pauk.graph.mutations import (
     MutationError,
     NotFound,
     VersionConflict,
+    columns,
     create_node,
     create_relationship,
     delete_node,
@@ -211,7 +213,11 @@ def search(request: Request, label: str, user: CurrentUser, session: Session,
     return templates.TemplateResponse(request, "search.html", {
         "user": user, "csrf": session["csrf"], "label": label, "query": q,
         "rows": rows[:SEARCH_LIMIT], "limit": SEARCH_LIMIT, "page": page, "more": more,
-        "fields": SEARCH_FIELDS[label], "labels": sorted(NODE_FIELDS)})
+        # Two sets, not one: the columns the table draws, and the fields the
+        # box actually looks at. Naming a column the search ignores in the
+        # hint under the box would promise a search that never happens.
+        "fields": columns(label), "searched": SEARCH_FIELDS[label],
+        "order": LIST_ORDER.get(label), "labels": sorted(NODE_FIELDS)})
 
 
 @router.get("/nodes/{label}/new", response_class=HTMLResponse)

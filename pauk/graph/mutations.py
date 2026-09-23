@@ -92,15 +92,36 @@ SEARCH_FIELDS: dict[str, tuple[str, ...]] = {
     "LinkCandidate": ("url", "host"),
 }
 
+# Columns the listing shows on top of the searched ones. Separate because
+# these are not text: a number matched as a substring answers "10" with 10,
+# 100 and 1000, and the search box would promise something it cannot do.
+LIST_FIELDS: dict[str, tuple[str, ...]] = {
+    "Repository": ("stars_num",),
+}
+
+# What orders a label's listing, biggest first, when nothing is typed into
+# the box. Repositories are read as "what is popular here", and an id order
+# buries the answer under whatever happened to be collected first.
+LIST_ORDER: dict[str, str] = {
+    "Repository": "stars_num",
+}
+
 SEARCH_LIMIT = 100
 
 
+def columns(label: str) -> tuple[str, ...]:
+    """The fields a listing of this label shows, in the order it shows them."""
+    return (*SEARCH_FIELDS[label], *LIST_FIELDS.get(label, ()))
+
+
 def _check_search_fields() -> None:
-    """Fail at import if a searched field is not a real field of its label.
+    """Fail at import if a listed field is not a real field of its label.
 
     A rename in `extract.py` would otherwise leave the search box quietly
     matching nothing — Cypher returns null for a property that does not
-    exist rather than raising.
+    exist rather than raising. The same holds for a column the listing
+    shows and for the property it sorts on: both are interpolated into
+    Cypher, and a stale name sorts everything into one silent blob.
     """
     for label, fields in SEARCH_FIELDS.items():
         if label not in NODE_FIELDS:
@@ -111,6 +132,14 @@ def _check_search_fields() -> None:
     missing = set(NODE_FIELDS) - set(SEARCH_FIELDS)
     if missing:
         raise RuntimeError(f"labels with no search fields: {sorted(missing)}")
+    for source, named in (("LIST_FIELDS", LIST_FIELDS),
+                          ("LIST_ORDER", {label: (name,) for label, name in LIST_ORDER.items()})):
+        for label, fields in named.items():
+            if label not in NODE_FIELDS:
+                raise RuntimeError(f"{source} names an unknown label: {label}")
+            unknown = [name for name in fields if name not in NODE_FIELDS[label]]
+            if unknown:
+                raise RuntimeError(f"{source}[{label}] names fields that do not exist: {unknown}")
 
 
 _check_search_fields()
@@ -233,14 +262,16 @@ def search_nodes(client: Neo4jClient, label: str, query: str, limit: int = 50,
     """
     validate_label(label)
     query = (query or "").strip()
-    fields = list(SEARCH_FIELDS[label])
+    # Shown and searched are not the same set: a listing can carry a number
+    # as a column without pretending the box can find it.
+    fields = list(columns(label))
     capped = min(limit, SEARCH_LIMIT)
     # An empty box means "show me what is there" rather than "find
     # nothing" — on an empty graph the difference is between a blank page
     # and seeing that it is in fact empty.
     if not query:
-        return client.list_nodes(label, fields, capped, skip)
-    return client.search_nodes(label, fields, query, capped, skip)
+        return client.list_nodes(label, fields, capped, skip, order=LIST_ORDER.get(label))
+    return client.search_nodes(label, fields, list(SEARCH_FIELDS[label]), query, capped, skip)
 
 
 def node_relationships(client: Neo4jClient, label: str, node_id: str) -> list[dict]:
