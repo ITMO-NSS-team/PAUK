@@ -385,6 +385,7 @@ class DedupStageTest(unittest.TestCase):
             person("A4", "Shared Coauthor", ["W1", "W3", "W4"]),
         ])
         self.assertEqual(result["dedup_merged"], 0)
+        self.assertEqual(result["dedup_component_conflicts"], 1)
         self.assertEqual(len(people), 4)
         (group_row,) = self.journal("held")
         self.assertEqual(sorted(group_row["persons"]), ["A1", "A2", "A3"])
