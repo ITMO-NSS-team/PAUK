@@ -98,8 +98,7 @@
 {% if pages > 1 %}
 <p style="margin-top:14px">
   {% set qs = "&actor=" ~ filters.actor|urlencode ~ "&entity_type=" ~ filters.entity_type|urlencode ~ "&entity_id=" ~ filters.entity_id|urlencode ~ "&kind=" ~ filters.kind|urlencode ~ "&since=" ~ filters.since|urlencode ~ "&until=" ~ filters.until|urlencode ~ "&order=" ~ order|urlencode %}
-  {# Назад и вперёд, а не новее и старее: порядок переключается, и при
-     обратном «старее» указывало бы на страницу с более новыми записями. #}
+  {# Назад и вперёд, а не новее и старее: порядок переключается. #}
   {% if page > 1 %}<a href="/audit?page={{ page - 1 }}{{ qs }}"><- назад</a>{% endif %}
   {% if page < pages %}<a href="/audit?page={{ page + 1 }}{{ qs }}" style="margin-left:14px">вперёд -></a>{% endif %}
 </p>

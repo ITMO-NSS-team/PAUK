@@ -31,12 +31,9 @@ logger = logging.getLogger("pauk.admin")
 
 COLLECTION = "health"
 #: One document: the panel shows the last answer, not a history of answers.
-#: What changed over time is a different question, and the journal of runs
-#: already records when each was taken.
 LATEST = "latest"
 
-#: Worst first. Somebody opening the page is looking for what is wrong, and
-#: a list that opens on thirty green lines hides the three red ones.
+#: Worst first: the page is opened to find what is wrong.
 ORDER = {"error": 0, "fail": 1, "warn": 2, "ok": 3}
 
 WORDS = {

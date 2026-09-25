@@ -25,20 +25,14 @@ from pauk.storage.prepared import REVISIONS, PreparedStore
 
 PAGE = 10
 
-#: Node label to the prepared entity its rows come from, derived from the
-#: loader's own maps rather than written out again. LinkCandidate is absent
-#: on purpose: it has no prepared rows, it is invented from repo_links.
+#: Node label to the prepared entity its rows come from. LinkCandidate has none.
 ENTITIES = {
     FILE_LABELS[filename]: entity
     for entity, filename in ENTITY_FILES.items()
     if filename in FILE_LABELS
 }
 
-#: Not what a run decided about the record, only how it got there. `_id`,
-#: `groups` and `_version` are the store's; `_processing` is the pipeline's
-#: own note of which stage has run and how many times, and it changes on
-#: every pass — shown, it fills the table with "4 пол. -> 4 пол." beside
-#: every real change.
+#: How a row was stored, not what a run decided: `_processing` changes always.
 BOOKKEEPING = frozenset({"_id", "_version", "groups", "_processing"})
 
 
@@ -97,16 +91,13 @@ def history(db: Database, label: str, node_id: str, limit: int = PAGE) -> list[d
 
     changes = []
     for index, row in enumerate(archived):
-        # What replaced this version: the next one filed, or the row as it
-        # is now when this is the last one filed.
+        # What replaced it: the next version filed, or the row as it stands.
         if index + 1 < len(archived):
             after = archived[index + 1]["snapshot"]
         elif live is not None:
             after = live
         else:
-            # The row is gone, so what replaced the last version is not
-            # known. Compared with nothing, every field would read as wiped
-            # by a run that did no such thing.
+            # The row is gone: comparing with nothing would read as wiped fields.
             continue
         changes.append({
             "when": row.get("replaced_at", ""),

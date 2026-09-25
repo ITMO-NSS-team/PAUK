@@ -35,14 +35,10 @@ def get_config(request: Request) -> Settings:
     return request.app.state.config
 
 
-#: How long the panel waits for Mongo before saying it is not there. The
-#: driver's own default is thirty seconds, which is a command being patient
-#: and a web request hanging.
+#: How long the panel waits for Mongo; the driver's own default is thirty seconds.
 MONGO_TIMEOUT_MS = 2000
 
-#: Said whenever the panel cannot reach Mongo at all. Accounts, sessions,
-#: decisions and the queue all live there, so this is the whole panel being
-#: down rather than one page failing.
+#: Said when Mongo cannot be reached: that is the whole panel, not one page.
 MONGO_SILENT = "MongoDB не отвечает. Панель без неё работать не может."
 
 
@@ -191,8 +187,7 @@ def graph_if_up(request: Request, user: Annotated[User, Depends(require_user)]) 
         client.close()
 
 
-# Named aliases so routes read as `db: Db` instead of repeating the
-# Annotated form in every signature.
+# Named aliases so routes read as `db: Db`, not the whole Annotated form.
 logger = logging.getLogger("pauk.admin")
 
 def plural(count: int, one: str, few: str, many: str) -> str:
@@ -260,8 +255,7 @@ def job_words(kind) -> str:
 templates.env.filters["job_words"] = job_words
 
 
-# Length past which a value is rendered already folded. Low on purpose: a
-# needless button the script removes beats text cut with nothing saying so.
+# Length past which a value arrives folded; the script drops a needless button.
 LONG_VALUE = 160
 
 

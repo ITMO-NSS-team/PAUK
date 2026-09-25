@@ -85,8 +85,7 @@ def as_csv(check_id: str, user: CurrentUser, graph: Graph,
     writer.writerows(found["rows"])
     logger.info("%s exported %s (%d row(s))", user.actor, check_id, len(found["rows"]))
     return StreamingResponse(
-        # Excel reads a CSV as the system encoding unless the file says
-        # otherwise, and these carry Russian names.
+        # Excel reads a CSV as the system encoding unless the file says otherwise.
         iter(["﻿" + buffer.getvalue()]),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{check_id}.csv"'})

@@ -51,9 +51,7 @@ def _build_node_fields() -> dict[str, frozenset[str]]:
     fields: dict[str, set[str]] = {}
     for spec in NODE_REGISTRY.values():
         fields.setdefault(spec.labels.split(":")[0], set()).update(spec.prop_fields)
-    # The loader publishes created_at for Person, but the database owns it
-    # like it owns updated_at. Leaving it in would make `admin schema`
-    # advertise a field every write then refuses.
+    # The database owns created_at, so `admin schema` must not advertise it.
     return {label: frozenset(names - RESERVED_FIELDS) for label, names in fields.items()}
 
 
@@ -78,10 +76,7 @@ def _build_relationships() -> dict[tuple[str, str, str], str]:
 NODE_FIELDS = _build_node_fields()
 RELATIONSHIPS = _build_relationships()
 
-# What the panel's search box looks at, per label. Kept explicit rather
-# than derived: these names are interpolated into Cypher like the labels
-# are, and searching every field of a Person would mean scanning its
-# biography and its funding blobs on every keystroke.
+# What the search box looks at: explicit, since these go into Cypher.
 SEARCH_FIELDS: dict[str, tuple[str, ...]] = {
     "Person": ("name_en", "name_ru", "orcid"),
     "Publication": ("title", "doi"),
@@ -92,16 +87,12 @@ SEARCH_FIELDS: dict[str, tuple[str, ...]] = {
     "LinkCandidate": ("url", "host"),
 }
 
-# Columns the listing shows on top of the searched ones. Separate because
-# these are not text: a number matched as a substring answers "10" with 10,
-# 100 and 1000, and the search box would promise something it cannot do.
+# Columns shown on top of the searched ones; numbers, not text.
 LIST_FIELDS: dict[str, tuple[str, ...]] = {
     "Repository": ("stars_num",),
 }
 
-# What orders a label's listing, biggest first, when nothing is typed into
-# the box. Repositories are read as "what is popular here", and an id order
-# buries the answer under whatever happened to be collected first.
+# What orders a listing when nothing is typed: an id order buries the answer.
 LIST_ORDER: dict[str, str] = {
     "Repository": "stars_num",
 }
@@ -262,13 +253,10 @@ def search_nodes(client: Neo4jClient, label: str, query: str, limit: int = 50,
     """
     validate_label(label)
     query = (query or "").strip()
-    # Shown and searched are not the same set: a listing can carry a number
-    # as a column without pretending the box can find it.
+    # Shown and searched are not the same set.
     fields = list(columns(label))
     capped = min(limit, SEARCH_LIMIT)
-    # An empty box means "show me what is there" rather than "find
-    # nothing" — on an empty graph the difference is between a blank page
-    # and seeing that it is in fact empty.
+    # An empty box means "show me what is there", not "find nothing".
     if not query:
         return client.list_nodes(label, fields, capped, skip, order=LIST_ORDER.get(label))
     return client.search_nodes(label, fields, list(SEARCH_FIELDS[label]), query, capped, skip)
@@ -447,16 +435,12 @@ def merge_nodes(client: Neo4jClient, label: str, duplicate_id: str, canonical_id
         raise MutationError("a node cannot be merged into itself")
     duplicate = read_node(client, label, duplicate_id)
     canonical = read_node(client, label, canonical_id)
-    # The duplicate may itself have swallowed ids earlier (A folded into B,
-    # now B into C). Those come along, or A stops resolving to anything and
-    # the loader recreates it on the next publish.
+    # Ids the duplicate swallowed earlier come along, or they stop resolving.
     merged_ids = list(canonical.get("merged_ids") or [])
     for swallowed in [*(duplicate.get("merged_ids") or []), duplicate_id]:
         if swallowed not in merged_ids and swallowed != canonical_id:
             merged_ids.append(swallowed)
-    # Written before the fold: afterwards the duplicate is gone, and a
-    # failure between the two steps would leave it free to reappear on the
-    # next publish.
+    # Before the fold: afterwards the duplicate is gone and could reappear.
     client.upsert_nodes_batch(label, [(canonical_id, {"merged_ids": merged_ids})])
     removed = getattr(client, MERGEABLE[label])([(duplicate_id, canonical_id)])
     logger.info("merged %s %s into %s", label, duplicate_id, canonical_id)

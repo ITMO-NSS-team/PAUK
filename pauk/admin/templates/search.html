@@ -33,8 +33,7 @@
     {% if page > 1 or more %} Страница {{ page }}.{% endif %}
   </p>
   <div class="card scroll">
-    {# Ширины заданы, иначе длинный идентификатор ужимает колонку до буквы
-       в строке, а адрес LinkCandidate растягивает таблицу за экран. #}
+    {# Ширины заданы: иначе адрес LinkCandidate растягивает таблицу за экран. #}
     <table class="fixed">
       <colgroup>
         <col style="width:16rem">{% for f in fields %}<col>{% endfor %}

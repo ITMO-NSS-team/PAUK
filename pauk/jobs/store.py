@@ -30,10 +30,7 @@ COLLECTION = "jobs"
 
 PAGE = 50
 
-# How long a job may go without saying it is alive before the page says so.
-# The beat is every minute (worker.BEAT_SECONDS), so this is several missed
-# beats, not a slow step: the beat runs in its own thread and does not wait
-# for the work.
+# Silence before the page says so: several missed beats, not a slow step.
 QUIET_MINUTES = 5
 
 
@@ -93,8 +90,7 @@ def claim(db: Database, worker: str, busy: set[str] | None = None) -> Job | None
         query,
         {"$set": {"state": str(JobState.CLAIMED), "worker": worker,
                   "heartbeat_at": moment}},
-        # `_id` only breaks a tie. Two jobs queued inside one millisecond
-        # share a created_at, and the order would otherwise be arbitrary.
+        # `_id` only breaks a tie: two jobs can share a created_at.
         sort=[("created_at", 1), ("_id", 1)],
         return_document=True)
     if document is None:

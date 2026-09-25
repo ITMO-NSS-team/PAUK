@@ -1,14 +1,7 @@
 /* PAUK admin — the map's design system, applied to forms.
 
-   The palette is the map's seven-gray scale, taken verbatim from
-   pauk/gui/web/style.css: same names, same values, no invented steps. The
-   panel and the map are one product, and a second palette would show.
-
-   Fonts are served from the map's own files rather than copied here — one
-   place to update, and nothing duplicated in the tree. Unlike the map the
-   panel is light only: it is a work tool that people keep open next to
-   other documents, and a second theme is a second set of contrasts to
-   keep correct for no gain here. */
+   Palette and fonts come from pauk/gui/web/style.css verbatim: one product,
+   one place to update. Light only, unlike the map. */
 
 @font-face {
   font-family: "Golos Text";
@@ -56,13 +49,7 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   --font: "Golos Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
-  /* The colour the panel adds. The map keeps its chrome grayscale and
-     spends colour on departments; here it marks what a reader has to tell
-     apart at a glance — what was removed, added, or changed.
-
-     All three sit at 6.3-6.6:1 against the background, the same weight as
-     --danger, which was here first. Traffic-light colours would read as a
-     different product next to the map. */
+  /* Removed, added, changed — all at 6.3-6.6:1, the weight of --danger. */
   --danger: #A33A2B;
   --ok: #2F6B45;
   --warn: #7E5410;
@@ -164,16 +151,9 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
 tr:last-child td { border-bottom: 0; }
 th { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
-/* Не только на ячейке: идентификаторы и адреса стоят и в span, а без
-   переноса длинная ссылка уезжает в соседний столбец. */
+/* Не только на ячейке: адреса стоят и в span, а без переноса уезжают вбок. */
 .val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; word-break: break-word; }
-/* Разрешённый выше перенос отменяет и минимальную ширину колонки: браузер
-   считает, что ей хватит одной буквы, и рядом с широким заголовком
-   идентификатор встаёт по букве в столбик. Пол в одиннадцать символов —
-   длина id вида W7171941820 — возвращает колонке ширину, а перенос внутри
-   неё остаётся для адресов, которым он и был нужен. Плюс горизонтальные
-   отступы ячейки: при box-sizing: border-box они входят в min-width и
-   иначе съели бы два символа из одиннадцати. */
+/* Пол под перенос: иначе колонка сжимается до буквы. 11 символов — длина id. */
 td.val { min-width: calc(11ch + 20px); }
 tr.ro td { color: var(--muted); }
 .fixed { table-layout: fixed; }
@@ -254,11 +234,7 @@ select {
 .change .now { color: var(--ok); background: rgba(47, 107, 69, 0.10); }
 .change .was + .now::before { content: "→"; color: var(--faint); margin: 0 6px 0 2px; }
 
-/* Значение в ячейке таблицы. Адрес или идентификатор без единого пробела
-   переносить негде, и по умолчанию он вылезает за свою колонку и ложится
-   поверх соседней. `anywhere`, а не `break-word`: последний рвёт только
-   когда слово не влезает целиком в пустую строку, а внутри узкой колонки
-   этого не хватает. */
+/* `anywhere`, а не `break-word`: второй не рвёт слово внутри узкой колонки. */
 .clip { overflow-wrap: anywhere; }
 
 .clipped {
@@ -337,9 +313,7 @@ select {
 .verdicts .row { flex-wrap: wrap; gap: 6px; }
 .verdicts button { padding: 6px 11px; font-size: 13px; }
 
-/* Фазы конвейера: пройденные закрашены, идущая отмечена бледнее, до
-   которых не дошли — пустые. Полоска рядом с названием шага отвечает на
-   вопрос «сколько ещё», на который текст сам по себе не отвечает. */
+/* Фазы конвейера: пройденные закрашены, идущая бледнее, остальные пустые. */
 .phases { display: flex; gap: 3px; margin-bottom: 6px; min-width: 96px; }
 .phases span {
   flex: 1; height: 5px; border-radius: 3px;
@@ -348,9 +322,7 @@ select {
 .phases .done { background: var(--ok); }
 .phases .now { background: var(--ok); opacity: 0.45; }
 
-/* Вердикт по проверкам: три счётчика, которые не должны сливаться в одну
-   строку разноцветных слов. Число цветом, подпись серым, каждый в своей
-   рамке. */
+/* Вердикт по проверкам: число цветом, подпись серым, каждый в своей рамке. */
 .verdict { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .verdict .tally {
   display: inline-flex; align-items: baseline; gap: 7px;
@@ -362,9 +334,7 @@ select {
 .verdict .mid b { color: var(--warn); }
 .verdict .good b { color: var(--ok); }
 
-/* Две карточки рядом. `.row` для этого не годится: он выравнивает по
-   нижнему краю и тянет каждую по содержимому, отчего соседние блоки
-   выходят разной ширины и высоты и читаются как разные по важности. */
+/* Две карточки рядом: `.row` тянет каждую по содержимому и они разной высоты. */
 .pair { display: flex; gap: 16px; align-items: stretch; flex-wrap: wrap; }
 .pair > .card { flex: 1 1 22rem; margin-bottom: 20px; }
 .pair > .card + .card { margin-top: 0; }

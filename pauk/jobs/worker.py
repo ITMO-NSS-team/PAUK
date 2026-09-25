@@ -28,24 +28,15 @@ from pauk.settings import Settings
 
 logger = logging.getLogger(__name__)
 
-# How long to wait before asking for work again on an empty queue, and how
-# often a running job says it is alive. The beat is well inside the lock's
-# lease (see locks.LEASE_MINUTES), so a live run never loses its own lock.
+# Poll on an empty queue, and the beat — well inside locks.LEASE_MINUTES.
 POLL_SECONDS = 5.0
 BEAT_SECONDS = 60.0
 
 
-#: Returns True when somebody pressed cancel while the run was under way.
-#: Asked between the phases of a pipeline, and by `Report` at every step.
+#: True when somebody pressed cancel. Asked between phases and by `Report`.
 Stop = Callable[[], bool]
 
-#: Told which part of the run is under way, by name and by how many of how
-#: many are behind it. Passed alongside `stop` because both are hooks the
-#: worker holds and the work itself knows nothing about.
-#:
-#: May raise `Cancelled`. The work calls it between the parts it is made of,
-#: which is exactly where stopping is safe, so the worker answers a cancel
-#: from inside it rather than waiting for the whole part to finish.
+#: Which part of the run is under way. Raises `Cancelled` between the parts.
 Report = Callable[..., None]
 
 
@@ -65,15 +56,10 @@ def _publish(config: Settings, db: Database, payload, stop: Stop,
     report("выкладка в граф")
 
     def rows(step: str, done: int, total: int) -> None:
-        # The load counts rows, and the page reads the counts as stages
-        # ("stage 3 of 10"), so the rows go into the label — the same as a
-        # stage's own (see pauk.pipeline.enrich._inside).
+        # The page reads the counts as stages, so rows go into the label.
         report(f"{step} {done}/{total}" if total else step)
 
-    # The reporter goes in, so the load says how far it has got and can be
-    # stopped between two chunks. Given up halfway it leaves the group
-    # loaded in part; the next publish finishes it, because every write in
-    # there is a MERGE.
+    # Given up between chunks the group is loaded in part; every write is a MERGE.
     return load_jsonl_group(config, db, payload.group, report=rows)
 
 
@@ -92,9 +78,7 @@ def _prune(config: Settings, db: Database, payload, stop: Stop,
     report("сверка графа с источником")
     client = audited_client(config, db)
     try:
-        # The lock lives in `prune.run`, the way it lives in a publish:
-        # a plan and its application have to be one turn, and a run from a
-        # terminal takes the same turn as this one.
+        # The lock lives in `prune.run`: a plan and its application are one turn.
         with actor_context("etl-pipeline", source="prune"):
             return prune.run(client, db, payload.apply, report=report).counts()
     finally:
@@ -108,9 +92,7 @@ def _health(config: Settings, db: Database, payload, stop: Stop,
     from pauk.gui.generate_stats import collect
 
     report("проверки по графу")
-    # Reads only, so no lock is taken. The job still contends for the graph
-    # (`resource_for`), which keeps it from measuring a graph that a publish
-    # is halfway through rewriting.
+    # Reads only, but still contends for the graph: a half-published one lies.
     client = audited_client(config, db)
     try:
         stats = collect(client.driver)
@@ -130,8 +112,7 @@ def _rebuild_map(config: Settings, db: Database, payload, stop: Stop,
     return rebuild_map(config, db, public=payload.public, seed=payload.seed)
 
 
-#: The three phases a pipeline run is made of, in order. Named here because
-#: the page draws one segment per phase and has to know how many there are.
+#: The three phases of a pipeline run; the page draws one segment per phase.
 PHASES = ("сбор", "публикация", "карта")
 
 
@@ -177,8 +158,7 @@ def _pipeline(config: Settings, db: Database, payload, stop: Stop,
     return counts | _rebuild_map(config, db, payload, stop, during(2))
 
 
-#: What each kind of job does. A closed table looked up by an enum, so no
-#: job can name a callable of its own.
+#: What each kind of job does; a closed table looked up by an enum.
 STEPS: dict[JobKind, Callable[[Settings, Database, BaseModel, Stop, Report], dict[str, int]]] = {
     JobKind.COLLECT: _collect,
     JobKind.PUBLISH: _publish,
@@ -218,11 +198,7 @@ class _Beat:
                 store.heartbeat(self._db, self._job.id)
                 locks.renew(self._db, self._job.resource, self._owner)
             except PyMongoError as error:
-                # One blip must not end the beating. An unhandled error
-                # here killed the thread outright, and after that the run
-                # kept going in silence: the lease it holds on the graph
-                # would expire under it and let a second writer in, which
-                # is the one thing the lock exists to prevent.
+                # One blip must not end the beating: the lease would expire.
                 logger.warning("job %s could not report in: %s", self._job.id, error)
 
     def __enter__(self) -> _Beat:
@@ -285,12 +261,9 @@ class Worker:
             when the job went back because its resource was busy. Either
             way the caller waits before asking again.
         """
-        # Jobs left behind by a worker that is gone. Nothing else ever moves
-        # them out of "under way": the only process that could was the one
-        # that died holding them.
+        # Jobs left behind by a worker that is gone; nothing else moves them.
         store.reap_stale(self.db)
-        # Jobs waiting on something somebody else holds are passed over,
-        # not taken and handed straight back.
+        # Jobs waiting on a held resource are passed over, not taken and dropped.
         job = store.claim(self.db, self.name, busy=locks.taken(self.db))
         if job is None:
             return False
@@ -315,11 +288,7 @@ class Worker:
         def report(step: str, done: int = 0, total: int = 0,
                    phase: int | None = None) -> None:
             store.progress(self.db, job.id, step, done, total, phase)
-            # Between two parts of the work nothing is half written, so this
-            # is where a cancel can be honoured. Before, the only such seam
-            # was between the three phases of a pipeline, and a run stopped
-            # during collection kept going through ten more stages — hours
-            # after somebody pressed the button.
+            # Between two parts nothing is half written: the seam for a cancel.
             if stop():
                 raise Cancelled(f"остановлено перед шагом «{step}»")
 
@@ -327,8 +296,7 @@ class Worker:
             with _Beat(self.db, job):
                 result = STEPS[job.kind](self.config, self.db, payload, stop, report)
         except locks.Busy as error:
-            # Not a failure. It goes back for whoever gets there next, and
-            # this worker waits instead of picking it up again at once.
+            # Not a failure: it goes back for whoever gets there next.
             logger.info("job %s waits: %s", job.id, error)
             store.requeue(self.db, job.id)
             return False

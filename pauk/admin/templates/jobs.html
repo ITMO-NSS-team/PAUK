@@ -1,8 +1,6 @@
 {% extends "base.html" %}
 
-{# Итог прогона – это счётчики, и у полного конвейера их за сорок. Столбцом
-   в сорок строк он выдавливает соседние ячейки и хоронит всё остальное в
-   истории, поэтому длинный прячется под сводку. #}
+{# У полного конвейера счётчиков за сорок, поэтому длинный итог под сводку. #}
 {% macro numbers(rows) %}{% for name, value in rows %}<div><b>{{ name }}</b>: {{ value }}</div>{% endfor %}{% endmacro %}
 {% macro result(rows, open_upto) %}
 {%- if rows|length > open_upto %}
@@ -95,8 +93,7 @@
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="kind" value="publish">
           <div class="grow"><label for="group">группа</label>
-            {# Только группы с подготовленными строками: публикация пустой
-               загрузит ноль строк и выглядит как поломка. #}
+            {# Только группы с подготовленными строками. #}
             <select id="group" name="group" required>
               {% for name in groups %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
             </select></div>
@@ -118,8 +115,7 @@
         <form method="post" action="/jobs" class="row">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="kind" value="map">
-          {# Один seed для всех пересборок: карту читают по форме, и новая
-             раскладка каждый раз была бы другой картой. #}
+          {# Один seed для всех пересборок: иначе карта каждый раз другая. #}
           <input type="hidden" name="seed" value="42">
           <div style="align-self:center">
             <label for="public"><input type="checkbox" id="public" name="public">
@@ -132,8 +128,7 @@
 
 </details>
 
-{# Ни дедуп, ни сверка не входят в конвейер: он их не запускает. Внутри
-   свёрнутого списка шагов их принимали за части прогона и не находили. #}
+{# Ни дедуп, ни сверка не входят в конвейер: он их не запускает. #}
 <div class="pair">
   <div class="card aside">
     <div class="head">
@@ -170,9 +165,7 @@
     <form method="post" action="/jobs" id="prune-form">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <input type="hidden" name="kind" value="prune">
-      {# Сначала посчитать, потом убрать: на графе, который ни разу не
-         сверяли, в список попадёт и то, что заводили руками до того, как
-         это стали записывать. #}
+      {# Сначала посчитать: на несверявшемся графе в список попадёт ручное. #}
       <div><label><input type="checkbox" name="apply" value="true"> убрать найденное,
         а не только посчитать</label></div>
       <div style="margin-top:8px"><button type="submit">Запустить</button></div>
@@ -230,8 +223,7 @@
           <button type="submit" class="ghost">отменить</button>
         </form>
         {% endif %}
-        {# Молчащую задачу можно закрыть, не дожидаясь воркера: если её
-           ресурс свободен, выполнять её некому. #}
+        {# Молчащую задачу со свободным ресурсом выполнять некому. #}
         {% if job.stale %}
         <form method="post" action="/jobs/give-up" style="margin-top:6px">
           <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -318,8 +310,7 @@
           <button type="submit" class="ghost">отменить</button>
         </form>
         {% endif %}
-        {# Нагрузка лежит в самой задаче, поэтому повтор ничего не просит
-           вписывать заново, а именно там ошибаются в датах. #}
+        {# Нагрузка лежит в задаче: повтор не просит вписывать даты заново. #}
         {% if user.can_run and job.state in final %}
         <form method="post" action="/jobs/repeat" style="margin-top:6px">
           <input type="hidden" name="csrf" value="{{ csrf }}">
