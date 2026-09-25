@@ -721,9 +721,9 @@ def _partition_conflicted_component(
 
     def value_for(member: str, field: str) -> str | None:
         if field == "ORCID":
-            return trusted_orcid.get(member)
+            return trusted_orcid.get(member) or None
         if field == "staff record":
-            return staff_ids.get(member)
+            return staff_ids.get(member) or None
         value = getattr(by_id[member], field)
         return value if isinstance(value, str) and value else None
 
@@ -772,6 +772,12 @@ def _partition_conflicted_component(
             ]
             buckets[winners[0] if len(winners) == 1 else None].add(member)
 
+        if any(bucket == part_set for bucket in buckets.values()):
+            # Nothing was separated, so recursing would repeat this step for
+            # ever. Every record goes back alone: the component keeps its
+            # conflict and a human decides, which is what the old refusal did.
+            return [[member] for member in sorted(part)]
+
         result: list[list[str]] = []
         for bucket in buckets.values():
             for connected in connected_parts(bucket):
@@ -787,14 +793,17 @@ def _group_conflict(
     staff_ids: dict[str, str] | None = None,
 ) -> tuple[str, set[str]] | None:
     """The first identity field whose values split the group, if any."""
-    orcids = {orcid for member in members if (orcid := trusted_orcid.get(member)) is not None}
+    # An empty string is an absent identity, not a second one: counting it
+    # as a value splits a group on nothing, and the partitioner reads the
+    # same field back as absent, so the two disagree about the same record.
+    orcids = {orcid for member in members if (orcid := trusted_orcid.get(member))}
     if len(orcids) > 1:
         return "ORCID", orcids
-    staff = {(staff_ids or {}).get(member) for member in members} - {None}
+    staff = {(staff_ids or {}).get(member) for member in members} - {None, ""}
     if len(staff) > 1:
         return "staff record", staff
     for field in PROFILE_FIELDS:
-        values = {getattr(by_id[member], field) for member in members} - {None}
+        values = {getattr(by_id[member], field) for member in members} - {None, ""}
         if len(values) > 1:
             return field, values
     return None

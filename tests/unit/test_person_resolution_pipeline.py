@@ -205,6 +205,33 @@ class PersonResolutionPipelineTest(unittest.TestCase):
 
 
 class ConflictedComponentPartitionTest(unittest.TestCase):
+    def test_an_empty_identity_is_absent_rather_than_a_second_value(self):
+        # An empty string used to count as an identity of its own while the
+        # partitioner read the same field as absent. The record kept landing
+        # back in the bucket it was supposed to leave, and the stage died of
+        # a RecursionError instead of folding two obvious duplicates.
+        people = [
+            person("A1", "Sergey Makarov", orcid="0000-0001"),
+            person("A2", "S. Makarov", orcid=""),
+        ]
+        people[0].email = "makarov@itmo.ru"
+        people[1].email = ""
+        pairs = [("A1", "A2")]
+
+        groups, report = _finalize_person_merge_groups(
+            pairs,
+            {frozenset(pairs[0]): "qwen_second_merge"},
+            {value.id: value for value in people},
+            {value.id: value.orcid for value in people},
+        )
+
+        folded = [
+            {group[0].id, *(duplicate.id for duplicate in group[1])}
+            for group in groups
+        ]
+        self.assertEqual(folded, [{"A1", "A2"}])
+        self.assertFalse([row for row in report if row["status"] == "held"])
+
     def test_identityless_records_follow_the_unique_nearest_identity(self):
         people = [
             person("A1", "Sergey Makarov", orcid="0000-0001"),
@@ -382,6 +409,10 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
                 for value in people:
                     if randomizer.random() < 0.35:
                         value.email = f"mail-{randomizer.randrange(4)}@example.org"
+                    elif randomizer.random() < 0.15:
+                        # An absent identity also arrives as an empty string.
+                        value.email = ""
+                        value.orcid = "" if randomizer.random() < 0.5 else value.orcid
                 ids = [value.id for value in people]
                 pairs = list(zip(ids, ids[1:], strict=False))
                 pairs.extend(
