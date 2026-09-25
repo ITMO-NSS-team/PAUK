@@ -2,16 +2,14 @@
 {% block content %}
 <h1>{{ check.title }}</h1>
 <p class="muted" style="margin:-8px 0 6px">
-  <a href="/health">&lt;- к проверкам</a> · {{ check.group }}
+  <a href="/health">&lt;- к проверкам</a> / {{ check.group }}
 </p>
 <div class="card" style="margin-bottom:20px">
   <div class="row" style="justify-content:space-between; align-items:center; margin:0">
     <div>
       Всего таких записей <b>{{ check.total }}</b>.
       {% if check.truncated %}
-      {# Строки спрашиваются у графа сейчас, а не берутся из сохранённого
-         снимка, поэтому их число может отличаться от того, что на списке
-         проверок: там результат прошлого прогона. #}
+      {# Строки спрошены у графа сейчас, а число на списке — с прошлого прогона. #}
       <span class="muted">Показаны первые {{ check.shown }}.</span>
       {% else %}<span class="muted">Показаны все.</span>{% endif %}
     </div>
@@ -23,7 +21,7 @@
 {% if not check.rows %}
 <div class="card"><p class="muted">Сейчас таких записей нет.
   {% if computed_at %}Список проверок считан
-  {{ computed_at[:19]|replace("T", " ") }} — с тех пор их могли починить.{% endif %}</p></div>
+  {{ computed_at[:19]|replace("T", " ") }} – с тех пор их могли починить.{% endif %}</p></div>
 {% else %}
 <div class="card scroll">
   <table>

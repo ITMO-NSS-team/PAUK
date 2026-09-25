@@ -51,9 +51,7 @@ COLLECTION = "graph_overrides"
 
 SET = "set"
 DELETE = "delete"
-#: Added by a person, not by the pipeline. Not an instruction to change
-#: anything — the record is already there — but a claim that it is wanted,
-#: which is what keeps a prune from treating it as a leftover.
+#: Added by a person: not an instruction, a claim that keeps a prune off it.
 CREATE = "create"
 LINK = "link"
 OPERATIONS = (SET, DELETE, CREATE)
@@ -141,12 +139,7 @@ def record_override(db: Database, label: str, target_id: str, op: str,
     now = _now()
     document_id = override_id(label, target_id)
 
-    # Read-then-replace would lose an edit: two administrators changing
-    # different fields of the same node at the same time each write back a
-    # whole document built from the state they read, and the later write
-    # drops the earlier one. Setting the field paths instead lets the
-    # server merge them, and `created_at` is only written when the document
-    # is first inserted.
+    # Field paths, not a whole document: two parallel edits must both survive.
     update: dict = {
         "$set": {
             "kind": "node",
@@ -160,14 +153,12 @@ def record_override(db: Database, label: str, target_id: str, op: str,
         "$setOnInsert": {"created_at": now},
     }
     if op == SET:
-        # Settled by the conditional write below: an edit to a record a
-        # person added leaves it a claim on that record.
+        # Settled by the conditional write below.
         update["$setOnInsert"]["op"] = SET
     else:
         update["$set"]["op"] = op
     if op == CREATE:
-        # Sticky, unlike `op`: a deletion overwrites the operation, and a
-        # restore has to know what to turn the decision back into.
+        # Sticky, unlike `op`, which a deletion overwrites.
         update["$set"]["created"] = True
     if snapshot:
         update["$set"]["snapshot"] = snapshot
@@ -177,25 +168,18 @@ def record_override(db: Database, label: str, target_id: str, op: str,
         update["$setOnInsert"]["note"] = ""
     db[COLLECTION].update_one({"_id": document_id}, update, upsert=True)
     if op == SET:
-        # Anything but a claim becomes an edit. A claim stays one: stored as
-        # a plain "set", it would go with the edit when the edit was undone,
-        # and a prune would then remove a record no prepared row explains.
-        # A second write rather than a read first, for the reason above.
+        # A claim stays a claim: as a plain "set" it would go with the edit.
         db[COLLECTION].update_one({"_id": document_id, "op": {"$ne": CREATE}},
                                   {"$set": {"op": SET}})
 
-    # The automatic value is recorded once per field — the first edit is the
-    # one that replaced what the pipeline produced. A conditional update per
-    # field keeps that true without reading the document first.
+    # Once per field: the first edit is the one that replaced the pipeline's.
     for name, value in (auto_value or {}).items():
         db[COLLECTION].update_one(
             {"_id": document_id, f"auto_value.{name}": {"$exists": False}},
             {"$set": {f"auto_value.{name}": value}})
 
     logger.info("override recorded: %s %s (%s)", op, document_id, ", ".join(sorted(fields)))
-    # Read back rather than return what was sent: the driver hands
-    # timestamps back without a timezone, so the two would differ in type
-    # depending on whether this was the first edit or a later one.
+    # Read back: the driver hands timestamps back without a timezone.
     return db[COLLECTION].find_one({"_id": document_id})
 
 
@@ -308,11 +292,7 @@ def deactivate_override(db: Database, label: str, target_id: str,
     if only_op is not None and row.get("op") != only_op:
         return False
     if row.get("op") == DELETE and (row.get("fields") or _made_by_hand(row)):
-        # The deletion goes, the edit stays. The snapshot goes with the
-        # deletion: it describes a node that is no longer deleted, and a
-        # later delete writes its own. A record a person added goes back to
-        # being claimed, fields or none: switched off, the claim would be
-        # gone and the next prune would remove what was just restored.
+        # The deletion goes, the edit or the claim stays, the snapshot goes with it.
         db[COLLECTION].update_one(
             {"_id": document_id},
             {"$set": {"op": CREATE if _made_by_hand(row) else SET, "updated_at": _now()},
@@ -371,20 +351,11 @@ def apply_overrides(client, db: Database) -> dict[str, int]:
     applied = unchanged = missing = 0
     for override in active_overrides(db):
         if override.get("op") == LINK:
-            # A claim, not an instruction. The edge is already there and
-            # nothing has to be done to keep it — only a prune reads these,
-            # and it reads them to leave the edge alone.
+            # A claim, not an instruction: only a prune reads these.
             unchanged += 1
             continue
         if override.get("kind") == "rel":
-            # Belt and braces: the loader already skips these, but an edge
-            # created by anything else — a rerun of an older version, a hand
-            # written query — is removed here.
-            #
-            # A row naming something the registry no longer has (a
-            # relationship type dropped in a refactor, a hand-edited
-            # document) is reported and skipped: this runs inside publish,
-            # and one bad row must not take a whole group's publish down.
+            # The loader skips these; an edge made by anything else goes here.
             try:
                 removed = delete_relationship(
                     client, override["src_label"], override["rel_type"], override["tgt_label"],
@@ -400,8 +371,7 @@ def apply_overrides(client, db: Database) -> dict[str, int]:
         try:
             current = read_node(client, label, target_id)
         except MutationError:
-            # A deletion override whose node is already gone is the normal
-            # steady state, not a problem worth reporting.
+            # A deletion whose node is already gone is the steady state.
             if override["op"] != DELETE:
                 logger.warning("override %s: %s %s no longer exists",
                                override["_id"], label, target_id)
@@ -410,18 +380,14 @@ def apply_overrides(client, db: Database) -> dict[str, int]:
                 unchanged += 1
             continue
 
-        # The node was there a moment ago, but another publish or another
-        # editor can remove it between the read above and the write below.
-        # Losing that race is not an error worth failing a publish over.
+        # The node can go between the read above and the write below.
         try:
             if override["op"] == DELETE:
                 delete_node(client, label, target_id, cascade=True)
                 applied += 1
                 continue
 
-            # A hand-made record carries the same kind of row as a hand
-            # edit: its fields are values a person chose, and putting them
-            # back on top after a publish is the same act.
+            # A hand-made record carries the same kind of row as a hand edit.
             fields = override.get("fields") or {}
             if not fields or not _needs_write(current, fields):
                 unchanged += 1

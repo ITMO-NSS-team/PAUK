@@ -22,8 +22,7 @@ from pauk.graph.overrides import COLLECTION, CREATE, DELETE, LINK, SET, active_o
 
 PAGE = 50
 
-# Writes the panel makes itself. Anything else changing the same field is
-# the pipeline having its own opinion.
+# Writes the panel makes itself; anything else is the pipeline's own opinion.
 PANEL = "admin-ui"
 
 
@@ -73,9 +72,7 @@ def in_force(db: Database, limit: int = PAGE, skip: int = 0) -> list[dict]:
     for row in rows:
         row["title"] = _title(row)
         row["what"] = WORDS.get((row.get("kind") == "rel", row.get("op")), "решение")
-        # A claim on something a person added is not an instruction, so
-        # there is nothing to stop applying. Removing the record or the
-        # link is how it is taken back, and both have their own buttons.
+        # A claim is not an instruction: it is taken back by removing the thing.
         row["undoable"] = row.get("op") not in (CREATE, LINK)
         row["pairs"] = sorted(
             (name, (row.get("auto_value") or {}).get(name), value)
@@ -114,8 +111,7 @@ def conflicts(db: Database, limit: int | None = PAGE, skip: int = 0) -> list[dic
         stated = row.get("source_value") or {}
         for name, ours in (row.get("fields") or {}).items():
             if name in stated:
-                # Recorded by apply_overrides at the moment it covered the
-                # value up — the source's own word, without inference.
+                # Recorded by apply_overrides when it covered the value up.
                 value, actor, when = stated[name], "pipeline", _moment(row.get("updated_at"))
             else:
                 latest = writes.get((row["label"], row["target_id"], name))
@@ -130,10 +126,7 @@ def conflicts(db: Database, limit: int | None = PAGE, skip: int = 0) -> list[dic
                 "actor": actor, "when": when, "note": row.get("note", ""),
             })
 
-    # Sorted on one representation: `updated_at` is a datetime whose str()
-    # separates date and time with a space, while feed timestamps use "T".
-    # A space sorts before "T", so mixing them sent every decision-sourced
-    # row to the bottom regardless of when it happened.
+    # One representation: a space sorts before "T", and str(datetime) uses one.
     found.sort(key=lambda row: row["when"], reverse=True)
     if limit is None:
         return found[skip:]
@@ -155,8 +148,7 @@ def _source_writes(db: Database, edits: list[dict]) -> dict[tuple[str, str, str]
     if not edits:
         return {}
     wanted = {(row["label"], row["target_id"]) for row in edits}
-    # Only the fields somebody edited by hand; a node's other fields move
-    # all the time and say nothing about a decision.
+    # Only fields somebody edited by hand; the rest move all the time.
     fields = {name for row in edits for name in (row.get("fields") or {})}
     rows = db[feed.COLLECTION].find(
         {"entity_type": {"$in": sorted({label for label, _ in wanted})},
@@ -165,16 +157,12 @@ def _source_writes(db: Database, edits: list[dict]) -> dict[tuple[str, str, str]
         {"entity_type": True, "entity_id": True, "timestamp": True,
          "actor": True, "diff": True})
 
-    # The newest per field is kept while walking, rather than asking the
-    # database to sort: a sort across several entities cannot lean on the
-    # (entity_type, entity_id, timestamp) index, and Mongo gives up on an
-    # in-memory sort past 32 MB. One pass needs neither.
+    # Newest per field kept while walking: such a sort leans on no index.
     latest: dict[tuple[str, str, str], tuple] = {}
     for entry in rows:
         entity = (entry.get("entity_type"), entry.get("entity_id"))
         if entity not in wanted:
-            # The two $in lists cross more pairs than exist: a label from
-            # one decision and an id from another match nothing real.
+            # The two $in lists cross more pairs than exist.
             continue
         when = entry.get("timestamp", "")
         for name, pair in (entry.get("diff") or {}).items():
@@ -235,9 +223,7 @@ def source_of_truth(db: Database, label: str, node_id: str) -> dict:
     if row is None:
         return {}
     stated, before = row.get("source_value") or {}, row.get("auto_value") or {}
-    # Only fields the source has actually spoken about. A field with
-    # neither record is left as it is: writing None there would erase a
-    # value on the strength of not knowing anything about it.
+    # Only fields the source has spoken about: None would erase, not restore.
     return {name: stated.get(name, before.get(name))
             for name in (row.get("fields") or {})
             if name in stated or name in before}

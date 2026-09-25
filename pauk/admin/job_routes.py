@@ -31,13 +31,10 @@ logger = logging.getLogger("pauk.admin")
 
 router = APIRouter()
 
-#: How many numbers of a run's result are shown open. Past that they fold
-#: under a summary: a full pipeline hands back forty, and a column forty
-#: lines tall pushes every other cell of the history out of sight.
+#: How many numbers of a result are shown open; a full pipeline hands back forty.
 RESULT_OPEN_UPTO = 12
 
-# What each kind and state is called on the page. `JobKind.PUBLISH` is a
-# name for the code, not for a reader.
+# What each kind and state is called on the page.
 KINDS = {
     JobKind.PIPELINE: "весь конвейер",
     JobKind.COLLECT: "сбор",
@@ -74,13 +71,10 @@ def _shown(job) -> dict:
         "resource": job.resource,
         "error": job.error,
         "cancel_requested": job.cancel_requested,
-        # Показывается, даже когда подбирать брошенные некому: без воркера
-        # такая задача так и висела бы «идёт» без всяких оговорок.
+        # Shown even with no worker to reap it: it would hang on "under way".
         "stale": store.is_quiet(job),
         "progress": job.progress,
-        # One segment per pipeline phase: the ones behind filled, the one
-        # under way marked. A single-step job gets none — there is nothing
-        # to divide.
+        # One segment per pipeline phase; a single-step job gets none.
         "phases": _phases(job),
         # Sorted so two renders list the counts the same way.
         "result": sorted((job.result or {}).items()),
@@ -88,9 +82,7 @@ def _shown(job) -> dict:
     }
 
 
-#: Payload fields in the page's words. A bare `seed=42` beside a finished
-#: run says nothing, and `public=False` reads as the opposite of what it
-#: means.
+#: Payload fields in the page's words: `public=False` reads as its opposite.
 PAYLOAD_WORDS = {
     "group": "группа",
     "date_from": "с",
@@ -107,8 +99,7 @@ def _payload_lines(kind, payload: dict) -> list[str]:
     a setting but the absence of one.
     """
     if JobKind(kind) is JobKind.PRUNE:
-        # "apply=False" beside a finished run reads as "found nothing",
-        # when it means "found it and left it alone".
+        # "apply=False" would read as "found nothing", not "left it alone".
         return ["убрать найденное" if payload.get("apply")
                 else "только посчитать, ничего не удалять"]
     lines = []
@@ -162,8 +153,7 @@ def jobs(request: Request, user: CurrentUser, session: Session, db: Db,
     total = store.count(db, **filters)
     return templates.TemplateResponse(request, "jobs.html", {
         "user": user, "csrf": session["csrf"],
-        # Apart from the history and above it. A run under way is what the
-        # page is opened for, and it need not be the newest row.
+        # Above the history: a run under way need not be the newest row.
         "under_way": [_shown(job) for job in store.running(db)],
         "rows": [_shown(job) for job in
                  store.recent(db, **filters, skip=(page - 1) * store.PAGE)],
@@ -174,11 +164,9 @@ def jobs(request: Request, user: CurrentUser, session: Session, db: Db,
         "actors": sorted(db[store.COLLECTION].distinct("actor")),
         "last_done": _last_done(db),
         "result_open_upto": RESULT_OPEN_UPTO,
-        # Read off the pipeline, not written out here: a stage added to the
-        # registry would otherwise leave the page describing the old one.
+        # Read off the pipeline: a new stage must not leave the page stale.
         "stages": [stage.name for stage in ALL_STAGES],
-        # Only groups with prepared rows. Publishing an empty one loads
-        # nothing and looks like a broken publish.
+        # Only groups with prepared rows: an empty one looks like a broken publish.
         "groups": PreparedStore.known_groups(db),
         "today": date.today().isoformat()})
 
@@ -202,9 +190,7 @@ def _collect_payload(form) -> dict:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "период задаётся двумя датами, вторая пустая")
     if date_from:
-        # PeriodSelector raises ValueError both for a value that is not a
-        # date and for a range the wrong way round, and one message for the
-        # two would be wrong half the time.
+        # PeriodSelector raises the same error for a bad date and a bad range.
         for what, value in (("начало", date_from), ("конец", date_to)):
             try:
                 date.fromisoformat(value)
@@ -212,8 +198,7 @@ def _collect_payload(form) -> dict:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST,
                                     f"{what} периода — не дата: {value!r}") from None
         try:
-            # The ordering rule stays where `pauk run` reads it. Only the
-            # wording is the panel's, since the selector talks about flags.
+            # The ordering rule stays in the selector; only the wording is here.
             PeriodSelector(date_from, date_to)
         except ValueError:
             raise HTTPException(status.HTTP_400_BAD_REQUEST,
@@ -233,13 +218,11 @@ def _payload_from(kind: JobKind, db, form) -> dict:
     if kind is JobKind.COLLECT:
         return _collect_payload(form)
     if kind is JobKind.PIPELINE:
-        # The group is not checked against the ones that exist here, unlike
-        # a plain publish: this run is the thing that creates it.
+        # Not checked against existing groups: this run creates one.
         return _collect_payload(form) | _map_options(form)
     if kind is JobKind.PUBLISH:
         group = str(form.get("group", "")).strip()
-        # Checked against the groups that exist, not only the shape of a
-        # name: a request arriving without the form meets the same list.
+        # Against the groups that exist: a request without the form meets it too.
         if group not in PreparedStore.known_groups(db):
             raise HTTPException(status.HTTP_400_BAD_REQUEST,
                                 f"нет подготовленных строк для группы {group!r}")
@@ -333,15 +316,12 @@ async def schedule(request: Request, user: Admin, db: Db, _: CsrfChecked):
     try:
         job = store.enqueue(db, kind, _payload_from(kind, db, form), actor=user.actor)
     except HTTPException as error:
-        # A form filled in wrongly goes back to the form, not to a page with
-        # a status code on it: everything typed is still there to correct,
-        # and an error page loses it.
+        # Back to the form, not to an error page that loses what was typed.
         if error.status_code != status.HTTP_400_BAD_REQUEST:
             raise
         return RedirectResponse(f"/jobs?problem={quote(str(error.detail))}",
                                 status_code=status.HTTP_303_SEE_OTHER)
     except ValidationError as error:
-        # The payload models refuse it before anything is stored.
         first = error.errors()[0]
         detail = (f"{'.'.join(str(part) for part in first['loc'])}: {first['msg']}")
         return RedirectResponse(f"/jobs?problem={quote(detail)}",

@@ -56,8 +56,7 @@
         <div style="margin-bottom:4px">
           {% if row.is_group and user.can_write and not row.verdict %}
           <label style="display:inline; font-size:inherit; color:inherit">
-            {# Галочки стоят в другой ячейке таблицы, внутрь формы их не
-               положить. Атрибут form связывает их с ней по идентификатору. #}
+            {# Галочки в другой ячейке: атрибут form связывает их с формой. #}
             <input type="checkbox" form="answer-{{ row.id }}"
                    name="same" value="{{ who.id }}">
             <a href="{{ who.href }}">{{ who.name }}</a>
@@ -97,13 +96,11 @@
         {% endif %}
       </td>
       <td>
-        {# Прочерк, когда причины нет: иначе единственное, что стоит в
-           клетке, — зелёная плашка ниже, и она читается как причина. #}
+        {# Прочерк, когда причины нет: иначе плашка ниже читается как причина. #}
         {% if row.reasons %}
           {% for reason in row.reasons %}<div>{{ reason }}</div>{% endfor %}
         {% else %}<span class="muted">—</span>{% endif %}
-        {# Правила передумали уже после ответа, поэтому стоит здесь, рядом с
-           прежней причиной, а не среди того, что человек решил. #}
+        {# Правила передумали после ответа: место рядом с прежней причиной. #}
         {% if row.disputed_at %}
         <div class="change" style="margin-top:6px">
           <span class="now">теперь связывают: {{ row.disputed_rule }}</span>
@@ -111,8 +108,7 @@
         {% endif %}
       </td>
       <td>
-        {# Что решил человек — здесь, а не среди доказательств: в одной
-           клетке они читались как один список, хотя это разные голоса. #}
+        {# Решение человека – отдельно от доказательств: это разные голоса. #}
         {% if row.verdict %}
         <div style="margin-bottom:8px">
           <span class="kind {% if row.verdict == 'same' %}kind-created{% else %}kind-deleted{% endif %}">
@@ -120,8 +116,7 @@
             {% elif row.is_github %}{% if row.verdict == "same" %}его аккаунт{% else %}не его аккаунт{% endif %}
             {% elif row.verdict == "same" %}один человек{% else %}разные люди{% endif %}</span>
           <br><span class="muted">{{ row.actor }}{% if row.note %} · {{ row.note }}{% endif %}</span>
-          {# Только у слияния есть что применять. «Разные» ничего не меняет,
-             оно лишь не даёт правилам слить пару потом. #}
+          {# Только у слияния есть что применять. #}
           {% if row.is_staff %}
             {% if row.chosen %}<br><span class="muted">сведёт записи на следующем прогоне</span>{% endif %}
           {% elif row.is_github and row.verdict == "same" %}
@@ -153,12 +148,10 @@
           <button type="submit" class="ghost">изменить</button>
         </form>
         {% elif row.applied_at and not row.can_split %}
-        {# Свернул сбор, а он удаляет свёрнутую строку. Собирать запись не
-           из чего, и кнопка могла бы только соврать. #}
+        {# Свернул сбор, а он удаляет свёрнутую строку: собирать не из чего. #}
         <span class="muted">разделить нельзя, исходных строк не осталось</span>
         {% elif row.applied_at %}
-        {# Не «передумать»: ответ убрать мало, в графе от него остался один
-           узел вместо двух. Кнопка разбирает слияние и записывает «разные». #}
+        {# Не «передумать»: в графе остался один узел вместо двух. #}
         <form method="post" action="/review/split-back">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="kind" value="{{ row.kind }}">
@@ -183,8 +176,7 @@
           <input type="hidden" name="tab" value="{{ tab }}">
           <input type="text" name="note" placeholder="почему" aria-label="почему">
           <div class="row" style="margin:0">
-            {# Группу нельзя назвать одним человеком: её отклонили именно
-               потому, что внутри два разных ORCID или адреса. #}
+            {# Группу нельзя назвать одним человеком: её за это и отклонили. #}
             {% if row.is_staff %}
             <input type="hidden" name="person" value="{{ row.person }}">
             <button type="submit" name="verdict" value="choose">это выбранная запись</button>
@@ -200,8 +192,7 @@
               {% elif row.is_group %}оставить раздельно
               {% elif row.is_github %}не его
               {% else %}разные{% endif %}</button>
-            {# Уже отложенному откладываться некуда: кнопка повторила бы
-               то, что и так записано. #}
+            {# Уже отложенному откладываться некуда. #}
             {% if not row.skipped_by %}
             <button type="submit" name="verdict" value="skip" class="ghost">не знаю</button>
             {% endif %}

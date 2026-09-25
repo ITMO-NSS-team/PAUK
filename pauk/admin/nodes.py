@@ -35,6 +35,7 @@ from pauk.admin.deps import (
     templates,
 )
 from pauk.graph.mutations import (
+    LIST_ORDER,
     NODE_FIELDS,
     RELATIONSHIPS,
     RESERVED_FIELDS,
@@ -43,10 +44,12 @@ from pauk.graph.mutations import (
     MutationError,
     NotFound,
     VersionConflict,
+    columns,
     create_node,
     create_relationship,
     delete_node,
     delete_relationship,
+    folded_into,
     node_relationships,
     read_node,
     search_nodes,
@@ -171,8 +174,7 @@ def _parse_value(raw: str, current: object = None):
     if not text:
         return None
     if isinstance(current, bool):
-        # Checked before int: in Python a bool *is* an int, and testing the
-        # other way round would turn True into 1.
+        # Before int: a bool is an int in Python, and True would become 1.
         return text.lower() in ("true", "1", "да", "yes", "on")
     if isinstance(current, int):
         try:
@@ -210,7 +212,8 @@ def search(request: Request, label: str, user: CurrentUser, session: Session,
     return templates.TemplateResponse(request, "search.html", {
         "user": user, "csrf": session["csrf"], "label": label, "query": q,
         "rows": rows[:SEARCH_LIMIT], "limit": SEARCH_LIMIT, "page": page, "more": more,
-        "fields": SEARCH_FIELDS[label], "labels": sorted(NODE_FIELDS)})
+        "fields": columns(label), "searched": SEARCH_FIELDS[label],
+        "order": LIST_ORDER.get(label), "labels": sorted(NODE_FIELDS)})
 
 
 @router.get("/nodes/{label}/new", response_class=HTMLResponse)
@@ -244,31 +247,18 @@ async def create(request: Request, label: str, user: Editor,
     node_id = str(form.get("id", "")).strip()
     if not node_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "the node needs an id")
-    # An id the panel could not address again. A path carrying a control
-    # character is refused before routing, so such a node would be created,
-    # listed by the search, and then answer 404 on its own link — with no
-    # way left to open, edit or delete it here.
+    # Such a node would list in the search and answer 404 on its own link.
     if any(character < " " or character == "\x7f" for character in node_id):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "the id cannot hold line breaks or control characters")
-    # A new node has nothing to compare against, so values arrive as text
-    # unless they parse as JSON — the same rule the CLI uses for --set.
+    # Nothing to compare against yet: text unless it parses as JSON, as in --set.
     fields = {name: value for name in NODE_FIELDS[label]
               if (value := _parse_new_value(str(form.get(name, "")))) is not None}
     try:
         create_node(graph, label, node_id, fields)
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
-    # Two things get written down. The record is claimed as wanted, so a
-    # prune does not take it for a leftover of a row that used to exist —
-    # nothing else in the graph says a person put it there. And a tombstone
-    # from an earlier deletion is withdrawn, or the next publish would
-    # remove the id again.
-    #
-    # Undone if neither can be written. Pessimistic: most of the time there
-    # is no tombstone and the node would have been fine, but whether there
-    # is one can only be learned from the store that is refusing to answer,
-    # and a node that disappears at the next publish is the worse outcome.
+    # Claimed so a prune keeps it, and any earlier tombstone withdrawn.
     def claim() -> None:
         deactivate_override(db, label, node_id, only_op="delete")
         record_override(db, label, node_id, CREATE, fields, actor=user.actor)
@@ -308,23 +298,22 @@ async def restore(label: str, node_id: str, user: Editor,
 
 @router.get("/nodes/{label}/{node_id:path}", response_class=HTMLResponse)
 def show(request: Request, label: str, node_id: str, user: CurrentUser,
-         session: Session, graph: Graph, db: Db):
+         session: Session, graph: Graph, db: Db, folded: str = ""):
     _known_label(label)
     try:
         props = read_node(graph, label, node_id)
-    except NotFound as error:
-        # Links in the feed outlive the nodes they point at: an entry about
-        # a deletion still names the id. Answer with what is known about it
-        # instead of a bare 404 — the question is "what happened to it",
-        # and the feed has the answer.
+    except NotFound:
+        # A folded id has no node of its own; send the reader to the survivor.
+        survivor = folded_into(graph, label, node_id)
+        if survivor:
+            # An id can be a URL of its own: escape it whole for the query.
+            return RedirectResponse(
+                _node_url(label, survivor, f"folded={quote(node_id, safe='')}"),
+                status_code=status.HTTP_303_SEE_OTHER)
+        # Feed links outlive their nodes: answer "what happened to it", not 404.
         gone = feed.history(db, label, node_id, limit=20)
-        # The feed is history; what the record can be restored from is the
-        # snapshot on the decision. Either one is reason enough to show the
-        # page: gating on the feed alone hid the restore button behind a
-        # 404 whenever the snapshot was there and the feed was not.
+        # Restoring reads the snapshot on the decision, not the feed.
         restorable = decisions.deleted_fields(db, label, node_id)
-        if not gone and not restorable:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from None
         return templates.TemplateResponse(request, "gone.html", {
             "user": user, "csrf": session["csrf"], "label": label, "node_id": node_id,
             "history": gone, "restorable": restorable,
@@ -334,6 +323,8 @@ def show(request: Request, label: str, node_id: str, user: CurrentUser,
     return templates.TemplateResponse(request, "node.html", {
         "user": user, "csrf": session["csrf"], "label": label, "node_id": node_id,
         "props": props, "editable": editable, "reserved": sorted(RESERVED_FIELDS),
+        # Only an id this record really swallowed: the value comes from the URL.
+        "folded": folded if folded in (props.get("merged_ids") or []) else "",
         "relationships": _worded(node_relationships(graph, label, node_id), label),
         "history": feed.history(db, label, node_id, limit=10),
         "source_history": source.history(db, label, node_id),
@@ -349,29 +340,16 @@ async def remove(request: Request, label: str, node_id: str, user: Editor,
     form = await request.form()
     cascade = bool(form.get("cascade"))
     try:
-        # Same order as the edit: a node with relationships and no cascade
-        # is refused, and a tombstone left behind would delete it on every
-        # later run.
-        # Snapshot first: after the delete the node is gone, and the
-        # decision has to carry what it removed so the record can be put
-        # back without asking the feed.
+        # Snapshot first: after the delete there is nothing left to read.
         snapshot = read_node(graph, label, node_id)
         kept = {name: value for name, value in snapshot.items()
                 if name in NODE_FIELDS[label] and value is not None}
         delete_node(graph, label, node_id, cascade=cascade)
-        # Without the tombstone the next publish brings the record back, so
-        # the delete is undone rather than left half-made. Relationships
-        # removed by a cascade do not come back with it — the loader
-        # rebuilds those from its own rows.
+        # Without the tombstone the next publish brings the record back.
         _record(undo=lambda: create_node(graph, label, node_id, kept),
                 write=lambda: record_override(
                     db, label, node_id, "delete", actor=user.actor,
                     note=str(form.get("note", "")).strip(), snapshot=kept))
-        # No reapply afterwards, and `pauk admin node delete` never did one
-        # either: the node is already gone and its decision says "delete",
-        # so applying it again reads every other decision in the database to
-        # change nothing. The tombstone is what makes the delete last, and
-        # the loader reads it on the next publish.
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
     logger.info("%s deleted %s %s", user.actor, label, node_id)
@@ -397,9 +375,7 @@ def _links_for(label: str) -> dict[str, list[dict]]:
         if src_label == label:
             outgoing.append(entry)
         if tgt_label == label:
-            # On an incoming link the source is what gets typed, and the
-            # loader addresses a source by its id. match_prop belongs to
-            # the target, which here is the open node itself.
+            # The source is what gets typed here, and it is addressed by id.
             incoming.append({**entry, "match_prop": "id"})
     return {"outgoing": outgoing, "incoming": incoming}
 
@@ -420,10 +396,7 @@ def _triple(raw: str) -> tuple[str, str, str]:
     return parts[0], parts[1], parts[2]
 
 
-# How each link reads in Russian: first from the node it leaves, then from
-# the node it enters. Types like MENTIONS_LINK or PRODUCED_BY say nothing
-# to a reader, and people decide what to link by meaning rather than by the
-# name of an edge in the graph.
+# How each link reads in Russian: leaving the node, then entering it.
 LINK_WORDS = {
     ("Department", "PART_OF", "Department"): ("входит в подразделение", "включает подразделение"),
     ("Department", "PART_OF", "Organization"): ("входит в организацию", "включает подразделение"),
@@ -472,11 +445,7 @@ async def link(request: Request, label: str, node_id: str, user: Editor,
     if not other:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "the other end is empty")
 
-    # The node whose page this is sits on whichever end its label matches;
-    # the person only ever types the other one. Read before creating
-    # anything, because which end this node takes depends on it. An unknown
-    # triple here is not a 500: the form never sends one, but a request can
-    # arrive without the form.
+    # This node takes whichever end its label matches; the other one is typed.
     match_prop = RELATIONSHIPS.get((src_label, rel_type, tgt_label))
     if match_prop is None:
         return _link_failed(label, node_id,
@@ -485,9 +454,7 @@ async def link(request: Request, label: str, node_id: str, user: Editor,
         if src_label == label:
             src_id, tgt_id, other_label, wanted = node_id, other, tgt_label, match_prop
         else:
-            # This node is the target, and the target is matched by
-            # match_prop — its id is the wrong value to send when that is
-            # something else, such as a repository's url.
+            # This node is the target, and a target is matched by match_prop.
             src_id, other_label, wanted = other, src_label, "id"
             tgt_id = node_id if match_prop == "id" else read_node(graph, label, node_id).get(match_prop)
             if not tgt_id:
@@ -497,9 +464,7 @@ async def link(request: Request, label: str, node_id: str, user: Editor,
                     f"Заполните {match_prop} и повторите.")
         create_relationship(graph, src_label, rel_type, tgt_label, src_id, tgt_id)
     except NotFound:
-        # The usual mistake is pasting an id where the link is matched by
-        # something else — a Repository by its url, a GitHubProfile by its
-        # login. Say which field this particular link needs.
+        # Usually an id pasted where the link matches on a url or a login.
         return _link_failed(
             label, node_id,
             f"{other_label} с {wanted} = «{other}» в графе нет. "
@@ -508,9 +473,7 @@ async def link(request: Request, label: str, node_id: str, user: Editor,
                if wanted != "id" else ". Проверьте идентификатор."))
     except MutationError as error:
         return _link_failed(label, node_id, str(error))
-    # Claimed for the same reason a hand-made record is: publishing leaves
-    # an edge it does not know alone, but a prune cannot tell it from one
-    # the pipeline has stopped making.
+    # Claimed so a prune tells it from an edge the pipeline stopped making.
     _record(undo=lambda: delete_relationship(graph, src_label, rel_type, tgt_label,
                                              src_id, tgt_id),
             write=lambda: record_relationship_override(
@@ -551,10 +514,7 @@ async def unlink(request: Request, label: str, node_id: str, user: Editor,
     form = await request.form()
     src_label, rel_type, tgt_label = _triple(str(form.get("triple", "")))
     other = str(form.get("other_id", "")).strip()
-    # The same rule the link form follows: the target is addressed by
-    # match_prop, which is not always its id. When this node is the target,
-    # sending its id unlinks nothing — the edge is stored against its url
-    # or its login, and the search finds no such edge.
+    # As in the link form: a target is addressed by match_prop, not always by id.
     match_prop = RELATIONSHIPS.get((src_label, rel_type, tgt_label), "id")
     if src_label == label:
         src_id, tgt_id = node_id, other
@@ -579,14 +539,7 @@ async def unlink(request: Request, label: str, node_id: str, user: Editor,
                             status_code=status.HTTP_303_SEE_OTHER)
 
 
-# Declared last on purpose, and the reason the action routes above name
-# the action before the id: the path converter is greedy, so an id at the
-# end of the pattern swallows anything that follows it. With the action
-# last, "/nodes/L/<id>/rel/delete" reads as a delete of a node called
-# "<id>/rel", and a LinkCandidate whose address happens to end in
-# "/delete" is not far-fetched. An id that *starts* with "delete/" or
-# "rel/" is: every LinkCandidate id begins with a scheme, and no other
-# label's id holds a slash at all.
+# Last on purpose: {node_id:path} is greedy and would swallow the routes above.
 @router.post("/nodes/{label}/{node_id:path}")
 async def edit(request: Request, label: str, node_id: str, user: Editor,
                db: Db, graph: Graph, _: CsrfChecked, __: StoresReady):
@@ -595,28 +548,19 @@ async def edit(request: Request, label: str, node_id: str, user: Editor,
     form = await request.form()
     note = str(form.get("note", "")).strip()
     try:
-        # Inside the try, and not above it: the record can be deleted while
-        # the form is open, and a NotFound escaping the handler answers the
-        # save with a 500 instead of saying what happened to the record.
-        # Parsed against what the node holds now, so an untouched box keeps
-        # its type instead of coming back as text.
+        # Inside the try: the record can be deleted while the form is open.
         before = read_node(graph, label, node_id)
         fields = {name: _parse_value(str(form[name]), before.get(name))
                   for name in NODE_FIELDS[label] if name in form}
         if not fields:
             return RedirectResponse(_node_url(label, node_id),
                                     status_code=status.HTTP_303_SEE_OTHER)
-        # Only what actually differs is written: submitting a form
-        # unchanged must not stamp an override on every field of the node,
-        # nor fill the audit feed with edits nobody made.
+        # Only what differs: an unchanged form must not stamp every field.
         changed = {name: value for name, value in fields.items() if before.get(name) != value}
         if not changed:
             return RedirectResponse(_node_url(label, node_id, "unchanged=1"),
                                     status_code=status.HTTP_303_SEE_OTHER)
-        # The form carries the updated_at it was rendered with. Without it
-        # two people editing one record in parallel simply overwrite each
-        # other: the second save wins and the first disappears without a
-        # word to anyone.
+        # The updated_at the form was rendered with: parallel saves collide.
         update_node(graph, label, node_id, changed,
                     expected_updated_at=str(form.get("seen_at") or "") or None)
         _record(
@@ -626,15 +570,12 @@ async def edit(request: Request, label: str, node_id: str, user: Editor,
                 db, label, node_id, "set", changed, actor=user.actor, note=note,
                 auto_value={name: before.get(name) for name in changed}))
     except VersionConflict:
-        # Not an error to shout about: someone got there first. Hand the
-        # page back with what is there now, so the edit can be redone on
-        # top of it rather than silently lost.
+        # Someone got there first: hand the page back with what is there now.
         logger.info("%s hit a version conflict on %s %s", user.actor, label, node_id)
         return RedirectResponse(_node_url(label, node_id, "stale=1"),
                                 status_code=status.HTTP_303_SEE_OTHER)
     except NotFound:
-        # Deleted while the form was open. Its own page already answers
-        # "what happened to it", with the button to bring it back.
+        # Deleted while the form was open; its own page explains that.
         logger.info("%s saved %s %s after it was deleted", user.actor, label, node_id)
         return RedirectResponse(_node_url(label, node_id),
                                 status_code=status.HTTP_303_SEE_OTHER)
