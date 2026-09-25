@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from itertools import combinations
 
 from pauk.graph.person_resolution import (
     DEFAULT_POLICY,
@@ -44,8 +43,7 @@ def plan_person_merges_resolved(
     # while these helpers remain the shared source of candidate generation and
     # transitive component safety checks.
     from pauk.pipeline.stages.dedup import (
-        _group_conflict,
-        _grouped,
+        _finalize_person_merge_groups,
         _initials_conflict,
         _is_pooled_record,
         _paired_persons,
@@ -140,6 +138,7 @@ def plan_person_merges_resolved(
                 resolve_pair(evidence, policy, logreg_model).probability, 6
             ),
             "route": route,
+            "reason": reason,
             "held_because": [reason],
         }
         if confidence is not None:
@@ -339,70 +338,13 @@ def plan_person_merges_resolved(
                 verdict.confidence,
             )
 
-    groups: list[tuple[Person, list[Person]]] = []
-    for members in _grouped(merge_pairs):
-        manual_conflicts = [
-            tuple(sorted(pair))
-            for pair in combinations(members, 2)
-            if decisions.get(frozenset(pair)) == DIFFERENT
-        ]
-        if manual_conflicts:
-            report.append(
-                {
-                    "status": "held",
-                    "persons": sorted(members),
-                    "names": [by_id[member].name_raw for member in sorted(members)],
-                    "held_because": [
-                        "component contradicts a manual different-people decision"
-                    ],
-                    "manual_conflicts": [
-                        list(pair) for pair in sorted(manual_conflicts)
-                    ],
-                    "route": "manual_conflict",
-                }
-            )
-            continue
-        conflict = _group_conflict(members, by_id, trusted_orcid, staff_ids)
-        if conflict:
-            field, values = conflict
-            report.append(
-                {
-                    "status": "held",
-                    "persons": sorted(members),
-                    "names": [by_id[member].name_raw for member in sorted(members)],
-                    "held_because": [
-                        f"group spans {len(values)} distinct {field} values"
-                    ],
-                    "route": "component_conflict",
-                }
-            )
-            continue
-        ranked = sorted(
-            (by_id[member] for member in members),
-            key=lambda person: (
-                -len(person.authored),
-                person.orcid is None,
-                person.id,
-            ),
-        )
-        canonical, duplicates = ranked[0], ranked[1:]
-        groups.append((canonical, duplicates))
-        for duplicate in duplicates:
-            report.append(
-                {
-                    "status": "merged",
-                    "person_a": duplicate.id,
-                    "name_a": duplicate.name_raw,
-                    "person_b": canonical.id,
-                    "name_b": canonical.name_raw,
-                    "merged_into": canonical.id,
-                    "rules": sorted(
-                        {
-                            rule
-                            for pair, rule in pair_rules.items()
-                            if duplicate.id in pair
-                        }
-                    ),
-                }
-            )
+    groups, group_report = _finalize_person_merge_groups(
+        merge_pairs,
+        pair_rules,
+        by_id,
+        trusted_orcid,
+        staff_ids,
+        decisions,
+    )
+    report.extend(group_report)
     return groups, report

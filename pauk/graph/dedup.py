@@ -469,6 +469,9 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
             for row in (*person_report, *publication_report, *repository_report)
         ]
         held = sum(1 for row in report if row["status"] == "held")
+        component_conflicts = sum(
+            row.get("route") == "component_conflict" for row in report
+        )
         # Only the person rows: publications and repositories are folded on
         # a DOI or a url and never hold anything back, so there is nothing
         # to ask about and no pair of people to key a question on.
@@ -498,6 +501,7 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
             "graph_publications_merged": publications_removed,
             "graph_repositories_merged": repositories_removed,
             "graph_dedup_candidates": held,
+            "graph_dedup_component_conflicts": component_conflicts,
             **overrides,
         }
     finally:
