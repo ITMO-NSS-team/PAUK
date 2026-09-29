@@ -37,7 +37,7 @@
   <p class="muted">
   {% if tab == "pressing" %}Разбирать нечего. Правила решили всё сами.
   {% elif tab == "answered" %}Пока никто ничего не решил.
-  {% elif tab == "disputed" %}Расхождений нет. Правила не конфликтуют ни с одним ответом.
+  {% elif tab == "disputed" %}Расхождений нет. Правила пайплайна не конфликтуют ни с одним ответом.
   {% elif tab == "skipped" %}Отложенных нет.
   {% else %}Вопросов нет. Очередь наполняется дедупликацией.{% endif %}</p>
 {% else %}
@@ -99,7 +99,7 @@
         {# Прочерк, когда причины нет: иначе плашка ниже читается как причина. #}
         {% if row.reasons %}
           {% for reason in row.reasons %}<div>{{ reason }}</div>{% endfor %}
-        {% else %}<span class="muted">—</span>{% endif %}
+        {% else %}<span class="muted">–</span>{% endif %}
         {# Правила передумали после ответа: место рядом с прежней причиной. #}
         {% if row.disputed_at %}
         <div class="change" style="margin-top:6px">

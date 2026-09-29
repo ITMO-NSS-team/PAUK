@@ -9,7 +9,7 @@
     <div>
       Всего таких записей <b>{{ check.total }}</b>.
       {% if check.truncated %}
-      {# Строки спрошены у графа сейчас, а число на списке — с прошлого прогона. #}
+      {# Строки спрошены у графа сейчас, а число на списке – с прошлого прогона. #}
       <span class="muted">Показаны первые {{ check.shown }}.</span>
       {% else %}<span class="muted">Показаны все.</span>{% endif %}
     </div>
@@ -30,7 +30,7 @@
     <tr>
       {% for value in row %}
       <td class="val"><span class="clip{% if value|string|is_long %} clipped{% endif %}">{{
-        value if value is not none else "—" }}</span></td>
+        value if value is not none else "–" }}</span></td>
       {% endfor %}
     </tr>
     {% endfor %}

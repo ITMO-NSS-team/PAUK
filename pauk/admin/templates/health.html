@@ -57,7 +57,7 @@
         {% if check.hint %}<br><span class="muted">{{ check.hint }}</span>{% endif %}
       </td>
       <td class="val" style="text-align:right">
-        {{ check.n if check.n is not none else "—" }}
+        {{ check.n if check.n is not none else "–" }}
         {% if check.n and check.pct is not none %}
         <br><span class="muted">{{ check.pct }}% из {{ check.of }}</span>
         {% elif check.of == 0 %}
