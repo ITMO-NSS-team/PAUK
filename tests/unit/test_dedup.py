@@ -1093,6 +1093,25 @@ class BlockingTest(unittest.TestCase):
         ]
         self.assertNotIn(frozenset(("A1", "A2")), self.pairs(people))
 
+    def test_one_contaminated_name_variant_does_not_create_a_surname_pair(self):
+        people = [
+            person("A1", "Lianshe Fu", ["W1"]),
+            person(
+                "A2",
+                "Leila V. Sharipova",
+                ["W2"],
+                variants=["Leila V. Sharipova", "Hao-Bin Fu", "Jui-Yin Lin"],
+            ),
+        ]
+        self.assertEqual(self.pairs(people), set())
+
+    def test_a_shared_deletion_key_does_not_bridge_different_surname_initials(self):
+        people = [
+            person("A1", "Hui Hwang Goh", ["W1"]),
+            person("A2", "Jingwei Zhang", ["W2"]),
+        ]
+        self.assertEqual(self.pairs(people), set())
+
     def test_extended_transliteration_and_compound_surnames_make_pairs(self):
         people = [
             person("A1", "Ilya Gosudarev", ["W1"]),

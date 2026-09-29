@@ -196,7 +196,24 @@ def _surname_from_name(name: str | None) -> str:
     return tokens[-1] if tokens else ""
 
 
-def _strong_surnames(person: Person) -> set[str]:
+def _given_token(name: str | None) -> str:
+    """Normalized given-name token for rejecting contaminated variants."""
+    if not name:
+        return ""
+    given_part = name.split(",", 1)[1] if "," in name else name
+    raw_tokens = _fold(given_part).split()
+    return _NAME_PUNCT.sub("", raw_tokens[0]) if raw_tokens else ""
+
+
+def _compatible_given_name(first: str, second: str) -> bool:
+    if not first or not second:
+        return False
+    if min(len(first), len(second)) <= 2:
+        return first[0] == second[0]
+    return SequenceMatcher(None, first, second).ratio() >= 0.8
+
+
+def _strong_surnames(person: Person, supported_tokens: set[str]) -> set[str]:
     """Surname spellings whose position is explicit rather than guessed."""
     surnames = {
         _NAME_PUNCT.sub("", _fold(value))
@@ -205,8 +222,9 @@ def _strong_surnames(person: Person) -> set[str]:
     }
     for value in (person.name_raw, *person.name_variants, *person.other_names):
         tokens = _name_tokens(value)
-        if "," in value or len(tokens) == 1:
-            surnames.add(_surname_from_name(value))
+        surname = _surname_from_name(value)
+        if ("," in value or len(tokens) == 1) and surname in supported_tokens:
+            surnames.add(surname)
     return {surname for surname in surnames if len(surname) > 1}
 
 
@@ -227,14 +245,25 @@ def _blocking_surnames(people: list[Person]) -> dict[str, set[str]]:
 
     for person in people:
         names = (person.name_raw, *person.name_variants, *person.other_names)
-        tokens = {token for name in names for token in _name_tokens(name)}
+        # OpenAlex occasionally contaminates one author's variants with a
+        # complete, unrelated coauthor list. A token absent from the display
+        # name therefore needs a compatible given name before it may become
+        # blocking evidence for this person.
+        raw_given = _given_token(person.name_raw)
+        trusted_names = {
+            name
+            for name in names
+            if name == person.name_raw
+            or _compatible_given_name(raw_given, _given_token(name))
+        }
+        tokens = {token for name in trusted_names for token in _name_tokens(name)}
         terminals = {
             surname
             for name in names
-            if (surname := _surname_from_name(name))
+            if (surname := _surname_from_name(name)) in tokens
         }
         tokens_by_person[person.id] = tokens
-        strong_by_person[person.id] = _strong_surnames(person)
+        strong_by_person[person.id] = _strong_surnames(person, tokens)
         token_occurrences.update(tokens)
         terminal_occurrences.update(terminals)
 
@@ -257,6 +286,8 @@ def _close_surnames(first: str, second: str) -> bool:
         return False
     if first.startswith(second) or second.startswith(first):
         return True
+    if first[0] != second[0]:
+        return False
     return SequenceMatcher(None, first, second).ratio() >= _FUZZY_SURNAME_RATIO
 
 
