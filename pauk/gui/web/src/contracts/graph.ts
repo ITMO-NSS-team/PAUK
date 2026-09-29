@@ -1,19 +1,8 @@
-// Формы данных, которые реально отдаёт pauk/gui/graph_builder/builder.py (build_graph_data()).
-// Это зеркало Python-кода, а не желаемая форма — если генератор поменяет
-// вывод, сначала правится этот файл, а уже потом код, который на него ссылается.
+// Mirror of what pauk/gui/graph_builder writes. Change this file first when
+// the builder output changes.
 //
-// AuthorNode/RepoNode/PubNode — это только "summary": то, что нужно
-// нарисовать точку на карте и мгновенно переключать вкладки
-// (graph-data.json). Расширенные поля (личные данные автора,
-// описание/владелец репозитория, заголовок/DOI/код публикации) вынесены в
-// отдельные AuthorDetail/RepoDetail/PubDetail — их pauk/gui пишет в
-// отдельные *-detail.json, которые pauk/gui/web подгружает лениво, после карты.
-// У публикаций это разделение было и раньше (PubDetail раньше назывался
-// SearchDetail и жил в contracts/search.ts — имя тянулось из старого
-// graph-search.js/old_gui, хотя используется далеко не только поиском;
-// переименовано, когда авторы/репозитории получили тот же принцип и старое
-// имя стало явно вводить в заблуждение). contracts/search.ts остаётся
-// только для того, что реально специфично поиску (SearchHit).
+// *Node types are the map summary (graph-data.json); *Detail types come from
+// *-detail.json, loaded lazily after the map.
 
 export type NodeKind = "author" | "repo" | "pub";
 
@@ -26,22 +15,17 @@ export interface Department {
   n_authors: number;
   n_pubs: number;
   n_repos: number;
-  // Другие написания названия (варианты из каталога) — только для поиска.
-  // Нет в graph-data.json, собранном до их появления.
+  // Search only. Missing in older graph-data.json.
   name_variants?: string[];
 }
 
 export interface AuthorNode {
   key: string;
   kind: "author";
-  // false — внешний соавтор (не ИТМО), по умолчанию скрыт фильтром
-  // filters.showExternalAuthors. Нет в graph-data.json, собранном до
-  // появления внешних авторов, — там все авторы из ИТМО.
+  // false: external co-author. Missing in older data, where everyone is ITMO.
   is_itmo?: boolean;
   dept: number;
   label: string;
-  // Добавлено после LLM RU/EN разбора имён (коммит 65f7765) — присутствует
-  // всегда, и в приватной, и в публичной сборке. Не то же самое, что name_en.
   label_en: string;
   pubs_count: number;
   rank: number;
@@ -49,37 +33,21 @@ export interface AuthorNode {
   gy: number;
 }
 
-// Один пункт из OpenAlex/ORCID affiliation-истории автора (new_cache
-// хранит это как JSON-текст на узле Person, pauk/gui его разбирает —
-// см. pauk/gui/graph_builder/nodes.py::_parse_json_list). years — годы, за которые
-// известна эта аффилиация; source — "openalex" или "orcid".
 export interface Affiliation {
   name: string;
   ror: string;
   years: number[];
+  // "openalex" or "orcid".
   source: string;
 }
 
-// Личные данные автора — отдельным файлом (authors-detail.json). Файл
-// больше не режется по полям в зависимости от сборки (--public/--private
-// новый_generate не знает, см. builder.py) — приватность решается
-// тем, в какую папку (public/private) этот файл физически попадает при
-// деплое, не содержимым самого файла.
+// Personal data: written only to private/, never to public/.
 export interface AuthorDetail {
   key: string;
-  // Единственное поле здесь с тегом "public" в new_cache/export.py — id
-  // автора в OpenAlex, ссылка на его публичный профиль.
   openalex_id: string;
-  // Полное имя на каждом языке — заголовок приватной карточки автора
-  // (features/panels.ts), как только этот detail домержился; до этого
-  // момента заголовок — сокращённая AuthorNode.label/label_en.
   name_ru: string;
   name_en: string;
-  // Варианты написания имени за вычетом того, что уже показано как
-  // заголовок (ни сокращённой подписи, ни name_ru/name_en) — раздельно по
-  // источнику: openalex — то, что OpenAlex видел по разным публикациям
-  // автора; orcid — имя, под которым автор сам просит его указывать, плюс
-  // варианты, которые он сам зарегистрировал в своём профиле ORCID.
+  // Spellings other than the ones already shown as the title.
   name_variants: { openalex: string[]; orcid: string[] };
   degree: string;
   github: string;
@@ -87,11 +55,9 @@ export interface AuthorDetail {
   google_scholar: string;
   email: string;
   affiliations: Affiliation[];
-  // Три поля ниже необязательные: authors-detail.json, сгенерированный до их
-  // появления, их не содержит, и карточка автора не должна на нём падать.
-  // Позиция автора в списке авторов и флаг "автор для переписки" — по ключу публикации.
+  // Optional: missing in older authors-detail.json. Keyed by pub key.
   pub_roles?: Record<string, PubRole>;
-  // ISO-строки из Neo4j (toString(datetime)), служебные поля.
+  // ISO strings from Neo4j.
   created_at?: string;
   updated_at?: string;
 }
@@ -105,8 +71,7 @@ export interface RepoNode {
   key: string;
   kind: "repo";
   dept: number;
-  // Цвет на вкладке репозиториев: id департамента либо RepoGroup.id
-  // (org/field), см. departments.py::repo_groups. Нет в старых graph-data.json.
+  // Department id or RepoGroup.id, colors the repos tab. Missing in older data.
   group?: number;
   label: string;
   stars: number;
@@ -121,9 +86,7 @@ export interface RepoDetail {
   url: string;
   has_readme: boolean;
   license: string;
-  // Логины GitHub контрибьюторов репозитория (не путать с
-  // features/panels.ts::repoContributorsOf() — та строит список ИЗ НАШЕГО
-  // графа, по repo_author_edges, этот же список — сырой, с самого GitHub).
+  // Raw GitHub logins, unlike repo_author_edges which link to our authors.
   contributors: string[];
   owner_type: string;
 }
@@ -140,10 +103,6 @@ export interface PubNode {
   gy: number;
 }
 
-// Заголовок/журнал/DOI/код публикации — раньше называлось PubDetail (см.
-// докстринг файла выше про переименование). PubNode своего заголовка
-// никогда не нёс: на карте публикация не подписана текстом, заголовок нужен
-// только в карточке/списках/поиске — ровно то, для чего и есть detail-файл.
 export interface PubDetail {
   key: string;
   label: string;
@@ -159,13 +118,11 @@ export interface PubDetail {
   abstract: string;
 }
 
-// Один источник финансирования публикации. grant_key — нормализованный
-// номер гранта (pauk/gui/graph_builder/grants.py), null — номера нет или он
-// обрезан; нет в pubs-detail.json, собранном до группировки по грантам.
 export interface Funding {
   funder: string;
-  // null — у записи OpenAlex есть фонд, но нет номера.
   grant_id: string | null;
+  // Normalized by graph_builder/grants.py; null when the number is missing or
+  // cut short. Missing in older pubs-detail.json.
   grant_key?: string | null;
 }
 
@@ -173,23 +130,19 @@ export interface Edge {
   s: string;
   t: string;
   w: number;
-  // Только у repo_edges: какие сигналы связали пару репозиториев.
+  // repo_edges only: which signals linked the pair.
   via?: RepoEdgeSignal[];
 }
 
 export type RepoEdgeSignal = "pub" | "person" | "coauthor" | "owner";
 
-// Группа репозиториев без департамента — по GitHub-организации или по
-// области публикаций. Форма департамента, чтобы регионы/подписи/выбор
-// работали без отдельной ветки; id не пересекаются с Department.id.
+// Shaped like a department so regions, labels and selection need no special
+// case. Ids never overlap Department.id.
 export interface RepoGroup extends Department {
   kind: "org" | "field";
 }
 
-// В отличие от Edge выше (s/t — строковые ключи author/pub/repo), у
-// dept_edges s/t — это Department.id (сквозной числовой gid, см.
-// builder.py: g() возвращает int, а не строку) — отдельный тип, а не
-// переиспользование Edge, чтобы не смешивать два разных вида ключей.
+// s/t are Department.id, not node keys.
 export interface DeptEdge {
   s: number;
   t: number;
@@ -202,7 +155,6 @@ export interface RepoAuthorEdge {
   role: string;
 }
 
-// Пары {s, t} без веса — в отличие от Edge выше.
 export interface UnweightedEdge {
   s: string;
   t: string;

@@ -93,10 +93,8 @@ describe("mountUrlSync", () => {
 
     const pub = data.pubs[0];
     if (!pub) throw new Error("фикстура должна содержать хотя бы одну публикацию");
-    // Симулируем реальный порядок событий браузера: сначала меняется сам URL
-    // (как при настоящем back/forward), потом приходит popstate. Публикация,
-    // не автор — tab=pubs, узел должен принадлежать своей вкладке (см.
-    // core/url.ts::TAB_KIND), иначе parseUrlState откатит выбор на null.
+    // Browser order: the URL changes first, then popstate fires. A pub on
+    // tab=pubs, since the node must belong to its tab.
     history.pushState(null, "", `?tab=pubs&sel=node&key=${pub.key}`);
     const lengthBefore = history.length;
 

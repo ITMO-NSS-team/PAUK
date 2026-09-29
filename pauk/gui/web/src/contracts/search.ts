@@ -1,13 +1,11 @@
 import type { NodeKind } from "./graph";
 
-// В отличие от PubDetail (contracts/graph.ts) — это НЕ то, что пишет Python.
-// Индекс поиска сегодня строится в браузере (search.js) из уже загруженного
-// GraphData — в pauk/gui/web это остаётся клиентской функцией buildSearchIndex().
+// Built in the browser from GraphData, not written by the Python builder.
 export interface SearchHit {
   key: string;
   kind: NodeKind | "dept";
   label: string;
   sub: string | null;
-  // Другие написания (RU/EN, варианты имени) — по ним тоже ищем, но не показываем.
+  // Other spellings (RU/EN, name variants): searched, not shown.
   terms?: string;
 }

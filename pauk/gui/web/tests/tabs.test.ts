@@ -12,13 +12,7 @@ import { loadSampleGraphData, loadSamplePubDetails } from "./fixtures";
 const NO_PUB_DETAILS = new Map<string, PubDetail>();
 const NO_REPO_DETAILS = new Map<string, RepoDetail>();
 
-/**
- * Вкладкам-спискам (createNodeListTab) от рендерера сейчас не нужно вообще
- * ничего — камерой к выбранному подлетает централизованно
- * map/build.ts::mountReactiveGraph, а не сама вкладка, — но параметр есть
- * в общем контракте TabModule.mount() (см. features/tabs/types.ts), поэтому
- * заглушка остаётся, просто пустая.
- */
+/** List tabs do not use the renderer; the camera is moved by map/build.ts. */
 function fakeRenderer(): Sigma {
   return {} as unknown as Sigma;
 }
@@ -47,20 +41,14 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
   };
 }
 
-/** Строки списка вкладки — второй ребёнок контейнера (первый — поле поиска, см. createNodeListTab). */
+/** Rows are the second child; the first is the search input. */
 function listItems(container: HTMLElement): HTMLButtonElement[] {
   return Array.from(container.querySelectorAll<HTMLButtonElement>(".tab-list-item"));
 }
 
 /**
- * Синтетический `GraphData` с `count` авторами — фикстура `./fixtures.ts`
- * (8 авторов) намеренно не трогается ради этих тестов (короче
- * TAB_LIST_CONFIG.pageSize, пагинация там никогда не появляется вовсе), а
- * тесты постраничного списка нужны как раз на данных БОЛЬШЕ одной страницы.
- * `pubs_count: count - i` — по убыванию вместе с индексом, поэтому порядок
- * после сортировки (authorsTab::compare — по убыванию pubs_count) точно
- * совпадает с порядком индексов (0, 1, 2, ...), удобно для предсказуемых
- * ассертов "что на какой странице".
+ * More authors than one page. `pubs_count` falls with the index, so the
+ * sorted order equals the index order.
  */
 function manyAuthorsData(count: number): GraphData {
   return {
@@ -192,7 +180,7 @@ describe("authorsTab", () => {
     const search = container.querySelector<HTMLInputElement>(".tab-search");
     if (!search) throw new Error("вкладка должна содержать поле поиска");
 
-    search.value = "лщывалщыв"; // заведомо не встречается ни в одной подписи фикстуры
+    search.value = "лщывалщыв"; // matches no fixture label
     search.dispatchEvent(new Event("input"));
 
     expect(listItems(container)).toHaveLength(0);
@@ -279,7 +267,7 @@ describe("pubsTab", () => {
     pubsTab.mount(container, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
     const years = listItems(container).map((el) => el.textContent?.includes("неизвестен"));
-    // Как только встретили "год неизвестен", все последующие тоже должны быть без года.
+    // After the first unknown year, all the rest are unknown too.
     const firstUnknownIndex = years.indexOf(true);
     if (firstUnknownIndex !== -1) {
       expect(years.slice(firstUnknownIndex).every(Boolean)).toBe(true);
@@ -324,9 +312,8 @@ describe("createNodeListTab — постраничный список (TAB_LIST_
     authorsTab.mount(container, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
     expect(listItems(container)).toHaveLength(10);
-    // pubs_count по убыванию = порядок индексов — первая страница это A0..A9.
     expect(listItems(container)[0]?.textContent).toContain("Автор 00");
-    expect(container.querySelector(".tab-pagination__status")?.textContent).toBe("1 / 3"); // 25 / 10 = 3 страницы
+    expect(container.querySelector(".tab-pagination__status")?.textContent).toBe("1 / 3"); // 25 / 10 = 3 pages
 
     const next = container.querySelector<HTMLButtonElement>(
       '.tab-pagination__button[aria-label="Следующая страница"]',
@@ -361,17 +348,17 @@ describe("createNodeListTab — постраничный список (TAB_LIST_
 
     const search = container.querySelector<HTMLInputElement>(".tab-search");
     if (!search) throw new Error("вкладка должна содержать поле поиска");
-    // Совпадает ровно с "Автор 10".."Автор 19" — 10 штук, ровно одна страница.
+    // Exactly "Автор 10".."Автор 19": one full page.
     search.value = "Автор 1";
     search.dispatchEvent(new Event("input"));
 
     expect(listItems(container)).toHaveLength(10);
-    // Одна страница — контролов пагинации нет вовсе (не просто задизейблены).
+    // One page: no pagination controls at all.
     expect(container.querySelector(".tab-pagination")?.children).toHaveLength(0);
   });
 
   it("короткий список (меньше pageSize) не показывает пагинацию вовсе", async () => {
-    const data = await loadSampleGraphData(); // во фикстуре 8 авторов — меньше TAB_LIST_CONFIG.pageSize
+    const data = await loadSampleGraphData(); // 8 authors, fewer than pageSize
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 

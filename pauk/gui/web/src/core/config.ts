@@ -1,199 +1,92 @@
-// Настройки отрисовки — единственное место, где живут "магические числа"
-// вида радиусов/ширин/отступов/зумов. Смена значения здесь меняет
-// поведение сразу везде, где оно используется, а не в одном месте из
-// нескольких, где оно случайно продублировано. Фронтенд-аналог
-// pauk/gui/graph_builder/config.py генератора (тот же принцип: тюнинг-константы
-// отдельно от логики, которая их использует).
-
 export const MAP_CONFIG = {
-  // Отступ от края холста при автоматическом вписывании графа в область
-  // просмотра (Sigma settings.stagePadding, autoRescale/autoCenter — оба
-  // включены по умолчанию). minZoom/maxZoom/initialZoom старого MapLibre-
-  // конфига здесь не переносятся as-is: у Sigma зум — это camera.ratio,
-  // число совсем другой природы, чем дискретные тайловые уровни зума
-  // MapLibre, отдельно потребуется подобрать разумные minCameraRatio/
-  // maxCameraRatio на глаз, когда до этого дойдём.
+  // Sigma stagePadding.
   fitPadding: 40,
 
   camera: {
-    // Sigma settings.zoomingRatio (app/main.ts) — множитель ratio за один
-    // "тик" колеса мыши (по умолчанию у Sigma 1.7). Меньше — медленнее зум,
-    // больше — быстрее. Кривая анимации одного тика (easing) у Sigma зашита
-    // в коде жёстко ("quadraticOut"), настройками не меняется — только эта
-    // скорость.
+    // Sigma zoomingRatio: ratio change per wheel tick (Sigma default 1.7).
     zoomingRatio: 1.45,
-    // Camera.ratio, к которому подлетает камера при выборе узла/департамента
-    // (map/build.ts::flyToSelection) — насколько близко "приближается".
-    // Абсолютное число safe: Sigma нормализует раскладку под общий
-    // "framed graph" масштаб (Sigma.process()/normalizationFunction) ещё ДО
-    // того, как камера в нём начинает работать, поэтому ratio=1 — это
-    // всегда примерно "весь граф целиком", независимо от реального
-    // диапазона координат ForceAtlas2. Раньше казалось, что дело было в
-    // самом ratio ("камера улетает в пустоту") — на самом деле проблема
-    // была в том, что flyToSelection читал СЫРЫЕ координаты узла вместо
-    // нормализованных — с тех пор, как это исправлено, ratio снова безопасен.
-    // 0.1 — заметное приближение (прямая просьба), а не "чуть ближе к целому графу".
+    // Camera ratio after flying to a selection. Sigma normalizes the layout,
+    // so ratio 1 is always about the whole graph.
     focusRatio: 0.1,
-    // Длительность анимации подлёта камеры к выбранному узлу, мс.
+    // ms
     focusDuration: 600,
-    // Sigma settings.maxCameraRatio — дальше этого отдалиться нельзя.
+    // Sigma maxCameraRatio.
     maxRatio: 2,
   },
 
   node: {
     radius: 3,
-    // "Чуть-чуть больше", не в 2 раза — свечения вокруг выбранного узла
-    // больше нет (см. app/main.ts::drawHaloedNodeLabel), сам размер должен
-    // быть скромной, а не бросающейся в глаза подсказкой (прямая жалоба —
-    // "не делай такой широкой").
     radiusSelected: 5,
-    // Цвет узла, у департамента которого почему-то нет своего color —
-    // не должно происходить на реальных данных, но лучше серый фолбэк,
-    // чем упавшее приложение.
+    // Department without a color; should not happen on real data.
     fallbackColor: "#9d9d9d",
-    // Разделительное кольцо вокруг узла (как в MapLibre-версии) здесь не
-    // перенесено: у Sigma NodeDisplayData нет отдельных stroke-полей у
-    // дефолтного circle-рендерера узла — понадобится свой NodeProgram,
-    // если эффект окажется реально нужен, не блокирует переезд.
-    // Подпись узла красится В ЦВЕТ ЕГО ДЕПАРТАМЕНТА (не одним общим цветом
-    // на все узлы) — свой defaultDrawNodeLabel в app/main.ts читает
-    // data.color (тот же цвет, что и у самого узла) вместо штатного
-    // Sigma settings.labelColor. labelHaloWidth ниже — обводка вокруг текста
-    // (Canvas2D context.strokeText до fillText), чтобы цветной текст не
-    // терялся на фоне того же цвета, что и близкие узлы/рёбра. Цвета
-    // фона/рёбер/обводки — в теме (core/themes), не здесь.
+    // Stroke around the department-colored label text.
     labelHaloWidth: 3,
-    // Sigma settings.labelRenderedSizeThreshold (app/main.ts) — минимальный
-    // экранный размер узла (в пикселях, зум уже учтён самой Sigma), при
-    // котором подпись вообще начинает рисоваться. МЕНЬШЕ число — БОЛЬШЕ
-    // подписей одновременно (см. Sigma::renderLabels — сравнение "size <
-    // threshold" пропускает подпись, если узел ещё не дорос до порога).
-    // Поднято с 6 до 20 именно поэтому — раньше показывало слишком много
-    // подписей разом ("белая каша"), а не слишком мало.
+    // Sigma labelRenderedSizeThreshold: labels show only on nodes at least
+    // this many pixels wide. Lower means more labels.
     labelVisibleAtSize: 20,
-    // Sigma settings.labelDensity (app/main.ts) — штатное прореживание
-    // подписей по сетке экрана, независимое от labelVisibleAtSize (см.
-    // Sigma::labelGrid.getLabelsToDisplay). 1 — дефолт Sigma, отправная
-    // точка для подбора, не протестированное на глаз число.
+    // Sigma labelDensity.
     labelDensity: 1,
-    // Максимальная длина подписи узла НА КАРТЕ (map/build.ts::truncateLabel) —
-    // только для графа, core/data.ts::nodeLabel() для сайдбара/поиска
-    // остаётся полным. Длинные названия публикаций иначе растягиваются на
-    // 1-2 строки и перекрывают соседние узлы.
+    // Map labels only; lists and search show the full label.
     labelMaxLength: 28,
   },
 
   edge: {
-    // Тоньше, чем было изначально ("рёбра слишком толстые" — прямая
-    // жалоба); цвета рёбер — в теме (core/themes::ThemeMapColors).
     width: 0.4,
     widthSelected: 1.4,
   },
 } as const;
 
-// Регионы департаментов (map/regions.ts): построение карты плотности и отрисовка.
+// Department regions (map/regions.ts).
 export const REGION_CONFIG = {
-  // Радиус "пятна" одного узла (sigma гауссова ядра) в долях среднего
-  // расстояния между узлами вкладки — так регионы складываются одинаково и на
-  // плотной вкладке публикаций, и на редкой вкладке репозиториев.
+  // Kernel radius as a share of the mean node spacing, so dense and sparse
+  // tabs get similar regions.
   kernelScale: 1,
-  // Сколько клеток сетки приходится на один sigma (точность контура).
+  // Grid cells per kernel sigma (contour precision).
   cellsPerSigma: 2.5,
-  // Предел клеток сетки по длинной стороне раскладки (время пересчёта).
+  // Grid size cap on the long side (rebuild time).
   gridMaxSize: 400,
-  // Минимальная суммарная плотность, при которой клетка вообще принадлежит
-  // какому-то департаменту (пик пятна одного узла = 1).
+  // Minimum density for a cell to belong to a department; one node peaks at 1.
   densityThreshold: 0.35,
-  // Раунды сглаживания контура (Chaikin).
+  // Chaikin smoothing rounds.
   smoothingRounds: 2,
   fillAlpha: 0.16,
-  // Заливка региона под курсором в режиме регионов.
+  // Region under the cursor in region mode.
   hoverFillAlpha: 0.32,
   strokeAlpha: 0.55,
   strokeWidth: 1.2,
-  // Во сколько раз притухает регион, не относящийся к выбору.
+  // Dimming of regions outside the selection.
   dimFactor: 0.3,
-  // Название департамента в центре его самого крупного острова (обводка —
-  // та же, что у подписей узлов, MAP_CONFIG.node.labelHalo*).
   labelSize: 13,
   labelWeight: "600",
-  // Ширина строки названия в пикселях — длинное название переносится.
+  // px; longer names wrap.
   labelMaxWidth: 150,
-  // Больше строк не рисуется, последняя обрезается многоточием.
+  // Last line ends with an ellipsis.
   labelMaxLines: 3,
-  // Межстрочный интервал в долях размера шрифта.
   labelLineHeight: 1.2,
-  // Минимальный зазор между прямоугольниками названий; перекрывающиеся
-  // названия менее крупных регионов не рисуются.
+  // Overlapping labels of smaller regions are skipped.
   labelGap: 4,
 } as const;
 
-// Должно оставаться синхронным с pauk/gui/graph_builder/config.py::NO_DEPT_COLOR —
-// цвет синтетического департамента "Без департамента"
-// (pauk/gui/graph_builder/departments.py), которым помечены авторы/публикации без
-// реального департамента. Настоящая межъязыковая связка, а не совпадение:
-// меняется Python-константа — меняется и эта.
+// Keep in sync with pauk/gui/graph_builder/config.py::NO_DEPT_COLOR.
 export const NO_DEPT_COLOR = "#8a8f98";
 
-// Границы для UI-регуляторов фильтров (features/filters.ts) — сами текущие
-// значения порогов живут в AppState.filters (core/state.ts), здесь только
-// диапазон, в котором пользователь может их двигать. Совпадает по духу со
-// старым GUI (там были те же пороги — max 30 для соавторства, max 15 для
-// общих авторов публикаций), без слепого копирования более старых, ничем
-// не обоснованных частностей той реализации.
+// Slider ranges; current values live in AppState.filters.
 export const FILTER_CONFIG = {
   coauth: { min: 1, max: 30 },
   sharedAuthors: { min: 1, max: 15 },
-  // max — текущий год, а не захардкоженный литерал: он неизбежно "протухнет"
-  // ровно так же, как протухла бы любая другая захардкоженная дата. app/main.ts
-  // берёт отсюда же значение по умолчанию для filters.yearMax (а не считает
-  // new Date().getFullYear() ещё раз отдельно) — так граница слайдера и
-  // стартовое "без фильтра" значение гарантированно не могут разъехаться.
   year: { min: 2020, max: new Date().getFullYear() },
-  // Порог camera.ratio, выше которого рёбра скрыты целиком (см.
-  // AppState.filters.edgeZoomThreshold, map/build.ts::applyGraphStyling) —
-  // раньше жил как захардкоженная MAP_CONFIG.edge.visibleBelowRatio, стал
-  // регулятором по прямой просьбе. max — 0.5, не весь диапазон zoom
-  // (ratio доходит примерно до 1.5, "весь граф целиком") — выше 0.5 рёбра
-  // всё равно сливаются в дымку на реальных данных, показывать в слайдере
-  // бесполезную часть диапазона незачем (прямая просьба сузить). step —
-  // дробный и мельче (0.01, не 0.05), чтобы в этом узком диапазоне
-  // регулятор давал точнее подбирать значение, а не 9 грубых делений.
-  // default — стартовое значение ползунка (подобрано на глаз). max совпадает
-  // с regionZoom.min: рёбра видны при ratio ниже своего порога, регионы — выше
-  // своего, и раз edgeZoom <= regionZoom, рёбра и регионы никогда не рисуются
-  // одновременно.
+  // Camera ratio thresholds. edgeZoom.max equals regionZoom.min, so edges and
+  // regions are never drawn at the same time.
   edgeZoom: { min: 0.05, max: 0.25, step: 0.01, default: 0.25 },
-  // Порог camera.ratio режима регионов (core/state.ts::isRegionMode): дальше
-  // него — заливка, названия, наведение и клик по регионам; ближе — только
-  // обводка регионов, выбираются узлы.
   regionZoom: { min: 0.25, max: 1, step: 0.01, default: 0.4 },
-  // Минимум узлов в одном острове региона.
   regionMinNodes: { min: 1, max: 50, default: 10 },
-  // Какие вкладки показывают регионы при старте: авторы и публикации.
+  // Tabs with regions on at start: authors and pubs.
   showRegions: { 1: true, 2: false, 3: true },
-  // Задержка между "пользователь перестал двигать ползунок" и "значение
-  // реально применяется в store.filters" (features/filters.ts::buildFilterRow) —
-  // применение фильтра пересобирает весь граф (map/build.ts::populateGraph),
-  // на реальных данных (десятки тысяч узлов) это заметно тяжелее одного
-  // движения ползунка, и без задержки перетаскивание лагало — каждый
-  // промежуточный тик слайдера гонял полную пересборку. Сам ползунок и
-  // подпись значения обновляются МГНОВЕННО (это просто DOM-текст) — тормозит
-  // не рисование ползунка, а то, что происходит ПОСЛЕ каждого его тика.
+  // Applying a filter rebuilds the whole graph, so sliders are debounced.
   debounceMs: 500,
 } as const;
 
-// Пути к настоящим данным (пишет `pauk/gui/graph_builder/builder.py`, по
-// умолчанию — прямо в <repo_root>/data/gui/private, без вложенной "data/",
-// см. pauk.settings.Settings.gui_dir). Vite отдаёт содержимое publicDir
-// (см. vite.config.ts) от корня сайта, поэтому файл `graph-data.json`,
-// лежащий прямо в publicDir, доступен как `/graph-data.json` — без
-// префикса "/data/", он был бы нужен только если бы внутри publicDir была
-// ещё и своя вложенная папка "data/". Файлов может не быть физически
-// (снепшот ещё не сгенерирован, или это data/gui/public вариант без
-// authors-detail.json — пока не подключаем, см. vite.config.ts) — тогда
-// fetch() в core/data.ts упадёт, а app/main.ts ловит это через
-// loggedStep()/.catch() и не роняет приложение, см. там же.
+// Served from Vite publicDir. Missing files are handled by app/main.ts.
 export const DATA_CONFIG = {
   graphDataUrl: "/graph-data.json",
   authorDetailsUrl: "/authors-detail.json",
@@ -203,38 +96,18 @@ export const DATA_CONFIG = {
   implementationRatesUrl: "/implementation-rates.json",
 } as const;
 
-// Сколько элементов показывать в списках карточки информации (features/panels.ts)
-// — топ соавторов, публикации автора и т.п. На реальных данных у активного
-// автора публикаций и соавторов может быть сотни; без ограничения список
-// превратил бы небольшую плавающую карточку в стену текста. Как и в старом
-// GUI (там recentPubs/topCoauthors тоже обрезались до 10).
+// Top-N lists in the info card.
 export const PANEL_CONFIG = {
   listLimit: 10,
-  // Сколько слов аннотации публикации видно до "Читать полностью".
+  // Words shown before "Read more".
   abstractWords: 50,
-  // Сколько столбцов показывать в графиках "Обзора" (features/panels.ts —
-  // распределение по департаментам/годам/звёздам) — отдельно от listLimit:
-  // там ограничение на читаемость СПИСКА (можно скроллить), тут — на
-  // читаемость САМОГО ГРАФИКА (каждый лишний столбец сужает остальные),
-  // числа сейчас совпадают, но по разным причинам.
+  // Bars in overview charts.
   chartBars: 8,
 } as const;
 
-// Список вкладки (features/tabs/nodeListTab.ts) — на реальных данных тысячи
-// строк, отрисовывать/скроллить их все разом незачем: показываем по
-// pageSize штук с постраничным переключением ("‹"/"›"), а не бесконечный
-// список. Число отдельное от PANEL_CONFIG.listLimit (тот же смысл "топ-N",
-// но там — короткий список ссылок ВНУТРИ карточки, здесь — основной,
-// постранично пролистываемый список вкладки; сейчас совпадают, но это два
-// разных по природе UI-элемента, тюнить их порознь не помешает).
 export const TAB_LIST_CONFIG = { pageSize: 10 } as const;
 
-// Сколько результатов показывать в глобальном поиске (features/globalSearch.ts)
-// — больше, чем PANEL_CONFIG.listLimit: там ограничение "топ-10 самых
-// весомых" (по числу публикаций/звёзд/весу связи), а тут — "найти ИМЕННО
-// эту сущность по подстроке" среди тысяч (searchHits не сортирует по
-// релевантности, просто фильтрует), заниженный лимит скорее спрятал бы
-// нужный результат, чем помог его найти.
+// Larger than listLimit: search filters by substring and does not rank.
 export const SEARCH_CONFIG = {
   resultsLimit: 30,
 } as const;

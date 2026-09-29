@@ -27,13 +27,7 @@ function initialState(): AppState {
   };
 }
 
-/**
- * Фейковый Sigma-рендерер: хранит реальный graphology.Graph (нужен
- * mountSelection для extremities()/getEdgeAttribute() при клике по ребру)
- * и перехватывает on(event, cb) по имени события — тест вызывает
- * сохранённый колбэк напрямую вместо настоящего клика мышью. Настоящий
- * Sigma в jsdom не поднять (нужен WebGL-канвас).
- */
+/** Keeps a real graph and stores `on()` callbacks so tests can fire them; real Sigma needs WebGL. */
 function fakeRenderer(
   graph: Graph,
   ratio = 1,
@@ -109,7 +103,7 @@ describe("mountSelection", () => {
     expect(deptAtViewport).toHaveBeenCalledWith({ x: 10, y: 20 });
     expect(store.get().selection).toEqual({ kind: "dept", id: 7 });
 
-    fire("clickStage", { event: { x: 90, y: 20 } }); // вне регионов — выбор снимается, как раньше
+    fire("clickStage", { event: { x: 90, y: 20 } }); // outside regions: selection cleared
     expect(store.get().selection).toBeNull();
   });
   it("в режиме регионов (регионы включены, камера дальше порога) клик по узлу или ребру выбирает регион под курсором, а не узел", () => {
@@ -132,7 +126,7 @@ describe("mountSelection", () => {
     fire("clickEdge", { edge: graph.edges()[0], event: { x: 1, y: 1 } });
     expect(store.get().selection).toEqual({ kind: "dept", id: 4 });
 
-    fire("enterNode", { node: "A1" }); // курсором в режиме регионов управляют регионы
+    fire("enterNode", { node: "A1" }); // regions own the cursor in region mode
     expect(container.style.cursor).toBeUndefined();
   });
 

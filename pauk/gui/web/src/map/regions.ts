@@ -1,18 +1,9 @@
-// Слой "map" — регионы департаментов под графом: цветные "территории", как
-// в старом GUI, но построенные по карте плотности,
-// а не выпуклой оболочкой, обрезанной ячейками Вороного.
-//
-// Как строится (buildRegions):
-// 1. Каждый узел добавляет гауссово "пятно" в сетку плотности своего департамента.
-// 2. Клетка принадлежит департаменту с наибольшей плотностью, если она выше
-//    порога, поэтому регионы разных департаментов не перекрываются, а
-//    граница проходит там, где один департамент начинает преобладать.
-// 3. Связные области ("острова") с числом узлов меньше порога отбрасываются.
-// 4. Границы оставшихся клеток обходятся в замкнутые контуры и сглаживаются.
-//
-// Рисуется на отдельном canvas под рёбрами (mountRegions), названия — на
-// canvas над узлами; что именно видно на каком зуме и при каком выборе — см.
-// mountRegions.
+// Department regions from a density grid:
+// 1. Each node adds a Gaussian kernel to its department's grid.
+// 2. A cell belongs to the densest department above the threshold, so regions
+//    never overlap.
+// 3. Islands with fewer nodes than the threshold are dropped.
+// 4. Cell borders are traced into closed rings and smoothed.
 
 import type Sigma from "sigma";
 import type { Coordinates } from "sigma/types";
@@ -24,36 +15,24 @@ import { groupIdOf, groupsById } from "../core/data";
 import { themeById } from "../core/themes";
 import { noDeptId, tabGraphNodes } from "./build";
 
-/** Узел, участвующий в построении регионов, в координатах раскладки. */
 export interface RegionPoint {
   x: number;
   y: number;
   dept: number;
 }
 
-/** Регион одного департамента — все его острова, замкнутые контуры в координатах раскладки. */
+/** Rings in layout coordinates. */
 export interface Region {
   dept: number;
-  /** Контуры рисуются и проверяются правилом even-odd: вложенный контур — дырка. */
+  /** Even-odd rule: a nested ring is a hole. */
   rings: [number, number][][];
-  /** Где рисовать название: центр узлов самого крупного острова. */
+  /** Center of the largest island. */
   label: Coordinates;
-  /** Узлов в самом крупном острове — приоритет названия при наложении. */
+  /** Node count of the largest island; label priority on overlap. */
   weight: number;
 }
 
-/**
- * Строит регионы департаментов по узлам текущей вкладки.
- *
- * @param points - узлы с координатами раскладки и id департамента.
- * @param minNodes - минимум узлов в острове; острова меньше не попадают в результат.
- * @returns По одному {@link Region} на департамент, у которого остался хоть один остров, по возрастанию `dept`.
- *
- * @example
- * // два плотных скопления разных департаментов далеко друг от друга
- * buildRegions([...cluster(0, 0, 12, 1), ...cluster(500, 0, 12, 2)], 10);
- * // -> [{ dept: 1, rings: [...] }, { dept: 2, rings: [...] }]
- */
+/** @returns One region per department with at least one island, sorted by `dept`. */
 export function buildRegions(points: RegionPoint[], minNodes: number): Region[] {
   const byDept = new Map<number, RegionPoint[]>();
   for (const point of points) {
@@ -80,8 +59,7 @@ export function buildRegions(points: RegionPoint[], minNodes: number): Region[] 
       count++;
     }
   }
-  // Размер пятна — от среднего расстояния между узлами (площадь / число узлов),
-  // размер клетки — от пятна, но не мельче предела сетки.
+  // Kernel size from the mean node spacing; cell size from the kernel, capped by the grid size.
   const extent = Math.max(maxX - minX, maxY - minY, 1e-9);
   const spacing = Math.sqrt(Math.max((maxX - minX) * (maxY - minY), extent * 1e-9) / count);
   const sigmaUnits = kernelScale * spacing;
@@ -104,7 +82,7 @@ export function buildRegions(points: RegionPoint[], minNodes: number): Region[] 
     }
   }
 
-  // 1-2. Плотность каждого департамента и владелец каждой клетки.
+  // 1-2. Density per department and the owner of each cell.
   const size = width * height;
   const best = new Float32Array(size);
   const owner = new Int32Array(size).fill(-1);
@@ -129,7 +107,7 @@ export function buildRegions(points: RegionPoint[], minNodes: number): Region[] 
     }
   });
 
-  // 3. Острова: связные (по 4 соседям) области клеток одного владельца.
+  // 3. Islands: 4-connected cells of one owner.
   const component = new Int32Array(size).fill(-1);
   let componentCount = 0;
   for (let start = 0; start < size; start++) {
@@ -164,7 +142,7 @@ export function buildRegions(points: RegionPoint[], minNodes: number): Region[] 
       sumY[comp] = (sumY[comp] ?? 0) + point.y;
     }
   });
-  // Самый крупный (по числу узлов) остров каждого департамента — под название.
+  // Largest island per department, for the label.
   const biggest = depts.map(([, list], deptIndex) => {
     let best = -1;
     for (const point of list) {
@@ -178,7 +156,7 @@ export function buildRegions(points: RegionPoint[], minNodes: number): Region[] 
   const kept = (i: number): boolean =>
     owner[i] !== -1 && (nodesInComponent[component[i] ?? 0] ?? 0) >= minNodes;
 
-  // 4. Контуры: направленные рёбра границы (внутренность справа), затем обход в петли.
+  // 4. Directed border edges (inside on the right), then walked into loops.
   const vertexKey = (vx: number, vy: number): number => vy * (width + 1) + vx;
   const toGraph = (key: number): [number, number] => {
     const vx = key % (width + 1);
@@ -239,7 +217,7 @@ export function buildRegions(points: RegionPoint[], minNodes: number): Region[] 
   return regions.sort((a, b) => a.dept - b.dept);
 }
 
-/** Убирает вершины посередине прямых отрезков контура — на сетке их большинство. */
+/** Grid contours are mostly collinear points. */
 function dropCollinear(ring: [number, number][]): [number, number][] {
   return ring.filter((point, i) => {
     const prev = ring[(i - 1 + ring.length) % ring.length] ?? point;
@@ -251,7 +229,7 @@ function dropCollinear(ring: [number, number][]): [number, number][] {
   });
 }
 
-/** Сглаживание замкнутого контура методом Chaikin: каждый отрезок заменяется точками на 1/4 и 3/4. */
+/** Chaikin smoothing: each segment becomes points at 1/4 and 3/4. */
 function smooth(ring: [number, number][], rounds: number): [number, number][] {
   let result = ring;
   for (let round = 0; round < rounds; round++) {
@@ -266,13 +244,6 @@ function smooth(ring: [number, number][], rounds: number): [number, number][] {
   return result;
 }
 
-/**
- * Какой департамент занимает точку (правило even-odd по всем контурам региона).
- *
- * @param regions - результат {@link buildRegions}.
- * @param point - точка в координатах раскладки.
- * @returns `dept` региона, внутри которого точка, иначе `null`.
- */
 export function regionDeptAt(regions: Region[], point: Coordinates): number | null {
   for (const region of regions) {
     let inside = false;
@@ -293,20 +264,7 @@ export function regionDeptAt(regions: Region[], point: Coordinates): number | nu
   return null;
 }
 
-/**
- * Разбивает название на строки не шире `maxWidth` (по словам); строк не
- * больше `maxLines`, последняя при нехватке места обрезается многоточием.
- * Слово длиннее `maxWidth` остаётся целым на своей строке.
- *
- * @param text - название.
- * @param measure - ширина строки в пикселях (обычно `context.measureText(...).width`).
- * @param maxWidth - предельная ширина строки.
- * @param maxLines - предельное число строк.
- *
- * @example
- * wrapLabel("Институт прикладных компьютерных наук", (s) => s.length * 7, 150, 3);
- * // -> ["Институт прикладных", "компьютерных наук"]
- */
+/** Word wrap; a word wider than `maxWidth` stays whole, the last line ends with an ellipsis. */
 export function wrapLabel(
   text: string,
   measure: (line: string) => number,
@@ -332,30 +290,18 @@ export function wrapLabel(
 }
 
 /**
- * Подключает регионы департаментов: пересчитывает их при смене
- * вкладки/фильтров и рисует на каждый кадр Sigma (`afterRender`).
+ * In region mode: fill, stroke and labels, hover highlight, click selects.
+ * Closer in: stroke only. A selected region keeps its fill and label at any
+ * zoom; with a node or edge selected there are no region labels.
  *
- * В режиме регионов (core/state.ts::isRegionMode — камера дальше порога):
- * заливка, обводка и названия; регион под курсором ярче, клик по нему
- * выбирает департамент. Названия не накладываются: крупные регионы важнее.
- * Ближе порога — только обводка, без названий и без реакции на мышь.
- *
- * Выбранный регион ведёт себя как выбранный узел: его заливка и название
- * видны на любом зуме, названия остальных скрыты. При выбранном узле или
- * ребре названий регионов нет.
- *
- * @param renderer - Sigma-рендерер.
- * @param store - Store приложения.
- * @param data - данные графа.
- * @returns `deptAtViewport` — департамент под точкой экрана в режиме
- *   регионов, иначе `null` (для клика, см. features/selection.ts), и функция отписки.
+ * @returns `deptAtViewport` for clicks (features/selection.ts) and an unmount function.
  */
 export function mountRegions(
   renderer: Sigma,
   store: Store<AppState>,
   data: GraphData,
 ): { deptAtViewport: (point: Coordinates) => number | null; unmount: () => void } {
-  // Заливка — под рёбрами и узлами; названия — над узлами, иначе их закрывают точки.
+  // Labels go above nodes, otherwise nodes cover them.
   const fillCanvas = renderer.createCanvas("regions", { beforeLayer: "edges" });
   const labelCanvas = renderer.createCanvas("region-labels", { afterLayer: "labels" });
   const deptById = groupsById(data);
@@ -382,7 +328,6 @@ export function mountRegions(
     return regionMode() ? regionDeptAt(regions, renderer.viewportToGraph(point)) : null;
   }
 
-  /** Подгоняет canvas под размер рендерера и очищает его; `null`, если 2d-контекста нет. */
   function prepare(canvas: HTMLCanvasElement): CanvasRenderingContext2D | null {
     const context = canvas.getContext("2d");
     if (!context) return null;
@@ -430,7 +375,6 @@ export function mountRegions(
       }
       fill.fillStyle = color;
       fill.strokeStyle = color;
-      // Выбранный регион держит заливку на любом зуме — как выбранный узел свою подсветку.
       if (full || region.dept === selectedDept) {
         const alpha = region.dept === hoveredDept ? cfg.hoverFillAlpha : cfg.fillAlpha;
         fill.globalAlpha = alpha * dim;
@@ -442,9 +386,8 @@ export function mountRegions(
     }
     fill.globalAlpha = 1;
 
-    // Названия: выбран департамент — только его, на любом зуме; выбран узел или
-    // ребро — никаких; ничего не выбрано — все (в режиме регионов), сначала
-    // регион под курсором, потом по убыванию размера, пропуская перекрывающиеся.
+    // Labels: a selected department shows only its own; a selected node or edge
+    // shows none; otherwise the hovered region first, then by size, skipping overlaps.
     const ordered = regions
       .filter((region) =>
         selectedDept !== null ? region.dept === selectedDept : selection === null && full,
@@ -500,8 +443,7 @@ export function mountRegions(
     }
   }
 
-  // Наведение на регион — только в режиме регионов; перерисовываются лишь
-  // свои canvas, без перерисовки графа.
+  // Hover redraws only the region canvases, not the graph.
   const captor = renderer.getMouseCaptor();
   function onMouseMove(event: Coordinates): void {
     const dept = deptAtViewport(event);

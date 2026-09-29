@@ -6,8 +6,7 @@ import boundaries from "eslint-plugin-boundaries";
 import prettierConfig from "eslint-config-prettier";
 
 // Layer order, lowest first. A layer may only import from layers at or
-// below its own position — this is the one hard rule the frontend replaces
-// 168 unscoped globals with (see new-gui-blueprint.html section 3).
+// below its own position.
 const LAYERS = ["contracts", "core", "map", "features", "app"];
 
 export default tseslint.config(

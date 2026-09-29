@@ -1,9 +1,3 @@
-// Слой "features" — регуляторы порогов фильтрации (store.filters).
-// Какие регуляторы показывать, зависит от активной вкладки: "Авторы" —
-// порог соавторства, "Публикации" — порог общих авторов и год, у
-// "Репозиториев"/"Поиска" регуляторов нет вообще (как и в старом GUI —
-// у репозиториев порога веса не было совсем).
-
 import type { GraphData } from "../contracts/graph";
 import { FILTER_CONFIG } from "../core/config";
 import { isolatedAuthors } from "../map/build";
@@ -11,36 +5,17 @@ import { requireElement } from "../core/dom";
 import { t, type Lang } from "../core/i18n";
 import type { AppState, Store } from "../core/state";
 
-/** Параметры одной строки регулятора — вход {@link buildFilterRow}. */
 interface FilterRowOptions {
-  /** Текст подписи слева от ползунка. */
   label: string;
-  /** Минимально допустимое значение ползунка. */
   min: number;
-  /** Максимально допустимое значение ползунка. */
   max: number;
-  /** Шаг ползунка — по умолчанию 1 (счётные пороги вроде "число публикаций"); дробный для непрерывных величин вроде camera.ratio. */
+  /** Defaults to 1; fractional for continuous values like camera ratio. */
   step?: number;
-  /** Текущее значение ползунка. */
   value: number;
-  /**
-   * Вызывается с новым числовым значением — не на каждый тик перетаскивания,
-   * а с задержкой {@link FILTER_CONFIG.debounceMs} после того, как
-   * пользователь остановился (см. {@link buildFilterRow}): применение
-   * фильтра пересобирает граф, дёргать это на каждый пиксель перетаскивания
-   * ощущалось как лаг.
-   */
+  /** Debounced: applying a filter rebuilds the whole graph. */
   onChange: (value: number) => void;
 }
 
-/**
- * Собирает одну строку "подпись + ползунок + текущее значение" — тот же
- * принцип, что и `core/render.ts::renderListItem`: один способ собрать
- * строку регулятора вместо копирования разметки под каждый фильтр.
- *
- * @param options - см. {@link FilterRowOptions}.
- * @returns Готовый `<label class="filter-row">` с ползунком внутри, ещё не вставленный в DOM.
- */
 function buildFilterRow(options: FilterRowOptions): HTMLElement {
   const row = document.createElement("label");
   row.className = "filter-row";
@@ -60,14 +35,8 @@ function buildFilterRow(options: FilterRowOptions): HTMLElement {
   value.className = "filter-row__value";
   value.textContent = String(options.value);
 
-  // Подпись значения — сразу, на каждый тик (это просто DOM-текст, не
-  // тормозит). options.onChange — с задержкой (debounce): применение
-  // фильтра пересобирает весь граф (map/build.ts::populateGraph), на
-  // реальных данных это заметно тяжелее одного движения ползунка — без
-  // задержки перетаскивание гоняло полную пересборку на каждый пиксель и
-  // лагало (прямая жалоба). Таймер один на строку (в замыкании) — новое
-  // движение сбрасывает предыдущий отсчёт, применяется только последнее
-  // значение, на котором пользователь реально остановился.
+  // The value label updates on every tick, onChange is debounced: a graph
+  // rebuild per pixel of dragging lags.
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   input.addEventListener("input", () => {
     value.textContent = input.value;
@@ -80,24 +49,12 @@ function buildFilterRow(options: FilterRowOptions): HTMLElement {
   return row;
 }
 
-/** Параметры одной строки чекбокса — вход {@link buildCheckboxRow}. */
 interface CheckboxRowOptions {
-  /** Текст подписи рядом с чекбоксом. */
   label: string;
-  /** Текущее состояние чекбокса. */
   checked: boolean;
-  /** Вызывается при каждом клике по чекбоксу с новым состоянием. */
   onChange: (checked: boolean) => void;
 }
 
-/**
- * Собирает одну строку "чекбокс + подпись" — тот же принцип, что и
- * {@link buildFilterRow}, но для булевых фильтров (например, "показывать
- * без департамента"), а не числовых порогов.
- *
- * @param options - см. {@link CheckboxRowOptions}.
- * @returns Готовый `<label class="filter-row">` с чекбоксом внутри, ещё не вставленный в DOM.
- */
 function buildCheckboxRow(options: CheckboxRowOptions): HTMLElement {
   const row = document.createElement("label");
   row.className = "filter-row";
@@ -116,15 +73,9 @@ function buildCheckboxRow(options: CheckboxRowOptions): HTMLElement {
 }
 
 /**
- * Подключает регуляторы фильтров для активной вкладки. Перестраивает
- * разметку только при смене вкладки или языка (`state.tab`/`state.lang`) —
- * сам ползунок уже обновляет свою подпись значения по месту через
- * `onChange`, поэтому реагировать на каждое изменение store целиком (в том
- * числе на смену `selection` от клика по карте) незачем — как и в
- * `features/tabs/index.ts::activateTab()`.
+ * Rebuilds the rows only on tab or language change, not on every store update.
  *
- * @param store - Store приложения.
- * @returns Функция отписки (unmount) от Store.
+ * @returns Unmount function.
  */
 export function mountFilters(store: Store<AppState>): () => void {
   const container = requireElement("filter-bar");
@@ -133,24 +84,10 @@ export function mountFilters(store: Store<AppState>): () => void {
   let prevTab: AppState["tab"] | null = null;
   let prevLang: Lang | null = null;
 
-  /**
-   * Точечно обновляет пороги фильтров в Store, мержа `patch` поверх
-   * текущих `filters` (по тому же принципу, что и сам `Store.set`).
-   *
-   * @param patch - изменяемые поля фильтров (обычно одно поле за раз, из `onChange` конкретного ползунка).
-   */
   function setFilter(patch: Partial<AppState["filters"]>): void {
     store.set({ filters: { ...store.get().filters, ...patch } });
   }
 
-  /**
-   * Перестраивает разметку регуляторов под текущую вкладку/язык. Не
-   * делает ничего, если ни то, ни другое не изменилось с прошлого вызова
-   * (см. `prevTab`/`prevLang` выше) — иначе разметка пересобиралась бы на
-   * любое изменение store, включая смену `selection`.
-   *
-   * @param state - текущее состояние приложения.
-   */
   function render(state: AppState): void {
     if (state.tab === prevTab && state.lang === prevLang) return;
     prevTab = state.tab;
@@ -158,9 +95,6 @@ export function mountFilters(store: Store<AppState>): () => void {
 
     const { lang, filters } = state;
     sectionLabel.textContent = t("section.filters", lang);
-    // Порог видимости рёбер по зуму — общий для всех трёх вкладок (это
-    // настройка отрисовки карты, а не фильтр конкретного вида сущностей),
-    // поэтому строится один раз, а не внутри if/else по вкладке ниже.
     const rows: HTMLElement[] = [
       buildFilterRow({
         label: t("filter.edgeZoom", lang),
@@ -221,8 +155,7 @@ export function mountFilters(store: Store<AppState>): () => void {
       );
     }
 
-    // Регионы департаментов (map/regions.ts) — после фильтров вкладки:
-    // переключатель свой у каждой вкладки, пороги общие.
+    // Region toggle is per tab, region thresholds are shared.
     rows.push(
       buildCheckboxRow({
         label: t("filter.showRegions", lang),
@@ -247,9 +180,6 @@ export function mountFilters(store: Store<AppState>): () => void {
       }),
     );
 
-    // Раньше скрывался, если для вкладки не было ни одного регулятора
-    // (у "Репозиториев" не было своих) — с общим для всех вкладок
-    // регулятором зума рёбер выше строк всегда хотя бы одна, панель всегда видна.
     container.hidden = false;
     container.replaceChildren(...rows);
   }
@@ -259,15 +189,11 @@ export function mountFilters(store: Store<AppState>): () => void {
 }
 
 /**
- * Включает фильтр, который прячет выбранного автора (внешние, "без
- * связей"), как только такой автор выбран — ссылкой из карточки
- * публикации, из URL: иначе выбор ушёл бы в узел, которого нет на карте.
- * Подписываться нужно раньше `map/build.ts::mountReactiveGraph` — тот
- * сбрасывает выбор узла, которого нет в графе.
+ * Turns on the filter that hides the selected author (external, isolated),
+ * e.g. after a link from a publication card. Must subscribe before
+ * map/build.ts::mountReactiveGraph, which drops selections missing from the graph.
  *
- * @param store - общий Store приложения.
- * @param data - данные графа.
- * @returns Функция отписки.
+ * @returns Unmount function.
  */
 export function mountHiddenAuthorReveal(store: Store<AppState>, data: GraphData): () => void {
   const external = new Set(data.authors.filter((a) => a.is_itmo === false).map((a) => a.key));
@@ -275,7 +201,7 @@ export function mountHiddenAuthorReveal(store: Store<AppState>, data: GraphData)
     const { selection, filters } = state;
     if (selection?.kind !== "node") return;
     const needExternal = !filters.showExternalAuthors && external.has(selection.key);
-    // "Без связей" — уже с учётом того, что внешние сейчас будут показаны.
+    // Isolated status depends on whether external authors are shown.
     const withExternal = filters.showExternalAuthors || needExternal;
     const needIsolated =
       !filters.showIsolatedAuthors && isolatedAuthors(data, withExternal).has(selection.key);

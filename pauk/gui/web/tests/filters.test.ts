@@ -80,8 +80,8 @@ describe("mountFilters", () => {
       expect(container.hidden).toBe(false);
       const inputs = container.querySelectorAll("input[type='range']");
       expect(inputs).toHaveLength(4);
-      expect((inputs[0] as HTMLInputElement).value).toBe("0.2"); // зум рёбер — первым, до вкладко-специфичных
-      expect((inputs[1] as HTMLInputElement).value).toBe("1"); // порог соавторства
+      expect((inputs[0] as HTMLInputElement).value).toBe("0.2"); // edge zoom comes first
+      expect((inputs[1] as HTMLInputElement).value).toBe("1");
     });
   });
 
@@ -101,7 +101,7 @@ describe("mountFilters", () => {
 
       expect(container.hidden).toBe(false);
       expect(container.querySelectorAll("input[type='range']")).toHaveLength(3);
-      expect(container.querySelectorAll("input[type='checkbox']")).toHaveLength(1); // только «Регионы департаментов»
+      expect(container.querySelectorAll("input[type='checkbox']")).toHaveLength(1); // only the regions toggle
     });
   });
 
@@ -110,23 +110,20 @@ describe("mountFilters", () => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
 
-      // [1] — второй range-инпут, первый ([0]) теперь общий регулятор
-      // зума рёбер (см. тест выше про порядок строк).
+      // [0] is the shared edge zoom slider.
       const input = container.querySelectorAll("input[type='range']")[1] as HTMLInputElement;
       input.value = "7";
       input.dispatchEvent(new Event("input"));
 
-      // Подпись значения рядом с ползунком обновляется сразу — это просто
-      // DOM-текст, не тормозит и не должно ждать debounce. [1] — та же
-      // строка, что и сам ползунок выше (не строка общего зума рёбер).
+      // The value label updates at once, without waiting for the debounce.
       expect(container.querySelectorAll(".filter-row__value")[1]?.textContent).toBe("7");
-      expect(store.get().filters.minCoauth).toBe(1); // ещё не применилось
+      expect(store.get().filters.minCoauth).toBe(1); // not applied yet
 
       vi.advanceTimersByTime(FILTER_CONFIG.debounceMs - 1);
-      expect(store.get().filters.minCoauth).toBe(1); // всё ещё не применилось — чуть-чуть не хватило
+      expect(store.get().filters.minCoauth).toBe(1); // still not applied
 
       vi.advanceTimersByTime(1);
-      expect(store.get().filters.minCoauth).toBe(7); // применилось ровно через debounceMs
+      expect(store.get().filters.minCoauth).toBe(7); // applied after debounceMs
     });
   });
 
@@ -136,27 +133,22 @@ describe("mountFilters", () => {
       mountFilters(store);
 
       const input = container.querySelectorAll("input[type='range']")[1] as HTMLInputElement;
-      // Имитация перетаскивания — несколько "input" подряд, каждый раньше,
-      // чем истёк debounceMs предыдущего: каждое новое движение сбрасывает
-      // отсчёт таймера, применяется только значение, на котором пользователь
-      // реально остановился, а не промежуточные тики (иначе на реальных
-      // данных перетаскивание гоняло бы полную пересборку графа на каждый
-      // пиксель и лагало — прямая жалоба).
+      // Each input restarts the timer; only the value the user stopped on is applied.
       for (const value of [2, 3, 4, 5, 6, 7]) {
         input.value = String(value);
         input.dispatchEvent(new Event("input"));
         vi.advanceTimersByTime(FILTER_CONFIG.debounceMs - 1);
       }
-      expect(store.get().filters.minCoauth).toBe(1); // ни один промежуточный тик не применился
+      expect(store.get().filters.minCoauth).toBe(1); // no intermediate tick applied
 
       vi.advanceTimersByTime(1);
-      expect(store.get().filters.minCoauth).toBe(7); // применилось только последнее значение
+      expect(store.get().filters.minCoauth).toBe(7); // only the last value applied
     });
   });
 
   it("движение общего ползунка зума рёбер пишет edgeZoomThreshold независимо от вкладки", () => {
     withContainer(() => {
-      const store = new Store<AppState>(initialState({ tab: 2 })); // вкладка без своих фильтров
+      const store = new Store<AppState>(initialState({ tab: 2 })); // a tab without its own filters
       mountFilters(store);
 
       const input = container.querySelector("input[type='range']") as HTMLInputElement;
@@ -176,7 +168,7 @@ describe("mountFilters", () => {
       store.set({ tab: 2 });
 
       expect(container.hidden).toBe(false);
-      // Общие для всех вкладок: зум рёбер, зум регионов, минимум узлов в регионе.
+      // Shared by all tabs: edge zoom, region zoom, region min nodes.
       expect(container.querySelectorAll("input[type='range']")).toHaveLength(3);
     });
   });
@@ -252,7 +244,7 @@ describe("mountFilters", () => {
 
       const ranges = [...container.querySelectorAll<HTMLInputElement>("input[type='range']")];
       const [edgeZoom] = ranges;
-      const [regionZoom, minNodes] = ranges.slice(-2); // регионы — последними, после фильтров вкладки
+      const [regionZoom, minNodes] = ranges.slice(-2); // region rows come last
       expect(Number(edgeZoom?.max)).toBeLessThanOrEqual(Number(regionZoom?.min));
 
       if (!regionZoom || !minNodes) throw new Error("ползунки регионов должны быть в фильтрах");
@@ -269,7 +261,7 @@ describe("mountFilters", () => {
 });
 
 describe("mountHiddenAuthorReveal", () => {
-  // A1, A2 — ИТМО-соавторы P1; A3 — один на P2, без репозиториев ("без связей"); E1 — внешний.
+  // A1, A2: ITMO co-authors of P1; A3: alone on P2, no repos (isolated); E1: external.
   const data = {
     authors: [
       { key: "A1", is_itmo: true, pubs_count: 1 },

@@ -9,10 +9,6 @@ import {
   loadSampleRepoDetails,
 } from "./fixtures";
 
-// Логика поиска (эта, чисто функциональная часть) переиспользуется
-// features/globalSearch.ts (глобальное окно поиска по всем видам сразу,
-// см. tests/globalSearch.test.ts) — отдельной вкладки "Поиск" больше нет
-// (была features/tabs/search.ts, удалена вместе со своими тестами).
 const NO_PUB_DETAILS = new Map<string, PubDetail>();
 const NO_REPO_DETAILS = new Map<string, RepoDetail>();
 
@@ -94,11 +90,11 @@ describe("поиск по всем написаниям", () => {
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     const index = buildSearchIndex(data, "ru", NO_PUB_DETAILS, NO_REPO_DETAILS, authorDetails);
 
-    // A1: name_en "Ivan Ivanov", варианты OpenAlex "Ivanov Ivan", ORCID "I. Ivanov".
+    // A1: name_en "Ivan Ivanov", OpenAlex "Ivanov Ivan", ORCID "I. Ivanov".
     for (const query of ["ivan ivanov", "ivanov ivan", "i. ivanov", "иванов иван иванович"]) {
       expect(searchHits(index, query).map((hit) => hit.key)).toContain("A1");
     }
-    // Написания только ищутся, подпись результата — по-прежнему на языке интерфейса.
+    // Spellings are searched only; the label stays in the UI language.
     expect(searchHits(index, "ivan ivanov").find((hit) => hit.key === "A1")?.label).not.toContain(
       "Ivan",
     );

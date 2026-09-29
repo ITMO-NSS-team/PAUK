@@ -16,10 +16,7 @@ import {
   populateGraph,
 } from "../src/map/build";
 
-// Пороги, которые ничего не отсекают — для тестов, где фильтрация не в фокусе.
-// edgeZoomThreshold: 10 — заведомо выше любого реалистичного camera.ratio
-// в тестах (по умолчанию 1, см. fakeRenderer), рёбра не должны прятаться
-// сами по себе, если тест явно не проверяет именно эту логику.
+// Thresholds that filter nothing; edgeZoomThreshold 10 is above any test camera ratio.
 const NO_FILTER = {
   minCoauth: 1,
   minSharedAuthors: 1,
@@ -33,8 +30,7 @@ const NO_FILTER = {
   regionZoomThreshold: 0.25,
   regionMinNodes: 10,
 };
-// Большинство тестов здесь не про названия публикаций — пустая карта
-// оставляет nodeLabel() на старом поведении (заглушка — ключ публикации).
+// Empty map: nodeLabel() falls back to the pub key.
 const NO_PUB_DETAILS = new Map<string, PubDetail>();
 
 const NODE_BASE = {
@@ -67,25 +63,19 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
   };
 }
 
-/** Ключи только "реальных" узлов графа (авторы/репозитории/публикации) — без якорей подписей департаментов. */
+/** Without department anchor nodes. */
 function realNodeKeys(graph: Graph): string[] {
   return graph.nodes().filter((key) => parseDeptNodeKey(key) === null);
 }
 
-/** Ключи только "реальных" рёбер графа — без рёбер между департаментами. */
+/** Without department edges. */
 function realEdgeKeys(graph: Graph): string[] {
   return graph
     .edges()
     .filter((edgeKey) => parseDeptNodeKey(graph.extremities(edgeKey)[0]) === null);
 }
 
-/**
- * Минимальный `GraphData` с одним обычным департаментом и одним
- * синтетическим "Без департамента" (`color === NO_DEPT_COLOR`) — общая
- * фикстура (`./fixtures.ts`) намеренно не трогается ради этих тестов (на
- * неё завязаны точные количества в других тестах этого файла), поэтому
- * тесты на фильтр строят собственные, изолированные данные.
- */
+/** One real department and one "no department"; separate from the shared fixture, whose counts other tests rely on. */
 function dataWithNoDept(): GraphData {
   return {
     departments: [
@@ -169,22 +159,15 @@ function dataWithNoDept(): GraphData {
   };
 }
 
-// any, не never[] — это фейк для перехвата колбэков в тесте, а не рабочий
-// код, где важна строгая типизация аргументов.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Reducer = (...args: any[]) => unknown;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type EventHandler = (...args: any[]) => void;
 
-/** См. fakeRenderer::getNodeDisplayData — сдвиг, доказывающий, что flyToSelection берёт координаты именно оттуда, а не из graph.getNodeAttributes(). */
+/** Offset proving flyToSelection reads getNodeDisplayData, not graph attributes. */
 const FRAMED_COORD_OFFSET = 1000;
 
-/**
- * Фейковый Sigma-рендерер: хранит реальный graphology.Graph (нужен
- * reducer'ам для extremities/getEdgeAttribute/areNeighbors) и перехватывает
- * setSetting(...)/on(...)/camera.on(...), чтобы тест мог вызвать сохранённые
- * колбэки напрямую — настоящий Sigma в jsdom не поднять (нужен WebGL-канвас).
- */
+/** Keeps a real graph and stores settings and event callbacks so tests can call them; real Sigma needs WebGL. */
 function fakeRenderer(graph: Graph): {
   renderer: Sigma;
   refresh: ReturnType<typeof vi.fn>;
@@ -213,11 +196,7 @@ function fakeRenderer(graph: Graph): {
     on: (event: string, cb: EventHandler) => handlers.set(event, cb),
     off: vi.fn(),
     refresh,
-    // Намеренно ДРУГИЕ координаты, чем "сырые" graph.getNodeAttributes() —
-    // так же, как настоящая Sigma отдаёт из getNodeDisplayData() координаты
-    // ПОСЛЕ normalizationFunction, а не сырые атрибуты графа (см.
-    // map/build.ts::flyToSelection). Если код по ошибке снова начнёт читать
-    // graph.getNodeAttributes() напрямую, тест ниже это поймает.
+    // Differs from the raw attributes, like Sigma's normalized display data.
     getNodeDisplayData: (key: string) => {
       if (!graph.hasNode(key)) return undefined;
       const attrs = graph.getNodeAttributes(key);
@@ -246,7 +225,7 @@ describe("populateGraph на фикстур-данных", () => {
   it("отдаёт только узлы вкладки, а не всех сущностей сразу", async () => {
     const data = await loadSampleGraphData();
 
-    // Три разных графа — авторы/репозитории/публикации не смешиваются в одной вкладке.
+    // Three separate graphs: kinds never mix in one tab.
     const authorsGraph = new Graph();
     populateGraph(authorsGraph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
     expect(realNodeKeys(authorsGraph)).toHaveLength(data.authors.length);
@@ -325,7 +304,7 @@ describe("populateGraph на фикстур-данных", () => {
     const graph = new Graph();
     populateGraph(graph, data, "ru", 1, { ...NO_FILTER, minCoauth: 2 }, NO_PUB_DETAILS);
     expect(realEdgeKeys(graph)).toHaveLength(strong);
-    expect(strong).toBeLessThan(data.coauth_edges.length); // проверка, что фикстура вообще даёт разброс весов
+    expect(strong).toBeLessThan(data.coauth_edges.length); // the fixture has a spread of weights
   });
 
   it("filters.minSharedAuthors скрывает слабые связи публикаций на вкладке 3", async () => {
@@ -345,11 +324,9 @@ describe("populateGraph на фикстур-данных", () => {
     const graph = new Graph();
     populateGraph(graph, data, "ru", 3, filters, NO_PUB_DETAILS);
     expect(realNodeKeys(graph).sort()).toEqual(expectedPubs.map((p) => p.key).sort());
-    expect(expectedPubs.some((p) => p.year === null)).toBe(true); // фикстура правда содержит пример без года
+    expect(expectedPubs.some((p) => p.year === null)).toBe(true); // the fixture has a pub without a year
 
-    // Ребро между публикациями, у одной из которых год скрыт фильтром, тоже пропадает —
-    // graph.hasNode() внутри populateGraph уже отражает фильтр узлов, отдельной
-    // проверки года на рёбрах не нужно (в отличие от MapLibre-версии).
+    // Edges to a pub hidden by the year filter disappear too.
     for (const edgeKey of realEdgeKeys(graph)) {
       const [s, t] = graph.extremities(edgeKey);
       expect(realNodeKeys(graph)).toContain(s);
@@ -373,7 +350,7 @@ describe("populateGraph на фикстур-данных", () => {
     );
 
     expect(realNodeKeys(shown)).toEqual(["A1", "A2"]);
-    expect(realNodeKeys(hidden)).toEqual(["A1"]); // A2 — из «Без департамента»
+    expect(realNodeKeys(hidden)).toEqual(["A1"]); // A2 is in "no department"
   });
 
   it("внешние авторы (is_itmo: false) скрыты, пока filters.showExternalAuthors выключен", () => {
@@ -399,11 +376,11 @@ describe("populateGraph на фикстур-данных", () => {
   it("isolatedAuthors: одна публикация, без соавторов и репозиториев; внешний соавтор — связь, только пока внешние показаны", () => {
     const data = {
       authors: [
-        { key: "A1", pubs_count: 1 }, // один на P1, рядом только внешний E1
-        { key: "A2", pubs_count: 1 }, // с A3 на P2
+        { key: "A1", pubs_count: 1 }, // alone on P1, only external E1 nearby
+        { key: "A2", pubs_count: 1 }, // with A3 on P2
         { key: "A3", pubs_count: 1 },
-        { key: "A4", pubs_count: 1 }, // один на P3, но есть репозиторий
-        { key: "A5", pubs_count: 2 }, // один, но публикаций две
+        { key: "A4", pubs_count: 1 }, // alone on P3, but has a repo
+        { key: "A5", pubs_count: 2 }, // alone, but two pubs
         { key: "E1", pubs_count: 1, is_itmo: false },
       ],
       all_edges: [
@@ -418,9 +395,9 @@ describe("populateGraph на фикстур-данных", () => {
       repo_author_edges: [{ s: "R1", t: "A4", role: "owner" }],
     } as unknown as GraphData;
 
-    // Внешние скрыты: у A1 соавтор только внешний E1 — "без связей"; E1 сам не на карте.
+    // External hidden: A1's only co-author is external E1, so A1 is isolated; E1 is not on the map.
     expect([...isolatedAuthors(data, false)]).toEqual(["A1"]);
-    // Внешние показаны: A1 и E1 — соавторы друг друга.
+    // External shown: A1 and E1 are co-authors.
     expect([...isolatedAuthors(data, true)]).toEqual([]);
   });
 
@@ -494,7 +471,7 @@ describe("populateGraph на фикстур-данных", () => {
     populateGraph(hidden, data, "ru", 3, { ...NO_FILTER, showNoDeptPubs: false }, NO_PUB_DETAILS);
 
     expect(realNodeKeys(shown)).toEqual(["P1", "P2"]);
-    expect(realNodeKeys(hidden)).toEqual(["P1"]); // P2 — из «Без департамента»
+    expect(realNodeKeys(hidden)).toEqual(["P1"]); // P2 is in "no department"
   });
 });
 
@@ -606,7 +583,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор гр�
 
     mountReactiveGraph(renderer, store, data, pubDetails);
 
-    // Статья гранта — яркая и подписана названием на любом зуме.
+    // A pub of the grant is bright and labelled at any zoom.
     expect(getReducer("nodeReducer")("P1", NODE_BASE)).toMatchObject({
       color: NODE_BASE.color,
       forceLabel: true,
@@ -634,9 +611,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
       highlighted: true,
       size: MAP_CONFIG.node.radiusSelected,
     });
-    // Сосед — цвет/подпись/размер не тронуты (соседи больше не растут,
-    // прямая просьба), но подпись форсирована (видна независимо от
-    // labelRenderedSizeThreshold — тоже прямая просьба).
+    // Neighbour: same color and size, but a forced label.
     expect(nodeReducer("A2", NODE_BASE)).toMatchObject({
       color: NODE_BASE.color,
       label: NODE_BASE.label,
@@ -646,22 +621,16 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     expect(nodeReducer("A3", NODE_BASE)).toMatchObject({
       color: darkTheme.map.dimNode,
       label: "",
-    }); // не сосед — притушен
+    }); // not a neighbour: dimmed
   });
 
   it("selection на ключ, которого нет в ТЕКУЩЕМ графе (например, после смены вкладки), не роняет reducer", async () => {
-    // Регрессия: раньше nodeReducer вызывал graph.areNeighbors(focus, ...)
-    // без проверки, что focus вообще существует в графе — graphology
-    // бросает исключение на несуществующем узле, а не возвращает false.
-    // Реалистичный сценарий — клик по узлу одной вкладки, затем переход на
-    // другую: граф пересобирается под новый набор сущностей, а выбор мог
-    // (по ошибке в другом месте, или до фикса в features/tabs/index.ts)
-    // пережить смену вкладки. Проверяем сам reducer — последний рубеж
-    // защиты, а не только то, что вызывающий код теперь сбрасывает выбор.
+    // Regression: areNeighbors() threw on a focus missing from the graph (e.g.
+    // a selection surviving a tab switch). The reducer must be safe on its own.
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A2", { x: 1, y: 1 });
-    const store = new Store<AppState>(initialState({ selection: { kind: "node", key: "A1" } })); // "A1" отсутствует в graph
+    const store = new Store<AppState>(initialState({ selection: { kind: "node", key: "A1" } })); // "A1" is not in the graph
     const { renderer, getReducer } = fakeRenderer(graph);
 
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
@@ -688,38 +657,34 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     graph.addNode("A2", { x: 1, y: 1 });
     graph.addNode("A3", { x: 2, y: 2 });
     graph.addEdge("A2", "A3");
-    const store = new Store<AppState>(initialState()); // ничего не выбрано кликом
+    const store = new Store<AppState>(initialState()); // nothing selected
     const { renderer, getReducer, fire } = fakeRenderer(graph);
 
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
     const nodeReducer = getReducer("nodeReducer");
 
     fire("enterNode", { node: "A2" });
-    // Сосед наведённого A2 — не притушен, не увеличен (соседи больше не
-    // растут ни при клике, ни при наведении) и БЕЗ форсированной подписи —
-    // forceLabel только когда фокус пришёл от ВЫБОРА (см. отдельный тест
-    // ниже), иначе на карте с тысячами узлов простое наведение мышью
-    // заваливало бы её подписями соседей без единого клика.
+    // Hover neighbour: not dimmed, not enlarged, no forced label.
     const a3 = nodeReducer("A3", NODE_BASE);
     expect(a3).toMatchObject({ color: NODE_BASE.color, size: NODE_BASE.size });
     expect(a3).not.toHaveProperty("forceLabel", true);
     expect(nodeReducer("A1", NODE_BASE)).toMatchObject({
       color: darkTheme.map.dimNode,
       label: "",
-    }); // не сосед — притушен
+    }); // not a neighbour: dimmed
 
     fire("leaveNode", {});
-    expect(nodeReducer("A1", NODE_BASE)).toEqual(NODE_BASE); // наведение снято — фокуса больше нет
+    expect(nodeReducer("A1", NODE_BASE)).toEqual(NODE_BASE); // hover gone: no focus
   });
 
   it("выбор остаётся фокусом при наведении на ДРУГОЙ узел, И ОДНОВРЕМЕННО наведение подсвечивает СВОИХ соседей — оба источника фокуса работают независимо", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0 });
-    graph.addNode("A2", { x: 1, y: 1 }); // сосед A1 (выбран)
-    graph.addNode("A3", { x: 2, y: 2 }); // сосед A4 (наведён), НЕ сосед A1
+    graph.addNode("A2", { x: 1, y: 1 }); // neighbour of A1 (selected)
+    graph.addNode("A3", { x: 2, y: 2 }); // neighbour of A4 (hovered), not of A1
     graph.addNode("A4", { x: 3, y: 3 });
-    graph.addNode("A5", { x: 4, y: 4 }); // ни то ни другое — должен остаться притушен
+    graph.addNode("A5", { x: 4, y: 4 }); // neither: stays dimmed
     graph.addEdge("A1", "A2");
     graph.addEdge("A3", "A4");
     const store = new Store<AppState>(initialState({ selection: { kind: "node", key: "A1" } }));
@@ -732,12 +697,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     const [edgeA3A4] = graph.edges("A3", "A4");
     if (!edgeA1A2 || !edgeA3A4) throw new Error("граф должен содержать оба ребра");
 
-    // Курсор наводится на A4 (совсем другой узел, не сосед A1), пока A1
-    // выбран кликом. Раньше (первая версия фикса) наведение на другой узел
-    // либо подменяло фокус на A4 (подсветка A1 пропадала — самая первая
-    // жалоба), либо полностью игнорировалось, пока что-то выбрано (A4/A3
-    // не подсвечивались вовсе — следующая жалоба: "мы должны иметь
-    // возможность искать дальше"). Правильно — оба источника активны сразу.
+    // Hover A4 while A1 is selected: both focus sources stay active.
     fire("enterNode", { node: "A4" });
 
     expect(nodeReducer("A1", NODE_BASE)).toMatchObject({
@@ -746,18 +706,18 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     });
     expect(nodeReducer("A2", NODE_BASE)).toMatchObject({
       color: NODE_BASE.color,
-      size: NODE_BASE.size, // соседи больше не растут — ни соседи выбора, ни соседи наведения
-      forceLabel: true, // сосед ВЫБОРА — подпись форсирована
+      size: NODE_BASE.size, // neighbours never grow
+      forceLabel: true, // selection neighbour: forced label
     });
-    expect(edgeReducer(edgeA1A2, EDGE_BASE)).toMatchObject({ color: EDGE_BASE.color }); // ребро выбора по-прежнему видно
-    const a3 = nodeReducer("A3", NODE_BASE); // сосед НАВЕДЕНИЯ (A4) — тоже подсвечен, независимо от выбора
+    expect(edgeReducer(edgeA1A2, EDGE_BASE)).toMatchObject({ color: EDGE_BASE.color }); // selection edge still visible
+    const a3 = nodeReducer("A3", NODE_BASE); // hover neighbour (A4) is lit too
     expect(a3).toMatchObject({ color: NODE_BASE.color, size: NODE_BASE.size });
-    expect(a3).not.toHaveProperty("forceLabel", true); // но подпись НЕ форсирована — сосед наведения, не выбора
-    expect(edgeReducer(edgeA3A4, EDGE_BASE)).toMatchObject({ color: EDGE_BASE.color }); // ребро наведения тоже видно
+    expect(a3).not.toHaveProperty("forceLabel", true); // no forced label for a hover neighbour
+    expect(edgeReducer(edgeA3A4, EDGE_BASE)).toMatchObject({ color: EDGE_BASE.color }); // hover edge visible too
     expect(nodeReducer("A5", NODE_BASE)).toMatchObject({
       color: darkTheme.map.dimNode,
       label: "",
-    }); // ни то ни другое — притушен
+    }); // neither: dimmed
   });
 
   it("выбор департамента оставляет яркими его узлы, остальные притушает, рёбра не показывает — у региона нет своего узла", async () => {
@@ -789,9 +749,9 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     });
 
     const edgeKey = (s: string, t: string) => graph.edge(s, t) ?? "";
-    expect(edgeReducer(edgeKey("A1", "A2"), EDGE_BASE)).toMatchObject({ hidden: true }); // оба конца в департаменте
+    expect(edgeReducer(edgeKey("A1", "A2"), EDGE_BASE)).toMatchObject({ hidden: true }); // both ends in the department
     expect(edgeReducer(edgeKey("A2", "A3"), EDGE_BASE)).toMatchObject({ hidden: true });
-    expect(edgeReducer(edgeKey("A3", "A4"), EDGE_BASE)).toMatchObject({ hidden: true }); // оба конца чужие
+    expect(edgeReducer(edgeKey("A3", "A4"), EDGE_BASE)).toMatchObject({ hidden: true }); // both ends outside
   });
 
   it("выбор РЕБРА подсвечивает оба его конца с подписями, как соседей выбора узла — но не увеличивает и не помечает highlighted", async () => {
@@ -799,7 +759,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0 });
     graph.addNode("A2", { x: 1, y: 1 });
-    graph.addNode("A3", { x: 2, y: 2 }); // не участвует в выбранном ребре — должен остаться притушен
+    graph.addNode("A3", { x: 2, y: 2 }); // not on the selected edge: stays dimmed
     graph.addEdge("A1", "A2", { weight: 2 });
     const store = new Store<AppState>(
       initialState({ selection: { kind: "edge", s: "A1", t: "A2", w: 2 } }),
@@ -812,7 +772,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     for (const key of ["A1", "A2"]) {
       const res = nodeReducer(key, NODE_BASE);
       expect(res).toMatchObject({ color: NODE_BASE.color, size: NODE_BASE.size, forceLabel: true });
-      expect(res).not.toHaveProperty("highlighted", true); // это два конца ребра, не "сам выбор" узла
+      expect(res).not.toHaveProperty("highlighted", true); // edge endpoints, not the selected node
     }
     expect(nodeReducer("A3", NODE_BASE)).toMatchObject({
       color: darkTheme.map.dimNode,
@@ -825,12 +785,12 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0 });
     graph.addNode("A2", { x: 1, y: 1 });
-    graph.addNode("A5", { x: 4, y: 4 }); // сосед A1 через ДРУГОЕ ребро (не выбранное)
+    graph.addNode("A5", { x: 4, y: 4 }); // neighbour of A1 via another edge
     graph.addNode("A6", { x: 5, y: 5 });
     graph.addNode("A7", { x: 6, y: 6 });
-    graph.addEdge("A1", "A2", { weight: 2 }); // выбранное ребро
-    graph.addEdge("A1", "A5", { weight: 1 }); // другое ребро того же конца — должно остаться видимым
-    graph.addEdge("A6", "A7", { weight: 1 }); // совсем не связано ни с A1, ни с A2 — должно скрыться
+    graph.addEdge("A1", "A2", { weight: 2 }); // selected edge
+    graph.addEdge("A1", "A5", { weight: 1 }); // another edge of the same endpoint: stays visible
+    graph.addEdge("A6", "A7", { weight: 1 }); // unrelated to A1 and A2: hidden
     const store = new Store<AppState>(
       initialState({ selection: { kind: "edge", s: "A1", t: "A2", w: 2 } }),
     );
@@ -843,18 +803,14 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     const [edgeA6A7] = graph.edges("A6", "A7");
     if (!edgeA1A5 || !edgeA6A7) throw new Error("граф должен содержать оба вспомогательных ребра");
 
-    // Раньше "anyFocusActive"/видимость рёбер для выбора ребра не учитывали
-    // ничего, кроме самого выбранного отрезка — все ОСТАЛЬНЫЕ рёбра обоих
-    // концов пропадали целиком (прямая жалоба: "остальные рёбра не видно").
+    // Other edges of the selected edge's endpoints stay visible.
     expect(edgeReducer(edgeA1A5, EDGE_BASE)).toMatchObject({ color: EDGE_BASE.color });
-    // Узел на другом конце этого ребра (A5) не должен тускнеть — видимая
-    // линия к притушенному узлу выглядела бы как рассинхрон.
+    // And their far ends are not dimmed.
     expect(nodeReducer("A5", NODE_BASE)).toMatchObject({
       color: NODE_BASE.color,
       size: NODE_BASE.size,
     });
-    // A6-A7 никак не связано ни с A1, ни с A2 — по-прежнему скрыто,
-    // "остальное убрать" всё ещё работает, просто не для ВСЕГО подряд.
+    // Unrelated edges are still hidden.
     expect(edgeReducer(edgeA6A7, EDGE_BASE)).toMatchObject({ hidden: true });
   });
 
@@ -877,7 +833,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     if (!touchingFocus || !notTouchingFocus) throw new Error("граф должен содержать оба ребра");
 
     expect(edgeReducer(touchingFocus, EDGE_BASE)).toMatchObject({ color: EDGE_BASE.color });
-    expect(edgeReducer(notTouchingFocus, EDGE_BASE)).toMatchObject({ hidden: true }); // "остальные рёбра убрать", не притушить
+    expect(edgeReducer(notTouchingFocus, EDGE_BASE)).toMatchObject({ hidden: true }); // hidden, not dimmed
   });
 
   it("edgeReducer подсвечивает выбранное ребро независимо от порядка s/t", async () => {
@@ -891,8 +847,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     );
     const { renderer, getReducer } = fakeRenderer(graph);
 
-    // NO_FILTER.edgeZoomThreshold (10) уже заведомо выше дефолтного ratio=1
-    // в fakeRenderer — рёбра видны без отдельного fireCameraUpdated.
+    // Edges are visible: the threshold is above the default ratio 1.
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
     const edgeReducer = getReducer("edgeReducer");
     const [edgeKey] = graph.edges();
@@ -913,8 +868,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     const store = new Store<AppState>(initialState());
     const { renderer, getReducer } = fakeRenderer(graph);
 
-    // NO_FILTER.edgeZoomThreshold — заведомо выше ratio=1, реальные рёбра
-    // были бы видны на этом зуме (проверяем, что дептовые — всё равно нет).
+    // Real edges would be visible at this zoom; department edges still are not.
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
     const [edgeKey] = graph.edges();
     if (!edgeKey) throw new Error("граф должен содержать ребро");
@@ -992,22 +946,20 @@ describe("mountReactiveGraph", () => {
     expect(realNodeKeys(graph)).toHaveLength(authorsRealCount);
 
     store.set({ selection: { kind: "node", key: "A1" } });
-    expect(refresh).toHaveBeenCalledTimes(1); // выбор — лёгкий refresh(), не пересборка
-    expect(realNodeKeys(graph)).toHaveLength(authorsRealCount); // граф не пересобирался
+    expect(refresh).toHaveBeenCalledTimes(1); // selection only refreshes, no rebuild
+    expect(realNodeKeys(graph)).toHaveLength(authorsRealCount); // graph not rebuilt
 
     store.set({ tab: 2 });
-    expect(realNodeKeys(graph)).toHaveLength(data.repos.length); // пересобран под новую вкладку
-    // "A1" (автор) не существует в новом графе (репозитории) — mountReactiveGraph
-    // сама обнуляет устаревший выбор (см. отдельный тест ниже), это и даёт
-    // второй refresh() здесь, не сама пересборка.
+    expect(realNodeKeys(graph)).toHaveLength(data.repos.length); // rebuilt for the new tab
+    // A1 does not exist in the repos graph, so the selection is cleared; that causes the second refresh().
     expect(store.get().selection).toBeNull();
     expect(refresh).toHaveBeenCalledTimes(2);
 
     store.set({ lang: "en" });
-    expect(realNodeKeys(graph)).toHaveLength(data.repos.length); // та же вкладка, граф пересобран заново (не упал)
+    expect(realNodeKeys(graph)).toHaveLength(data.repos.length); // same tab, rebuilt without crashing
 
     store.set({ filters: { ...store.get().filters, minCoauth: 5 } });
-    expect(refresh).toHaveBeenCalledTimes(2); // ни одно из трёх пересобраний само по себе refresh() не дёргало
+    expect(refresh).toHaveBeenCalledTimes(2); // rebuilds alone never call refresh()
   });
 
   it("смена фильтра, скрывающего выбранную публикацию (filters.yearMax), тоже обнуляет устаревший выбор", async () => {
@@ -1022,9 +974,9 @@ describe("mountReactiveGraph", () => {
     const { renderer } = fakeRenderer(graph);
 
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
-    store.set({ filters: { ...store.get().filters, yearMax: 2022 } }); // скрывает pub2024 (год > 2022)
+    store.set({ filters: { ...store.get().filters, yearMax: 2022 } }); // hides pub2024
 
-    expect(graph.hasNode(pub2024.key)).toBe(false); // публикация правда пропала из графа
+    expect(graph.hasNode(pub2024.key)).toBe(false); // the pub is really gone
     expect(store.get().selection).toBeNull();
   });
 
@@ -1038,11 +990,7 @@ describe("mountReactiveGraph", () => {
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
     store.set({ selection: { kind: "node", key: "A1" } });
 
-    // x/y сдвинуты на FRAMED_COORD_OFFSET относительно сырых атрибутов узла
-    // (см. fakeRenderer::getNodeDisplayData) — так тест ловит регрессию,
-    // из-за которой камера раньше улетала в пустоту на реальных данных:
-    // graph.getNodeAttributes() отдаёт СЫРЫЕ координаты ForceAtlas2, а не то
-    // нормализованное пространство, в котором живёт camera.x/y.
+    // Display coordinates are offset from raw ones; raw coordinates sent the camera off screen.
     expect(cameraAnimate).toHaveBeenCalledWith(
       {
         x: 12 + FRAMED_COORD_OFFSET,
@@ -1054,21 +1002,17 @@ describe("mountReactiveGraph", () => {
   });
 
   it("смена вкладки И selection ОДНИМ патчем (как делает features/globalSearch.ts) тоже подлетает камерой — не только раздельные store.set()", async () => {
-    // Регрессия: раньше ветка "сменилась вкладка" всегда делала return, даже
-    // если selection в ТОМ ЖЕ патче тоже сменился — камера так никогда и не
-    // подлетала к результату глобального поиска, если он принадлежал другой
-    // вкладке (подсветка на карте при этом была верной, только сам вид
-    // камеры оставался там, где был до выбора).
+    // Regression: a tab change returned early, so the camera ignored a selection in the same patch.
     const data = await loadSampleGraphData();
     const graph = new Graph();
-    populateGraph(graph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS); // изначально вкладка 1
+    populateGraph(graph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS); // starts on tab 1
     const store = new Store<AppState>(initialState({ tab: 1 }));
     const { renderer, cameraAnimate } = fakeRenderer(graph);
     const repo = data.repos[0];
     if (!repo) throw new Error("фикстура должна содержать хотя бы один репозиторий");
 
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
-    store.set({ tab: 2, selection: { kind: "node", key: repo.key } }); // один патч, как в глобальном поиске
+    store.set({ tab: 2, selection: { kind: "node", key: repo.key } }); // one patch, like global search
 
     expect(cameraAnimate).toHaveBeenCalledWith(
       {
@@ -1115,24 +1059,19 @@ describe("mountReactiveGraph", () => {
   });
 
   it("выбор ребра переживает пересборку графа (смена lang) независимо от порядка s/t — graph.hasEdge() чувствителен к направлению, ребро выбора — нет", async () => {
-    // populateGraph добавляет рёбра через generic graph.mergeEdge(), которое
-    // на графе типа "mixed" (дефолт graphology) создаёт НАПРАВЛЕННОЕ ребро
-    // s -> t — graph.hasEdge(t, s) для него вернуло бы false. Рёбра в этом
-    // приложении везде считаются неориентированными (core/url.ts и
-    // applyGraphStyling::isSelectedEdge уже проверяют оба порядка) —
-    // selectionExistsIn() должна делать то же самое.
+    // mergeEdge on a mixed graph makes a directed edge, so selectionExistsIn() must check both orders.
     const data = await loadSampleGraphData();
     const graph = new Graph();
     populateGraph(graph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
     const edge = data.coauth_edges[0];
     if (!edge) throw new Error("фикстура должна содержать хотя бы одно coauth-ребро");
     const store = new Store<AppState>(
-      initialState({ selection: { kind: "edge", s: edge.t, t: edge.s, w: edge.w } }), // s/t НАРОЧНО перевёрнуты
+      initialState({ selection: { kind: "edge", s: edge.t, t: edge.s, w: edge.w } }), // s/t swapped on purpose
     );
     const { renderer } = fakeRenderer(graph);
 
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
-    store.set({ lang: "en" }); // безобидная пересборка, но всё равно проходит через selectionExistsIn()
+    store.set({ lang: "en" }); // harmless rebuild that still runs selectionExistsIn()
 
     expect(store.get().selection).not.toBeNull();
   });

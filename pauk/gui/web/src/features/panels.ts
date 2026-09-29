@@ -1,11 +1,3 @@
-// Слой "features" — панель с информацией о том, что сейчас выбрано.
-// Умеет показывать карточку узла (автор/репозиторий/публикация), ребра
-// (кто с кем связан и с каким весом), департамента (сводные числа из
-// самого Department) и карточку "Обзор" по умолчанию, когда вообще ничего
-// не выбрано — сводка ЗАВИСИТ от активной вкладки (числа сущностей,
-// заполняемость её detail-полей), не один общий набор чисел на все три
-// графа, см. {@link renderOverview}.
-
 import type {
   Affiliation,
   AuthorDetail,
@@ -37,19 +29,13 @@ import { createLoadingIndicator, requireElement } from "../core/dom";
 import { kindLabel, localize, t } from "../core/i18n";
 import { TAB_FOR_KIND, type AppState, type Selection, type Store } from "../core/state";
 
-/** Строка карточки ещё не может показать значение — соответствующий
- * `*Detail`-файл (см. {@link AuthorDetail}/{@link RepoDetail}) не домержился
- * в карту, переданную {@link mountPanel}. Отдельный маркер, а не пустая
- * строка — пустая строка означала бы "поле реально пустое", а это "мы пока
- * не знаем, что там". */
+/** The detail file has not arrived yet; differs from an empty value. */
 const LOADING: unique symbol = Symbol("panel-row-loading");
 
-/** Значение строки карточки — обычный текст, список кликабельных ВНЕШНИХ
- * ссылок ({@link PanelLink}, DOI/GitHub/ORCID/код — открываются в новой
- * вкладке), список кликабельных ссылок на ДРУГИЕ СУЩНОСТИ ГРАФА
- * ({@link PanelEntityRef} — соавторы, публикации, департаменты и т.п.:
- * клик делает эту сущность новым store.selection, не открывает вкладку),
- * либо {@link LOADING}, пока detail ещё не пришёл. */
+/**
+ * Plain text, external links (open in a new tab), refs to other graph
+ * entities (a click selects them), or {@link LOADING}.
+ */
 type PanelRowValue =
   | string
   | PanelLink[]
@@ -57,86 +43,55 @@ type PanelRowValue =
   | PanelList
   | PanelLongText
   | typeof LOADING;
-/** Одна кликабельная ВНЕШНЯЯ ссылка в строке карточки — всегда открывается в новой вкладке ({@link buildCard}). */
 interface PanelLink {
   kind: "link";
   href: string;
   text: string;
-  /** Необязательный некликабельный суффикс, например годы аффилиации. */
+  /** Non-clickable suffix, e.g. affiliation years. */
   meta?: string;
-  /** Имя файла — ссылка скачивает, а не открывает (CSV гранта). */
+  /** File name: the link downloads instead of opening (grant CSV). */
   download?: string;
 }
-/**
- * Длинное поле-список: подпись во всю ширину, под ней по элементу на строку,
- * первые {@link PANEL_CONFIG.listLimit} и кнопка "ещё N" для остальных.
- */
+/** Full-width list with the first {@link PANEL_CONFIG.listLimit} items and a "N more" toggle. */
 interface PanelList {
   kind: "list";
   items: (string | PanelText | PanelLink | PanelEntityRef)[];
 }
-/** Длинный текст (аннотация): первые {@link PANEL_CONFIG.abstractWords} слов, остальное по клику. */
+/** First {@link PANEL_CONFIG.abstractWords} words, the rest on click. */
 interface PanelLongText {
   kind: "longText";
   text: string;
 }
-/** Некликабельный пункт {@link PanelList} с серым суффиксом — оформлен так же, как {@link PanelLink}, только без ссылки. */
+/** Non-clickable {@link PanelList} item styled like {@link PanelLink}. */
 interface PanelText {
   kind: "text";
   text: string;
   meta?: string;
 }
-/**
- * Кликабельная ссылка на ДРУГУЮ сущность ЭТОГО ЖЕ графа (не внешний URL) —
- * узел или департамент, клик по которой делает её новым `store.selection`
- * (карта подлетает к ней, панель показывает уже её карточку — та же
- * механика, что у клика по узлу на карте или по строке списка вкладки, см.
- * map/build.ts::flyToSelection). Ключевая часть "прослеживать связи": не
- * просто СКАЗАТЬ, кто с кем связан, а дать перейти по этой связи одним кликом.
- */
+/** Link to another node, department or grant; a click selects it. */
 interface PanelEntityRef {
   kind: "ref";
-  /** Куда положить как `store.selection` по клику. */
   selection: Extract<Selection, { kind: "node" } | { kind: "dept" } | { kind: "grant" }>;
-  /** Кликабельная подпись — сама ссылка. */
   label: string;
-  /** Необязательный некликабельный суффикс справа от подписи, например роль в репозитории ("(maintainer)"). */
+  /** Non-clickable suffix, e.g. a repo role. */
   meta?: string;
 }
-/** Одна строка карточки: `[подпись, значение]`. */
 type PanelRow = [label: string, value: PanelRowValue];
-/** Раздел карточки: заголовок (`null` — без заголовка) и его строки. */
+/** `null` title means no heading. */
 interface PanelSection {
   title: string | null;
   rows: PanelRow[];
 }
 
-/** Ключ узла, на который ведёт ссылка (у ссылки на департамент — пусто). */
 function refKey(ref: PanelEntityRef): string {
   return ref.selection.kind === "node" ? ref.selection.key : "";
 }
 
-/** Карточка из одного раздела без заголовка — для карточек, которые на разделы не делятся. */
 function untitled(rows: PanelRow[]): PanelSection[] {
   return [{ title: null, rows }];
 }
 
-/**
- * Строит ссылку на DOI публикации — как и в старом GUI (`search.js`): если
- * `doi` уже пришёл полным URL вида `https://doi.org/...`, префикс не
- * задваивается.
- *
- * Отдельной проверки схемы (как у {@link codeLink}) не требует: схема
- * `"https://doi.org/"` всегда захардкожена нами, значение подставляется
- * только в путь — оно физически не может подменить схему ссылки.
- *
- * @param doi - DOI публикации, с префиксом `https://doi.org/` или без него.
- * @returns Ссылка с полным `https://doi.org/...` в `href` и исходным `doi` в `text`.
- *
- * @example
- * doiLink("10.1000/xyz123"); // { href: "https://doi.org/10.1000/xyz123", text: "10.1000/xyz123" }
- * doiLink("https://doi.org/10.1000/xyz123"); // тот же результат — префикс не задвоился
- */
+/** Accepts a bare DOI or a full https://doi.org/ URL. */
 function doiLink(doi: string): PanelLink {
   return {
     kind: "link",
@@ -145,54 +100,17 @@ function doiLink(doi: string): PanelLink {
   };
 }
 
-/**
- * Строит ссылку на GitHub-профиль автора по его логину. Использует общий
- * {@link githubProfileUrl} из `core/data.ts`, а не собственный литерал
- * `"https://github.com/"` — так сборка ссылки (здесь) и укорачивание уже
- * готовой ссылки (см. {@link codeLink}) не могут разойтись между собой.
- *
- * @param username - логин автора на GitHub (`AuthorDetail.github`).
- * @returns Ссылка на профиль с логином в `text`.
- *
- * @example
- * githubLink("ivanov-ii"); // { href: "https://github.com/ivanov-ii", text: "ivanov-ii" }
- */
 function githubLink(username: string): PanelLink {
   return { kind: "link", href: githubProfileUrl(username), text: username };
 }
 
-/**
- * Строит ссылку на ORCID автора по его id. Схема `"https://orcid.org/"`
- * захардкожена нами — та же логика безопасности, что и у {@link doiLink}.
- *
- * @param id - ORCID id автора (`AuthorDetail.orcid`), формата `"0000-0001-2345-6789"`.
- * @returns Ссылка на страницу ORCID с id в `text`.
- *
- * @example
- * orcidLink("0000-0001-2345-6789"); // { href: "https://orcid.org/0000-0001-2345-6789", text: "0000-0001-2345-6789" }
- */
 function orcidLink(id: string): PanelLink {
   return { kind: "link", href: `https://orcid.org/${id}`, text: id };
 }
 
 /**
- * Проверяет схему произвольного URL, пришедшего из данных (не построенного
- * нами самими), и возвращает его как есть, если схема безопасна.
- *
- * Общая часть {@link codeLink} и {@link googleScholarLink}/{@link
- * openalexUrlLink} — все три поля (`code_url`, `google_scholar`,
- * `openalex_url`) приходят из внешнего харвестинга (GitHub/Google
- * Scholar/OpenAlex), а не собираются нами из проверенных частей, как
- * {@link doiLink}/{@link githubLink}/{@link orcidLink} — без проверки
- * схемы значение вроде `"javascript:alert(1)"` привело бы к выполнению
- * произвольного кода по клику (XSS). Если схема не `http:`/`https:`, или
- * `url` вообще не парсится как URL, возвращается безопасный `"about:blank"`,
- * а в консоль пишется предупреждение — не тихо, чтобы проблема с данными
- * была заметна разработчику.
- *
- * @param url - произвольная ссылка из внешних данных.
- * @param context - имя вызывающей функции, для текста предупреждения в консоли.
- * @returns `url` как есть, если схема `http:`/`https:`, иначе `"about:blank"`.
+ * For URLs from harvested data: anything but http/https (e.g. `javascript:`)
+ * becomes `about:blank`, with a console warning.
  */
 function safeHref(url: string, context: string): string {
   try {
@@ -207,64 +125,23 @@ function safeHref(url: string, context: string): string {
   return "about:blank";
 }
 
-/**
- * Строит ссылку на код публикации из `PubDetail.code_url`, с проверкой
- * схемы (см. {@link safeHref}).
- *
- * @param url - произвольная ссылка на код из `PubDetail.code_url`.
- * @returns Ссылка с проверенной схемой в `href` и коротким путём без
- *   `"https://github.com/"` в `text` (см. {@link githubShortPath}).
- *
- * @example
- * codeLink("https://github.com/example-org/graph-toolkit");
- * // { href: "https://github.com/example-org/graph-toolkit", text: "example-org/graph-toolkit" }
- */
 function codeLink(url: string): PanelLink {
   return { kind: "link", href: safeHref(url, "codeLink"), text: githubShortPath(url) };
 }
 
-/**
- * Строит ссылку на профиль Google Scholar из `AuthorDetail.google_scholar`
- * (уже полный URL, в отличие от `orcid`/`openalex_id`, которые
- * приходят голыми id) — с проверкой схемы (см. {@link safeHref}). Текст
- * ссылки — фиксированное "Google Scholar", а не сам URL: он длинный и с
- * query-параметрами, нечитаем в узкой карточке.
- *
- * @param url - `AuthorDetail.google_scholar`.
- */
+/** The URL is long and full of query params, so the text is fixed. */
 function googleScholarLink(url: string): PanelLink {
   return { kind: "link", href: safeHref(url, "googleScholarLink"), text: "Google Scholar" };
 }
 
-/**
- * Строит ссылку на страницу публикации на OpenAlex из `PubDetail.openalex_url`
- * (уже полный URL) — та же схема-проверка, что и у {@link googleScholarLink},
- * той же причине (внешний харвестинг, не наша сборка ссылки).
- *
- * @param url - `PubDetail.openalex_url`.
- */
 function openalexUrlLink(url: string): PanelLink {
   return { kind: "link", href: safeHref(url, "openalexUrlLink"), text: "OpenAlex" };
 }
 
-/**
- * Строит ссылку на профиль автора на OpenAlex по его id
- * (`AuthorDetail.openalex_id`, например `"A5120308655"`) — схема
- * `"https://openalex.org/"` захардкожена нами, как и у {@link orcidLink},
- * проверка не нужна.
- *
- * @param id - `AuthorDetail.openalex_id`.
- */
 function openalexIdLink(id: string): PanelLink {
   return { kind: "link", href: `https://openalex.org/${id}`, text: id };
 }
 
-/**
- * Строит ссылку `mailto:` из `AuthorDetail.email` — схема захардкожена
- * нами, проверка не нужна.
- *
- * @param email - адрес почты.
- */
 function emailLink(email: string): PanelLink {
   return { kind: "link", href: `mailto:${email}`, text: email };
 }
@@ -272,18 +149,8 @@ function emailLink(email: string): PanelLink {
 const AFFILIATION_SOURCE_LABELS: Record<string, string> = { openalex: "OpenAlex", orcid: "ORCID" };
 
 /**
- * Склеивает записи аффилиаций с одинаковым названием (одна и та же
- * организация приходит отдельно от OpenAlex и от ORCID) в один пункт списка:
- * название (ссылка на ror.org, если ROR известен), диапазон лет и источники.
- * Сверху — самые недавние.
- *
- * @param affiliations - `AuthorDetail.affiliations`.
- * @returns Пункты для {@link PanelList}.
- *
- * @example
- * // [{name: "ITMO", ror: "04txgxn49", years: [2023, 2024], source: "openalex"},
- * //  {name: "ITMO", ror: "04txgxn49", years: [2019], source: "orcid"}]
- * // -> [{ kind: "link", href: "https://ror.org/04txgxn49", text: "ITMO", meta: "2019–2024 · OpenAlex, ORCID" }]
+ * Merges OpenAlex and ORCID entries with the same name into one item: name
+ * (linked to ror.org when known), year range and sources. Newest first.
  */
 function affiliationItems(affiliations: Affiliation[]): (PanelLink | PanelText)[] {
   const byName = new Map<string, { ror: string; years: number[]; sources: Set<string> }>();
@@ -313,13 +180,7 @@ function affiliationItems(affiliations: Affiliation[]): (PanelLink | PanelText)[
     });
 }
 
-/**
- * Форматирует служебную ISO-метку времени (`created_at`/`updated_at`) под
- * язык интерфейса. Нераспознанная строка возвращается как есть.
- *
- * @param value - ISO-строка, например `"2026-08-14T10:23:45.123Z"`.
- * @param lang - язык интерфейса.
- */
+/** Unparseable strings are returned as is. */
 function formatTimestamp(value: string, lang: AppState["lang"]): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -332,24 +193,7 @@ function formatTimestamp(value: string, lang: AppState["lang"]): string {
   });
 }
 
-/**
- * Подключает панель информации: подписывается на Store и перерисовывает
- * содержимое каждый раз, когда меняется `state.selection` ИЛИ
- * `state.lang` — оба поля читаются в одном `render()`, поэтому одной
- * подписки достаточно, без отдельной логики "что именно изменилось".
- *
- * При монтировании один раз строит все нужные обратные индексы
- * (`indexByKey`, `buildAuthorPubIndex` и т.д.) — они не меняются, пока не
- * поменялись сами `data`, поэтому пересчитывать их на каждый рендер не
- * нужно, только на каждый клик искать в уже готовых структурах.
- *
- * @param store - Store приложения.
- * @param data - данные графа.
- * @param pubDetails - карта деталей публикаций (настоящие названия/DOI/код публикаций).
- * @param authorDetails - карта личных данных авторов (степень, GitHub, ORCID, варианты имени) — отдельно от `AuthorNode`, см. `contracts/graph.ts::AuthorDetail`.
- * @param repoDetails - карта описаний/лицензий/типа владельца репозиториев — отдельно от `RepoNode`, см. `contracts/graph.ts::RepoDetail`.
- * @returns Функция отписки (unmount) от Store.
- */
+/** @returns Unmount function. */
 export function mountPanel(
   store: Store<AppState>,
   data: GraphData,
@@ -389,7 +233,7 @@ export function mountPanel(
     })
     .catch((error: unknown) => console.warn("implementation-rates.json:", error));
 
-  /** Ссылки на репозиторий/публикацию пары с implementation rate в `meta`: "реализовано 32/57 · 56%". */
+  /** Repo/pub refs with the implementation rate in `meta`: "implemented 32/57 · 56%". */
   function withImplementationRate(
     refs: PanelEntityRef[],
     pairKeyOf: (ref: PanelEntityRef) => string,
@@ -406,7 +250,7 @@ export function mountPanel(
     });
   }
 
-  /** Пункт "Гранты": номер кликабелен, если его удалось нормализовать (grant_key). */
+  /** The number is clickable only when it was normalized (grant_key). */
   function fundingItem(entry: PubDetail["funding"][number]): PanelEntityRef | PanelText {
     if (entry.grant_key)
       return {
@@ -421,7 +265,7 @@ export function mountPanel(
       : { kind: "text", text: entry.funder };
   }
 
-  /** Публикации гранта для CSV: по строке на публикацию, свежие сверху. */
+  /** One CSV row per publication, newest first. */
   function grantCsvLink(grant: GrantInfo, pubKeys: string[], lang: AppState["lang"]): PanelLink {
     const rows = [
       ["OpenAlex ID", "Title", "Year", "DOI", "Journal", "Type", "Authors", "Funder", "Grant"],
@@ -468,8 +312,6 @@ export function mountPanel(
       : [];
   }
 
-  // Строится один раз при монтировании, а не на каждый рендер — поиск по
-  // ключу должен быть мгновенным, а не пересчитывать индекс на каждый клик.
   const index = indexByKey(data);
   const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
   const groups = groupsById(data);
@@ -487,16 +329,6 @@ export function mountPanel(
   const repoAuthorIndex = buildRepoAuthorIndex(data);
   const { repoPubs: repoPubIndex, pubRepos: pubRepoIndex } = buildRepoPubIndex(data);
 
-  /**
-   * Строит кликабельные ссылки на департаменты по списку их id — для строки
-   * "связанные департаменты" в карточке департамента. Клик по любому из них
-   * делает этот департамент новым `store.selection` — "прослеживать связи"
-   * между департаментами так же просто, как между узлами.
-   *
-   * @param ids - список id департаментов.
-   * @param lang - язык интерфейса.
-   * @returns Ссылки в том же порядке, что и `ids`.
-   */
   function deptRefsOf(ids: number[], lang: AppState["lang"]): PanelEntityRef[] {
     return ids.map((id) => {
       const dept = groups.get(id);
@@ -505,24 +337,7 @@ export function mountPanel(
     });
   }
 
-  /**
-   * Строит кликабельные ссылки на узлы графа по списку их ключей — общая
-   * функция для строк "общие публикации"/"общие авторы" в карточке ребра и
-   * всех похожих списков в карточках автора/репозитория/публикации/обзора.
-   * Клик по любой из них делает этот узел новым `store.selection` — камера
-   * подлетает к нему, а панель показывает уже его карточку (та же механика,
-   * что у клика по узлу на карте, см. map/build.ts::flyToSelection) —
-   * ключевая часть "прослеживать связи одним кликом", а не просто видеть
-   * список имён.
-   *
-   * @param keys - список ключей узлов (авторов, репозиториев или публикаций).
-   * @param lang - язык интерфейса.
-   * @returns Ссылки в том же порядке, что и `keys`. Ключ, которого нет в
-   *   `index` (не должно случаться на согласованных данных), используется
-   *   как подпись как есть, а не отбрасывается — но тогда клик по нему
-   *   ни к чему не приведёт (mountReactiveGraph сам обнулит несуществующий
-   *   выбор, см. map/build.ts::selectionExistsIn).
-   */
+  /** An unknown key keeps its raw text as the label. */
   function entityRefsOf(keys: string[], lang: AppState["lang"]): PanelEntityRef[] {
     return keys.map((key) => {
       const node = index.get(key);
@@ -531,28 +346,10 @@ export function mountPanel(
     });
   }
 
-  /**
-   * Отбирает из списка ключей только те, что резолвятся в публикацию, и
-   * возвращает их недавние сверху (год по убыванию), обрезано до
-   * {@link PANEL_CONFIG.listLimit} — без этого список на реальных данных
-   * (у активного автора/репозитория может быть сотни публикаций) не
-   * поместился бы в небольшую карточку. Общая часть {@link recentPubKeysOf}
-   * и {@link repoPubKeysOf} — отличаются только тем, откуда берут исходный
-   * список ключей (публикации автора vs публикации репозитория).
-   *
-   * @param pubKeys - произвольный список ключей (не обязательно только публикаций).
-   * @returns До `PANEL_CONFIG.listLimit` ключей публикаций из `pubKeys`, от новых к старым.
-   */
   function recentPubKeysFrom(pubKeys: string[]): string[] {
     return pubKeysByYear(pubKeys).slice(0, PANEL_CONFIG.listLimit);
   }
 
-  /**
-   * Все ключи публикаций из `pubKeys`, от новых к старым, без обрезки —
-   * для списков с кнопкой "ещё N" ({@link PanelList}).
-   *
-   * @param pubKeys - произвольный список ключей (не обязательно только публикаций).
-   */
   function pubKeysByYear(pubKeys: string[]): string[] {
     return pubKeys
       .map((key) => index.get(key))
@@ -561,26 +358,12 @@ export function mountPanel(
       .map((node) => node.key);
   }
 
-  /**
-   * Возвращает ключи соавторов автора, по убыванию суммарного веса связи
-   * (числа совместных публикаций).
-   *
-   * @param authorKey - ключ автора.
-   * @returns Ключи всех соавторов, от самых частых к редким.
-   */
   function topCoauthorKeys(authorKey: string): string[] {
     return [...(coauthIndex.get(authorKey) ?? new Map<string, number>()).entries()]
       .sort(([, weightA], [, weightB]) => weightB - weightA)
       .map(([key]) => key);
   }
 
-  /**
-   * Возвращает ключи репозиториев автора, по убыванию звёзд (как и в
-   * старом GUI).
-   *
-   * @param authorKey - ключ автора.
-   * @returns Ключи всех репозиториев автора, от самых популярных к менее популярным.
-   */
   function authorRepoKeysOf(authorKey: string): string[] {
     return (authorRepoIndex.get(authorKey) ?? [])
       .map((key) => index.get(key))
@@ -589,17 +372,7 @@ export function mountPanel(
       .map((node) => node.key);
   }
 
-  /**
-   * Строит кликабельные ссылки на участников репозитория, с ролью
-   * некликабельным суффиксом (например, `"Иванов И.И. (maintainer)"` —
-   * кликабельно только "Иванов И.И."), обрезано до {@link PANEL_CONFIG.listLimit}.
-   * Отдельная функция, а не {@link entityRefsOf}: нужно дописать роль после
-   * имени, а не только саму подпись узла.
-   *
-   * @param repoKey - ключ репозитория.
-   * @param lang - язык интерфейса.
-   * @returns Ссылки участников с ролями в `meta`.
-   */
+  /** Clickable name with the role as a suffix, e.g. "Ivanov I.I. (maintainer)". */
   function repoContributorRefsOf(repoKey: string, lang: AppState["lang"]): PanelEntityRef[] {
     return (repoAuthorIndex.get(repoKey) ?? []).slice(0, PANEL_CONFIG.listLimit).map((edge) => {
       const author = index.get(edge.t);
@@ -613,41 +386,19 @@ export function mountPanel(
     });
   }
 
-  /**
-   * Возвращает ключи публикаций, связанных с репозиторием, недавние
-   * сверху, обрезано до {@link PANEL_CONFIG.listLimit}.
-   *
-   * @param repoKey - ключ репозитория.
-   * @returns До `PANEL_CONFIG.listLimit` ключей публикаций, от новых к старым.
-   */
   function repoPubKeysOf(repoKey: string): string[] {
     return recentPubKeysFrom(repoPubIndex.get(repoKey) ?? []);
   }
 
-  /** Скрывает панель и очищает её содержимое — для случая рассинхрона данных (см. `render()`) или отсутствующего selection. */
   function hide(): void {
     container.hidden = true;
     container.replaceChildren();
   }
 
   /**
-   * Показывает панель с готовой карточкой.
-   *
-   * @param title - заголовок карточки (`<h3>`, например имя автора или "Обзор").
-   * @param kind - короткий бейдж вида сущности рядом с заголовком (например
-   *   "Автор"/"Департамент"/"Публикации" для "Обзора" текущей вкладки) —
-   *   после того, как почти любая сущность стала кликабельной ссылкой на
-   *   другую (см. {@link PanelEntityRef}), легко потерять, на карточку
-   *   КАКОГО вида сущности только что перепрыгнули.
-   * @param sections - разделы карточки со строками, см. {@link PanelSection}.
-   * @param showBack - показывать ли кнопку "← Обзор" — не для самого
-   *   "Обзора" (там уже некуда возвращаться), для всех остальных карточек.
-   * @param subtitle - см. {@link PanelCardOptions.subtitle} — имя того же
-   *   автора на ВТОРОМ языке, мельче и серым под заголовком; сейчас передаёт
-   *   только карточка автора, `null`/не задано — подзаголовка нет.
-   * @param extra - см. {@link PanelCardOptions.extra} — сейчас используется
-   *   только "Обзором" для графиков ({@link buildBarChart}), поэтому
-   *   необязательный: карточки узла/ребра/департамента его не передают.
+   * @param kind - Badge next to the title, so the user sees what kind of
+   *   entity they jumped to.
+   * @param showBack - Every card but the overview gets a back button.
    */
   function show(
     title: string,
@@ -664,23 +415,10 @@ export function mountPanel(
         kind,
         sections,
         lang: store.get().lang,
-        // "← Обзор"/"← Overview" — null для самого "Обзора" (там уже
-        // некуда возвращаться), готовая локализованная строка для всех
-        // остальных карточек.
         backLabel: showBack ? `← ${t("overview.title", store.get().lang)}` : null,
-        // Клик по PanelEntityRef внутри карточки пишет новую сущность прямо
-        // в store.selection, точно так же, как клик по узлу на карте
-        // (features/selection.ts) или по строке списка вкладки. Ссылки на
-        // сущность ДРУГОГО вида (например, "публикации" на карточке
-        // автора — это узлы-публикации, а не узлы-авторы) требуют ЕЩЁ и
-        // сменить tab — иначе selection указывал бы на узел, которого нет
-        // в графе ТЕКУЩЕЙ вкладки, и flyToSelection() тихо не находил бы
-        // координаты (renderer.getNodeDisplayData() возвращает undefined
-        // для несуществующего узла) — камера не подлетала бы вовсе, хотя
-        // сама карточка новой сущности показывалась бы нормально: та же
-        // логика, что и в features/globalSearch.ts (TAB_FOR_KIND). У
-        // "dept" смены вкладки не нужно — якоря департаментов есть в
-        // графе каждой из трёх вкладок.
+        // A ref to another kind also switches the tab, otherwise the node is
+        // missing from the current graph and the camera cannot fly to it.
+        // Department anchors exist in every tab.
         onSelectRef: (selection) => {
           if (selection?.kind === "grant") {
             store.set({ tab: TAB_FOR_KIND.pub, selection });
@@ -703,43 +441,21 @@ export function mountPanel(
   }
 
   /**
-   * Строит текст строки-процента заполненности поля. {@link LOADING}, пока
-   * detail-файл ещё вообще не начал приходить (`total === 0`) — денежным
-   * является число сущностей, чей detail УЖЕ пришёл, а не общее число
-   * сущностей вкладки: до того, как соответствующий `*-detail.json`
-   * домержился целиком (см. `app/main.ts::loadDetailsInto`), знаменатель
-   * "общее число" давал бы искусственно растущий с каждым fetch процент, а
-   * не реальную заполненность поля среди уже известных записей.
-   *
-   * @param count - число сущностей, у которых поле реально заполнено.
-   * @param total - число сущностей, чей detail уже пришёл (знаменатель).
+   * The denominator is the number of entities whose detail already arrived,
+   * so the percentage does not creep up while the file loads.
    */
   function completionRow(count: number, total: number): PanelRowValue {
     return total === 0 ? LOADING : `${Math.round((count / total) * 100)}%`;
   }
 
-  /**
-   * Рисует карточку "Обзор" по умолчанию, когда ничего не выбрано — сводка
-   * по текущей активной ВКЛАДКЕ (в отличие от старой версии, где обзор был
-   * один общий на все три графа): топ-10 сущностей вкладки и заполняемость
-   * её detail-полей — то, что реально интересно про "авторов" отличается
-   * от того, что интересно про "публикации" или "репозитории", общая
-   * сводка на четыре числа не показывала ничего специфичного ни для одной
-   * из вкладок.
-   *
-   * @param state - текущее состояние приложения (`tab` выбирает вид сводки, `lang` — язык).
-   */
+  /** Overview of the active tab, shown when nothing is selected. */
   function renderOverview(state: AppState): void {
     const { tab, lang } = state;
-    // Какую вкладку резюмирует "Обзор" — в бейдж рядом с заголовком, а не
-    // только в подсветку кнопки вкладки в сайдбаре: панель может быть
-    // единственным, на что смотрят в моменте (например, после долгой серии
-    // переходов по кликабельным ссылкам).
     const tabKind =
       tab === 1 ? t("tab.authors", lang) : tab === 2 ? t("tab.repos", lang) : t("tab.pubs", lang);
 
     if (tab === 1) {
-      // Все авторы, ИТМО и внешние, независимо от фильтра на карте.
+      // All authors, ITMO and external, regardless of the map filter.
       const authors: AuthorNode[] = data.authors;
       const external = authors.filter((a) => a.is_itmo === false).length;
       const avgPubs =
@@ -803,7 +519,6 @@ export function mountPanel(
       );
     }
 
-    // tab === 3
     const pubs: PubNode[] = data.pubs;
     const withKnownYear = pubs.filter((p) => p.year !== null).length;
 
@@ -829,15 +544,6 @@ export function mountPanel(
     );
   }
 
-  /**
-   * График "Обзора" вкладки авторов — число авторов по департаментам, топ
-   * {@link PANEL_CONFIG.chartBars} по величине. НЕ то же самое, что убранный
-   * топ-10 конкретных авторов (прямая просьба его убрать) — здесь ось
-   * категорий это ДЕПАРТАМЕНТЫ, а не имена людей, распределение, а не рейтинг сущностей.
-   *
-   * @param authors - узлы-авторы текущих данных.
-   * @param lang - язык для названия департамента.
-   */
   function authorsByDeptChart(authors: AuthorNode[], lang: AppState["lang"]): HTMLElement | null {
     const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
     const countByDept = new Map<number, number>();
@@ -859,17 +565,7 @@ export function mountPanel(
     return buildBarChart(t("chart.authorsByDept", lang), bars);
   }
 
-  /**
-   * График "Обзора" вкладки публикаций — число публикаций по году, в
-   * ХРОНОЛОГИЧЕСКОМ порядке (не по величине и без обрезки {@link
-   * PANEL_CONFIG.chartBars} — это временной ряд, а не рейтинг: обрезать
-   * его означало бы выкинуть часть истории, а не "менее важные" столбцы).
-   * Публикации с неизвестным годом (`year === null`) в график не попадают —
-   * см. {@link field.yearUnknown} рядом в тех же полях "Обзора".
-   *
-   * @param pubs - узлы-публикации текущих данных.
-   * @param lang - язык заголовка графика.
-   */
+  /** Chronological and not truncated: it is a time series. Unknown years are left out. */
   function pubsByYearChart(pubs: PubNode[], lang: AppState["lang"]): HTMLElement | null {
     const countByYear = new Map<number, number>();
     for (const pub of pubs) {
@@ -884,12 +580,7 @@ export function mountPanel(
     return buildBarChart(t("chart.pubsByYear", lang), bars);
   }
 
-  /**
-   * Границы корзин {@link reposByStarsChart} — не равномерный шаг, а
-   * примерно логарифмический: звёзды на реальных данных распределены очень
-   * неравномерно (пара репозиториев с десятками тысяч звёзд, основная масса
-   * — единицы), равномерные корзины оставили бы почти всё в одной "0".
-   */
+  /** Roughly logarithmic: a few repos have thousands of stars, most have a handful. */
   const STAR_BUCKETS: { max: number; label: string }[] = [
     { max: 0, label: "0" },
     { max: 9, label: "1–9" },
@@ -898,14 +589,6 @@ export function mountPanel(
     { max: Infinity, label: "1000+" },
   ];
 
-  /**
-   * График "Обзора" вкладки репозиториев — число репозиториев по корзинам
-   * звёзд ({@link STAR_BUCKETS}), не топ конкретных репозиториев по
-   * звёздам (то как раз и был убранный топ-10) — распределение, а не рейтинг.
-   *
-   * @param repos - узлы-репозитории текущих данных.
-   * @param lang - язык заголовка графика.
-   */
   function reposByStarsChart(repos: RepoNode[], lang: AppState["lang"]): HTMLElement | null {
     const countByBucket = new Map<string, number>(STAR_BUCKETS.map((bucket) => [bucket.label, 0]));
     for (const repo of repos) {
@@ -920,42 +603,16 @@ export function mountPanel(
     return buildBarChart(t("chart.reposByStars", lang), bars);
   }
 
-  /**
-   * Пересобирает содержимое панели под текущее состояние — вызывается
-   * сразу при монтировании и на каждое изменение Store. Показывает один
-   * из четырёх видов карточки:
-   * - "Обзор" (см. {@link renderOverview}), если `selection === null`;
-   * - карточку узла (автор/репозиторий/публикация), со своим набором
-   *   дополнительных строк для каждого вида;
-   * - карточку ребра, с общими публикациями/авторами, если оба конца
-   *   ребра одного вида (автор-автор или публикация-публикация);
-   * - карточку департамента, со связанными департаментами.
-   *
-   * Если выбранного узла/ребра/департамента вдруг нет в текущих `data`
-   * (рассинхрон, которого не должно случаться на согласованных данных —
-   * клик по карте или списку берёт ключ прямо из тех же `data`), панель
-   * молча скрывается через {@link hide} вместо показа пустой карточки.
-   *
-   * @param state - текущее состояние приложения.
-   */
+  /** A selection missing from `data` hides the panel instead of showing an empty card. */
   function render(state: AppState): void {
     const { selection, lang } = state;
     if (selection === null) return renderOverview(state);
 
     if (selection.kind === "node") {
       const node = index.get(selection.key);
-      // Ключ выбран, но узла с таким ключом нет в текущих данных — такое
-      // не должно происходить (клик по карте берёт key прямо из тех же
-      // данных), но если вдруг случится рассинхрон, лучше молча спрятать
-      // панель, чем показать пустую карточку.
       if (!node) return hide();
 
       const dept = deptById.get(node.dept);
-      // Для автора заголовок карточки могут поменять ниже (полное имя
-      // вместо сокращённой подписи) — для остальных видов узлов остаётся
-      // как есть. subtitle — имя на ВТОРОМ языке под заголовком (прямая
-      // просьба), тоже только для автора — у репозитория нет `_en`-варианта
-      // имени вовсе, у публикации заголовок в принципе на одном языке.
       let title = nodeLabel(node, lang, pubDetails);
       let subtitle: string | null = null;
       const keyRow: PanelRow = [t("field.key", lang), node.key];
@@ -966,8 +623,8 @@ export function mountPanel(
       ];
       const rows: PanelRow[] = [keyRow, kindRow, deptRow];
       if (node.kind === "author") {
-        // Разделы — по пометкам полей в pauk/cache/export.py: public/связи
-        // графа — "Общее", private — "Приватное", id и метки времени — "Служебное".
+        // Sections follow the field tags in pauk/cache/export.py: public and
+        // graph links, private, service fields.
         const general: PanelRow[] = [
           deptRow,
           [t("field.pubsCount", lang), String(node.pubs_count)],
@@ -975,13 +632,10 @@ export function mountPanel(
         const privateRows: PanelRow[] = [];
         const service: PanelRow[] = [keyRow, kindRow];
 
-        // pauk/gui пишет запись в authors-detail.json для КАЖДОГО автора,
-        // даже с пустыми полями, поэтому "записи нет" значит ровно одно:
-        // файл ещё не домержился (см. app/main.ts).
+        // Every author has a record, even with empty fields, so a missing
+        // record means the file has not arrived yet.
         const authorDetail = authorDetails.get(node.key);
         if (authorDetail) {
-          // Заголовок — полное имя на нужном языке, если оно известно; под
-          // ним имя на втором языке, если оно отличается.
           const fullName = localize(authorDetail.name_ru, authorDetail.name_en, lang);
           if (fullName) {
             title = fullName;
@@ -1010,7 +664,7 @@ export function mountPanel(
               { kind: "list", items: affiliationItems(authorDetail.affiliations) },
             ]);
           }
-          // Раздельно по источнику — см. author_variants() в pauk/gui/graph_builder/nodes.py.
+          // Per source, see author_variants() in pauk/gui/graph_builder/nodes.py.
           if (authorDetail.name_variants.openalex.length > 0) {
             privateRows.push([
               t("field.nameVariantsOpenalex", lang),
@@ -1089,8 +743,7 @@ export function mountPanel(
         rows.push([t("field.stars", lang), String(node.stars)]);
         const group = node.group === undefined ? undefined : repoGroupById.get(node.group);
         if (group) rows.push([t(`group.kind.${group.kind}`, lang), deptRefsOf([group.id], lang)]);
-        // Тот же приём, что и у автора выше: .has(), потому что запись в
-        // repos-detail.json есть у каждого репозитория без исключений.
+        // Every repo has a record, see the author card above.
         if (repoDetails.has(node.key)) {
           const repoDetail = repoDetails.get(node.key);
           if (repoDetail?.url) rows.push([t("field.github", lang), [codeLink(repoDetail.url)]]);
@@ -1142,11 +795,8 @@ export function mountPanel(
         if (detail?.openalex_url)
           rows.push([t("field.openalexUrl", lang), [openalexUrlLink(detail.openalex_url)]]);
 
-        // Как и в старом showPubCard(): если публикация связана с нашим
-        // собственным репозиторием (repo_pub_edges), показываем ссылку на
-        // него ВМЕСТО голого code_url — связь через собственные данные
-        // надёжнее внешнего харвестинга, а раз она есть, дублировать её
-        // ещё и code_url незачем.
+        // A link to our own repo replaces code_url: our data is more reliable
+        // than harvested links.
         const pubRepoKeys = (pubRepoIndex.get(node.key) ?? []).slice(0, PANEL_CONFIG.listLimit);
         if (pubRepoKeys.length > 0) {
           rows.push([
@@ -1183,13 +833,6 @@ export function mountPanel(
         [t("field.edgeWeight", lang), String(selection.w)],
       ];
 
-      // Сам вес — это только число; что конкретно за ним стоит, видно только
-      // через all_edges. Показываем список, только если он не пуст — как и
-      // в старом showEdgeCard(), у ребра без общих публикаций/авторов (или
-      // между узлами другого вида, например репозиториями) этой строки нет.
-      // Так же, как и у остальных списков в этом файле, режем до
-      // PANEL_CONFIG.listLimit — у активных соавторов общих публикаций
-      // может быть больше, чем поместится в карточку.
       const via = repoEdgeVia.get(`${from.key}\u0000${to.key}`) ?? [];
       if (via.length > 0)
         rows.push([
@@ -1215,7 +858,7 @@ export function mountPanel(
     if (selection.kind === "grant") {
       const grant = grantIndex(pubDetails).get(selection.key);
       if (!grant) {
-        // Гранты строятся из pubs-detail.json — пока он не пришёл, ждём, а не прячем.
+        // Grants come from pubs-detail.json; wait for it instead of hiding.
         if (pubDetails.size > 0) return hide();
         return show(
           selection.key,
@@ -1244,7 +887,6 @@ export function mountPanel(
       );
     }
 
-    // selection.kind === "dept"
     const group = repoGroupById.get(selection.id);
     if (group) {
       const members = data.repos
@@ -1298,61 +940,23 @@ export function mountPanel(
   return unsubscribe;
 }
 
-/** Параметры одной карточки — вход {@link buildCard}. */
 interface PanelCardOptions {
-  /** Заголовок карточки (например, имя автора или "Обзор"). */
   title: string;
-  /**
-   * Короткий бейдж вида сущности рядом с заголовком (например
-   * "Автор"/"Департамент"/название вкладки для "Обзора") — после того, как
-   * почти любая сущность в карточке стала кликабельной ссылкой на другую
-   * (см. {@link PanelEntityRef}), легко потерять, на карточку КАКОГО вида
-   * сущности только что перепрыгнули, глядя только на список полей.
-   */
   kind: string;
-  /** Разделы карточки в порядке отображения; пустые разделы не рисуются. */
+  /** Empty sections are not drawn. */
   sections: PanelSection[];
-  /** Язык интерфейса — для подписи кнопки "ещё N" у {@link PanelList}. */
   lang: AppState["lang"];
-  /**
-   * Текст кнопки "назад к обзору" (например `"← Обзор"`), уже
-   * локализованный вызывающим кодом — `null`, если кнопку показывать не
-   * нужно (у самого "Обзора" — там уже некуда возвращаться).
-   */
+  /** `null` hides the back button. */
   backLabel: string | null;
-  /** Вызывается с `PanelEntityRef.selection`, когда кликают по ссылке на другую сущность графа — пишет её в `store.selection` ("прослеживать связи" одним кликом). */
   onSelectRef: (selection: Selection) => void;
-  /** Вызывается по клику на кнопку "назад к обзору" (см. `backLabel`). */
   onBack: () => void;
-  /**
-   * Имя той же сущности на ВТОРОМ языке — рисуется мельче и серым сразу
-   * под заголовком (прямая просьба: для EN-интерфейса сверху английское
-   * имя, под ним русское, и наоборот). Сейчас передаёт только карточка
-   * автора (`name_ru`/`name_en` есть только у {@link AuthorDetail} —
-   * у {@link RepoNode} нет `_en`-варианта вовсе, у {@link PubDetail}
-   * заголовок в принципе на одном языке). `null`/не задано — подзаголовка нет.
-   */
+  /** Name in the other language, small and grey under the title. */
   subtitle?: string | null;
-  /**
-   * Произвольный DOM-узел, вставляемый ПОСЛЕ списка полей (`<dl>`) — сейчас
-   * единственный потребитель это простые графики {@link buildBarChart} в
-   * карточке "Обзор" (см. {@link renderOverview}): они не пара "подпись —
-   * значение", как остальные строки, поэтому не встроены в {@link PanelRow},
-   * а идут отдельным блоком. `null`/не задано — ничего не добавляется.
-   */
+  /** Appended after the `<dl>`, e.g. overview charts. */
   extra?: HTMLElement | null;
 }
 
-/**
- * Собирает DOM-карточку: (необязательная) кнопка "назад к обзору",
- * заголовок с бейджем вида сущности, список пар "подпись — значение".
- * Только `textContent` для обычного текста и явные `<a>`/`<button>` с
- * фиксированными атрибутами для ссылок — никакого `innerHTML`, данные из
- * графа не должны интерпретироваться как разметка.
- *
- * @param options - см. {@link PanelCardOptions}.
- * @returns `<div class="panel-card">`, ещё не вставленный в DOM.
- */
+/** No `innerHTML`: graph data must never be parsed as markup. */
 function buildCard(options: PanelCardOptions): HTMLElement {
   const { title, kind, sections, lang, backLabel, onSelectRef, onBack, subtitle, extra } = options;
   const card = document.createElement("div");
@@ -1367,8 +971,7 @@ function buildCard(options: PanelCardOptions): HTMLElement {
     card.appendChild(back);
   }
 
-  // Заголовок и имя на втором языке — одним блоком, чтобы подзаголовок стоял
-  // вплотную к имени, а не после общего отступа шапки.
+  // One block, so the subtitle sits right under the name.
   const head = document.createElement("div");
   head.className = "panel-card__head";
   const titles = document.createElement("div");
@@ -1400,8 +1003,7 @@ function buildCard(options: PanelCardOptions): HTMLElement {
     return a;
   }
 
-  // Ссылки на другие сущности графа — <button>, не <a>: клик не открывает
-  // вкладку, а меняет store.selection (см. onSelectRef).
+  // <button>, not <a>: a click changes store.selection instead of navigating.
   function refElement(ref: PanelEntityRef): HTMLButtonElement {
     const button = document.createElement("button");
     button.type = "button";
@@ -1435,7 +1037,6 @@ function buildCard(options: PanelCardOptions): HTMLElement {
     const hidden = value.items.length - limit;
     let expanded = false;
 
-    // Кнопка переключает список между первыми `limit` пунктами и всеми.
     function renderItems(): void {
       ul.replaceChildren(
         ...(expanded ? value.items : value.items.slice(0, limit)).map(listItemElement),
@@ -1467,7 +1068,6 @@ function buildCard(options: PanelCardOptions): HTMLElement {
     const limit = PANEL_CONFIG.abstractWords;
     let expanded = false;
 
-    // Та же механика, что у listElement: кнопка переключает сокращённый и полный текст.
     function render(): void {
       if (words.length <= limit) {
         el.textContent = value.text;
@@ -1516,12 +1116,10 @@ function buildCard(options: PanelCardOptions): HTMLElement {
         dd.classList.add("panel-row--block");
         dd.appendChild(longTextElement(value));
       } else if (!Array.isArray(value)) {
-        // Длинный список — подпись и значения во всю ширину, по элементу на строку.
         dt.classList.add("panel-row--block");
         dd.classList.add("panel-row--block");
         dd.appendChild(listElement(value));
       } else if (value[0]?.kind === "link") {
-        // Несколько внешних ссылок в одной строке — через запятую, как и в старом GUI.
         (value as PanelLink[]).forEach((link, i) => {
           if (i > 0) dd.append(", ");
           dd.appendChild(linkElement(link));
@@ -1552,27 +1150,17 @@ function buildCard(options: PanelCardOptions): HTMLElement {
 }
 
 /**
- * Собирает простой горизонтальный bar-chart из подписанных чисел — DOM +
- * CSS (ширина `<div>` в процентах от максимума ряда), без canvas/SVG и без
- * графической библиотеки: для "прикинуть соотношение на глаз" в карточке
- * "Обзор" (см. {@link renderOverview}) точная координатная система не
- * нужна, а точное число и так подписано рядом текстом.
+ * Plain DOM bar chart, widths in percent of the maximum.
  *
- * @param title - заголовок раздела над графиком (например, "Публикации по годам").
- * @param bars - пары "подпись — число", В ПОРЯДКЕ ОТОБРАЖЕНИЯ — сортировка
- *   (по величине, по году и т.п.) и обрезка длинных хвостов ({@link
- *   PANEL_CONFIG.chartBars}) — забота вызывающего кода, эта функция просто рисует, что дали.
- * @returns `<div class="panel-chart">`, ещё не вставленный в DOM; `null`,
- *   если `bars` пуст — не показывать пустой график лучше, чем показать его без единого столбца.
+ * @param bars - Already sorted and truncated by the caller.
+ * @returns `null` for no bars.
  */
 function buildBarChart(
   title: string,
   bars: { label: string; value: number }[],
 ): HTMLElement | null {
   if (bars.length === 0) return null;
-  // Math.max(..., 1) — подстраховка от деления на 0, если ВСЕ столбцы
-  // нулевые (например, ни одна публикация ещё не набрала общих авторов
-  // выше текущего порога фильтра) — тогда все столбцы просто рисуются пустыми.
+  // Avoids division by zero when every bar is 0.
   const max = Math.max(...bars.map((bar) => bar.value), 1);
 
   const container = document.createElement("div");

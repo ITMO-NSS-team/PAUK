@@ -3,15 +3,6 @@ import { localize } from "../../core/i18n";
 import { isAuthorShown } from "../../map/build";
 import { createNodeListTab } from "./nodeListTab";
 
-/**
- * Вкладка "Авторы" — список всех авторов, отсортированный по количеству
- * публикаций по убыванию (как и в старом `tab-authors.js`). Общий механизм
- * выбора (клик по строке списка = клик по узлу карты, и наоборот) и
- * подписка на Store — в {@link createNodeListTab}, здесь только то, чем
- * эта вкладка отличается от reposTab/pubsTab: сортировка и что показать в строке.
- *
- * Реализует {@link TabModule} — см. её JSDoc за подробным описанием формы `mount()`.
- */
 export const authorsTab = createNodeListTab<AuthorNode>({
   items: (data) => data.authors,
   visible: (author, state, data) => isAuthorShown(data, author, state.filters),

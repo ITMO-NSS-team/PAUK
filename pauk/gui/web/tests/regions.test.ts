@@ -11,7 +11,6 @@ import {
   type RegionPoint,
 } from "../src/map/regions";
 
-/** Плотное скопление `count` узлов департамента `dept` вокруг точки (cx, cy), по сетке с шагом `step`. */
 function cluster(cx: number, cy: number, count: number, dept: number, step = 2): RegionPoint[] {
   const side = Math.ceil(Math.sqrt(count));
   return Array.from({ length: count }, (_, i) => ({
@@ -31,7 +30,7 @@ describe("buildRegions", () => {
     expect(regions.map((r) => r.dept)).toEqual([1, 2]);
     for (const p of a) expect(regionDeptAt(regions, p)).toBe(1);
     for (const p of b) expect(regionDeptAt(regions, p)).toBe(2);
-    expect(regionDeptAt(regions, { x: 100, y: 0 })).toBeNull(); // пустота между скоплениями не закрашена
+    expect(regionDeptAt(regions, { x: 100, y: 0 })).toBeNull(); // the gap between clusters stays empty
   });
 
   it("соседние департаменты не перекрываются: точка не лежит сразу в двух регионах", () => {
@@ -70,7 +69,7 @@ describe("buildRegions", () => {
   });
 
   it("точка названия — центр узлов самого крупного острова, а не всех узлов департамента", () => {
-    const big = cluster(0, 0, 20, 1); // 4 ряда по 5 узлов: x 0..8, y 0..6 -> центр (4, 3)
+    const big = cluster(0, 0, 20, 1); // 4 rows of 5: x 0..8, y 0..6 -> center (4, 3)
     const regions = buildRegions([...big, ...cluster(300, 0, 12, 1)], 10);
 
     expect(regions[0]?.label.x).toBeCloseTo(4);
@@ -101,7 +100,7 @@ function department(id: number, name: string, color: string): Department {
   return { id, name, name_en: name, color, n: 16, n_authors: 16, n_pubs: 0, n_repos: 0 };
 }
 
-/** Департамент 0 — скопление у (0, 0); «Без департамента» (9) — скопление у (200, 0). */
+/** Department 0 clusters at (0, 0); "no department" (9) at (200, 0). */
 function sampleData(): GraphData {
   return {
     departments: [
@@ -148,10 +147,7 @@ function initialState(overrides: Partial<AppState["filters"]> = {}): AppState {
   };
 }
 
-/**
- * Фейковый Sigma-рендерер: canvas с подменённым 2d-контекстом (jsdom его не
- * рисует), координаты раскладки = координаты экрана, afterRender вызывается тестом.
- */
+/** Canvas with a stubbed 2d context (jsdom does not draw); layout coords equal screen coords. */
 function fakeRenderer(ratio: { value: number }) {
   const context = {
     setTransform: vi.fn(),
@@ -174,7 +170,7 @@ function fakeRenderer(ratio: { value: number }) {
     globalAlpha: 1,
     lineWidth: 1,
   };
-  // Оба canvas (заливка и названия) отдают один и тот же фейковый контекст.
+  // Both canvases (fill and labels) share one fake context.
   const createCanvas = vi.fn(() => {
     const canvas = document.createElement("canvas");
     canvas.getContext = (() => context) as unknown as HTMLCanvasElement["getContext"];
@@ -240,16 +236,16 @@ describe("mountRegions", () => {
     expect(renderer.createCanvas).toHaveBeenCalledWith("regions", { beforeLayer: "edges" });
     expect(renderer.createCanvas).toHaveBeenCalledWith("region-labels", { afterLayer: "labels" });
     render();
-    // Название — в центре острова (скопление 4×4 с шагом 2 у (0, 0) -> центр (3, 3)), на текущем языке.
+    // Label at the island center (4x4 grid, step 2, at (0, 0) -> (3, 3)), in the current language.
     expect(context.fillText).toHaveBeenCalledWith("Кафедра", 3, 3);
     expect(context.fill).toHaveBeenCalledWith("evenodd");
-    expect(context.fillStyle).toBe("#ff0000"); // только реальный департамент, не «Без департамента»
+    expect(context.fillStyle).toBe("#ff0000"); // real department only, not "no department"
     expect(context.fill).toHaveBeenCalledTimes(1);
 
     context.fill.mockClear();
     context.fillText.mockClear();
     context.stroke.mockClear();
-    ratio.value = 0.2; // ближе порога 0.25 — остаётся только обводка, без заливки и названий
+    ratio.value = 0.2; // below the 0.25 threshold: stroke only
     render();
     expect(context.clearRect).toHaveBeenCalled();
     expect(context.stroke).toHaveBeenCalled();
@@ -273,7 +269,7 @@ describe("mountRegions", () => {
     expect(context.fill).toHaveBeenCalledTimes(1);
 
     context.fill.mockClear();
-    store.set({ filters: { ...store.get().filters, regionMinNodes: 50 } }); // больше, чем узлов у департамента
+    store.set({ filters: { ...store.get().filters, regionMinNodes: 50 } }); // more than the department has
     render();
     expect(context.fill).not.toHaveBeenCalled();
   });
@@ -284,7 +280,7 @@ describe("mountRegions", () => {
     const regions = mountRegions(renderer, new Store<AppState>(initialState()), sampleData());
 
     expect(regions.deptAtViewport({ x: 2, y: 2 })).toBe(0);
-    expect(regions.deptAtViewport({ x: 202, y: 2 })).toBeNull(); // «Без департамента» региона не получает
+    expect(regions.deptAtViewport({ x: 202, y: 2 })).toBeNull(); // "no department" gets no region
 
     ratio.value = 0.1;
     expect(regions.deptAtViewport({ x: 2, y: 2 })).toBeNull();
@@ -313,7 +309,7 @@ describe("mountRegions", () => {
   it("перекрывающиеся названия не рисуются: остаётся название более крупного региона", () => {
     const { renderer, context, render } = fakeRenderer({ value: 1 });
     const data = sampleData();
-    // Второй департамент вплотную к первому и крупнее — названия в экранных координатах накладываются.
+    // A larger second department right next to the first: their labels overlap on screen.
     data.authors.push(...cluster(10, 0, 30, 1).map((p, i) => authorNode(`B${i}`, p)));
     data.departments.push(department(1, "Лаборатория", "#00ff00"));
     mountRegions(renderer, new Store<AppState>(initialState()), data);
@@ -333,7 +329,7 @@ describe("mountRegions", () => {
     mountRegions(renderer, store, data);
 
     render();
-    expect(context.fillText).toHaveBeenCalledTimes(2); // далеко друг от друга — оба названия
+    expect(context.fillText).toHaveBeenCalledTimes(2); // far apart: both labels
 
     context.fillText.mockClear();
     store.set({ selection: { kind: "dept", id: 1 } });
@@ -352,7 +348,7 @@ describe("mountRegions", () => {
     expect(container.style.cursor).toBe("pointer");
     expect(alphas.at(-1)).toBe(REGION_CONFIG.hoverFillAlpha);
 
-    moveMouse(150, 150); // пусто
+    moveMouse(150, 150); // empty spot
     expect(container.style.cursor).toBe("");
     expect(alphas.at(-1)).toBe(REGION_CONFIG.fillAlpha);
 
@@ -370,7 +366,7 @@ describe("mountRegions", () => {
     mountRegions(renderer, store, sampleData());
 
     render();
-    expect(context.fill).toHaveBeenCalled(); // сами регионы видны
+    expect(context.fill).toHaveBeenCalled(); // regions themselves are drawn
     expect(context.fillText).not.toHaveBeenCalled();
 
     store.set({ selection: { kind: "edge", s: "A0", t: "A1", w: 1 } });
@@ -390,11 +386,11 @@ describe("mountRegions", () => {
     const filled: string[] = [];
     context.fill.mockImplementation(() => filled.push(context.fillStyle));
 
-    ratio.value = 0.1; // режим узлов
+    ratio.value = 0.1; // node mode
     render();
 
     expect(filled).toEqual(["#00ff00"]);
     expect(context.fillText.mock.calls.map(([text]) => text)).toEqual(["Лаборатория"]);
-    expect(context.stroke).toHaveBeenCalledTimes(2); // обводка у обоих регионов
+    expect(context.stroke).toHaveBeenCalledTimes(2); // both regions stroked
   });
 });

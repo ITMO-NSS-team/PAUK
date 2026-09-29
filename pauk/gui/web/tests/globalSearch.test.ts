@@ -31,7 +31,6 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
   };
 }
 
-/** Минимальная разметка — ровно те id, которые requireElement() ищет внутри mountGlobalSearch(). */
 function mountMarkup(): void {
   document.body.innerHTML = `
     <button type="button" id="global-search-trigger"></button>
@@ -90,7 +89,7 @@ describe("mountGlobalSearch", () => {
 
   it("Enter в поле ввода выбирает первый результат", async () => {
     const data = await loadSampleGraphData();
-    const store = new Store<AppState>(initialState({ tab: 2 })); // намеренно не на вкладке автора
+    const store = new Store<AppState>(initialState({ tab: 2 })); // deliberately not the authors tab
     mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
     document
@@ -141,7 +140,7 @@ describe("mountGlobalSearch", () => {
       .getElementById("global-search-trigger")
       ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const input = document.getElementById("global-search-input") as HTMLInputElement;
-    input.value = "П"; // должно найтись больше одного автора
+    input.value = "П"; // matches more than one author
     input.dispatchEvent(new Event("input"));
 
     const items = [
@@ -151,11 +150,8 @@ describe("mountGlobalSearch", () => {
     const second = items[1];
     if (!second) throw new Error("должен быть второй результат");
 
-    // event.target здесь — сама кнопка (второй результат), не input: код
-    // должен проверять именно "event.target === input", а не более широкое
-    // "это не INPUT/TEXTAREA" — иначе Enter здесь тоже подхватило бы "выбрать
-    // первый" и выбрало бы ПЕРВЫЙ результат вместо второго (или вместо
-    // штатного клика по самой кнопке, за который отвечает браузер, а не мы).
+    // Focus is on the second result, not the input: Enter must click that
+    // button, not pick the first result.
     second.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
 
     expect(store.get().selection).toBeNull();
@@ -183,14 +179,14 @@ describe("mountGlobalSearch", () => {
     document
       .getElementById("global-search-trigger")
       ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    overlay.dispatchEvent(new MouseEvent("click", { bubbles: true })); // target === overlay сам по себе
+    overlay.dispatchEvent(new MouseEvent("click", { bubbles: true })); // target is the overlay itself
 
     expect(overlay.hidden).toBe(true);
   });
 
   it("выбор автора из результатов переключает вкладку на 1 и пишет selection", async () => {
     const data = await loadSampleGraphData();
-    const store = new Store<AppState>(initialState({ tab: 2 })); // намеренно НЕ на вкладке автора
+    const store = new Store<AppState>(initialState({ tab: 2 })); // deliberately not the authors tab
     mountGlobalSearch(store, data, NO_PUB_DETAILS, NO_REPO_DETAILS);
 
     document
@@ -207,12 +203,12 @@ describe("mountGlobalSearch", () => {
     expect(store.get().screen).toBe("app");
     expect(store.get().tab).toBe(1);
     expect(store.get().selection).toEqual({ kind: "node", key: "A1" });
-    expect((document.getElementById("global-search") as HTMLElement).hidden).toBe(true); // закрылось после выбора
+    expect((document.getElementById("global-search") as HTMLElement).hidden).toBe(true); // closed after the pick
   });
 
   it("окно поиска закрывается после выбора, даже если другой подписчик Store упал на новом selection", async () => {
-    // Регрессия: упавшая на выбранном узле панель прерывала store.set(), и
-    // close() после него не вызывался — камера подлетала, а поиск оставался открытым.
+    // Regression: a panel crash on the selected node interrupted store.set(),
+    // so close() never ran.
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
     store.subscribe(() => {
@@ -255,7 +251,7 @@ describe("mountGlobalSearch", () => {
     if (!hit) throw new Error(`должен найтись департамент "${dept.name}" среди результатов`);
     hit.click();
 
-    expect(store.get().tab).toBe(3); // не менялась
+    expect(store.get().tab).toBe(3); // unchanged
     expect(store.get().selection).toEqual({ kind: "dept", id: dept.id });
   });
 
@@ -268,7 +264,7 @@ describe("mountGlobalSearch", () => {
       .getElementById("global-search-trigger")
       ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const input = document.getElementById("global-search-input") as HTMLInputElement;
-    input.value = "лщывалщыв"; // заведомо не встречается ни в одной подписи фикстуры
+    input.value = "лщывалщыв"; // matches no fixture label
     input.dispatchEvent(new Event("input"));
 
     expect(document.querySelectorAll("#global-search-results .tab-list-item")).toHaveLength(0);
@@ -279,7 +275,7 @@ describe("mountGlobalSearch", () => {
 
   it("пустой запрос (сразу после открытия) показывает департаменты для просмотра, крупнейшие сверху — не 'Ничего не найдено' и не пустой список", async () => {
     const data = await loadSampleGraphData();
-    // Департамент 0 во фикстуре (n=7) крупнее департамента 2 (n=5) — 0 должен идти первым.
+    // Department 0 (n=7) is larger than department 2 (n=5), so it comes first.
     const dept0 = data.departments.find((d) => d.id === 0);
     const dept1 = data.departments.find((d) => d.id === 2);
     if (!dept0 || !dept1) throw new Error("фикстура должна содержать департаменты 0 и 2");

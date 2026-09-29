@@ -54,7 +54,7 @@ describe("parseUrlState", () => {
   it("неизвестный слаг вкладки тоже откатывается на меню — безопаснее показать выбор, чем угадывать по битой ссылке", async () => {
     const data = await loadSampleGraphData();
     expect(parseUrlState("?tab=nope", data)).toEqual({ screen: "menu", tab: 1, selection: null });
-    expect(parseUrlState("?tab=9", data)).toEqual({ screen: "menu", tab: 1, selection: null }); // старый числовой формат больше не распознаётся
+    expect(parseUrlState("?tab=9", data)).toEqual({ screen: "menu", tab: 1, selection: null }); // the old numeric format is not recognized
   });
 
   it("восстанавливает выбор узла по ключу, который реально есть в data", async () => {
@@ -80,7 +80,7 @@ describe("parseUrlState", () => {
 
   it("восстанавливает ребро по s/t в исходном порядке и достаёт вес из data (не из URL)", async () => {
     const data = await loadSampleGraphData();
-    // A1-A2 во фикстуре: w=2.
+    // A1-A2 in the fixture: w=2.
     expect(parseUrlState("?tab=persons&sel=edge&s=A1&t=A2", data)).toEqual({
       screen: "app",
       tab: 1,
@@ -142,9 +142,7 @@ describe("parseUrlState", () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];
     if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
-    // tab: 1 ("persons"), не 3 — узел должен принадлежать своей вкладке
-    // (см. следующий тест), иначе parseUrlState теперь корректно откатит
-    // выбор на null.
+    // tab 1, not 3: the node must belong to its tab (see the next test).
     const original = {
       screen: "app" as const,
       tab: 1 as const,
@@ -159,8 +157,7 @@ describe("parseUrlState", () => {
     const author = data.authors[0];
     if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
 
-    // author.key реально существует в data, но не как публикация — на
-    // tab=pubs это должно откатиться на null, а не тихо принять чужую сущность.
+    // author.key exists, but not as a pub, so tab=pubs drops it.
     expect(parseUrlState(`?tab=pubs&sel=node&key=${author.key}`, data)).toEqual({
       screen: "app",
       tab: 3,
@@ -170,7 +167,7 @@ describe("parseUrlState", () => {
 
   it("ребро с другой вкладки откатывается на null — ищем только среди рёбер своей вкладки", async () => {
     const data = await loadSampleGraphData();
-    // A1-A2 — coauth-ребро (авторы), не существует среди pub_edges.
+    // A1-A2 is a co-authorship edge, not among pub_edges.
     expect(parseUrlState("?tab=pubs&sel=edge&s=A1&t=A2", data)).toEqual({
       screen: "app",
       tab: 3,

@@ -4,14 +4,10 @@ import type { Theme } from "./theme";
 
 export { Theme } from "./theme";
 
-/** Все темы в порядке кнопок на меню; первая — тема по умолчанию. */
+/** Menu button order; the first one is the default. */
 export const THEMES: readonly Theme[] = [darkTheme, lightTheme];
 
-/**
- * Тема по id; неизвестный id — тема по умолчанию, не падение.
- *
- * @param id - `AppState.theme`.
- */
+/** Unknown id falls back to the default theme. */
 export function themeById(id: string): Theme {
   return THEMES.find((theme) => theme.id === id) ?? darkTheme;
 }

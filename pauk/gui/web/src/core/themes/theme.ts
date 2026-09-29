@@ -1,9 +1,6 @@
-// Одна тема оформления — самодостаточный объект: имя, CSS-токены вёрстки и
-// цвета карты. Все темы собраны в themes/index.ts; новая тема — новый файл с
-// `new Theme({...})` и одна строка в THEMES, остальной код про конкретные
-// темы ничего не знает.
+// A new theme is one file with `new Theme({...})` plus one line in THEMES.
 
-/** CSS-переменные вёрстки (`var(--bg)` и т.д. в index.html). Акцент — общий для всех тем. */
+/** CSS variables used by index.html (`var(--bg)` etc.). */
 export interface ThemeUiTokens {
   bg: string;
   surface: string;
@@ -18,23 +15,20 @@ export interface ThemeUiTokens {
   "danger-text": string;
 }
 
-/** Цвета canvas-карты (Sigma), которые не выразить CSS-переменными. */
+/** Sigma draws on canvas, so the map cannot read CSS variables. */
 export interface ThemeMapColors {
-  /** Фон карты — совпадает с `--surface`, чтобы сайдбар и карта читались одним тоном. */
   background: string;
-  /** Узел не в фокусе и не сосед фокуса — полупрозрачный, "отошёл на фон". */
+  /** Node outside the focus and its neighbours. */
   dimNode: string;
-  /** Обводка вокруг цветной подписи узла и названия региона. */
   labelHalo: string;
   edge: string;
   edgeSelected: string;
 }
 
 export interface ThemeOptions {
-  /** Стабильный id — хранится в `AppState.theme`. */
   id: string;
   name: { ru: string; en: string };
-  /** Для нативных элементов браузера (скроллбары, поля ввода). */
+  /** For native browser widgets (scrollbars, inputs). */
   colorScheme: "dark" | "light";
   ui: ThemeUiTokens;
   map: ThemeMapColors;
@@ -55,12 +49,7 @@ export class Theme {
     this.map = options.map;
   }
 
-  /**
-   * Применяет тему к документу: CSS-переменные и `color-scheme` на `root`.
-   * Цвета карты отсюда не трогаются — их читает сама карта при отрисовке.
-   *
-   * @param root - обычно `document.documentElement`.
-   */
+  /** Map colors are not applied here: the map reads them at render time. */
   apply(root: HTMLElement): void {
     for (const [token, value] of Object.entries(this.ui))
       root.style.setProperty(`--${token}`, value);

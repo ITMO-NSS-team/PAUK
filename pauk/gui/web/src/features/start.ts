@@ -1,68 +1,32 @@
-// Слой "features" — экран загрузки (boot-progress) и меню (полноэкранный
-// выбор языка + один вход в приложение). Boot-экран виден с первого кадра,
-// пока грузится graph-data.json. Меню — не одноразовый онбординг с
-// localStorage-флагом, а настоящее состояние приложения
-// (AppState.screen === "menu", см. core/state.ts): показывается на КАЖДОЙ
-// загрузке страницы БЕЗУСЛОВНО, даже если в адресной строке была
-// сохранённая ссылка на конкретный узел (app/main.ts не читает URL при
-// начальной загрузке вообще, см. там же) — прямая просьба, и на него
-// всегда можно вернуться кликом по кнопке "← Меню" в шапке сайдбара
-// (раньше там было название проекта "PAUK" без объяснения, что кнопка
-// вообще кликабельна — прямая просьба сделать её назначение понятным).
+// The menu is shown on every page load, even when the URL points to a node.
 
 import { requireElement } from "../core/dom";
 import { t, type LocaleKey } from "../core/i18n";
 import type { AppState, Store } from "../core/state";
 
-/** Стадия загрузки, которую показывает boot-экран. */
 export type BootStage = "loading" | "rendering" | "error";
 
-/** Ключ статус-строки boot-экрана для каждой стадии. */
 const STAGE_LOCALE_KEY: Record<BootStage, LocaleKey> = {
   loading: "start.loading",
   rendering: "start.rendering",
   error: "start.error",
 };
 
-/**
- * Доля заполнения прогресс-бара для стадий loading/rendering — по
- * известным контрольным точкам, а не побайтовым отслеживанием
- * `ReadableStream`, как в старом GUI: то же ощущение "грузится →
- * рисуется → готово" заметно меньшим кодом. У стадии "error" своей доли
- * нет — бар просто остаётся там, где остановился, а не скачет на 100%
- * при сбое.
- */
+// Fixed checkpoints instead of byte progress. "error" keeps the bar where it
+// stopped.
 const STAGE_PROGRESS: Record<"loading" | "rendering", number> = {
   loading: 15,
   rendering: 70,
 };
 
-/**
- * Подключает boot-экран и меню.
- *
- * @param store - Store приложения — меню читает `screen`/`lang` для
- *   показа/скрытия себя и приложения и для перерисовки своего текста, и
- *   пишет `screen`/`tab`/`lang` по клику на свои кнопки.
- * @returns `setBootStage`/`finishBoot` — вызывать из app/main.ts по ходу загрузки данных.
- */
+/** @returns Boot callbacks for app/main.ts. */
 export function mountStart(store: Store<AppState>): {
-  /** Обновляет прогресс-бар и статус-текст boot-экрана. */
   setBootStage: (stage: BootStage) => void;
-  /**
-   * Прячет boot-экран. Что показать дальше (меню или обычный интерфейс) —
-   * уже решено `store.screen` (выставлен из `parseUrlState()` в
-   * app/main.ts ДО вызова этой функции) — здесь решать нечего.
-   */
+  /** What comes next (menu or app) is already decided by `store.screen`. */
   finishBoot: () => void;
   /**
-   * Прячет boot-экран НЕМЕДЛЕННО (без анимации/задержки {@link finishBoot} и
-   * без "доскакивания" бара до 100%) — вызывать при ошибке, ДО
-   * `showLoadError()` в app/main.ts. `#boot-screen` непрозрачен и стоит выше
-   * `#load-error` по z-index (index.html) — без этого баннер с реальной
-   * причиной ошибки рисуется, но полностью перекрыт boot-экраном, и
-   * единственное, что видит пользователь — общий статус-текст
-   * {@link STAGE_LOCALE_KEY.error} ("Данные не найдены...") независимо от
-   * того, что сломалось на самом деле.
+   * Hides the boot screen at once. Call before `showLoadError()`: the boot
+   * screen is opaque and sits above `#load-error`.
    */
   hideBootOnError: () => void;
 } {
@@ -85,9 +49,7 @@ export function mountStart(store: Store<AppState>): {
 
   function finishBoot(): void {
     bar.style.width = "100%";
-    // Небольшая задержка перед скрытием — та же идея, что и в старом GUI:
-    // дать полосе прогресса реально долистать до конца, а не мигнуть
-    // мгновенно из "70%" в "нет экрана вообще".
+    // Let the bar reach 100% before it disappears.
     setTimeout(() => {
       boot.hidden = true;
     }, 200);
@@ -97,7 +59,6 @@ export function mountStart(store: Store<AppState>): {
     boot.hidden = true;
   }
 
-  /** Перерисовывает меню (текст + видимость меню/приложения) под текущее состояние. */
   function render(state: AppState): void {
     const isMenu = state.screen === "menu";
     menu.hidden = !isMenu;
@@ -114,11 +75,6 @@ export function mountStart(store: Store<AppState>): {
     }
   }
 
-  // Один вход в приложение, всегда на первую вкладку — отдельные кнопки
-  // выбора вкладки на меню убраны по прямой просьбе. Устаревший выбор (с
-  // совсем другой вкладки, если до захода в меню была выбрана, например,
-  // публикация) сама обнулит map/build.ts::mountReactiveGraph — она видит
-  // смену store.tab независимо от того, что именно её вызвало.
   enterButton.addEventListener("click", () => {
     store.set({ screen: "app", tab: 1 });
   });
@@ -127,7 +83,6 @@ export function mountStart(store: Store<AppState>): {
       store.set({ lang: button.dataset.lang as AppState["lang"] });
     });
   }
-  // Единственный способ вернуться в меню из приложения — заголовок сайдбара.
   brand.addEventListener("click", () => {
     store.set({ screen: "menu" });
   });

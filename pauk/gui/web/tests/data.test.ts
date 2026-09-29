@@ -77,7 +77,6 @@ describe("loadSampleAuthorDetails / loadSampleRepoDetails / indexDetailsByKey", 
   });
 });
 
-/** Минимальный валидный RepoDetail для тестов ниже — важно только поле `description`, остальные нужны лишь для типа. */
 function repoDetailStub(key: string, description: string): RepoDetail {
   return { key, description, url: "", has_readme: false, license: "", contributors: [], owner_type: "" };
 }
@@ -87,7 +86,7 @@ describe("mergeDetailsInto", () => {
     const target = new Map<string, RepoDetail>();
     expect(target.has("R1")).toBe(false);
 
-    const before = target; // та же ссылка, что и target — проверяем, что mergeDetailsInto её не подменяет
+    const before = target; // mergeDetailsInto must keep the same reference
     mergeDetailsInto(target, await loadSampleRepoDetails());
 
     expect(target).toBe(before);
@@ -138,7 +137,7 @@ describe("grantIndex", () => {
 
     const grant = grantIndex(pubDetails).get("18-19-00627");
     expect(grant).toEqual({ key: "18-19-00627", name: "18-19-00627", funder: "RSF", pubs: ["P1", "P2", "P3"] });
-    expect(grantIndex(pubDetails).size).toBe(1); // обрезанный номер без ключа не стал грантом
+    expect(grantIndex(pubDetails).size).toBe(1); // a cut-short number without a key is not a grant
   });
 
   it("пересчитывается, когда детали домержились фоном", async () => {

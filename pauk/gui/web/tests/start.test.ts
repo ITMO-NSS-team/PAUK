@@ -26,7 +26,6 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
   };
 }
 
-/** Минимальная разметка — ровно те id, которые requireElement() ищет внутри mountStart(). */
 function mountMarkup(): void {
   document.body.innerHTML = `
     <div id="boot-screen">
@@ -81,7 +80,7 @@ describe("mountStart", () => {
     setBootStage("rendering");
     setBootStage("error");
 
-    expect(bar.style.width).toBe("70%"); // не сдвинулся
+    expect(bar.style.width).toBe("70%"); // unchanged
     expect(document.getElementById("boot-status")?.textContent).toBe("Ошибка загрузки.");
   });
 
@@ -94,11 +93,9 @@ describe("mountStart", () => {
     setBootStage("rendering");
     hideBootOnError();
 
-    // Синхронно, а не после setTimeout, как finishBoot() — баннер с точной
-    // причиной ошибки (#load-error) стоит ниже boot-экрана по z-index и
-    // должен стать видимым сразу, а не через 200мс.
+    // Synchronous, unlike finishBoot(): the error banner below must show at once.
     expect(boot.hidden).toBe(true);
-    expect(bar.style.width).toBe("70%"); // не "доскакивает" до 100%, в отличие от finishBoot()
+    expect(bar.style.width).toBe("70%"); // does not jump to 100% like finishBoot()
   });
 
   it("finishBoot прячет boot-экран, видимость меню/приложения остаётся под управлением screen", () => {

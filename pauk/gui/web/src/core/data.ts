@@ -10,43 +10,21 @@ import type {
 } from "../contracts/graph";
 import { localize, type Lang } from "./i18n";
 
-/** Любой из трёх видов узлов графа — авторы, репозитории, публикации. */
 type GraphNode = AuthorNode | RepoNode | PubNode;
 
-/**
- * Группа узла для цвета, регионов и выбора "департамента": у репозитория —
- * `group` (департамент, GitHub-организация или область), у остальных — `dept`.
- *
- * @param node - узел графа.
- * @returns Id из {@link groupsById}.
- */
+/** Repos are colored by `group` (department, GitHub org or field), others by `dept`. */
 export function groupIdOf(node: GraphNode): number {
   return node.kind === "repo" ? (node.group ?? node.dept) : node.dept;
 }
 
-/**
- * Департаменты и группы репозиториев одним индексом — их id не пересекаются.
- *
- * @param data - данные графа.
- * @returns Map от id к департаменту или группе.
- */
+/** Departments and repo groups in one index; their ids never overlap. */
 export function groupsById(data: GraphData): Map<number, Department | RepoGroup> {
   return new Map<number, Department | RepoGroup>(
     [...data.departments, ...(data.repo_groups ?? [])].map((group) => [group.id, group]),
   );
 }
 
-/**
- * Загружает `graph-data.json` по сети и проверяет его форму в dev-режиме
- * через {@link assertGraphData}. Голый JSON, без обёртки `window.GRAPH=...;`
- * — та обёртка была нужна только старому GUI (подключение через
- * `<script>` без сборщика), `pauk/gui/graph_builder/builder.py` пишет обычный
- * `.json`, поэтому здесь просто `response.json()`.
- *
- * @param url - адрес файла `graph-data.json` (например, из Vite dev-сервера прокси или статики).
- * @returns Промис с данными графа.
- * @throws Error, если HTTP-запрос не удался (`!response.ok`).
- */
+/** Checks the shape in dev mode only. */
 export async function loadGraphData(url: string): Promise<GraphData> {
   const response = await fetch(url);
   if (!response.ok) {
@@ -58,24 +36,7 @@ export async function loadGraphData(url: string): Promise<GraphData> {
   return data;
 }
 
-/**
- * Загружает один из настоящих `*-detail.json` (авторов/репозиториев/
- * публикаций) по сети — один и тот же fetch для всех трёх видов, различие
- * только в `T` и URL (см. {@link DATA_CONFIG} в core/config.ts). Аналог
- * {@link loadGraphData}, но без {@link assertGraphData}-проверки формы:
- * это массив однотипных плоских объектов, а не структура с обязательными
- * полями-массивами разной вложенности.
- *
- * Файла может не быть вовсе (например, `authors-detail.json` в публичной,
- * покинувшей корпоративную сеть сборке — см. `pauk/gui/graph_builder/builder.py`
- * про то, что этот файл пишется только в `private/`) — тогда `!response.ok`
- * бросает Error, а app/main.ts уже ловит её через `.catch()` на каждую из
- * трёх фоновых загрузок, не роняя приложение.
- *
- * @typeParam T - вид детали ({@link AuthorDetail}, {@link RepoDetail} или `PubDetail`).
- * @param url - адрес `*-detail.json`.
- * @returns Промис со списком деталей.
- */
+/** Throws on a missing file; app/main.ts catches it (e.g. no authors-detail.json in public/). */
 export async function loadDetails<T>(url: string): Promise<T[]> {
   const response = await fetch(url);
   if (!response.ok) {
@@ -84,73 +45,21 @@ export async function loadDetails<T>(url: string): Promise<T[]> {
   return (await response.json()) as T[];
 }
 
-/**
- * Строит индекс "ключ -> сам объект" по списку любых деталей (авторов,
- * репозиториев или публикаций) — единая функция вместо трёх одинаковых по
- * смыслу копий, по одной на каждый вид `*Detail`. Тот же принцип, что и
- * {@link indexByKey} ниже, только для detail-объектов, а не узлов графа.
- *
- * @typeParam T - вид детали (в приложении — {@link AuthorDetail}, {@link RepoDetail} или `PubDetail`).
- * @param details - список деталей (например, результат {@link loadDetails}).
- * @returns Map от `T.key` к самому объекту `T`.
- *
- * @example
- * const byKey = indexDetailsByKey([{ key: "P1", label: "...", ... }]);
- * byKey.get("P1"); // { key: "P1", label: "...", ... }
- * byKey.get("P2"); // undefined — такого ключа не было в списке
- */
 export function indexDetailsByKey<T extends { key: string }>(details: T[]): Map<string, T> {
   return new Map(details.map((detail) => [detail.key, detail]));
 }
 
 /**
- * Домешивает список деталей в УЖЕ СУЩЕСТВУЮЩУЮ карту, по той же ссылке —
- * не создаёт новую `Map`, в отличие от {@link indexDetailsByKey}. Ровно то,
- * что нужно для приоритетной загрузки в `app/main.ts`: карта передаётся во
- * все фичи один раз, ещё пустой, а detail-файл домешивается в неё позже,
- * когда придёт по сети — фичам не нужно ничего пересоздавать или получать
- * заново, они уже держат ссылку на этот же объект.
- *
- * @typeParam T - вид детали (см. {@link indexDetailsByKey}).
- * @param target - карта, в которую нужно добавить записи (мутируется на месте).
- * @param details - список деталей, которые нужно добавить/перезаписать.
- *
- * @example
- * const authorDetails = new Map<string, AuthorDetail>(); // пока пуст
- * mountPanel(store, data, pubDetails, authorDetails, repoDetails); // уже держит эту ссылку
- * // ...позже:
- * mergeDetailsInto(authorDetails, await loadDetails<AuthorDetail>(url));
- * store.notify(); // mountPanel перечитывает ту же authorDetails и видит новые записи
+ * Merges into the existing map in place: features already hold this map and
+ * only need `store.notify()` afterwards.
  */
 export function mergeDetailsInto<T extends { key: string }>(target: Map<string, T>, details: T[]): void {
   for (const detail of details) target.set(detail.key, detail);
 }
 
 /**
- * Лёгкая проверка формы данных, которая падает только в dev-режиме
- * (`import.meta.env.DEV`) — источник данных доверенный (свой генератор, не
- * пользовательский ввод), поэтому вместо полноценной рантайм-схемы
- * (zod/valibot) здесь один быстрый тест на рассинхрон контракта с Python,
- * а не валидация каждого поля.
- *
- * @param data - произвольное значение, которое должно быть {@link GraphData}
- *   (обычно результат `JSON.parse` или импорта фикстуры).
- * @throws Error с понятным текстом, если:
- *   - `data` не объект;
- *   - у одного из обязательных полей (`departments`, `authors`, `repos`,
- *     `pubs`, `coauth_edges`, `repo_edges`, `pub_edges`) нет массива;
- *   - у первого автора нет `key`/`label_en` нужного типа (признак того, что
- *     `builder.py` поменял форму `AuthorNode`).
- *
- * Ничего не делает и не бросает исключений, если данные прошли все
- * проверки — используется как type assertion (`asserts data is GraphData`),
- * поэтому TypeScript после вызова знает, что `data` имеет тип `GraphData`,
- * без отдельного приведения через `as`.
- *
- * @example
- * const data: unknown = JSON.parse(text);
- * assertGraphData(data);
- * // здесь TypeScript уже считает data: GraphData, можно писать data.authors
+ * Dev-only sanity check against contract drift with the Python builder, not
+ * a full schema validation: the data comes from our own builder.
  */
 export function assertGraphData(data: unknown): asserts data is GraphData {
   if (typeof data !== "object" || data === null) {
@@ -181,26 +90,6 @@ export function assertGraphData(data: unknown): asserts data is GraphData {
   }
 }
 
-/**
- * Строит индекс "ключ узла -> сам узел" по всем трём видам узлов графа
- * сразу (авторы, репозитории, публикации). Без этой карты пришлось бы
- * каждый раз перебирать три массива целиком, чтобы найти один узел по
- * ключу (например, `"A5133538481"` для автора или `"W7164652155"` для
- * публикации).
- *
- * Строится один раз при монтировании фичи (клика по карте, панели
- * информации и т.д.), не на каждый клик — иначе на большом графе
- * пересборка индекса на каждое действие пользователя была бы заметно
- * медленной.
- *
- * @param data - данные графа.
- * @returns Map от `node.key` к самому узлу (`AuthorNode | RepoNode | PubNode`).
- *
- * @example
- * const index = indexByKey(data);
- * index.get("A1"); // { key: "A1", kind: "author", label: "Иванов И.И.", ... }
- * index.get("nope"); // undefined
- */
 export function indexByKey(data: GraphData): Map<string, GraphNode> {
   const index = new Map<string, GraphNode>();
   for (const node of [...data.authors, ...data.repos, ...data.pubs]) {
@@ -209,28 +98,7 @@ export function indexByKey(data: GraphData): Map<string, GraphNode> {
   return index;
 }
 
-/**
- * Строит обратные индексы автор ↔ публикация из `GraphData.all_edges` —
- * единственного места в контракте, где эта связь вообще есть напрямую
- * (`AuthorNode.pubs_count` — просто число, а не список ключей публикаций).
- *
- * Нужны карточке ребра и карточкам узлов (features/panels.ts): "какие
- * именно публикации общие у пары соавторов", "какие именно авторы общие у
- * пары связанных публикаций", "какие публикации у этого автора", "кто
- * авторы этой публикации" — то, что сам вес ребра (`coauth_edges.w` /
- * `pub_edges.w`) или `pubs_count` только считает, не называя.
- *
- * @param data - данные графа.
- * @returns Объект с двумя картами:
- *   - `authorPubs` — ключ автора -> список ключей его публикаций;
- *   - `pubAuthors` — ключ публикации -> список ключей её авторов.
- *
- * @example
- * // all_edges: [{s:"A1",t:"P1"}, {s:"A2",t:"P1"}]
- * const { authorPubs, pubAuthors } = buildAuthorPubIndex(data);
- * authorPubs.get("A1"); // ["P1"]
- * pubAuthors.get("P1"); // ["A1", "A2"]
- */
+/** Author <-> pub lists from `all_edges`, the only direct link between them. */
 export function buildAuthorPubIndex(data: GraphData): {
   authorPubs: Map<string, string[]>;
   pubAuthors: Map<string, string[]>;
@@ -251,38 +119,10 @@ export function buildAuthorPubIndex(data: GraphData): {
   return { authorPubs, pubAuthors };
 }
 
-/**
- * Строит индекс соавторства: для каждого автора — карта "ключ соавтора ->
- * суммарный вес" (суммарное число совместных публикаций). `coauth_edges`
- * неориентированы (нет отдельной записи в обе стороны для одной и той же
- * пары), поэтому при обходе каждое ребро учитывается с обоих концов.
- *
- * Нужен карточке автора (features/panels.ts) для топа соавторов — просто
- * `AuthorNode.pubs_count` этого не показывает, он только считает публикации,
- * не называет, с кем именно автор их писал.
- *
- * @param data - данные графа.
- * @returns Map от ключа автора к Map "ключ соавтора -> суммарный вес связи".
- *
- * @example
- * // coauth_edges: [{s:"A1",t:"A2",w:2}, {s:"A1",t:"A3",w:1}]
- * const index = buildCoauthIndex(data);
- * index.get("A1"); // Map { "A2" => 2, "A3" => 1 }
- * index.get("A2"); // Map { "A1" => 2 } — та же связь видна и со стороны A2
- */
+/** Author -> co-author -> shared pub count. Edges are undirected. */
 export function buildCoauthIndex(data: GraphData): Map<string, Map<string, number>> {
   const index = new Map<string, Map<string, number>>();
 
-  /**
-   * Прибавляет `weight` к весу связи `from -> to` в `index` (создавая
-   * запись, если её ещё не было). Вызывается дважды на каждое ребро —
-   * `coauth_edges` неориентированы, поэтому связь должна быть видна с
-   * обеих сторон.
-   *
-   * @param from - ключ автора, со стороны которого добавляется связь.
-   * @param to - ключ соавтора на другом конце связи.
-   * @param weight - вес, который нужно прибавить.
-   */
   function addWeight(from: string, to: string, weight: number): void {
     const neighbors = index.get(from) ?? new Map<string, number>();
     neighbors.set(to, (neighbors.get(to) ?? 0) + weight);
@@ -297,36 +137,10 @@ export function buildCoauthIndex(data: GraphData): Map<string, Map<string, numbe
   return index;
 }
 
-/**
- * Строит индекс связей между департаментами (общие публикации через их
- * авторов) — та же идея и то же устройство, что и {@link buildCoauthIndex},
- * только ключи не строковые (`author.key`), а числовые (`Department.id`,
- * см. `DeptEdge` в contracts/graph.ts).
- *
- * Нужен карточке департамента (features/panels.ts) для списка "связанные
- * департаменты", отсортированного по силе связи.
- *
- * @param data - данные графа.
- * @returns Map от id департамента к Map "id соседнего департамента -> суммарный вес связи".
- *
- * @example
- * // dept_edges: [{s:0,t:1,w:2}, {s:1,t:2,w:1}]
- * const index = buildDeptEdgeIndex(data);
- * index.get(0); // Map { 1 => 2 }
- * index.get(1); // Map { 0 => 2, 2 => 1 }
- */
+/** Same as {@link buildCoauthIndex}, keyed by department id. */
 export function buildDeptEdgeIndex(data: GraphData): Map<number, Map<number, number>> {
   const index = new Map<number, Map<number, number>>();
 
-  /**
-   * Прибавляет `weight` к весу связи `from -> to` в `index` (создавая
-   * запись, если её ещё не было). Вызывается дважды на каждое ребро —
-   * `dept_edges` неориентированы, поэтому связь должна быть видна с обеих сторон.
-   *
-   * @param from - id департамента, со стороны которого добавляется связь.
-   * @param to - id соседнего департамента на другом конце связи.
-   * @param weight - вес, который нужно прибавить.
-   */
   function addWeight(from: number, to: number, weight: number): void {
     const neighbors = index.get(from) ?? new Map<number, number>();
     neighbors.set(to, (neighbors.get(to) ?? 0) + weight);
@@ -341,23 +155,7 @@ export function buildDeptEdgeIndex(data: GraphData): Map<number, Map<number, num
   return index;
 }
 
-/**
- * Строит индекс "автор -> ключи репозиториев, где он указан контрибьютором"
- * из `GraphData.repo_author_edges` (`s` — репозиторий, `t` — автор, см.
- * контракт `RepoAuthorEdge`).
- *
- * Учитывает только прямую связь автор-репозиторий, без учёта "репозиторий
- * связан с публикацией автора" через `repo_pub_edges` — так делал старый
- * GUI (`authorRepos`), но это отдельный, более сложный источник той же
- * информации; пока хватает прямой связи.
- *
- * @param data - данные графа.
- * @returns Map от ключа автора к списку ключей репозиториев.
- *
- * @example
- * // repo_author_edges: [{s:"R1",t:"A1",role:"maintainer"}]
- * buildAuthorRepoIndex(data).get("A1"); // ["R1"]
- */
+/** Direct contributor links only, not repos linked through the author's pubs. */
 export function buildAuthorRepoIndex(data: GraphData): Map<string, string[]> {
   const index = new Map<string, string[]>();
   for (const edge of data.repo_author_edges) {
@@ -368,22 +166,6 @@ export function buildAuthorRepoIndex(data: GraphData): Map<string, string[]> {
   return index;
 }
 
-/**
- * Строит индекс "репозиторий -> его участники (с ролью)" из
- * `GraphData.repo_author_edges` — обратная сторона
- * {@link buildAuthorRepoIndex} (там ключ — автор, здесь — сам репозиторий).
- *
- * Нужен карточке репозитория (features/panels.ts): "кто именно над ним
- * работал", а не только владелец из `RepoDetail.owner`.
- *
- * @param data - данные графа.
- * @returns Map от ключа репозитория к списку рёбер `RepoAuthorEdge`
- *   (каждое содержит ключ автора в поле `t` и его роль в поле `role`).
- *
- * @example
- * // repo_author_edges: [{s:"R1",t:"A1",role:"maintainer"}]
- * buildRepoAuthorIndex(data).get("R1"); // [{ s: "R1", t: "A1", role: "maintainer" }]
- */
 export function buildRepoAuthorIndex(data: GraphData): Map<string, RepoAuthorEdge[]> {
   const index = new Map<string, RepoAuthorEdge[]>();
   for (const edge of data.repo_author_edges) {
@@ -394,27 +176,6 @@ export function buildRepoAuthorIndex(data: GraphData): Map<string, RepoAuthorEdg
   return index;
 }
 
-/**
- * Строит обратные индексы репозиторий ↔ публикация из
- * `GraphData.repo_pub_edges` — тем же приёмом, что и {@link buildAuthorPubIndex}.
- *
- * Нужны карточке репозитория (features/panels.ts): "какие публикации с ним
- * связаны", и карточке публикации: "в каком репозитории её код" — в
- * старом GUI (`tab-pubs.js::showPubCard`) при наличии связанного репозитория
- * его ссылка показывалась ВМЕСТО голого `code_url` из `PubDetail` —
- * связь через собственные данные надёжнее, чем внешний харвестинг.
- *
- * @param data - данные графа.
- * @returns Объект с двумя картами:
- *   - `repoPubs` — ключ репозитория -> список ключей связанных публикаций;
- *   - `pubRepos` — ключ публикации -> список ключей связанных репозиториев.
- *
- * @example
- * // repo_pub_edges: [{s:"R1",t:"P1"}]
- * const { repoPubs, pubRepos } = buildRepoPubIndex(data);
- * repoPubs.get("R1"); // ["P1"]
- * pubRepos.get("P1"); // ["R1"]
- */
 export function buildRepoPubIndex(data: GraphData): { repoPubs: Map<string, string[]>; pubRepos: Map<string, string[]> } {
   const repoPubs = new Map<string, string[]>();
   const pubRepos = new Map<string, string[]>();
@@ -432,92 +193,27 @@ export function buildRepoPubIndex(data: GraphData): { repoPubs: Map<string, stri
   return { repoPubs, pubRepos };
 }
 
-// Общий префикс GitHub-ссылок — используется и для сборки ссылки на профиль
-// автора (githubLink в features/panels.ts), и здесь, для укорачивания уже
-// готовой ссылки на репозиторий/код при отображении. Раньше строка
-// "https://github.com/" была продублирована как литерал в трёх местах
-// (features/panels.ts дважды, features/search/index.ts один раз) — общий
-// источник правды означает, что при смене домена (например, на self-hosted
-// GitHub Enterprise) достаточно поменять его в одном месте.
 const GITHUB_URL_PREFIX = "https://github.com/";
 
-/**
- * Убирает `"https://github.com/"` из полной GitHub-ссылки, оставляя
- * короткий `"owner/repo"` — так и в старом GUI: длинный URL с протоколом и
- * доменом распирал бы узкую боковую панель или строку списка, а
- * `"owner/repo"` тут же понятен без клика.
- *
- * Если строка не начинается с `"https://github.com/"` (например, это уже
- * короткий путь или ссылка на другой хостинг), возвращается без изменений.
- *
- * @param url - полная ссылка (например, `RepoDetail.url`) или уже короткий путь.
- * @returns Ссылка без префикса `"https://github.com/"`.
- *
- * @example
- * githubShortPath("https://github.com/example-org/graph-toolkit"); // "example-org/graph-toolkit"
- * githubShortPath("example-org/graph-toolkit"); // "example-org/graph-toolkit" — префикса и так не было
- */
+/** `https://github.com/owner/repo` -> `owner/repo`; other strings pass through. */
 export function githubShortPath(url: string): string {
   return url.replace(GITHUB_URL_PREFIX, "");
 }
 
-/**
- * Строит полную ссылку на GitHub-профиль по имени пользователя —
- * используется вместе с {@link githubShortPath} тем же общим префиксом
- * {@link GITHUB_URL_PREFIX}, так что "собрать ссылку" и "укоротить ссылку"
- * не могут разойтись между собой.
- *
- * @param username - логин пользователя на GitHub (`AuthorDetail.github`), без протокола и домена.
- * @returns Полная ссылка вида `"https://github.com/<username>"`.
- *
- * @example
- * githubProfileUrl("ivanov-ii"); // "https://github.com/ivanov-ii"
- */
 export function githubProfileUrl(username: string): string {
   return `${GITHUB_URL_PREFIX}${username}`;
 }
 
-/**
- * Возвращает подпись узла для интерфейса на нужном языке.
- *
- * У `PubNode` своего `label` нет вообще — заголовок публикации приходит
- * отдельно, из `PubDetail` (`graph-search.js`), а не из самого узла
- * графа (см. contracts/graph.ts). `pubDetails` — необязательный
- * параметр: если для публикации нашлось название, используется оно; если
- * карта не передана или в ней нет такого ключа, функция откатывается на
- * `node.key` — так вызывающему коду, у которого ещё нет доступа к
- * `PubDetail`, не обязательно ничего менять.
- *
- * У `AuthorNode` есть пара `label`/`label_en` — язык переключается через
- * {@link localize}. У `RepoNode` своего `_en`-варианта нет (имя
- * репозитория не переводится), поэтому для него `localize()` просто
- * вернёт `repo.label` на любом языке. У `PubDetail` тоже нет
- * `_en`-варианта (реальный `graph-search.js` его не содержит) — название
- * публикации всегда на одном языке, независимо от `lang`.
- *
- * @param node - любой из трёх видов узлов графа.
- * @param lang - язык интерфейса.
- * @param pubDetails - опциональная карта деталей публикаций (см.
- *   {@link indexDetailsByKey}) — нужна только для публикаций.
- * @returns Подпись узла на нужном языке (или его ключ, если подписи взять неоткуда).
- *
- * @example
- * nodeLabel(author, "ru"); // "Иванов И.И." (из author.label)
- * nodeLabel(author, "en"); // "Ivanov I.I." (из author.label_en)
- * nodeLabel(repo, "en");   // "graph-toolkit" (у RepoNode нет _en, localize вернёт как есть)
- * nodeLabel(pub, "ru");                        // "P1" — pubDetails не передали, откат на ключ
- * nodeLabel(pub, "ru", pubDetailsByKey);     // "Название публикации" — нашли по ключу
- */
+/** PubNode has no label: the title comes from `pubDetails`, falling back to the key. */
 export function nodeLabel(node: GraphNode, lang: Lang, pubDetails?: Map<string, PubDetail>): string {
   if (!("label" in node)) return pubDetails?.get(node.key)?.label ?? node.key;
   const labelEn = "label_en" in node ? node.label_en : undefined;
   return localize(node.label, labelEn, lang);
 }
 
-/** Грант и его публикации — см. {@link grantIndex}. */
 export interface GrantInfo {
   key: string;
-  /** Номер так, как его чаще всего писали авторы. */
+  /** The spelling authors used most often. */
   name: string;
   funder: string;
   pubs: string[];
@@ -533,14 +229,7 @@ const grantIndexCache = new WeakMap<
   { size: number; index: Map<string, GrantInfo> }
 >();
 
-/**
- * Индекс "грант -> публикации" по `funding[].grant_key` из pubs-detail.json.
- * Пересчитывается, только когда карта деталей выросла (она домерживается
- * фоном, см. {@link mergeDetailsInto}).
- *
- * @param pubDetails - детали публикаций.
- * @returns Map от `grant_key` к {@link GrantInfo}.
- */
+/** Recomputed only when the detail map grows (it is filled in the background). */
 export function grantIndex(pubDetails: Map<string, PubDetail>): Map<string, GrantInfo> {
   const cached = grantIndexCache.get(pubDetails);
   if (cached?.size === pubDetails.size) return cached.index;
@@ -576,15 +265,7 @@ export function grantIndex(pubDetails: Map<string, PubDetail>): Map<string, Gran
   return index;
 }
 
-/**
- * CSV по RFC 4180 с BOM — чтобы Excel открыл кириллицу как UTF-8.
- *
- * @param rows - строки, первая — заголовок.
- * @returns Текст CSV.
- *
- * @example
- * toCsv([["a", "b"], ['x,"y"', "z"]]); // '\uFEFFa,b\r\n"x,""y""",z'
- */
+/** RFC 4180 with a BOM, so Excel reads Cyrillic as UTF-8. */
 export function toCsv(rows: string[][]): string {
   const cell = (value: string): string =>
     /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;

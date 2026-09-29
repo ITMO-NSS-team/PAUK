@@ -1,10 +1,3 @@
-// Слой "features" — окно поиска по ВСЕМ видам сущностей сразу (авторы,
-// репозитории, публикации, департаменты), поверх всего интерфейса, а не
-// вкладка. Единственный способ найти департамент вообще: у него нет ни
-// своей вкладки, ни узла-кнопки на карте (только невидимый якорь подписи,
-// см. map/build.ts::addDeptLabelAnchors) — на реальных данных департаментов
-// около 60, найти нужный "на глаз" по подписям на карте нереально.
-
 import type { AuthorDetail, GraphData, PubDetail, RepoDetail } from "../contracts/graph";
 import type { SearchHit } from "../contracts/search";
 import { SEARCH_CONFIG } from "../core/config";
@@ -16,26 +9,11 @@ import { visibleAuthors } from "../map/build";
 import { buildSearchIndex, parseDeptHitKey, searchHits } from "./search";
 
 /**
- * Подключает глобальный поиск. Открывается кнопкой `#global-search-trigger`
- * в сайдбаре или клавишей `"/"` (если фокус не в текстовом поле — иначе
- * "/" печаталась бы как обычный символ), закрывается `Escape` или кликом
- * по затемнённому фону, `Enter` в поле ввода выбирает первый результат
- * (без этого добраться до результата можно было только мышью или долгим
- * Tab'ом). Работает из ЛЮБОГО экрана (`AppState.screen`) — `#global-search`
- * лежит вне `#app`/`#menu` с более высоким z-index, см. index.html.
+ * Search over all kinds at once. It is the only way to find a department,
+ * which has no tab and no clickable node. Opens with the button or "/",
+ * works from any screen.
  *
- * Клик по результату пишет `store.selection` (и `store.tab`/`screen`, если
- * нужно переключить их под вид найденной сущности) — та же механика "выбор
- * = навигация", что и у клика по узлу на карте (features/selection.ts) или
- * по строке списка вкладки (features/tabs/nodeListTab.ts): камера подлетает
- * к узлу централизованно в map/build.ts::mountReactiveGraph.
- *
- * @param store - Store приложения.
- * @param data - данные графа.
- * @param pubDetails - карта деталей публикаций (для настоящих названий публикаций в результатах).
- * @param repoDetails - карта описаний/владельцев/ссылок репозиториев (для короткого пути на GitHub в результатах).
- * @param authorDetails - личные данные авторов (другие написания имени для поиска); догружается фоном, индекс перестраивается при каждом открытии окна.
- * @returns Функция отписки (unmount) — снимает обработчик клавиатуры.
+ * @returns Unmount function.
  */
 export function mountGlobalSearch(
   store: Store<AppState>,
@@ -49,10 +27,8 @@ export function mountGlobalSearch(
   const input = requireElement("global-search-input") as HTMLInputElement;
   const resultsEl = requireElement("global-search-results");
 
-  // Индекс — снимок текущего языка на момент ОТКРЫТИЯ окна, не пересчитывается
-  // непрерывно, пока окно закрыто (когда его вообще никто не видит, смена
-  // языка в другом месте интерфейса не обязана его касаться).
-  // Внешние авторы ищутся, только когда их показывает фильтр — как и на карте.
+  // Rebuilt on every open, so it follows the language and the external
+  // authors filter.
   function buildIndex(): SearchHit[] {
     const { lang, filters } = store.get();
     const shown = { ...data, authors: visibleAuthors(data, filters) };
@@ -60,7 +36,6 @@ export function mountGlobalSearch(
   }
   let index = buildIndex();
 
-  /** Подпись кнопки-триггера в сайдбаре — реагирует на смену языка, в отличие от текста внутри самого (обычно закрытого) окна поиска. */
   function renderTrigger(lang: AppState["lang"]): void {
     const hint = document.createElement("span");
     hint.className = "global-search-trigger__hint";
@@ -70,19 +45,7 @@ export function mountGlobalSearch(
   renderTrigger(store.get().lang);
   const unsubscribeTrigger = store.subscribe((state) => renderTrigger(state.lang));
 
-  /**
-   * Рисует список результатов, независимо от того, откуда они взялись —
-   * из фильтра по запросу ({@link searchHits}) или из подсказки
-   * "департаменты для просмотра" на пустом запросе (см. {@link render}) —
-   * клик ведёт себя одинаково в обоих случаях.
-   *
-   * @param container - куда рисовать список — обычно {@link resultsEl}
-   *   целиком, но для подсказки "департаменты для просмотра" это отдельный
-   *   `<div>` ПОСЛЕ заголовка подсказки (см. {@link render}), не сам
-   *   `resultsEl` — иначе `renderList()` его же `replaceChildren()` стёр бы
-   *   и сам заголовок.
-   * @param hits - результаты для отображения (уже обрезаны до нужной длины вызывающим кодом).
-   */
+  /** @param container - A separate element when a heading must stay above the list. */
   function renderHits(container: HTMLElement, hits: SearchHit[]): void {
     renderList(container, hits, (hit) =>
       renderListItem({
@@ -90,9 +53,7 @@ export function mountGlobalSearch(
         meta: hit.sub ?? undefined,
         dataKind: hit.kind,
         onClick: () => {
-          // screen: "app" безусловно — поиск открыт и с меню (см. клавиша
-          // "/" ниже), результат должен привести в приложение, а не просто
-          // молча записаться в состояние, скрытое за #menu.
+          // Search is also open on the menu, so always switch to the app.
           if (hit.kind === "dept") {
             store.set({ screen: "app", selection: { kind: "dept", id: parseDeptHitKey(hit.key) } });
           } else {
@@ -108,17 +69,12 @@ export function mountGlobalSearch(
     );
   }
 
-  /** Перерисовывает список результатов под текущий текст в поле ввода. */
   function render(): void {
     const query = input.value;
 
     if (!query.trim()) {
-      // Пустой запрос — не "нечего показать", а подсказка "департаменты
-      // для просмотра", крупнейшие сверху: департамент нельзя выбрать
-      // никаким другим способом, если не знаешь его точное название
-      // заранее (нет ни своей вкладки, ни узла-кнопки на карте) —
-      // пользователь должен иметь возможность просто заглянуть в список,
-      // а не только искать по угаданному запросу.
+      // Empty query lists the largest departments: they cannot be found any
+      // other way without knowing the name.
       const deptById = new Map(data.departments.map((dept) => [dept.id, dept]));
       const deptHits = [...index]
         .filter((hit) => hit.kind === "dept")
@@ -166,24 +122,13 @@ export function mountGlobalSearch(
 
   input.addEventListener("input", render);
   trigger.addEventListener("click", open);
-  // Клик именно по затемнённому фону (event.target === overlay), а не по
-  // самому окну поиска внутри него — те клики доходят с target глубже внутри.
   overlay.addEventListener("click", (event) => {
     if (event.target === overlay) close();
   });
 
   /**
-   * `"/"` открывает поиск из любого места интерфейса (кроме текстовых
-   * полей — иначе перехватывало бы обычный ввод символа "/"), `Escape`
-   * закрывает уже открытое окно, `Enter` В САМОМ ПОЛЕ ВВОДА выбирает
-   * первый результат — без этого добраться до результата с клавиатуры
-   * можно было только Tab'ом до нужной кнопки (ненадёжно и медленно для
-   * того, кто водит браузер клавиатурой/через DOM, а не мышью). Именно
-   * `event.target === input`, а не любой `<input>`/`<textarea>` — если
-   * фокус уже НА КОНКРЕТНОЙ кнопке результата (добрались туда Tab'ом),
-   * Enter на ней и так работает штатно (клик по самой себе), нашей же
-   * логике "кликнуть по ПЕРВОЙ" там делать нечего — иначе Enter на третьем
-   * результате возвращал бы первый, а не выбранный.
+   * Enter picks the first result only when focus is in the input; on a result
+   * button it clicks that button as usual.
    */
   function onKeydown(event: KeyboardEvent): void {
     if (!overlay.hidden && event.key === "Escape") {

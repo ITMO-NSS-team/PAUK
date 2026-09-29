@@ -1,7 +1,5 @@
 import { Theme } from "./theme";
 
-// Та же иерархия, что у тёмной: bg чуть темнее surface, surface-2 для
-// полей и кнопок, muted для второстепенного текста; акцент тот же.
 export const lightTheme = new Theme({
   id: "light",
   name: { ru: "Светлая", en: "Light" },
