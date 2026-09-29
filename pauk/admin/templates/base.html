@@ -28,13 +28,23 @@
     Пайплайн
   </a>
   <div class="who">
-    <span class="muted">{{ user.login }} · {{ user.role }}</span>
+    <span class="me"><b>{{ user.login }}</b><span class="muted">{{ user.role }}</span></span>
     <form method="post" action="/logout">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <button type="submit" class="ghost">выйти</button>
     </form>
   </div>
 </header>
+{# Паутина в углу, от неё нить вниз и паук на конце: нить тянется по мере
+   прокрутки, паук возвращает наверх. Живёт в пустом поле справа от текста,
+   на узком экране прячется. #}
+<div class="web" aria-hidden="true">
+  <img src="/assets/icons/pauk-web-4x.png" alt="">
+  <span class="silk"></span>
+</div>
+<button type="button" class="spider" id="to-top" title="Наверх" aria-label="Наверх" hidden>
+  <img src="/assets/icons/pauk-frame-8x.png" alt="">
+</button>
 {% endif %}
 <main>
 {% if user and graph_job %}
@@ -46,6 +56,31 @@
 {% endif %}
 {% block content %}{% endblock %}</main>
 <script>
+  {
+    // Длина нити – это доля прокрученного, а паук висит на её конце.
+    const silk = document.querySelector(".web .silk");
+    const spider = document.getElementById("to-top");
+    if (silk && spider) {
+      // Нить начинается под паутиной, а внизу оставляем место самому пауку.
+      const START = 96;
+      const place = () => {
+        const scrollable = document.documentElement.scrollHeight - window.innerHeight;
+        // Странице в один экран паук не нужен: подниматься неоткуда.
+        spider.hidden = scrollable < 120;
+        const reach = Math.max(window.innerHeight - START - 48, 0);
+        const length = scrollable > 0 ? Math.min(window.scrollY / scrollable, 1) * reach : 0;
+        silk.style.height = `${length}px`;
+        spider.style.top = `${START + length}px`;
+      };
+      place();
+      addEventListener("scroll", place, { passive: true });
+      addEventListener("resize", place);
+      spider.addEventListener("click", () => {
+        const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+        scrollTo({ top: 0, behavior: still ? "auto" : "smooth" });
+      });
+    }
+  }
   {
     // Свёрнутые значения приходят такими с сервера, поэтому мерить нужно
     // только их, а не всё подряд, и страница не прыгает при загрузке.
@@ -62,11 +97,28 @@
       more.className = "more";
       more.textContent = "развернуть";
       more.setAttribute("aria-expanded", "false");
-      more.addEventListener("click", () => {
-        const open = !value.classList.toggle("clipped");
-        more.textContent = open ? "свернуть" : "развернуть";
-        more.setAttribute("aria-expanded", String(open));
-      });
+      // Разворачивать нечего, пока свёрнуто, поэтому верхняя кнопка нужна
+      // только раскрытому значению: аннотация статьи занимает несколько
+      // экранов, и с одной кнопкой внизу свернуть её можно, только долистав
+      // до конца.
+      const above = more.cloneNode(true);
+      above.classList.add("above");
+      above.hidden = true;
+      const show = (open) => {
+        value.classList.toggle("clipped", !open);
+        above.hidden = !open;
+        for (const button of [more, above]) {
+          button.textContent = open ? "свернуть" : "развернуть";
+          button.setAttribute("aria-expanded", String(open));
+        }
+        // Свернули снизу – значение осталось экранами выше, и читатель
+        // оказался бы в пустоте на месте исчезнувшего текста.
+        if (!open) value.scrollIntoView({ block: "nearest" });
+      };
+      const toggle = () => show(value.classList.contains("clipped"));
+      more.addEventListener("click", toggle);
+      above.addEventListener("click", toggle);
+      value.before(above);
       value.after(more);
     });
   }
