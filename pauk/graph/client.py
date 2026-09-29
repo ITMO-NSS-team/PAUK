@@ -18,7 +18,7 @@ BOOLEAN_MERGE_FIELDS = {
 }
 LIST_MERGE_FIELDS = {
     "Person": {"name_variants", "other_names", "merged_ids"},
-    "Publication": {"fields", "merged_ids"},
+    "Publication": {"fields", "merged_ids", "pdf_urls"},
     "Repository": {"cited_urls", "contributors", "merged_ids"},
 }
 JSON_LIST_MERGE_FIELDS = {
@@ -438,7 +438,7 @@ class Neo4jClient:
             RETURN p.id AS id, p.type AS type, p.doi AS doi, p.title AS title,
                    p.journal AS journal, p.publication_date AS publication_date,
                    p.year AS year, p.openalex_url AS openalex_url,
-                   p.pdf_url AS pdf_url, p.abstract AS abstract,
+                   p.pdf_urls AS pdf_urls, p.abstract AS abstract,
                    p.versions AS versions,
                    p.merged_ids AS merged_ids, count(a) AS author_count,
                    collect(CASE WHEN a IS NULL THEN NULL ELSE

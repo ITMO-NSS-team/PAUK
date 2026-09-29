@@ -56,7 +56,7 @@ Works (W7000000001..W7000000100):
 * W016     zero authorships
 * W017     12 co-authors (incl. both Ivanovs -> Crossref ambiguity)
 * W018     A12 appears twice in the authorship list
-* W019     grants/funding present (stored as JSON text on the node) + 404 repo
+* W019     awards/funders present (funding stored as JSON text on the node) + 404 repo
 * W020     pdf_url present + 404 repo (typo of a real name)
 
 Duplicate publication records for the dedup stage (works W111..W120):
@@ -559,7 +559,16 @@ def build_universe() -> dict:
             work["abstract_inverted_index"] = _inverted_index(text)
 
         if n == 19:
-            work["grants"] = [{"funder_display_name": "Synthetic Science Fund", "grant_id": "SSF-19"}]
+            work["funders"] = [{
+                "id": "https://openalex.org/F7000000019",
+                "display_name": "Synthetic Science Fund",
+            }]
+            work["awards"] = [{
+                "id": "https://openalex.org/G7000000019",
+                "funder_id": "https://openalex.org/F7000000019",
+                "funder_display_name": "Synthetic Science Fund",
+                "funder_award_id": "SSF-19",
+            }]
         if n == 20:
             work["best_oa_location"] = {"pdf_url": "https://example.org/w20.pdf"}
         works.append(work)

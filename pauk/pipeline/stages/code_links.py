@@ -20,7 +20,7 @@ from .base import EnrichmentStage
 
 logger = logging.getLogger(__name__)
 
-_WRAP = r"(?:-\n[ \t]*)?"
+_WRAP = r"(?:-\n[ \t]*|(?<=_)\n[ \t]*)?"
 _CHAR = r"(?:-(?!\n)|[\w.])"
 _SEGMENT = _CHAR + r"+(?:" + _WRAP + _CHAR + r"+)*"
 GITHUB_URL = re.compile(
@@ -35,6 +35,7 @@ GITHUB_URL = re.compile(
     re.IGNORECASE,
 )
 _EMBEDDED_WRAP = re.compile(r"-\n[ \t]*")
+_AMBIGUOUS_WRAP = re.compile(r"-\n[ \t]*|(?<=_)\n[ \t]*")
 URL_TRAILING_PUNCT = ".,;:!?)]}>\"'-"
 GITHUB_HOST = "github.com"
 _GLUED_TAIL = re.compile(r"\.(?:[A-Z][a-z]+[\w-]*|[A-Z]{2,}[\w-]*|\d+(?:\.\d+)*)$")
@@ -90,6 +91,27 @@ def _slice_context(text: str, start: int, end: int) -> str | None:
     return " ".join(window.split()) or None
 
 
+def _url_candidates(raw: str) -> list[str]:
+    variants = [""]
+    finished: list[str] = []
+    start = 0
+    for match in _AMBIGUOUS_WRAP.finditer(raw):
+        variants = [prefix + raw[start:match.start()] for prefix in variants]
+        if match.group().startswith("-"):
+            variants = [prefix + suffix for prefix in variants for suffix in ("", "-")]
+        else:
+            finished.extend(variants)
+        if len(variants) + len(finished) > 32:
+            raise ValueError("Too many ambiguous line breaks in a GitHub URL")
+        start = match.end()
+    variants = finished + [prefix + raw[start:] for prefix in variants]
+    return list(dict.fromkeys(
+        url for variant in variants
+        if urlparse(url := _clean_match(variant)).netloc.lower() == GITHUB_HOST
+        and len(urlparse(url).path.strip("/").split("/")) == 2
+    ))
+
+
 def _occurrences_in_text(text: str, page_number: int | None) -> dict[str, LinkOccurrence]:
     """Canonical URL -> first occurrence found in this text.
 
@@ -98,12 +120,23 @@ def _occurrences_in_text(text: str, page_number: int | None) -> dict[str, LinkOc
     """
     found: dict[str, LinkOccurrence] = {}
     for match in GITHUB_URL.finditer(text):
-        url = _clean_match(match.group())
-        if url in found:
-            continue
-        found[url] = LinkOccurrence(
-            context=_slice_context(text, match.start(), match.end()), page_number=page_number
-        )
+        raw = match.group()
+        candidates = _url_candidates(raw)
+        continuous = "\n" not in raw
+        for url in candidates:
+            previous = found.get(url)
+            fragments = list(dict.fromkeys([
+                *(previous.raw_fragments if previous else []), raw,
+            ]))
+            # A direct spelling must survive even if a wrapped mention came first.
+            if previous and (previous.continuous or not continuous):
+                previous.raw_fragments = fragments
+                continue
+            found[url] = LinkOccurrence(
+                context=_slice_context(text, match.start(), match.end()), page_number=page_number,
+                raw_url=raw, raw_fragments=fragments,
+                candidate_urls=candidates, continuous=continuous,
+            )
     return found
 
 
@@ -139,7 +172,8 @@ def _pdf_page_occurrences(
         if urlparse(url).netloc.lower() != GITHUB_HOST or url in found:
             continue
         found[url] = LinkOccurrence(
-            context=_annotation_context(page, text, link.get("from")), page_number=page_number
+            context=_annotation_context(page, text, link.get("from")), page_number=page_number,
+            raw_url=uri, raw_fragments=[uri],
         )
     return found
 
@@ -147,6 +181,8 @@ def _pdf_page_occurrences(
 def _extract_pdf(data: bytes) -> tuple[list[str], list[dict[str, LinkOccurrence]]]:
     """Per-page text (for full_text) and per-page link occurrences."""
     with fitz.open(stream=data, filetype="pdf") as doc:
+        if not doc.is_pdf or doc.page_count == 0:
+            raise ValueError("Response is not a non-empty PDF document")
         pages: list[str] = []
         page_occurrences: list[dict[str, LinkOccurrence]] = []
         for page in doc:
@@ -169,8 +205,30 @@ def _collect_occurrences(
     occurrences: dict[str, list[LinkOccurrence]] = defaultdict(list)
     for url, occ in _occurrences_in_text(abstract, None).items():
         occurrences[url].append(occ)
+    # Only uninterrupted visible text in this PDF can settle a wrapped spelling.
+    confirmed = {
+        urlparse(url).path.casefold() for page_found in pdf_page_occurrences
+        for url, occurrence in page_found.items() if occurrence.continuous
+    }
     for page_found in pdf_page_occurrences:
         for url, occ in page_found.items():
+            if len(occ.candidate_urls) > 1:
+                identity = urlparse(url).path.casefold()
+                groups = [_url_candidates(raw) for raw in occ.raw_fragments] or [occ.candidate_urls]
+                remaining = []
+                for group in groups:
+                    supported = [candidate for candidate in group
+                                 if urlparse(candidate).path.casefold() in confirmed]
+                    choices = supported or group
+                    if identity in {urlparse(candidate).path.casefold() for candidate in choices}:
+                        remaining.append(choices)
+                if not remaining:
+                    continue
+                resolved = identity in confirmed or any(len(group) == 1 for group in remaining)
+                choices = [url] if resolved else list(dict.fromkeys(
+                    candidate for group in remaining for candidate in group
+                ))
+                occ = occ.model_copy(update={"candidate_urls": choices})
             occurrences[url].append(occ)
     return dict(occurrences)
 
@@ -236,7 +294,7 @@ class CodeLinksStage(EnrichmentStage):
         for pub in self.progress(candidates, total=len(candidates)):
             state = pub.processing.get(self.name)
             archived = _archived_repository_url(pub)
-            needs_pdf = bool(pub.pdf_url) or (self.crawler_available and bool(pub.doi))
+            needs_pdf = bool(pub.pdf_urls) or (self.crawler_available and bool(pub.doi))
             if needs_pdf:
                 pdf_pages, pdf_page_occurrences, pdf_error = self._pdf_pages(pub)
             else:
@@ -320,7 +378,7 @@ class CodeLinksStage(EnrichmentStage):
     ) -> tuple[list[str], list[dict[str, LinkOccurrence]], str | None]:
         """Download (if not already cached) and extract per-page text + link occurrences.
 
-        Prefers pub.pdf_url; if OpenAlex supplied none, falls back to the
+        Tries every direct PDF candidate before falling back to the
         PDF-Crawler-Service (resolves a PDF from the DOI - arXiv, Unpaywall,
         publisher pages, ...) when it's configured and reachable.
 
@@ -329,21 +387,27 @@ class CodeLinksStage(EnrichmentStage):
         non-open-access PDF) — the caller still falls back to the
         abstract-only result rather than losing it.
         """
-        via_crawler = not pub.pdf_url
-        if pub.pdf_url:
-            source_url = pub.pdf_url
-        elif self.crawler_available and pub.doi:
-            source_url = f"{self.config.pdf_crawler_url}/download?" + urlencode({"url": pub.doi})
-        else:
-            return [], [], None
-        try:
-            if self.pdf_store.exists(pub.id):
-                pdf_bytes = self.pdf_store.read(pub.id)
-            else:
-                kwargs = {"timeout": CRAWLER_DOWNLOAD_TIMEOUT, "retries": 0} if via_crawler else {}
+        errors = []
+        if self.pdf_store.exists(pub.id):
+            try:
+                pages, occurrences = _extract_pdf(self.pdf_store.read(pub.id))
+                return pages, occurrences, None
+            except Exception as exc:
+                errors.append(redact_text(exc))
+
+        sources = [(url, {}) for url in pub.pdf_urls]
+        if self.crawler_available and pub.doi:
+            sources.append((
+                f"{self.config.pdf_crawler_url}/download?" + urlencode({"url": pub.doi}),
+                {"timeout": CRAWLER_DOWNLOAD_TIMEOUT, "retries": 0},
+            ))
+        for source_url, kwargs in sources:
+            try:
                 pdf_bytes = self.http.get_bytes(source_url, **kwargs)
+                pages, occurrences = _extract_pdf(pdf_bytes)
+                # Error pages must never poison the cache for subsequent attempts.
                 self.pdf_store.save(pub.id, pdf_bytes)
-            pages, page_occurrences = _extract_pdf(pdf_bytes)
-            return pages, page_occurrences, None
-        except Exception as exc:
-            return [], [], redact_text(exc)
+                return pages, occurrences, None
+            except Exception as exc:
+                errors.append(redact_text(exc))
+        return [], [], "; ".join(errors) or None

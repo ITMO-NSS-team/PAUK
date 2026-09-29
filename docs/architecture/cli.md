@@ -58,7 +58,7 @@ pauk normalize --group <group>
 pauk enrich [stage] --group <group> [--input <файл-с-id> --entity <сущность>] [--force]
 ```
 
-`stage` — имя одного этапа (`pdf`, `persons`, `departments`, `code_links`,
+`stage` — имя одного этапа (`persons`, `departments`, `code_links`,
 `link_relevance`, `emails`, `repositories`, `dedup`, `github_match`,
 `author_names`; опционально — `social_graph`) или `all` (по умолчанию,
 все основные этапы по порядку — порядок задан `ALL_STAGES` в

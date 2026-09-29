@@ -1,4 +1,6 @@
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -6,6 +8,7 @@ from unittest.mock import patch
 import mongomock
 
 from pauk.models import Person
+from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.stages.author_names import AuthorNamesStage, RussianNamesCatalog, to_cyrillic
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
@@ -29,6 +32,7 @@ class _FakeOpenRouterClient:
         del args, kwargs
         self.last_response = None
         self.last_usage = None
+        self.last_error = None
         self._replies = list(self._queue)
 
     def chat_json(self, prompt):
@@ -36,6 +40,7 @@ class _FakeOpenRouterClient:
         reply = self._replies.pop(0) if self._replies else None
         if isinstance(reply, Exception):
             raise reply
+        self.last_error = "simulated failure" if reply is None else None
         return reply
 
     @classmethod
@@ -44,11 +49,13 @@ class _FakeOpenRouterClient:
 
 
 class AuthorNamesStageTest(unittest.TestCase):
-    def run_stage(self, people, catalog_rows, replies):
+    def run_stage(self, people, catalog_rows, replies, *, force=False):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name)
-        self.config = Settings(data_dir=root)
+        # The fake answers from a queue, so these cases read call order:
+        # one worker. Parallel work has its own test below.
+        self.config = Settings(data_dir=root, author_names_concurrency=1)
         self.config.static_dir.mkdir(parents=True)
         (self.config.static_dir / "russian_names.csv").write_text(
             CATALOG_HEADER + "".join(f"{row}\n" for row in catalog_rows), encoding="utf-8")
@@ -58,7 +65,9 @@ class AuthorNamesStageTest(unittest.TestCase):
         self.prepared.write_models("persons", people)
         with patch("pauk.pipeline.stages.author_names.OpenRouterClient",
                    _FakeOpenRouterClient.queued(replies)):
-            result = AuthorNamesStage(self.prepared, self.raw, self.config).run()
+            result = AuthorNamesStage(
+                self.prepared, self.raw, self.config, force=force
+            ).run()
         return result, {p.id: p for p in self.prepared.read_models("persons", Person)}
 
     def test_missing_catalog_stops_the_stage(self):
@@ -165,6 +174,178 @@ class AuthorNamesStageTest(unittest.TestCase):
         _, people = self.run_stage([first], [], replies=[None])
         self.assertEqual(people["A1"].name_ru, "Павел Жуков")
         self.assertEqual(people["A1"].name_en, "Pavel Zhukov")
+
+    def test_an_incomplete_reply_is_failed_and_retried_on_the_next_run(self):
+        incomplete = {
+            "matched_candidate": None,
+            "first_name_ru": "Павел",
+            "surname_en": "Zhukov",
+            "reason": "fields accidentally omitted",
+        }
+        result, people = self.run_stage(
+            [person("A1", "Pavel Zhukov")], [], replies=[incomplete, incomplete]
+        )
+
+        row = people["A1"]
+        self.assertEqual(result["names_failed"], 1)
+        self.assertEqual(row.processing["author_names"].status, ProcessingStatus.FAILED)
+        self.assertIn("surname_ru", row.processing["author_names"].error)
+        self.assertIn("first_name_en", row.processing["author_names"].error)
+        self.assertIsNone(row.surname_ru)
+        self.assertIsNone(row.first_name_en)
+
+        complete = {
+            "matched_candidate": None,
+            "surname_ru": "Жуков",
+            "first_name_ru": "Павел",
+            "surname_en": "Zhukov",
+            "first_name_en": "Pavel",
+            "reason": "complete split",
+        }
+        with patch(
+            "pauk.pipeline.stages.author_names.OpenRouterClient",
+            _FakeOpenRouterClient.queued([complete]),
+        ):
+            again = AuthorNamesStage(self.prepared, self.raw, self.config).run()
+
+        saved = next(self.prepared.read_models("persons", Person))
+        self.assertEqual(again["author_names"], 1)
+        self.assertEqual(saved.processing["author_names"].status, ProcessingStatus.COMPLETED)
+        self.assertEqual(saved.surname_ru, "Жуков")
+        self.assertEqual(saved.first_name_en, "Pavel")
+
+    def test_a_semantic_retry_can_recover_an_incomplete_reply_immediately(self):
+        incomplete = {
+            "matched_candidate": None,
+            "surname_ru": "Жуков",
+            "first_name_ru": "Павел",
+            "surname_en": "Zhukov",
+            "first_name_en": None,
+            "reason": "incomplete",
+        }
+        complete = {**incomplete, "first_name_en": "Pavel", "reason": "corrected"}
+
+        result, people = self.run_stage(
+            [person("A1", "Pavel Zhukov")], [], replies=[incomplete, complete]
+        )
+
+        self.assertEqual(result["names_failed"], 0)
+        self.assertEqual(people["A1"].processing["author_names"].status, ProcessingStatus.COMPLETED)
+        logs = list(self.db.llm_logs_author_names.find({}, {"_id": False}))
+        self.assertEqual(len(logs), 2)
+        self.assertIn("first_name_en", logs[0]["error"])
+        self.assertIsNone(logs[1]["error"])
+        self.assertEqual(logs[1]["context"]["response_attempt"], 2)
+
+    def test_required_fields_reject_null_blank_whitespace_and_non_string_values(self):
+        for invalid in (None, "", "   ", 123):
+            with self.subTest(invalid=invalid):
+                reply = {
+                    "matched_candidate": None,
+                    "surname_ru": "Жуков",
+                    "first_name_ru": "Павел",
+                    "surname_en": "Zhukov",
+                    "first_name_en": invalid,
+                    "reason": "invalid first name",
+                }
+                result, people = self.run_stage(
+                    [person("A1", "Pavel Zhukov")], [], replies=[reply, reply]
+                )
+                self.assertEqual(result["names_failed"], 1)
+                self.assertEqual(
+                    people["A1"].processing["author_names"].status,
+                    ProcessingStatus.FAILED,
+                )
+
+    def test_required_fields_are_checked_even_for_a_matched_candidate(self):
+        incomplete = {
+            "matched_candidate": 0,
+            "surname_ru": "Жуков",
+            "first_name_ru": "Павел",
+            "surname_en": "Zhukov",
+            "first_name_en": None,
+            "reason": "candidate match but incomplete response",
+        }
+        result, people = self.run_stage(
+            [person("A1", "Pavel Zhukov")],
+            ["Жуков Павел,Жуков,Павел,,"],
+            replies=[incomplete, incomplete],
+        )
+        self.assertEqual(result["names_failed"], 1)
+        self.assertEqual(people["A1"].processing["author_names"].status, ProcessingStatus.FAILED)
+
+    def test_an_invalid_candidate_index_is_not_trusted(self):
+        reply = {
+            "matched_candidate": 7,
+            "surname_ru": "Жуков",
+            "first_name_ru": "Павел",
+            "surname_en": "Zhukov",
+            "first_name_en": "Pavel",
+            "reason": "bad index",
+        }
+        result, people = self.run_stage(
+            [person("A1", "Pavel Zhukov")], [], replies=[reply, reply]
+        )
+        self.assertEqual(result["names_failed"], 1)
+        self.assertIn("outside", people["A1"].processing["author_names"].error)
+
+    def test_an_invalid_reply_does_not_erase_a_previous_complete_split(self):
+        existing = person("A1", "Pavel Zhukov")
+        existing.surname_ru = "Жуков"
+        existing.first_name_ru = "Павел"
+        existing.surname_en = "Zhukov"
+        existing.first_name_en = "Pavel"
+        existing.name_ru = "Жуков Павел"
+        existing.name_en = "Zhukov Pavel"
+        existing.processing["author_names"] = ProcessingState(
+            status=ProcessingStatus.COMPLETED, attempts=1, result_count=1
+        )
+        incomplete = {
+            "matched_candidate": None,
+            "surname_ru": "Жуков",
+            "first_name_ru": "Павел",
+            "surname_en": "Zhukov",
+            "first_name_en": None,
+            "reason": "incomplete forced response",
+        }
+
+        _, people = self.run_stage(
+            [existing], [], replies=[incomplete, incomplete], force=True
+        )
+
+        row = people["A1"]
+        self.assertEqual(row.processing["author_names"].status, ProcessingStatus.FAILED)
+        self.assertEqual(
+            (row.surname_ru, row.first_name_ru, row.surname_en, row.first_name_en),
+            ("Жуков", "Павел", "Zhukov", "Pavel"),
+        )
+        self.assertEqual((row.name_ru, row.name_en), ("Жуков Павел", "Zhukov Pavel"))
+
+    def test_a_malformed_reply_fails_one_person_without_stopping_the_batch(self):
+        malformed = {
+            "matched_candidate": None,
+            "surname_ru": "Жуков",
+            "first_name_ru": "Павел",
+            "surname_en": "Zhukov",
+            "first_name_en": ["Pavel"],
+            "reason": "wrong type",
+        }
+        valid = {
+            "matched_candidate": None,
+            "surname_ru": "Петров",
+            "first_name_ru": "Иван",
+            "surname_en": "Petrov",
+            "first_name_en": "Ivan",
+            "reason": "valid",
+        }
+        result, people = self.run_stage(
+            [person("A1", "Pavel Zhukov"), person("A2", "Ivan Petrov")],
+            [],
+            replies=[malformed, malformed, valid],
+        )
+        self.assertEqual(result["author_names"], 2)
+        self.assertEqual(people["A1"].processing["author_names"].status, ProcessingStatus.FAILED)
+        self.assertEqual(people["A2"].processing["author_names"].status, ProcessingStatus.COMPLETED)
 
     def test_an_invented_patronymic_with_no_candidate_is_dropped(self):
         # The model states a patronymic despite there being no directory
@@ -327,8 +508,9 @@ class AuthorNamesStageTest(unittest.TestCase):
         )
         row = people["A1"]
         self.assertIsNone(row.first_name_ru)
-        self.assertEqual(row.surname_ru, "Конопка")  # fully Cyrillic, untouched
-        self.assertEqual(row.first_name_en, "Małgorzata")  # English field is not guarded
+        self.assertIsNone(row.surname_ru)  # an invalid reply is not applied partially
+        self.assertIsNone(row.first_name_en)
+        self.assertEqual(row.processing["author_names"].status, ProcessingStatus.FAILED)
 
     def test_a_bare_latin_initial_in_a_ru_field_is_transliterated_not_dropped(self):
         _, people = self.run_stage(
@@ -525,6 +707,73 @@ class StaffIdentityTest(unittest.TestCase):
             ("Никитин Андрей Алексеевич", "Никитин", "Андрей", "Алексеевич", ""),
             ("Никитин Андрей Викторович", "Никитин", "Андрей", "Викторович", ""))
         self.assertIsNone(catalog.staff_id(person("A1", "Andrey Nikitin")))
+
+
+class _ThreadedFakeClient:
+    """A fake that answers from the prompt instead of a call queue, so the
+    reply is right whichever worker happens to make the call. Records the
+    threads it was used from."""
+
+    threads: set = set()
+
+    def __init__(self, *args, **kwargs) -> None:
+        del args, kwargs
+        self.last_response = None
+        self.last_usage = None
+        self.last_error = None
+
+    def chat_json(self, prompt):
+        _ThreadedFakeClient.threads.add(threading.current_thread().name)
+        time.sleep(0.05)
+        for latin, cyrillic in (("Petrov", "Петров"), ("Sidorov", "Сидоров"),
+                                ("Smirnov", "Смирнов"), ("Volkov", "Волков")):
+            if latin in prompt:
+                return {
+                    "matched_candidate": None,
+                    "surname_ru": cyrillic, "first_name_ru": "Иван",
+                    "surname_en": latin, "first_name_en": "Ivan",
+                    "reason": "",
+                }
+        return None
+
+
+class ParallelAuthorNamesTest(unittest.TestCase):
+    def run_stage(self, people, concurrency):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        config = Settings(data_dir=root, author_names_concurrency=concurrency)
+        config.static_dir.mkdir(parents=True)
+        (config.static_dir / "russian_names.csv").write_text(CATALOG_HEADER, encoding="utf-8")
+        db = mongomock.MongoClient()["pauk_test"]
+        prepared = PreparedStore(db, "sample")
+        prepared.write_models("persons", people)
+        _ThreadedFakeClient.threads = set()
+        with patch("pauk.pipeline.stages.author_names.OpenRouterClient", _ThreadedFakeClient):
+            result = AuthorNamesStage(prepared, RawStore(db, "sample"), config).run()
+        return result, {p.id: p for p in prepared.read_models("persons", Person)}
+
+    def test_every_author_keeps_their_own_answer_across_workers(self):
+        people = [person("A1", "Ivan Petrov"), person("A2", "Ivan Sidorov"),
+                  person("A3", "Ivan Smirnov"), person("A4", "Ivan Volkov")]
+
+        result, rows = self.run_stage(people, concurrency=4)
+
+        self.assertEqual(result["author_names"], 4)
+        self.assertEqual(rows["A1"].surname_ru, "Петров")
+        self.assertEqual(rows["A2"].surname_ru, "Сидоров")
+        self.assertEqual(rows["A3"].surname_ru, "Смирнов")
+        self.assertEqual(rows["A4"].surname_ru, "Волков")
+        self.assertGreater(len(_ThreadedFakeClient.threads), 1)
+
+    def test_one_worker_is_the_same_stage(self):
+        result, rows = self.run_stage(
+            [person("A1", "Ivan Petrov"), person("A2", "Ivan Sidorov")], concurrency=1)
+
+        self.assertEqual(result["author_names"], 2)
+        self.assertEqual(rows["A1"].surname_ru, "Петров")
+        self.assertEqual(rows["A2"].surname_ru, "Сидоров")
+        self.assertEqual(len(_ThreadedFakeClient.threads), 1)
 
 
 if __name__ == "__main__":

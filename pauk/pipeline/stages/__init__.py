@@ -5,7 +5,6 @@ from .departments import DepartmentsStage
 from .emails import EmailsStage
 from .github_match import GitHubMatchStage
 from .link_relevance import LinkRelevanceStage
-from .pdf import PdfStage
 from .persons import PersonsStage
 from .repo_people import RepoPeopleStage
 from .repositories import RepositoriesStage
@@ -29,7 +28,7 @@ from .social_graph import SocialGraphStage
 # each run costs hundreds of API calls. Run it by name, then github_match
 # again, until a run finds nothing new.
 ALL_STAGES = (
-    PdfStage, PersonsStage, DepartmentsStage, CodeLinksStage, LinkRelevanceStage,
+    PersonsStage, DepartmentsStage, CodeLinksStage, LinkRelevanceStage,
     EmailsStage, RepositoriesStage, RepoPeopleStage, DedupStage, GitHubMatchStage,
     AuthorNamesStage,
 )

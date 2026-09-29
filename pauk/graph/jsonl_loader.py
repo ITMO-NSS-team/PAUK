@@ -137,6 +137,18 @@ def extract_repo_links(
             if props.get("classification_status") == "pending":
                 props.pop("classification_status")
         occurrences = link.get("occurrences") or []
+        ambiguous = bool(occurrences) and all(
+            len(occurrence.get("candidate_urls") or []) > 1 for occurrence in occurrences
+        )
+        if any(occurrence.get("raw_url") for occurrence in occurrences):
+            props["url_ambiguous"] = ambiguous
+            props["candidate_urls"] = sorted({
+                candidate for occurrence in occurrences
+                for candidate in occurrence.get("candidate_urls") or []
+            })
+            props["availability"] = link.get("availability", "unchecked")
+        if ambiguous:
+            props["is_relevant"] = None
         if occurrences:
             props["context"] = [o.get("context") or "" for o in occurrences]
             props["page_number"] = [o.get("page_number") or 0 for o in occurrences]

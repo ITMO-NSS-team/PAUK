@@ -142,6 +142,67 @@ class PersonResolutionTest(unittest.TestCase):
         self.assertEqual(result.decision, Decision.MERGE)
         self.assertEqual(result.route, "logreg_high")
 
+    def test_different_surnames_are_never_merged_on_the_name_alone(self):
+        result = resolve_pair(
+            evidence(
+                person_a="name_1",
+                name_a="A. V. Shashkin",
+                name_b="Alexander Vinogradov",
+                shared_coauthors=0,
+                shared_departments=0,
+                shared_fields=0,
+                shared_publications=0,
+                works_a=3,
+                works_b=1,
+                surname_occurrences_a=1,
+                surname_occurrences_b=1,
+            )
+        )
+
+        self.assertGreaterEqual(result.probability, 0.99)
+        self.assertEqual(result.decision, Decision.FIRST_MODEL)
+        self.assertEqual(result.route, "surname_mismatch")
+
+    def test_a_transliterated_surname_is_not_a_mismatch(self):
+        result = resolve_pair(
+            evidence(
+                person_a="name_1",
+                name_a="Aleksey Grigorev",
+                name_b="A.S. Grigoriev",
+                shared_coauthors=0,
+                shared_departments=0,
+                shared_fields=0,
+                shared_publications=0,
+                works_a=3,
+                works_b=1,
+                surname_occurrences_a=1,
+                surname_occurrences_b=1,
+            )
+        )
+
+        self.assertEqual(result.decision, Decision.MERGE)
+        self.assertEqual(result.route, "logreg_high")
+
+    def test_a_joint_work_still_allows_a_merge_across_surnames(self):
+        result = resolve_pair(
+            evidence(
+                person_a="name_1",
+                name_a="A. V. Shashkin",
+                name_b="Alexander Vinogradov",
+                shared_coauthors=0,
+                shared_departments=0,
+                shared_fields=0,
+                shared_publications=2,
+                works_a=3,
+                works_b=1,
+                surname_occurrences_a=1,
+                surname_occurrences_b=1,
+            )
+        )
+
+        self.assertEqual(result.decision, Decision.MERGE)
+        self.assertEqual(result.route, "logreg_high")
+
     def test_uncertain_pair_requires_two_positive_model_verdicts(self):
         initial = resolve_pair(
             evidence(

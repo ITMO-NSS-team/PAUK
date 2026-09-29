@@ -1,15 +1,128 @@
+import json
 import unittest
+from pathlib import Path
 
 import mongomock
 
 from pauk.models import Authorship, CodeLink, Person, Publication, PublicationVersion, RepoLink, Repository
-from pauk.pipeline.normalize import OpenAlexNormalizer
+from pauk.pipeline.normalize import OpenAlexNormalizer, _funding
+from pauk.pipeline.stages import ALL_STAGES
+from pauk.pipeline.stages.dedup import _merge_publication
 from pauk.storage import PreparedStore, RawStore
 
 
+class FundingTest(unittest.TestCase):
+    def test_funder_only_entries_do_not_duplicate_numbered_grants(self):
+        awards = [
+            {"funder_display_name": "Fund One", "funder_award_id": None},
+            {"funder_display_name": "Fund One", "funder_award_id": "123"},
+            {"funder_display_name": "Fund One", "funder_award_id": "456"},
+        ]
+        for ordered in (awards, list(reversed(awards))):
+            with self.subTest(awards=ordered):
+                result = _funding({"awards": ordered, "funders": [{"display_name": "Fund One"}]})
+                self.assertEqual(len(result), 2)
+                self.assertEqual({(f.funder, f.grant_id) for f in result},
+                                 {("Fund One", "123"), ("Fund One", "456")})
+
+    def test_real_openalex_responses(self):
+        works = json.loads((Path(__file__).parents[1] / "fixtures/openalex_funding.json").read_text(encoding="utf-8"))
+        db = mongomock.MongoClient()["funding_test"]
+        raw = RawStore(db, "funding")
+        for work in works:
+            raw.append("openalex_works", work, {})
+        prepared = PreparedStore(db, "funding")
+        OpenAlexNormalizer(raw, prepared).run()
+        funding = {pub.id: pub.funding for pub in prepared.read_models("publications", Publication)}
+        self.assertEqual([f.model_dump() for f in funding["W7172214022"]], [
+            {"funder": "Qassim University", "grant_id": "QU-  APC-2026"},
+            {"funder": "ITMO University", "grant_id": None},
+        ])
+        self.assertEqual(len(funding["W7172384132"]), 7)
+        self.assertEqual({f.grant_id for f in funding["W7172384132"]
+                          if f.funder == "National Natural Science Foundation of China"},
+                         {"52475499", "52222513", "92580114", "525B2076"})
+        epsrc = [f.grant_id for f in funding["W4387377944"]
+                 if f.funder == "Engineering and Physical Sciences Research Council"]
+        self.assertEqual(epsrc, ["EP/V00171X/1", "EP/X017222/1"])
+
+    def test_awards_and_remaining_funders(self):
+        work = {
+            "funders": [
+                {"id": "F1", "display_name": "Fund One"},
+                {"id": "F2", "display_name": "Fund Two"},
+                {"id": "F2", "display_name": "Fund Two"},
+            ],
+            "awards": [
+                {"funder_id": "F1", "funder_display_name": "Fund One", "funder_award_id": "123"},
+                {"funder_id": "F1", "funder_display_name": "Fund One", "funder_award_id": "456"},
+                {"funder_id": "F1", "funder_display_name": "Fund One", "funder_award_id": "123"},
+            ],
+        }
+        self.assertEqual([entry.model_dump() for entry in _funding(work)], [
+            {"funder": "Fund One", "grant_id": "123"},
+            {"funder": "Fund One", "grant_id": "456"},
+            {"funder": "Fund Two", "grant_id": None},
+        ])
+
+    def test_missing_and_empty_fields(self):
+        for work in ({}, {"funders": None, "awards": None}, {"funders": [{}], "awards": [{}]}):
+            with self.subTest(work=work):
+                self.assertEqual(_funding(work), [])
+
+    def test_funders_without_awards(self):
+        result = _funding({"funders": [{"id": "F1", "display_name": "Fund One"}]})
+        self.assertEqual([entry.model_dump() for entry in result], [{"funder": "Fund One", "grant_id": None}])
+
+    def test_awards_without_funders_keep_partial_information(self):
+        result = _funding({"awards": [
+            {"id": "G1", "display_name": "Project title", "funder_award_id": "123"},
+            {"funder_display_name": "Fund One", "funder_award_id": None},
+            {"id": "G2", "display_name": "Another project"},
+        ]})
+        self.assertEqual([entry.model_dump() for entry in result], [
+            {"funder": None, "grant_id": "123"},
+            {"funder": "Fund One", "grant_id": None},
+        ])
+
+
 class NormalizeTest(unittest.TestCase):
+    def test_pdf_stage_removed_and_candidates_survive_merge(self):
+        self.assertNotIn("pdf", [stage.name for stage in ALL_STAGES])
+        base = Publication(id="W1", title="t", pdf_urls=["https://example.org/a.pdf"])
+        extra = Publication(id="W2", title="t",
+                            pdf_urls=["https://example.org/b.pdf", "https://example.org/a.pdf",
+                                      "https://example.org/c.pdf"])
+        merged = _merge_publication(base, extra)
+        self.assertEqual(merged.pdf_urls, [
+            "https://example.org/a.pdf", "https://example.org/b.pdf", "https://example.org/c.pdf",
+        ])
+        self.assertEqual(merged.versions[0].pdf_urls, extra.pdf_urls)
+
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
+
+    def test_pdf_candidates_preserve_order_and_existing_links(self):
+        raw = RawStore(self.db, "sample")
+        prepared = PreparedStore(self.db, "sample")
+        prepared.write_models("publications", [Publication(
+            id="W1", title="old", pdf_urls=["https://example.org/existing.pdf"])])
+        raw.append("openalex_works", {
+            "id": "https://openalex.org/W1", "title": "Paper",
+            "best_oa_location": {"pdf_url": "https://example.org/best.pdf"},
+            "locations": [None, {}, {"pdf_url": ""},
+                          {"pdf_url": "https://example.org/other.pdf"},
+                          {"pdf_url": "https://example.org/best.pdf"}],
+        }, {})
+        OpenAlexNormalizer(raw, prepared).run()
+        [pub] = list(prepared.read_models("publications", Publication))
+        self.assertEqual(pub.pdf_urls, [
+            "https://example.org/best.pdf", "https://example.org/other.pdf",
+            "https://example.org/existing.pdf",
+        ])
+        OpenAlexNormalizer(raw, prepared).run()
+        [again] = list(prepared.read_models("publications", Publication))
+        self.assertEqual(again.pdf_urls, pub.pdf_urls)
 
     def test_openalex_work_creates_publication_and_all_authors(self):
         raw = RawStore(self.db, "sample")

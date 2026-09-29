@@ -79,7 +79,7 @@ Python 3.6 — версия python3 на сервере не зафиксиро�
 
 Отдельный сервис ([github.com/gurinboru/PDF-Crawler-Service](https://github.com/gurinboru/PDF-Crawler-Service),
 FastAPI+Redis+Celery) — опциональный fallback для `code_links.py`, когда
-у публикации нет `pdf_url` (см. [pipeline/code-links.md](pipeline/code-links.md)).
+у публикации нет `pdf_urls` (см. [pipeline/code-links.md](pipeline/code-links.md)).
 Развёртывание, поддержка и корректность самого поиска PDF — не в зоне
 ответственности этого репозитория; здесь только клиентская сторона
 интеграции.

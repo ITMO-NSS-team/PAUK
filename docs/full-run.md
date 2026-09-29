@@ -95,7 +95,7 @@ uv run pauk enrich --group testrun
 ```
 
 Стадии (порядок исполнения):
-`pdf -> persons -> departments -> code_links -> link_relevance -> emails -> repositories -> dedup -> github_match -> author_names` (+ `social_graph`, опционально). Одна стадия: `uv run pauk enrich <stage> --group testrun`.
+`persons -> departments -> code_links -> link_relevance -> emails -> repositories -> dedup -> github_match -> author_names` (+ `social_graph`, опционально). Одна стадия: `uv run pauk enrich <stage> --group testrun`.
 
 Стадия `dedup` сворачивает дубли внутри одной группы. Дедуп всего графа - отдельная команда в разделе 3.
 
@@ -156,6 +156,18 @@ cd pauk/gui/web && npm install && npm run dev   # локально
 
 `--entity` принимает ключи `PreparedStore.COLLECTIONS`: publications, persons,
 departments, organizations, repositories, github_profiles, repo_links.
+
+Исторически некорректные `author_names=completed` сначала планируются read-only
+скриптом, потому что `Person` глобальна и один общий файл с одной группой не
+охватит все id:
+
+```bash
+uv run python scripts/plan_author_names_repair.py --out data/reports/author-names-repair
+```
+
+Перед выполнением напечатанных скриптом команд снять `snapshot_mongo.py`.
+Команды запускать последовательно, после них повторно проверить планировщиком
+нулевой остаток, опубликовать затронутые группы и пересобрать cache/web.
 
 ## 7. Промоут в прод
 

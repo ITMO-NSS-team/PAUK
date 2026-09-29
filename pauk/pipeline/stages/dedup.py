@@ -159,6 +159,24 @@ def _norm_doi(doi: str | None) -> str | None:
     return value.rstrip("/") or None
 
 
+_NAME_PUNCT = re.compile(r"[^\w]", re.UNICODE)
+
+
+def _name_tokens(name: str | None) -> list[str]:
+    """Name tokens worth blocking on: initials carry no identity of their own.
+
+    Punctuation goes before the length check, so "A.A." collapses to a
+    two-letter token and drops out instead of bucketing every author who
+    happens to share those initials.
+    """
+    tokens = []
+    for token in _norm_name(name).split():
+        stripped = _NAME_PUNCT.sub("", token)
+        if len(stripped) > 2:
+            tokens.append(stripped)
+    return tokens
+
+
 def _variant_set(person: Person) -> set[str]:
     return {_norm_name(variant) for variant in person.name_variants if _norm_name(variant)}
 
@@ -237,9 +255,8 @@ def _paired_persons(people: list[Person], in_scope: set[str] | None,
         if staff_id:
             by_staff.setdefault(staff_id, []).append(person)
         for name in (person.name_raw, *person.name_variants):
-            for token in _norm_name(name).replace(",", " ").split():
-                if len(token) > 2:
-                    by_token.setdefault(token, []).append(person)
+            for token in _name_tokens(name):
+                by_token.setdefault(token, []).append(person)
 
     emitted: set[tuple[str, str]] = set()
     for bucket in (*by_orcid.values(), *by_token.values(), *by_staff.values()):
@@ -651,7 +668,7 @@ def _version_of(publication: Publication,
         publication_date=publication.publication_date,
         year=publication.year,
         openalex_url=publication.openalex_url,
-        pdf_url=publication.pdf_url,
+        pdf_urls=publication.pdf_urls,
         abstract=publication.abstract,
         authors=list(authors),
     )
@@ -668,11 +685,12 @@ def _merge_versions(*sources: Iterable[PublicationVersion]) -> list[PublicationV
             if existing is version:
                 continue
             for field in ("title", "doi", "journal", "publication_date",
-                          "year", "openalex_url", "pdf_url", "abstract"):
+                          "year", "openalex_url", "abstract"):
                 if getattr(existing, field) is None:
                     setattr(existing, field, getattr(version, field))
             if not existing.authors:
                 existing.authors = version.authors
+            existing.pdf_urls = _union(existing.pdf_urls, version.pdf_urls)
     return list(merged.values())
 
 
@@ -686,6 +704,7 @@ def _merge_publication(base: Publication, extra: Publication,
     an abstract or a PDF link present on only one record is never lost.
     """
     base.has_code = base.has_code or extra.has_code
+    base.pdf_urls = _union(base.pdf_urls, extra.pdf_urls)
     base.versions = _merge_versions(base.versions, extra.versions,
                                     [_version_of(extra, extra_authors)])
     base.merged_ids = _union(base.merged_ids, extra.merged_ids)
@@ -697,7 +716,7 @@ def _merge_publication(base: Publication, extra: Publication,
         if grant not in base.funding:
             base.funding.append(grant)
     for field in ("type", "code_url", "doi", "journal", "publication_date", "year",
-                  "openalex_url", "pdf_url", "abstract"):
+                  "openalex_url", "abstract"):
         if getattr(base, field) is None:
             setattr(base, field, getattr(extra, field))
     for stage, state in extra.processing.items():

@@ -80,7 +80,7 @@
 * **`code_url`** (`String`) — JSON-список ссылок на авторский код.
 * **`funding`** (`JSON`) — информация о финансировании.
 * **`openalex_url`** (`String`) — ссылка на публикацию в OpenAlex.
-* **`pdf_url`** (`String`) — ссылка на PDF.
+* **`pdf_urls`** (`List[String]`) — упорядоченные уникальные ссылки на PDF.
 * **`abstract`** (`String`) — аннотация.
 * **`full_text`** (`String`) — полный текст (если извлечён из PDF).
 * **`versions`** (`JSON`) — версии публикации.

@@ -87,7 +87,7 @@ def _node_version(row: dict) -> dict:
         "publication_date": str(row["publication_date"]) if row.get("publication_date") else None,
         "year": row.get("year"),
         "openalex_url": row.get("openalex_url"),
-        "pdf_url": row.get("pdf_url"),
+        "pdf_urls": row.get("pdf_urls"),
         "abstract": row.get("abstract"),
         "authors": authors or None,
     }
@@ -111,7 +111,9 @@ def _merged_versions_json(canonical: dict, duplicates: list[dict]) -> str:
             for key, value in entry.items():
                 # An empty author list counts as missing: entries written
                 # before author lists were versioned carry one.
-                if existing.get(key) in (None, [], ""):
+                if key == "pdf_urls":
+                    existing[key] = _union(existing.get(key) or [], value or [])
+                elif existing.get(key) in (None, [], ""):
                     existing[key] = value
 
     for row in (canonical, *duplicates):

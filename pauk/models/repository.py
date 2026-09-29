@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -44,6 +44,11 @@ class LinkCandidate(BaseModel):
 class LinkOccurrence(BaseModel):
     context: str | None = None
     page_number: int | None = None
+    raw_url: str | None = None
+    raw_fragments: list[str] = Field(default_factory=list)
+    # Alternatives belong to this occurrence, not to every mention of the URL.
+    candidate_urls: list[str] = Field(default_factory=list)
+    continuous: bool = False
 
 
 class CodeLink(BaseModel):
@@ -54,6 +59,14 @@ class CodeLink(BaseModel):
     is_relevant: bool | None = None
     llm_confidence: float | None = None
     llm_reason: str | None = None
+    availability: Literal["unchecked", "available", "not_found", "failed"] = "unchecked"
+    availability_error: str | None = None
+
+    @property
+    def url_ambiguous(self) -> bool:
+        return bool(self.occurrences) and all(
+            len(occurrence.candidate_urls) > 1 for occurrence in self.occurrences
+        )
 
     @model_validator(mode="before")
     @classmethod

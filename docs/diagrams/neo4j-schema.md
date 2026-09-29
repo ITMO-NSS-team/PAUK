@@ -58,7 +58,7 @@ classDiagram
         +code_url
         +funding : JSON
         +openalex_url
-        +pdf_url
+        +pdf_urls
         +abstract
         +versions : JSON
         +merged_ids

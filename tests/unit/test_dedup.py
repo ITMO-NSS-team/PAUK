@@ -25,7 +25,7 @@ from pauk.models import (
     Repository,
 )
 from pauk.pipeline.stages.author_names import RussianNamesCatalog
-from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage
+from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage, _paired_persons
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore, review
 from tests.bench.mocks import RecordingNeo4jClient
@@ -836,6 +836,7 @@ class GraphDedupTest(unittest.TestCase):
         client = RecordingNeo4jClient()
         w1 = publication("W1", "Same work", doi="10.1/x", day="2026-01-01")
         w1.abstract = "First-group abstract"
+        w1.pdf_urls = ["https://example.org/w1.pdf"]
         self.load_new_group(client, "q1", [w1], [person("X1", "Author One", ["W1"])])
         self.load_new_group(client, "y2026",
                             [publication("W2", "Same work", doi="10.1/x", day="2026-05-01")],
@@ -845,8 +846,21 @@ class GraphDedupTest(unittest.TestCase):
         ledger = {entry["openalex_id"]: entry
                   for entry in json.loads(client.nodes["Publication"]["W2"]["versions"])}
         self.assertEqual(ledger["W1"]["abstract"], "First-group abstract")
+        self.assertEqual(ledger["W1"]["pdf_urls"], w1.pdf_urls)
+        self.assertEqual(client.nodes["Publication"]["W2"]["pdf_urls"], w1.pdf_urls)
         self.assertEqual([a["person_id"] for a in ledger["W1"]["authors"]], ["X1"])
         self.assertEqual({a["person_id"] for a in ledger["W2"]["authors"]}, {"X1", "X2"})
+
+    def test_graph_version_keeps_stored_and_current_pdf_urls(self):
+        row = {
+            "id": "W1",
+            "pdf_urls": ["https://example.org/a.pdf", "https://example.org/b.pdf"],
+            "versions": json.dumps([{
+                "openalex_id": "W1", "pdf_urls": ["https://example.org/a.pdf"],
+            }]),
+        }
+        [version] = json.loads(graph_dedup._merged_versions_json(row, []))
+        self.assertEqual(version["pdf_urls"], row["pdf_urls"])
 
     def test_cross_group_renamed_repository_folds_in_graph(self):
         client = RecordingNeo4jClient()
@@ -919,29 +933,32 @@ class FoldPropertyPreservationTest(unittest.TestCase):
 
     def test_node_properties_only_the_duplicate_knew_move_over(self):
         # Folding in the graph (cross-group dedup) deletes the duplicate
-        # node; a pdf_url only it carried must reach the canonical first.
+        # node; PDF links only it carried must reach the canonical first.
         client = RecordingNeo4jClient()
         client.upsert_nodes_batch("Publication", [
             ("W1", {"title": "One work", "doi": "10.1/x"}),
             ("W2", {"title": "One work", "doi": "10.1/y",
-                    "pdf_url": "https://example.org/w2.pdf"}),
+                    "pdf_urls": ["https://example.org/w2.pdf"]}),
         ])
         client.merge_publication_nodes_batch([("W2", "W1")])
         self.assertNotIn("W2", client.nodes["Publication"])
         survivor = client.nodes["Publication"]["W1"]
-        self.assertEqual(survivor["pdf_url"], "https://example.org/w2.pdf")
+        self.assertEqual(survivor["pdf_urls"], ["https://example.org/w2.pdf"])
         self.assertEqual(survivor["doi"], "10.1/x")  # canonical's own value wins
 
     def test_publication_boolean_and_json_list_properties_are_merged(self):
         client = RecordingNeo4jClient()
         client.upsert_nodes_batch("Publication", [
-            ("W1", {"has_code": False, "funding": "[]"}),
+            ("W1", {"has_code": False, "funding": "[]",
+                    "pdf_urls": ["https://example.org/a.pdf"]}),
             ("W2", {"has_code": True,
+                    "pdf_urls": ["https://example.org/a.pdf", "https://example.org/b.pdf"],
                     "funding": '[{"funder": "Science Fund", "grant_id": "G-1"}]'}),
         ])
         client.merge_publication_nodes_batch([("W2", "W1")])
         survivor = client.nodes["Publication"]["W1"]
         self.assertTrue(survivor["has_code"])
+        self.assertEqual(survivor["pdf_urls"], ["https://example.org/a.pdf", "https://example.org/b.pdf"])
         self.assertEqual(survivor["funding"], '[{"funder": "Science Fund", "grant_id": "G-1"}]')
 
     def test_repository_boolean_and_list_properties_are_merged(self):
@@ -984,6 +1001,41 @@ class LoaderPersonMergeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BlockingTest(unittest.TestCase):
+    def pairs(self, people):
+        return {frozenset((first.id, second.id)) for first, second in _paired_persons(people, None)}
+
+    def test_shared_initials_do_not_make_a_pair(self):
+        people = [
+            person("A1", "A.A. Ivanov", ["W1"]),
+            person("A2", "A.A. Petrov", ["W2"]),
+            person("A3", "K Yu Shugurov", ["W3"]),
+            person("A4", "S.Yu. Kopaev", ["W4"]),
+        ]
+        self.assertEqual(self.pairs(people), set())
+
+    def test_a_shared_surname_still_makes_a_pair(self):
+        people = [
+            person("A1", "Ivan Petrov", ["W1"]),
+            person("A2", "I. Petrov", ["W2"]),
+        ]
+        self.assertEqual(self.pairs(people), {frozenset(("A1", "A2"))})
+
+    def test_a_name_variant_still_makes_a_pair(self):
+        people = [
+            person("A1", "A.A. Ivanov", ["W1"]),
+            person("A2", "A.A. Petrov", ["W2"], variants=["Alexey Ivanov"]),
+        ]
+        self.assertEqual(self.pairs(people), {frozenset(("A1", "A2"))})
+
+    def test_a_shared_orcid_pairs_names_with_nothing_in_common(self):
+        people = [
+            person("A1", "A.A. Ivanov", ["W1"], orcid="0000-0001"),
+            person("A2", "Alexey Smirnov", ["W2"], orcid="0000-0001"),
+        ]
+        self.assertEqual(self.pairs(people), {frozenset(("A1", "A2"))})
 
 
 class ReviewDecisionsTest(unittest.TestCase):

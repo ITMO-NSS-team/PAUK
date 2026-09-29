@@ -97,7 +97,7 @@ def _parse_verdict(result: dict) -> tuple[bool | None, float, str | None]:
 
 
 def _update_publication_code(publication: Publication, links: list[CodeLink]) -> None:
-    relevant = [link for link in links if link.is_relevant is True]
+    relevant = [link for link in links if link.is_relevant is True and not link.url_ambiguous]
     publication.has_code = bool(relevant)
     if not relevant:
         publication.code_url = None

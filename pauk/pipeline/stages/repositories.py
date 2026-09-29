@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from pauk.models import GitHubProfile, RepoLink, Repository
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.redaction import redact_text
+from pauk.sources.base import HttpRequestError
 from pauk.sources.github import GitHubClient
 
 from .base import EnrichmentStage
@@ -88,7 +89,7 @@ class RepositoriesStage(EnrichmentStage):
     def _enrich_repository(self, client: GitHubClient, repo: Repository, owner: str,
                            name: str, source_url: str, profiles: dict[str, GitHubProfile],
                            state: ProcessingState | None,
-                           fetched_orgs: set[str]) -> None:
+                           fetched_orgs: set[str]) -> tuple[str, str | None]:
         """One repository's metadata, its README status and its owner's
         profile stub. The people behind it are a separate stage — see
         repo_people.py for why.
@@ -100,8 +101,10 @@ class RepositoriesStage(EnrichmentStage):
         `fetched_orgs` is the run's set of organizations already looked up; it
         is what keeps the owner-profile call to one per organization.
         """
+        fetched = False
         try:
             payload = client.get_repository(owner, name)
+            fetched = True
             self.raw.append("github", payload, {"repository": source_url})
             repo.url = payload.get("html_url") or source_url
             repo.name = payload.get("name") or name
@@ -162,6 +165,7 @@ class RepositoriesStage(EnrichmentStage):
                 finished_at=datetime.now(UTC),
                 result_count=1,
             )
+            return "available", None
         except Exception as exc:
             repo.processing[self.name] = ProcessingState(
                 status=ProcessingStatus.FAILED,
@@ -169,6 +173,11 @@ class RepositoriesStage(EnrichmentStage):
                 finished_at=datetime.now(UTC),
                 error=redact_text(exc),
             )
+            # A later README failure cannot turn a fetched repository into a 404.
+            if fetched:
+                return "available", None
+            status = "not_found" if isinstance(exc, HttpRequestError) and exc.status_code == 404 else "failed"
+            return status, redact_text(exc)
 
     def _pending_repository_ids(
         self, rows: list[RepoLink], repositories: dict[str, Repository],
@@ -254,6 +263,7 @@ class RepositoriesStage(EnrichmentStage):
         client = GitHubClient(self.config.request_timeout, self.config.github_token)
         changed = 0
         attempted_repo_ids: set[str] = set()
+        availability: dict[str, tuple[str, str | None]] = {}
         # Taken before the first fetch, because a fetch can rewrite `repo.url`
         # to the canonical one GitHub redirects to. Recomputing this after the
         # link pass would key the same row under its new URL, miss it in
@@ -313,7 +323,7 @@ class RepositoriesStage(EnrichmentStage):
                 repo_id = f"github_{owner.lower()}_{name.lower()}"
                 if not self.in_scope("repositories", repo_id):
                     continue
-                implements = link.is_relevant is True
+                implements = link.is_relevant is True and not link.url_ambiguous
                 repo = repositories.get(repo_id)
                 if repo is not None:
                     if implements and row.publication_id not in repo.publication_ids:
@@ -322,6 +332,8 @@ class RepositoriesStage(EnrichmentStage):
                         repo.cited_urls.append(url)
                     state = repo.processing.get(self.name)
                     if not self.needs_attempt(state):
+                        if state.status == ProcessingStatus.COMPLETED:
+                            availability[repo_id] = ("available", None)
                         continue
                 else:
                     repo = Repository(
@@ -345,8 +357,9 @@ class RepositoriesStage(EnrichmentStage):
                 # differs from the cited one; the second pass is keyed by
                 # that, so claim it here — before the fetch rewrites it.
                 attempted_repo_ids.add(_url_repo_id(repo.url) or repo_id)
-                self._enrich_repository(client, repo, owner, name, url, profiles,
-                                        state, fetched_orgs)
+                availability[repo_id] = self._enrich_repository(
+                    client, repo, owner, name, url, profiles, state, fetched_orgs,
+                )
                 progress.update()
                 changed += 1
 
@@ -365,6 +378,19 @@ class RepositoriesStage(EnrichmentStage):
             progress.update()
             changed += 1
         progress.close()
+        updated_rows = []
+        for row in rows:
+            if not self._row_in_scope(row):
+                continue
+            updated = False
+            for link in row.links:
+                result = availability.get(_url_repo_id(link.url))
+                if result is not None:
+                    link.availability, link.availability_error = result
+                    updated = True
+            if updated:
+                updated_rows.append(row)
+        self.prepared.upsert_models("repo_links", updated_rows)
         # Re-key fetched rows to their canonical identity: a renamed repo (the
         # API redirects the old URL) or a case-variant citation must collapse
         # into one row, otherwise two rows share one canonical URL.
