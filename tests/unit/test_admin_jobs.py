@@ -51,6 +51,33 @@ class JobsPageTest(unittest.TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertIn("задач ещё не было", page.text.lower())
 
+    def test_the_page_says_nobody_is_taking_jobs(self):
+        # The buttons queue work silently, so a page that only listed the
+        # queue left "nothing is happening" looking exactly like "no worker
+        # was ever started".
+        page = self.client.get("/jobs").text
+        self.assertIn("Воркер не работает", page)
+        self.assertIn("pauk admin worker", page)
+
+    def test_and_says_so_when_one_is_there(self):
+        store.mark_present(self.db, "worker-1")
+        page = self.client.get("/jobs").text
+        self.assertIn("воркер работает", page)
+        self.assertNotIn("Воркер не работает", page)
+
+    def test_a_worker_that_stopped_saying_so_does_not_count(self):
+        # The mark is refreshed every few seconds; a stale one belongs to a
+        # process that is gone, and showing it would be worse than nothing.
+        self.db[store.WORKERS].insert_one({
+            "_id": "worker-1",
+            "seen_at": now() - timedelta(seconds=store.PRESENT_SECONDS + 5)})
+        self.assertIn("Воркер не работает", self.client.get("/jobs").text)
+
+    def test_a_worker_that_left_takes_its_mark_with_it(self):
+        store.mark_present(self.db, "worker-1")
+        store.mark_gone(self.db, "worker-1")
+        self.assertIn("Воркер не работает", self.client.get("/jobs").text)
+
     def test_a_finished_run_shows_its_counts(self):
         self.finished(result={"rows_persons": 12})
         page = self.client.get("/jobs").text
@@ -265,9 +292,12 @@ class SchedulingTest(unittest.TestCase):
         self.assertEqual(self.post(client, csrf, kind="dedup").status_code, 403)
 
     def test_only_an_admin_is_offered_the_forms(self):
-        self.assertIn("Запустить", self.client.get("/jobs").text)
+        # By the form, not by the word on its button: "запустить" also
+        # stands in the line that tells anybody how to start the worker,
+        # and a test reading that could not tell the two apart.
+        self.assertIn('action="/jobs"', self.client.get("/jobs").text)
         client, _ = self.sign_in("petrov")
-        self.assertNotIn("Запустить", client.get("/jobs").text)
+        self.assertNotIn('action="/jobs"', client.get("/jobs").text)
 
     def test_a_forged_form_is_refused(self):
         self.assertEqual(self.post(csrf="not-the-token", kind="dedup").status_code, 403)

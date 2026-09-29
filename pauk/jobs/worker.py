@@ -248,9 +248,14 @@ class Worker:
             for received in (signal.SIGINT, signal.SIGTERM):
                 signal.signal(received, lambda *_: self.stop())
         logger.info("worker %s started", self.name)
-        while not self._stopping.is_set():
-            if not self.run_once():
-                self._stopping.wait(self.poll_seconds)
+        try:
+            while not self._stopping.is_set():
+                if not self.run_once():
+                    self._stopping.wait(self.poll_seconds)
+        finally:
+            # Leaving quietly is still leaving: without this the page keeps
+            # showing a worker for as long as the mark stays fresh.
+            store.mark_gone(self.db, self.name)
         logger.info("worker %s stopped", self.name)
 
     def run_once(self) -> bool:
@@ -261,6 +266,10 @@ class Worker:
             when the job went back because its resource was busy. Either
             way the caller waits before asking again.
         """
+        # Said on every turn, not once at startup: the page asks "is anyone
+        # taking jobs right now", and a mark left at startup would answer
+        # yes for a process that died an hour ago.
+        store.mark_present(self.db, self.name)
         # Jobs left behind by a worker that is gone; nothing else moves them.
         store.reap_stale(self.db)
         # Jobs waiting on a held resource are passed over, not taken and dropped.

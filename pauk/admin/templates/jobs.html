@@ -17,7 +17,13 @@
 {% set problem = request.query_params.get("problem") %}
 {% if problem %}<p class="note bad">{{ problem }}</p>{% endif %}
 <p class="muted" style="margin:-8px 0 22px">
-  Выполняет процесс <code>pauk admin worker</code>
+  {% if workers %}
+  <span class="kind kind-created">Воркер работает</span>
+  {% if workers|length > 1 %}<span class="muted">, их {{ workers|length }}</span>{% endif %}
+  {% else %}
+  <span class="kind kind-deleted">Воркер не работает</span>
+  <span>Запустить воркер <code>pauk admin worker</code></span>
+  {% endif %}
 </p>
 
 {% if user.can_run %}
@@ -135,9 +141,9 @@
       <b>Дедупликация графа</b>
       {% if last_done.dedup %}<span class="ago">последний раз {{ last_done.dedup|moment }}</span>{% endif %}
     </div>
-    <p class="muted">Сводит дубли <b>между разными сборами</b>. Не часть конвейера, запускается по необходимости. Очевидные
-      дубли сводит, спорные пары откладывает на ручной разбор. Сведённое
-      обратно не разделяется.</p>
+    <p class="muted">Сводит дубли <b>между разными сборами</b>: очевидные сливает
+      сама, спорные кладёт в «Спорные случаи». Запускают руками, по мере
+      надобности. Слитое обратно не разделяется.</p>
     <form method="post" action="/jobs" id="dedup-form">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <input type="hidden" name="kind" value="dedup">
@@ -158,10 +164,9 @@
       <b>Сверка с источником</b>
       {% if last_done.prune %}<span class="ago">последний раз {{ last_done.prune|moment }}</span>{% endif %}
     </div>
-    <p class="muted">Публикация умеет только добавлять, поэтому запись, удалённая
-      из Mongo, и связь, которую строка перестала заявлять, остаются в графе.
-      Здесь они находятся. Заведённое и связанное вручную не трогается, оно
-      записано в ручных решениях.</p>
+    <p class="muted">Публикация только добавляет, поэтому удалённое в Mongo
+      остаётся в графе. Сверка находит такие записи и связи. Заведённое
+      руками не трогает: оно записано в «Ручных решениях».</p>
     <form method="post" action="/jobs" id="prune-form">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <input type="hidden" name="kind" value="prune">
@@ -198,7 +203,7 @@
       </td>
       <td>{{ job.actor }}<br><span class="muted">{{ job.worker or "ещё не взята" }}</span></td>
       <td class="val" style="white-space:nowrap">{{ (job.started_at or job.created_at)|moment }}</td>
-      <td class="val" style="white-space:nowrap">{{ job.heartbeat_at|moment or "—" }}
+      <td class="val" style="white-space:nowrap">{{ job.heartbeat_at|moment or "–" }}
         {% if job.stale %}<br><span class="kind kind-deleted">не отвечает</span>
         {% elif job.cancel_requested %}<br><span class="muted">просили остановить</span>{% endif %}
       </td>
@@ -212,7 +217,7 @@
           {{ job.progress.step }}
           {% if job.progress.total %}<br><span class="muted">этап
             {{ job.progress.done + 1 }} из {{ job.progress.total }}</span>{% endif %}
-        {% else %}<span class="muted">—</span>{% endif %}
+        {% else %}<span class="muted">–</span>{% endif %}
       </td>
       {% if user.can_run %}
       <td style="width:1%">
@@ -302,7 +307,7 @@
       <td>
         {% if job.error %}<span class="note bad" style="display:block">{{ job.error }}</span>
         {% elif job.result %}{{ result(job.result, result_open_upto) }}
-        {% else %}<span class="muted">—</span>{% endif %}
+        {% else %}<span class="muted">–</span>{% endif %}
         {% if user.can_run and job.state not in final and not job.cancel_requested %}
         <form method="post" action="/jobs/cancel" style="margin-top:6px">
           <input type="hidden" name="csrf" value="{{ csrf }}">

@@ -163,6 +163,9 @@ def jobs(request: Request, user: CurrentUser, session: Session, db: Db,
         "final": {str(name) for name in FINAL},
         "actors": sorted(db[store.COLLECTION].distinct("actor")),
         "last_done": _last_done(db),
+        # Nobody taking jobs is the difference between "running" and "queued
+        # forever", and only this page can say it.
+        "workers": store.workers_present(db),
         "result_open_upto": RESULT_OPEN_UPTO,
         # Read off the pipeline: a new stage must not leave the page stale.
         "stages": [stage.name for stage in ALL_STAGES],

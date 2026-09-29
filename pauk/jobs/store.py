@@ -28,10 +28,19 @@ logger = logging.getLogger(__name__)
 
 COLLECTION = "jobs"
 
+#: Where a running worker leaves its mark. Separate from the jobs it takes:
+#: an idle worker has no job to attach itself to.
+WORKERS = "job_workers"
+
 PAGE = 50
 
 # Silence before the page says so: several missed beats, not a slow step.
 QUIET_MINUTES = 5
+
+#: How long a worker's mark stays good for. The loop refreshes it on every
+#: turn (POLL_SECONDS, five seconds), so this is three missed turns: a slow
+#: Mongo should not blink the page between "here" and "gone".
+PRESENT_SECONDS = 20
 
 
 def enqueue(db: Database, kind: JobKind, payload: dict | None = None,
@@ -314,6 +323,38 @@ def count(db: Database, *, kind: str = "", state: str = "", actor: str = "") -> 
     query = {name: value for name, value
              in (("kind", kind), ("state", state), ("actor", actor)) if value}
     return db[COLLECTION].count_documents(query)
+
+
+def mark_present(db: Database, name: str) -> None:
+    """Say that this worker is here, right now.
+
+    A worker that is idle holds no job and writes nothing else, so without
+    this the page cannot tell "nobody started the worker" from "the worker
+    is waiting for something to do" – and those need different things from
+    the person reading it.
+    """
+    db[WORKERS].update_one({"_id": name}, {"$set": {"seen_at": now()}}, upsert=True)
+
+
+def mark_gone(db: Database, name: str) -> None:
+    """Take the mark back when the worker leaves on its own.
+
+    Without it a stopped worker would go on looking alive until its mark
+    goes stale, which is exactly the moment somebody is deciding whether
+    to start one.
+    """
+    db[WORKERS].delete_one({"_id": name})
+
+
+def workers_present(db: Database, seconds: int = PRESENT_SECONDS) -> list[str]:
+    """Names of the workers that have said they are here lately.
+
+    Empty means nobody is taking jobs off the queue: they will pile up
+    until somebody runs `pauk admin worker`.
+    """
+    fresh = now() - timedelta(seconds=seconds)
+    return sorted(row["_id"] for row in
+                  db[WORKERS].find({"seen_at": {"$gte": fresh}}, {"_id": 1}))
 
 
 def _as_job(document: dict) -> Job:
