@@ -127,6 +127,12 @@ describe("parseUrlState", () => {
     expect(parseUrlState("?tab=repos&sel=dept&id=7", data).selection).toBeNull();
   });
 
+  it("выбор гранта переживает круговой обход через URL", async () => {
+    const data = await loadSampleGraphData();
+    const state = { screen: "app" as const, tab: 3 as const, selection: { kind: "grant" as const, key: "075-15-2021-1349" } };
+    expect(parseUrlState(`?${serializeUrlState(state)}`, data)).toEqual(state);
+  });
+
   it("несуществующий id департамента откатывается на null", async () => {
     const data = await loadSampleGraphData();
     expect(parseUrlState("?tab=pubs&sel=dept&id=999", data)).toEqual({ screen: "app", tab: 3, selection: null });

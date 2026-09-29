@@ -513,3 +513,80 @@ export function nodeLabel(node: GraphNode, lang: Lang, pubDetails?: Map<string, 
   const labelEn = "label_en" in node ? node.label_en : undefined;
   return localize(node.label, labelEn, lang);
 }
+
+/** Грант и его публикации — см. {@link grantIndex}. */
+export interface GrantInfo {
+  key: string;
+  /** Номер так, как его чаще всего писали авторы. */
+  name: string;
+  funder: string;
+  pubs: string[];
+}
+
+interface GrantAcc {
+  pubs: Set<string>;
+  names: Map<string, number>;
+  funders: Map<string, number>;
+}
+const grantIndexCache = new WeakMap<
+  Map<string, PubDetail>,
+  { size: number; index: Map<string, GrantInfo> }
+>();
+
+/**
+ * Индекс "грант -> публикации" по `funding[].grant_key` из pubs-detail.json.
+ * Пересчитывается, только когда карта деталей выросла (она домерживается
+ * фоном, см. {@link mergeDetailsInto}).
+ *
+ * @param pubDetails - детали публикаций.
+ * @returns Map от `grant_key` к {@link GrantInfo}.
+ */
+export function grantIndex(pubDetails: Map<string, PubDetail>): Map<string, GrantInfo> {
+  const cached = grantIndexCache.get(pubDetails);
+  if (cached?.size === pubDetails.size) return cached.index;
+
+  const acc = new Map<string, GrantAcc>();
+  for (const detail of pubDetails.values()) {
+    for (const entry of detail.funding) {
+      if (!entry.grant_key) continue;
+      const grant = acc.get(entry.grant_key) ?? {
+        pubs: new Set<string>(),
+        names: new Map<string, number>(),
+        funders: new Map<string, number>(),
+      };
+      grant.pubs.add(detail.key);
+      const name = entry.grant_id ?? entry.grant_key;
+      grant.names.set(name, (grant.names.get(name) ?? 0) + 1);
+      if (entry.funder) grant.funders.set(entry.funder, (grant.funders.get(entry.funder) ?? 0) + 1);
+      acc.set(entry.grant_key, grant);
+    }
+  }
+  const mostCommon = (counts: Map<string, number>): string =>
+    [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? "";
+  const index = new Map<string, GrantInfo>();
+  for (const [key, grant] of acc) {
+    index.set(key, {
+      key,
+      name: mostCommon(grant.names).trim(),
+      funder: mostCommon(grant.funders),
+      pubs: [...grant.pubs],
+    });
+  }
+  grantIndexCache.set(pubDetails, { size: pubDetails.size, index });
+  return index;
+}
+
+/**
+ * CSV по RFC 4180 с BOM — чтобы Excel открыл кириллицу как UTF-8.
+ *
+ * @param rows - строки, первая — заголовок.
+ * @returns Текст CSV.
+ *
+ * @example
+ * toCsv([["a", "b"], ['x,"y"', "z"]]); // '\uFEFFa,b\r\n"x,""y""",z'
+ */
+export function toCsv(rows: string[][]): string {
+  const cell = (value: string): string =>
+    /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+  return "\uFEFF" + rows.map((row) => row.map(cell).join(",")).join("\r\n");
+}

@@ -9,6 +9,7 @@ import json
 
 from .authorship import Authorship
 from .departments import DepartmentAssignment, DepartmentTable
+from .grants import add_grant_keys
 
 
 def dense_rank(values: dict[str, int]) -> dict[str, float]:
@@ -394,4 +395,5 @@ class PubNodeBuilder:
                     "abstract": row.get("abstract") or "",
                 }
             )
+        add_grant_keys(detail)
         return summary, detail

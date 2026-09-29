@@ -153,13 +153,20 @@ export interface PubDetail {
   code_url: string[];
   type: string;
   fields: string[];
-  // Почти всегда пустые массивы на реальных данных сегодня (OpenAlex редко
-  // отдаёт что-то непустое) — тип оставлен нестрогим (не описываем форму
-  // элемента), пока не появится реальный непустой пример.
-  funding: unknown[];
+  funding: Funding[];
   versions: unknown[];
   openalex_url: string;
   abstract: string;
+}
+
+// Один источник финансирования публикации. grant_key — нормализованный
+// номер гранта (pauk/gui/graph_builder/grants.py), null — номера нет или он
+// обрезан; нет в pubs-detail.json, собранном до группировки по грантам.
+export interface Funding {
+  funder: string;
+  // null — у записи OpenAlex есть фонд, но нет номера.
+  grant_id: string | null;
+  grant_key?: string | null;
 }
 
 export interface Edge {

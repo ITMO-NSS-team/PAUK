@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { RepoDetail } from "../src/contracts/graph";
 import {
   assertGraphData,
+  grantIndex,
+  toCsv,
   groupIdOf,
   groupsById,
   indexByKey,
@@ -9,7 +11,12 @@ import {
   mergeDetailsInto,
   nodeLabel,
 } from "../src/core/data";
-import { loadSampleAuthorDetails, loadSampleGraphData, loadSampleRepoDetails } from "./fixtures";
+import {
+  loadSampleAuthorDetails,
+  loadSampleGraphData,
+  loadSamplePubDetails,
+  loadSampleRepoDetails,
+} from "./fixtures";
 
 describe("loadSampleGraphData", () => {
   it("загружает фикстуру и проходит проверку формы", async () => {
@@ -115,5 +122,39 @@ describe("groupIdOf / groupsById", () => {
     const group = { ...dept, id: 7, kind: "field" as const, name: "Physics", name_en: "Physics" };
     expect(groupsById({ ...data, repo_groups: [group] }).get(7)).toBe(group);
     expect([...groupsById(data).keys()]).toEqual(data.departments.map((d) => d.id));
+  });
+});
+
+describe("grantIndex", () => {
+  it("собирает публикации по grant_key, имя и фонд — самые частые написания", async () => {
+    const [detail] = await loadSamplePubDetails();
+    if (!detail) throw new Error("в фикстуре нет деталей публикации");
+    const rsf = (grantId: string, key: string | null) => ({ funder: "RSF", grant_id: grantId, grant_key: key });
+    const pubDetails = indexDetailsByKey([
+      { ...detail, key: "P1", funding: [rsf("18-19-00627", "18-19-00627")] },
+      { ...detail, key: "P2", funding: [rsf("18-19-00627", "18-19-00627"), rsf("18-19-", null)] },
+      { ...detail, key: "P3", funding: [rsf("Grant 18-19-00627", "18-19-00627")] },
+    ]);
+
+    const grant = grantIndex(pubDetails).get("18-19-00627");
+    expect(grant).toEqual({ key: "18-19-00627", name: "18-19-00627", funder: "RSF", pubs: ["P1", "P2", "P3"] });
+    expect(grantIndex(pubDetails).size).toBe(1); // обрезанный номер без ключа не стал грантом
+  });
+
+  it("пересчитывается, когда детали домержились фоном", async () => {
+    const [detail] = await loadSamplePubDetails();
+    if (!detail) throw new Error("в фикстуре нет деталей публикации");
+    const pubDetails = new Map<string, typeof detail>();
+    expect(grantIndex(pubDetails).size).toBe(0);
+    mergeDetailsInto(pubDetails, [
+      { ...detail, funding: [{ funder: "RSF", grant_id: "17-71-30029", grant_key: "17-71-30029" }] },
+    ]);
+    expect(grantIndex(pubDetails).get("17-71-30029")?.pubs).toEqual([detail.key]);
+  });
+});
+
+describe("toCsv", () => {
+  it("BOM для Excel, кавычки и запятые экранированы по RFC 4180", () => {
+    expect(toCsv([["a", "b"], ['x,"y"', "z"]])).toBe('\uFEFFa,b\r\n"x,""y""",z');
   });
 });

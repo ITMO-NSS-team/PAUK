@@ -67,14 +67,17 @@ export type LocaleKey =
   | "field.ownerType"
   | "field.license"
   | "field.hasReadme"
-  | "field.documents"
   | "field.repoVia"
+  | "field.grants"
+  | "grant.kind"
+  | "grant.funder"
+  | "grant.export"
+  | "grant.downloadCsv"
   | "field.implemented"
   | "field.groupWhy"
   | `group.kind.${"org" | "field"}`
   | `group.why.${"org" | "field"}`
   | `via.${"pub" | "person" | "coauthor" | "owner"}`
-  | "field.workSummary"
   | "field.report"
   | "field.openalexId"
   | "field.googleScholar"
@@ -119,6 +122,7 @@ export type LocaleKey =
   | "section.service"
   | "panel.showMore"
   | "panel.showLess"
+  | "panel.readMore"
   | "search.placeholder"
   | "search.pubsCountShort"
   | "search.trigger"
@@ -176,8 +180,12 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.ownerType": "Тип владельца",
     "field.license": "Лицензия",
     "field.hasReadme": "Есть README",
-    "field.documents": "Документы",
     "field.repoVia": "Связаны через",
+    "field.grants": "Гранты",
+    "grant.kind": "Грант",
+    "grant.funder": "Фонд",
+    "grant.export": "Список статей",
+    "grant.downloadCsv": "Скачать CSV",
     "field.implemented": "реализовано",
     "field.groupWhy": "Почему вместе",
     "group.kind.org": "GitHub-организация",
@@ -190,7 +198,6 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "via.person": "общего участника ИТМО",
     "via.coauthor": "соавтора статей",
     "via.owner": "общего владельца",
-    "field.workSummary": "Сводка работы",
     "field.report": "Отчет",
     "field.openalexId": "OpenAlex",
     "field.googleScholar": "Google Scholar",
@@ -227,6 +234,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "section.service": "Служебное",
     "panel.showMore": "+ ещё {n}",
     "panel.showLess": "− свернуть",
+    "panel.readMore": "+ читать полностью",
     "overview.title": "Обзор",
     "overview.avgPubsPerAuthor": "Публикаций на автора (среднее)",
     "overview.itmoAuthors": "Из ИТМО",
@@ -300,8 +308,12 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "field.ownerType": "Owner type",
     "field.license": "License",
     "field.hasReadme": "Has README",
-    "field.documents": "Documents",
     "field.repoVia": "Linked by",
+    "field.grants": "Grants",
+    "grant.kind": "Grant",
+    "grant.funder": "Funder",
+    "grant.export": "Publication list",
+    "grant.downloadCsv": "Download CSV",
     "field.implemented": "implemented",
     "field.groupWhy": "Why together",
     "group.kind.org": "GitHub organization",
@@ -313,7 +325,6 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "via.person": "a shared ITMO member",
     "via.coauthor": "a co-author of their papers",
     "via.owner": "a shared owner",
-    "field.workSummary": "Work Summary",
     "field.report": "Report",
     "field.openalexId": "OpenAlex",
     "field.googleScholar": "Google Scholar",
@@ -350,6 +361,7 @@ const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
     "section.service": "Service",
     "panel.showMore": "+ {n} more",
     "panel.showLess": "− show less",
+    "panel.readMore": "+ read more",
     "overview.title": "Overview",
     "overview.avgPubsPerAuthor": "Publications per author (avg.)",
     "overview.itmoAuthors": "From ITMO",

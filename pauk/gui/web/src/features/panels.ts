@@ -26,9 +26,12 @@ import {
   buildRepoPubIndex,
   githubProfileUrl,
   githubShortPath,
+  grantIndex,
   groupsById,
   indexByKey,
   nodeLabel,
+  toCsv,
+  type GrantInfo,
 } from "../core/data";
 import { createLoadingIndicator, requireElement } from "../core/dom";
 import { kindLabel, localize, t } from "../core/i18n";
@@ -47,7 +50,13 @@ const LOADING: unique symbol = Symbol("panel-row-loading");
  * ({@link PanelEntityRef} — соавторы, публикации, департаменты и т.п.:
  * клик делает эту сущность новым store.selection, не открывает вкладку),
  * либо {@link LOADING}, пока detail ещё не пришёл. */
-type PanelRowValue = string | PanelLink[] | PanelEntityRef[] | PanelList | typeof LOADING;
+type PanelRowValue =
+  | string
+  | PanelLink[]
+  | (PanelEntityRef | PanelText)[]
+  | PanelList
+  | PanelLongText
+  | typeof LOADING;
 /** Одна кликабельная ВНЕШНЯЯ ссылка в строке карточки — всегда открывается в новой вкладке ({@link buildCard}). */
 interface PanelLink {
   kind: "link";
@@ -55,6 +64,8 @@ interface PanelLink {
   text: string;
   /** Необязательный некликабельный суффикс, например годы аффилиации. */
   meta?: string;
+  /** Имя файла — ссылка скачивает, а не открывает (CSV гранта). */
+  download?: string;
 }
 /**
  * Длинное поле-список: подпись во всю ширину, под ней по элементу на строку,
@@ -63,6 +74,11 @@ interface PanelLink {
 interface PanelList {
   kind: "list";
   items: (string | PanelText | PanelLink | PanelEntityRef)[];
+}
+/** Длинный текст (аннотация): первые {@link PANEL_CONFIG.abstractWords} слов, остальное по клику. */
+interface PanelLongText {
+  kind: "longText";
+  text: string;
 }
 /** Некликабельный пункт {@link PanelList} с серым суффиксом — оформлен так же, как {@link PanelLink}, только без ссылки. */
 interface PanelText {
@@ -81,7 +97,7 @@ interface PanelText {
 interface PanelEntityRef {
   kind: "ref";
   /** Куда положить как `store.selection` по клику. */
-  selection: Extract<Selection, { kind: "node" } | { kind: "dept" }>;
+  selection: Extract<Selection, { kind: "node" } | { kind: "dept" } | { kind: "grant" }>;
   /** Кликабельная подпись — сама ссылка. */
   label: string;
   /** Необязательный некликабельный суффикс справа от подписи, например роль в репозитории ("(maintainer)"). */
@@ -390,18 +406,66 @@ export function mountPanel(
     });
   }
 
-  function reportLinksOf(repoUrl: string, lang: AppState["lang"]): PanelLink[] {
-    const name = repoUrl.replace(/\/+$/, "").split("/").pop()?.toLowerCase() ?? "";
-    const links: PanelLink[] = [];
-    for (const [suffix, label] of [
-      ["_work_summary.pdf", t("field.workSummary", lang)],
-      ["_report.pdf", t("field.report", lang)],
-    ] as const) {
-      const file = reportFiles.get(name + suffix);
-      if (file)
-        links.push({ kind: "link", href: `/reports/${encodeURIComponent(file)}`, text: label });
+  /** Пункт "Гранты": номер кликабелен, если его удалось нормализовать (grant_key). */
+  function fundingItem(entry: PubDetail["funding"][number]): PanelEntityRef | PanelText {
+    if (entry.grant_key)
+      return {
+        kind: "ref",
+        selection: { kind: "grant", key: entry.grant_key },
+        label: entry.grant_key,
+        meta: entry.funder,
+      };
+    const number = (entry.grant_id ?? "").trim();
+    return number
+      ? { kind: "text", text: number, meta: entry.funder }
+      : { kind: "text", text: entry.funder };
+  }
+
+  /** Публикации гранта для CSV: по строке на публикацию, свежие сверху. */
+  function grantCsvLink(grant: GrantInfo, pubKeys: string[], lang: AppState["lang"]): PanelLink {
+    const rows = [
+      ["OpenAlex ID", "Title", "Year", "DOI", "Journal", "Type", "Authors", "Funder", "Grant"],
+    ];
+    for (const key of pubKeys) {
+      const node = index.get(key);
+      const detail = pubDetails.get(key);
+      const authors = (pubAuthors.get(key) ?? []).map((author) => {
+        const authorNode = index.get(author);
+        return authorNode ? nodeLabel(authorNode, lang) : author;
+      });
+      const entry = detail?.funding.find((f) => f.grant_key === grant.key);
+      rows.push([
+        key,
+        detail?.label ?? "",
+        node?.kind === "pub" && node.year !== null ? String(node.year) : "",
+        detail?.doi ?? "",
+        detail?.journal ?? "",
+        detail?.type ?? "",
+        authors.join("; "),
+        entry?.funder ?? grant.funder,
+        entry?.grant_id?.trim() || grant.name,
+      ]);
     }
-    return links;
+    return {
+      kind: "link",
+      href: `data:text/csv;charset=utf-8,${encodeURIComponent(toCsv(rows))}`,
+      text: t("grant.downloadCsv", lang),
+      download: `grant_${grant.key.replace(/[^0-9A-Za-z.-]/g, "_")}.csv`,
+    };
+  }
+
+  function reportLinksOf(repoUrl: string): PanelLink[] {
+    const name = repoUrl.replace(/\/+$/, "").split("/").pop()?.toLowerCase() ?? "";
+    const file = reportFiles.get(`${name}_report.pdf`);
+    return file
+      ? [
+          {
+            kind: "link",
+            href: `/reports/${encodeURIComponent(file)}`,
+            text: "PDF",
+          },
+        ]
+      : [];
   }
 
   // Строится один раз при монтировании, а не на каждый рендер — поиск по
@@ -618,6 +682,10 @@ export function mountPanel(
         // "dept" смены вкладки не нужно — якоря департаментов есть в
         // графе каждой из трёх вкладок.
         onSelectRef: (selection) => {
+          if (selection?.kind === "grant") {
+            store.set({ tab: TAB_FOR_KIND.pub, selection });
+            return;
+          }
           if (selection?.kind === "node") {
             const node = index.get(selection.key);
             if (node) {
@@ -1025,14 +1093,15 @@ export function mountPanel(
         // repos-detail.json есть у каждого репозитория без исключений.
         if (repoDetails.has(node.key)) {
           const repoDetail = repoDetails.get(node.key);
+          if (repoDetail?.url) rows.push([t("field.github", lang), [codeLink(repoDetail.url)]]);
           if (repoDetail?.description)
             rows.push([t("field.description", lang), repoDetail.description]);
           if (repoDetail?.owner_type)
             rows.push([t("field.ownerType", lang), repoDetail.owner_type]);
           if (repoDetail?.license) rows.push([t("field.license", lang), repoDetail.license]);
           if (repoDetail?.has_readme) rows.push([t("field.hasReadme", lang), "✓"]);
-          const reportLinks = repoDetail ? reportLinksOf(repoDetail.url, lang) : [];
-          if (reportLinks.length > 0) rows.push([t("field.documents", lang), reportLinks]);
+          const reportLinks = repoDetail ? reportLinksOf(repoDetail.url) : [];
+          if (reportLinks.length > 0) rows.push([t("field.report", lang), reportLinks]);
         } else {
           rows.push([t("field.loadingDetails", lang), LOADING]);
         }
@@ -1066,7 +1135,10 @@ export function mountPanel(
         if (detail?.type) rows.push([t("field.pubType", lang), detail.type]);
         if (detail && detail.fields.length > 0)
           rows.push([t("field.pubFields", lang), detail.fields.join(", ")]);
-        if (detail?.abstract) rows.push([t("field.abstract", lang), detail.abstract]);
+        if (detail && detail.funding.length > 0)
+          rows.push([t("field.grants", lang), detail.funding.map(fundingItem)]);
+        if (detail?.abstract)
+          rows.push([t("field.abstract", lang), { kind: "longText", text: detail.abstract }]);
         if (detail?.openalex_url)
           rows.push([t("field.openalexUrl", lang), [openalexUrlLink(detail.openalex_url)]]);
 
@@ -1140,6 +1212,38 @@ export function mountPanel(
       return show(t("kind.edge", lang), t("kind.edge", lang), untitled(rows), true);
     }
 
+    if (selection.kind === "grant") {
+      const grant = grantIndex(pubDetails).get(selection.key);
+      if (!grant) {
+        // Гранты строятся из pubs-detail.json — пока он не пришёл, ждём, а не прячем.
+        if (pubDetails.size > 0) return hide();
+        return show(
+          selection.key,
+          t("grant.kind", lang),
+          untitled([[t("field.loadingDetails", lang), LOADING]]),
+          true,
+        );
+      }
+      const pubKeys = [...grant.pubs].sort((a, b) => {
+        const yearOf = (key: string): number => {
+          const node = index.get(key);
+          return node?.kind === "pub" ? (node.year ?? 0) : 0;
+        };
+        return yearOf(b) - yearOf(a) || a.localeCompare(b);
+      });
+      return show(
+        grant.name,
+        t("grant.kind", lang),
+        untitled([
+          [t("grant.funder", lang), grant.funder],
+          [t("field.pubsCount", lang), String(pubKeys.length)],
+          [t("grant.export", lang), [grantCsvLink(grant, pubKeys, lang)]],
+          [t("tab.pubs", lang), { kind: "list", items: entityRefsOf(pubKeys, lang) }],
+        ]),
+        true,
+      );
+    }
+
     // selection.kind === "dept"
     const group = repoGroupById.get(selection.id);
     if (group) {
@@ -1151,6 +1255,9 @@ export function mountPanel(
         localize(group.name, group.name_en, lang),
         t(`group.kind.${group.kind}`, lang),
         untitled([
+          ...(group.kind === "org"
+            ? [[t("field.github", lang), [githubLink(group.name)]] satisfies PanelRow]
+            : []),
           [t("field.reposCount", lang), String(members.length)],
           [t("field.groupWhy", lang), t(`group.why.${group.kind}`, lang)],
           [t("tab.repos", lang), { kind: "list", items: entityRefsOf(members, lang) }],
@@ -1284,8 +1391,11 @@ function buildCard(options: PanelCardOptions): HTMLElement {
   function linkElement(link: PanelLink): HTMLAnchorElement {
     const a = document.createElement("a");
     a.href = link.href;
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
+    if (link.download) a.download = link.download;
+    else {
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+    }
     a.textContent = link.text;
     return a;
   }
@@ -1351,6 +1461,34 @@ function buildCard(options: PanelCardOptions): HTMLElement {
     return ul;
   }
 
+  function longTextElement(value: PanelLongText): HTMLDivElement {
+    const el = document.createElement("div");
+    const words = value.text.split(/\s+/).filter(Boolean);
+    const limit = PANEL_CONFIG.abstractWords;
+    let expanded = false;
+
+    // Та же механика, что у listElement: кнопка переключает сокращённый и полный текст.
+    function render(): void {
+      if (words.length <= limit) {
+        el.textContent = value.text;
+        return;
+      }
+      el.textContent = expanded ? value.text : `${words.slice(0, limit).join(" ")}…`;
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "panel-list__more";
+      toggle.textContent = expanded ? t("panel.showLess", lang) : t("panel.readMore", lang);
+      toggle.addEventListener("click", () => {
+        expanded = !expanded;
+        render();
+      });
+      el.append(" ", toggle);
+    }
+
+    render();
+    return el;
+  }
+
   for (const section of sections) {
     if (section.rows.length === 0) continue;
 
@@ -1373,6 +1511,10 @@ function buildCard(options: PanelCardOptions): HTMLElement {
         dd.textContent = value;
       } else if (value === LOADING) {
         dd.appendChild(createLoadingIndicator());
+      } else if (!Array.isArray(value) && value.kind === "longText") {
+        dt.classList.add("panel-row--block");
+        dd.classList.add("panel-row--block");
+        dd.appendChild(longTextElement(value));
       } else if (!Array.isArray(value)) {
         // Длинный список — подпись и значения во всю ширину, по элементу на строку.
         dt.classList.add("panel-row--block");
@@ -1385,10 +1527,16 @@ function buildCard(options: PanelCardOptions): HTMLElement {
           dd.appendChild(linkElement(link));
         });
       } else {
-        (value as PanelEntityRef[]).forEach((ref, i) => {
+        (value as (PanelEntityRef | PanelText)[]).forEach((item, i) => {
           if (i > 0) dd.append(", ");
-          dd.appendChild(refElement(ref));
-          if (ref.meta) dd.append(` ${ref.meta}`);
+          if (item.kind === "text") dd.append(item.text);
+          else dd.appendChild(refElement(item));
+          if (item.meta) {
+            const meta = document.createElement("span");
+            meta.className = "panel-list__meta";
+            meta.textContent = item.meta;
+            dd.append(" ", meta);
+          }
         });
       }
 

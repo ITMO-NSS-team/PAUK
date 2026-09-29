@@ -15,7 +15,7 @@ import type Sigma from "sigma";
 import type { EdgeDisplayData, NodeDisplayData } from "sigma/types";
 import type { AuthorNode, Edge, GraphData, PubDetail, PubNode, RepoNode } from "../contracts/graph";
 import { MAP_CONFIG, NO_DEPT_COLOR } from "../core/config";
-import { groupIdOf, groupsById, nodeLabel } from "../core/data";
+import { grantIndex, groupIdOf, groupsById, nodeLabel } from "../core/data";
 import { localize, type Lang } from "../core/i18n";
 import { themeById } from "../core/themes";
 import { isRegionMode, type AppState, type Selection, type Store, type TabId } from "../core/state";
@@ -417,6 +417,7 @@ function addDeptLabelAnchors(
 function applyGraphStyling(
   renderer: Sigma,
   store: Store<AppState>,
+  pubDetails: PubDetailsByKey,
 ): { setHoveredNode: (key: string | null) => void; setCameraRatio: (ratio: number) => void } {
   const graph = renderer.getGraph();
   let hoveredNode: string | null = null;
@@ -438,6 +439,15 @@ function applyGraphStyling(
     const dept = selectedDept();
     return (
       dept !== null && graph.hasNode(nodeKey) && graph.getNodeAttribute(nodeKey, "dept") === dept
+    );
+  }
+
+  /** Публикация из выбранного гранта (выбор из карточки публикации). */
+  function inSelectedGrant(nodeKey: string): boolean {
+    const selection = store.get().selection;
+    return (
+      selection?.kind === "grant" &&
+      (grantIndex(pubDetails).get(selection.key)?.pubs.includes(nodeKey) ?? false)
     );
   }
 
@@ -526,7 +536,8 @@ function applyGraphStyling(
       selKey !== null ||
       hoveredNode !== null ||
       selection?.kind === "edge" ||
-      selection?.kind === "dept";
+      selection?.kind === "dept" ||
+      selection?.kind === "grant";
 
     if (!isSelected && anyFocusActive) {
       if (
@@ -535,7 +546,8 @@ function applyGraphStyling(
         isNeighborOfHover ||
         isSelectedEdgeEndpoint ||
         isNeighborOfEdgeSelection ||
-        inSelectedDept(nodeKey)
+        inSelectedDept(nodeKey) ||
+        inSelectedGrant(nodeKey)
       ) {
         // Крупнее — только сам выбор УЗЛА (radiusSelected выше), ни
         // наведённый узел, ни чьи-либо соседи, ни концы выбранного ребра
@@ -546,7 +558,8 @@ function applyGraphStyling(
         // себе перевалил порог видимости подписи. У соседей НАВЕДЕНИЯ подпись
         // не форсируем — не просили, и на карте с тысячами узлов это была бы
         // лишняя "каша" подписей при простом движении мыши.
-        if (isNeighborOfSelection || isSelectedEdgeEndpoint) res.forceLabel = true;
+        if (isNeighborOfSelection || isSelectedEdgeEndpoint || inSelectedGrant(nodeKey))
+          res.forceLabel = true;
       } else {
         res.color = themeById(store.get().theme).map.dimNode;
         res.label = "";
@@ -598,7 +611,11 @@ function applyGraphStyling(
     // Выбранный департамент своих рёбер не показывает — у региона нет узла,
     // рёбра которого можно было бы подсветить, как у выбранного узла.
     const anyFocusActive =
-      selKey !== null || hoveredNode !== null || edgeEndpoints !== null || selectedDept() !== null;
+      selKey !== null ||
+      hoveredNode !== null ||
+      edgeEndpoints !== null ||
+      selectedDept() !== null ||
+      store.get().selection?.kind === "grant";
     if (anyFocusActive && !touchesSelection && !touchesEdgeSelectionEndpoint && !touchesHover) {
       return { ...data, hidden: true };
     }
@@ -641,6 +658,7 @@ function selectionExistsIn(graph: Graph, selection: Selection): boolean {
   if (selection === null) return true;
   if (selection.kind === "node") return graph.hasNode(selection.key);
   if (selection.kind === "dept") return graph.hasNode(deptNodeKey(selection.id));
+  if (selection.kind === "grant") return true;
   // graph — "mixed" (graphology-дефолт), а populateGraph() добавляет рёбра
   // через generic mergeEdge(), который на графе типа "mixed" создаёт
   // НАПРАВЛЕННОЕ ребро (s → t). hasEdge(source, target) при этом проверяет
@@ -691,7 +709,7 @@ function selectionExistsIn(graph: Graph, selection: Selection): boolean {
  * @param selection - новое выбранное состояние (см. {@link Selection}).
  */
 function flyToSelection(renderer: Sigma, selection: Selection): void {
-  if (selection === null || selection.kind === "edge") return;
+  if (selection === null || selection.kind === "edge" || selection.kind === "grant") return;
 
   const key = selection.kind === "node" ? selection.key : deptNodeKey(selection.id);
   const nodeData = renderer.getNodeDisplayData(key);
@@ -739,7 +757,7 @@ export function mountReactiveGraph(
   pubDetails: PubDetailsByKey,
 ): () => void {
   const graph = renderer.getGraph();
-  const { setHoveredNode, setCameraRatio } = applyGraphStyling(renderer, store);
+  const { setHoveredNode, setCameraRatio } = applyGraphStyling(renderer, store, pubDetails);
 
   // Отдельная пара обработчиков от той, что в features/selection.ts —
   // там enterNode/leaveNode меняют курсор (что делать по клику), здесь —

@@ -83,6 +83,9 @@ export function serializeUrlState(state: { screen: Screen; tab: TabId; selection
   } else if (selection?.kind === "dept") {
     params.set("sel", "dept");
     params.set("id", String(selection.id));
+  } else if (selection?.kind === "grant") {
+    params.set("sel", "grant");
+    params.set("key", selection.key);
   }
 
   return params.toString();
@@ -172,6 +175,11 @@ export function parseUrlState(search: string, data: GraphData): { screen: Screen
       const edge = tabEdges(data, tab).find((e) => (e.s === s && e.t === t) || (e.s === t && e.t === s));
       if (edge) return { screen: "app", tab, selection: { kind: "edge", s: edge.s, t: edge.t, w: edge.w } };
     }
+  } else if (kind === "grant") {
+    // Гранты живут в pubs-detail.json, который грузится после разбора URL —
+    // проверить ключ здесь нечем; несуществующий просто не покажет карточку.
+    const key = params.get("key");
+    if (key) return { screen: "app", tab, selection: { kind: "grant", key } };
   } else if (kind === "dept") {
     const id = Number(params.get("id"));
     if (groupsById(data).has(id)) return { screen: "app", tab, selection: { kind: "dept", id } };

@@ -588,6 +588,34 @@ describe("applyGraphStyling (через mountReactiveGraph) — якоря де�
   });
 });
 
+describe("applyGraphStyling (через mountReactiveGraph) — выбор гранта", () => {
+  it("статьи гранта остаются яркими, остальные притушены, рёбра спрятаны", async () => {
+    const data = await loadSampleGraphData();
+    const [detail] = await loadSamplePubDetails();
+    if (!detail) throw new Error("в фикстуре нет деталей публикации");
+    const pubDetails = indexDetailsByKey([
+      { ...detail, key: "P1", funding: [{ funder: "RSF", grant_id: "18-19-00627", grant_key: "18-19-00627" }] },
+      { ...detail, key: "P2", funding: [] },
+    ]);
+    const graph = new Graph();
+    graph.addNode("P1", { x: 0, y: 0 });
+    graph.addNode("P2", { x: 1, y: 1 });
+    graph.addEdge("P1", "P2");
+    const store = new Store<AppState>(initialState({ selection: { kind: "grant", key: "18-19-00627" } }));
+    const { renderer, getReducer } = fakeRenderer(graph);
+
+    mountReactiveGraph(renderer, store, data, pubDetails);
+
+    // Статья гранта — яркая и подписана названием на любом зуме.
+    expect(getReducer("nodeReducer")("P1", NODE_BASE)).toMatchObject({
+      color: NODE_BASE.color,
+      forceLabel: true,
+    });
+    expect(getReducer("nodeReducer")("P2", NODE_BASE)).toMatchObject({ color: darkTheme.map.dimNode });
+    expect(getReducer("edgeReducer")(graph.edges()[0], EDGE_BASE)).toMatchObject({ hidden: true });
+  });
+});
+
 describe("applyGraphStyling (через mountReactiveGraph) — выбор/наведение и притухание соседей", () => {
   it("nodeReducer подсвечивает выбранный узел, соседей оставляет обычного размера с форсированной подписью, остальных притушает", async () => {
     const data = await loadSampleGraphData();

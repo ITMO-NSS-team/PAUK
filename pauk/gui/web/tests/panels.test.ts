@@ -742,6 +742,112 @@ describe("mountPanel", () => {
     });
   });
 
+  it("длинная аннотация — первые N слов и «читать полностью», по клику — целиком, повторный клик — снова коротко", async () => {
+    const data = await loadSampleGraphData();
+    const [detail] = await loadSamplePubDetails();
+    if (!detail) throw new Error("в фикстуре нет деталей публикации");
+    const words = Array.from({ length: 80 }, (_, i) => `w${i + 1}`);
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: detail.key } });
+    mountPanel(store, data, indexDetailsByKey([{ ...detail, abstract: words.join(" ") }]), NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const dd = [...panel.querySelectorAll("dt")].find((el) => el.textContent === "Аннотация")?.nextElementSibling;
+    const toggle = () => dd?.querySelector<HTMLButtonElement>(".panel-list__more");
+    expect(dd?.textContent).toContain("w50…");
+    expect(dd?.textContent).not.toContain("w51");
+    expect(toggle()?.textContent).toBe("+ читать полностью");
+
+    toggle()?.click();
+    expect(dd?.textContent).toContain("w80");
+    expect(toggle()?.textContent).toBe("− свернуть");
+
+    toggle()?.click();
+    expect(dd?.textContent).not.toContain("w51");
+  });
+
+  it("короткая аннотация — целиком и без кнопки", async () => {
+    const data = await loadSampleGraphData();
+    const [detail] = await loadSamplePubDetails();
+    if (!detail) throw new Error("в фикстуре нет деталей публикации");
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: detail.key } });
+    mountPanel(store, data, indexDetailsByKey([{ ...detail, abstract: "Short abstract." }]), NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const dd = [...panel.querySelectorAll("dt")].find((el) => el.textContent === "Аннотация")?.nextElementSibling;
+    expect(dd?.textContent).toBe("Short abstract.");
+    expect(dd?.querySelector(".panel-list__more")).toBeNull();
+  });
+
+  it("карточка репозитория ведёт на GitHub, карточка группы-организации — на профиль организации", async () => {
+    const data = await loadSampleGraphData();
+    const [dept] = data.departments;
+    if (!dept) throw new Error("в фикстуре нет департаментов");
+    const org = { ...dept, id: 99, kind: "org" as const, name: "example-org", name_en: "example-org" };
+    const field = { ...dept, id: 98, kind: "field" as const, name: "Physics", name_en: "Physics" };
+    const repoDetails = indexDetailsByKey(await loadSampleRepoDetails());
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "R1" } });
+    mountPanel(store, { ...data, repo_groups: [org, field] }, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, repoDetails);
+
+    const repoLink = panel.querySelector<HTMLAnchorElement>("a[href='https://github.com/example-org/graph-toolkit']");
+    expect(repoLink?.textContent).toBe("example-org/graph-toolkit");
+
+    store.set({ selection: { kind: "dept", id: 99 } });
+    expect(panel.querySelector("a[href='https://github.com/example-org']")?.textContent).toBe("example-org");
+
+    // У группы по области публикаций своей страницы на GitHub нет.
+    store.set({ selection: { kind: "dept", id: 98 } });
+    expect(panel.querySelector("a[href^='https://github.com']")).toBeNull();
+  });
+
+  it("грант: номер в карточке публикации ведёт на карточку гранта со списком статей и CSV", async () => {
+    const data = await loadSampleGraphData();
+    const details = await loadSamplePubDetails();
+    const grant = { funder: "Russian Science Foundation", grant_id: "Grant 18-19-00627", grant_key: "18-19-00627" };
+    const pubDetails = indexDetailsByKey(
+      details.map((d) =>
+        d.key === "P1" || d.key === "P3"
+          ? {
+              ...d,
+              funding: [
+                grant,
+                { funder: "RFBR", grant_id: "18-19-", grant_key: null },
+                { funder: "Priority 2030", grant_id: null, grant_key: null },
+              ],
+            }
+          : d,
+      ),
+    );
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "P1" } });
+    mountPanel(store, data, pubDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const grantsDd = [...panel.querySelectorAll("dt")].find((el) => el.textContent === "Гранты")?.nextElementSibling;
+    expect(grantsDd?.textContent).toContain("Russian Science Foundation");
+    expect(grantsDd?.textContent).toContain("18-19-"); // обрезанный номер виден, но не кликабелен
+    expect(grantsDd?.querySelectorAll(".panel-entity-ref")).toHaveLength(1);
+    expect(grantsDd?.querySelector(".panel-entity-ref")?.textContent).toBe("18-19-00627");
+    expect(grantsDd?.textContent).toContain("Priority 2030"); // фонд без номера — просто текст
+    expect(grantsDd?.querySelector(".panel-list")).toBeNull(); // строкой, как остальные поля
+
+    grantsDd?.querySelector<HTMLButtonElement>(".panel-entity-ref")?.click();
+    expect(store.get().selection).toEqual({ kind: "grant", key: "18-19-00627" });
+    expect(store.get().tab).toBe(3);
+
+    expect(panel.querySelector("h3")?.textContent).toBe("Grant 18-19-00627");
+    expect(panel.textContent).toContain("Russian Science Foundation");
+    const csvLink = panel.querySelector<HTMLAnchorElement>("a[download]");
+    expect(csvLink?.download).toBe("grant_18-19-00627.csv");
+    const csv = decodeURIComponent(csvLink?.href.split(",").slice(1).join(",") ?? "");
+    const lines = csv.replace("\uFEFF", "").split("\r\n");
+    expect(lines[0]).toBe("OpenAlex ID,Title,Year,DOI,Journal,Type,Authors,Funder,Grant");
+    expect(lines.slice(1).map((line) => line.split(",")[0]).sort()).toEqual(["P1", "P3"]);
+  });
+
+  it("грант из URL до прихода pubs-detail.json — индикатор загрузки, а не пустая панель", async () => {
+    const data = await loadSampleGraphData();
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "grant", key: "18-19-00627" } });
+    mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+    expect(panel.hidden).toBe(false);
+    expect(panel.querySelector(".loading-indicator")).not.toBeNull();
+  });
+
   it("карточка репозитория показывает описание (RepoDetail.description)", async () => {
     const data = await loadSampleGraphData();
     const repoDetails = indexDetailsByKey(await loadSampleRepoDetails());

@@ -53,6 +53,7 @@ export type Selection =
   | { kind: "node"; key: string }
   | { kind: "edge"; s: string; t: string; w: number }
   | { kind: "dept"; id: number }
+  | { kind: "grant"; key: string }
   | null;
 
 /**
