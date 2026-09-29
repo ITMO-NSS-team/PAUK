@@ -1,0 +1,36 @@
+# Админ-панель PAUK как служба: поднимается при загрузке машины и встаёт
+# обратно, если упала. Заменяет screen-сессию, которая перезагрузку не
+# переживает.
+#
+#   sudo cp scripts/systemd/pauk-admin.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pauk-admin
+#   systemctl status pauk-admin
+#   journalctl -u pauk-admin -f
+#
+# Путь до uv подставьте свой: systemd не читает профиль оболочки, и просто
+# `uv` здесь не найдётся. Узнать – `which uv` на сервере.
+# User и WorkingDirectory написаны под einsteinium, где репозиторий лежит в
+# /home/asteb/PAUK.
+
+[Unit]
+Description=PAUK admin panel
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+User=asteb
+WorkingDirectory=/home/asteb/PAUK
+# HOME задан явно: uv держит там свой кэш, а служба запускается без входа в
+# систему, где переменную обычно ставит оболочка.
+Environment=HOME=/home/asteb
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/asteb/.local/bin/uv run uvicorn pauk.admin.app:build --factory --host 0.0.0.0 --port 8505
+# Базы живут рядом и после перезагрузки могут ещё не отвечать. Панель без
+# Mongo не стартует вовсе, и единственное лекарство – попробовать снова.
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
