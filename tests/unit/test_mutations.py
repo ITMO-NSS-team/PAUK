@@ -194,6 +194,10 @@ class FakeGraph:
                 for (node_label, node_id), props in self.nodes.items() if node_label == label
                 for alias in props.get("merged_ids") or []}
 
+    def fetch_canonical_id(self, label, node_id):
+        """One alias resolved, the way the real client resolves it."""
+        return self.fetch_merged_id_map(label).get(node_id)
+
 
 class WhitelistTest(unittest.TestCase):
     """The closed sets that keep user input out of interpolated Cypher."""

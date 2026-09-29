@@ -286,6 +286,21 @@ class StopTest(unittest.TestCase):
             self.worker.run_forever()
         self.assertEqual(store.read(self.db, job.id).state, JobState.DONE)
 
+    def test_an_idle_worker_still_says_it_is_here(self):
+        # It holds no job and writes nothing else, so an empty queue looked
+        # the same whether a worker was waiting or nobody had started one.
+        self.worker.run_once()
+        self.assertEqual(store.workers_present(self.db), ["worker-1"])
+
+    def test_and_takes_the_mark_back_when_it_leaves(self):
+        # The mark is put there first: asked to stop before its first turn,
+        # the loop never marks anything, and the test would pass on a
+        # worker that never cleans up after itself.
+        store.mark_present(self.db, "worker-1")
+        self.worker.stop()
+        self.worker.run_forever()
+        self.assertEqual(store.workers_present(self.db), [])
+
 
 class PipelineJobTest(unittest.TestCase):
     """Collect, publish, rebuild the map — one job, three phases.

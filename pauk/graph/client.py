@@ -526,6 +526,33 @@ class Neo4jClient:
             return session.execute_read(
                 lambda tx: {record["merged_id"]: record["canonical_id"] for record in tx.run(query)})
 
+    def fetch_canonical_id(self, label: str, node_id: str) -> str | None:
+        """The node this id was folded into, if it was folded into one.
+
+        Asked about one id rather than taken from `fetch_merged_id_map`: the
+        panel needs this the moment somebody opens an id that has no node,
+        and pulling the whole map of every fold in the graph to answer about
+        one of them would be paid on every such page.
+
+        Returns:
+            The surviving node's id, or None when nothing swallowed this id.
+            A node of its own is not looked for here — the caller has
+            already failed to find one.
+        """
+        query = cast(
+            LiteralString,
+            f"""
+            MATCH (n:{label})
+            WHERE $node_id IN coalesce(n.merged_ids, [])
+            RETURN n.id AS canonical_id
+            LIMIT 1
+            """,
+        )
+        with self.driver.session(default_access_mode="READ") as session:
+            return session.execute_read(
+                lambda tx: next((record["canonical_id"] for record in
+                                 tx.run(query, node_id=node_id)), None))
+
     def merge_person_nodes_batch(self, merges: list[tuple[str, str]]) -> int:
         """Fold duplicate Person nodes into their canonical person."""
         return self._fold_nodes_batch("Person", merges, outgoing=(
@@ -655,8 +682,8 @@ class Neo4jClient:
         return int(row["total"]) if row else 0
 
     def list_nodes(self, label: str, fields: list[str], limit: int = 50,
-                   skip: int = 0) -> list[dict]:
-        """The first nodes of a label, in id order.
+                   skip: int = 0, order: str | None = None) -> list[dict]:
+        """The first nodes of a label, in id order unless asked otherwise.
 
         What the panel shows before anything is typed: on a small graph it
         is the whole list, on a large one the beginning of it.
@@ -666,17 +693,24 @@ class Neo4jClient:
             fields: Property names to return, also interpolated.
             limit: How many rows to bring back.
             skip: How many to pass over first, for paging.
+            order: Property to sort by, largest first, also interpolated —
+                whitelist only. A node that has no such property sorts
+                last: in Cypher null is the largest value, so the ones
+                with nothing to show would otherwise open the list. Ties
+                keep the id order, without which paging could show one row
+                twice and skip another.
         """
         returned = ", ".join(f"n.{name} AS {name}" for name in fields)
+        by = f"coalesce(n.{order}, -1) DESC, id" if order else "id"
         text = (f"MATCH (n:{label}) RETURN n.id AS id, {returned} "
-                f"ORDER BY id SKIP $skip LIMIT $limit")
+                f"ORDER BY {by} SKIP $skip LIMIT $limit")
         with self.driver.session() as session:
             rows = session.execute_read(
                 lambda tx: list(tx.run(cast(LiteralString, text), limit=limit, skip=skip)))
         return [dict(row) for row in rows]
 
-    def search_nodes(self, label: str, fields: list[str], query: str, limit: int = 50,
-                     skip: int = 0) -> list[dict]:
+    def search_nodes(self, label: str, fields: list[str], searched: list[str], query: str,
+                     limit: int = 50, skip: int = 0) -> list[dict]:
         """Nodes of one label whose text matches, for the panel's search box.
 
         Case-insensitive substring match across the fields the caller
@@ -686,16 +720,21 @@ class Neo4jClient:
 
         Args:
             label: Node label, interpolated into Cypher — whitelist only.
-            fields: Property names to search, also interpolated —
+            fields: Property names to return, also interpolated —
                 whitelist only.
+            searched: Property names the query is matched against, a subset
+                of `fields`. Separate because a listing can show a column
+                the box has no business matching: a substring of a number
+                answers "10" with 10, 100 and 1000.
             query: What the user typed.
             limit: How many rows to bring back.
             skip: How many to pass over first, for paging.
 
         Returns:
-            One dict per node: its `id` plus the searched fields.
+            One dict per node: its `id` plus `fields`.
         """
-        conditions = " OR ".join(f"toLower(toString(n.{name})) CONTAINS $needle" for name in fields)
+        conditions = " OR ".join(
+            f"toLower(toString(n.{name})) CONTAINS $needle" for name in searched)
         returned = ", ".join(f"n.{name} AS {name}" for name in fields)
         text = (
             f"MATCH (n:{label}) WHERE n.id = $exact OR {conditions} "

@@ -720,7 +720,7 @@ class QuestionWithNoEvidenceTest(unittest.TestCase):
             "status": "disputed", "person_a": "A1", "name_a": "A", "person_b": "A2",
             "name_b": "B", "rule": "same_name"}])
         why = self.cells()[2]
-        self.assertIn("—", why)
+        self.assertIn("–", why)
         self.assertIn("теперь связывают", why)
 
 

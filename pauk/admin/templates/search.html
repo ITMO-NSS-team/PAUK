@@ -13,7 +13,7 @@
 {% endif %}
 <form method="get" class="row">
   <div class="grow">
-    <label for="q">Идентификатор или часть текста ({{ fields|join(", ") }})</label>
+    <label for="q">Идентификатор или часть текста ({{ searched|join(", ") }})</label>
     <input type="text" id="q" name="q" value="{{ query }}" autofocus>
   </div>
   <button type="submit">Искать</button>
@@ -28,12 +28,12 @@
     {% if query %}Найдено: {{ rows|length }}{% if page > 1 or more %}
       на этой странице{% endif %}.
     {% else %}Показаны {{ rows|length }} {{ rows|length|plural("узел", "узла", "узлов") }}
-      по возрастанию идентификатора.{% endif %}
+      {% if order %}по убыванию {{ order }}, пустые в конце.
+      {% else %}по возрастанию идентификатора.{% endif %}{% endif %}
     {% if page > 1 or more %} Страница {{ page }}.{% endif %}
   </p>
   <div class="card scroll">
-    {# Ширины заданы, иначе длинный идентификатор ужимает колонку до буквы
-       в строке, а адрес LinkCandidate растягивает таблицу за экран. #}
+    {# Ширины заданы: иначе адрес LinkCandidate растягивает таблицу за экран. #}
     <table class="fixed">
       <colgroup>
         <col style="width:16rem">{% for f in fields %}<col>{% endfor %}

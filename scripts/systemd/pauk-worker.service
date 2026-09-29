@@ -1,0 +1,35 @@
+# Воркер PAUK как служба: без него кнопки в панели складывают задачи в
+# очередь, и там они ждут вечно.
+#
+#   sudo cp scripts/systemd/pauk-worker.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pauk-worker
+#   journalctl -u pauk-worker -f
+#
+# Путь до uv, User и WorkingDirectory – как в pauk-admin.service.
+
+[Unit]
+Description=PAUK admin worker
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+User=asteb
+WorkingDirectory=/home/asteb/PAUK
+# HOME задан явно: uv держит там свой кэш, а служба запускается без входа в
+# систему, где переменную обычно ставит оболочка.
+Environment=HOME=/home/asteb
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/asteb/.local/bin/uv run pauk admin worker
+Restart=always
+RestartSec=5
+# SIGTERM воркер понимает как «доделай задачу и выходи», поэтому остановка
+# длится столько, сколько идёт текущий шаг. Через пять минут systemd убьёт
+# процесс; брошенную задачу подберёт следующий воркер, когда истечёт аренда
+# замка на графе (15 минут) – он для этого и написан.
+KillSignal=SIGTERM
+TimeoutStopSec=300
+
+[Install]
+WantedBy=multi-user.target

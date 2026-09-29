@@ -1,3 +1,4 @@
+import struct
 import threading
 import unittest
 from unittest.mock import patch
@@ -148,11 +149,12 @@ class PanelTest(unittest.TestCase):
     def test_the_icon_is_the_spider_and_not_the_web(self):
         # pauk-web.png is, despite the name, a cobweb; the spider is
         # pauk-frame.png. Putting the wrong one in the tab is easy and
-        # invisible from the code alone.
+        # invisible from the code alone. The page itself draws the web as
+        # decoration, so only the head is checked.
         self.sign_in()
-        body = self.client.get("/").text
-        self.assertIn("pauk-frame", body)
-        self.assertNotIn("pauk-web", body)
+        head = self.client.get("/").text.split("</head>")[0]
+        self.assertIn("pauk-frame", head)
+        self.assertNotIn("pauk-web", head)
 
     def test_the_panel_is_light_only(self):
         css = self.client.get("/static/panel.css").text
@@ -166,6 +168,20 @@ class PanelTest(unittest.TestCase):
             self.assertEqual(
                 self.client.get(f"/assets/fonts/golos-text-{part}.woff2").status_code, 200, part)
         self.assertEqual(self.client.get("/static/panel.css").text.count("@font-face"), 3)
+
+    def test_and_each_of_them_is_a_font_a_browser_will_take(self):
+        # Served with 200 is not the same as usable: the three files sat
+        # here for weeks with junk appended, every browser quietly refused
+        # them, and the panel drew itself in whatever the machine had.
+        # Nobody noticed until a password field turned into empty boxes on a
+        # machine whose fallback font has no bullet. A woff2 states its own
+        # length and table count, and both give the mangling away.
+        for part in ("latin", "cyrillic", "cyrillic-ext"):
+            body = self.client.get(f"/assets/fonts/golos-text-{part}.woff2").content
+            signature, _flavor, length, tables = struct.unpack(">4sIIH", body[:14])
+            self.assertEqual(signature, b"wOF2", part)
+            self.assertEqual(length, len(body), part)
+            self.assertLess(tables, 100, part)
 
     def test_the_panel_offers_no_way_to_create_an_account(self):
         # Accounts come from `pauk admin user add` only; a registration

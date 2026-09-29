@@ -40,23 +40,17 @@ SESSION_HOURS = 12
 
 ATTEMPTS = "admin_login_attempts"
 
-# Failed logins tolerated, and for how long. Counted per login, not per
-# address: behind a VPN and one proxy an address says little.
+# Failed logins tolerated, and for how long. Counted per login, not per address.
 MAX_FAILURES = 30
 LOCKOUT_MINUTES = 15
 
-# scrypt cost. n=2**14 keeps a single hash near a hundred milliseconds on a
-# laptop — slow enough to make guessing expensive, fast enough that a login
-# form still feels instant.
+# scrypt cost: n=2**14 is about a hundred milliseconds per hash on a laptop.
 _N, _R, _P, _SALT, _KEY = 2**14, 8, 1, 16, 32
 
 ROLES = ("admin", "editor", "viewer")
 CAN_WRITE = frozenset({"admin", "editor"})
 
-# Starting a run is not editing a record. A publish rewrites the whole
-# graph, a collection run spends hours and an API quota, and neither can be
-# taken back by a counter-edit — so they need the role that was until now
-# only a name.
+# Starting a run is not editing a record: neither is undone by a counter-edit.
 CAN_RUN = frozenset({"admin"})
 
 
@@ -200,9 +194,7 @@ def authenticate(db: Database, login: str, password: str) -> User:
     _refuse_while_locked(db, login)
     row = db[USERS].find_one({"_id": login})
     if row is None or not row.get("active", False):
-        # Verify anyway, against a stand-in, so a missing user takes the
-        # same one key derivation as a wrong password and the two cannot be
-        # told apart by how long the answer took.
+        # Against a stand-in, so a missing user costs the same as a wrong password.
         verify_password(password, _placeholder_hash())
         _count_failure(db, login)
         raise AuthError("wrong login or password")
@@ -343,6 +335,5 @@ def check_csrf(session: dict, submitted: str | None) -> bool:
     expected = session.get("csrf")
     if not expected or not submitted:
         return False
-    # Compared as bytes: compare_digest refuses str with non-ASCII
-    # characters, and the submitted value is whatever the form sent.
+    # As bytes: compare_digest refuses str with non-ASCII characters.
     return hmac.compare_digest(expected.encode(), submitted.encode())

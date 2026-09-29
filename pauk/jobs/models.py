@@ -24,9 +24,7 @@ class JobKind(StrEnum):
     MAP = "map"
     PRUNE = "prune"
     HEALTH = "health"
-    #: Collect, publish and rebuild the map, in that order, as one job.
-    #: Not three jobs queued together: publishing needs a group, and at the
-    #: moment the queue is filled that group has no rows yet.
+    #: Collect, publish, rebuild the map: one job, since publishing needs a group.
     PIPELINE = "pipeline"
 
 
@@ -46,8 +44,7 @@ class JobState(StrEnum):
 #: States a job will never leave.
 FINAL = frozenset({JobState.DONE, JobState.FAILED, JobState.CANCELLED})
 
-#: Publishing, deduplicating and exporting a snapshot all rewrite or read
-#: the whole graph, so they take turns.
+#: Publishing, dedup and a snapshot all touch the whole graph: they take turns.
 GRAPH = "graph"
 
 
@@ -156,8 +153,7 @@ class Job(BaseModel):
     result: dict[str, int] = Field(default_factory=dict)
     error: str | None = None
     cancel_requested: bool = False
-    #: Where inside the run it is: the step by name, and how many of how
-    #: many are behind it. Absent until something reports.
+    #: Where inside the run it is; absent until something reports.
     progress: dict | None = None
 
     @property
