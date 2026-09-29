@@ -91,6 +91,10 @@
         height: 16px;
         margin-top: -6px; /* (4px track - 16px thumb) / 2 */
         background: url("./src/assets/icons/pauk-frame-accent.png") center / contain no-repeat;
+        transition: transform 0.15s ease;
+      }
+      input[type="range"]:active::-webkit-slider-thumb {
+        transform: rotate(90deg);
       }
       input[type="range"]::-moz-range-track {
         height: 4px;
@@ -103,6 +107,10 @@
         border: none;
         border-radius: 0;
         background: url("./src/assets/icons/pauk-frame-accent.png") center / contain no-repeat;
+        transition: transform 0.15s ease;
+      }
+      input[type="range"]:active::-moz-range-thumb {
+        transform: rotate(90deg);
       }
 
       #brand,
