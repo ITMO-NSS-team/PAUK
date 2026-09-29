@@ -149,11 +149,12 @@ class PanelTest(unittest.TestCase):
     def test_the_icon_is_the_spider_and_not_the_web(self):
         # pauk-web.png is, despite the name, a cobweb; the spider is
         # pauk-frame.png. Putting the wrong one in the tab is easy and
-        # invisible from the code alone.
+        # invisible from the code alone. The page itself draws the web as
+        # decoration, so only the head is checked.
         self.sign_in()
-        body = self.client.get("/").text
-        self.assertIn("pauk-frame", body)
-        self.assertNotIn("pauk-web", body)
+        head = self.client.get("/").text.split("</head>")[0]
+        self.assertIn("pauk-frame", head)
+        self.assertNotIn("pauk-web", head)
 
     def test_the_panel_is_light_only(self):
         css = self.client.get("/static/panel.css").text

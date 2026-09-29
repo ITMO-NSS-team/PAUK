@@ -62,7 +62,7 @@ class JobsPageTest(unittest.TestCase):
     def test_and_says_so_when_one_is_there(self):
         store.mark_present(self.db, "worker-1")
         page = self.client.get("/jobs").text
-        self.assertIn("воркер работает", page)
+        self.assertIn("Воркер работает", page)
         self.assertNotIn("Воркер не работает", page)
 
     def test_a_worker_that_stopped_saying_so_does_not_count(self):
