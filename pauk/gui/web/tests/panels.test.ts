@@ -1095,8 +1095,10 @@ describe("mountPanel", () => {
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     expect(panel.textContent).toContain("Общие публикации");
-    expect(panel.textContent).toContain("P1");
-    expect(panel.textContent).toContain("P5");
+    const dt = [...panel.querySelectorAll("dt")].find((el) => el.textContent === "Общие публикации");
+    expect(dt?.classList.contains("panel-row--block")).toBe(true); // one per line, like the pubs list
+    const items = [...(dt?.nextElementSibling?.querySelectorAll("button.panel-entity-ref") ?? [])];
+    expect(items.map((el) => el.textContent).sort()).toEqual(["P1", "P5"]);
   });
 
   it("карточка ребра публикация-публикация показывает список общих авторов", async () => {

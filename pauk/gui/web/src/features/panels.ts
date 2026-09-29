@@ -840,16 +840,17 @@ export function mountPanel(
           via.map((signal) => t(`via.${signal}`, lang)).join(", "),
         ]);
       if (from.kind === "author" && to.kind === "author") {
-        const shared = (authorPubs.get(from.key) ?? [])
-          .filter((pub) => (authorPubs.get(to.key) ?? []).includes(pub))
-          .slice(0, PANEL_CONFIG.listLimit);
-        if (shared.length > 0) rows.push([t("field.sharedPubs", lang), entityRefsOf(shared, lang)]);
-      } else if (from.kind === "pub" && to.kind === "pub") {
-        const shared = (pubAuthors.get(from.key) ?? [])
-          .filter((author) => (pubAuthors.get(to.key) ?? []).includes(author))
-          .slice(0, PANEL_CONFIG.listLimit);
+        const shared = pubKeysByYear(
+          (authorPubs.get(from.key) ?? []).filter((pub) => (authorPubs.get(to.key) ?? []).includes(pub)),
+        );
         if (shared.length > 0)
-          rows.push([t("field.sharedAuthors", lang), entityRefsOf(shared, lang)]);
+          rows.push([t("field.sharedPubs", lang), { kind: "list", items: entityRefsOf(shared, lang) }]);
+      } else if (from.kind === "pub" && to.kind === "pub") {
+        const shared = (pubAuthors.get(from.key) ?? []).filter((author) =>
+          (pubAuthors.get(to.key) ?? []).includes(author),
+        );
+        if (shared.length > 0)
+          rows.push([t("field.sharedAuthors", lang), { kind: "list", items: entityRefsOf(shared, lang) }]);
       }
 
       return show(t("kind.edge", lang), t("kind.edge", lang), untitled(rows), true);
