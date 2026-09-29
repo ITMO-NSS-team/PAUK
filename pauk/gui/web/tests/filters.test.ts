@@ -127,6 +127,27 @@ describe("mountFilters", () => {
     });
   });
 
+  it("бегунок наклоняется в сторону движения ползунка", () => {
+    withContainer(() => {
+      const store = new Store<AppState>(initialState());
+      mountFilters(store);
+
+      const input = container.querySelectorAll("input[type='range']")[1] as HTMLInputElement;
+      const move = (value: number): void => {
+        input.value = String(value);
+        input.dispatchEvent(new Event("input"));
+      };
+
+      move(5);
+      expect(input.dataset.tilt).toBe("right");
+      move(3);
+      expect(input.dataset.tilt).toBe("left");
+
+      input.dispatchEvent(new Event("pointerdown"));
+      expect(input.dataset.tilt).toBeUndefined();
+    });
+  });
+
   it("быстрое перетаскивание ползунка (много тиков подряд) применяет ТОЛЬКО последнее значение, не каждый тик", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());

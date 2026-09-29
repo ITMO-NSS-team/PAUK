@@ -38,9 +38,14 @@ function buildFilterRow(options: FilterRowOptions): HTMLElement {
   // The value label updates on every tick, onChange is debounced: a graph
   // rebuild per pixel of dragging lags.
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+  // The thumb tilts toward the drag direction, see index.html.
+  let lastValue = options.value;
+  input.addEventListener("pointerdown", () => delete input.dataset.tilt);
   input.addEventListener("input", () => {
     value.textContent = input.value;
     const parsed = Number(input.value);
+    if (parsed !== lastValue) input.dataset.tilt = parsed < lastValue ? "left" : "right";
+    lastValue = parsed;
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => options.onChange(parsed), FILTER_CONFIG.debounceMs);
   });

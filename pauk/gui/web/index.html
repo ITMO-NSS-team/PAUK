@@ -93,8 +93,11 @@
         background: url("./src/assets/icons/pauk-frame-accent.png") center / contain no-repeat;
         transition: transform 0.15s ease;
       }
-      input[type="range"]:active::-webkit-slider-thumb {
+      input[type="range"][data-tilt="right"]:active::-webkit-slider-thumb {
         transform: rotate(90deg);
+      }
+      input[type="range"][data-tilt="left"]:active::-webkit-slider-thumb {
+        transform: rotate(-90deg);
       }
       input[type="range"]::-moz-range-track {
         height: 4px;
@@ -109,8 +112,11 @@
         background: url("./src/assets/icons/pauk-frame-accent.png") center / contain no-repeat;
         transition: transform 0.15s ease;
       }
-      input[type="range"]:active::-moz-range-thumb {
+      input[type="range"][data-tilt="right"]:active::-moz-range-thumb {
         transform: rotate(90deg);
+      }
+      input[type="range"][data-tilt="left"]:active::-moz-range-thumb {
+        transform: rotate(-90deg);
       }
 
       #brand,
