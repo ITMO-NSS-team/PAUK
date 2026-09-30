@@ -99,6 +99,8 @@ export const DATA_CONFIG = {
 // Top-N lists in the info card.
 export const PANEL_CONFIG = {
   listLimit: 3,
+  // Items added per "N more" click.
+  listStep: 20,
   // Words shown before "Read more".
   abstractWords: 50,
   // Bars in overview charts.

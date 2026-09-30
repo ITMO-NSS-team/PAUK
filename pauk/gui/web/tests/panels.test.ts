@@ -352,11 +352,11 @@ describe("mountPanel", () => {
     expect(panel.textContent).not.toContain("Создан");
   });
 
-  it("длинный список: первые 3 и «+ ещё N», по клику — все и «свернуть», повторный клик — снова 3", async () => {
+  it("длинный список: первые 3, «+ ещё» добавляет по 20, «свернуть» на любом шаге возвращает 3", async () => {
     const data = await loadSampleGraphData();
     const [a1] = await loadSampleAuthorDetails();
     if (!a1) throw new Error("фикстура должна содержать автора A1");
-    const variants = Array.from({ length: 13 }, (_, i) => `Variant ${i + 1}`);
+    const variants = Array.from({ length: 50 }, (_, i) => `Variant ${i + 1}`);
     const authorDetails = indexDetailsByKey([
       { ...a1, name_variants: { openalex: variants, orcid: [] } },
     ]);
@@ -371,22 +371,32 @@ describe("mountPanel", () => {
       (el) => el.textContent === "Варианты написания (OpenAlex)",
     );
     const list = dt?.nextElementSibling?.querySelector(".panel-list");
-    const toggle = () => list?.querySelector<HTMLButtonElement>(".panel-list__more");
-    const itemTexts = () =>
-      [...(list?.querySelectorAll("li") ?? [])]
-        .filter((li) => !li.querySelector(".panel-list__more"))
-        .map((li) => li.textContent);
+    const buttons = () => [...(list?.querySelectorAll<HTMLButtonElement>(".panel-list__more") ?? [])];
+    const labels = () => buttons().map((b) => b.textContent);
+    const count = () => list?.querySelectorAll("li:not(.panel-list__toggle)").length;
 
-    expect(itemTexts()).toEqual(variants.slice(0, 3));
-    expect(toggle()?.textContent).toBe("+ ещё 10");
+    expect(count()).toBe(3);
+    expect(labels()).toEqual(["+ ещё 20"]);
 
-    toggle()?.click();
-    expect(itemTexts()).toEqual(variants);
-    expect(toggle()?.textContent).toBe("− свернуть");
+    buttons()[0]?.click();
+    expect(count()).toBe(23);
+    expect(labels()).toEqual(["+ ещё 20", "− свернуть"]);
 
-    toggle()?.click();
-    expect(itemTexts()).toEqual(variants.slice(0, 3));
-    expect(toggle()?.textContent).toBe("+ ещё 10");
+    buttons()[0]?.click();
+    expect(count()).toBe(43);
+    expect(labels()).toEqual(["+ ещё 7", "− свернуть"]);
+
+    buttons()[0]?.click();
+    expect(count()).toBe(50);
+    expect(labels()).toEqual(["− свернуть"]);
+
+    buttons()[0]?.click();
+    expect(count()).toBe(3);
+    expect(labels()).toEqual(["+ ещё 20"]);
+
+    buttons()[0]?.click();
+    buttons()[1]?.click(); // collapse from a middle step
+    expect(count()).toBe(3);
   });
 
   it("карточка автора БЕЗ domержённого detail (только сокращённая подпись узла) не показывает подзаголовок", async () => {

@@ -558,11 +558,17 @@
         counter-reset: panel-item;
       }
       .panel-list li {
+        display: flex;
+        gap: 4px;
         padding: 6px 0;
       }
       .panel-list li:not(.panel-list__toggle)::before {
+        flex: none;
         counter-increment: panel-item;
-        content: counter(panel-item) ". ";
+        content: counter(panel-item) ".";
+      }
+      .panel-list__body {
+        min-width: 0;
       }
       .panel-list li:first-child {
         padding-top: 0;

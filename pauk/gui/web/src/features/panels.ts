@@ -1021,17 +1021,21 @@ function buildCard(options: PanelCardOptions): HTMLElement {
 
   function listItemElement(item: PanelList["items"][number]): HTMLLIElement {
     const li = document.createElement("li");
+    // Own column next to the number, so wrapped text does not drop below it.
+    const body = document.createElement("span");
+    body.className = "panel-list__body";
+    li.appendChild(body);
     if (typeof item === "string") {
-      li.textContent = item;
+      body.textContent = item;
       return li;
     }
-    if (item.kind === "text") li.append(item.text);
-    else li.appendChild(item.kind === "link" ? linkElement(item) : refElement(item));
+    if (item.kind === "text") body.append(item.text);
+    else body.appendChild(item.kind === "link" ? linkElement(item) : refElement(item));
     if (item.meta) {
       const meta = document.createElement("span");
       meta.className = "panel-list__meta";
       meta.textContent = item.meta;
-      li.append(" ", meta);
+      body.append(" ", meta);
     }
     return li;
   }
@@ -1040,28 +1044,40 @@ function buildCard(options: PanelCardOptions): HTMLElement {
     const ul = document.createElement("ul");
     ul.className = "panel-list";
     const limit = PANEL_CONFIG.listLimit;
-    const hidden = value.items.length - limit;
-    let expanded = false;
+    let shown = limit;
 
-    function renderItems(): void {
-      ul.replaceChildren(
-        ...(expanded ? value.items : value.items.slice(0, limit)).map(listItemElement),
-      );
-      if (hidden <= 0) return;
-
+    function button(text: string, onClick: () => void): HTMLButtonElement {
       const toggle = document.createElement("button");
       toggle.type = "button";
       toggle.className = "panel-list__more";
-      toggle.textContent = expanded
-        ? t("panel.showLess", lang)
-        : t("panel.showMore", lang).replace("{n}", String(hidden));
+      toggle.textContent = text;
       toggle.addEventListener("click", () => {
-        expanded = !expanded;
+        onClick();
         renderItems();
       });
+      return toggle;
+    }
+
+    function renderItems(): void {
+      ul.replaceChildren(...value.items.slice(0, shown).map(listItemElement));
+      const buttons: HTMLButtonElement[] = [];
+      const hidden = value.items.length - shown;
+      if (hidden > 0) {
+        const next = Math.min(hidden, PANEL_CONFIG.listStep);
+        buttons.push(
+          button(t("panel.showMore", lang).replace("{n}", String(next)), () => (shown += next)),
+        );
+      }
+      if (shown > limit && value.items.length > limit)
+        buttons.push(button(t("panel.showLess", lang), () => (shown = limit)));
+      if (buttons.length === 0) return;
+
       const toggleItem = document.createElement("li");
       toggleItem.className = "panel-list__toggle";
-      toggleItem.appendChild(toggle);
+      buttons.forEach((b, i) => {
+        if (i > 0) toggleItem.append(" · ");
+        toggleItem.appendChild(b);
+      });
       ul.appendChild(toggleItem);
     }
 
