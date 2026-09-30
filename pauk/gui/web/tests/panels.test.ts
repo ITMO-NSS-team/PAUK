@@ -824,7 +824,7 @@ describe("mountPanel", () => {
     expect(store.get().selection).toEqual({ kind: "grant", key: "18-19-00627" });
     expect(store.get().tab).toBe(3);
 
-    expect(panel.querySelector("h3")?.textContent).toBe("Grant 18-19-00627");
+    expect(panel.querySelector("h3")?.textContent).toBe("Russian Science Foundation Grant 18-19-00627");
     expect(panel.textContent).toContain("Russian Science Foundation");
     const csvLink = panel.querySelector<HTMLAnchorElement>("a[download]");
     expect(csvLink?.download).toBe("grant_18-19-00627.csv");

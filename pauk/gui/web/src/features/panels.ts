@@ -876,7 +876,7 @@ export function mountPanel(
         return yearOf(b) - yearOf(a) || a.localeCompare(b);
       });
       return show(
-        grant.name,
+        grant.funder ? `${grant.funder} ${grant.name}` : grant.name,
         t("grant.kind", lang),
         untitled([
           [t("grant.funder", lang), grant.funder],
