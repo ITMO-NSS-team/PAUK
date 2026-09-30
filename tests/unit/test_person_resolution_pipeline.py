@@ -65,15 +65,26 @@ class PersonResolutionPipelineTest(unittest.TestCase):
         self.assertEqual(len(models.first_calls), 1)
         self.assertEqual(len(models.second_calls), 1)
 
-    def test_first_model_rejection_becomes_a_review_question(self):
+    def test_first_model_rejection_separates_without_review(self):
         models = FakeModels(ModelVerdict(False, 0.8, "insufficient evidence"))
 
         groups, report = plan_person_merges_resolved(self.people, {}, models=models)
 
         self.assertEqual(groups, [])
-        self.assertEqual(report[0]["status"], "held")
-        self.assertEqual(report[0]["route"], "qwen_first_separate")
+        self.assertEqual(report, [])
         self.assertEqual(models.second_calls, [])
+
+    def test_second_model_rejection_separates_without_review(self):
+        models = FakeModels(
+            ModelVerdict(True, 0.8, "possible duplicate"),
+            ModelVerdict(False, 0.8, "different people"),
+        )
+
+        groups, report = plan_person_merges_resolved(self.people, {}, models=models)
+
+        self.assertEqual(groups, [])
+        self.assertEqual(report, [])
+        self.assertEqual(len(models.second_calls), 1)
 
     def test_model_failure_is_safe_and_reviewable(self):
         groups, report = plan_person_merges_resolved(
@@ -82,6 +93,16 @@ class PersonResolutionPipelineTest(unittest.TestCase):
 
         self.assertEqual(groups, [])
         self.assertEqual(report[0]["held_because"], ["first model unavailable"])
+
+    def test_second_model_failure_is_safe_and_reviewable(self):
+        groups, report = plan_person_merges_resolved(
+            self.people,
+            {},
+            models=FakeModels(ModelVerdict(True, 0.8, "possible duplicate")),
+        )
+
+        self.assertEqual(groups, [])
+        self.assertEqual(report[0]["held_because"], ["second model unavailable"])
 
     def test_a_human_merge_answer_skips_both_models(self):
         models = FakeModels()
@@ -186,7 +207,7 @@ class DedupStageWiringTest(unittest.TestCase):
         self.assertEqual(review.questions(self.db), [])
 
     @patch("pauk.pipeline.person_resolution.OpenRouterResolutionModels")
-    def test_pipeline_sends_a_rejected_pair_to_review_panel(
+    def test_pipeline_accepts_a_rejected_pair_without_review(
         self, model_factory
     ):
         model_factory.return_value = FakeModels(
@@ -196,11 +217,8 @@ class DedupStageWiringTest(unittest.TestCase):
         result = DedupStage(self.prepared, self.raw, self.config).run()
 
         self.assertEqual(result["dedup_merged"], 0)
-        self.assertEqual(result["dedup_candidates"], 1)
-        (question,) = review.questions(self.db)
-        self.assertEqual(question["kind"], review.PAIR)
-        self.assertEqual(question["members"], ["A1", "A2"])
-        self.assertEqual(question["evidence"]["route"], "qwen_first_separate")
+        self.assertEqual(result["dedup_candidates"], 0)
+        self.assertEqual(review.questions(self.db), [])
 
     def test_conflicting_orcid_never_reaches_a_model_or_queue(self):
         people = [

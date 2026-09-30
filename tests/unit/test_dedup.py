@@ -1016,12 +1016,116 @@ class BlockingTest(unittest.TestCase):
         ]
         self.assertEqual(self.pairs(people), set())
 
+    def test_shared_given_name_does_not_make_a_pair(self):
+        people = [
+            person("A1", "Sergey Borisov", ["W1"]),
+            person("A2", "Sergey Petrov", ["W2"]),
+            person("A3", "Sergey Ivanov", ["W3"]),
+        ]
+        self.assertEqual(self.pairs(people), set())
+
     def test_a_shared_surname_still_makes_a_pair(self):
         people = [
             person("A1", "Ivan Petrov", ["W1"]),
             person("A2", "I. Petrov", ["W2"]),
         ]
         self.assertEqual(self.pairs(people), {frozenset(("A1", "A2"))})
+
+    def test_a_close_surname_spelling_makes_a_pair(self):
+        people = [
+            person("A1", "Aleksey Grigorev", ["W1"]),
+            person("A2", "A. S. Grigoriev", ["W2"]),
+            person("A3", "E. A. Zernitskaya", ["W3"]),
+            person("A4", "Ekaterina Zernitckaia", ["W4"]),
+        ]
+        self.assertEqual(
+            self.pairs(people),
+            {
+                frozenset(("A1", "A2")),
+                frozenset(("A3", "A4")),
+            },
+        )
+
+    def test_comma_marks_a_surname_first_variant(self):
+        people = [
+            person("A1", "Valentin Malykh", ["W1"]),
+            person("A2", "Malykh, Valentin", ["W2"]),
+        ]
+        self.assertEqual(self.pairs(people), {frozenset(("A1", "A2"))})
+
+    def test_parsed_surname_overrides_ambiguous_name_order(self):
+        first = person("A1", "Valentin Malykh", ["W1"])
+        second = person("A2", "Malykh Valentin", ["W2"])
+        second.surname_en = "Malykh"
+
+        self.assertEqual(self.pairs([first, second]), {frozenset(("A1", "A2"))})
+
+    def test_reversed_unparsed_names_keep_the_surname_candidate(self):
+        people = [
+            person("A1", "Igor Konyakhin", ["W1"]),
+            person("A2", "Konyakhin Igor", ["W2"]),
+            person("A3", "Dmitry Fedorov", ["W3"]),
+            person("A4", "Fedorov Dmitriy Alekseevich", ["W4"]),
+        ]
+        self.assertEqual(
+            self.pairs(people),
+            {
+                frozenset(("A1", "A2")),
+                frozenset(("A3", "A4")),
+            },
+        )
+
+    def test_identical_unparsed_surname_first_names_remain_candidates(self):
+        people = [
+            person("A1", "Fadeev Sergey", ["W1"]),
+            person("A2", "Fadeev Sergey", ["W2"]),
+        ]
+        self.assertEqual(self.pairs(people), {frozenset(("A1", "A2"))})
+
+    def test_common_given_name_stays_out_of_reversed_name_buckets(self):
+        people = [
+            person("A1", "Sergey Borisov", ["W1"]),
+            person("A2", "Petrov Sergey", ["W2"]),
+            *[
+                person(f"B{index}", f"Sergey Surname{index}", [f"X{index}"])
+                for index in range(64)
+            ],
+        ]
+        self.assertNotIn(frozenset(("A1", "A2")), self.pairs(people))
+
+    def test_one_contaminated_name_variant_does_not_create_a_surname_pair(self):
+        people = [
+            person("A1", "Lianshe Fu", ["W1"]),
+            person(
+                "A2",
+                "Leila V. Sharipova",
+                ["W2"],
+                variants=["Leila V. Sharipova", "Hao-Bin Fu", "Jui-Yin Lin"],
+            ),
+        ]
+        self.assertEqual(self.pairs(people), set())
+
+    def test_a_shared_deletion_key_does_not_bridge_different_surname_initials(self):
+        people = [
+            person("A1", "Hui Hwang Goh", ["W1"]),
+            person("A2", "Jingwei Zhang", ["W2"]),
+        ]
+        self.assertEqual(self.pairs(people), set())
+
+    def test_extended_transliteration_and_compound_surnames_make_pairs(self):
+        people = [
+            person("A1", "Ilya Gosudarev", ["W1"]),
+            person("A2", "Ilia Gossoudarev", ["W2"]),
+            person("A3", "Aleksandra A. Mekhova", ["W3"]),
+            person("A4", "Mekhova-Caramalac Aleksandra", ["W4"]),
+        ]
+        self.assertEqual(
+            self.pairs(people),
+            {
+                frozenset(("A1", "A2")),
+                frozenset(("A3", "A4")),
+            },
+        )
 
     def test_a_name_variant_still_makes_a_pair(self):
         people = [
@@ -1145,7 +1249,7 @@ class ReviewDecisionsTest(unittest.TestCase):
         self.assertNotIn("applied_at", answer)
 
     def test_a_merge_nobody_would_have_paired_still_happens(self):
-        # _paired_persons only offers people who share a name token, an
+        # _paired_persons only offers people with matching surname blocks,
         # ORCID or a staff record. An answer must not depend on whether a
         # blocking heuristic happened to put the two in one bucket.
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)

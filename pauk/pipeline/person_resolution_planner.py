@@ -254,15 +254,6 @@ def plan_person_merges_resolved(
             resolve_pair(evidence, policy, logreg_model), verdict
         )
         if resolution.decision is Decision.SEPARATE:
-            hold(
-                first,
-                second,
-                evidence,
-                shared_fields,
-                resolution.route,
-                verdict.reason or "first model rejected the merge",
-                verdict.confidence,
-            )
             continue
         first_positive[pair_id] = verdict
         coauthors_a = all_coauthors(first.id)
@@ -328,16 +319,6 @@ def plan_person_merges_resolved(
         )
         if resolution.decision is Decision.MERGE:
             plan_merge(first, second, resolution.route)
-        else:
-            hold(
-                first,
-                second,
-                evidence,
-                shared_fields,
-                resolution.route,
-                verdict.reason or "independent model rejected the merge",
-                verdict.confidence,
-            )
 
     groups: list[tuple[Person, list[Person]]] = []
     for members in _grouped(merge_pairs):
