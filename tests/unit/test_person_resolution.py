@@ -1,6 +1,7 @@
 import unittest
 
 from pauk.graph.person_resolution import (
+    DEFAULT_POLICY,
     MODEL_FEATURES,
     Decision,
     ModelVerdict,
@@ -39,6 +40,10 @@ def evidence(**changes):
 
 
 class PersonResolutionTest(unittest.TestCase):
+    def test_default_policy_uses_the_deployed_confidence_gates(self):
+        self.assertEqual(DEFAULT_POLICY.separate_below, 0.13)
+        self.assertEqual(DEFAULT_POLICY.merge_from, 0.94)
+
     def test_feature_vector_matches_the_fitted_model_contract(self):
         features = feature_vector(evidence())
 
