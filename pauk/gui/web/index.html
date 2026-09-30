@@ -554,16 +554,21 @@
         list-style: none;
         overflow-wrap: anywhere;
       }
+      .panel-list {
+        counter-reset: panel-item;
+      }
       .panel-list li {
         padding: 6px 0;
-        border-bottom: 1px solid var(--border);
+      }
+      .panel-list li:not(.panel-list__toggle)::before {
+        counter-increment: panel-item;
+        content: counter(panel-item) ". ";
       }
       .panel-list li:first-child {
         padding-top: 0;
       }
       .panel-list li:last-child {
         padding-bottom: 0;
-        border-bottom: none;
       }
       .panel-list__meta {
         color: var(--muted);

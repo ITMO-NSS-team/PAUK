@@ -52,7 +52,7 @@ interface PanelLink {
   /** File name: the link downloads instead of opening (grant CSV). */
   download?: string;
 }
-/** Full-width list with the first {@link PANEL_CONFIG.listLimit} items and a "N more" toggle. */
+/** Numbered full-width list with the first {@link PANEL_CONFIG.listLimit} items and a "N more" toggle. */
 interface PanelList {
   kind: "list";
   items: (string | PanelText | PanelLink | PanelEntityRef)[];
@@ -346,10 +346,6 @@ export function mountPanel(
     });
   }
 
-  function recentPubKeysFrom(pubKeys: string[]): string[] {
-    return pubKeysByYear(pubKeys).slice(0, PANEL_CONFIG.listLimit);
-  }
-
   function pubKeysByYear(pubKeys: string[]): string[] {
     return pubKeys
       .map((key) => index.get(key))
@@ -374,7 +370,7 @@ export function mountPanel(
 
   /** Clickable name with the role as a suffix, e.g. "Ivanov I.I. (maintainer)". */
   function repoContributorRefsOf(repoKey: string, lang: AppState["lang"]): PanelEntityRef[] {
-    return (repoAuthorIndex.get(repoKey) ?? []).slice(0, PANEL_CONFIG.listLimit).map((edge) => {
+    return (repoAuthorIndex.get(repoKey) ?? []).map((edge) => {
       const author = index.get(edge.t);
       const label = author ? nodeLabel(author, lang, pubDetails) : edge.t;
       return {
@@ -387,7 +383,7 @@ export function mountPanel(
   }
 
   function repoPubKeysOf(repoKey: string): string[] {
-    return recentPubKeysFrom(repoPubIndex.get(repoKey) ?? []);
+    return pubKeysByYear(repoPubIndex.get(repoKey) ?? []);
   }
 
   function hide(): void {
@@ -621,7 +617,7 @@ export function mountPanel(
         t("field.dept", lang),
         dept ? localize(dept.name, dept.name_en, lang) : t("field.unknownDept", lang),
       ];
-      const rows: PanelRow[] = [keyRow, kindRow, deptRow];
+      const rows: PanelRow[] = [deptRow];
       if (node.kind === "author") {
         // Sections follow the field tags in pauk/cache/export.py: public and
         // graph links, private, service fields.
@@ -785,19 +781,19 @@ export function mountPanel(
 
         const detail = pubDetails.get(node.key);
         if (detail?.doi) rows.push([t("field.doi", lang), [doiLink(detail.doi)]]);
+        if (detail?.openalex_url)
+          rows.push([t("field.openalexUrl", lang), [openalexUrlLink(detail.openalex_url)]]);
         if (detail?.type) rows.push([t("field.pubType", lang), detail.type]);
         if (detail && detail.fields.length > 0)
           rows.push([t("field.pubFields", lang), detail.fields.join(", ")]);
         if (detail && detail.funding.length > 0)
-          rows.push([t("field.grants", lang), detail.funding.map(fundingItem)]);
+          rows.push([t("field.grants", lang), { kind: "list", items: detail.funding.map(fundingItem) }]);
         if (detail?.abstract)
           rows.push([t("field.abstract", lang), { kind: "longText", text: detail.abstract }]);
-        if (detail?.openalex_url)
-          rows.push([t("field.openalexUrl", lang), [openalexUrlLink(detail.openalex_url)]]);
 
         // A link to our own repo replaces code_url: our data is more reliable
         // than harvested links.
-        const pubRepoKeys = (pubRepoIndex.get(node.key) ?? []).slice(0, PANEL_CONFIG.listLimit);
+        const pubRepoKeys = pubRepoIndex.get(node.key) ?? [];
         if (pubRepoKeys.length > 0) {
           rows.push([
             t("tab.repos", lang),
@@ -814,12 +810,21 @@ export function mountPanel(
           rows.push([t("field.code", lang), detail.code_url.map(codeLink)]);
         }
 
-        const pubAuthorKeys = (pubAuthors.get(node.key) ?? []).slice(0, PANEL_CONFIG.listLimit);
+        const pubAuthorKeys = pubAuthors.get(node.key) ?? [];
         if (pubAuthorKeys.length > 0)
-          rows.push([t("tab.authors", lang), entityRefsOf(pubAuthorKeys, lang)]);
+          rows.push([t("tab.authors", lang), { kind: "list", items: entityRefsOf(pubAuthorKeys, lang) }]);
       }
 
-      return show(title, kindLabel(node.kind, lang), untitled(rows), true, subtitle);
+      return show(
+        title,
+        kindLabel(node.kind, lang),
+        [
+          { title: t("section.general", lang), rows },
+          { title: t("section.service", lang), rows: [keyRow, kindRow] },
+        ],
+        true,
+        subtitle,
+      );
     }
 
     if (selection.kind === "edge") {
@@ -1055,6 +1060,7 @@ function buildCard(options: PanelCardOptions): HTMLElement {
         renderItems();
       });
       const toggleItem = document.createElement("li");
+      toggleItem.className = "panel-list__toggle";
       toggleItem.appendChild(toggle);
       ul.appendChild(toggleItem);
     }

@@ -352,7 +352,7 @@ describe("mountPanel", () => {
     expect(panel.textContent).not.toContain("Создан");
   });
 
-  it("длинный список: первые 10 и «+ ещё N», по клику — все и «свернуть», повторный клик — снова 10", async () => {
+  it("длинный список: первые 3 и «+ ещё N», по клику — все и «свернуть», повторный клик — снова 3", async () => {
     const data = await loadSampleGraphData();
     const [a1] = await loadSampleAuthorDetails();
     if (!a1) throw new Error("фикстура должна содержать автора A1");
@@ -377,16 +377,16 @@ describe("mountPanel", () => {
         .filter((li) => !li.querySelector(".panel-list__more"))
         .map((li) => li.textContent);
 
-    expect(itemTexts()).toEqual(variants.slice(0, 10));
-    expect(toggle()?.textContent).toBe("+ ещё 3");
+    expect(itemTexts()).toEqual(variants.slice(0, 3));
+    expect(toggle()?.textContent).toBe("+ ещё 10");
 
     toggle()?.click();
     expect(itemTexts()).toEqual(variants);
     expect(toggle()?.textContent).toBe("− свернуть");
 
     toggle()?.click();
-    expect(itemTexts()).toEqual(variants.slice(0, 10));
-    expect(toggle()?.textContent).toBe("+ ещё 3");
+    expect(itemTexts()).toEqual(variants.slice(0, 3));
+    expect(toggle()?.textContent).toBe("+ ещё 10");
   });
 
   it("карточка автора БЕЗ domержённого detail (только сокращённая подпись узла) не показывает подзаголовок", async () => {
@@ -791,6 +791,50 @@ describe("mountPanel", () => {
     expect(panel.querySelector("a[href^='https://github.com']")).toBeNull();
   });
 
+  it("карточки публикации и репозитория: разделы «Общее»/«Служебное», авторы списком, OpenAlex сразу после DOI", async () => {
+    const data = await loadSampleGraphData();
+    const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "P1" } });
+    mountPanel(store, data, pubDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const sectionTitles = () =>
+      [...panel.querySelectorAll(".panel-section__title")].map((el) => el.textContent);
+    const labels = () => [...panel.querySelectorAll("dt")].map((el) => el.textContent);
+    expect(sectionTitles()).toEqual(["Общее", "Служебное"]);
+    expect(labels().indexOf("OpenAlex")).toBe(labels().indexOf("DOI") + 1);
+    const authorsDd = [...panel.querySelectorAll("dt")].find((el) => el.textContent === "Авторы")
+      ?.nextElementSibling;
+    expect(authorsDd?.querySelector(".panel-list")).not.toBeNull();
+
+    store.set({ selection: { kind: "node", key: "R1" } });
+    expect(sectionTitles()).toEqual(["Общее", "Служебное"]);
+  });
+
+  it("гранты публикации — нумерованный список: первые три, остальные по кнопке", async () => {
+    const data = await loadSampleGraphData();
+    const funding = ["11-11-11111", "22-22-22222", "33-33-33333", "44-44-44444"].map((key) => ({
+      funder: "Russian Science Foundation",
+      grant_id: key,
+      grant_key: key,
+    }));
+    const pubDetails = indexDetailsByKey(
+      (await loadSamplePubDetails()).map((d) => (d.key === "P1" ? { ...d, funding } : d)),
+    );
+    const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "P1" } });
+    mountPanel(store, data, pubDetails, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+
+    const list = () =>
+      [...panel.querySelectorAll("dt")]
+        .find((el) => el.textContent === "Гранты")
+        ?.nextElementSibling?.querySelector(".panel-list");
+    const grants = () => list()?.querySelectorAll("li:not(.panel-list__toggle)").length;
+    expect(grants()).toBe(3);
+
+    list()?.querySelector<HTMLButtonElement>(".panel-list__more")?.click();
+    expect(grants()).toBe(4);
+    expect(list()?.querySelector(".panel-list__more")?.textContent).toBe("− свернуть");
+  });
+
   it("грант: номер в карточке публикации ведёт на карточку гранта со списком статей и CSV", async () => {
     const data = await loadSampleGraphData();
     const details = await loadSamplePubDetails();
@@ -818,7 +862,7 @@ describe("mountPanel", () => {
     expect(grantsDd?.querySelectorAll(".panel-entity-ref")).toHaveLength(1);
     expect(grantsDd?.querySelector(".panel-entity-ref")?.textContent).toBe("18-19-00627");
     expect(grantsDd?.textContent).toContain("Priority 2030"); // funder without a number: plain text
-    expect(grantsDd?.querySelector(".panel-list")).toBeNull(); // inline, like other fields
+    expect(grantsDd?.querySelector(".panel-list")?.children).toHaveLength(3); // numbered list, no toggle for 3
 
     grantsDd?.querySelector<HTMLButtonElement>(".panel-entity-ref")?.click();
     expect(store.get().selection).toEqual({ kind: "grant", key: "18-19-00627" });

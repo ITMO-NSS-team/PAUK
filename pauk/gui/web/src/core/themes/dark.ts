@@ -19,7 +19,7 @@ export const darkTheme = new Theme({
   },
   map: {
     background: "#202020",
-    dimNode: "rgba(74, 74, 74, 0.45)",
+    dimNode: "rgba(74, 74, 74, 0.3)",
     labelHalo: "#ffffff",
     edge: "rgba(157, 157, 157, 0.35)",
     edgeSelected: "rgba(157, 157, 157, 0.75)",
