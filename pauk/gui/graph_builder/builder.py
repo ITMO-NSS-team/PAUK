@@ -1,42 +1,21 @@
-"""Cache snapshot -> layout -> JSON for the site - entry point and
-orchestration. The actual stage logic lives in separate modules
-(`authorship.py`, `departments.py`, `layout.py`, `nodes.py`, `edges.py`) -
-this file only wires them together in the right order and handles the
-CLI/disk writes.
+"""Cache snapshot -> layout -> JSON for the site. The stage logic lives in
+`authorship.py`, `departments.py`, `layout.py`, `nodes.py` and `edges.py`;
+this file wires them together in order and writes the files.
 
-- `db` is in the shape `pauk.cache.export::load_db()` returns: lists of
-  dicts (`cypher_dict` for persons/publications/repositories), not a mix of
-  dicts and positional tuples like the old GUI's `generate_data.py`.
-- Nodes are built in two forms at once - "summary" (what's needed to draw a
-  point on the map: `key`/`kind`/`dept`/`label`/`rank`/`gx`/`gy` plus one
-  summary number) and "detail" (everything else - extended fields `pauk/gui/web`
-  lazily loads after the map). This used to exist for exactly one entity
-  (publications - a separate `build_search_detail()`/`graph-search.js`);
-  here it's generalized to all four types instead of reinvented.
-- Departments have no separate detail file yet - today `departments` has no
-  field that isn't already in summary.
-- Output is plain JSON (not `window.GRAPH=...;`): `pauk/gui/web` already reads
-  plain JSON (`core/data.ts::loadGraphData()`), the wrapper was only ever
-  needed by the old GUI, unrelated here.
-- One run, no `--public`/`--private` mode: generation used to run twice (once
-  per build variant), producing an almost identical `graph-data.json` that
-  only differed in whether the author label was truncated. `GraphDataBuilder`
-  now computes exactly one version of everything - the map label is currently
-  the full form (`author_label(..., public=False)`, see `nodes.py` -
-  readability won out over anonymizing a label next to a file already shared
-  across build variants; flip back to `public=True` there for an actual
-  public deploy), and `authors-detail.json` always holds every person field
-  (private ones included), untrimmed. Public/private is decided not by content but by disk
-  location: `write_site_data()` writes `graph-data.json`/`repos-detail.json`/
-  `pubs-detail.json` into `public/` (no personal field lives there), and
-  `authors-detail.json` only into `private/`. For local development (today's
-  only consumer, `pauk/gui/web`, serves static files from ONE folder -
-  `vite.config.ts::publicDir`) `graph-data.json`/`repos-detail.json`/
-  `pubs-detail.json` are ADDITIONALLY written into `private/` too - so all
-  four files end up there at once, same as before, no changes needed in
-  `pauk/gui/web`. The actual split of "what leaves the corporate network" happens
-  at deploy time - only `public/` is taken from there, `private/` never
-  reaches the public artifact.
+- Nodes come in two forms: "summary" (what the map needs to draw a point,
+  goes into `graph-data.json`) and "detail" (extended fields `pauk/gui/web`
+  loads lazily after the map). Departments have no detail file - they have
+  no field that isn't already in summary.
+- Output is plain JSON, which is what `core/data.ts::loadGraphData()` reads.
+- One build serves both variants. Public/private is decided by disk
+  location, not by trimming content: `public/` gets files with no personal
+  field, `authors-detail.json` goes only into `private/`. The map label is
+  the full form (`author_label(..., public=False)`, see `nodes.py`); flip it
+  to `public=True` there if a public deploy needs anonymized labels.
+- `graph-data.json` and the non-author detail files are also written into
+  `private/`, because Vite serves ONE folder (`vite.config.ts::publicDir`)
+  and local development needs all four files there. Deploy takes only
+  `public/`.
 """
 
 from __future__ import annotations
@@ -45,6 +24,9 @@ import json
 import logging
 import time
 from pathlib import Path
+
+from pauk.cache import read_snapshot
+from pauk.storage import AtomicWriter
 
 from .authorship import build_authorship_index
 from .departments import DepartmentAssigner, repo_groups
@@ -134,9 +116,10 @@ class GraphDataBuilder:
 
 
 def dump_json(data, path: Path) -> None:
-    """Writes data as plain JSON (not `window.X=...;` - that wrapper was
-    only ever needed by the old GUI, `pauk/gui/web` reads JSON directly via `fetch`)."""
-    path.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    """Writes data as plain JSON, atomically: the web server may be serving
+    these files while a rebuild runs, and must never see a half-written one."""
+    with AtomicWriter(path) as fh:
+        json.dump(data, fh, ensure_ascii=False, separators=(",", ":"))
     logger.info("Wrote %s (%.1f MB)", path, path.stat().st_size / 1e6)
 
 
@@ -153,8 +136,6 @@ def write_site_data(snapshot: Path, out_dir: Path, seed: int) -> dict[str, int]:
         What went onto the map - `map_authors`/`map_pubs`/`map_repos`/
         `map_departments`/`map_edges` (the admin panel shows these after a rebuild).
     """
-    from pauk.cache.graph_snapshot import read_snapshot
-
     public_dir = out_dir / "public"
     private_dir = out_dir / "private"
     public_dir.mkdir(parents=True, exist_ok=True)  # exist_ok - a second run into the same folder shouldn't fail

@@ -46,6 +46,11 @@ class AddGrantKeysTest(unittest.TestCase):
         add_grant_keys(pubs)
         self.assertEqual({pub["funding"][0]["grant_key"] for pub in pubs}, {"EP-V013025-1"})
 
+    def test_chain_of_prefixes_resolves_to_the_longest(self):
+        pubs = [_pub("P1", "075-15"), _pub("P2", "075-15-2021"), _pub("P3", "075-15-2021-1349")]
+        add_grant_keys(pubs)
+        self.assertEqual({pub["funding"][0]["grant_key"] for pub in pubs}, {"075-15-2021-1349"})
+
     def test_entries_keep_their_raw_fields(self):
         pubs = [_pub("P1", "Grant 18-19-00627")]
         add_grant_keys(pubs)

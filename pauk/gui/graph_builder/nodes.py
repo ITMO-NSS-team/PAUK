@@ -165,19 +165,10 @@ class AuthorNodeBuilder:
 
         Returns:
             `(summary, detail)` - `summary` goes into `graph-data.json`,
-            `detail` into `authors-detail.json`. Both hold the SAME data
-            regardless of build variant - privacy is no longer decided here
-            by trimming fields, it's decided outside, by which folder
-            `write_site_data()` writes the final file into (`authors-detail.json` only
-            ever goes into `private/`, see `builder.py`). The map label
-            (`label`/`label_en`) uses `author_label(..., public=False)` -
-            full surname + initials ("Фамилия И.О."), not the
-            three-letter-truncated public-safe form - readability on the map
-            won out for now over anonymizing a label that already sits next
-            to a `graph-data.json` shipped as one shared file for every
-            build variant. Flip back to `public=True` here if/when an actual
-            public deploy needs the map label itself anonymized again (the
-            truncation behavior in `author_label()` isn't removed, just unused).
+            `detail` into `authors-detail.json`. Privacy is decided by which
+            folder `write_site_data()` puts the file in, not by trimming
+            fields here (see `builder.py`). The map label is the full
+            "Фамилия И.О." form, `author_label(..., public=False)`.
         """
         # set() - a publication could have been counted twice from some data
         # mismatch, so count unique ids, not the raw list length.
@@ -195,23 +186,14 @@ class AuthorNodeBuilder:
             pid_ = row["id"]  # "id", not "key" - that's the column name in the snapshot
             x, y = self.pos[pid_]
             # Full surname + initials (public=False) - see build()'s docstring.
-            label_ru = author_label(row["surname_ru"], row["first_name_ru"], row["second_name_ru"], public=False) or row.get("name_ru") or ""
-            # surname_en/first_name_en/second_name_en are None for every
-            # single person in the real snapshot today (no pipeline stage
-            # ever populates them) - author_label() always returns "" here,
-            # so this used to silently fall back straight to label_ru,
-            # meaning label_en was byte-identical to the Russian label for
-            # 100% of authors regardless of the selected language. name_en
-            # (the free-text transliterated name, e.g. "Maria Zaitseva") IS
-            # populated for effectively everyone (author_names.py) - falling
-            # back to it (not to label_ru) is what actually makes the EN
-            # interface show English names on the map/lists, not just once
-            # AuthorDetail has merged into the panel card. It isn't run
-            # through author_label() itself (no reliable surname/given-name
-            # split for it - see author_label()'s own docstring on why
-            # guessing word order is exactly the failure mode to avoid).
+            label_ru = author_label(row.get("surname_ru"), row.get("first_name_ru"), row.get("second_name_ru"), public=False) or row.get("name_ru") or ""
+            # The *_en name parts are not populated by any pipeline stage, but
+            # name_en (free-text transliteration) is. Falling back to it, not
+            # to label_ru, keeps the EN interface from showing Russian names.
+            # It is not run through author_label(): there is no reliable
+            # surname/given-name split for free text.
             label_en = (
-                author_label(row["surname_en"], row["first_name_en"], row["second_name_en"], public=False)
+                author_label(row.get("surname_en"), row.get("first_name_en"), row.get("second_name_en"), public=False)
                 or row.get("name_en")
                 or label_ru
             )
@@ -236,8 +218,8 @@ class AuthorNodeBuilder:
                     "name_ru": row.get("name_ru") or "",
                     "name_en": row.get("name_en") or "",
                     "name_variants": author_variants(row, label_ru, label_en),
-                    "degree": row["degree"] or "",
-                    "github": row["github"] or "",
+                    "degree": row.get("degree") or "",
+                    "github": row.get("github") or "",
                     "orcid": row.get("orcid") or "",
                     "google_scholar": row.get("google_scholar") or "",
                     "email": row.get("email") or "",
@@ -315,14 +297,7 @@ class RepoNodeBuilder:
 
 
 class PubNodeBuilder:
-    """Builds publication rows in two forms at once (summary/detail).
-
-    The detail part is what a separate `build_search_detail()` used to
-    build for `graph-search.js`: title, journal, DOI, code. Different from
-    the original in one way - code returns the link list as-is (already a
-    list from `pauk.cache`), parsing `code_url` out of a JSON string is this
-    class's job now, not the snapshot consumer's a layer up.
-    """
+    """Builds publication rows in two forms at once (summary/detail)."""
 
     def __init__(
         self,

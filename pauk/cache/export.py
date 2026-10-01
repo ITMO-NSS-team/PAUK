@@ -58,9 +58,7 @@ def _execute_retrying(driver, query, **params):
         ServiceUnavailable | SessionExpired | TransientError | OSError:
             if the failure repeats `CYPHER_RETRIES` times with no success.
     """
-    attempt = 0
-    while True:  # exits only via return (success) or raise (retries exhausted)
-        attempt += 1
+    for attempt in range(1, CYPHER_RETRIES + 1):
         try:
             t0 = time.time()
             records, _, _ = driver.execute_query(query, **params)
@@ -224,11 +222,6 @@ def load_db(driver, tables: Collection[str] | None = None) -> dict[str, list]:
         "r.forks_num AS forks_num, "
         "r.is_fork AS is_fork, "
         "gh.login AS owner, "
-        # "gh.name AS owner_name, "  # TODO: decide is it necessary + why not nameS + classification by type
-        # "gh.html_url AS owner_html_url, "
-        # "gh.description AS owner_description, "
-        # "gh.location AS owner_location, "
-        # "gh.company AS owner_company, "
         "gh.type AS owner_type, "
         # service
         "toString(r.access_date) AS access_date, "
@@ -241,7 +234,6 @@ def load_db(driver, tables: Collection[str] | None = None) -> dict[str, list]:
         cypher_dict,
         driver,
         "MATCH (d:Department) "
-        "OPTIONAL MATCH (d)-[:PART_OF]->(parent) "
         "RETURN "
         # required
         "d.id AS id, "
@@ -251,8 +243,6 @@ def load_db(driver, tables: Collection[str] | None = None) -> dict[str, list]:
         "d.name_variants AS name_variants, "
         "d.context_aliases AS context_aliases, "
         "d.kind AS kind",
-        # "parent.id AS parent_id, "
-        # "labels(parent)[0] AS parent_kind"
     )
 
     queries["organizations"] = partial(

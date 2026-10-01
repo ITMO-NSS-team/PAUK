@@ -44,7 +44,7 @@ def add_grant_keys(pubs_detail: list[dict]) -> None:
     redundant entries, in place.
 
     A key that is a dash-prefix of longer keys is a number cut short: it joins
-    the longer one when there is exactly one, and is dropped (`None`) when
+    the longest one when there is exactly one, and is dropped (`None`) when
     there are several - `075-15` prefixes hundreds of ministry contracts.
 
     OpenAlex often lists one grant several times per paper, sometimes next to
@@ -67,7 +67,11 @@ def add_grant_keys(pubs_detail: list[dict]) -> None:
             prefix = "-".join(parts[:i])
             if prefix in keys:
                 extensions[prefix].add(key)
-    resolved = {prefix: (next(iter(longer)) if len(longer) == 1 else None) for prefix, longer in extensions.items()}
+    # Only the longest extensions count: in A < B < C, A still resolves to C.
+    resolved = {}
+    for prefix, longer in extensions.items():
+        leaves = {k for k in longer if not any(o != k and o.startswith(k + "-") for o in longer)}
+        resolved[prefix] = next(iter(leaves)) if len(leaves) == 1 else None
 
     for pub in pubs_detail:
         for entry in pub["funding"]:
