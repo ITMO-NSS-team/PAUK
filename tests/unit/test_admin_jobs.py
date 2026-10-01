@@ -41,7 +41,7 @@ class JobsPageTest(unittest.TestCase):
         return job
 
     def under_way(self, kind=JobKind.MAP, payload=None):
-        job = store.enqueue(self.db, kind, payload or {"public": True})
+        job = store.enqueue(self.db, kind, payload or {"seed": 42})
         store.claim(self.db, "worker-1")
         store.start(self.db, job.id)
         return job
@@ -342,13 +342,9 @@ class SchedulingTest(unittest.TestCase):
             kind="collect", date_from="вчера", date_to="2024-01-01"))
 
     def test_rebuilding_the_map(self):
-        self.post(kind="map", seed="7", public="on")
+        self.post(kind="map", seed="7")
         payload = store.recent(self.db)[0].payload
-        self.assertEqual(payload, {"public": True, "seed": 7})
-
-    def test_the_map_defaults_to_keeping_the_names(self):
-        self.post(kind="map", seed="42")
-        self.assertFalse(store.recent(self.db)[0].payload["public"])
+        self.assertEqual(payload, {"seed": 7})
 
     def test_deduplicating_takes_no_arguments(self):
         self.assertEqual(self.post(kind="dedup").status_code, 303)
@@ -658,14 +654,6 @@ class MapOptionsTest(unittest.TestCase):
     def test_a_real_seed_is_kept(self):
         self.post(kind="map", seed="7")
         self.assertEqual(store.recent(self.db)[0].payload["seed"], 7)
-
-    def test_an_unticked_box_means_the_names_stay(self):
-        self.post(kind="map", seed="42")
-        self.assertFalse(store.recent(self.db)[0].payload["public"])
-
-    def test_a_ticked_box_drops_them(self):
-        self.post(kind="map", seed="42", public="on")
-        self.assertTrue(store.recent(self.db)[0].payload["public"])
 
 
 class SilentJobOnThePageTest(unittest.TestCase):

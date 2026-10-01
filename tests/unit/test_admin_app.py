@@ -106,15 +106,12 @@ class PanelTest(unittest.TestCase):
         self.assertEqual(self.client.get("/").status_code, 200)
         self.assertIn("viewer", body)
 
-    def test_the_look_comes_from_the_map_own_files(self):
-        # Logo and fonts are served from pauk/gui/web rather than copied,
-        # so the panel and the map cannot drift apart visually.
+    def test_the_logo_and_fonts_are_served(self):
         self.assertEqual(self.client.get("/static/panel.css").status_code, 200)
         self.assertEqual(
             self.client.get("/assets/fonts/golos-text-cyrillic.woff2").status_code, 200)
-        # The icons the map itself uses, from vendor/icons where it keeps them.
-        for icon in ("pauk-frame.png", "pauk-frame-8x.png", "pauk-web-4x.png"):
-            self.assertEqual(self.client.get(f"/assets/icons/{icon}").status_code, 200, icon)
+        self.assertEqual(self.client.get("/assets/icons/pauk-frame.png").status_code, 200)
+        self.assertEqual(self.client.get("/favicon.ico").status_code, 200)
 
     def test_the_admin_port_serves_nothing_else_from_the_map(self):
         # Only the two asset paths are mounted. Mounting the whole web

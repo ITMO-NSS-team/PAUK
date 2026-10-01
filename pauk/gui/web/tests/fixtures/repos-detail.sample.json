@@ -1,0 +1,7 @@
+[
+  { "key": "R1", "description": "Инструменты для построения раскладки графа", "url": "https://github.com/example-org/graph-toolkit", "has_readme": true, "license": "MIT", "contributors": ["ivanov-ii"], "owner_type": "organization" },
+  { "key": "R2", "description": "Пайплайн подготовки данных", "url": "https://github.com/example-org/data-pipeline", "has_readme": true, "license": "", "contributors": [], "owner_type": "organization" },
+  { "key": "R3", "description": "Симулятор роботов", "url": "https://github.com/example-org/robo-sim", "has_readme": false, "license": "Apache-2.0", "contributors": [], "owner_type": "organization" },
+  { "key": "R4", "description": "Библиотека компьютерного зрения", "url": "https://github.com/example-org/vision-lib", "has_readme": true, "license": "", "contributors": [], "owner_type": "user" },
+  { "key": "R5", "description": "Статистические утилиты", "url": "https://github.com/example-org/stat-tools", "has_readme": false, "license": "", "contributors": [], "owner_type": "organization" }
+]
