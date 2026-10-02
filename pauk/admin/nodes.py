@@ -32,6 +32,7 @@ from pauk.admin.deps import (
     Graph,
     Session,
     StoresReady,
+    safe_path,
     templates,
 )
 from pauk.graph.mutations import (
@@ -298,7 +299,7 @@ async def restore(label: str, node_id: str, user: Editor,
 
 @router.get("/nodes/{label}/{node_id:path}", response_class=HTMLResponse)
 def show(request: Request, label: str, node_id: str, user: CurrentUser,
-         session: Session, graph: Graph, db: Db, folded: str = ""):
+         session: Session, graph: Graph, db: Db, folded: str = "", back: str = ""):
     _known_label(label)
     try:
         props = read_node(graph, label, node_id)
@@ -307,9 +308,11 @@ def show(request: Request, label: str, node_id: str, user: CurrentUser,
         survivor = folded_into(graph, label, node_id)
         if survivor:
             # An id can be a URL of its own: escape it whole for the query.
-            return RedirectResponse(
-                _node_url(label, survivor, f"folded={quote(node_id, safe='')}"),
-                status_code=status.HTTP_303_SEE_OTHER)
+            query = f"folded={quote(node_id, safe='')}"
+            if back:
+                query += f"&back={quote(back, safe='')}"
+            return RedirectResponse(_node_url(label, survivor, query),
+                                    status_code=status.HTTP_303_SEE_OTHER)
         # Feed links outlive their nodes: answer "what happened to it", not 404.
         gone = feed.history(db, label, node_id, limit=20)
         # Restoring reads the snapshot on the decision, not the feed.
@@ -325,6 +328,8 @@ def show(request: Request, label: str, node_id: str, user: CurrentUser,
         "props": props, "editable": editable, "reserved": sorted(RESERVED_FIELDS),
         # Only an id this record really swallowed: the value comes from the URL.
         "folded": folded if folded in (props.get("merged_ids") or []) else "",
+        # Where the reader came from, when that was not the search.
+        "back": safe_path(back, default="") if back else "",
         "relationships": _worded(node_relationships(graph, label, node_id), label),
         "history": feed.history(db, label, node_id, limit=10),
         "source_history": source.history(db, label, node_id),

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterator
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -23,7 +24,7 @@ from pymongo.errors import PyMongoError
 
 from pauk.admin.auth import COOKIE, User, check_csrf, read_session
 from pauk.jobs import store
-from pauk.jobs.models import GRAPH
+from pauk.jobs.models import GRAPH, aware, now
 from pauk.settings import Settings
 
 
@@ -215,6 +216,31 @@ def moment(value) -> str:
     return value.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def ago(value) -> str:
+    """How long ago, in words: "только что", "вчера в 18:24", "23.09 в 18:24".
+
+    A summary is read at a glance, and a stamp like 2026-09-23 18:24:00
+    makes the reader do the subtraction. Takes both shapes the stores keep:
+    a datetime from the queue, an ISO string from the health snapshot.
+    """
+    if not value:
+        return ""
+    moment_at = datetime.fromisoformat(value) if isinstance(value, str) else value
+    moment_at = aware(moment_at)
+    minutes = int((now() - moment_at).total_seconds() // 60)
+    if minutes < 1:
+        return "только что"
+    if minutes < 60:
+        return f"{minutes} {plural(minutes, 'минуту', 'минуты', 'минут')} назад"
+    local = moment_at.astimezone()
+    today = now().astimezone().date()
+    if local.date() == today:
+        return f"сегодня в {local:%H:%M}"
+    if (today - local.date()).days == 1:
+        return f"вчера в {local:%H:%M}"
+    return f"{local:%d.%m} в {local:%H:%M}"
+
+
 def running_job(request: Request) -> dict:
     """The graph job under way, for the warning strip on every page.
 
@@ -240,6 +266,7 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"),
                             context_processors=[running_job])
 templates.env.filters["plural"] = plural
 templates.env.filters["moment"] = moment
+templates.env.filters["ago"] = ago
 
 
 def job_words(kind) -> str:
@@ -257,6 +284,17 @@ templates.env.filters["job_words"] = job_words
 
 # Length past which a value arrives folded; the script drops a needless button.
 LONG_VALUE = 160
+
+
+def safe_path(target: str, default: str = "/") -> str:
+    """A path from the query string, refused if it leaves this site.
+
+    Unchecked, `?next=https://evil.example` turns a redirect or a "back"
+    link into one that looks like ours and lands somewhere else.
+    """
+    if not target.startswith("/") or target.startswith("//"):
+        return default
+    return target
 
 
 def is_long(value) -> bool:

@@ -276,6 +276,50 @@ class FoldNowTest(unittest.TestCase):
         self.assertEqual(set(self.graph.nodes), {("Person", "A1"), ("Person", "A2")})
 
 
+class FactsInTheRowTest(unittest.TestCase):
+    """What is known about each person, beside their name."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        review.record_held(self.db, [held_pair("A1", "A2")])
+        self.graph = FakePanelGraph()
+        self.graph.add("Person", "A1", name_raw="Ivan Smirnov",
+                       orcid="0000-0002-1825-0097", email="smirnov@itmo.ru")
+        self.graph.add("Person", "A2", name_raw="Ivan Smirnov")
+        self.graph.add("Department", "D1", name_ru="Физико-технический мегафакультет")
+        self.graph.add("Publication", "W1")
+        self.graph.relationships[("Person", "BELONGS_TO", "Department", "A1", "D1")] = {}
+        self.graph.relationships[("Person", "AUTHORED", "Publication", "A1", "W1")] = {}
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_if_up] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def body(self):
+        return self.client.get("/review").text
+
+    def test_the_row_carries_what_tells_two_records_apart(self):
+        body = self.body()
+        self.assertIn("0000-0002-1825-0097", body)
+        self.assertIn("smirnov@itmo.ru", body)
+        self.assertIn("Физико-технический мегафакультет", body)
+        self.assertIn("1 работа", body)
+
+    def test_a_record_with_nothing_known_adds_no_empty_lines(self):
+        # A2 has only a name: the facts block must not appear for it at all.
+        self.assertEqual(self.body().count('class="facts"'), 1)
+
+    def test_with_the_graph_down_the_queue_still_opens(self):
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_if_up] = lambda: None
+        client = TestClient(app, follow_redirects=False)
+        client.post("/login", data={"login": "roman", "password": "hunter2"})
+        page = client.get("/review")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("A1", page.text)
+
+
 class DisputedTabTest(unittest.TestCase):
     """Where the rules have changed their mind about a settled pair."""
 
@@ -440,6 +484,20 @@ class GitHubQuestionTest(unittest.TestCase):
 
     def csrf(self):
         return self.body().split('name="csrf" value="')[1].split('"')[0]
+
+    def test_the_card_carries_the_way_back_to_the_question(self):
+        # Without it the only way out of a person's page is the search,
+        # which is not where the reader came from.
+        body = self.body()
+        self.assertIn("/nodes/Person/A5140754163?back=", body)
+        self.assertIn("%2Freview%3Ftab%3Dpressing", body)
+
+    def test_and_the_way_back_points_at_the_question_itself(self):
+        # The queue is fifty rows long: landing on its top means finding
+        # the question again by eye.
+        body = self.body()
+        self.assertIn("%23q-github_person-A5140754163-XieN-N", body)
+        self.assertIn('<tr id="q-github_person-A5140754163-XieN-N">', body)
 
     def test_the_account_points_at_github_and_the_person_at_their_card(self):
         # Sending a login to /nodes/Person would open a card for a node that
@@ -659,7 +717,8 @@ class ColumnsSayWhoSpeaksTest(unittest.TestCase):
     def cells(self, login="roman"):
         self.client.post("/login", data={"login": login, "password": "hunter2"})
         body = self.client.get("/review", params={"tab": "answered"}).text
-        row = body.split("<tr>")[2]
+        # Split on the question rows: the header row has no anchor.
+        row = re.split(r'<tr id="q-', body)[1]
         return re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
 
     def test_what_the_rules_collected_stands_alone(self):
@@ -704,7 +763,8 @@ class QuestionWithNoEvidenceTest(unittest.TestCase):
 
     def cells(self):
         body = self.client.get("/review", params={"tab": "answered"}).text
-        return re.findall(r"<td[^>]*>(.*?)</td>", body.split("<tr>")[2], re.S)
+        row = re.split(r'<tr id="q-', body)[1]
+        return re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
 
     def test_the_row_still_says_who_it_is_about(self):
         # Pairing members with an empty name list used to drop every subject

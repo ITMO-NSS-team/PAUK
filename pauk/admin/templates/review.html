@@ -49,7 +49,7 @@
     <tr><th>о чём вопрос</th><th>что известно</th><th>почему отложено</th>
       <th>решение</th></tr>
     {% for row in rows %}
-    <tr>
+    <tr id="{{ row.anchor }}">
       <td>
         <div class="kind kind-bulk" style="margin-bottom:4px">{{ row.asks }}</div>
         {% for who in row.people %}
@@ -73,7 +73,18 @@
           <a href="{{ who.href }}"
              {% if who.account %}target="_blank" rel="noopener"{% endif %}>{{ who.name }}</a>
           {% endif %}
-          <br><span class="muted val">{{ who.id }}{% if who.account %} на GitHub{% endif %}</span></div>
+          <br><span class="muted val">{{ who.id }}{% if who.account %} на GitHub{% endif %}</span>
+          {% set facts = who.facts or {} %}
+          {% if facts.orcid or facts.email or facts.department or facts.works %}
+          <div class="facts">
+            {% if facts.orcid %}<span title="ORCID">{{ facts.orcid }}</span>{% endif %}
+            {% if facts.email %}<span title="почта">{{ facts.email }}</span>{% endif %}
+            {% if facts.department %}<span title="подразделение">{{ facts.department }}</span>{% endif %}
+            {% if facts.works %}<span title="публикаций в графе">{{ facts.works }} {{
+              facts.works|plural("работа", "работы", "работ") }}</span>{% endif %}
+          </div>
+          {% endif %}
+        </div>
         {% endfor %}
       </td>
       <td>

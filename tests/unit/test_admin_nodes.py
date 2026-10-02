@@ -51,10 +51,8 @@ class FakePanelGraph(FakeGraph):
         rows = [{"id": node_id, **{name: props.get(name) for name in fields}}
                 for (node_label, node_id), props in self.nodes.items() if node_label == label]
         if order:
-            # Largest first, and a node without the property sorts last —
-            # the real client says the same with coalesce(..., -1). Zero is
-            # a value, not a gap: `or -1` would have put a repository with
-            # no stars level with one the graph knows nothing about.
+            # Largest first, missing last, as coalesce(..., -1) does. Zero is
+            # a value: `or -1` would level it with what was never collected.
             rows.sort(key=lambda row: (
                 -(row[order] if row.get(order) is not None else -1), row["id"]))
         else:
@@ -195,10 +193,8 @@ class NodeScreenTest(unittest.TestCase):
                          ["R2", "R3", "R4", "R1"])
 
     def test_a_repository_with_no_stars_at_all_comes_after_one_with_zero(self):
-        # Zero is a count; a missing property is "never collected". Cypher
-        # sorts null highest, so without care the unknown ones open the
-        # list — and treating the two as one puts them in id order, which
-        # here is the wrong way round.
+        # Cypher sorts null highest, so the never-collected would open the
+        # list; treating them as zero puts the pair in id order, backwards here.
         self.add_repositories()
         self.sign_in()
         listed = self.listed(self.client.get("/nodes/Repository").text)
@@ -271,21 +267,34 @@ class NodeScreenTest(unittest.TestCase):
         self.assertIn("Ivan Petrov", body)
         self.assertIn("0000-0002-1825-0097", body)
 
+    def test_a_card_opened_from_a_question_offers_the_way_back(self):
+        self.sign_in()
+        body = self.client.get("/nodes/Person/A1", params={"back": "/review?tab=pressing"}).text
+        self.assertIn("к спорному случаю", body)
+        self.assertIn('href="/review?tab=pressing"', body)
+
+    def test_a_way_back_off_this_site_is_refused(self):
+        # The address comes from the query string, and an unchecked one
+        # turns the link into somebody else's.
+        self.sign_in()
+        body = self.client.get("/nodes/Person/A1",
+                               params={"back": "https://evil.example"}).text
+        self.assertNotIn("evil.example", body)
+        self.assertNotIn("к спорному случаю", body)
+
     def test_a_missing_node_is_404(self):
         self.sign_in()
         self.assertEqual(self.client.get("/nodes/Person/nope").status_code, 404)
 
     def test_a_missing_node_answers_with_a_page_and_not_with_json(self):
-        # A link out of the review queue used to land on the raw
-        # {"detail": "Person A5050264529 does not exist"} of an unhandled
-        # 404, which says nothing to the person who followed it.
+        # A link out of the review queue used to land on the raw JSON of an
+        # unhandled 404, which says nothing to whoever followed it.
         self.sign_in()
         self.assertIn("Этой записи в графе нет", self.client.get("/nodes/Person/nope").text)
 
     def test_an_id_folded_away_opens_the_record_that_swallowed_it(self):
-        # A question in the queue names the id as it stood when it was
-        # asked; the fold that answered it came later and left that id
-        # only in the survivor's merged_ids.
+        # The question names the id as it stood when asked; the fold came
+        # later and left it only in the survivor's merged_ids.
         self.graph.nodes[("Person", "A1")]["merged_ids"] = ["A9"]
         self.sign_in()
         response = self.client.get("/nodes/Person/A9")

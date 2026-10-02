@@ -15,6 +15,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from neo4j.exceptions import AuthError, ServiceUnavailable
 
 from pauk.admin.deps import (
     CsrfChecked,
@@ -27,7 +28,13 @@ from pauk.admin.deps import (
     plural,
     templates,
 )
-from pauk.graph.mutations import MutationError, NotFound, merge_nodes, read_node
+from pauk.graph.mutations import (
+    MutationError,
+    NotFound,
+    merge_nodes,
+    person_facts,
+    read_node,
+)
 from pauk.graph.unmerge import NothingToRebuild, rebuildable, split_person
 from pauk.pipeline.stages.dedup import merge_rank
 from pauk.storage import review
@@ -115,7 +122,7 @@ def _asks(row: dict) -> str:
     return "две записи"
 
 
-def _people(row: dict, evidence: dict) -> list[dict]:
+def _people(row: dict, evidence: dict, back: str = "") -> list[dict]:
     """The subjects of one question, each with somewhere to look.
 
     A person is a node the panel can open. An account is not: it lives on
@@ -134,19 +141,25 @@ def _people(row: dict, evidence: dict) -> list[dict]:
         shown.append({
             "id": member,
             "name": name or member,
+            # The card carries the way back: the search is the only other
+            # way out, and it is not where the reader came from.
             "href": None if record else
-                    (evidence.get("url") if account else f"/nodes/Person/{quote(member)}"),
+                    (evidence.get("url") if account
+                     else f"/nodes/Person/{quote(member)}?back={quote(back, safe='')}"),
             "account": account,
             "record": record,
         })
     return shown
 
 
-def _shown(row: dict) -> dict:
+def _shown(row: dict, back: str = "") -> dict:
     """One question as the page reads it."""
     evidence = row.get("evidence", {})
     return {
         "id": row["_id"],
+        # The row's own address on the page. Colons do not belong in a
+        # fragment, and a question id is built of them.
+        "anchor": "q-" + row["_id"].replace(":", "-"),
         "kind": row["kind"],
         # Four kinds of question run one after another; the names do not say which.
         "asks": _asks(row),
@@ -157,7 +170,8 @@ def _shown(row: dict) -> dict:
         "chosen": row.get("chosen"),
         "members": row["members"],
         # Bare OpenAlex ids ask a question nobody can answer.
-        "people": _people(row, evidence),
+        "people": _people(row, evidence,
+                          f"{back}#q-" + row["_id"].replace(":", "-") if back else ""),
         "url": evidence.get("url"),
         "signals": [SIGNALS.get(name, name) for name in evidence.get("signals") or []],
         "repos": evidence.get("repos") or [],
@@ -191,7 +205,7 @@ def _tab(value: object, default: str) -> str:
 
 @router.get("/review", response_class=HTMLResponse)
 def queue(request: Request, user: CurrentUser, session: Session, db: Db,
-          tab: str = "pressing", page: int = 1):
+          graph: MaybeGraph, tab: str = "pressing", page: int = 1):
     """Questions the rules left open, the longest-waiting first.
 
     Readable by anyone who can sign in. Answering needs the editor role:
@@ -201,14 +215,38 @@ def queue(request: Request, user: CurrentUser, session: Session, db: Db,
         tab = "pressing"
     page = max(page, 1)
     total = review.count(db, **TABS[tab])
+    back = f"/review?tab={tab}&page={page}"
     return templates.TemplateResponse(request, "review.html", {
         "user": user, "csrf": session["csrf"], "tab": tab, "page": page,
         "pages": max((total + PAGE - 1) // PAGE, 1), "total": total,
-        "rows": _splittable(db, [_shown(row) for row in
-                                 review.questions(db, limit=PAGE, skip=(page - 1) * PAGE,
-                                                  **TABS[tab])]),
+        "rows": _with_facts(graph, _splittable(db, [
+            _shown(row, back) for row in
+            review.questions(db, limit=PAGE, skip=(page - 1) * PAGE, **TABS[tab])])),
         "counts": {name: review.count(db, **filters) for name, filters in TABS.items()},
     })
+
+
+def _with_facts(graph, rows: list[dict]) -> list[dict]:
+    """Put a few known fields beside each person on the page.
+
+    A name and an id answer nothing: deciding whether two records are one
+    researcher means knowing an ORCID, an address, a department, how much
+    each has published. Asked in one query for the whole page, and skipped
+    when the graph is silent - the queue is readable without it.
+    """
+    if graph is None:
+        return rows
+    wanted = sorted({person["id"] for row in rows for person in row["people"]
+                     if not person["account"] and not person["record"]})
+    try:
+        facts = person_facts(graph, wanted)
+    except (ServiceUnavailable, AuthError) as error:
+        logger.warning("queue shown without the facts, the graph did not answer: %s", error)
+        return rows
+    for row in rows:
+        for person in row["people"]:
+            person["facts"] = facts.get(person["id"], {})
+    return rows
 
 
 def _splittable(db, rows: list[dict]) -> list[dict]:

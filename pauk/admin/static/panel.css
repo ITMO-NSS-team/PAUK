@@ -295,6 +295,28 @@ select {
 .more[aria-expanded="true"]::after { content: " ▴"; }
 .more.above { display: block; margin: 0 0 4px; }
 
+/* Cut rather than widening the column: an address is longer than the cell. */
+.facts { margin-top: 2px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.facts span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Clear of the sticky header, or the row it scrolls to lands under it. */
+tr[id^="q-"] { scroll-margin-top: 90px; }
+tr[id^="q-"]:target td { background: var(--bg); }
+
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 16px; }
+.summary .card { margin: 0; display: flex; flex-direction: column; gap: 6px;
+                 text-decoration: none; color: var(--text); }
+.summary .card:hover { border-color: var(--g4); }
+.summary .label { font-size: 11px; font-weight: 600; letter-spacing: .05em;
+                  text-transform: uppercase; color: var(--muted); }
+.summary .headline { font-size: 26px; font-weight: 700; line-height: 1.1; }
+.summary .headline.quiet { font-size: 19px; color: var(--muted); font-weight: 600; }
+.summary .headline .pulse { margin-right: 9px; }
+.summary .under { font-size: 13px; color: var(--muted); line-height: 1.45; }
+.summary .verdict { gap: 6px; }
+.summary .verdict .tally { padding: 4px 9px; font-size: 12px; }
+.summary .verdict .tally b { font-size: 15px; }
+
 .kind { font-weight: 600; }
 .kind-created { color: var(--ok); }
 .kind-updated { color: var(--warn); }

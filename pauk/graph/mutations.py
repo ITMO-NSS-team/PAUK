@@ -212,6 +212,11 @@ def read_node(client: Neo4jClient, label: str, node_id: str) -> dict:
     return props
 
 
+def person_facts(client: Neo4jClient, node_ids: list[str]) -> dict[str, dict]:
+    """What a page shows about these people besides their names."""
+    return client.fetch_person_facts(node_ids)
+
+
 def folded_into(client: Neo4jClient, label: str, node_id: str) -> str | None:
     """The record this id was folded into, for an id with no node of its own.
 

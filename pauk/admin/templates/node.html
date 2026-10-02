@@ -2,7 +2,7 @@
 {% import "_change.html" as show %}
 {% block content %}
 <h1>{{ label }} <span class="muted">{{ node_id }}</span></h1>
-<p class="muted"><a href="/nodes/{{ label }}"><- к поиску</a></p>
+<p class="muted">{% if back %}<a href="{{ back }}"><- к спорному случаю</a> / {% endif %}<a href="/nodes/{{ label }}"><- к поиску</a></p>
 
 {% if folded %}
 <p class="note">Записи <span class="val">{{ folded }}</span> в графе нет, её свели с этой.</p>

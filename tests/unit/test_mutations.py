@@ -184,6 +184,27 @@ class FakeGraph:
             and (src_label, src_id) in self.nodes and node(tgt_label, tgt_id)
         }
 
+    def fetch_person_facts(self, node_ids):
+        """The same few fields the real client collects for a page."""
+        facts = {}
+        for node_id in node_ids:
+            props = self.nodes.get(("Person", node_id))
+            if props is None:
+                continue
+            department = None
+            works = 0
+            for (src_label, rel_type, tgt_label, src_id, tgt_id) in self.relationships:
+                if src_label != "Person" or src_id != node_id:
+                    continue
+                if rel_type == "AUTHORED":
+                    works += 1
+                elif rel_type == "BELONGS_TO" and department is None:
+                    named = self.nodes.get((tgt_label, tgt_id), {})
+                    department = named.get("name_ru") or named.get("name_en")
+            facts[node_id] = {"orcid": props.get("orcid"), "email": props.get("email"),
+                              "department": department, "works": works}
+        return facts
+
     def fetch_merged_id_map(self, label):
         """Aliases the way the real client reads them: off the nodes.
 

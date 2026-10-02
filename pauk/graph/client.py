@@ -292,11 +292,8 @@ class Neo4jClient:
         if not batch:
             return 0
 
-        # Identifiers are interpolated, as everywhere here: Cypher cannot
-        # parameterize them and these are our own literals. "SET new +=
-        # properties(old); SET new += keep" fills the gaps without letting the
-        # duplicate win — without it a MERGE onto an existing canonical edge
-        # drops the duplicate's properties, such as its only affiliation.
+        # The duplicate fills the gaps and never wins: without this a MERGE
+        # onto an existing edge drops its properties, such as an affiliation.
         move_queries = [
             cast(
                 LiteralString,
@@ -521,6 +518,38 @@ class Neo4jClient:
         with self.driver.session() as session:
             return session.execute_read(
                 lambda tx: {record["merged_id"]: record["canonical_id"] for record in tx.run(query)})
+
+    def fetch_person_facts(self, node_ids: list[str]) -> dict[str, dict]:
+        """A few decisive fields for the people on one page.
+
+        Asked in one query because the review queue shows them a page at a
+        time: bare ids and names leave the reader opening every card to find
+        out whether a record is a real researcher or a stub.
+
+        Returns:
+            Person id to orcid, email, department name and how many
+            publications it authored. Missing values come back as None.
+        """
+        if not node_ids:
+            return {}
+        query = cast(
+            LiteralString,
+            """
+            UNWIND $node_ids AS wanted
+            MATCH (p:Person {id: wanted})
+            OPTIONAL MATCH (p)-[:BELONGS_TO]->(d:Department)
+            OPTIONAL MATCH (p)-[:AUTHORED]->(w:Publication)
+            RETURN p.id AS id, p.orcid AS orcid, p.email AS email,
+                   head(collect(DISTINCT coalesce(d.name_ru, d.name_en))) AS department,
+                   count(DISTINCT w) AS works
+            """,
+        )
+        with self.driver.session(default_access_mode="READ") as session:
+            rows = session.execute_read(
+                lambda tx: list(tx.run(query, node_ids=list(node_ids))))
+        return {row["id"]: {"orcid": row["orcid"], "email": row["email"],
+                            "department": row["department"], "works": row["works"]}
+                for row in rows}
 
     def fetch_canonical_id(self, label: str, node_id: str) -> str | None:
         """The node this id was folded into, if it was folded into one.
