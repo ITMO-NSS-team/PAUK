@@ -277,12 +277,9 @@ class NormalizeTest(unittest.TestCase):
         self.assertEqual({a.publication_id for a in person.authored}, {"W1", "W2"})
 
     def test_null_or_missing_title_becomes_untitled(self):
-        # OpenAlex may serve "title": null. The pre-pauk populate_publications.py
-        # used work.get("title", "No title"), which keeps None on an explicit null
-        # (the default only fills a *missing* key) and later crashed on len(None)
-        # — the bug PR #45 patched. The pauk normalizer uses
-        # `_clean_markup(work.get("title")) or "Untitled"`, so every falsy title
-        # (null, empty string, absent) resolves to "Untitled" without a crash.
+        # OpenAlex may serve "title": null, where `.get("title", "No title")`
+        # keeps the None and crashes later on len(None) - the bug PR #45
+        # patched. Every falsy title resolves to "Untitled" instead.
         raw = RawStore(self.db, "sample")
         raw.append("openalex_works", {"id": "https://openalex.org/W1", "title": None, "authorships": []},
                    {"work_id": "W1"})

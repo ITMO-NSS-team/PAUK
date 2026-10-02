@@ -320,13 +320,11 @@ def build_graph_data(db, seed: int, public: bool = False):
     owner_type = {row["id"]: (row.get("owner_type") or "") for row in db["repositories"]}
     repo_owner_login = {row["id"]: (row["owner"] or "") for row in db["repositories"]}
 
-    # An inferred group of one is not a group — it spends a unique hue on a
-    # single dot — so each tier is offered only when it has enough members,
-    # and a repository the tier turns down falls through to the next one.
-    # Departments are exempt: a department exists outside this map, and
-    # dropping it would break the colour it shares with the other two tabs.
-    # A personal account never forms a group at all — it says who pushed the
-    # code, not what it belongs to, and there are 173 of them.
+    # A tier is offered only with enough members: a group of one spends a
+    # unique hue on a single dot, and what a tier turns down falls through to
+    # the next. Departments are exempt — their colour is shared with the other
+    # two tabs. A personal account says who pushed, not what the code belongs
+    # to, and never forms a group.
     org_of = {
         row["id"]: repo_owner_login[row["id"]].lower()
         for row in db["repositories"]

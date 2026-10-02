@@ -213,12 +213,10 @@ class HeartbeatTest(unittest.TestCase):
         self.assertGreaterEqual(len(seen), 2, "сердцебиение не обновлялось")
 
     def test_the_lease_is_pushed_out(self):
-        # The lock is taken inside the step, the way the real functions
-        # take it: taking it first would leave the resource busy and the
-        # worker would pass the job over instead of claiming it. And it is
-        # taken as the process, which is what `held` does — this worker is
-        # named "worker-1", and renewing under that name would match
-        # nothing while the lease quietly ran out.
+        # Taken inside the step, as the real functions take it: taken first,
+        # the resource would read as busy and the job would be passed over.
+        # And taken as the process, which is what `held` matches - renewing
+        # under the worker's own name would match nothing.
         store.enqueue(self.db, JobKind.PUBLISH, {"group": "2024"})
         beaten = threading.Event()
         first = []

@@ -292,15 +292,11 @@ class Neo4jClient:
         if not batch:
             return 0
 
-        # Labels and relationship types are interpolated for the same reason
-        # as in upsert_relationships_batch: Cypher cannot parameterize
-        # identifiers, and these are always our own literals.
-        # "SET new += properties(old); SET new += keep" is the pure-Cypher way
-        # to fill gaps without letting the duplicate win: everything the old
-        # relationship knew is copied in, then the canonical's own values are
-        # laid back on top. Without it, a MERGE that finds an existing
-        # canonical relationship silently drops the duplicate's properties —
-        # e.g. the only AUTHORED edge carrying an affiliation.
+        # Identifiers are interpolated, as everywhere here: Cypher cannot
+        # parameterize them and these are our own literals. "SET new +=
+        # properties(old); SET new += keep" fills the gaps without letting the
+        # duplicate win — without it a MERGE onto an existing canonical edge
+        # drops the duplicate's properties, such as its only affiliation.
         move_queries = [
             cast(
                 LiteralString,

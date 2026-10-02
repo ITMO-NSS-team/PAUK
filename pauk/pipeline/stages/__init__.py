@@ -10,23 +10,15 @@ from .repo_people import RepoPeopleStage
 from .repositories import RepositoriesStage
 from .social_graph import SocialGraphStage
 
-# Dedup runs after the fetching stages: it folds duplicate publications,
-# repositories and persons using what they fetched (ORCIDs and name variants,
-# GitHub repo ids) and rewrites every prepared row that referenced a
-# merged-away id. Russian names come last so only canonical persons are named
-# — and so a name is resolved against every spelling the merge collected,
-# which is more than the survivor carried on its own. Dedup does not wait for
-# that: it reads the staff catalog directly (dedup.staff_identities), since a
-# record in it is an identity, and identity is exactly what dedup needs.
-# link_relevance runs right after code_links, which is what produces the
-# unclassified (is_relevant=None) links it judges. emails reads the full
-# text code_links downloaded, and runs before github_match so the addresses
-# it finds can identify an account. github_match needs the accounts
-# repositories harvests and the authorships dedup has already folded.
-# social_graph is not in the default run: it walks outward from confirmed
-# accounts, so it only pays off once github_match has confirmed some, and
-# each run costs hundreds of API calls. Run it by name, then github_match
-# again, until a run finds nothing new.
+# The order is a chain of dependencies. Dedup folds duplicates on what the
+# fetching stages brought and rewrites every row naming a merged-away id; it
+# does not wait for Russian names, reading the staff catalog itself. Names
+# come last, so only canonical persons are named, against every spelling the
+# merge collected. link_relevance judges the links code_links produced,
+# emails reads the text it downloaded, and github_match needs both those
+# addresses and the repositories harvest. social_graph is out of the default
+# run: hundreds of API calls that only pay off once github_match has
+# confirmed some accounts, so it is run by name and then github_match again.
 ALL_STAGES = (
     PersonsStage, DepartmentsStage, CodeLinksStage, LinkRelevanceStage,
     EmailsStage, RepositoriesStage, RepoPeopleStage, DedupStage, GitHubMatchStage,

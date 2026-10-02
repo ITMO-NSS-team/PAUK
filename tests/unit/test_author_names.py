@@ -80,12 +80,8 @@ class AuthorNamesStageTest(unittest.TestCase):
                 AuthorNamesStage(prepared, RawStore(db, "sample"), config).run()
 
     def test_a_crash_partway_through_does_not_lose_already_processed_people(self):
-        # Each person is upserted right after it's processed
-        # (PreparedStore.upsert_models), not batched into one write_models()
-        # call after the whole loop - so an unexpected error on person #2
-        # (a malformed LLM reply, or anything else the loop doesn't guard
-        # against) must not roll back the LLM work already spent and saved
-        # for person #1.
+        # Each person is upserted as it is processed, not batched after the
+        # loop, so an error on person #2 keeps the work spent on person #1.
         with self.assertRaises(RuntimeError):
             self.run_stage(
                 [person("A1", "Nikolay Nikitin"), person("A2", "Ivan Petrov")], [],
@@ -413,13 +409,9 @@ class AuthorNamesStageTest(unittest.TestCase):
         self.assertEqual(people["A1"].second_name_en, "Vladimirovich")
 
     def test_a_candidate_backed_patronymic_survives_even_without_matched_candidate_set(self):
-        # The model is supposed to set matched_candidate whenever it copies
-        # a directory row (rule 1), but it doesn't always do both at once -
-        # the same rule-breaking _guard_invented_second_name's docstring
-        # already documents for rule 3. A patronymic that matches a
-        # candidate row must not be treated as invented just because
-        # matched_candidate came back null and name_variants never spelled
-        # it out.
+        # The model does not always set matched_candidate when it copies a
+        # directory row, so a patronymic matching a candidate must not count
+        # as invented just because that field came back null.
         result, people = self.run_stage(
             [person("A1", "M.V. Dorogov")],
             ["Дорогов Максим Владимирович,Дорогов,Максим,Владимирович,"],

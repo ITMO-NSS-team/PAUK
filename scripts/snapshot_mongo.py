@@ -25,15 +25,11 @@ from pymongo import MongoClient
 from pauk.settings import settings
 from pauk.storage.mongo import get_mongo_client
 
-# Everything the harvest chain writes: `repositories` gains contributors,
-# `github_profiles` is rewritten wholesale, `persons` gains github/email/
-# contributed_to. The rest are read-only to the harvest but the stand needs
-# them — the repositories stage iterates `repo_links`, and a rehearsal that
-# loads no publications, departments or organizations is not a rehearsal:
-# every author it meets is created fresh instead of merged with.
-#
-# This is the list `rehearsal_up.sh` imports. Keep the two in step; the stand
-# reads the manifest this script writes and refuses to start without a file.
+# What the harvest chain writes, plus what the stand must read: the
+# repositories stage iterates `repo_links`, and a rehearsal without
+# publications, departments and organizations creates every author fresh
+# instead of merging with it. `rehearsal_up.sh` imports this list - keep the
+# two in step, the stand refuses to start without the manifest.
 DEFAULT = ("publications", "persons", "departments", "organizations",
            "repositories", "repo_links", "github_profiles")
 
