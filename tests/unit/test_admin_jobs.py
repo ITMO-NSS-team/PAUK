@@ -141,8 +141,8 @@ class JobsPageTest(unittest.TestCase):
         self.assertIn('href="/jobs"', self.client.get("/").text)
 
 
-#: Устойчивая часть полосы-предупреждения. Формулировку вокруг правят,
-#: и тест на неё целиком ломается на каждой редактуре.
+#: The steady part of the warning banner: the wording around it is edited
+#: often, and a test matching the whole line breaks on every rewrite.
 BANNER = "переписывается"
 
 
@@ -292,9 +292,8 @@ class SchedulingTest(unittest.TestCase):
         self.assertEqual(self.post(client, csrf, kind="dedup").status_code, 403)
 
     def test_only_an_admin_is_offered_the_forms(self):
-        # By the form, not by the word on its button: "запустить" also
-        # stands in the line that tells anybody how to start the worker,
-        # and a test reading that could not tell the two apart.
+        # By the form, not by the word on its button: the line telling
+        # anybody how to start the worker carries that word too.
         self.assertIn('action="/jobs"', self.client.get("/jobs").text)
         client, _ = self.sign_in("petrov")
         self.assertNotIn('action="/jobs"', client.get("/jobs").text)

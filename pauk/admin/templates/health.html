@@ -50,7 +50,6 @@
     {% for check in group.checks %}
     <tr>
       <td>
-        {# Ссылка только там, где есть что открыть. #}
         {% if openable(check) %}
         <a href="/health/{{ check.id }}"><b>{{ check.title }}</b></a>
         {% else %}<b>{{ check.title }}</b>{% endif %}

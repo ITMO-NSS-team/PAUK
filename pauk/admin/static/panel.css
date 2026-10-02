@@ -190,9 +190,7 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
 tr:last-child td { border-bottom: 0; }
 th { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
-/* Не только на ячейке: адреса стоят и в span, а без переноса уезжают вбок. */
 .val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; word-break: break-word; }
-/* Пол под перенос: иначе колонка сжимается до буквы. 11 символов – длина id. */
 td.val { min-width: calc(11ch + 20px); }
 tr.ro td { color: var(--muted); }
 .fixed { table-layout: fixed; }
@@ -273,7 +271,6 @@ select {
 .change .now { color: var(--ok); background: rgba(47, 107, 69, 0.10); }
 .change .was + .now::before { content: "→"; color: var(--faint); margin: 0 6px 0 2px; }
 
-/* `anywhere`, а не `break-word`: второй не рвёт слово внутри узкой колонки. */
 .clip { overflow-wrap: anywhere; }
 
 .clipped {
@@ -296,8 +293,6 @@ select {
 .more:hover { color: var(--text); background: none; }
 .more::after { content: " ▾"; }
 .more[aria-expanded="true"]::after { content: " ▴"; }
-/* Верхняя кнопка стоит над значением, а не в строке с ним: рядом с первой
-   строкой текста она читалась бы как часть этого текста. */
 .more.above { display: block; margin: 0 0 4px; }
 
 .kind { font-weight: 600; }
@@ -350,12 +345,10 @@ select {
 .steps > summary:hover { color: var(--text); }
 .steps[open] > summary { margin-bottom: 10px; }
 
-/* Ответ на вопрос очереди: поле «почему» и три кнопки под ним. */
 .verdicts input[type=text] { margin-bottom: 8px; }
 .verdicts .row { flex-wrap: wrap; gap: 6px; }
 .verdicts button { padding: 6px 11px; font-size: 13px; }
 
-/* Фазы конвейера: пройденные закрашены, идущая бледнее, остальные пустые. */
 .phases { display: flex; gap: 3px; margin-bottom: 6px; min-width: 96px; }
 .phases span {
   flex: 1; height: 5px; border-radius: 3px;
@@ -364,7 +357,6 @@ select {
 .phases .done { background: var(--ok); }
 .phases .now { background: var(--ok); opacity: 0.45; }
 
-/* Вердикт по проверкам: число цветом, подпись серым, каждый в своей рамке. */
 .verdict { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .verdict .tally {
   display: inline-flex; align-items: baseline; gap: 7px;
@@ -376,7 +368,6 @@ select {
 .verdict .mid b { color: var(--warn); }
 .verdict .good b { color: var(--ok); }
 
-/* Две карточки рядом: `.row` тянет каждую по содержимому и они разной высоты. */
 .pair { display: flex; gap: 16px; align-items: stretch; flex-wrap: wrap; }
 .pair > .card { flex: 1 1 22rem; margin-bottom: 20px; }
 .pair > .card + .card { margin-top: 0; }

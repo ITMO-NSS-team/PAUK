@@ -170,12 +170,8 @@ class PanelTest(unittest.TestCase):
         self.assertEqual(self.client.get("/static/panel.css").text.count("@font-face"), 3)
 
     def test_and_each_of_them_is_a_font_a_browser_will_take(self):
-        # Served with 200 is not the same as usable: the three files sat
-        # here for weeks with junk appended, every browser quietly refused
-        # them, and the panel drew itself in whatever the machine had.
-        # Nobody noticed until a password field turned into empty boxes on a
-        # machine whose fallback font has no bullet. A woff2 states its own
-        # length and table count, and both give the mangling away.
+        # Served is not the same as usable: a mangled woff2 answers 200 and
+        # every browser refuses it silently.
         for part in ("latin", "cyrillic", "cyrillic-ext"):
             body = self.client.get(f"/assets/fonts/golos-text-{part}.woff2").content
             signature, _flavor, length, tables = struct.unpack(">4sIIH", body[:14])

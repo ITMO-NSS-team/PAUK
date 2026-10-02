@@ -9,7 +9,6 @@
     <div>
       Всего таких записей <b>{{ check.total }}</b>.
       {% if check.truncated %}
-      {# Строки спрошены у графа сейчас, а число на списке – с прошлого прогона. #}
       <span class="muted">Показаны первые {{ check.shown }}.</span>
       {% else %}<span class="muted">Показаны все.</span>{% endif %}
     </div>

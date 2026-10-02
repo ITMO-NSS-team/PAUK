@@ -56,7 +56,6 @@
         <div style="margin-bottom:4px">
           {% if row.is_group and user.can_write and not row.verdict %}
           <label style="display:inline; font-size:inherit; color:inherit">
-            {# Галочки в другой ячейке: атрибут form связывает их с формой. #}
             <input type="checkbox" form="answer-{{ row.id }}"
                    name="same" value="{{ who.id }}">
             <a href="{{ who.href }}">{{ who.name }}</a>
@@ -96,11 +95,9 @@
         {% endif %}
       </td>
       <td>
-        {# Прочерк, когда причины нет: иначе плашка ниже читается как причина. #}
         {% if row.reasons %}
           {% for reason in row.reasons %}<div>{{ reason }}</div>{% endfor %}
         {% else %}<span class="muted">–</span>{% endif %}
-        {# Правила передумали после ответа: место рядом с прежней причиной. #}
         {% if row.disputed_at %}
         <div class="change" style="margin-top:6px">
           <span class="now">теперь связывают: {{ row.disputed_rule }}</span>
@@ -108,7 +105,6 @@
         {% endif %}
       </td>
       <td>
-        {# Решение человека – отдельно от доказательств: это разные голоса. #}
         {% if row.verdict %}
         <div style="margin-bottom:8px">
           <span class="kind {% if row.verdict == 'same' %}kind-created{% else %}kind-deleted{% endif %}">
@@ -116,7 +112,6 @@
             {% elif row.is_github %}{% if row.verdict == "same" %}его аккаунт{% else %}не его аккаунт{% endif %}
             {% elif row.verdict == "same" %}один человек{% else %}разные люди{% endif %}</span>
           <br><span class="muted">{{ row.actor }}{% if row.note %} · {{ row.note }}{% endif %}</span>
-          {# Только у слияния есть что применять. #}
           {% if row.is_staff %}
             {% if row.chosen %}<br><span class="muted">сведёт записи на следующем прогоне</span>{% endif %}
           {% elif row.is_github and row.verdict == "same" %}
@@ -148,10 +143,8 @@
           <button type="submit" class="ghost">изменить</button>
         </form>
         {% elif row.applied_at and not row.can_split %}
-        {# Свернул сбор, а он удаляет свёрнутую строку: собирать не из чего. #}
         <span class="muted">разделить нельзя, исходных строк не осталось</span>
         {% elif row.applied_at %}
-        {# Не «передумать»: в графе остался один узел вместо двух. #}
         <form method="post" action="/review/split-back">
           <input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="kind" value="{{ row.kind }}">
@@ -176,7 +169,6 @@
           <input type="hidden" name="tab" value="{{ tab }}">
           <input type="text" name="note" placeholder="почему" aria-label="почему">
           <div class="row" style="margin:0">
-            {# Группу нельзя назвать одним человеком: её за это и отклонили. #}
             {% if row.is_staff %}
             <input type="hidden" name="person" value="{{ row.person }}">
             <button type="submit" name="verdict" value="choose">это выбранная запись</button>
@@ -192,7 +184,6 @@
               {% elif row.is_group %}оставить раздельно
               {% elif row.is_github %}не его
               {% else %}разные{% endif %}</button>
-            {# Уже отложенному откладываться некуда. #}
             {% if not row.skipped_by %}
             <button type="submit" name="verdict" value="skip" class="ghost">не знаю</button>
             {% endif %}

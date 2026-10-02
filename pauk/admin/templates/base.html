@@ -10,7 +10,6 @@
 <body>
 {% if user %}
 <header>
-  {# Логотип – кнопка на главную страницу.#}
   <a href="/" class="logo" title="На главную"><img src="/assets/icons/pauk-frame.png" alt="Admin PAUK"></a>
   <a href="/audit" class="section {% if request.url.path.startswith('/audit') %}on{% endif %}">
     Журнал правок
@@ -35,9 +34,6 @@
     </form>
   </div>
 </header>
-{# Паутина в углу, от неё нить вниз и паук на конце: нить тянется по мере
-   прокрутки, паук возвращает наверх. Живёт в пустом поле справа от текста,
-   на узком экране прячется. #}
 <div class="web" aria-hidden="true">
   <img src="/assets/icons/pauk-web-4x.png" alt="">
   <span class="silk"></span>
@@ -57,15 +53,12 @@
 {% block content %}{% endblock %}</main>
 <script>
   {
-    // Длина нити – это доля прокрученного, а паук висит на её конце.
     const silk = document.querySelector(".web .silk");
     const spider = document.getElementById("to-top");
     if (silk && spider) {
-      // Нить начинается под паутиной, а внизу оставляем место самому пауку.
       const START = 96;
       const place = () => {
         const scrollable = document.documentElement.scrollHeight - window.innerHeight;
-        // Странице в один экран паук не нужен: подниматься неоткуда.
         spider.hidden = scrollable < 120;
         const reach = Math.max(window.innerHeight - START - 48, 0);
         const length = scrollable > 0 ? Math.min(window.scrollY / scrollable, 1) * reach : 0;
@@ -82,13 +75,10 @@
     }
   }
   {
-    // Свёрнутые значения приходят такими с сервера, поэтому мерить нужно
-    // только их, а не всё подряд, и страница не прыгает при загрузке.
     const values = [...document.querySelectorAll(".clipped")];
     const cut = values.map((value) => value.scrollHeight > value.clientHeight);
     values.forEach((value, index) => {
       if (!cut[index]) {
-        // Уместилось целиком: разворачивать нечего, и кнопка соврала бы.
         value.classList.remove("clipped");
         return;
       }
@@ -97,10 +87,6 @@
       more.className = "more";
       more.textContent = "развернуть";
       more.setAttribute("aria-expanded", "false");
-      // Разворачивать нечего, пока свёрнуто, поэтому верхняя кнопка нужна
-      // только раскрытому значению: аннотация статьи занимает несколько
-      // экранов, и с одной кнопкой внизу свернуть её можно, только долистав
-      // до конца.
       const above = more.cloneNode(true);
       above.classList.add("above");
       above.hidden = true;
@@ -111,8 +97,6 @@
           button.textContent = open ? "свернуть" : "развернуть";
           button.setAttribute("aria-expanded", String(open));
         }
-        // Свернули снизу – значение осталось экранами выше, и читатель
-        // оказался бы в пустоте на месте исчезнувшего текста.
         if (!open) value.scrollIntoView({ block: "nearest" });
       };
       const toggle = () => show(value.classList.contains("clipped"));
