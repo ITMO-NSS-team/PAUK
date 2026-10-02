@@ -9,7 +9,7 @@
 
 {% if computed_at %}
 <p class="muted" style="margin:-8px 0 18px">
-  Считаны {{ computed_at[:19]|replace("T", " ") }}
+  Посчитаны {{ computed_at|ago }}
   {%- if totals.nodes %}, в графе было {{ totals.nodes }} узлов и {{ totals.rels }} связей{% endif %}.
 </p>
 {% endif %}
@@ -36,7 +36,7 @@
       <button type="submit">{% if computed_at %}Пересчитать{% else %}Посчитать{% endif %}</button>
     </form>
     {% else %}
-    <span class="muted">пересчёт за администратором</span>
+    <span class="muted">пересчёт доступен админу</span>
     {% endif %}
   </div>
 </div>

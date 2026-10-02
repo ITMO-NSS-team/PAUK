@@ -20,7 +20,7 @@
 {% if not check.rows %}
 <div class="card"><p class="muted">Сейчас таких записей нет.
   {% if computed_at %}Список проверок считан
-  {{ computed_at[:19]|replace("T", " ") }} – с тех пор их могли починить.{% endif %}</p></div>
+  {{ computed_at|ago }}, с тех пор их могли починить.{% endif %}</p></div>
 {% else %}
 <div class="card scroll">
   <table>

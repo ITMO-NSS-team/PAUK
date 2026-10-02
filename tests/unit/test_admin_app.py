@@ -156,6 +156,47 @@ class PanelTest(unittest.TestCase):
         self.assertIn("pauk-frame", head)
         self.assertNotIn("pauk-web", head)
 
+    def test_the_overview_says_how_the_work_is_going(self):
+        # Four pages answer four questions; the first page answers them at
+        # once, or nobody looks until something has already gone wrong.
+        from pauk.jobs import store
+        from pauk.jobs.models import JobKind
+        from pauk.storage import review
+        review.record_held(self.db, [{
+            "status": "held", "person_a": "A1", "name_a": "A", "person_b": "A2",
+            "name_b": "B", "shared_coauthors": 0, "shared_departments": 0,
+            "shared_fields": [],
+            "held_because": ["identical name with nothing corroborating it"]}])
+        store.mark_present(self.db, "worker-1")
+        # The health snapshot keeps its time as text, unlike a job's, and a
+        # page that ran it through the date filter crashed on the real data.
+        from pauk.admin import health
+        health.save(self.db, {"checks": [{"status": "fail"}, {"status": "ok"}]})
+        job = store.enqueue(self.db, JobKind.MAP, {"public": True})
+        store.claim(self.db, "worker-1")
+        store.start(self.db, job.id)
+        self.sign_in()
+        body = self.client.get("/").text
+        # By what the cards are made of, not by their wording: the words are
+        # edited often and a test reading them breaks on every rewrite.
+        self.assertIn('class="summary"', body)
+        self.assertIn('class="pulse"', body)
+        self.assertIn("пересборка карты", body)
+        self.assertIn("вопрос ждёт ответа", body)
+        self.assertIn('class="tally bad"', body)
+        self.assertNotIn("воркер не работает", body)
+
+    def test_and_says_when_nobody_is_running_anything(self):
+        self.sign_in()
+        body = self.client.get("/").text
+        self.assertIn('class="summary"', body)
+        # No pulse: that mark belongs to a run under way.
+        self.assertNotIn('class="pulse"', body)
+        self.assertIn("воркер не работает", body)
+        # Zero is not a count to agree with: "0 вопросов ждут" is a page
+        # talking about nothing, and the card says so instead.
+        self.assertIn("вопросов не осталось", body)
+
     def test_the_panel_is_light_only(self):
         css = self.client.get("/static/panel.css").text
         self.assertNotIn("data-theme", css)

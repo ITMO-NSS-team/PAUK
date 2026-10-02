@@ -36,6 +36,7 @@ from pauk.admin import (
     job_routes,
     nodes,
     review_routes,
+    summary,
 )
 from pauk.admin.auth import (
     COOKIE,
@@ -55,6 +56,7 @@ from pauk.admin.deps import (
     CurrentUser,
     Db,
     Session,
+    safe_path,
     templates,
 )
 from pauk.graph.audit import SharedGraph
@@ -125,18 +127,6 @@ def _node_counts(graph: _LazyGraph) -> dict[str, int] | None:
         return None
 
 
-def _safe_next(target: str) -> str:
-    """Where to go after signing in, refusing anywhere but this site.
-
-    Without the check, `?next=https://evil.example` would turn the login
-    into an open redirect — a link that looks like ours and lands
-    somewhere else.
-    """
-    if not target.startswith("/") or target.startswith("//"):
-        return "/"
-    return target
-
-
 def build(config: Settings | None = None, db: Database | None = None) -> FastAPI:
     """Assemble the application.
 
@@ -191,9 +181,9 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
     @app.get("/login", response_class=HTMLResponse)
     def login_form(request: Request, session: Session, next: str = "/"):
         if session is not None:
-            return RedirectResponse(_safe_next(next), status_code=status.HTTP_303_SEE_OTHER)
+            return RedirectResponse(safe_path(next), status_code=status.HTTP_303_SEE_OTHER)
         return templates.TemplateResponse(request, "login.html",
-                                          {"user": None, "next": _safe_next(next)})
+                                          {"user": None, "next": safe_path(next)})
 
     @app.post("/login")
     def login(request: Request, db: Db,
@@ -204,7 +194,7 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
             return templates.TemplateResponse(
                 request, "login.html",
                 {"user": None, "error": message, "denied": denied,
-                 "next": _safe_next(next)},
+                 "next": safe_path(next)},
                 status_code=code)
 
         try:
@@ -223,7 +213,7 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
             logger.warning("mongo is not answering, cannot sign anybody in: %s", error)
             return refused(MONGO_SILENT, denied=False,
                            code=status.HTTP_503_SERVICE_UNAVAILABLE)
-        response = RedirectResponse(_safe_next(next), status_code=status.HTTP_303_SEE_OTHER)
+        response = RedirectResponse(safe_path(next), status_code=status.HTTP_303_SEE_OTHER)
         response.set_cookie(
             COOKIE, token,
             max_age=SESSION_HOURS * 3600,
@@ -248,13 +238,14 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
         return response
 
     @app.get("/", response_class=HTMLResponse)
-    def index(request: Request, user: CurrentUser, session: Session):
+    def index(request: Request, user: CurrentUser, session: Session, db: Db):
         counts = _node_counts(app.state.graph)
         labels = [(label, len(NODE_FIELDS[label]), (counts or {}).get(label))
                   for label in sorted(NODE_FIELDS)]
         return templates.TemplateResponse(request, "index.html", {
             "user": user, "csrf": session["csrf"], "counted": counts is not None,
-            "labels": labels, "relationships": len(RELATIONSHIPS)})
+            "labels": labels, "relationships": len(RELATIONSHIPS),
+            "summary": summary.collect(db)})
 
     app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
