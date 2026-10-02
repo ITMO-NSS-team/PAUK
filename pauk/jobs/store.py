@@ -37,9 +37,8 @@ PAGE = 50
 # Silence before the page says so: several missed beats, not a slow step.
 QUIET_MINUTES = 5
 
-#: How long a worker's mark stays good for. The loop refreshes it on every
-#: turn (POLL_SECONDS, five seconds), so this is three missed turns: a slow
-#: Mongo should not blink the page between "here" and "gone".
+#: Three turns of the loop: a slow Mongo should not blink the page between
+#: "here" and "gone".
 PRESENT_SECONDS = 20
 
 

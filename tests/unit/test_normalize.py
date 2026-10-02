@@ -277,9 +277,8 @@ class NormalizeTest(unittest.TestCase):
         self.assertEqual({a.publication_id for a in person.authored}, {"W1", "W2"})
 
     def test_null_or_missing_title_becomes_untitled(self):
-        # OpenAlex may serve "title": null, where `.get("title", "No title")`
-        # keeps the None and crashes later on len(None) - the bug PR #45
-        # patched. Every falsy title resolves to "Untitled" instead.
+        # OpenAlex may serve "title": null, which `.get("title", "No title")`
+        # keeps and crashes on later (PR #45). Falsy titles become "Untitled".
         raw = RawStore(self.db, "sample")
         raw.append("openalex_works", {"id": "https://openalex.org/W1", "title": None, "authorships": []},
                    {"work_id": "W1"})

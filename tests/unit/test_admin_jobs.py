@@ -52,9 +52,8 @@ class JobsPageTest(unittest.TestCase):
         self.assertIn("задач ещё не было", page.text.lower())
 
     def test_the_page_says_nobody_is_taking_jobs(self):
-        # The buttons queue work silently, so a page that only listed the
-        # queue left "nothing is happening" looking exactly like "no worker
-        # was ever started".
+        # The buttons queue work silently, and "nothing is happening" looked
+        # exactly like "no worker was ever started".
         page = self.client.get("/jobs").text
         self.assertIn("Воркер не работает", page)
         self.assertIn("pauk admin worker", page)

@@ -19,10 +19,8 @@ _PreparedModel = TypeVar("_PreparedModel", Publication, Person)
 
 ITMO_ROR_ID = "04txgxn49"
 
-# An author slot sometimes holds what is not a person: the venue ("Association
-# for Computational Linguistics 2026"), a collaborator group, a contact
-# address leaked from a submission form. OpenAlex mints author entities for
-# all of them; they never become persons, and none is worth transliterating.
+# An author slot sometimes holds a venue, a collaborator group or a contact
+# address. OpenAlex mints author entities for all of them; persons they are not.
 NOT_A_PERSON_NAME = re.compile(
     r"\b(association|conference|proceedings|workshop|committee|consortium"
     r"|collaborat\w*|society)\b"

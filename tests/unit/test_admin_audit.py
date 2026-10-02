@@ -182,10 +182,8 @@ class DeletedNodeTest(unittest.TestCase):
         self.assertIn("user:roman", response.text)
 
     def test_an_id_nobody_ever_touched_says_so_and_invents_no_history(self):
-        # Was a bare 404 with the JSON of an unhandled error, which is what
-        # a reader following a dead link out of the review queue landed on.
-        # A page instead — but it may not offer the deletion decision the
-        # page beside it does, because there was never one to offer.
+        # A page instead of the JSON of an unhandled 404, but without the
+        # deletion decision beside it: there was never one to offer.
         response = self.client.get("/nodes/Publication/never-existed")
         self.assertEqual(response.status_code, 404)
         self.assertIn("Этой записи в графе нет", response.text)

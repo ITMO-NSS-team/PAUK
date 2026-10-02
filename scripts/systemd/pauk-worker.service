@@ -15,9 +15,8 @@ Environment=PYTHONUNBUFFERED=1
 ExecStart=/home/asteb/.local/bin/uv run pauk admin worker
 Restart=always
 RestartSec=5
-# SIGTERM means "finish the job in hand, then leave", so stopping takes as
-# long as the step does. Killed after five minutes, its job is picked up by
-# the next worker once the graph lock's lease runs out.
+# SIGTERM means "finish the job in hand, then leave", so stopping takes as long
+# as the step does; killed after five minutes, its job is picked up by the next.
 KillSignal=SIGTERM
 TimeoutStopSec=300
 

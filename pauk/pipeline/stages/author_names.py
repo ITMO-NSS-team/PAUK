@@ -832,10 +832,8 @@ def _guard_broken_transliteration(parsed: dict) -> dict:
     return parsed
 
 
-# The suffix does not prove a word is a patronymic (Бабич, Томкович and
-# Ходасевич are surnames ending the same way), but a word put in the
-# patronymic slot without it is very likely a second given name forced there
-# - Spanish "Pedro Luis González" and the like, which rule 5 heads off.
+# The suffix proves nothing (Бабич, Ходасевич are surnames), but a word in the
+# patronymic slot without it is likely a second given name forced there.
 _PATRONYMIC_LIKE_RU = re.compile(
     r"(ович|евич|ьевич|иевич|овна|евна|ьевна|иевна|инична|ична)$", re.IGNORECASE
 )
@@ -1102,10 +1100,8 @@ class AuthorNamesStage(EnrichmentStage):
         ):
             state = person.processing.get(self.name)
             if parsed is None:
-                # As before this stage called an LLM: word order is not
-                # reliable enough to store, so the parts stay as an earlier
-                # successful run left them, and name_raw is already
-                # romanized. Retried on the next run (FAILED).
+                # Word order is not reliable enough to store, so the parts
+                # stay as an earlier run left them. Retried next run (FAILED).
                 person.name_ru = person.name_ru or to_cyrillic(person.name_raw)
                 person.name_en = person.name_en or person.name_raw
                 person.processing[self.name] = self._state(

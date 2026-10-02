@@ -88,11 +88,8 @@ class MockGitHubClient:
     def has_readme(self, owner: str, name: str) -> bool:
         return True
 
-    # The people half of the GitHub API, for repo_people. They answer empty:
-    # the universe models no contributors and no commits, so nothing below the
-    # owner is exercised — modelling them is its own change. They are here for
-    # the bench's first promise, "no network": unpatched, repo_people fetches
-    # contributors, commits and a profile for each of the 80 repositories.
+    # Empty answers, because the universe models no contributors: these are
+    # here for the bench's first promise, "no network".
     def contributors(self, owner: str, name: str) -> list[dict]:
         self.calls.append((owner, name))
         return []

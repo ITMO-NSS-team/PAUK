@@ -266,9 +266,8 @@ class Worker:
             when the job went back because its resource was busy. Either
             way the caller waits before asking again.
         """
-        # Said on every turn, not once at startup: the page asks "is anyone
-        # taking jobs right now", and a mark left at startup would answer
-        # yes for a process that died an hour ago.
+        # On every turn, not once at startup: a mark left there would speak
+        # for a process that died an hour ago.
         store.mark_present(self.db, self.name)
         # Jobs left behind by a worker that is gone; nothing else moves them.
         store.reap_stale(self.db)

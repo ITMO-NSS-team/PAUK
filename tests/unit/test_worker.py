@@ -213,10 +213,8 @@ class HeartbeatTest(unittest.TestCase):
         self.assertGreaterEqual(len(seen), 2, "сердцебиение не обновлялось")
 
     def test_the_lease_is_pushed_out(self):
-        # Taken inside the step, as the real functions take it: taken first,
-        # the resource would read as busy and the job would be passed over.
-        # And taken as the process, which is what `held` matches - renewing
-        # under the worker's own name would match nothing.
+        # Taken inside the step and as the process, as the real functions do:
+        # taken first the job is passed over, named otherwise `held` finds it not.
         store.enqueue(self.db, JobKind.PUBLISH, {"group": "2024"})
         beaten = threading.Event()
         first = []
@@ -291,9 +289,8 @@ class StopTest(unittest.TestCase):
         self.assertEqual(store.workers_present(self.db), ["worker-1"])
 
     def test_and_takes_the_mark_back_when_it_leaves(self):
-        # The mark is put there first: asked to stop before its first turn,
-        # the loop never marks anything, and the test would pass on a
-        # worker that never cleans up after itself.
+        # The mark is put there first: asked to stop before its first turn the
+        # loop marks nothing, and the test would pass on any worker.
         store.mark_present(self.db, "worker-1")
         self.worker.stop()
         self.worker.run_forever()

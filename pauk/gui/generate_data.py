@@ -320,11 +320,8 @@ def build_graph_data(db, seed: int, public: bool = False):
     owner_type = {row["id"]: (row.get("owner_type") or "") for row in db["repositories"]}
     repo_owner_login = {row["id"]: (row["owner"] or "") for row in db["repositories"]}
 
-    # A tier is offered only with enough members: a group of one spends a
-    # unique hue on a single dot, and what a tier turns down falls through to
-    # the next. Departments are exempt — their colour is shared with the other
-    # two tabs. A personal account says who pushed, not what the code belongs
-    # to, and never forms a group.
+    # A group of one spends a unique hue on a single dot, so a tier needs
+    # members; departments are exempt, their colour is shared with other tabs.
     org_of = {
         row["id"]: repo_owner_login[row["id"]].lower()
         for row in db["repositories"]

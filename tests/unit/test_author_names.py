@@ -409,9 +409,8 @@ class AuthorNamesStageTest(unittest.TestCase):
         self.assertEqual(people["A1"].second_name_en, "Vladimirovich")
 
     def test_a_candidate_backed_patronymic_survives_even_without_matched_candidate_set(self):
-        # The model does not always set matched_candidate when it copies a
-        # directory row, so a patronymic matching a candidate must not count
-        # as invented just because that field came back null.
+        # matched_candidate is not always set when a directory row is copied,
+        # so a matching patronymic must not count as invented.
         result, people = self.run_stage(
             [person("A1", "M.V. Dorogov")],
             ["Дорогов Максим Владимирович,Дорогов,Максим,Владимирович,"],
