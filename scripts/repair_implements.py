@@ -33,11 +33,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from pauk.models import ClassificationStatus, CodeLink, Repository
-from pauk.pipeline.stages.repositories import GITHUB_HOSTS
 from pauk.settings import settings
 from pauk.storage import PreparedStore
 from pauk.storage.mongo import get_mongo_client
-from pauk.urls import normalize_repo_url
+from pauk.urls import GITHUB_HOSTS, normalize_repo_url
 
 logger = logging.getLogger(__name__)
 

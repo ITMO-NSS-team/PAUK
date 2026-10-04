@@ -1,16 +1,15 @@
 from collections import defaultdict
 from datetime import UTC, date, datetime
-from urllib.parse import urlparse
 
 from pauk.models import GitHubProfile, RepoLink, Repository
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.redaction import redact_text
 from pauk.sources.base import HttpRequestError
 from pauk.sources.github import GitHubClient
+from pauk.urls import github_owner_name
 
 from .base import EnrichmentStage
 
-GITHUB_HOSTS = {"github.com", "www.github.com"}
 
 def _payload_date(value: str | None) -> date | None:
     """GitHub timestamps are ISO-8601 with a `Z`, which date.fromisoformat
@@ -23,19 +22,6 @@ def _payload_date(value: str | None) -> date | None:
         return None
 
 
-def _github_owner_name(url: str | None) -> tuple[str, str] | None:
-    """(owner, name) for a github.com URL of exactly two path segments.
-
-    Anything else — a gist, a subdirectory link, another host — is not a
-    repository this stage can fetch.
-    """
-    parsed = urlparse((url or "").rstrip("/"))
-    parts = parsed.path.strip("/").split("/")
-    if parsed.netloc.lower() not in GITHUB_HOSTS or len(parts) != 2:
-        return None
-    return parts[0], parts[1]
-
-
 def _url_repo_id(url: str | None) -> str | None:
     """`github_{owner}_{name}` for a repository URL, or None if it is not one.
 
@@ -43,7 +29,7 @@ def _url_repo_id(url: str | None) -> str | None:
     the identity the fetched payload gives it. Both passes of the stage key
     their work by this, so it lives in one place.
     """
-    parsed = _github_owner_name(url)
+    parsed = github_owner_name(url)
     return f"github_{parsed[0].lower()}_{parsed[1].lower()}" if parsed else None
 
 
@@ -316,7 +302,7 @@ class RepositoriesStage(EnrichmentStage):
                 continue
             for link in row.links:
                 url = link.url.rstrip("/")
-                parsed = _github_owner_name(url)
+                parsed = github_owner_name(url)
                 if parsed is None:
                     continue
                 owner, name = parsed
@@ -371,7 +357,7 @@ class RepositoriesStage(EnrichmentStage):
             if url_id in attempted_repo_ids:
                 continue
             attempted_repo_ids.add(url_id)
-            owner, name = _github_owner_name(repo.url)
+            owner, name = github_owner_name(repo.url)
             self._enrich_repository(client, repo, owner, name, repo.url,
                                     profiles, repo.processing.get(self.name),
                                     fetched_orgs)

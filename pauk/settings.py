@@ -67,6 +67,10 @@ class Settings:
     # Official ITMO staff records (personal data — never committed).
     # None means <static_dir>/russian_names.csv.
     russian_names_file: str | None = os.getenv("PAUK_RUSSIAN_NAMES_FILE") or None
+    # Free-text search over the graph (pauk/search). The model embeds both
+    # the publications at index time and the questions at query time, so
+    # changing it means rebuilding the index.
+    search_embedding_model: str = os.getenv("PAUK_SEARCH_EMBEDDING_MODEL", "BAAI/bge-m3")
 
     def map_out_dir(self, public: bool = False) -> Path:
         """Where one build of the map is written.
@@ -100,6 +104,10 @@ class Settings:
     @property
     def audit_dir(self) -> Path:
         return self.data_dir / "audit"
+
+    @property
+    def search_dir(self) -> Path:
+        return self.data_dir / "search"
 
 
 settings = Settings()

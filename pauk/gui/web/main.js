@@ -320,9 +320,11 @@ function setTab(t) {
 
   const isSearch = t === 4;
   const isStats  = t === 5;
-  const isPage   = isSearch || isStats;   // full-screen tabs that hide the map chrome
+  const isAsk    = t === 6;
+  const isPage   = isSearch || isStats || isAsk;   // full-screen tabs that hide the map chrome
   document.getElementById("search-page").classList.toggle("visible", isSearch);
   document.getElementById("stats-page").classList.toggle("visible", isStats);
+  document.getElementById("ask-page").classList.toggle("visible", isAsk);
   document.getElementById("left-panel").style.display  = isPage ? "none" : "";
   document.getElementById("right-panel").style.display = isPage ? "none" : "";
 
@@ -350,6 +352,8 @@ function setTab(t) {
     renderOverview();
   } else if (isSearch) {
     spShowLanding();
+  } else if (isAsk) {
+    renderAsk();
   } else {
     renderStats();
   }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import time
 from collections.abc import Iterator
 
@@ -62,6 +63,22 @@ class GitHubClient(HttpClient):
                 return False
             raise
         return True
+
+    def get_readme(self, owner: str, name: str) -> str | None:
+        """The README text, or None when the repository has none (404).
+
+        The same call as `has_readme`; the JSON body carries the file
+        base64-encoded, which keeps this on the client's usual JSON path.
+        """
+        try:
+            payload = self.get_json(f"{self.API_URL}/repos/{owner}/{name}/readme")
+        except HttpRequestError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+        if payload.get("encoding") != "base64" or not isinstance(payload.get("content"), str):
+            return None
+        return base64.b64decode(payload["content"]).decode("utf-8", errors="replace")
 
     def _paged(self, url: str, pages: int, **params) -> Iterator[dict]:
         """Items from a paged endpoint, stopping at `pages` or the last page.

@@ -20,6 +20,16 @@ dependencies = [
     "uvicorn>=0.52.4",
     "jinja2>=3.1.6",
     "python-multipart>=0.0.32",
+    "numpy>=2.0",
+    "rank-bm25>=0.2.2",
+    "rapidfuzz>=3.9",
+]
+
+[project.optional-dependencies]
+# The embedding model for `pauk search` (pulls in torch, several GB). Without
+# it the search still works, in BM25 mode only.
+search = [
+    "sentence-transformers>=5.0",
 ]
 
 [project.scripts]

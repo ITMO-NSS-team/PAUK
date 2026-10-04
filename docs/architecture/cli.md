@@ -198,6 +198,23 @@ pauk cache export [--output <путь>]
 `data/cache/graph_snapshot.json` (или указанный путь) — готовит вход для
 `pauk.gui.generate_data`. См. [cache.md](cache.md).
 
+## `search`
+
+```
+pauk search fetch-readmes [--force]
+pauk search build-index
+pauk search ask "<вопрос>" [--mode hybrid|dense|bm25] [--ranking graph|authorship]
+                          [--no-llm-parse] [--no-llm-answer] [--top N]
+pauk search batch <вопросы.txt|.csv> [--out DIR] [--mode ...] [--ranking ...]
+                  [--no-llm-parse] [--no-llm-answer] [--top N] [--force]
+```
+
+Вопрос к графу на естественном языке, граф только читается. `fetch-readmes`
+скачивает README репозиториев, `build-index` строит эмбеддинги и индекс имён
+в `data/search/`, `ask` печатает результат JSON-ом, `batch` прогоняет список
+вопросов и пишет `results.jsonl` и `review.csv` для ручной разметки.
+Эмбеддингам нужен `uv sync --extra search`. См. [search.md](search.md).
+
 ## `--input`: точечный выбор строк у `enrich`
 
 `_selection_from_input(path, entity)` читает `path` построчно (один id на

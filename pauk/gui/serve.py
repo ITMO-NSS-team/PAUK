@@ -7,6 +7,7 @@ import logging
 import mimetypes
 import socket
 import sys
+import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -26,6 +27,41 @@ ROOT = Path(__file__).parent / "web"
 DATA_DIR = settings.map_out_dir(PUBLIC)
 API_STATS = "/api/stats"
 API_CHECK = "/api/check"
+API_ASK = "/api/ask"
+ASK_MAX_BODY = 64 * 1024
+
+# The search engine holds the embedding model and the indexes in memory, so it
+# is built once per process - in the background at startup, or on the first
+# question if the index appeared later.
+_ask_engine = None
+_ask_engine_error: str | None = None
+_ask_engine_lock = threading.Lock()
+
+
+def _get_ask_engine():
+    global _ask_engine, _ask_engine_error
+    with _ask_engine_lock:
+        if _ask_engine is None:
+            from pauk.search.pipeline import Engine
+
+            try:
+                _ask_engine = Engine(settings)
+                _ask_engine_error = None
+            except Exception as exc:
+                _ask_engine_error = f"{type(exc).__name__}: {exc}"
+                raise
+        return _ask_engine
+
+
+def _warm_ask_engine():
+    if not (settings.search_dir / "manifest.json").is_file():
+        logger.info("No search index in %s - the Ask tab needs `pauk search build-index`", settings.search_dir)
+        return
+    try:
+        _get_ask_engine().embedder(["warm up"])
+        logger.info("Search engine ready")
+    except Exception:
+        logger.exception("Search engine failed to start")
 
 _gzip_cache: dict[str, tuple[str, bytes]] = {}
 
@@ -132,20 +168,68 @@ class GzipHandler(SimpleHTTPRequestHandler):
                 },
             )
 
+    def _ask(self):
+        """One free-text question through pauk.search. Read-only on the graph."""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if not 0 < length <= ASK_MAX_BODY:
+            return self._send_json(400, {"error": "Request body is empty or too large"})
+        try:
+            from pauk.search.pipeline import AskOptions
+            from pauk.search.plan import QueryPlan
+            from pauk.search.retrieval import MODES
+        except ImportError as e:
+            return self._send_json(503, {"error": "Search dependencies are not installed.", "detail": str(e)})
+        try:
+            body = json.loads(self.rfile.read(length))
+            question = str(body.get("question") or "").strip()[:2000]
+            mode = body.get("retrieval_mode", "hybrid")
+            ranking = body.get("ranking", "graph")
+            if not question or mode not in MODES or ranking not in ("graph", "authorship"):
+                raise ValueError("question, retrieval_mode or ranking is invalid")
+            options = AskOptions(
+                retrieval_mode=mode, ranking=ranking,
+                llm_parse=bool(body.get("llm_parse", True)), llm_answer=bool(body.get("llm_answer", True)),
+                top_n=max(1, min(100, int(body.get("top_n", 10)))),
+                plan=QueryPlan.model_validate(body["plan"]) if body.get("plan") else None,
+            )
+        except (ValueError, TypeError, AttributeError) as e:
+            return self._send_json(400, {"error": f"Bad request: {e}"})
+        try:
+            engine = _get_ask_engine()
+        except Exception:
+            return self._send_json(503, {
+                "error": "The search index is not available. Build it with `pauk search build-index`.",
+                "detail": _ask_engine_error,
+            })
+        try:
+            return self._send_json(200, engine.ask(question, options))
+        except Exception as e:
+            logger.exception("ask failed")
+            return self._send_json(503, {
+                "error": "Search failed. Please make sure Neo4j is running.",
+                "detail": f"{type(e).__name__}: {e}",
+            })
+
     def do_POST(self):
         if PUBLIC:
             return self.send_error(404)
-        if self.path.split("?")[0] == API_STATS:
+        route = self.path.split("?")[0]
+        if route == API_STATS:
             return self._recompute_stats()
+        if route == API_ASK:
+            return self._ask()
         self.send_error(404)
 
     def do_GET(self):
         route = self.path.split("?")[0]
         # graph-stats.js is an aggregate-only snapshot (counts/percentages, no
-        # individual rows) - safe to serve on --public. /api/check and
-        # /api/stats hit a live Neo4j and can return raw example rows (names),
-        # so those stay blocked regardless of build.
-        if PUBLIC and route in (API_STATS, API_CHECK):
+        # individual rows) - safe to serve on --public. /api/check,
+        # /api/stats and /api/ask hit a live Neo4j and can return raw rows
+        # (names), so those stay blocked regardless of build.
+        if PUBLIC and route in (API_STATS, API_CHECK, API_ASK):
             return self.send_error(404)
         if route == API_STATS:
             return self._send_json(405, {"error": "Recompute is POST-only"})
@@ -210,6 +294,8 @@ class GzipHandler(SimpleHTTPRequestHandler):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     _warn_missing_generated_files()
+    if not PUBLIC:
+        threading.Thread(target=_warm_ask_engine, name="ask-warmup", daemon=True).start()
     server = ThreadingHTTPServer(("", PORT), GzipHandler)
     mode = "PUBLIC (redacted)" if PUBLIC else "private (full data)"
     print(f"http://{socket.gethostname()}:{PORT}  ({mode}, data from {DATA_DIR})")

@@ -138,7 +138,7 @@
 
   <header id="topbar">
     <div id="tab-toggle">
-      <button data-tab="1" class="active" data-i18n="tab.people">Персоналии</button><button data-tab="3" data-i18n="tab.pubs">Публикации</button><button data-tab="2" data-i18n="tab.repos">Репозитории</button><button data-tab="4" data-i18n="tab.search">Поиск</button><button data-tab="5" data-i18n="tab.health">Здоровье БД</button>
+      <button data-tab="1" class="active" data-i18n="tab.people">Персоналии</button><button data-tab="3" data-i18n="tab.pubs">Публикации</button><button data-tab="2" data-i18n="tab.repos">Репозитории</button><button data-tab="4" data-i18n="tab.search">Поиск</button><button data-tab="6" data-i18n="tab.ask">Вопрос</button><button data-tab="5" data-i18n="tab.health">Здоровье БД</button>
     </div>
     <div class="topbar-right">
       <button class="theme-toggle" id="theme-toggle" title="Светлая / тёмная тема" aria-label="Переключить тему">
@@ -207,6 +207,9 @@
   <!-- Tab 5: DB stats + health checks (full-screen, on top of the map) -->
   <div id="stats-page"></div>
 
+  <!-- Tab 6: free-text question to the graph (full-screen, on top of the map) -->
+  <div id="ask-page"></div>
+
   <script defer src="vendor/maplibre-gl.js"></script>
   <script defer src="vendor/d3.min.js"></script>
   <script defer src="graph-data.js"></script>
@@ -222,6 +225,7 @@
   <script defer src="graph-stats.js"></script>
   <script defer src="tab-stats.js"></script>
   <script defer src="search.js"></script>
+  <script defer src="tab-ask.js"></script>
   <script defer src="main.js"></script>
   <script defer src="graph-search.js"></script>
 </body>

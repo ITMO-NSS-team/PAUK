@@ -8,7 +8,7 @@ from pymongo.errors import ServerSelectionTimeoutError
 
 from pauk.admin import cli as admin_cli
 from pauk.jobs.locks import Busy
-from pauk.logging import configure_logging
+from pauk.log_setup import configure_logging
 from pauk.pipeline.collect import Collector
 from pauk.pipeline.enrich import Enricher
 from pauk.pipeline.normalize import OpenAlexNormalizer
@@ -16,6 +16,7 @@ from pauk.pipeline.runner import PipelineRunner
 from pauk.pipeline.selectors import PeriodSelector, WorkSelector, WorksFileSelector
 from pauk.pipeline.stages import ALL_STAGES, OPTIONAL_STAGES
 from pauk.pipeline.stages.base import PreparedSelection
+from pauk.search import cli as search_cli
 from pauk.settings import settings
 from pauk.sources import OpenAlexClient
 from pauk.storage import PreparedStore, RawStore, ensure_indexes, get_mongo_client
@@ -89,6 +90,7 @@ def main() -> None:
     p = cache_sub.add_parser("export")
     p.add_argument("--output", type=Path)
     admin_cli.add_parser(sub)
+    search_cli.add_parser(sub)
     args = parser.parse_args()
     configure_logging(args.verbose)
 
@@ -159,6 +161,9 @@ def main() -> None:
                 admin_cli.run(args, settings, db)
             finally:
                 mongo.close()
+    elif args.command == "search":
+        # Reads the graph only; never opens Mongo.
+        search_cli.run(args, settings)
     elif args.command == "dedup":
         from pauk.graph.dedup import run_graph_dedup
         mongo = get_mongo_client(settings)

@@ -17,6 +17,8 @@ data/pdf/*
 data/audit/*
 data/reports/*
 data/backups/*
+# Search index: vectors, texts, READMEs and a name index of people.
+data/search/*
 !data/cache/.gitkeep
 !data/audit/.gitkeep
 
