@@ -73,9 +73,23 @@ def _load_cached(path: Path, options: AskOptions) -> dict[str, dict[str, Any]]:
         if not line.strip():
             continue
         row = json.loads(line)
-        if row.get("batch_options") == _settings_key(options) and "error" not in row:
+        if row.get("batch_options") == _settings_key(options) and not _transient_failure(row):
             cached[row["question"]] = row
     return cached
+
+
+def _transient_failure(row: dict[str, Any]) -> bool:
+    """A crash or an LLM call that never got an answer: worth asking again.
+
+    Kept, such a row would pin a network blip into every later run - the
+    question would stay "answered" by the topic-search fallback for good.
+    """
+    if "error" in row:
+        return True
+    parse = (row.get("trace") or {}).get("parse") or {}
+    if parse.get("fallback"):
+        return True
+    return any(note.startswith("Текстовый ответ не получен") for note in row.get("notes") or [])
 
 
 def run(questions_path: Path, out_dir: Path, options: AskOptions, *, force: bool = False,
@@ -195,3 +209,70 @@ def write_review(results: list[dict[str, Any]], path: Path) -> None:
             row = review_row(number, result)
             row.update(marks.get(result["question"], {}))
             writer.writerow(row)
+
+
+# --- reading runs back for the review page (pauk/gui/web/review.html) ---------
+
+CORRECT_VALUES = ("", "да", "частично", "нет")
+MAX_COMMENT = 4000
+
+
+def list_runs(search_dir: Path) -> list[dict[str, Any]]:
+    """Every batch output under the search dir, newest first."""
+    runs = []
+    for results in search_dir.glob("**/results.jsonl"):
+        run_dir = results.parent
+        lines = [line for line in results.read_text(encoding="utf-8").splitlines() if line.strip()]
+        runs.append({
+            "name": run_dir.relative_to(search_dir).as_posix(),
+            "questions": len(lines),
+            "modified": results.stat().st_mtime,
+        })
+    return sorted(runs, key=lambda run: -run["modified"])
+
+
+def resolve_run(search_dir: Path, name: str) -> Path:
+    """The run directory for a name from the page; nothing outside the search dir."""
+    run_dir = (search_dir / name).resolve()
+    if not run_dir.is_relative_to(search_dir.resolve()) or not (run_dir / "results.jsonl").is_file():
+        raise FileNotFoundError(name)
+    return run_dir
+
+
+def load_run(run_dir: Path) -> list[dict[str, Any]]:
+    marks = _earlier_marks(run_dir / "review.csv")
+    results = []
+    for line in (run_dir / "results.jsonl").read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            result = json.loads(line)
+            result["marks"] = marks.get(result["question"], dict.fromkeys(REVIEW_COLUMNS, ""))
+            results.append(result)
+    return results
+
+
+def save_marks(run_dir: Path, question: str, marks: dict[str, str]) -> dict[str, str]:
+    """Write one question's marks into review.csv, keeping every other row as it is."""
+    clean = {
+        "correct": str(marks.get("correct") or ""),
+        "broken_step": str(marks.get("broken_step") or ""),
+        "comment": str(marks.get("comment") or "")[:MAX_COMMENT],
+    }
+    if clean["correct"] not in CORRECT_VALUES:
+        raise ValueError(f"correct must be one of {CORRECT_VALUES[1:]}")
+    if clean["broken_step"] and clean["broken_step"] not in BROKEN_STEPS.split(" | "):
+        raise ValueError(f"broken_step must be one of {BROKEN_STEPS}")
+    results = load_run(run_dir)
+    if not any(result["question"] == question for result in results):
+        raise KeyError(question)
+    review_path = run_dir / "review.csv"
+    write_review(results, review_path)  # make sure every question has a row
+    with review_path.open(encoding="utf-8-sig", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    for row in rows:
+        if row["question"] == question:
+            row.update(clean)
+    with review_path.open("w", encoding="utf-8-sig", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=COLUMNS, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+    return clean

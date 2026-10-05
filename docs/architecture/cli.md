@@ -207,12 +207,16 @@ pauk search ask "<вопрос>" [--mode hybrid|dense|bm25] [--ranking graph|aut
                           [--no-llm-parse] [--no-llm-answer] [--top N]
 pauk search batch <вопросы.txt|.csv> [--out DIR] [--mode ...] [--ranking ...]
                   [--no-llm-parse] [--no-llm-answer] [--top N] [--force]
+pauk search pool [--run batch] [--k 10]
+pauk search metrics [--run batch]
 ```
 
 Вопрос к графу на естественном языке, граф только читается. `fetch-readmes`
 скачивает README репозиториев, `build-index` строит эмбеддинги и индекс имён
 в `data/search/`, `ask` печатает результат JSON-ом, `batch` прогоняет список
 вопросов и пишет `results.jsonl` и `review.csv` для ручной разметки.
+`pool` собирает пул первых k от каждого варианта поиска для оценки на
+`/review`, `metrics` считает по оценкам P@k, nDCG@10 и MRR.
 Эмбеддингам нужен `uv sync --extra search`. См. [search.md](search.md).
 
 ## `--input`: точечный выбор строк у `enrich`

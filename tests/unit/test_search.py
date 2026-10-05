@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import csv
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,7 +10,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from pauk.search import batch
+from pauk.search import batch, evaluation
 from pauk.search.entities import NameIndex, initials_compatible, name_key, transliterate
 from pauk.search.llm import ANSWER_MAX_TOKENS, allowed_urls, compose_answer, strip_unknown_links
 from pauk.search.plan import QueryPlan
@@ -292,6 +293,84 @@ class BatchTest(unittest.TestCase):
         self.assertEqual(engine.asked, ["один", "сломай", "сломай", "два"])
         self.assertEqual(summary["reused"], 1)
         self.assertEqual(self._review()[0]["correct"], "да")
+
+    def test_llm_failures_are_asked_again(self):
+        questions = self.dir / "q.txt"
+        questions.write_text("один\n", encoding="utf-8")
+        engine = self.FakeEngine()
+        ask = engine.ask
+        engine.ask = lambda q, o: {**ask(q, o), "trace": {"parse": {"fallback": "ConnectionError"}}}
+        options = batch.AskOptions()
+        batch.run(questions, self.out, options, engine=engine)
+        batch.run(questions, self.out, options, engine=engine)
+        self.assertEqual(engine.asked, ["один", "один"])
+
+    def test_review_page_reads_and_saves_marks(self):
+        questions = self.dir / "q.txt"
+        questions.write_text("один\nдва\n", encoding="utf-8")
+        batch.run(questions, self.out, batch.AskOptions(), engine=self.FakeEngine())
+        search_dir = self.dir
+        self.assertEqual([r["name"] for r in batch.list_runs(search_dir)], ["out"])
+        run_dir = batch.resolve_run(search_dir, "out")
+        with self.assertRaises(FileNotFoundError):
+            batch.resolve_run(search_dir, "../..")
+        batch.save_marks(run_dir, "два", {"correct": "нет", "broken_step": "template", "comment": "x"})
+        marks = {r["question"]: r["marks"] for r in batch.load_run(run_dir)}
+        self.assertEqual(marks["два"], {"correct": "нет", "broken_step": "template", "comment": "x"})
+        self.assertEqual(marks["один"]["correct"], "")
+        with self.assertRaises(ValueError):
+            batch.save_marks(run_dir, "два", {"correct": "может быть"})
+        with self.assertRaises(KeyError):
+            batch.save_marks(run_dir, "три", {})
+
+
+class EvaluationTest(unittest.TestCase):
+    def test_metrics_of_one_ranking(self):
+        grades = {"a": 2, "b": 0, "c": 1, "d": 2}
+        m = evaluation.score_ranking(["b", "a", "x", "c"], grades, k=10)
+        self.assertEqual((m["P@5"], m["P@10"]), (0.4, 0.2))
+        self.assertEqual(m["MRR"], 0.5)  # first relevant at rank 2
+        self.assertEqual(m["judged@10"], 0.3)  # x was never judged and counts as not relevant
+        self.assertGreater(evaluation.score_ranking(["a", "d", "c"], grades, 10)["nDCG@10"], m["nDCG@10"])
+        self.assertEqual(evaluation.score_ranking(["a", "d", "c"], grades, 10)["nDCG@10"], 1.0)
+
+    def test_pool_judgments_and_metrics(self):
+        run_dir = Path(tempfile.mkdtemp())
+        result = {"question": "q", "plan": {"core": ["x"]}, "sections": {}}
+        (run_dir / "results.jsonl").write_text(
+            "\n".join(json.dumps(r) for r in [result, {"question": "profile", "plan": {"core": []}}]),
+            encoding="utf-8")
+
+        class Engine:
+            config = type("C", (), {"search_dir": run_dir})()
+
+            def ask(self, question, options):
+                order = ["p1", "p2"] if options.ranking == "graph" else ["p2", "p1"]
+                return {"sections": {
+                    "persons": [{"id": i, "label": i, "url": None, "top_publications": ["t"]} for i in order],
+                    "publications": [{"id": "w1", "label": "Paper", "title": "Paper", "year": 2025}],
+                }}
+
+        (run_dir / "publications.json").write_text(json.dumps([{"id": "w1", "text": "Paper about x"}]),
+                                                   encoding="utf-8")
+        pool = evaluation.build_pool(run_dir, Engine(), k=2)
+        entry, skipped = pool["questions"]
+        self.assertTrue(skipped["skipped"])
+        self.assertEqual(set(entry["items"]["persons"]), {"p1", "p2"})
+        self.assertEqual(entry["items"]["publications"]["w1"]["abstract"], "about x")
+        evaluation.save_judgment(run_dir, "q", "persons", "p1", 2)
+        evaluation.save_judgment(run_dir, "q", "persons", "p2", 0)
+        with self.assertRaises(KeyError):
+            evaluation.save_judgment(run_dir, "q", "persons", "nobody", 1)
+        with self.assertRaises(ValueError):
+            evaluation.save_judgment(run_dir, "q", "persons", "p1", 5)
+        rows = {r["variant"]: r for r in evaluation.compute_metrics(run_dir)}
+        self.assertEqual(rows["hybrid+graph"]["MRR"], 1.0)
+        self.assertEqual(rows["hybrid"]["MRR"], 0.5)
+        self.assertEqual(evaluation.progress(pool, evaluation.load_judgments(run_dir))["q"],
+                         {"judged": 2, "total": 3})
+        evaluation.save_judgment(run_dir, "q", "persons", "p2", None)
+        self.assertEqual(evaluation.load_judgments(run_dir)["q"], {"persons:p1": 2})
 
 
 if __name__ == "__main__":

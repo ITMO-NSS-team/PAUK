@@ -36,6 +36,15 @@ def add_parser(subparsers) -> None:
     p.add_argument("--top", type=int, default=10)
     p.add_argument("--force", action="store_true", help="re-ask questions already answered with the same options")
 
+    p = sub.add_parser("pool", help="run every search variant on a batch run's questions and pool their top-k")
+    p.add_argument("--run", default="batch", help="batch run directory under <data_dir>/search (default: batch)")
+    p.add_argument("--k", type=int, default=10, help="pool depth per variant (default: 10)")
+
+    p = sub.add_parser("metrics", help="P@k, nDCG@k and MRR per variant from the judged pool")
+    p.add_argument("--run", default="batch", help="batch run directory under <data_dir>/search (default: batch)")
+    p.add_argument("--judge", help="use judgments_<judge>.json instead of judgments.json, and report "
+                                    "how far that judge agrees with judgments.json")
+
 
 def run(args, config: Settings) -> None:
     if args.search_command == "fetch-readmes":
@@ -46,6 +55,35 @@ def run(args, config: Settings) -> None:
         from .index import build
 
         print(json.dumps(build(config), ensure_ascii=False, indent=2))
+    elif args.search_command in ("pool", "metrics"):
+        from .batch import resolve_run
+        from .evaluation import build_pool, compute_metrics, load_judgments, progress
+
+        run_dir = resolve_run(config.search_dir, args.run)
+        if args.search_command == "pool":
+            from .pipeline import Engine
+
+            engine = Engine(config)
+            try:
+                pool = build_pool(run_dir, engine, k=args.k)
+            finally:
+                engine.close()
+            print(json.dumps({"pool": str(run_dir / "pool.json"),
+                              "questions": progress(pool, load_judgments(run_dir)),
+                              "skipped": [q["question"] for q in pool["questions"] if q.get("skipped")],
+                              "judge at": "http://localhost:8501/review (Пул)"}, ensure_ascii=False, indent=2))
+        else:
+            from .evaluation import agreement
+
+            rows = compute_metrics(run_dir, args.judge)
+            if not rows:
+                print("No judgments yet: grade the pool on http://localhost:8501/review first.")
+            for row in rows:
+                print("  ".join(f"{key}={value}" for key, value in row.items()))
+            if args.judge:
+                print(f"\nagreement of {args.judge} with judgments.json on items both graded:")
+                for row in agreement(run_dir, args.judge) or [{"items": 0}]:
+                    print("  ".join(f"{key}={value}" for key, value in row.items()))
     elif args.search_command == "batch":
         from pathlib import Path
 

@@ -29,6 +29,17 @@ API_STATS = "/api/stats"
 API_CHECK = "/api/check"
 API_ASK = "/api/ask"
 ASK_MAX_BODY = 64 * 1024
+# The developer page for reviewing `pauk search batch` runs. Like /api/ask it
+# shows names and is never served on --public.
+REVIEW_PAGE = "/review"
+API_REVIEW_RUNS = "/api/review/runs"
+API_REVIEW_RUN = "/api/review/run"
+API_REVIEW_MARK = "/api/review/mark"
+API_REVIEW_POOL = "/api/review/pool"
+API_REVIEW_JUDGE = "/api/review/judge"
+REVIEW_ROUTES = (REVIEW_PAGE, "/review.html", "/review.js", API_REVIEW_RUNS, API_REVIEW_RUN, API_REVIEW_MARK,
+                 API_REVIEW_POOL, API_REVIEW_JUDGE)
+_review_lock = threading.Lock()
 
 # The search engine holds the embedding model and the indexes in memory, so it
 # is built once per process - in the background at startup, or on the first
@@ -213,6 +224,81 @@ class GzipHandler(SimpleHTTPRequestHandler):
                 "detail": f"{type(e).__name__}: {e}",
             })
 
+    def _review_runs(self):
+        from pauk.search.batch import list_runs
+
+        return self._send_json(200, {"runs": list_runs(settings.search_dir)})
+
+    def _review_run(self):
+        from pauk.search.batch import load_run, resolve_run
+
+        name = (parse_qs(urlparse(self.path).query).get("name") or [""])[0]
+        try:
+            run_dir = resolve_run(settings.search_dir, name)
+        except FileNotFoundError:
+            return self._send_json(404, {"error": f"No batch run {name!r}"})
+        return self._send_json(200, {"name": name, "results": load_run(run_dir)})
+
+    def _review_mark(self):
+        from pauk.search.batch import resolve_run, save_marks
+
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if not 0 < length <= ASK_MAX_BODY:
+            return self._send_json(400, {"error": "Request body is empty or too large"})
+        try:
+            body = json.loads(self.rfile.read(length))
+            run_dir = resolve_run(settings.search_dir, str(body.get("run") or ""))
+            with _review_lock:  # two tabs saving at once must not interleave the CSV rewrite
+                marks = save_marks(run_dir, str(body.get("question") or ""), body.get("marks") or {})
+        except FileNotFoundError:
+            return self._send_json(404, {"error": "No such batch run"})
+        except KeyError:
+            return self._send_json(404, {"error": "No such question in the run"})
+        except (ValueError, TypeError, AttributeError) as e:
+            return self._send_json(400, {"error": f"Bad request: {e}"})
+        return self._send_json(200, {"marks": marks})
+
+    def _review_pool(self):
+        from pauk.search.batch import resolve_run
+        from pauk.search.evaluation import load_judgments, load_pool, progress
+
+        name = (parse_qs(urlparse(self.path).query).get("name") or [""])[0]
+        try:
+            run_dir = resolve_run(settings.search_dir, name)
+            pool = load_pool(run_dir)
+        except FileNotFoundError:
+            return self._send_json(404, {"error": "No pool for this run: build it with `pauk search pool`"})
+        judgments = load_judgments(run_dir)
+        return self._send_json(200, {"pool": pool, "judgments": judgments, "progress": progress(pool, judgments)})
+
+    def _review_judge(self):
+        from pauk.search.batch import resolve_run
+        from pauk.search.evaluation import save_judgment
+
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if not 0 < length <= ASK_MAX_BODY:
+            return self._send_json(400, {"error": "Request body is empty or too large"})
+        try:
+            body = json.loads(self.rfile.read(length))
+            run_dir = resolve_run(settings.search_dir, str(body.get("run") or ""))
+            grade = body.get("grade")
+            with _review_lock:
+                save_judgment(run_dir, str(body.get("question") or ""), str(body.get("kind") or ""),
+                              str(body.get("id") or ""), None if grade is None else int(grade))
+        except FileNotFoundError:
+            return self._send_json(404, {"error": "No such batch run or pool"})
+        except KeyError as e:
+            return self._send_json(404, {"error": str(e)})
+        except (ValueError, TypeError, AttributeError) as e:
+            return self._send_json(400, {"error": f"Bad request: {e}"})
+        return self._send_json(200, {"ok": True})
+
     def do_POST(self):
         if PUBLIC:
             return self.send_error(404)
@@ -221,6 +307,10 @@ class GzipHandler(SimpleHTTPRequestHandler):
             return self._recompute_stats()
         if route == API_ASK:
             return self._ask()
+        if route == API_REVIEW_MARK:
+            return self._review_mark()
+        if route == API_REVIEW_JUDGE:
+            return self._review_judge()
         self.send_error(404)
 
     def do_GET(self):
@@ -229,12 +319,20 @@ class GzipHandler(SimpleHTTPRequestHandler):
         # individual rows) - safe to serve on --public. /api/check,
         # /api/stats and /api/ask hit a live Neo4j and can return raw rows
         # (names), so those stay blocked regardless of build.
-        if PUBLIC and route in (API_STATS, API_CHECK, API_ASK):
+        if PUBLIC and route in (API_STATS, API_CHECK, API_ASK, *REVIEW_ROUTES):
             return self.send_error(404)
         if route == API_STATS:
             return self._send_json(405, {"error": "Recompute is POST-only"})
         if route == API_CHECK:
             return self._check_examples()
+        if route == API_REVIEW_RUNS:
+            return self._review_runs()
+        if route == API_REVIEW_RUN:
+            return self._review_run()
+        if route == API_REVIEW_POOL:
+            return self._review_pool()
+        if route == REVIEW_PAGE:
+            self.path = "/review.html"
 
         if route.lstrip("/") in _DATA_DIR_FILES:
             path = str(DATA_DIR / route.lstrip("/"))
