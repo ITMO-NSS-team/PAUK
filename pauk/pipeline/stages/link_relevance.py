@@ -15,6 +15,7 @@ from .code_links import ARCHIVED_DEPOSIT_REASON
 logger = logging.getLogger(__name__)
 
 MODEL_CONTEXT_LIMIT = 12
+AMBIGUOUS_URL_REASON = "ambiguous_url_extraction"
 
 PROMPT_TEMPLATE = """Ты помогаешь анализировать научные публикации.
 
@@ -193,14 +194,22 @@ class LinkRelevanceStage(EnrichmentStage):
             state = pub.processing.get(self.name)
             if not self.needs_attempt(state):
                 continue
-            # Under --force, re-judge everything except the one deterministic
-            # verdict code_links sets itself (not an LLM call, nothing to
-            # re-judge) - e.g. to re-classify with a newly configured model.
+            for link in row.links:
+                if link.url_ambiguous:
+                    link.classification_status = ClassificationStatus.CLASSIFIED
+                    link.is_relevant = None
+                    link.llm_confidence = None
+                    link.llm_reason = AMBIGUOUS_URL_REASON
+            # Under --force, re-judge only verdicts that came from the model.
+            # Extraction ambiguity cannot be resolved from the same contexts.
             pending = [
                 link
                 for link in row.links
-                if link.classification_status != ClassificationStatus.CLASSIFIED
-                or (self.force and link.llm_reason != ARCHIVED_DEPOSIT_REASON)
+                if not link.url_ambiguous
+                and (
+                    link.classification_status != ClassificationStatus.CLASSIFIED
+                    or (self.force and link.llm_reason != ARCHIVED_DEPOSIT_REASON)
+                )
             ]
             candidates.append((row, pub, pending))
         changed = 0

@@ -26,7 +26,12 @@ from pauk.pipeline.stages.code_links import (
     _normalize_ligatures,
     _occurrences_in_text,
 )
-from pauk.pipeline.stages.link_relevance import MODEL_CONTEXT_LIMIT, LinkRelevanceStage, _format_contexts
+from pauk.pipeline.stages.link_relevance import (
+    AMBIGUOUS_URL_REASON,
+    MODEL_CONTEXT_LIMIT,
+    LinkRelevanceStage,
+    _format_contexts,
+)
 from pauk.pipeline.stages.repo_people import RepoPeopleStage, _is_person
 from pauk.pipeline.stages.repositories import RepositoriesStage
 from pauk.settings import Settings
@@ -564,6 +569,66 @@ class StagesTest(unittest.TestCase):
         self.assertEqual(links["https://github.com/asl/BandageNG"].llm_reason,
                           "repository_archived_by_this_deposit")
         self.assertEqual(links["https://github.com/org/repo"].llm_reason, "re-judged")
+
+    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
+    def test_link_relevance_skips_ambiguous_url_and_rejudges_confirmed_url(self, openrouter_client):
+        openrouter_client.return_value.chat_json.return_value = {
+            "is_authors_artifact": True, "confidence": 0.9, "reason": "authors say so",
+        }
+        openrouter_client.return_value.last_response = {"choices": []}
+        openrouter_client.return_value.last_usage = None
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        short_url = "https://github.com/KseniiaCheloshkina/cancer_"
+        full_url = short_url + "breakpoints_hotspots_prediction_wide"
+        prepared.write_models("publications", [Publication(
+            id="W1",
+            title="paper",
+            has_code=True,
+            code_url=json.dumps([short_url]),
+        )])
+        prepared.write_models("repo_links", [RepoLink(publication_id="W1", links=[
+            CodeLink(
+                url=short_url,
+                occurrences=[LinkOccurrence(
+                    source="pdf_text",
+                    candidate_urls=[short_url, full_url],
+                )],
+                is_relevant=True,
+                llm_confidence=0.85,
+                llm_reason="old false positive",
+            ),
+            CodeLink(
+                url=full_url,
+                occurrences=[LinkOccurrence(
+                    source="pdf_annotation",
+                    candidate_urls=[full_url],
+                    continuous=True,
+                )],
+                is_relevant=True,
+                llm_confidence=0.95,
+                llm_reason="old verdict",
+            ),
+        ])])
+
+        LinkRelevanceStage(prepared, raw, force=True).run()
+
+        openrouter_client.return_value.chat_json.assert_called_once()
+        prompt = openrouter_client.return_value.chat_json.call_args.args[0]
+        self.assertIn(f"URL: {full_url}", prompt)
+        self.assertNotIn(f"URL: {short_url}\n", prompt)
+        links = {link.url: link for link in next(
+            prepared.read_models("repo_links", RepoLink)
+        ).links}
+        ambiguous = links[short_url]
+        self.assertEqual(ambiguous.classification_status, ClassificationStatus.CLASSIFIED)
+        self.assertIsNone(ambiguous.is_relevant)
+        self.assertIsNone(ambiguous.llm_confidence)
+        self.assertEqual(ambiguous.llm_reason, AMBIGUOUS_URL_REASON)
+        self.assertEqual(links[full_url].llm_reason, "authors say so")
+        publication = next(prepared.read_models("publications", Publication))
+        self.assertEqual(json.loads(publication.code_url), [full_url])
+        self.assertEqual(self.db["llm_logs_link_relevance"].count_documents({}), 1)
 
     @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
     def test_link_relevance_marks_failed_when_the_llm_call_fails(self, openrouter_client):

@@ -101,9 +101,11 @@ GITHUB_URL = re.compile(
 
 Если у адреса есть только неоднозначные вхождения, `url_ambiguous=true`:
 он не попадает в `Publication.code_url` и `Repository.publication_ids`,
-даже при положительном вердикте релевантности. В графе альтернативы
-помечаются свойствами `MENTIONS_LINK.url_ambiguous`, `candidate_urls` и
-`availability`; `is_relevant` такого ребра остаётся неопределённым.
+а `link_relevance` не отправляет его в модель и сохраняет детерминированный
+неопределённый результат (`classified`, `is_relevant=null`, причина
+`"ambiguous_url_extraction"`). В графе альтернативы помечаются свойствами
+`MENTIONS_LINK.url_ambiguous`, `candidate_urls` и `availability`;
+`is_relevant` такого ребра остаётся неопределённым.
 
 ## Источники текста на одной PDF-странице
 
@@ -194,9 +196,12 @@ PDF-контекст помечены своим источником. Отве�
 ошибка очищает прежний вердикт, выставляет `failed` и оставляет стейдж в
 `FAILED`, чтобы следующий запуск повторил запрос. `result_count` стейджа
 считает все ссылки со статусом `classified`, включая неопределённые.
-Архивный репозиторий Zenodo — единственное детерминированное исключение:
-`classified`, `true`, уверенность `1.0`, причина
-`"repository_archived_by_this_deposit"`, без вызова модели.
+Два случая обрабатываются детерминированно, без вызова модели:
+
+- архивный репозиторий Zenodo — `classified`, `true`, уверенность `1.0`,
+  причина `"repository_archived_by_this_deposit"`;
+- URL только с неоднозначными вхождениями — `classified`, `null`, без
+  уверенности, причина `"ambiguous_url_extraction"`.
 
 После классификации `has_code=true`, только если есть хотя бы один
 `CodeLink.is_relevant=true`. `code_url` хранит JSON-список URL всех таких
