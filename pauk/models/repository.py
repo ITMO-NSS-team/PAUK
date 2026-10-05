@@ -44,6 +44,12 @@ class LinkCandidate(BaseModel):
 class LinkOccurrence(BaseModel):
     context: str | None = None
     page_number: int | None = None
+    source: Literal[
+        "abstract", "pdf_text", "pdf_annotation", "reference", "citation", "deposit_title"
+    ] | None = None
+    reference_label: str | None = None
+    text_start: int | None = None
+    text_end: int | None = None
     raw_url: str | None = None
     raw_fragments: list[str] = Field(default_factory=list)
     # Alternatives belong to this occurrence, not to every mention of the URL.

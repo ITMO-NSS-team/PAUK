@@ -98,10 +98,13 @@ Pydantic-модели того, что лежит в `data/prepared/<group>/*.js
 - **`LinkCandidate`** — ссылка на код, найденная в статье, но ещё не
   сопоставленная с известным `Repository` (`id` = сам URL).
 - **`LinkOccurrence`** — одно вхождение ссылки: `context` (окружающий
-  текст) + `page_number` (`None` = абстракт, PDF-страницы с 1). Введено в
-  этой сессии вместе с PDF full-text — раньше `CodeLink` хранил одно
-  значение `context`/`page_number` на ссылку, что не давало отразить
-  ссылку, встретившуюся и в абстракте, и на нескольких страницах.
+  текст), `page_number` (`None` = абстракт, PDF-страницы с 1), источник
+  (`abstract`/`pdf_text`/`pdf_annotation`/`reference`/`citation`/
+  `deposit_title`) и смещения `text_start`/`text_end`. Для литературы и
+  сносок `reference_label` связывает запись источника с местом её
+  использования. `raw_url`/`raw_fragments`/`candidate_urls`/`continuous`
+  сохраняют исходное и альтернативные прочтения перенесённого URL. Поля
+  опциональны, поэтому старые prepared-строки продолжают читаться.
 - **`CodeLink`** — url, host, `occurrences: list[LinkOccurrence]`,
   `classification_status` (`pending`/`classified`/`failed`) и
   `is_relevant`/`llm_confidence`/`llm_reason` — заполняются

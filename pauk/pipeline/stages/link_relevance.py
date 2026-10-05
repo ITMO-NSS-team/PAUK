@@ -14,6 +14,8 @@ from .code_links import ARCHIVED_DEPOSIT_REASON
 
 logger = logging.getLogger(__name__)
 
+MODEL_CONTEXT_LIMIT = 12
+
 PROMPT_TEMPLATE = """Ты помогаешь анализировать научные публикации.
 
 Публикация:
@@ -22,7 +24,7 @@ PROMPT_TEMPLATE = """Ты помогаешь анализировать науч
 В её материалах найдена ссылка:
   URL: {url}
 
-Все найденные контексты этой ссылки:
+Контексты этой ссылки, отобранные для анализа:
 {contexts}
 
 Вопрос: это репозиторий/модель/датасет, который ВЫЛОЖИЛИ САМИ АВТОРЫ этой
@@ -34,7 +36,7 @@ PROMPT_TEMPLATE = """Ты помогаешь анализировать науч
 Признаки чужого: ссылка в списке литературы; известная чужая библиотека
 (PyTorch, BERT, Llama); формулировки "we use", "based on", "following [N]".
 
-Учитывай все контексты вместе. Если данных недостаточно или контексты
+Учитывай все переданные контексты вместе. Если данных недостаточно или контексты
 противоречат друг другу, верни null в поле is_authors_artifact.
 
 Ответь СТРОГО валидным JSON без markdown:
@@ -42,27 +44,78 @@ PROMPT_TEMPLATE = """Ты помогаешь анализировать науч
 """
 
 
-def _source_hint(page_number: int | None) -> str:
-    if page_number is None:
+def _source_hint(occurrence: LinkOccurrence) -> str:
+    if occurrence.source == "deposit_title":
+        return "название архивного депозита"
+    if occurrence.source == "citation":
+        return f"место цитирования [{occurrence.reference_label}], страница {occurrence.page_number}"
+    if occurrence.source == "reference":
+        return f"список литературы [{occurrence.reference_label}], страница {occurrence.page_number}"
+    if occurrence.source == "pdf_annotation":
+        return f"кликабельная область PDF, страница {occurrence.page_number}"
+    if occurrence.page_number is None:
         return "абстракт OpenAlex (контекст ограничен)"
-    return f"видимый текст PDF, страница {page_number}"
+    return f"видимый текст PDF, страница {occurrence.page_number}"
 
 
-def _format_contexts(occurrences: list[LinkOccurrence]) -> str:
+def _unique_context_occurrences(occurrences: list[LinkOccurrence]) -> list[LinkOccurrence]:
+    unique: list[LinkOccurrence] = []
+    seen: set[tuple[int | None, str, str | None, str | None]] = set()
+    for occurrence in occurrences:
+        context = " ".join((occurrence.context or "").split()) or "(контекст пустой)"
+        key = (
+            occurrence.page_number,
+            context,
+            occurrence.source,
+            occurrence.reference_label,
+        )
+        if key not in seen:
+            seen.add(key)
+            unique.append(occurrence)
+    return unique
+
+
+def _model_occurrences(
+    occurrences: list[LinkOccurrence], limit: int = MODEL_CONTEXT_LIMIT
+) -> list[LinkOccurrence]:
+    unique = _unique_context_occurrences(occurrences)
+    if len(unique) <= limit:
+        return unique
+
+    selected: set[int] = set()
+    sources: set[str | None] = set()
+    for index, occurrence in enumerate(unique):
+        if len(selected) >= limit:
+            break
+        if occurrence.source not in sources:
+            sources.add(occurrence.source)
+            selected.add(index)
+    for index in range(len(unique)):
+        if len(selected) >= limit:
+            break
+        selected.add(index)
+    return [occurrence for index, occurrence in enumerate(unique) if index in selected]
+
+
+def _format_contexts(
+    occurrences: list[LinkOccurrence], limit: int | None = MODEL_CONTEXT_LIMIT
+) -> str:
     if not occurrences:
         return "[1] Источник неизвестен\n\"\"\"\n(контекст пустой)\n\"\"\""
 
+    unique = _unique_context_occurrences(occurrences)
+    selected = unique if limit is None else _model_occurrences(unique, limit)
     blocks: list[str] = []
-    seen: set[tuple[int | None, str]] = set()
-    for occurrence in occurrences:
+    for occurrence in selected:
         context = " ".join((occurrence.context or "").split()) or "(контекст пустой)"
-        key = (occurrence.page_number, context)
-        if key in seen:
-            continue
-        seen.add(key)
         blocks.append(
-            f"[{len(blocks) + 1}] Источник: {_source_hint(occurrence.page_number)}\n"
+            f"[{len(blocks) + 1}] Источник: {_source_hint(occurrence)}\n"
             f'\"\"\"\n{context}\n\"\"\"'
+        )
+    if len(selected) < len(unique):
+        blocks.append(
+            f"Ещё {len(unique) - len(selected)} контекст(ов) сохранено, "
+            "но не передано из-за лимита размера запроса."
         )
     return "\n\n".join(blocks)
 

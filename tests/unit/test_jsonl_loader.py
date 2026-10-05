@@ -30,7 +30,15 @@ class ExtractRepoLinksTest(unittest.TestCase):
         known = {normalize_repo_url("https://github.com/Org/Repo"): "https://github.com/Org/Repo"}
         row = {"publication_id": "W1", "links": [{
             "url": "https://github.com/org/repo",
-            "occurrences": [{"context": "code", "page_number": None}, {"context": "again", "page_number": 3}],
+            "occurrences": [
+                {"context": "code", "page_number": None, "source": "abstract"},
+                {
+                    "context": "again",
+                    "page_number": 3,
+                    "source": "citation",
+                    "reference_label": "9",
+                },
+            ],
         }]}
         candidates, repo_edges, candidate_edges, promotions = extract_repo_links(row, known)
         self.assertEqual(candidates, [])
@@ -40,7 +48,12 @@ class ExtractRepoLinksTest(unittest.TestCase):
         # since Neo4j array properties can't hold null.
         self.assertEqual(repo_edges, [(
             "W1", "https://github.com/Org/Repo",
-            {"context": ["code", "again"], "page_number": [0, 3]},
+            {
+                "context": ["code", "again"],
+                "page_number": [0, 3],
+                "context_source": ["abstract", "citation"],
+                "reference_label": ["", "9"],
+            },
         )])
         self.assertEqual(promotions, [("https://github.com/org/repo", "https://github.com/Org/Repo")])
 

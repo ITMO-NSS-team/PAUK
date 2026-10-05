@@ -18,12 +18,16 @@ from pauk.graph.load import ENTITY_FILES
 from pauk.graph.person_resolution import ModelVerdict
 from pauk.models import (
     Affiliation,
+    ClassificationStatus,
+    CodeLink,
+    LinkOccurrence,
     Person,
     Publication,
     PublicationVersion,
     RepoLink,
     Repository,
 )
+from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.stages.author_names import RussianNamesCatalog
 from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage, _paired_persons
 from pauk.settings import Settings
@@ -578,6 +582,88 @@ class PublicationDedupTest(unittest.TestCase):
         self.assertEqual(links.publication_id, "W2")
         self.assertEqual({link.url for link in links.links},
                          {"https://github.com/org/repo", "https://github.com/org/other"})
+
+    def test_same_repository_keeps_occurrences_from_every_publication_version(self):
+        older = publication("W1", "One work", doi="10.1/x", day="2026-01-01")
+        older.has_code = True
+        older.code_url = '["https://github.com/org/repo"]'
+        newer = publication("W2", "One work", doi="10.1/x", day="2026-02-01")
+        newer.has_code = True
+        newer.code_url = '["https://github.com/org/other"]'
+
+        _, publications = self.run_stage(
+            [older, newer],
+            repo_links=[
+                RepoLink(publication_id="W1", links=[CodeLink(
+                    url="https://github.com/Org/Repo",
+                    classification_status=ClassificationStatus.CLASSIFIED,
+                    is_relevant=True,
+                    occurrences=[LinkOccurrence(context="Preprint context", page_number=2)],
+                )]),
+                RepoLink(publication_id="W2", links=[CodeLink(
+                    url="https://github.com/org/repo",
+                    classification_status=ClassificationStatus.CLASSIFIED,
+                    is_relevant=True,
+                    occurrences=[LinkOccurrence(context="Journal context", page_number=5)],
+                )]),
+            ],
+        )
+
+        (links,) = self.prepared.read_models("repo_links", RepoLink)
+        self.assertEqual(len(links.links), 1)
+        self.assertEqual(
+            [occurrence.context for occurrence in links.links[0].occurrences],
+            ["Preprint context", "Journal context"],
+        )
+        self.assertEqual(
+            set(json.loads(publications["W2"].code_url)),
+            {"https://github.com/org/repo", "https://github.com/org/other"},
+        )
+
+    def test_conflicting_version_verdicts_are_retried_without_losing_last_claim(self):
+        older = publication("W1", "One work", doi="10.1/x", day="2026-01-01")
+        older.has_code = True
+        older.code_url = '["https://github.com/org/repo"]'
+        newer = publication("W2", "One work", doi="10.1/x", day="2026-02-01")
+        for row in (older, newer):
+            row.processing["link_relevance"] = ProcessingState(
+                status=ProcessingStatus.COMPLETED,
+            )
+
+        self.run_stage(
+            [older, newer],
+            repositories=[Repository(
+                id="github_org_repo",
+                name="repo",
+                url="https://github.com/org/repo",
+                cited_urls=["https://github.com/org/repo"],
+                publication_ids=["W1"],
+            )],
+            repo_links=[
+                RepoLink(publication_id="W1", links=[CodeLink(
+                    url="https://github.com/org/repo",
+                    classification_status=ClassificationStatus.CLASSIFIED,
+                    is_relevant=True,
+                    occurrences=[LinkOccurrence(context="Our implementation")],
+                )]),
+                RepoLink(publication_id="W2", links=[CodeLink(
+                    url="https://github.com/org/repo",
+                    classification_status=ClassificationStatus.CLASSIFIED,
+                    is_relevant=False,
+                    occurrences=[LinkOccurrence(context="We use this library")],
+                )]),
+            ],
+        )
+
+        [publication_row] = self.prepared.read_models("publications", Publication)
+        [links] = self.prepared.read_models("repo_links", RepoLink)
+        [repository_row] = self.prepared.read_models("repositories", Repository)
+        self.assertNotIn("link_relevance", publication_row.processing)
+        self.assertTrue(publication_row.has_code)
+        self.assertEqual(json.loads(publication_row.code_url), ["https://github.com/org/repo"])
+        self.assertEqual(links.links[0].classification_status, ClassificationStatus.PENDING)
+        self.assertEqual(len(links.links[0].occurrences), 2)
+        self.assertEqual(repository_row.publication_ids, ["W2"])
 
     def test_second_run_is_a_no_op(self):
         self.run_stage([
