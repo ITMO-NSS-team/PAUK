@@ -109,6 +109,12 @@ class ShapeTest(unittest.TestCase):
     def test_every_check_is_findable_by_id(self):
         self.assertEqual(set(BY_ID), {check.id for check in CHECKS})
 
+    def test_duplicate_orcid_check_is_exposed(self):
+        check = BY_ID["person_shared_orcid"]
+        self.assertEqual(check.group, "Дубликаты")
+        self.assertIn("p.orcid", check.count)
+        self.assertIn("p.orcid", check.examples)
+
     def test_warning_comes_before_failure(self):
         for check in CHECKS:
             with self.subTest(check=check.id):
