@@ -271,8 +271,8 @@ class PersonResolutionTest(unittest.TestCase):
         self.assertEqual(second.decision, Decision.SECOND_MODEL)
 
         rejected = apply_second_verdict(second, ModelVerdict(False, 0.87, "no independent support"))
-        self.assertEqual(rejected.decision, Decision.SEPARATE)
-        self.assertEqual(rejected.route, "qwen_second_separate")
+        self.assertEqual(rejected.decision, Decision.REVIEW)
+        self.assertEqual(rejected.route, "qwen_disagreement")
 
     def test_cascade_reproduces_two_positive_verdict_requirement(self):
         pair = evidence(
@@ -372,7 +372,7 @@ class PersonResolutionTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             evidence(shared_coauthors=-1)
 
-    def test_negative_first_verdict_finishes_without_second_call(self):
+    def test_negative_first_verdict_requires_second_call(self):
         initial = resolve_pair(
             evidence(
                 name_a="A. Petrov",
@@ -389,8 +389,8 @@ class PersonResolutionTest(unittest.TestCase):
 
         result = apply_first_verdict(initial, ModelVerdict(False, 0.78, "insufficient evidence"))
 
-        self.assertEqual(result.decision, Decision.SEPARATE)
-        self.assertEqual(result.route, "qwen_first_separate")
+        self.assertEqual(result.decision, Decision.SECOND_MODEL)
+        self.assertFalse(result.first_duplicate)
 
     def test_model_confidence_outside_contract_is_rejected(self):
         with self.assertRaises(ValueError):
