@@ -165,7 +165,7 @@ class Engine:
             "repositories": len(data["repositories"]),
         }
         if anchor.kind == "person":
-            counts["coauthors"] = len(data.get("coauthors") or [])
+            counts["coauthors"] = len({row["person"] for row in data["authorship"]} - {anchor.best.id})
         else:
             counts["members"] = len(data.get("members") or [])
             counts["units"] = len(data.get("units") or [])

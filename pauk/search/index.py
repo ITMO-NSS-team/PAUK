@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -28,9 +29,21 @@ README_CHARS = 4000
 
 PUBLICATIONS = """
 MATCH (p:Publication)
-RETURN p.id AS id, p.title AS title, p.abstract AS abstract, p.fields AS fields, p.year AS year
+RETURN p.id AS id, p.title AS title, p.abstract AS abstract, p.fields AS fields, p.year AS year, p.type AS type
 ORDER BY p.id
 """
+# Records that are not research texts: reviews of someone else's paper and
+# book front matter. They stay in the graph, only search does not offer them.
+NOT_SEARCHABLE_TYPES = {"paratext", "peer-review"}
+# Without an abstract these types are almost always a single figure or table
+# of an article (OpenAlex gives them their own DOI); a bare caption like
+# "Graphical Abstract" is close to any vague query and wins it.
+FIGURE_LIKE_TYPES = {"other", "dataset"}
+_PARATEXT_TITLE = re.compile(
+    r"^(graphic(al)? abstract|contributors?|preface|foreword|front ?matter|back ?matter|"
+    r"table of contents|editorial board|untitled)\.?$",
+    re.IGNORECASE,
+)
 REPOSITORIES = """
 MATCH (r:Repository)
 RETURN r.id AS id, r.name AS name, r.url AS url, r.description AS description, r.topics AS topics
@@ -55,6 +68,14 @@ RETURN d.id AS id, d.name_ru AS name_ru, d.name_en AS name_en, d.name_variants A
        COUNT { (:Publication)-[:PRODUCED_BY]->(d) } AS publications
 ORDER BY d.id
 """
+
+
+def is_searchable(row: dict[str, Any]) -> bool:
+    if row.get("type") in NOT_SEARCHABLE_TYPES:
+        return False
+    if (row.get("abstract") or "").strip():
+        return True
+    return row.get("type") not in FIGURE_LIKE_TYPES and not _PARATEXT_TITLE.match((row.get("title") or "").strip())
 
 
 def publication_text(row: dict[str, Any]) -> str:
@@ -95,6 +116,8 @@ def build(config: Settings, *, batch_size: int = 16) -> dict[str, int]:
     finally:
         graph.close()
 
+    found = len(publications)
+    publications = [row for row in publications if is_searchable(row)]
     pub_texts = [publication_text(row) for row in publications]
     repo_texts = []
     with_readme = 0
@@ -129,6 +152,7 @@ def build(config: Settings, *, batch_size: int = 16) -> dict[str, int]:
         "built_at": datetime.now(UTC).isoformat(),
         "embedding_model": config.search_embedding_model,
         "publications": len(publications),
+        "publications_not_searchable": found - len(publications),
         "publications_with_abstract": sum(bool(row.get("abstract")) for row in publications),
         "repositories": len(repositories),
         "repositories_with_readme": with_readme,

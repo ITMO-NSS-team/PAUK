@@ -27,6 +27,23 @@ FIELDS: dict[str, tuple[str, ...]] = {
 }
 
 
+# Words that fit any scientific text. A core phrase made only of them pulls
+# search towards whatever says "architecture" (network diagrams, buildings),
+# and the model adds them despite being told not to, so they are dropped here.
+GENERIC_WORDS = {
+    "архитектура", "архитектуры", "архитектурами", "architecture", "architectures",
+    "метод", "методы", "методами", "method", "methods", "подход", "подходы", "approach", "approaches",
+    "модель", "модели", "моделями", "model", "models", "система", "системы", "system", "systems",
+    "исследование", "исследования", "research", "study", "studies", "применение", "application", "applications",
+    "алгоритм", "алгоритмы", "algorithm", "algorithms", "технология", "технологии", "technology", "technologies",
+}
+
+
+def _is_generic(phrase: str) -> bool:
+    words = phrase.casefold().replace("-", " ").split()
+    return bool(words) and all(word in GENERIC_WORDS for word in words)
+
+
 class Entity(BaseModel):
     kind: EntityKind
     name: str = Field(min_length=1)
@@ -51,7 +68,10 @@ class QueryPlan(BaseModel):
     @field_validator("core")
     @classmethod
     def _clean_core(cls, value: list[str]) -> list[str]:
-        return list(dict.fromkeys(phrase.strip() for phrase in value if phrase and phrase.strip()))
+        phrases = list(dict.fromkeys(phrase.strip() for phrase in value if phrase and phrase.strip()))
+        # A question that is about "methods" and nothing else keeps them: an
+        # empty core would turn a topic question into no search at all.
+        return [phrase for phrase in phrases if not _is_generic(phrase)] or phrases
 
     @field_validator("expected_values")
     @classmethod

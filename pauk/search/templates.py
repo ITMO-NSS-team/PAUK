@@ -57,11 +57,10 @@ RETURN d.id AS id, d.name_ru AS name_ru, d.name_en AS name_en, d.kind AS kind,
 # --- person_profile -------------------------------------------------------------
 
 PERSON_PUBLICATIONS = """
-MATCH (p:Person {id: $person_id})-[a:AUTHORED]->(pub:Publication)
+MATCH (p:Person {id: $person_id})-[:AUTHORED]->(pub:Publication)
 OPTIONAL MATCH (pub)-[:PRODUCED_BY]->(d:Department)
 RETURN pub.id AS id, pub.title AS title, pub.year AS year, pub.journal AS journal, pub.doi AS doi,
-       pub.openalex_url AS openalex_url, a.position AS position,
-       COUNT { (:Person)-[:AUTHORED]->(pub) } AS n_authors, collect(DISTINCT d.id) AS departments
+       pub.openalex_url AS openalex_url, collect(DISTINCT d.id) AS departments
 """
 PERSON_REPOSITORIES = """
 MATCH (p:Person {id: $person_id})
@@ -78,13 +77,6 @@ RETURN r.id AS id, r.name AS name, r.url AS url, r.description AS description, r
        collect(DISTINCT implemented.id) AS publications,
        collect(DISTINCT {person: contributor.id, role: c2.role}) AS contributors
 """
-PERSON_COAUTHORS = """
-MATCH (p:Person {id: $person_id})-[:AUTHORED]->(pub:Publication)<-[:AUTHORED]-(co:Person)
-WHERE co.id <> p.id
-RETURN co.id AS id, count(DISTINCT pub) AS shared
-ORDER BY shared DESC LIMIT 50
-"""
-
 # --- department_profile ---------------------------------------------------------
 
 DEPARTMENT_UNITS = """
@@ -116,18 +108,16 @@ def topic_subgraph(graph: GraphReader, pub_ids: list[str], repo_ids: list[str]) 
 
 def person_profile(graph: GraphReader, person_id: str) -> dict[str, Any]:
     publications = graph.read(PERSON_PUBLICATIONS, person_id=person_id)
-    authorship = [
-        {"pub": row["id"], "person": person_id, "position": row["position"], "n_authors": row["n_authors"]}
-        for row in publications
-    ]
+    # Every author of the person's papers, as in a topic subgraph: ranking
+    # then scores co-authors by their shared papers through the same code,
+    # and "who does X write with most" is answered by the persons section.
+    authorship = graph.read(TOPIC_AUTHORSHIP, pub_ids=[row["id"] for row in publications])
     repositories = graph.read(PERSON_REPOSITORIES, person_id=person_id)
-    coauthors = graph.read(PERSON_COAUTHORS, person_id=person_id)
     return _with_lookups(graph, {
         "authorship": authorship,
         "publications": publications,
         "repositories": repositories,
-        "coauthors": coauthors,
-    }, extra_persons=[person_id, *(row["id"] for row in coauthors)])
+    }, extra_persons=[person_id])
 
 
 def department_units(graph: GraphReader, department_id: str) -> list[str]:

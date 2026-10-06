@@ -12,6 +12,7 @@ import numpy as np
 
 from pauk.search import batch, evaluation
 from pauk.search.entities import NameIndex, initials_compatible, name_key, transliterate
+from pauk.search.index import is_searchable
 from pauk.search.llm import ANSWER_MAX_TOKENS, allowed_urls, compose_answer, strip_unknown_links
 from pauk.search.plan import QueryPlan
 from pauk.search.ranking import RankingConfig, position_weight, preset, rank, recency_weight, trim
@@ -116,6 +117,20 @@ class EntitiesTest(unittest.TestCase):
         self.assertIsNone(self.index.resolve("Совершенно Неизвестный").best)
 
 
+class SearchableTest(unittest.TestCase):
+    def test_figures_and_front_matter_are_not_searchable(self):
+        self.assertFalse(is_searchable({"type": "other", "title": "Graphic Abstract", "abstract": None}))
+        self.assertFalse(is_searchable({"type": "dataset", "title": "Сравнительные характеристики алгоритмов"}))
+        self.assertFalse(is_searchable({"type": "paratext", "title": "Contributors", "abstract": "x"}))
+        self.assertFalse(is_searchable({"type": "peer-review", "title": "Report on 2108.10326v2", "abstract": "x"}))
+        self.assertFalse(is_searchable({"type": "article", "title": "Preface", "abstract": ""}))
+
+    def test_research_texts_stay(self):
+        self.assertTrue(is_searchable({"type": "article", "title": "Adaptive Regulation", "abstract": None}))
+        self.assertTrue(is_searchable({"type": "dataset", "title": "Sea ice data", "abstract": "Daily ice charts"}))
+        self.assertTrue(is_searchable({"type": "article", "title": "Untitled", "abstract": "Production networks"}))
+
+
 class PlanTest(unittest.TestCase):
     def test_type_follows_contents(self):
         self.assertEqual(QueryPlan(core=["x"]).type, "topic")
@@ -128,6 +143,11 @@ class PlanTest(unittest.TestCase):
         plan = QueryPlan(core=["x"], fields=["name", "shoe_size"])
         self.assertEqual(plan.wanted_fields("persons"), {"name"})
         self.assertIsNone(plan.wanted_fields("publications"))
+
+    def test_generic_core_words_are_dropped(self):
+        plan = QueryPlan(core=["RT-DETR", "ResNet", "архитектуры", "neural architectures", "Architectures"])
+        self.assertEqual(plan.core, ["RT-DETR", "ResNet", "neural architectures"])
+        self.assertEqual(QueryPlan(core=["методы", "approaches"]).core, ["методы", "approaches"])
 
 
 class AnswerLinksTest(unittest.TestCase):
@@ -223,6 +243,17 @@ class RankingTest(unittest.TestCase):
         self.assertEqual(departments["inst"]["publications"], 2)
         # The lab did the work; its institute gets only the decayed share.
         self.assertGreater(departments["lab"]["score"], departments["inst"]["score"])
+
+    def test_profile_lists_coauthors_by_shared_publications(self):
+        # A person profile carries every author of the person's papers, each
+        # paper weighing 1.0: co-authors rank by how many papers they share.
+        profile = {"P1": 1.0, "P2": 1.0}
+        persons = rank(_subgraph(), profile, {}, QueryPlan(entities=[{"kind": "person", "name": "Средний"}]),
+                       preset("authorship"))["persons"]
+        self.assertEqual([(p["id"], p["publications"]) for p in persons], [("middle", 2), ("first", 1)])
+        everyone = QueryPlan(entities=[{"kind": "person", "name": "Средний"}], filter={"only_itmo": False})
+        persons = rank(_subgraph(), profile, {}, everyone, preset("authorship"))["persons"]
+        self.assertIn(("external", 1), [(p["id"], p["publications"]) for p in persons])
 
     def test_authorship_ranking_ignores_graph_structure(self):
         plan = QueryPlan(core=["diffusion"])
