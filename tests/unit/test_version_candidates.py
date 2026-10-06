@@ -83,10 +83,9 @@ class ClassifyPairTest(unittest.TestCase):
         self.assertEqual(signals["title_sim"], 1.0)
 
     def test_doi_version_suffix_is_a_sibling(self):
-        # A DOI-versioned sub-part legitimately carries its own sub-title
-        # ("...84874" is the whole paper, "...84874.2" one of its revisions
-        # with an editor's note appended) - the DOI relation, not the
-        # title, is what proves these are the same work.
+        # "...84874" is the whole paper, "...84874.2" one of its revisions
+        # with an editor's note appended to the title - still the paper's
+        # title, unlike a figure's caption (see the component test below).
         bucket, _signals = classify_pair(
             pub("W1", "Expanding the stdpopsim species catalog", doi="10.7554/elife.84874",
                 authors=["A1", "A2"]),
@@ -111,6 +110,93 @@ class ClassifyPairTest(unittest.TestCase):
         )
         self.assertEqual(bucket, "SERIES_NOT_VERSION")
         self.assertNotIn(bucket, MERGE_BUCKETS)
+
+    def test_doi_component_with_its_own_caption_is_not_a_version(self):
+        # Cifra LLC mints "<article DOI>.N" for each figure/table of the
+        # article; the component's title is its caption.
+        bucket, signals = classify_pair(
+            pub("W1", "Снижение содержания афлатоксина М1 в молоке с помощью куркумина: кинетическое "
+                      "моделирование методом Монте-Карло", doi="10.60797/jbg.2026.32.4", authors=["A1"]),
+            pub("W2", "Input parameters and probability distributions used in the Monte Carlo simulation",
+                doi="10.60797/jbg.2026.32.4.1", type="dataset", authors=["A1"]),
+        )
+        self.assertEqual(bucket, "SUPPLEMENT_OR_REVIEW")
+        self.assertNotIn(bucket, MERGE_BUCKETS)
+        self.assertEqual(signals["doi_b"], "10.60797/jbg.2026.32.4.1")
+
+    def test_cyrillic_doi_component_does_not_match_on_latin_fragments(self):
+        # Both titles fold to just "ux" - not evidence of one title.
+        bucket, _signals = classify_pair(
+            pub("W1", "КОМПЛЕКСНЫЙ ОБЗОР МУЛЬТИМОДАЛЬНЫХ ИНТЕРФЕЙСОВ И UX-ДИЗАЙНА ПРИЛОЖЕНИЙ",
+                doi="10.60797/irj.2026.168.48", authors=["A1"]),
+            pub("W2", "Классификация мультимодальных интерфейсов и UX-дизайна приложений",
+                doi="10.60797/irj.2026.168.48.1", type="other", authors=["A1"]),
+        )
+        self.assertEqual(bucket, "SUPPLEMENT_OR_REVIEW")
+
+    def test_erratum_suffix_is_not_a_version(self):
+        bucket, _signals = classify_pair(
+            pub("W1", "Multiple plane phase retrieval-inpainting with the saturated noisy data",
+                type="conference-paper", authors=["A1", "A2"]),
+            pub("W2", "Multiple plane phase retrieval-inpainting with the saturated noisy data (Erratum)",
+                type="erratum", authors=["A1", "A2"]),
+        )
+        self.assertEqual(bucket, "ERRATUM")
+
+    def test_retraction_notice_and_retracted_paper_are_not_a_version(self):
+        bucket, _signals = classify_pair(
+            pub("W1", "RETRACTED: Modeling of adsorptive removal of azithromycin from aquatic media",
+                authors=["A1", "A2"]),
+            pub("W2", 'Retraction notice to "Modeling of adsorptive removal of azithromycin from aquatic media"',
+                type="retraction", authors=["A1", "A2"]),
+        )
+        self.assertEqual(bucket, "ERRATUM")
+
+    def test_erratum_to_the_translated_edition_is_not_a_version(self):
+        # The erratum follows the English edition's wording, the original
+        # carries its own translation of the title - close, not literal.
+        bucket, _signals = classify_pair(
+            pub("W1", "Erratum to: Surface Emitting Quantum-Cascade Lasers with a Second-Order Grating "
+                      "and Elevated Coefficient of Coupling", type="erratum", authors=["A1", "A2"]),
+            pub("W2", "Surface emitting quantum-cascade lasers with a second-order grating and increased "
+                      "coupling coefficient", journal="Известия Российской академии наук",
+                authors=["A1", "A2"]),
+        )
+        self.assertEqual(bucket, "ERRATUM")
+
+    def test_paper_titled_correction_of_is_not_a_notice(self):
+        bucket, _signals = classify_pair(
+            pub("W1", "Correction of chromatic aberration in wide-angle refractive imaging lenses",
+                pdate="2020-01-01", authors=["A1", "A2"]),
+            pub("W2", "Correction of chromatic aberrations in wide-angle refractive imaging lens systems",
+                pdate="2020-06-01", authors=["A1", "A2"]),
+        )
+        self.assertEqual(bucket, "STRONG_FUZZY")
+
+    def test_section_numbered_series_is_not_a_version(self):
+        bucket, _signals = classify_pair(
+            pub("W1", "Disturbance Observers: Methods and Applications. I. Methods", authors=["A1", "A2"]),
+            pub("W2", "Disturbance Observers: Methods and Applications. II. Applications", authors=["A1", "A2"]),
+        )
+        self.assertEqual(bucket, "SERIES_NOT_VERSION")
+
+    def test_bare_section_number_and_part_number_are_one_series(self):
+        bucket, _signals = classify_pair(
+            pub("W1", "Molecular transfer processes in liquid nutrient media in the yeast and beer industries. "
+                      "2. Study of the rheological properties", authors=["A1", "A2"]),
+            pub("W2", "Molecular transport processes in liquid nutrient media of yeast and beer industries. "
+                      "Part 3. Thermophysical properties", authors=["A1", "A2"]),
+        )
+        self.assertEqual(bucket, "SERIES_NOT_VERSION")
+
+    def test_part_numbers_of_unrelated_series_are_not_a_series(self):
+        result = classify_pair(
+            pub("W1", "State of the art and prospects for refrigerating compressor industry. "
+                      "Part 2. Technology and science", authors=["A1"]),
+            pub("W2", "Human Colour Perception Mechanisms: A Review of Natural Science Concepts. Part 1",
+                authors=["A1"]),
+        )
+        self.assertIsNone(result)
 
     def test_book_volumes_are_not_a_version(self):
         bucket, _signals = classify_pair(

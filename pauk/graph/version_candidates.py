@@ -26,6 +26,7 @@ import unicodedata
 from collections import defaultdict
 from datetime import date
 from difflib import SequenceMatcher
+from functools import lru_cache
 from itertools import combinations
 from pathlib import Path
 
@@ -65,9 +66,17 @@ _ARXIV_IN_DOI = re.compile(r"10\.48550/arxiv\.([0-9]{4}\.[0-9]{4,5}|[a-z-]+/[0-9
 _VERSION_TAG = re.compile(r"\.v?\d{1,3}$", re.I)
 
 _ERRATUM_PREFIX = re.compile(
-    r"^(correction|corrigendum|erratum|retraction(?:\s+note)?|"
-    r"publisher correction|author correction|expression of concern|addendum)"
-    r"\s*(to|for|:|—|-|–)?\s*", re.I)
+    r"^(correction|corrigendum|erratum|retraction(?:\s+(?:note|notice))?|retracted|"
+    r"notice of retraction|publisher correction|author correction|expression of concern|addendum)"
+    # The separator is required: "Correction of chromatic aberration" is a
+    # paper, "Correction to: ..." / "Erratum: ..." is a notice.
+    r"\s*(\bto\b|\bfor\b|:|—|-|–)\s*", re.I)
+# The same notice spelled as a suffix: "... (Erratum)", "...: publisher's note".
+_ERRATUM_SUFFIX = re.compile(
+    r"\s*(?:\((?:erratum|corrigendum|retracted|retraction)\)|[:.]\s*publisher['’]?s\s+note)\s*$", re.I)
+# OpenAlex types of a notice about another record - never a version of it,
+# even when the notice reuses the original title verbatim.
+_NOTICE_TYPES = frozenset({"erratum", "retraction"})
 
 # A record whose title only makes sense next to another paper's - a
 # supplementary file, a dataset deposit, a peer-review report - not a
@@ -88,6 +97,10 @@ _SERIES_TAIL = re.compile(
     r"|supplementary (?:file|material|data)\s*\d*"
     r")\s*$", re.I)
 _SERIES_NUM = re.compile(r"\b(?:part|pt|episode|chapter|no|#)\s*\.?\s*([ivx]+|\d{1,3})\b", re.I)
+# A bare section number between sentences: "Disturbance Observers: Methods and
+# Applications. II. Applications", "... beer industries. 2. Study of ...".
+# Case-sensitive, so the English pronoun "I" mid-sentence never counts.
+_SERIES_SECTION = re.compile(r"[.:]\s+([IVX]{1,4}|\d{1,2})\.(?:\s|$)")
 _ROMAN = {"i": 1, "ii": 2, "iii": 3, "iv": 4, "v": 5, "vi": 6, "vii": 7, "viii": 8, "ix": 9, "x": 10}
 
 _CYRILLIC = re.compile(r"[Ѐ-ӿ]")
@@ -122,6 +135,12 @@ _MAX_PUBS_PER_AUTHOR = 90
 _MAX_PUBS_PER_TOKEN = 45
 
 
+# Every record sits in hundreds of blocked pairs; the per-record text work
+# below is cached so it runs once per title/abstract, not once per pair.
+_TEXT_CACHE_SIZE = 1 << 16
+
+
+@lru_cache(maxsize=_TEXT_CACHE_SIZE)
 def _fold_title(title: str | None) -> str:
     """Aggressive normalization for comparison: strip accents/markup that a
     publisher's re-typesetting changes (LaTeX, sub/superscript unicode,
@@ -133,19 +152,37 @@ def _fold_title(title: str | None) -> str:
     return " ".join(word for word in text.split() if word not in _STOPWORDS)
 
 
-def _title_tokens(title: str | None) -> set[str]:
-    return {word for word in _fold_title(title).split() if len(word) > 2}
+@lru_cache(maxsize=_TEXT_CACHE_SIZE)
+def _title_tokens(title: str | None) -> frozenset[str]:
+    return frozenset(word for word in _fold_title(title).split() if len(word) > 2)
 
 
-def _jaccard(a: set, b: set) -> float:
+def _jaccard(a: set | frozenset, b: set | frozenset) -> float:
     return len(a & b) / len(a | b) if (a or b) else 0.0
 
 
-def _shingles(text: str | None, n: int = 3) -> set[str]:
+@lru_cache(maxsize=_TEXT_CACHE_SIZE)
+def _shingles(text: str | None, n: int = 3) -> frozenset[str]:
     words = _fold_title(text).split()
     if len(words) < n:
-        return set(words)
-    return {" ".join(words[i:i + n]) for i in range(len(words) - n + 1)}
+        return frozenset(words)
+    return frozenset(" ".join(words[i:i + n]) for i in range(len(words) - n + 1))
+
+
+def _title_similarity(folded_a: str, folded_b: str, token_jaccard: float, floor: float = 0.0) -> float:
+    """max(token Jaccard, SequenceMatcher ratio): the first catches reordered
+    words, the second point edits (a hyphen, an ending).
+
+    SequenceMatcher is the hot spot of the whole report, so below `floor` the
+    exact ratio is skipped: when even its quick_ratio() upper bound cannot
+    reach `floor`, the token Jaccard is returned instead. Callers comparing
+    the result against a threshold >= `floor` get the same decision either
+    way.
+    """
+    matcher = SequenceMatcher(None, folded_a, folded_b)
+    if token_jaccard < floor and matcher.quick_ratio() < floor:
+        return token_jaccard
+    return max(token_jaccard, matcher.ratio())
 
 
 def _arxiv_id(row: dict) -> str | None:
@@ -175,12 +212,14 @@ def _doi_version_siblings(doi_a: str | None, doi_b: str | None) -> bool:
     return longer.startswith(shorter) and bool(_VERSION_TAG.fullmatch(longer[len(shorter):]))
 
 
-def _series_num(title: str) -> int | None:
-    match = _SERIES_NUM.search(title)
+def _series_num(title: str) -> tuple[int, str] | None:
+    """(series number, folded title text before it), or None."""
+    match = _SERIES_NUM.search(title) or _SERIES_SECTION.search(title)
     if not match:
         return None
     token = match.group(1).lower()
-    return _ROMAN.get(token, int(token) if token.isdigit() else None)
+    number = _ROMAN.get(token, int(token) if token.isdigit() else None)
+    return (number, _fold_title(title[:match.start()])) if number is not None else None
 
 
 def _series_variant(title_a: str, title_b: str, folded_a: str, folded_b: str) -> bool:
@@ -192,7 +231,12 @@ def _series_variant(title_a: str, title_b: str, folded_a: str, folded_b: str) ->
     if stem_a == stem_b and stem_a and folded_a != folded_b:
         return True
     num_a, num_b = _series_num(title_a), _series_num(title_b)
-    if num_a is not None and num_b is not None and num_a != num_b:
+    # Different numbers alone say nothing: "... beer industries. Part 3" and
+    # "Thermophysical properties of colourants. Part 1" are two unrelated
+    # series. Only a shared series name before the number makes them parts
+    # of one series.
+    if num_a and num_b and num_a[0] != num_b[0] and num_a[1] and num_b[1] \
+            and SequenceMatcher(None, num_a[1], num_b[1]).ratio() >= 0.9:
         return True
     words_a, words_b = folded_a.split(), folded_b.split()
     if len(words_a) == len(words_b):
@@ -202,15 +246,37 @@ def _series_variant(title_a: str, title_b: str, folded_a: str, folded_b: str) ->
     return False
 
 
+def _notice_subject(row: dict) -> str | None:
+    """The title a correction/retraction notice is about, with the notice
+    marker stripped; None when the record is not a notice."""
+    title = row.get("title") or ""
+    prefix = _ERRATUM_PREFIX.match(title)
+    if prefix:
+        title = title[prefix.end():]
+    stripped = _ERRATUM_SUFFIX.sub("", title)
+    if prefix or stripped != title or (row.get("type") or "").lower() in _NOTICE_TYPES:
+        return stripped
+    return None
+
+
 def _erratum_of(a: dict, b: dict) -> tuple[dict, dict] | None:
-    """(erratum, original) if one title is "Correction to: <the other>"."""
+    """(erratum, original) if one record is a correction/retraction notice
+    about the other: "Correction to: <the other>", "<the other> (Erratum)",
+    or an OpenAlex `erratum`/`retraction` record reusing the title. The
+    notice may follow the translated edition's wording ("Elevated
+    Coefficient of Coupling" vs "increased coupling coefficient"), so a
+    close title counts, not only a literal one."""
     for erratum, original in ((a, b), (b, a)):
-        match = _ERRATUM_PREFIX.match(erratum.get("title") or "")
-        if not match:
+        subject = _notice_subject(erratum)
+        if subject is None:
             continue
-        stripped = _fold_title((erratum["title"] or "")[match.end():])
+        stripped = _fold_title(subject)
         base = _fold_title(original.get("title"))
-        if stripped and base and (stripped == base or stripped in base or base in stripped):
+        if not stripped or not base:
+            continue
+        if stripped == base or stripped in base or base in stripped or _title_similarity(
+                stripped, base, _jaccard(_title_tokens(subject), _title_tokens(original.get("title"))),
+                floor=0.75) >= 0.75:
             return erratum, original
     return None
 
@@ -260,19 +326,22 @@ def classify_pair(a: dict, b: dict) -> tuple[str, dict] | None:
     erratum = _erratum_of(a, b)
     if erratum:
         return "ERRATUM", _signals(a, b, erratum=erratum[0]["id"], original=erratum[1]["id"])
+    if _notice_subject(a) is not None or _notice_subject(b) is not None:
+        # A correction/retraction notice about some third record: whatever
+        # its title resembles here, it is not a version of it.
+        return None
 
     if _series_variant(title_a, title_b, folded_a, folded_b):
         return "SERIES_NOT_VERSION", _signals(a, b)
 
     token_jaccard = _jaccard(_title_tokens(title_a), _title_tokens(title_b))
-    sequence_ratio = SequenceMatcher(None, folded_a, folded_b).ratio()
-    title_sim = max(token_jaccard, sequence_ratio)
 
     if _DEPOSIT_HEAD.match(title_a.strip()) or _DEPOSIT_HEAD.match(title_b.strip()):
         # Only when the deposit's own title actually tracks the paper's -
         # otherwise every deposit sharing an author with any paper would
         # bucket here.
         if token_jaccard >= 0.5:
+            title_sim = _title_similarity(folded_a, folded_b, token_jaccard)
             return "SUPPLEMENT_OR_REVIEW", _signals(a, b, title_sim=title_sim)
         return None
 
@@ -282,11 +351,25 @@ def classify_pair(a: dict, b: dict) -> tuple[str, dict] | None:
     if folded_a == folded_b and doi_a != doi_b and min_tokens >= _MIN_TITLE_TOKENS:
         return "MISSED_BY_NORM", _signals(a, b, title_sim=1.0, doi_a=doi_a, doi_b=doi_b)
     if _doi_version_siblings(doi_a, doi_b):
-        return "DOI_SIBLING", _signals(a, b, title_sim=title_sim, doi_a=doi_a, doi_b=doi_b)
+        title_sim = _title_similarity(folded_a, folded_b, token_jaccard)
+        # Publishers also mint "<article DOI>.N" for the article's own
+        # figures and tables (Cifra 10.60797, AIP supplementary material):
+        # the DOI relation is the same, but such a component carries its own
+        # caption as the title. A revision keeps the paper's title. A
+        # Cyrillic title folds down to its Latin fragments ("ux", "svg"),
+        # which then "match" trivially - too few tokens to compare at all.
+        similar = title_sim >= 0.75 and min_tokens >= _MIN_TITLE_TOKENS
+        bucket = "DOI_SIBLING" if similar else "SUPPLEMENT_OR_REVIEW"
+        return bucket, _signals(a, b, title_sim=round(title_sim, 3), doi_a=doi_a, doi_b=doi_b)
 
     if min_tokens < _MIN_TITLE_TOKENS:
         return None
     if (a.get("type") or "").lower() in _NON_PAPER_TYPES or (b.get("type") or "").lower() in _NON_PAPER_TYPES:
+        return None
+
+    # 0.75 is the lowest title threshold of any bucket below.
+    title_sim = _title_similarity(folded_a, folded_b, token_jaccard, floor=0.75)
+    if title_sim < 0.75:
         return None
 
     authors_a = {author["person_id"] for author in a.get("authors") or [] if author and author.get("person_id")}
