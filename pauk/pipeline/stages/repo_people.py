@@ -21,9 +21,9 @@ from pauk.models import GitHubProfile, Repository
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.redaction import redact_text
 from pauk.sources.github import GitHubClient
+from pauk.urls import github_owner_name
 
 from .base import EnrichmentStage
-from .repositories import _github_owner_name
 
 # Pages of commits read per repository, 100 commits each. Three is what the
 # previous pipeline used: enough for the git identities of everyone who
@@ -159,14 +159,14 @@ class RepoPeopleStage(EnrichmentStage):
         pending = [
             repo for repo in repositories.values()
             if self._repo_in_scope(repo)
-            and _github_owner_name(repo.url) is not None
+            and github_owner_name(repo.url) is not None
             and self.needs_attempt(repo.processing.get(self.name))
         ]
         client = GitHubClient(self.config.request_timeout, self.config.github_token)
         changed = 0
         for repo in self.progress(sorted(pending, key=lambda r: r.id),
                                   total=len(pending), unit="repository"):
-            owner, name = _github_owner_name(repo.url)
+            owner, name = github_owner_name(repo.url)
             state = repo.processing.get(self.name)
             try:
                 self._harvest(client, repo, owner, name, profiles)

@@ -16,6 +16,7 @@ from pauk.pipeline.runner import PipelineRunner
 from pauk.pipeline.selectors import PeriodSelector, WorkSelector, WorksFileSelector
 from pauk.pipeline.stages import ALL_STAGES, OPTIONAL_STAGES
 from pauk.pipeline.stages.base import PreparedSelection
+from pauk.rag import cli as rag_cli
 from pauk.settings import settings
 from pauk.sources import OpenAlexClient
 from pauk.storage import PreparedStore, RawStore, ensure_indexes, get_mongo_client
@@ -89,6 +90,7 @@ def main() -> None:
     p = cache_sub.add_parser("export")
     p.add_argument("--output", type=Path)
     admin_cli.add_parser(sub)
+    rag_cli.add_parser(sub)
     args = parser.parse_args()
     configure_logging(args.verbose)
 
@@ -134,6 +136,9 @@ def main() -> None:
             raise SystemExit(str(error)) from None
         finally:
             mongo.close()
+    elif args.command == "rag":
+        # Neo4j and the embedding model only; Mongo plays no part.
+        rag_cli.run(args, settings)
     elif args.command == "admin":
         # `schema` only prints the whitelists; it reaches neither database,
         # so it stays usable without one running.

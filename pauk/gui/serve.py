@@ -5,8 +5,10 @@ import io
 import json
 import logging
 import mimetypes
+import re
 import socket
 import sys
+import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -26,6 +28,15 @@ ROOT = Path(__file__).parent / "web"
 DATA_DIR = settings.map_out_dir(PUBLIC)
 API_STATS = "/api/stats"
 API_CHECK = "/api/check"
+# Judging the RAG validation pool (pauk rag pool): names and grades of real
+# people, so none of it is served on --public.
+RAG_JUDGE_PAGE = "/rag-judge"
+API_RAG_RUNS = "/api/rag/runs"
+API_RAG_POOL = "/api/rag/pool"
+API_RAG_JUDGE = "/api/rag/judge"
+RAG_ROUTES = (RAG_JUDGE_PAGE, API_RAG_RUNS, API_RAG_POOL, API_RAG_JUDGE)
+_RUN_NAME = re.compile(r"[A-Za-z0-9_.-]{1,64}")
+_rag_lock = threading.Lock()
 
 _gzip_cache: dict[str, tuple[str, bytes]] = {}
 
@@ -132,11 +143,59 @@ class GzipHandler(SimpleHTTPRequestHandler):
                 },
             )
 
+    def _rag_run_dir(self, name: str | None) -> Path | None:
+        if not name or not _RUN_NAME.fullmatch(name) or name.startswith("."):
+            return None
+        path = settings.data_dir / "rag" / "runs" / name
+        return path if (path / "pool.json").is_file() else None
+
+    def _rag_runs(self):
+        root = settings.data_dir / "rag" / "runs"
+        runs = sorted(p.name for p in root.iterdir() if (p / "pool.json").is_file()) if root.is_dir() else []
+        return self._send_json(200, {"runs": runs})
+
+    def _rag_pool(self, query):
+        from pauk.rag import evaluation
+
+        params = parse_qs(query)
+        run_dir = self._rag_run_dir((params.get("run") or [None])[0])
+        judge = (params.get("judge") or [None])[0] or None
+        if run_dir is None:
+            return self._send_json(404, {"error": "no such run"})
+        try:
+            pool = evaluation.load_pool(run_dir)
+            judgments = evaluation.load_judgments(run_dir, judge)
+        except ValueError as exc:
+            return self._send_json(400, {"error": str(exc)})
+        return self._send_json(200, {"pool": pool, "judgments": judgments,
+                                     "progress": evaluation.progress(pool, judgments)})
+
+    def _rag_judge(self):
+        from pauk.rag import evaluation
+
+        try:
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+        except ValueError:
+            return self._send_json(400, {"error": "bad JSON"})
+        run_dir = self._rag_run_dir(body.get("run"))
+        if run_dir is None:
+            return self._send_json(404, {"error": "no such run"})
+        try:
+            with _rag_lock:  # two tabs grading at once must not lose each other's writes
+                evaluation.save_judgment(run_dir, body.get("question", ""), body.get("kind", ""),
+                                         body.get("id", ""), body.get("grade"), body.get("judge") or None)
+        except (KeyError, ValueError) as exc:
+            return self._send_json(400, {"error": str(exc)})
+        return self._send_json(200, {"ok": True})
+
     def do_POST(self):
         if PUBLIC:
             return self.send_error(404)
-        if self.path.split("?")[0] == API_STATS:
+        route = self.path.split("?")[0]
+        if route == API_STATS:
             return self._recompute_stats()
+        if route == API_RAG_JUDGE:
+            return self._rag_judge()
         self.send_error(404)
 
     def do_GET(self):
@@ -145,8 +204,15 @@ class GzipHandler(SimpleHTTPRequestHandler):
         # individual rows) - safe to serve on --public. /api/check and
         # /api/stats hit a live Neo4j and can return raw example rows (names),
         # so those stay blocked regardless of build.
-        if PUBLIC and route in (API_STATS, API_CHECK):
+        if PUBLIC and route in (API_STATS, API_CHECK, *RAG_ROUTES):
             return self.send_error(404)
+        if route == RAG_JUDGE_PAGE:
+            self.path = "/rag-judge.html"
+            route = self.path
+        if route == API_RAG_RUNS:
+            return self._rag_runs()
+        if route == API_RAG_POOL:
+            return self._rag_pool(urlparse(self.path).query)
         if route == API_STATS:
             return self._send_json(405, {"error": "Recompute is POST-only"})
         if route == API_CHECK:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from urllib.parse import urlparse, urlunparse
 
+GITHUB_HOSTS = ("github.com", "www.github.com")
 
 def normalize_repo_url(url: str) -> str:
     """Comparison key for repository URLs.
@@ -16,6 +17,19 @@ def normalize_repo_url(url: str) -> str:
     """
     normalized = url.strip().rstrip("/").lower().removesuffix(".git")
     parsed = urlparse(normalized)
-    if parsed.netloc == "www.github.com":
-        normalized = urlunparse(parsed._replace(netloc="github.com"))
+    if parsed.netloc == GITHUB_HOSTS[1]:
+        normalized = urlunparse(parsed._replace(netloc=GITHUB_HOSTS[0]))
     return normalized
+
+
+def github_owner_name(url: str | None) -> tuple[str, str] | None:
+    """(owner, name) for a github.com URL of exactly two path segments.
+
+    Anything else — a gist, a subdirectory link, another host — is not a
+    repository the GitHub API can be asked about.
+    """
+    parsed = urlparse((url or "").rstrip("/"))
+    parts = parsed.path.strip("/").split("/")
+    if parsed.netloc.lower() not in GITHUB_HOSTS or len(parts) != 2:
+        return None
+    return parts[0], parts[1]
