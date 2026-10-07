@@ -88,6 +88,11 @@ def main() -> None:
     cache_sub = p.add_subparsers(dest="cache_command", required=True)
     p = cache_sub.add_parser("export")
     p.add_argument("--output", type=Path)
+    p = sub.add_parser("versions")
+    versions_sub = p.add_subparsers(dest="versions_command", required=True)
+    p = versions_sub.add_parser("report",
+                                help="report candidate version pairs the dedup stage did not catch")
+    p.add_argument("--output", type=Path)
     admin_cli.add_parser(sub)
     args = parser.parse_args()
     configure_logging(args.verbose)
@@ -171,6 +176,11 @@ def main() -> None:
                 raise SystemExit(str(error)) from None
         finally:
             mongo.close()
+    elif args.command == "versions":
+        # Read-only against Neo4j - no Mongo connection needed.
+        from pauk.graph.version_candidates import run_version_report
+        path = run_version_report(settings, args.output)
+        logger.info("versions report: %s", path)
     else:
         from pauk.cache import GraphSnapshotExporter
         path = GraphSnapshotExporter(settings).export(args.output)
