@@ -64,8 +64,7 @@ def load_db(driver) -> dict[str, list]:
     (:Repository)-[:OWNED_BY]->(:GitHubProfile)."""
     db: dict[str, list] = {}
 
-    # Staff are a property, not a label: the loader writes one :Person and
-    # carries membership in is_itmo (#150). Missing external persons - #151.
+    # Missing external persons - #151.
     db["persons"] = cypher_dict(
         driver,
         "MATCH (p:Person) WHERE p.is_itmo "
