@@ -6,9 +6,8 @@ Cyrillic, sometimes mixed) — name_raw. This stage splits it, and every
 known spelling variant, into surname/first name/second name (patronymic),
 in both Russian and English. It also composes name_ru and name_en - one
 flat "surname first name second name" string per language, matching
-gui/generate_data.py's author_label() shape - so a graph consumer that
-just wants a display string (Cypher diagnostics in gui/checks.py, for
-instance) doesn't have to reassemble it from the parts itself:
+gui/nodes.py's author_label() shape - so a graph consumer that
+just wants a display string doesn't have to reassemble it from the parts itself:
 
 1. Catalog match, for identity and the academic degree only. A CSV of
    official ITMO staff records (columns: name_ru, surname, name,

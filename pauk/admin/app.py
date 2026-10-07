@@ -1,7 +1,7 @@
 """The panel itself: a FastAPI service, separate from the public map.
 
-`pauk/gui/serve.py` keeps serving the map as read-only static files on its
-own port. This service is the only one with routes that write, and it runs
+The map is a static site (`pauk/gui/web`, see `scripts/deploy.sh`) served
+read-only on its own port. This service is the only one with routes that write, and it runs
 next to the database rather than on the public interface — Neo4j is not
 exposed, so there is no other way in and nothing to guard on the map side.
 
@@ -285,13 +285,12 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
 
     templates.env.globals["stylesheet"] = stylesheet
 
-    # The logo and the fonts come from the map's own files instead of being
-    # copied here: one place to update, and the panel looks like the same
-    # product. Only these two paths are exposed — mounting the whole web
-    # directory would serve the map's data dump from the admin port too.
-    web = Path(__file__).resolve().parents[1] / "gui" / "web"
+    # The logo and the fonts live in the panel's own static/: the map is a
+    # separately built TypeScript site now (pauk/gui/web) with no vendor/
+    # folder to borrow them from.
+    static = Path(__file__).parent / "static"
     for name in ("fonts", "icons"):
-        source = web / "vendor" / name
+        source = static / name
         if source.is_dir():
             app.mount(f"/assets/{name}", StaticFiles(directory=str(source)), name=name)
 
@@ -307,7 +306,7 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
         Served as a file rather than a redirect — a 301 gets cached hard
         enough to outlive the fix.
         """
-        path = web / "vendor" / "icons" / "pauk-frame.png"
+        path = static / "icons" / "pauk-frame.png"
         if not path.is_file():
             raise HTTPException(status.HTTP_404_NOT_FOUND, "the icon is missing")
         return FileResponse(path, media_type="image/png",

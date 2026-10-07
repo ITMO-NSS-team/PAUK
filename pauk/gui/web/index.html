@@ -1,228 +1,891 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PAUK</title>
-  <link rel="icon" type="image/png" href="vendor/icons/pauk-frame.png" />
-  <link rel="stylesheet" href="vendor/maplibre-gl.css" />
-  <link rel="stylesheet" href="style.css" />
-  <!-- Preloaded for first paint (preloader/tab bar) — style.css discovers it too late otherwise. -->
-  <link rel="preload" href="vendor/fonts/inter-cyrillic.woff2" as="font" type="font/woff2" crossorigin />
-  <!-- Dark theme paused (toggle hidden in style.css); restore this line + drop display:none to bring it back. -->
-  <!-- <script>document.documentElement.setAttribute("data-theme","dark");</script> -->
-</head>
-<body>
-  <div id="boot-screen">
-    <img class="boot-spider" src="vendor/icons/pauk-frame-8x.png" alt="" />
-    <div class="boot-title">PAUK</div>
-    <div class="boot-progress"><div class="boot-progress-bar" id="boot-progress-bar"></div></div>
-    <div class="boot-status" id="boot-status"></div>
-  </div>
-
-  <div id="welcome-modal" class="hidden">
-    <svg id="welcome-burst" class="welcome-burst" aria-hidden="true"></svg>
-    <div class="welcome-hero">
-      <a class="welcome-badge" href="https://github.com/ITMO-NSS-team/PAUK" target="_blank" rel="noopener noreferrer"><span data-i18n="welcome.badge">Открытый проект ИТМО</span> <span class="welcome-badge-arrow">›</span></a>
-      <h1 class="welcome-title" data-i18n-html="welcome.title">Карта соавторства<br />и открытого кода ИТМО</h1>
-      <p class="welcome-subtitle" data-i18n="welcome.subtitle">
-        Публикации, авторы и департаменты ИТМО — и связанные с ними open-source репозитории на GitHub.
-      </p>
-      <div class="welcome-lang" id="welcome-lang">
-        <button class="welcome-lang-btn" data-lang="ru" title="Русский" aria-label="Русский">🇷🇺</button>
-        <button class="welcome-lang-btn" data-lang="en" title="English" aria-label="English">🇬🇧</button>
-      </div>
-      <button id="welcome-close" class="welcome-cta">
-        <span data-i18n="welcome.cta">Смотреть карту</span>
-        <span class="welcome-cta-arrow">→</span>
-      </button>
-      <div class="welcome-modes" data-i18n="welcome.modes">Персоналии · Публикации · Репозитории · Поиск</div>
-    </div>
-  </div>
-
-  <!-- Not deferred: the deferred scripts below block on graph-data.js's download. -->
-  <script>
-  (function () {
-    var params = new URLSearchParams(location.search);
-    var hasDeepLink = !!(params.get("kind") && (params.get("key") || params.get("id") !== null));
-    window._pauk_hasDeepLink = hasDeepLink;
-    if (hasDeepLink) document.getElementById("welcome-modal").style.display = "none";
-
-    // i18n.js hasn't run yet — read localStorage directly instead of LANG/setLang.
-    var currentLang = localStorage.getItem("pauk-lang") || "en";
-    document.querySelectorAll(".welcome-lang-btn").forEach(function (btn) {
-      if (btn.getAttribute("data-lang") === currentLang) btn.classList.add("active");
-      btn.addEventListener("click", function () { setLang(btn.getAttribute("data-lang")); });
-    });
-
-    var bar = document.getElementById("boot-progress-bar");
-    var status = document.getElementById("boot-status");
-    var STAGE_TEXT = {
-      loading:   { ru: "Загрузка данных…", en: "Loading data…" },
-      rendering: { ru: "Отрисовка карты…", en: "Rendering the map…" },
-      error: {
-        ru: "Данные не найдены. Запустите generate_data.py и перезапустите сервер.",
-        en: "Data not found. Run generate_data.py and restart the server.",
-      },
-    };
-    function setStage(key) {
-      if (status) status.textContent = (STAGE_TEXT[key] || {})[currentLang] || STAGE_TEXT[key].ru;
-    }
-    function setProgress(frac) {
-      if (bar) bar.style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + "%";
-    }
-    window._pauk_setProgress = setProgress;
-    setStage("loading");
-
-    // Backstop: if the boot screen is still up after a generous timeout, say so.
-    setTimeout(function () {
-      var boot = document.getElementById("boot-screen");
-      if (boot && !boot.classList.contains("hidden")) setStage("error");
-    }, 30000);
-
-    // res.ok works everywhere fetch() does; only the byte-level bar needs ReadableStream.
-    if (window.fetch) {
-      fetch("graph-data.js").then(function (res) {
-        if (!res.ok) { setStage("error"); return; }
-        if (!window.ReadableStream || !res.body) { setProgress(0.85); setStage("rendering"); return; }
-        var total = +res.headers.get("content-length") || 0;
-        var reader = res.body.getReader(), loaded = 0;
-        (function pump() {
-          reader.read().then(function (r) {
-            if (r.done) { setStage("rendering"); return; }
-            loaded += r.value.length;
-            if (total) setProgress(Math.min(0.92, loaded / total));
-            pump();
-          });
-        })();
-      }).catch(function () { setProgress(0.85); setStage("rendering"); });
-    } else {
-      setProgress(0.85);
-    }
-
-    function buildWelcomeBurst() {
-      var svg = document.getElementById("welcome-burst");
-      if (!svg) return;
-      var w = window.innerWidth, h = window.innerHeight;
-      svg.setAttribute("viewBox", "0 0 " + w + " " + h);
-      var cx = w / 2, cy = h / 2;
-      var n = Math.max(48, Math.round(w / 22));
-      var rx = Math.min(w * 0.17, 230);
-      var ry = Math.min(h * 0.26, 190);
-      var maxLen = Math.max(w, h) * 0.5;
-      var s = "";
-      for (var k = 0; k < n; k++) {
-        var angle = (k / n) * Math.PI * 2;
-        var ux = Math.cos(angle), uy = Math.sin(angle);
-        var len = maxLen * (0.45 + Math.random() * 0.55);
-        var x1 = cx + ux * rx, y1 = cy + uy * ry;
-        var x2 = cx + ux * (rx + len), y2 = cy + uy * (ry + len);
-        var op = (0.25 + Math.random() * 0.5).toFixed(2);
-        s += '<line x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '" stroke-opacity="' + op + '"/>';
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PAUK</title>
+    <link rel="icon" type="image/png" href="./src/assets/icons/pauk-frame-8x.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* Dark theme copy for the first frame only; src/core/themes overwrites these. */
+      :root {
+        --bg: #181818;
+        --surface: #202020;
+        --surface-2: #2a2a2a;
+        --border: #333333;
+        --text: #dcdcdc;
+        --muted: #8a8a8a;
+        --accent: #ff7f50;
+        --accent-soft: rgba(255, 127, 80, 0.18);
+        --danger-bg: #2a1414;
+        --danger-border: #e03131;
+        --danger-text: #ffb3b3;
       }
-      svg.innerHTML = s;
-    }
-    window._pauk_buildWelcomeBurst = buildWelcomeBurst;
-    if (!hasDeepLink) buildWelcomeBurst();
-    var _burstResizeTimer = null;
-    window.addEventListener("resize", function () {
-      if (document.getElementById("welcome-modal").classList.contains("hidden")) return;
-      clearTimeout(_burstResizeTimer);
-      _burstResizeTimer = setTimeout(buildWelcomeBurst, 120);
-    });
-  })();
-  </script>
 
-  <div id="map"></div>
-  <canvas id="overlay"></canvas>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font-family: "Inter", system-ui, sans-serif;
+        color-scheme: dark;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+      }
 
-  <header id="topbar">
-    <div id="tab-toggle">
-      <button data-tab="1" class="active" data-i18n="tab.people">Персоналии</button><button data-tab="3" data-i18n="tab.pubs">Публикации</button><button data-tab="2" data-i18n="tab.repos">Репозитории</button><button data-tab="4" data-i18n="tab.search">Поиск</button><button data-tab="5" data-i18n="tab.health">Здоровье БД</button>
+      button:focus-visible,
+      a:focus-visible,
+      input:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      /* The accent spider instead of the native check mark; accent-color cannot swap it for an image. */
+      input[type="checkbox"] {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 16px;
+        height: 16px;
+        margin: 0;
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        background-color: var(--surface-2);
+        cursor: pointer;
+        vertical-align: middle;
+      }
+      input[type="checkbox"]:checked {
+        border-color: var(--accent);
+        background: var(--surface-2) url("./src/assets/icons/pauk-frame-accent.png") center / 70%
+          no-repeat;
+      }
+      /* The border and spider already show focus. Both :focus and :focus-visible,
+         since checkboxes get focus-visible on mouse click; box-shadow for Safari. */
+      input[type="checkbox"]:focus,
+      input[type="checkbox"]:focus-visible {
+        outline: none !important;
+        box-shadow: none !important;
+      }
+      /* Accent spider thumb; -webkit- and -moz- pseudo-elements cannot be merged. */
+      input[type="range"] {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 100%;
+        background: transparent;
+        cursor: pointer;
+      }
+      input[type="range"]::-webkit-slider-runnable-track {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border);
+      }
+      input[type="range"]::-webkit-slider-thumb {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 16px;
+        height: 16px;
+        margin-top: -6px; /* (4px track - 16px thumb) / 2 */
+        background: url("./src/assets/icons/pauk-frame-accent.png") center / contain no-repeat;
+        transition: transform 0.15s ease;
+      }
+      input[type="range"][data-tilt="right"]:active::-webkit-slider-thumb {
+        transform: rotate(90deg);
+      }
+      input[type="range"][data-tilt="left"]:active::-webkit-slider-thumb {
+        transform: rotate(-90deg);
+      }
+      input[type="range"]::-moz-range-track {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border);
+      }
+      input[type="range"]::-moz-range-thumb {
+        width: 16px;
+        height: 16px;
+        border: none;
+        border-radius: 0;
+        background: url("./src/assets/icons/pauk-frame-accent.png") center / contain no-repeat;
+        transition: transform 0.15s ease;
+      }
+      input[type="range"][data-tilt="right"]:active::-moz-range-thumb {
+        transform: rotate(90deg);
+      }
+      input[type="range"][data-tilt="left"]:active::-moz-range-thumb {
+        transform: rotate(-90deg);
+      }
+
+      #brand,
+      #global-search-trigger,
+      #tab-buttons button,
+      .tab-list-item {
+        transition:
+          background-color 0.12s ease,
+          color 0.12s ease,
+          border-color 0.12s ease;
+      }
+
+      /* Not hidden by [hidden] on purpose: Sigma needs real #map size while the
+         menu overlay covers the app. */
+      #app {
+        display: flex;
+        height: 100%;
+      }
+      /* Safety net for a flex child without min-width: 0. */
+      #sidebar {
+        width: 280px;
+        flex-shrink: 0;
+        overflow-x: hidden;
+        display: flex;
+        flex-direction: column;
+        background: var(--surface);
+        border-right: 1px solid var(--border);
+      }
+      .sidebar-section-label {
+        padding: 8px 12px 0;
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 700;
+      }
+      /* Anchor for the zoom debug readout. */
+      #map {
+        flex: 1;
+        min-width: 0;
+        position: relative;
+      }
+
+      #brand {
+        display: block;
+        width: 100%;
+        padding: 12px;
+        border: none;
+        border-bottom: 1px solid var(--border);
+        background: none;
+        color: var(--text);
+        font-size: 14px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        text-align: left;
+        cursor: pointer;
+      }
+      #brand:hover {
+        background: var(--surface-2);
+      }
+
+      #global-search-trigger {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 8px 12px;
+        border: none;
+        border-bottom: 1px solid var(--border);
+        background: none;
+        color: var(--muted);
+        font-size: 12px;
+        text-align: left;
+        cursor: pointer;
+      }
+      #global-search-trigger:hover {
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      /* SVG mask: the Unicode search glyph is missing from most fonts. */
+      #global-search-trigger::before {
+        content: "";
+        width: 13px;
+        height: 13px;
+        flex-shrink: 0;
+        background-color: currentColor;
+        -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='10' cy='10' r='6.5'/%3E%3Cline x1='20' y1='20' x2='15' y2='15'/%3E%3C/svg%3E")
+          center / contain no-repeat;
+        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='10' cy='10' r='6.5'/%3E%3Cline x1='20' y1='20' x2='15' y2='15'/%3E%3C/svg%3E")
+          center / contain no-repeat;
+      }
+      .global-search-trigger__hint {
+        margin-left: auto;
+        padding: 1px 6px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 11px;
+      }
+
+      /* Above everything, including the menu. */
+      #global-search {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding-top: 12vh;
+        background: rgba(0, 0, 0, 0.55);
+      }
+      #global-search[hidden] {
+        display: none;
+      }
+      .global-search-box {
+        width: min(560px, calc(100vw - 32px));
+        max-height: 60vh;
+        display: flex;
+        flex-direction: column;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+        overflow: hidden;
+      }
+      .global-search-input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 16px;
+        border: none;
+        border-bottom: 1px solid var(--border);
+        background: none;
+        color: var(--text);
+        font-size: 16px;
+      }
+      #global-search-results {
+        overflow-y: auto;
+      }
+      .global-search-hint {
+        padding: 10px 12px 4px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      #tab-buttons {
+        display: flex;
+        border-bottom: 1px solid var(--border);
+      }
+      #tab-buttons button {
+        flex: 1;
+        padding: 10px 4px;
+        border: none;
+        background: none;
+        color: var(--muted);
+        font-size: 12px;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+      }
+      #tab-buttons button.tab-button--active {
+        color: var(--text);
+        border-bottom-color: var(--accent);
+        font-weight: 600;
+      }
+
+      #filter-bar {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        /* Same top padding as .tab-search. */
+        padding: 16px 12px 10px;
+        border-bottom: 1px solid var(--border);
+      }
+      #filter-bar[hidden] {
+        display: none;
+      }
+      .filter-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+      }
+      .filter-row__label {
+        flex-shrink: 0;
+        color: var(--muted);
+      }
+      /* Without min-width: 0 the slider pushes the row out of the sidebar. */
+      .filter-row input[type="range"] {
+        flex: 1;
+        min-width: 0;
+      }
+      .filter-row__value {
+        flex-shrink: 0;
+        min-width: 2.5em;
+        text-align: right;
+        color: var(--text);
+      }
+
+      #tab-content {
+        flex: 1;
+        overflow-y: auto;
+      }
+      .tab-search {
+        position: sticky;
+        top: 0;
+        width: 100%;
+        box-sizing: border-box;
+        /* Same top padding as #filter-bar. */
+        padding: 16px 12px 8px;
+        border: none;
+        border-bottom: 1px solid var(--border);
+        font-size: 13px;
+        background: var(--surface);
+        color: var(--text);
+      }
+      /* The shared focus ring overlaps the label above, so recolor the bottom border instead. */
+      .tab-search:focus-visible {
+        outline: none;
+        border-bottom-color: var(--accent);
+      }
+      .tab-list-item {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        width: 100%;
+        padding: 8px 12px;
+        border: none;
+        border-bottom: 1px solid var(--border);
+        background: none;
+        color: var(--text);
+        font-size: 13px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .tab-list-item:hover {
+        background: var(--surface-2);
+      }
+      .tab-list-item--selected {
+        background: var(--accent-soft);
+      }
+      /* Lets nowrap text shrink instead of overflowing the row. */
+      .tab-list-item__label {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .tab-list-item__meta {
+        flex-shrink: 0;
+        color: var(--muted);
+      }
+      .tab-empty {
+        padding: 24px 12px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      /* Stays in the DOM when empty, so the list height does not jump. */
+      .tab-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-top: 1px solid var(--border);
+      }
+      .tab-pagination__button {
+        width: 26px;
+        height: 26px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface-2);
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .tab-pagination__button:hover:not(:disabled) {
+        border-color: var(--accent);
+      }
+      .tab-pagination__button:disabled {
+        color: var(--muted);
+        cursor: default;
+        opacity: 0.5;
+      }
+      .tab-pagination__status {
+        min-width: 3.5em;
+        text-align: center;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      /* Search meta is a long line, so label and meta stack instead of sharing a row. */
+      .search-results .tab-list-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+      }
+      .search-results .tab-list-item__label {
+        white-space: normal;
+      }
+      .search-results .tab-list-item__meta {
+        font-size: 12px;
+      }
+
+      #panel {
+        width: 280px;
+        flex-shrink: 0;
+        overflow-y: auto;
+        background: var(--surface);
+        border-left: 1px solid var(--border);
+        padding: 16px;
+        color: var(--text);
+        font-size: 13px;
+      }
+      #panel[hidden] {
+        display: none;
+      }
+      .panel-back {
+        display: block;
+        margin: 0 0 10px;
+        padding: 0;
+        border: none;
+        background: none;
+        color: var(--muted);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .panel-back:hover {
+        color: var(--accent);
+      }
+      .panel-card__head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 0 0 12px;
+      }
+      .panel-card__titles {
+        min-width: 0;
+      }
+      /* Lets a long title wrap instead of pushing out the kind badge. */
+      #panel h3 {
+        margin: 0;
+        min-width: 0;
+        font-size: 15px;
+        line-height: 1.3;
+        overflow-wrap: break-word;
+      }
+      .panel-kind {
+        flex-shrink: 0;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: var(--surface-2);
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        white-space: nowrap;
+      }
+      .panel-card__subtitle {
+        margin: 2px 0 0;
+        font-size: 12px;
+        color: var(--muted);
+        overflow-wrap: break-word;
+      }
+      #panel dl {
+        margin: 0;
+        display: grid;
+        /* minmax(0, ...): otherwise a long unbreakable key or URL widens the column past the panel. */
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 0 12px;
+      }
+      #panel dt,
+      #panel dd {
+        padding: 7px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      #panel dt {
+        color: var(--muted);
+      }
+      #panel dd {
+        margin: 0;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+      }
+      #panel dt:last-of-type,
+      #panel dd:last-of-type {
+        border-bottom: none;
+      }
+      /* External links are always underlined, entity refs only on hover. */
+      #panel a {
+        color: var(--accent);
+        text-decoration: underline;
+      }
+      /* A <button> that selects the entity; inherits font and color from dd. */
+      .panel-entity-ref {
+        font: inherit;
+        color: var(--accent);
+        background: none;
+        border: none;
+        padding: 0;
+        cursor: pointer;
+        text-align: left;
+        text-decoration: none;
+      }
+      .panel-entity-ref:hover {
+        text-decoration: underline;
+      }
+
+      .panel-section + .panel-section {
+        margin-top: 16px;
+      }
+      #panel dt.panel-row--block,
+      #panel dd.panel-row--block {
+        grid-column: 1 / -1;
+      }
+      #panel dt.panel-row--block {
+        padding-top: 16px;
+        padding-bottom: 10px;
+        border-bottom: none;
+      }
+      #panel dt.panel-row--block:first-child {
+        padding-top: 7px;
+      }
+      #panel dd.panel-row--block {
+        padding-top: 0;
+        padding-bottom: 12px;
+      }
+      .panel-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        overflow-wrap: anywhere;
+      }
+      .panel-list {
+        counter-reset: panel-item;
+      }
+      .panel-list li {
+        display: flex;
+        gap: 4px;
+        padding: 6px 0;
+      }
+      .panel-list li:not(.panel-list__toggle)::before {
+        flex: none;
+        counter-increment: panel-item;
+        content: counter(panel-item) ".";
+      }
+      .panel-list__body {
+        min-width: 0;
+      }
+      .panel-list li:first-child {
+        padding-top: 0;
+      }
+      .panel-list li:last-child {
+        padding-bottom: 0;
+      }
+      .panel-list__meta {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .panel-list__more {
+        padding: 0;
+        border: none;
+        background: none;
+        color: var(--muted);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .panel-list__more:hover {
+        color: var(--accent);
+      }
+
+      /* No side padding of its own: #panel already has it. */
+      .panel-chart {
+        padding: 14px 0 0;
+      }
+      .panel-section__title,
+      .panel-chart h4 {
+        margin: 0 0 8px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .chart-bar-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        padding: 3px 0;
+      }
+      .chart-bar-row__label {
+        flex: 0 0 auto;
+        width: 88px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--muted);
+      }
+      .chart-bar-row__track {
+        flex: 1;
+        min-width: 0;
+        height: 8px;
+        border-radius: 4px;
+        background: var(--surface-2);
+        overflow: hidden;
+      }
+      .chart-bar-row__fill {
+        height: 100%;
+        background: var(--accent);
+        border-radius: inherit;
+        transition: width 0.2s ease-out;
+      }
+      .chart-bar-row__value {
+        flex: 0 0 auto;
+        min-width: 2em;
+        text-align: right;
+        color: var(--text);
+      }
+
+      .loading-indicator {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        background: var(--muted);
+        border-radius: 2px;
+        animation: loading-pulse 1s ease-in-out infinite;
+      }
+      @keyframes loading-pulse {
+        0%,
+        100% {
+          opacity: 0.35;
+          transform: scale(0.8);
+        }
+        50% {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+
+      #load-error {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        max-width: 420px;
+        padding: 16px 20px;
+        background: var(--danger-bg);
+        border: 1px solid var(--danger-border);
+        border-radius: 8px;
+        color: var(--danger-text);
+        font-size: 13px;
+        text-align: center;
+      }
+      #load-error[hidden] {
+        display: none;
+      }
+
+      /* ---------- boot screen and menu (features/start.ts) ---------- */
+      #boot-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background: var(--bg);
+        transition: opacity 0.35s ease;
+      }
+      #boot-screen[hidden] {
+        display: none;
+      }
+      .boot-title {
+        font-size: 24px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        color: var(--text);
+      }
+      .boot-progress {
+        width: 180px;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border);
+        overflow: hidden;
+      }
+      .boot-progress-bar {
+        height: 100%;
+        width: 0%;
+        background: var(--accent);
+        transition: width 0.2s ease-out;
+        border-radius: inherit;
+      }
+      .boot-status {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+
+      #menu {
+        position: fixed;
+        inset: 0;
+        z-index: 26;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(
+          ellipse 900px 700px at 50% 40%,
+          var(--surface) 0%,
+          var(--bg) 70%
+        );
+      }
+      #menu[hidden] {
+        display: none;
+      }
+      .menu-hero {
+        text-align: center;
+        max-width: 560px;
+        padding: 20px;
+      }
+      .menu-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 7px 14px 7px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        text-decoration: none;
+        margin-bottom: 24px;
+        transition: border-color 0.12s ease;
+      }
+      .menu-badge:hover {
+        border-color: var(--accent);
+      }
+      .menu-badge-arrow {
+        color: var(--muted);
+      }
+      .menu-title {
+        font-size: clamp(28px, 4vw, 44px);
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        line-height: 1.15;
+        color: var(--text);
+        margin: 0 0 16px;
+      }
+      .menu-subtitle {
+        font-size: 15px;
+        line-height: 1.55;
+        color: var(--muted);
+        margin: 0 auto 28px;
+        max-width: 460px;
+      }
+      .menu-cta {
+        padding: 12px 22px;
+        background: var(--accent);
+        color: #ffffff;
+        border: none;
+        border-radius: 10px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        transition:
+          transform 0.12s ease,
+          box-shadow 0.12s ease,
+          filter 0.12s ease;
+      }
+      /* brightness() keeps --accent the only source of the color. */
+      .menu-cta:hover {
+        filter: brightness(1.08);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px var(--accent-soft);
+      }
+      .menu-cta:active {
+        transform: translateY(0);
+      }
+      .menu-lang {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin-top: 20px;
+      }
+      .menu-lang button {
+        padding: 6px 14px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition:
+          color 0.12s ease,
+          border-color 0.12s ease;
+      }
+      .menu-lang button:hover {
+        color: var(--text);
+      }
+      .menu-theme {
+        margin-top: 8px;
+      }
+      .menu-lang button.menu-lang--active {
+        color: var(--text);
+        border-color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="boot-screen">
+      <div class="boot-title">PAUK</div>
+      <div class="boot-progress"><div class="boot-progress-bar" id="boot-progress-bar"></div></div>
+      <div class="boot-status" id="boot-status"></div>
     </div>
-    <div class="topbar-right">
-      <button class="theme-toggle" id="theme-toggle" title="Светлая / тёмная тема" aria-label="Переключить тему">
-        <svg class="theme-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="4"/>
-          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
-        </svg>
-        <span class="theme-track"><span class="theme-thumb"></span></span>
-        <svg class="theme-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>
-        </svg>
-      </button>
-    </div>
-  </header>
-
-  <!-- left: search + filter -->
-  <aside id="left-panel">
-    <div class="card">
-      <div class="card-label" data-i18n="tab.search">Поиск</div>
-      <div class="search-box">
-        <input id="search" type="text" placeholder="Автор, репозиторий или публикация" data-i18n-placeholder="search.placeholder" autocomplete="off" />
-        <button id="search-clear" class="search-clear" type="button" title="Очистить" data-i18n-title="search.clear">×</button>
+    <!-- hidden only until JS runs; features/start.ts drives it. -->
+    <div id="menu" hidden>
+      <div class="menu-hero">
+        <a
+          class="menu-badge"
+          href="https://github.com/ITMO-NSS-team/PAUK"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <span id="menu-badge-text"></span> <span class="menu-badge-arrow">›</span>
+        </a>
+        <h1 class="menu-title" id="menu-title"></h1>
+        <p class="menu-subtitle" id="menu-subtitle"></p>
+        <button type="button" id="menu-enter" class="menu-cta"></button>
+        <div class="menu-lang">
+          <button type="button" data-lang="ru">RU</button>
+          <button type="button" data-lang="en">EN</button>
+        </div>
+        <div class="menu-lang menu-theme" id="menu-theme"></div>
       </div>
-      <div class="search-loading-hint" data-i18n="search.loadingHint">Индекс публикаций ещё загружается — авторы и репозитории уже доступны</div>
-      <div id="search-results"></div>
     </div>
-    <div class="card" id="edge-filter-card" style="display:none;margin-top:10px">
-      <div class="card-label" id="edge-filter-label">Мин. совм. публикаций</div>
-      <div class="edge-filter-row">
-        <input type="range" id="edge-threshold" min="1" max="30" value="1" />
-        <span id="edge-threshold-val">1</span>
+
+    <!-- [hidden] has no visual effect here, see #app in <style>. -->
+    <div id="app" hidden>
+      <aside id="sidebar">
+        <button type="button" id="brand">← Menu</button>
+        <button type="button" id="global-search-trigger"></button>
+        <nav id="tab-buttons">
+          <button type="button" data-tab="1">Авторы</button>
+          <button type="button" data-tab="3">Публикации</button>
+          <button type="button" data-tab="2">Репозитории</button>
+        </nav>
+        <div class="sidebar-section-label" id="filters-section-label"></div>
+        <div id="filter-bar" hidden></div>
+        <div id="tab-content"></div>
+      </aside>
+      <div id="map"></div>
+      <aside id="panel" hidden></aside>
+    </div>
+    <!-- Outside #app and #menu, so "/" opens it from any screen. -->
+    <div id="global-search" hidden>
+      <div class="global-search-box">
+        <input type="search" id="global-search-input" class="global-search-input" />
+        <div id="global-search-results" class="search-results"></div>
       </div>
-      <div style="font-size:11px;color:var(--faint);margin-top:6px" data-i18n="filter.edgesOnly">только отображение рёбер</div>
     </div>
-    <div class="card" id="year-filter-card" style="display:none;margin-top:10px">
-      <div class="card-label" data-i18n="filter.pubsByYear">Публикации по год</div>
-      <div class="edge-filter-row">
-        <input type="range" id="year-from" min="2020" max="2026" value="2026" />
-        <span id="year-from-val" style="font-size:16px;font-weight:800;color:var(--text);min-width:36px;text-align:right">2026</span>
-      </div>
-    </div>
-  </aside>
-
-  <!-- right: mode description + overview / node card -->
-  <aside id="right-panel">
-    <div id="overview" class="card"></div>
-    <div id="detail" class="card hidden">
-      <button id="detail-close" title="закрыть" data-i18n-title="detail.close">×</button>
-      <div id="detail-body"></div>
-    </div>
-  </aside>
-
-  <!-- Tab 4: search page (full-screen, on top of the map) -->
-  <div id="search-page">
-    <div id="sp-search-bar">
-      <div class="search-box" id="sp-search-box">
-        <input id="sp-input" type="text" placeholder="Поиск автора, публикации или департамента…" data-i18n-placeholder="search.spPlaceholder" autocomplete="off" />
-        <button id="sp-clear" class="search-clear" type="button" title="Очистить" data-i18n-title="search.clear">×</button>
-      </div>
-      <div class="search-loading-hint" data-i18n="search.loadingHint">Индекс публикаций ещё загружается — авторы и репозитории уже доступны</div>
-      <div id="sp-results"></div>
-    </div>
-    <div id="sp-main"></div>
-  </div>
-
-  <!-- Tab 5: DB stats + health checks (full-screen, on top of the map) -->
-  <div id="stats-page"></div>
-
-  <script defer src="vendor/maplibre-gl.js"></script>
-  <script defer src="vendor/d3.min.js"></script>
-  <script defer src="graph-data.js"></script>
-  <script defer src="i18n.js"></script>
-  <script defer src="core.js"></script>
-  <script defer src="build.js"></script>
-  <script defer src="overlay.js"></script>
-  <script defer src="panels.js"></script>
-  <script defer src="selection.js"></script>
-  <script defer src="tab-authors.js"></script>
-  <script defer src="tab-repos.js"></script>
-  <script defer src="tab-pubs.js"></script>
-  <script defer src="graph-stats.js"></script>
-  <script defer src="tab-stats.js"></script>
-  <script defer src="search.js"></script>
-  <script defer src="main.js"></script>
-  <script defer src="graph-search.js"></script>
-</body>
+    <div id="load-error" hidden></div>
+    <script type="module" src="/src/app/main.ts"></script>
+  </body>
 </html>

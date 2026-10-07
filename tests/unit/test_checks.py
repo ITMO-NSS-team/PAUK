@@ -13,10 +13,10 @@ import re
 import unittest
 from pathlib import Path
 
+from pauk.admin.checks import BY_ID, CHECKS, GROUP_EN
+from pauk.admin.graph_stats import QUERIES
 from pauk.cache import export
 from pauk.graph.mutations import NODE_FIELDS, RELATIONSHIPS
-from pauk.gui.checks import BY_ID, CHECKS, GROUP_EN
-from pauk.gui.generate_stats import QUERIES
 
 #: Labels and relationship types as Cypher writes them: after a colon,
 #: inside a node pattern `(a:Label)` or a relationship one `[r:TYPE]`.
