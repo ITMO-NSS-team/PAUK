@@ -350,9 +350,8 @@ class TrimCommandTest(unittest.TestCase):
     """`pauk admin trim`, the only thing that shortens either history."""
 
     def setUp(self):
-        # Stamps relative to today: fixed dates make the row named RECENT
-        # older than the cutoff once enough calendar time passes, and the
-        # test then fails on a day nobody changed anything.
+        """Stamps relative to today: a fixed date drifts past the cutoff and
+        fails the test on a day nobody changed anything."""
         self.db = mongomock.MongoClient()["pauk_test"]
         old = (datetime.now(UTC) - timedelta(days=400)).isoformat()
         recent = (datetime.now(UTC) - timedelta(days=1)).isoformat()
