@@ -1,6 +1,6 @@
 """The graph's health, as a page.
 
-The same thirty-two checks the map's tab runs, read from the answer a run
+The thirty-two checks of `pauk.admin.checks`, read from the answer a run
 wrote down (see `pauk.admin.health`). The page itself asks the graph
 nothing — except when somebody opens one check to see the rows behind it,
 which is a `LIMIT`-ed query and worth running fresh.
@@ -16,9 +16,9 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, StreamingResponse
 
 from pauk.admin import health
+from pauk.admin.checks import BY_ID
 from pauk.admin.deps import CurrentUser, Db, Graph, Session, templates
-from pauk.gui.checks import BY_ID
-from pauk.gui.generate_stats import EXAMPLES_LIMIT_DEFAULT
+from pauk.admin.graph_stats import EXAMPLES_LIMIT_DEFAULT
 
 logger = logging.getLogger("pauk.admin")
 

@@ -1,0 +1,376 @@
+// localize() picks a language from bilingual data fields; t() returns
+// static UI strings.
+
+import type { NodeKind } from "../contracts/graph";
+
+export type Lang = "ru" | "en";
+
+/** Falls back to `ru` when there is no `en` variant (e.g. repo names). */
+export function localize(ru: string, en: string | undefined, lang: Lang): string {
+  return lang === "en" && en ? en : ru;
+}
+
+export type LocaleKey =
+  | "tab.authors"
+  | "tab.repos"
+  | "tab.pubs"
+  | "tab.search"
+  | `kind.${NodeKind | "dept"}`
+  | "kind.edge"
+  | "field.key"
+  | "field.kind"
+  | "field.dept"
+  | "field.pubsCount"
+  | "field.degree"
+  | "field.nameVariantsOpenalex"
+  | "field.nameVariantsOrcid"
+  | "field.github"
+  | "field.orcid"
+  | "field.stars"
+  | "field.description"
+  | "field.ownerType"
+  | "field.license"
+  | "field.hasReadme"
+  | "field.repoVia"
+  | "field.grants"
+  | "grant.kind"
+  | "grant.funder"
+  | "grant.export"
+  | "grant.downloadCsv"
+  | "field.implemented"
+  | "field.groupWhy"
+  | `group.kind.${"org" | "field"}`
+  | `group.why.${"org" | "field"}`
+  | `via.${"pub" | "person" | "coauthor" | "owner"}`
+  | "field.report"
+  | "field.openalexId"
+  | "field.googleScholar"
+  | "field.email"
+  | "field.affiliations"
+  | "field.pubType"
+  | "field.pubFields"
+  | "field.abstract"
+  | "field.openalexUrl"
+  | "field.year"
+  | "field.yearUnknown"
+  | "field.unknownDept"
+  | "field.edgeFrom"
+  | "field.edgeTo"
+  | "field.edgeWeight"
+  | "field.sharedPubs"
+  | "field.sharedAuthors"
+  | "field.topCoauthors"
+  | "field.relatedDepts"
+  | "field.contributors"
+  | "field.loadingDetails"
+  | "field.authorsCount"
+  | "field.reposCount"
+  | "field.deptsCount"
+  | "field.total"
+  | "overview.title"
+  | "overview.avgPubsPerAuthor"
+  | "overview.itmoAuthors"
+  | "overview.externalAuthors"
+  | "overview.knownYear"
+  | "chart.authorsByDept"
+  | "chart.pubsByYear"
+  | "chart.reposByStars"
+  | "field.doi"
+  | "field.code"
+  | "field.createdAt"
+  | "field.updatedAt"
+  | "field.corresponding"
+  | "field.authorPosition"
+  | "section.general"
+  | "section.private"
+  | "section.service"
+  | "panel.showMore"
+  | "panel.showLess"
+  | "panel.readMore"
+  | "search.placeholder"
+  | "search.pubsCountShort"
+  | "search.trigger"
+  | "search.browseDepts"
+  | "tab.searchPlaceholder"
+  | "tab.noResults"
+  | "tab.prevPage"
+  | "tab.nextPage"
+  | "filter.coauth"
+  | "filter.sharedAuthors"
+  | "filter.yearMax"
+  | "filter.showNoDept"
+  | "filter.showExternal"
+  | "filter.showIsolated"
+  | "filter.edgeZoom"
+  | "filter.showRegions"
+  | "filter.regionZoom"
+  | "filter.regionMinNodes"
+  | "brand.backToMenu"
+  | "section.filters"
+  | "section.quickSearch"
+  | "start.badge"
+  | "start.title"
+  | "start.subtitle"
+  | "start.cta"
+  | "start.loading"
+  | "start.rendering"
+  | "start.error"
+  | "start.errorFetch"
+  | "start.errorFetchHint"
+  | "start.errorRender";
+
+const LOCALES: Record<Lang, Record<LocaleKey, string>> = {
+  ru: {
+    "tab.authors": "Авторы",
+    "tab.repos": "Репозитории",
+    "tab.pubs": "Публикации",
+    "tab.search": "Поиск",
+    "kind.author": "Автор",
+    "kind.repo": "Репозиторий",
+    "kind.pub": "Публикация",
+    "kind.dept": "Департамент",
+    "kind.edge": "Связь",
+    "field.key": "Ключ",
+    "field.kind": "Тип",
+    "field.dept": "Департамент",
+    "field.pubsCount": "Публикаций",
+    "field.degree": "Учёная степень",
+    "field.nameVariantsOpenalex": "Варианты написания (OpenAlex)",
+    "field.nameVariantsOrcid": "Варианты написания (ORCID)",
+    "field.github": "GitHub",
+    "field.orcid": "ORCID",
+    "field.stars": "Звёзд",
+    "field.description": "Описание",
+    "field.ownerType": "Тип владельца",
+    "field.license": "Лицензия",
+    "field.hasReadme": "Есть README",
+    "field.repoVia": "Связаны через",
+    "field.grants": "Гранты",
+    "grant.kind": "Грант",
+    "grant.funder": "Фонд",
+    "grant.export": "Список статей",
+    "grant.downloadCsv": "Скачать CSV",
+    "field.implemented": "реализовано",
+    "field.groupWhy": "Почему вместе",
+    "group.kind.org": "GitHub-организация",
+    "group.kind.field": "Область",
+    "group.why.org":
+      "Департамент неизвестен, репозитории сгруппированы по организации-владельцу на GitHub.",
+    "group.why.field":
+      "Нет ни департамента, ни организации, сгруппированы по области публикаций, которые они реализуют.",
+    "via.pub": "общую публикацию",
+    "via.person": "общего участника ИТМО",
+    "via.coauthor": "соавтора статей",
+    "via.owner": "общего владельца",
+    "field.report": "Отчет",
+    "field.openalexId": "OpenAlex",
+    "field.googleScholar": "Google Scholar",
+    "field.email": "Email",
+    "field.affiliations": "Аффилиации",
+    "field.pubType": "Тип публикации",
+    "field.pubFields": "Направления",
+    "field.abstract": "Аннотация",
+    "field.openalexUrl": "OpenAlex",
+    "field.year": "Год",
+    "field.yearUnknown": "неизвестен",
+    "field.unknownDept": "—",
+    "field.edgeFrom": "От",
+    "field.edgeTo": "К",
+    "field.edgeWeight": "Вес",
+    "field.sharedPubs": "Общие публикации",
+    "field.sharedAuthors": "Общие авторы",
+    "field.topCoauthors": "Топ соавторов",
+    "field.relatedDepts": "Связанные департаменты",
+    "field.contributors": "Участники",
+    "field.loadingDetails": "Подробнее",
+    "field.authorsCount": "Авторов",
+    "field.reposCount": "Репозиториев",
+    "field.deptsCount": "Департаментов",
+    "field.total": "Всего",
+    "field.doi": "DOI",
+    "field.code": "Код",
+    "field.createdAt": "Создан",
+    "field.updatedAt": "Обновлён",
+    "field.corresponding": "автор для переписки",
+    "field.authorPosition": "{n}-й автор",
+    "section.general": "Общее",
+    "section.private": "Приватное",
+    "section.service": "Служебное",
+    "panel.showMore": "+ ещё {n}",
+    "panel.showLess": "− свернуть",
+    "panel.readMore": "+ читать полностью",
+    "overview.title": "Обзор",
+    "overview.avgPubsPerAuthor": "Публикаций на автора (среднее)",
+    "overview.itmoAuthors": "Из ИТМО",
+    "overview.externalAuthors": "Внешних",
+    "overview.knownYear": "Известен год",
+    "chart.authorsByDept": "Авторы по департаментам",
+    "chart.pubsByYear": "Публикации по годам",
+    "chart.reposByStars": "Репозитории по звёздам",
+    "search.placeholder": "Поиск по авторам, репозиториям, публикациям, департаментам…",
+    "search.pubsCountShort": "публ.",
+    "search.trigger": "Поиск по всему",
+    "search.browseDepts": "Департаменты",
+    "tab.searchPlaceholder": "Поиск…",
+    "tab.noResults": "Ничего не найдено",
+    "tab.prevPage": "Предыдущая страница",
+    "tab.nextPage": "Следующая страница",
+    "filter.coauth": "Мин. соавторство",
+    "filter.sharedAuthors": "Мин. общих авторов",
+    "filter.yearMax": "До года",
+    "filter.showNoDept": "Показывать без департамента",
+    "filter.showExternal": "Показывать внешних авторов",
+    "filter.showIsolated": "Показывать авторов без связей",
+    "filter.edgeZoom": "Порог показа рёбер",
+    "filter.showRegions": "Регионы департаментов",
+    "filter.regionZoom": "Порог показа регионов",
+    "filter.regionMinNodes": "Мин. узлов в регионе",
+    "brand.backToMenu": "← Меню",
+    "section.filters": "Фильтры",
+    "section.quickSearch": "Быстрый поиск",
+    "start.badge": "Открытый проект ИТМО",
+    "start.title": "Карта соавторства и открытого кода ИТМО",
+    "start.subtitle":
+      "Публикации, авторы и департаменты ИТМО — и связанные с ними open-source репозитории на GitHub.",
+    "start.cta": "Смотреть карту",
+    "start.loading": "Загрузка данных…",
+    "start.rendering": "Отрисовка графа…",
+    // Deliberately neutral: the boot screen hides at once and the banner
+    // below shows the real cause.
+    "start.error": "Ошибка загрузки.",
+    "start.errorFetch": "Не удалось загрузить данные графа",
+    "start.errorFetchHint":
+      'Проверьте, что "pauk gui build" сгенерировал файлы в data/gui/private.',
+    "start.errorRender":
+      "Данные графа загрузились, но при отрисовке произошла ошибка. Подробности — в консоли браузера (F12).",
+  },
+  en: {
+    "tab.authors": "Authors",
+    "tab.repos": "Repositories",
+    "tab.pubs": "Publications",
+    "tab.search": "Search",
+    "kind.author": "Author",
+    "kind.repo": "Repository",
+    "kind.pub": "Publication",
+    "kind.dept": "Department",
+    "kind.edge": "Link",
+    "field.key": "Key",
+    "field.kind": "Type",
+    "field.dept": "Department",
+    "field.pubsCount": "Publications",
+    "field.degree": "Degree",
+    "field.nameVariantsOpenalex": "Other spellings (OpenAlex)",
+    "field.nameVariantsOrcid": "Other spellings (ORCID)",
+    "field.github": "GitHub",
+    "field.orcid": "ORCID",
+    "field.stars": "Stars",
+    "field.description": "Description",
+    "field.ownerType": "Owner type",
+    "field.license": "License",
+    "field.hasReadme": "Has README",
+    "field.repoVia": "Linked by",
+    "field.grants": "Grants",
+    "grant.kind": "Grant",
+    "grant.funder": "Funder",
+    "grant.export": "Publication list",
+    "grant.downloadCsv": "Download CSV",
+    "field.implemented": "implemented",
+    "field.groupWhy": "Why together",
+    "group.kind.org": "GitHub organization",
+    "group.kind.field": "Field",
+    "group.why.org": "No department is known, grouped by the GitHub organization that owns them.",
+    "group.why.field":
+      "Neither a department nor an organization, grouped by the field of the publications they implement.",
+    "via.pub": "a shared publication",
+    "via.person": "a shared ITMO member",
+    "via.coauthor": "a co-author of their papers",
+    "via.owner": "a shared owner",
+    "field.report": "Report",
+    "field.openalexId": "OpenAlex",
+    "field.googleScholar": "Google Scholar",
+    "field.email": "Email",
+    "field.affiliations": "Affiliations",
+    "field.pubType": "Publication type",
+    "field.pubFields": "Fields",
+    "field.abstract": "Abstract",
+    "field.openalexUrl": "OpenAlex",
+    "field.year": "Year",
+    "field.yearUnknown": "unknown",
+    "field.unknownDept": "—",
+    "field.edgeFrom": "From",
+    "field.edgeTo": "To",
+    "field.edgeWeight": "Weight",
+    "field.sharedPubs": "Shared publications",
+    "field.sharedAuthors": "Shared authors",
+    "field.topCoauthors": "Top co-authors",
+    "field.relatedDepts": "Related departments",
+    "field.contributors": "Contributors",
+    "field.loadingDetails": "More info",
+    "field.authorsCount": "Authors",
+    "field.reposCount": "Repositories",
+    "field.deptsCount": "Departments",
+    "field.total": "Total",
+    "field.doi": "DOI",
+    "field.code": "Code",
+    "field.createdAt": "Created",
+    "field.updatedAt": "Updated",
+    "field.corresponding": "corresponding",
+    "field.authorPosition": "author #{n}",
+    "section.general": "General",
+    "section.private": "Private",
+    "section.service": "Service",
+    "panel.showMore": "+ {n} more",
+    "panel.showLess": "− show less",
+    "panel.readMore": "+ read more",
+    "overview.title": "Overview",
+    "overview.avgPubsPerAuthor": "Publications per author (avg.)",
+    "overview.itmoAuthors": "From ITMO",
+    "overview.externalAuthors": "External",
+    "overview.knownYear": "Known year",
+    "chart.authorsByDept": "Authors by department",
+    "chart.pubsByYear": "Publications by year",
+    "chart.reposByStars": "Repositories by stars",
+    "search.placeholder": "Search authors, repositories, publications, departments…",
+    "search.pubsCountShort": "pubs",
+    "search.trigger": "Search everything",
+    "search.browseDepts": "Departments",
+    "tab.searchPlaceholder": "Search…",
+    "tab.noResults": "No results found",
+    "tab.prevPage": "Previous page",
+    "tab.nextPage": "Next page",
+    "filter.coauth": "Min. co-authorship",
+    "filter.sharedAuthors": "Min. shared authors",
+    "filter.yearMax": "Up to year",
+    "filter.showNoDept": "Show without department",
+    "filter.showExternal": "Show external authors",
+    "filter.showIsolated": "Show authors without links",
+    "filter.edgeZoom": "Edge visibility threshold",
+    "filter.showRegions": "Department regions",
+    "filter.regionZoom": "Region visibility threshold",
+    "filter.regionMinNodes": "Min. nodes per region",
+    "brand.backToMenu": "← Menu",
+    "section.filters": "Filters",
+    "section.quickSearch": "Quick Search",
+    "start.badge": "Open ITMO project",
+    "start.title": "ITMO co-authorship and open-source code map",
+    "start.subtitle":
+      "Publications, authors and departments of ITMO — and the open-source repositories linked to them on GitHub.",
+    "start.cta": "View the map",
+    "start.loading": "Loading data…",
+    "start.rendering": "Rendering the graph…",
+    "start.error": "Loading error.",
+    "start.errorFetch": "Failed to load the graph data",
+    "start.errorFetchHint":
+      'Make sure "pauk gui build" has generated the files in data/gui/private.',
+    "start.errorRender":
+      "The graph data loaded, but something failed while rendering it. See the browser console (F12) for details.",
+  },
+};
+
+export function t(key: LocaleKey, lang: Lang): string {
+  return LOCALES[lang][key];
+}
+
+export function kindLabel(kind: NodeKind | "dept", lang: Lang): string {
+  return t(`kind.${kind}`, lang);
+}

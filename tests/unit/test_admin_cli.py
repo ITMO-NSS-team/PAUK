@@ -346,20 +346,15 @@ class DeleteSnapshotTest(unittest.TestCase):
         self.assertIsNone(self.db[COLLECTION].find_one({"op": "delete"}))
 
 
-def _stamp(days_ago: int) -> str:
-    """A timestamp the stores keep: ISO 8601 text, without a zone."""
-    return (datetime.now(UTC) - timedelta(days=days_ago)).strftime("%Y-%m-%dT%H:%M:%S")
-
-
 class TrimCommandTest(unittest.TestCase):
     """`pauk admin trim`, the only thing that shortens either history."""
 
     def setUp(self):
+        """Stamps relative to today: a fixed date drifts past the cutoff and
+        fails the test on a day nobody changed anything."""
         self.db = mongomock.MongoClient()["pauk_test"]
-        # Counted back from today: a written-out date stops being recent on
-        # its own, and the test starts failing on a day nobody touched it.
-        old = _stamp(days_ago=400)
-        recent = _stamp(days_ago=1)
+        old = (datetime.now(UTC) - timedelta(days=400)).isoformat()
+        recent = (datetime.now(UTC) - timedelta(days=1)).isoformat()
         self.db[REVISIONS].insert_many([
             {"entity_type": "persons", "entity_id": "OLD", "version": 1,
              "snapshot": {}, "replaced_at": old},

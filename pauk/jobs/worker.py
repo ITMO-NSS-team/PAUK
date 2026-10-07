@@ -88,8 +88,8 @@ def _prune(config: Settings, db: Database, payload, stop: Stop,
 def _health(config: Settings, db: Database, payload, stop: Stop,
             report: Report) -> dict[str, int]:
     from pauk.admin import health
+    from pauk.admin.graph_stats import collect
     from pauk.graph.audit import audited_client
-    from pauk.gui.generate_stats import collect
 
     report("проверки по графу")
     # Reads only, but still contends for the graph: a half-published one lies.
@@ -109,7 +109,7 @@ def _rebuild_map(config: Settings, db: Database, payload, stop: Stop,
                  report: Report) -> dict[str, int]:
     from pauk.gui.rebuild import rebuild_map
     report("пересборка карты")
-    return rebuild_map(config, db, public=payload.public, seed=payload.seed)
+    return rebuild_map(config, db, seed=payload.seed)
 
 
 #: The three phases of a pipeline run; the page draws one segment per phase.

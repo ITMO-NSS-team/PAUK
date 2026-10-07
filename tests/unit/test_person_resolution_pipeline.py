@@ -5,8 +5,17 @@ from unittest.mock import patch
 
 import mongomock
 
-from pauk.graph.person_resolution import ModelVerdict
+from pauk.graph.person_resolution import (
+    ModelVerdict,
+    PairEvidence,
+    first_stage_payload,
+)
 from pauk.models import Person
+from pauk.pipeline.person_resolution import (
+    OpenRouterResolutionModels,
+    _Request,
+    _Result,
+)
 from pauk.pipeline.person_resolution_planner import (
     DIFFERENT,
     SAME,
@@ -220,6 +229,104 @@ class DedupStageWiringTest(unittest.TestCase):
 
         self.assertEqual((groups, report), ([], []))
         self.assertEqual(models.first_calls, [])
+
+
+class ResolverCacheTest(unittest.TestCase):
+    """A stored verdict has to survive renumbering: merges upstream shift
+    every pair number, and the verdict is about the two people, not about
+    the number they were handed this run."""
+
+    def setUp(self):
+        self.config = Settings(openrouter_api_key="test-key")
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.models = OpenRouterResolutionModels(self.config, self.db, "sample")
+
+    def evidence(self):
+        return PairEvidence(
+            person_a="A1", name_a="Ivan Petrov", person_b="A2", name_b="I. Petrov",
+        )
+
+    def answer(self, pair_id):
+        return {"results": [{"id": pair_id, "duplicate": True, "confidence": 0.9,
+                             "reason": "same person"}]}
+
+    def test_a_verdict_stored_under_one_number_answers_another(self):
+        calls = []
+
+        def chat_json(self_client, prompt, **kwargs):
+            calls.append(prompt)
+            return {"results": [{"id": 7, "duplicate": True, "confidence": 0.9, "reason": "same"}]}
+
+        with patch("pauk.sources.OpenRouterClient.chat_json", chat_json, create=True):
+            first = self.models.first_many([(7, self.evidence())])
+            second = self.models.first_many([(4210, self.evidence())])
+
+        self.assertTrue(first[7].duplicate)
+        self.assertTrue(second[4210].duplicate)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(self.db["llm_person_resolution_cache"].count_documents({}), 1)
+
+    def test_the_key_still_separates_different_people(self):
+        other = PairEvidence(person_a="B1", name_a="Anna Volkova",
+                             person_b="B2", name_b="A. Volkova")
+        keys = {
+            self.models._fingerprint(request)
+            for request in (
+                _Request(1, "qwen_first", "sys", first_stage_payload(1, self.evidence()), 160, None),
+                _Request(2, "qwen_first", "sys", first_stage_payload(2, other), 160, None),
+            )
+        }
+
+        self.assertEqual(len(keys), 2)
+
+
+class ResolverBatchingTest(unittest.TestCase):
+    """The pool is fed in blocks, so every request must still be answered
+    and counted exactly once across block boundaries."""
+
+    def models(self, workers):
+        config = Settings(openrouter_api_key="test-key", person_resolution_concurrency=workers)
+        db = mongomock.MongoClient()["pauk_test"]
+        return OpenRouterResolutionModels(config, db, "sample")
+
+    def evidence(self, number):
+        return PairEvidence(
+            person_a=f"A{number}", name_a=f"Ivan Petrov{number}",
+            person_b=f"B{number}", name_b=f"I. Petrov{number}",
+        )
+
+    def test_an_interrupt_drops_the_rest_of_the_block(self):
+        # The pool waits for everything it has queued, so without cancelling
+        # the pending futures Ctrl-C still pays for the whole block.
+        models = self.models(workers=1)
+        items = [(number, self.evidence(number)) for number in range(8)]
+        started = []
+
+        def invoke(request):
+            started.append(request.pair_id)
+            raise KeyboardInterrupt
+
+        with patch.object(OpenRouterResolutionModels, "_invoke", side_effect=invoke, autospec=False):
+            with self.assertRaises(KeyboardInterrupt):
+                models.first_many(items)
+
+        self.assertLess(len(started), len(items))
+
+    def test_every_pair_is_answered_across_several_blocks(self):
+        models = self.models(workers=2)
+        items = [(number, self.evidence(number)) for number in range(30)]
+        seen = []
+
+        def invoke(request):
+            seen.append(request.pair_id)
+            return _Result(request, ModelVerdict(True, 0.9, "same"), None, None, None, None, False)
+
+        with patch.object(OpenRouterResolutionModels, "_invoke", side_effect=invoke, autospec=False):
+            verdicts = models.first_many(items)
+
+        self.assertEqual(sorted(verdicts), [number for number, _ in items])
+        self.assertEqual(sorted(seen), [number for number, _ in items])
+        self.assertTrue(all(verdict.duplicate for verdict in verdicts.values()))
 
 
 if __name__ == "__main__":
