@@ -53,7 +53,9 @@
 `is_corresponding`; `CONTRIBUTED_TO` — `role`; `MENTIONS_LINK` — `context`
 (список), `page_number` (список, `0` = абстракт — Neo4j не хранит `null`
 внутри массива-свойства, поэтому сентинел не `None`, см.
-[pipeline/code-links.md](pipeline/code-links.md)), `is_relevant`,
+[pipeline/code-links.md](pipeline/code-links.md)), параллельные массивы
+`context_source` и `reference_label` (пустая строка = у вхождения нет
+значения), `is_relevant`,
 `classification_status`, `llm_confidence`, `llm_reason`.
 
 Для ссылок, извлечённых с учётом альтернатив переносов, `MENTIONS_LINK`

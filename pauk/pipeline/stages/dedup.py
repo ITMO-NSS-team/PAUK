@@ -89,7 +89,17 @@ from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Iterator
 from datetime import UTC, date, datetime
 
-from pauk.models import Person, Publication, PublicationVersion, RepoLink, Repository, VersionAuthor
+from pauk.models import (
+    ClassificationStatus,
+    CodeLink,
+    LinkOccurrence,
+    Person,
+    Publication,
+    PublicationVersion,
+    RepoLink,
+    Repository,
+    VersionAuthor,
+)
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.normalize import (
     NOT_A_PERSON_NAME,
@@ -658,6 +668,81 @@ def _union(*lists: Iterable[str]) -> list[str]:
     return list(dict.fromkeys(value for values in lists for value in values))
 
 
+def _stored_code_urls(value: str | None) -> list[str]:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return [value]
+    if isinstance(parsed, str):
+        return [parsed]
+    if isinstance(parsed, list):
+        return [url for url in parsed if isinstance(url, str)]
+    return []
+
+
+def _occurrence_key(occurrence: LinkOccurrence) -> tuple:
+    return (
+        occurrence.context,
+        occurrence.page_number,
+        occurrence.source,
+        occurrence.reference_label,
+        occurrence.text_start,
+        occurrence.text_end,
+        occurrence.raw_url,
+        tuple(occurrence.raw_fragments),
+        tuple(occurrence.candidate_urls),
+        occurrence.continuous,
+    )
+
+
+def _merge_code_link(base: CodeLink, extra: CodeLink) -> None:
+    """Keep every occurrence and reconcile judgments made before the merge."""
+    base_keys = {_occurrence_key(occurrence) for occurrence in base.occurrences}
+    extra_keys = {_occurrence_key(occurrence) for occurrence in extra.occurrences}
+    seen = set(base_keys)
+    for occurrence in extra.occurrences:
+        if (key := _occurrence_key(occurrence)) not in seen:
+            seen.add(key)
+            base.occurrences.append(occurrence)
+    base.host = base.host or extra.host
+
+    base_classified = base.classification_status == ClassificationStatus.CLASSIFIED
+    extra_classified = extra.classification_status == ClassificationStatus.CLASSIFIED
+    if base_classified and extra_classified and base.is_relevant == extra.is_relevant:
+        if (extra.llm_confidence or 0.0) > (base.llm_confidence or 0.0):
+            base.llm_confidence = extra.llm_confidence
+            base.llm_reason = extra.llm_reason
+    elif base_classified != extra_classified:
+        unjudged_evidence = extra_keys - base_keys if base_classified else base_keys - extra_keys
+        if unjudged_evidence:
+            base.classification_status = ClassificationStatus.PENDING
+            base.is_relevant = None
+            base.llm_confidence = None
+            base.llm_reason = None
+        elif extra_classified:
+            base.classification_status = extra.classification_status
+            base.is_relevant = extra.is_relevant
+            base.llm_confidence = extra.llm_confidence
+            base.llm_reason = extra.llm_reason
+    elif base_classified and extra_classified:
+        base.classification_status = ClassificationStatus.PENDING
+        base.is_relevant = None
+        base.llm_confidence = None
+        base.llm_reason = None
+    elif (
+        base.classification_status == ClassificationStatus.FAILED
+        or extra.classification_status == ClassificationStatus.FAILED
+    ):
+        base.classification_status = ClassificationStatus.FAILED
+
+    availability_rank = {"unchecked": 0, "failed": 1, "not_found": 2, "available": 3}
+    if availability_rank[extra.availability] > availability_rank[base.availability]:
+        base.availability = extra.availability
+        base.availability_error = extra.availability_error
+
+
 def _version_of(publication: Publication,
                 authors: Iterable[VersionAuthor] = ()) -> PublicationVersion:
     return PublicationVersion(
@@ -704,6 +789,8 @@ def _merge_publication(base: Publication, extra: Publication,
     an abstract or a PDF link present on only one record is never lost.
     """
     base.has_code = base.has_code or extra.has_code
+    code_urls = _union(_stored_code_urls(base.code_url), _stored_code_urls(extra.code_url))
+    base.code_url = json.dumps(code_urls, ensure_ascii=False) if code_urls else None
     base.pdf_urls = _union(base.pdf_urls, extra.pdf_urls)
     base.versions = _merge_versions(base.versions, extra.versions,
                                     [_version_of(extra, extra_authors)])
@@ -715,7 +802,7 @@ def _merge_publication(base: Publication, extra: Publication,
     for grant in extra.funding:
         if grant not in base.funding:
             base.funding.append(grant)
-    for field in ("type", "code_url", "doi", "journal", "publication_date", "year",
+    for field in ("type", "doi", "journal", "publication_date", "year",
                   "openalex_url", "abstract"):
         if getattr(base, field) is None:
             setattr(base, field, getattr(extra, field))
@@ -921,7 +1008,6 @@ class DedupStage(EnrichmentStage):
         for repository in repositories:
             repository.publication_ids = _union(
                 id_map.get(pid, pid) for pid in repository.publication_ids)
-        self.prepared.write_models("repositories", repositories)
 
         merged_links: dict[str, RepoLink] = {}
         for row in self.prepared.read_models("repo_links", RepoLink):
@@ -930,9 +1016,35 @@ class DedupStage(EnrichmentStage):
             if existing is None:
                 merged_links[row.publication_id] = row
                 continue
-            known = {link.url for link in existing.links}
-            existing.links.extend(link for link in row.links if link.url not in known)
+            known = {normalize_repo_url(link.url): link for link in existing.links}
+            for link in row.links:
+                key = normalize_repo_url(link.url)
+                if key in known:
+                    _merge_code_link(known[key], link)
+                else:
+                    known[key] = link
+                    existing.links.append(link)
         self.prepared.write_models("repo_links", merged_links.values())
+
+        affected_publications = set(id_map.values())
+        retry_publications = {
+            publication_id
+            for publication_id, row in merged_links.items()
+            if publication_id in affected_publications
+            and any(
+                link.classification_status != ClassificationStatus.CLASSIFIED
+                for link in row.links
+            )
+        }
+        if retry_publications:
+            publications = list(self.prepared.read_models("publications", Publication))
+            for publication in publications:
+                if publication.id in retry_publications:
+                    # Keep the last complete publication/repository claims
+                    # until the combined evidence has been judged successfully.
+                    publication.processing.pop("link_relevance", None)
+            self.prepared.write_models("publications", publications)
+        self.prepared.write_models("repositories", repositories)
 
     # --- repositories ---------------------------------------------------------
 

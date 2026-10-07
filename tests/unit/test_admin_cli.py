@@ -1,5 +1,6 @@
 import argparse
 import unittest
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 import mongomock
@@ -350,17 +351,18 @@ class TrimCommandTest(unittest.TestCase):
 
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
+        recent = datetime.now(UTC).isoformat()
         self.db[REVISIONS].insert_many([
             {"entity_type": "persons", "entity_id": "OLD", "version": 1,
              "snapshot": {}, "replaced_at": "2024-01-01T10:00:00"},
             {"entity_type": "persons", "entity_id": "RECENT", "version": 1,
-             "snapshot": {}, "replaced_at": "2026-09-01T10:00:00"},
+             "snapshot": {}, "replaced_at": recent},
         ])
         self.db[feed.COLLECTION].insert_many([
             {"timestamp": "2024-01-01T10:00:00", "actor": "pipeline", "source": "publish",
              "operation": "upsert_nodes", "entity_type": "Person", "entity_id": "OLD",
              "change_kind": "updated", "diff": {}},
-            {"timestamp": "2026-09-01T10:00:00", "actor": "user:roman", "source": "admin-ui",
+            {"timestamp": recent, "actor": "user:roman", "source": "admin-ui",
              "operation": "upsert_nodes", "entity_type": "Person", "entity_id": "RECENT",
              "change_kind": "updated", "diff": {}},
         ])

@@ -26,7 +26,12 @@ from pauk.pipeline.stages.code_links import (
     _normalize_ligatures,
     _occurrences_in_text,
 )
-from pauk.pipeline.stages.link_relevance import LinkRelevanceStage
+from pauk.pipeline.stages.link_relevance import (
+    AMBIGUOUS_URL_REASON,
+    MODEL_CONTEXT_LIMIT,
+    LinkRelevanceStage,
+    _format_contexts,
+)
 from pauk.pipeline.stages.repo_people import RepoPeopleStage, _is_person
 from pauk.pipeline.stages.repositories import RepositoriesStage
 from pauk.settings import Settings
@@ -401,7 +406,12 @@ class StagesTest(unittest.TestCase):
                 url="https://github.com/org/repo",
                 occurrences=[
                     LinkOccurrence(context="We use this library as a dependency."),
-                    LinkOccurrence(context="Our complete implementation is available here.", page_number=7),
+                    LinkOccurrence(
+                        context="Our complete implementation is available here.",
+                        page_number=7,
+                        source="citation",
+                        reference_label="9",
+                    ),
                 ],
             )]),
         ])
@@ -413,7 +423,37 @@ class StagesTest(unittest.TestCase):
         self.assertIn("We use this library as a dependency.", prompt)
         self.assertIn("Our complete implementation is available here.", prompt)
         self.assertIn("абстракт OpenAlex", prompt)
-        self.assertIn("страница 7", prompt)
+        self.assertIn("место цитирования [9], страница 7", prompt)
+
+    def test_link_relevance_bounds_prompt_without_dropping_stored_contexts(self):
+        occurrences = [
+            LinkOccurrence(context=f"Body context {index}", page_number=index, source="pdf_text")
+            for index in range(1, MODEL_CONTEXT_LIMIT + 3)
+        ]
+        occurrences.append(LinkOccurrence(
+            context="Reference entry",
+            page_number=99,
+            source="reference",
+            reference_label="9",
+        ))
+
+        formatted = _format_contexts(occurrences)
+
+        self.assertIn("Body context 1", formatted)
+        self.assertNotIn(f"Body context {MODEL_CONTEXT_LIMIT + 2}", formatted)
+        self.assertIn("Reference entry", formatted)
+        self.assertIn("не передано из-за лимита", formatted)
+        self.assertEqual(len(occurrences), MODEL_CONTEXT_LIMIT + 3)
+
+    def test_link_relevance_keeps_distinct_sources_with_identical_text(self):
+        formatted = _format_contexts([
+            LinkOccurrence(context="same", page_number=2, source="pdf_text"),
+            LinkOccurrence(context="same", page_number=2, source="pdf_annotation"),
+        ])
+
+        self.assertEqual(formatted.count("same"), 2)
+        self.assertIn("видимый текст PDF", formatted)
+        self.assertIn("кликабельная область PDF", formatted)
 
     @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
     def test_link_relevance_keeps_an_explicit_uncertain_verdict(self, openrouter_client):
@@ -529,6 +569,66 @@ class StagesTest(unittest.TestCase):
         self.assertEqual(links["https://github.com/asl/BandageNG"].llm_reason,
                           "repository_archived_by_this_deposit")
         self.assertEqual(links["https://github.com/org/repo"].llm_reason, "re-judged")
+
+    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
+    def test_link_relevance_skips_ambiguous_url_and_rejudges_confirmed_url(self, openrouter_client):
+        openrouter_client.return_value.chat_json.return_value = {
+            "is_authors_artifact": True, "confidence": 0.9, "reason": "authors say so",
+        }
+        openrouter_client.return_value.last_response = {"choices": []}
+        openrouter_client.return_value.last_usage = None
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        short_url = "https://github.com/KseniiaCheloshkina/cancer_"
+        full_url = short_url + "breakpoints_hotspots_prediction_wide"
+        prepared.write_models("publications", [Publication(
+            id="W1",
+            title="paper",
+            has_code=True,
+            code_url=json.dumps([short_url]),
+        )])
+        prepared.write_models("repo_links", [RepoLink(publication_id="W1", links=[
+            CodeLink(
+                url=short_url,
+                occurrences=[LinkOccurrence(
+                    source="pdf_text",
+                    candidate_urls=[short_url, full_url],
+                )],
+                is_relevant=True,
+                llm_confidence=0.85,
+                llm_reason="old false positive",
+            ),
+            CodeLink(
+                url=full_url,
+                occurrences=[LinkOccurrence(
+                    source="pdf_annotation",
+                    candidate_urls=[full_url],
+                    continuous=True,
+                )],
+                is_relevant=True,
+                llm_confidence=0.95,
+                llm_reason="old verdict",
+            ),
+        ])])
+
+        LinkRelevanceStage(prepared, raw, force=True).run()
+
+        openrouter_client.return_value.chat_json.assert_called_once()
+        prompt = openrouter_client.return_value.chat_json.call_args.args[0]
+        self.assertIn(f"URL: {full_url}", prompt)
+        self.assertNotIn(f"URL: {short_url}\n", prompt)
+        links = {link.url: link for link in next(
+            prepared.read_models("repo_links", RepoLink)
+        ).links}
+        ambiguous = links[short_url]
+        self.assertEqual(ambiguous.classification_status, ClassificationStatus.CLASSIFIED)
+        self.assertIsNone(ambiguous.is_relevant)
+        self.assertIsNone(ambiguous.llm_confidence)
+        self.assertEqual(ambiguous.llm_reason, AMBIGUOUS_URL_REASON)
+        self.assertEqual(links[full_url].llm_reason, "authors say so")
+        publication = next(prepared.read_models("publications", Publication))
+        self.assertEqual(json.loads(publication.code_url), [full_url])
+        self.assertEqual(self.db["llm_logs_link_relevance"].count_documents({}), 1)
 
     @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
     def test_link_relevance_marks_failed_when_the_llm_call_fails(self, openrouter_client):
@@ -663,7 +763,7 @@ class StagesTest(unittest.TestCase):
         http_client.return_value.get_bytes.assert_not_called()
 
     @patch("pauk.pipeline.stages.code_links.HttpClient")
-    def test_code_links_dedupes_per_page_and_orders_abstract_first(self, http_client):
+    def test_code_links_keeps_same_page_mentions_and_orders_abstract_first(self, http_client):
         http_client.return_value.get_bytes.return_value = _make_pdf_bytes([
             "See https://github.com/org/repo and again https://github.com/org/repo here.",
             "Also https://github.com/org/repo on page two.",
@@ -677,9 +777,7 @@ class StagesTest(unittest.TestCase):
         ])
         CodeLinksStage(prepared, raw, config=config).run()
         [link] = [link for row in prepared.read_models("repo_links", RepoLink) for link in row.links]
-        # abstract (None) first, then one occurrence per PDF page despite two
-        # mentions on page 1 - repeats within the same page add no new info.
-        self.assertEqual([o.page_number for o in link.occurrences], [None, 1, 2])
+        self.assertEqual([o.page_number for o in link.occurrences], [None, 1, 1, 2])
 
     @patch("pauk.pipeline.stages.code_links.HttpClient")
     def test_code_links_finds_github_url_only_reachable_via_hyperlink(self, http_client):
@@ -715,11 +813,15 @@ class StagesTest(unittest.TestCase):
         ])
         CodeLinksStage(prepared, raw, config=config).run()
         [link] = [link for row in prepared.read_models("repo_links", RepoLink) for link in row.links]
-        # One occurrence, not two - the annotation points at the same URL
-        # already found in the visible text, so the richer text context wins.
-        self.assertEqual(len(link.occurrences), 1)
-        assert link.occurrences[0].context is not None
-        self.assertIn("Full implementation", link.occurrences[0].context)
+        self.assertEqual(len(link.occurrences), 2)
+        self.assertEqual(
+            {occurrence.source for occurrence in link.occurrences},
+            {"pdf_text", "pdf_annotation"},
+        )
+        self.assertTrue(any(
+            "Full implementation" in (occurrence.context or "")
+            for occurrence in link.occurrences
+        ))
 
     @patch("pauk.pipeline.stages.code_links.HttpClient")
     def test_code_links_falls_back_to_abstract_when_pdf_download_fails(self, http_client):
@@ -1297,11 +1399,18 @@ class ImplementsFromRelevanceTest(unittest.TestCase):
 
 
 class CollectOccurrencesTest(unittest.TestCase):
-    def test_dedupes_within_one_text_keeps_first_context(self):
-        text = "first https://github.com/org/repo then https://github.com/org/repo again"
+    def test_keeps_distinct_occurrences_within_one_text(self):
+        text = (
+            "first https://github.com/org/repo "
+            + "x" * 1200
+            + " second https://github.com/org/repo again"
+        )
         found = _occurrences_in_text(text, page_number=5)
         self.assertEqual(list(found), ["https://github.com/org/repo"])
-        self.assertEqual(found["https://github.com/org/repo"].page_number, 5)
+        occurrences = found["https://github.com/org/repo"]
+        self.assertEqual(len(occurrences), 2)
+        self.assertEqual([occurrence.page_number for occurrence in occurrences], [5, 5])
+        self.assertLess(occurrences[0].text_start, occurrences[1].text_start)
 
     def test_collect_merges_abstract_and_pages_in_order(self):
         # pdf_page_occurrences is a list of per-page dicts (what _extract_pdf
