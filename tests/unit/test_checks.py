@@ -11,7 +11,9 @@ guarded is the part that rotted: the names they are written against.
 
 import re
 import unittest
+from pathlib import Path
 
+from pauk.cache import export
 from pauk.graph.mutations import NODE_FIELDS, RELATIONSHIPS
 from pauk.gui.checks import BY_ID, CHECKS, GROUP_EN
 from pauk.gui.generate_stats import QUERIES
@@ -30,6 +32,30 @@ def names_in(cypher: str) -> set[str]:
     for match in INSIDE.finditer(cypher or ""):
         found.update(NAME.findall(match.group(1) or match.group(2) or ""))
     return found
+
+
+class ExportQueriesTest(unittest.TestCase):
+    """The snapshot export reads the same graph and rots the same way.
+
+    Its queries went through the label migration still asking for
+    `:Person:Itmo`, and nothing noticed until a full run wrote a map with
+    no authors, no authorship and no departments on it. The checks were
+    guarded, the export was not.
+    """
+
+    def setUp(self):
+        self.known = set(NODE_FIELDS) | {rel_type for _src, rel_type, _tgt in RELATIONSHIPS}
+        self.source = Path(export.__file__).read_text(encoding="utf-8")
+
+    def queries(self) -> list[str]:
+        return [found for found in re.findall(r'"([^"]*MATCH[^"]*)"', self.source)]
+
+    def test_every_export_query_asks_about_something_real(self):
+        found = self.queries()
+        self.assertGreater(len(found), 5, "the export queries stopped being found")
+        for cypher in found:
+            with self.subTest(query=cypher[:40]):
+                self.assertEqual(names_in(cypher) - self.known, set())
 
 
 class NamesExistTest(unittest.TestCase):

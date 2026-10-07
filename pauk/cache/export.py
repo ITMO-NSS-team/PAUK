@@ -64,10 +64,10 @@ def load_db(driver) -> dict[str, list]:
     (:Repository)-[:OWNED_BY]->(:GitHubProfile)."""
     db: dict[str, list] = {}
 
-    # is_itmo:Itmo/External label migration - #150. Missing external persons - #151.
+    # Missing external persons - #151.
     db["persons"] = cypher_dict(
         driver,
-        "MATCH (p:Person:Itmo) "
+        "MATCH (p:Person) WHERE p.is_itmo "
         "RETURN p.id AS id, p.first_name_ru AS first_name_ru, "
         "       p.second_name_ru AS second_name_ru, p.surname_ru AS surname_ru, "
         "       p.first_name_en AS first_name_en, p.second_name_en AS second_name_en, "
@@ -110,12 +110,14 @@ def load_db(driver) -> dict[str, list]:
 
     db["authorship"] = cypher(
         driver,
-        "MATCH (p:Person:Itmo)-[:AUTHORED]->(pub:Publication) RETURN pub.id AS pid, p.id AS per",
+        "MATCH (p:Person)-[:AUTHORED]->(pub:Publication) WHERE p.is_itmo "
+        "RETURN pub.id AS pid, p.id AS per",
     )
 
     db["person_depts"] = cypher(
         driver,
-        "MATCH (p:Person:Itmo)-[:BELONGS_TO]->(d:Department) RETURN p.id AS per, d.id AS did",
+        "MATCH (p:Person)-[:BELONGS_TO]->(d:Department) WHERE p.is_itmo "
+        "RETURN p.id AS per, d.id AS did",
     )
 
     db["pub_depts"] = cypher(
@@ -130,7 +132,8 @@ def load_db(driver) -> dict[str, list]:
 
     db["repo_persons"] = cypher(
         driver,
-        "MATCH (p:Person:Itmo)-[rel:CONTRIBUTED_TO]->(r:Repository) RETURN r.id AS rid, p.id AS per, rel.role AS role",
+        "MATCH (p:Person)-[rel:CONTRIBUTED_TO]->(r:Repository) WHERE p.is_itmo "
+        "RETURN r.id AS rid, p.id AS per, rel.role AS role",
     )
 
     db["repo_depts"] = cypher(
