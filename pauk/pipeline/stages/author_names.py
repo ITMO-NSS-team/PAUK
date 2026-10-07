@@ -1101,8 +1101,6 @@ class AuthorNamesStage(EnrichmentStage):
                         for future in as_completed(futures):
                             yield future.result()
                     except BaseException:
-                        # Same as the resolver: an interrupt drops the queue
-                        # instead of paying for a block nobody will read.
                         pool.shutdown(wait=False, cancel_futures=True)
                         raise
 

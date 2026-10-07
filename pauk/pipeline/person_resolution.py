@@ -238,9 +238,6 @@ class OpenRouterResolutionModels:
         if not self.config.openrouter_api_key:
             results = [self._invoke(request) for request in requests]
         else:
-            # A block at a time rather than one pool over every pair: the
-            # pool waits for whatever it has queued, so submitting all of
-            # them means an interrupt keeps paying for calls nobody reads.
             done = 0
             for start in range(0, len(requests), self.workers * 8):
                 block = requests[start:start + self.workers * 8]
