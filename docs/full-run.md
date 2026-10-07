@@ -32,9 +32,10 @@ Mongo и Neo4j (на Linux - `free -g`). Наличие ключей прове�
 Места на диске нужно около 10 ГБ: полный прогон оставляет 5 ГБ скачанных PDF и
 около 1.5 ГБ логов вызовов LLM в Mongo.
 
-Проверить не наличие ключа OpenRouter, а его лимит: упереться в него посреди
-дедупа дороже, чем не начать, потому что 403 приходит мгновенно и за минуту
-помечает тысячи записей как `failed`.
+Проверить, что ключ OpenRouter отвечает и что лимита на нём хватит на весь
+прогон: если он кончится посреди стадии, 403 приходит мгновенно и стадия за
+минуту проходит тысячи записей вхолостую. Команда ниже проверяет только, что
+ключ отвечает, остаток лимита смотреть в OpenRouter.
 
 ```bash
 uv run python -c "from pauk.sources.llm import OpenRouterClient; from pauk.settings import settings as s; c=OpenRouterClient(s.request_timeout, s.openrouter_api_key, s.person_resolution_model, s.openrouter_proxy_url); print('ответ:', bool(c.chat_json('Reply with JSON {\"ok\":true}')), c.last_error or '')"
@@ -116,9 +117,11 @@ uv run pauk enrich --group testrun
 Стадии (порядок исполнения):
 `persons -> departments -> code_links -> link_relevance -> emails -> repositories -> repo_people -> dedup -> github_match -> author_names` (+ `social_graph`, опционально). Одна стадия: `uv run pauk enrich <stage> --group testrun`.
 
-Стадии пишут результаты в Mongo в конце работы, а не по ходу: прерванная стадия
-не оставляет частичного результата, а счётчики в базе во время её работы не
-двигаются, смотреть надо в лог.
+`departments`, `code_links`, `link_relevance`, `emails`, `github_match` и `dedup`
+пишут результаты в Mongo одной пачкой в конце работы: прерванная стадия не
+оставляет частичного результата, а счётчики в базе во время её работы не
+двигаются, смотреть надо в лог. `persons`, `repo_people` и `author_names` пишут
+по ходу.
 
 Дедуп персон работает через резолвер: логистическая модель сама разводит и
 сливает уверенные пары, остальные решает LLM (`PAUK_PERSON_RESOLUTION_MODEL`) в
@@ -139,14 +142,7 @@ uv run pauk publish graph --group testrun     # по группам
 uv run pauk dedup graph                         # по всему графу
 ```
 
-`dedup graph` на большом графе идёт десятки минут; фаза планирования пишет в лог в конце. Сведённые слияния и отложенные пары - в `data/cache/dedup_candidates_graph.jsonl`.
-
-После публикации и после дедупа графа заново применить ручные правки, иначе
-публикация их затрёт:
-
-```bash
-uv run pauk admin overrides apply
-```
+`dedup graph` на полном графе идёт около часа при заполненном кэше вердиктов и часы на пустом; прогресс резолвера виден в логе (`person resolution qwen_first: N/M`). Сведённые слияния и отложенные пары - в `data/cache/dedup_candidates_graph.jsonl`.
 
 ## 4. Обновление web
 
@@ -159,7 +155,7 @@ uv run python -m pauk.gui.serve                 # порт 8501
 
 После правок графа пересобирать web этой же цепочкой; открыть `http://localhost:8501`.
 
-`generate_data` считает силовую раскладку и на полном корпусе держит около 7 ГБ
+`generate_data` считает силовую раскладку и на полном корпусе держит больше 6 ГБ
 памяти почти полчаса. На сервере, где память уже заняли Mongo и Neo4j, он
 упирается в предел, поэтому раскладку считают на машине посвободнее:
 
