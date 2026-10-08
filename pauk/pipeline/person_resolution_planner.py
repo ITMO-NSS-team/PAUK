@@ -207,7 +207,7 @@ def plan_person_merges_resolved(
 
     first_results = models.first_many(pending_first) if models is not None else {}
     pending_second: list[SecondStageContext] = []
-    first_positive: dict[int, ModelVerdict] = {}
+    first_verdicts: dict[int, ModelVerdict] = {}
 
     def researcher_context(person: Person) -> ResearcherContext:
         field_counts = Counter(
@@ -250,21 +250,7 @@ def plan_person_merges_resolved(
                 "first model unavailable",
             )
             continue
-        resolution = apply_first_verdict(
-            resolve_pair(evidence, policy, logreg_model), verdict
-        )
-        if resolution.decision is Decision.SEPARATE:
-            hold(
-                first,
-                second,
-                evidence,
-                shared_fields,
-                resolution.route,
-                verdict.reason or "first model rejected the merge",
-                verdict.confidence,
-            )
-            continue
-        first_positive[pair_id] = verdict
+        first_verdicts[pair_id] = verdict
         coauthors_a = all_coauthors(first.id)
         coauthors_b = all_coauthors(second.id)
         pending_second.append(
@@ -322,22 +308,14 @@ def plan_person_merges_resolved(
             continue
         resolution = apply_second_verdict(
             apply_first_verdict(
-                resolve_pair(evidence, policy, logreg_model), first_positive[pair_id]
+                resolve_pair(evidence, policy, logreg_model), first_verdicts[pair_id]
             ),
             verdict,
         )
         if resolution.decision is Decision.MERGE:
             plan_merge(first, second, resolution.route)
-        else:
-            hold(
-                first,
-                second,
-                evidence,
-                shared_fields,
-                resolution.route,
-                verdict.reason or "independent model rejected the merge",
-                verdict.confidence,
-            )
+        elif resolution.decision is Decision.REVIEW:
+            hold(first, second, evidence, shared_fields, resolution.route, resolution.reason, verdict.confidence)
 
     groups: list[tuple[Person, list[Person]]] = []
     for members in _grouped(merge_pairs):
