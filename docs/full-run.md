@@ -29,6 +29,26 @@ Mongo и Neo4j (на Linux - `free -g`). Наличие ключей прове�
 `OPENROUTER_API_KEY`
 (+ `OPENROUTER_PROXY_URL`, если OpenRouter недоступен из сети напрямую).
 
+Места на диске нужно около 10 ГБ: полный прогон оставляет 5 ГБ скачанных PDF и
+около 1.5 ГБ логов вызовов LLM в Mongo.
+
+Проверить, что ключ OpenRouter отвечает и что лимита на нём хватит на весь
+прогон: если он кончится посреди стадии, 403 приходит мгновенно и стадия за
+минуту проходит тысячи записей вхолостую. Команда ниже проверяет только, что
+ключ отвечает, остаток лимита смотреть в OpenRouter.
+
+```bash
+uv run python -c "from pauk.sources.llm import OpenRouterClient; from pauk.settings import settings as s; c=OpenRouterClient(s.request_timeout, s.openrouter_api_key, s.person_resolution_model, s.openrouter_proxy_url); print('ответ:', bool(c.chat_json('Reply with JSON {\"ok\":true}')), c.last_error or '')"
+```
+
+Потоки LLM-стадий задаются заранее: `PAUK_PERSON_RESOLUTION_CONCURRENCY` (дедуп,
+по умолчанию 8, на 32 идёт около 30 пар в секунду) и `PAUK_AUTHOR_NAMES_CONCURRENCY`
+(имена, на 16 это час вместо шестнадцати).
+
+`PAUK_PDF_CRAWLER_URL` включает фолбек на PDF-Crawler-Service, пустое значение -
+выключает. Если сервис по DOI не находит PDF из вашей сети, каждая публикация
+впустую съедает минуты и отвечает 422 - тогда фолбек лучше выключить.
+
 ## 1. Копия БД
 
 ### Снять дамп
@@ -95,7 +115,23 @@ uv run pauk enrich --group testrun
 ```
 
 Стадии (порядок исполнения):
-`persons -> departments -> code_links -> link_relevance -> emails -> repositories -> dedup -> github_match -> author_names` (+ `social_graph`, опционально). Одна стадия: `uv run pauk enrich <stage> --group testrun`.
+`persons -> departments -> code_links -> link_relevance -> emails -> repositories -> repo_people -> dedup -> github_match -> author_names` (+ `social_graph`, опционально). Одна стадия: `uv run pauk enrich <stage> --group testrun`.
+
+`departments`, `code_links`, `link_relevance`, `emails`, `github_match` и `dedup`
+пишут результаты в Mongo одной пачкой в конце работы: прерванная стадия не
+оставляет частичного результата, а счётчики в базе во время её работы не
+двигаются, смотреть надо в лог. `persons`, `repo_people` и `author_names` пишут
+по ходу.
+
+Дедуп персон работает через резолвер: логистическая модель сама разводит и
+сливает уверенные пары, остальные решает LLM (`PAUK_PERSON_RESOLUTION_MODEL`) в
+два прохода. Поэтому стадии нужен `OPENROUTER_API_KEY`; с
+`PAUK_PERSON_RESOLUTION_ENABLED=false` она идёт по прежним правилам, без LLM.
+
+На корпусе 2020-2026 резолвер идёт 5-6 часов на 32 потоках и съедает около 60%
+всех токенов прогона, имена - час на 16 потоках, остальные стадии минуты.
+Вердикты кэшируются в `llm_person_resolution_cache` и переживают перенумерацию
+пар после слияний, поэтому перезапуск после обрыва стоит уже недорого.
 
 Стадия `dedup` сворачивает дубли внутри одной группы. Дедуп всего графа - отдельная команда в разделе 3.
 
@@ -106,7 +142,7 @@ uv run pauk publish graph --group testrun     # по группам
 uv run pauk dedup graph                         # по всему графу
 ```
 
-`dedup graph` на большом графе идёт десятки минут; фаза планирования пишет в лог в конце. Сведённые слияния и отложенные пары - в `data/cache/dedup_candidates_graph.jsonl`.
+`dedup graph` на полном графе идёт около часа при заполненном кэше вердиктов и часы на пустом; прогресс резолвера виден в логе (`person resolution qwen_first: N/M`). Сведённые слияния и отложенные пары - в `data/cache/dedup_candidates_graph.jsonl`.
 
 ## 4. Обновление web
 
@@ -118,6 +154,19 @@ cd pauk/gui/web && npm install && npm run dev   # локально
 ```
 
 После правок графа пересобирать web этой же цепочкой.
+
+`generate_data` считает силовую раскладку и на полном корпусе держит больше 6 ГБ
+памяти почти полчаса. На сервере, где память уже заняли Mongo и Neo4j, он
+упирается в предел, поэтому раскладку считают на машине посвободнее:
+
+```bash
+scp <server>:~/PAUK/data/cache/graph_snapshot.json data/cache/
+uv run python -m pauk.gui.generate_data --cache data/cache/graph_snapshot.json
+scp pauk/gui/data/private/graph-data.js pauk/gui/data/private/graph-search.js <server>:~/PAUK/pauk/gui/data/private/
+```
+
+`generate_stats` ходит в Neo4j напрямую и занимает пару секунд, его проще
+запускать на сервере.
 
 ## 5. Проверка
 
@@ -172,6 +221,14 @@ uv run python scripts/plan_author_names_repair.py --out data/reports/author-name
 ## 7. Промоут в прод
 
 После проверки на копии повторить разделы 2-5 с прод-окружением: в `.env` репозитория вернуть прод-адреса БД (из серверного `.env`) вместо локальных.
+
+Большой прогон удобнее собирать в новой базе (`MONGO_DB=pauk_<дата>`), оставив
+старую нетронутой. Тогда перед переключением надо перенести в неё `admin_users` и
+`graph_overrides` из прежней базы, применить правки (`pauk admin overrides apply`)
+и перезапустить сервисы: карту, админку и воркер. Они читают `.env` при старте,
+поэтому без перезапуска продолжат работать со старой базой. Запускать их из
+`screen` нужно бинарями из `.venv`: пользовательского `PATH` там нет и `uv` не
+находится.
 
 Убрать копию по завершении:
 
