@@ -22,13 +22,10 @@ logger = logging.getLogger("pauk.admin")
 COLLECTION = "audit"
 PAGE = 50
 
-#: How much history `trim` keeps by default. Half a year covers "what
-#: happened to this record" and every conflict the panel compares, and is
-#: well past the point where anybody asks.
+#: How much history `trim` keeps by default.
 KEEP_DAYS = 180
 
-# What the entries look like, in the panel's words. `operation` is the
-# client method that made the change, which says nothing to a reader.
+# What the entries look like, in the panel's words.
 KINDS = {
     "created": "создано",
     "updated": "изменено",
@@ -54,9 +51,7 @@ def _query(*, actor: str = "", entity_type: str = "", entity_id: str = "",
         query["entity_id"] = entity_id
     if kind:
         query["change_kind"] = kind
-    # Timestamps are stored as ISO 8601 strings, where ordering by text and
-    # ordering by time are the same thing. `until` is compared against the
-    # end of its day, so a range of one date holds that whole day.
+    # ISO 8601 strings: text order is time order. `until` covers its whole day.
     if since or until:
         window = {}
         if since:
@@ -88,8 +83,7 @@ def entries(db: Database, *, limit: int = PAGE, skip: int = 0,
                 .sort("timestamp", order).skip(skip).limit(limit))
     for row in rows:
         row["kind_ru"] = KINDS.get(row.get("change_kind", ""), row.get("change_kind", ""))
-        # Stored as {field: [old, new]}; a template reads pairs more easily
-        # than a mapping, and the order should be stable between renders.
+        # Pairs rather than a mapping, in an order stable between renders.
         row["changes"] = sorted((row.get("diff") or {}).items())
     return rows
 

@@ -213,12 +213,8 @@ class HeartbeatTest(unittest.TestCase):
         self.assertGreaterEqual(len(seen), 2, "сердцебиение не обновлялось")
 
     def test_the_lease_is_pushed_out(self):
-        # The lock is taken inside the step, the way the real functions
-        # take it: taking it first would leave the resource busy and the
-        # worker would pass the job over instead of claiming it. And it is
-        # taken as the process, which is what `held` does — this worker is
-        # named "worker-1", and renewing under that name would match
-        # nothing while the lease quietly ran out.
+        # Taken inside the step and as the process, as the real functions do:
+        # taken first the job is passed over, named otherwise `held` finds it not.
         store.enqueue(self.db, JobKind.PUBLISH, {"group": "2024"})
         beaten = threading.Event()
         first = []
@@ -285,6 +281,20 @@ class StopTest(unittest.TestCase):
         with patch.dict(worker.STEPS, {JobKind.PUBLISH: step}):
             self.worker.run_forever()
         self.assertEqual(store.read(self.db, job.id).state, JobState.DONE)
+
+    def test_an_idle_worker_still_says_it_is_here(self):
+        # It holds no job and writes nothing else, so an empty queue looked
+        # the same whether a worker was waiting or nobody had started one.
+        self.worker.run_once()
+        self.assertEqual(store.workers_present(self.db), ["worker-1"])
+
+    def test_and_takes_the_mark_back_when_it_leaves(self):
+        # The mark is put there first: asked to stop before its first turn the
+        # loop marks nothing, and the test would pass on any worker.
+        store.mark_present(self.db, "worker-1")
+        self.worker.stop()
+        self.worker.run_forever()
+        self.assertEqual(store.workers_present(self.db), [])
 
 
 class PipelineJobTest(unittest.TestCase):

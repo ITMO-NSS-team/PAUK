@@ -831,13 +831,8 @@ def _guard_broken_transliteration(parsed: dict) -> dict:
     return parsed
 
 
-# A patronymic suffix is not enough on its own to prove a word IS a
-# patronymic (Бабич, Томкович and Ходасевич are surnames ending the same
-# way), but it's enough to catch a word the model already put in the
-# patronymic slot that doesn't even carry the shape - that's very likely a
-# second given name forced into the wrong slot (Spanish "Pedro Luis
-# González", Portuguese, Western double given names), the exact mistake
-# rule 5 exists to head off.
+# The suffix proves nothing (Бабич, Ходасевич are surnames), but a word in the
+# patronymic slot without it is likely a second given name forced there.
 _PATRONYMIC_LIKE_RU = re.compile(
     r"(ович|евич|ьевич|иевич|овна|евна|ьевна|иевна|инична|ична)$", re.IGNORECASE
 )
@@ -1108,13 +1103,8 @@ class AuthorNamesStage(EnrichmentStage):
         ):
             state = person.processing.get(self.name)
             if parsed is None:
-                # Reverse transliteration for name_ru, same as before this
-                # stage called an LLM at all - guessing the parts from word
-                # order is not reliable enough to store, so they stay
-                # whatever an earlier successful run left them. name_en has
-                # no transliteration to do: name_raw already comes from
-                # OpenAlex romanized, so it is already a reasonable English
-                # display name. Retried on the next pipeline run (FAILED).
+                # Word order is not reliable enough to store, so the parts
+                # stay as an earlier run left them. Retried next run (FAILED).
                 person.name_ru = person.name_ru or to_cyrillic(person.name_raw)
                 person.name_en = person.name_en or person.name_raw
                 person.processing[self.name] = self._state(

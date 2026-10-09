@@ -28,13 +28,18 @@ logger = logging.getLogger(__name__)
 
 COLLECTION = "jobs"
 
+#: Where a running worker leaves its mark. Separate from the jobs it takes:
+#: an idle worker has no job to attach itself to.
+WORKERS = "job_workers"
+
 PAGE = 50
 
-# How long a job may go without saying it is alive before the page says so.
-# The beat is every minute (worker.BEAT_SECONDS), so this is several missed
-# beats, not a slow step: the beat runs in its own thread and does not wait
-# for the work.
+# Silence before the page says so: several missed beats, not a slow step.
 QUIET_MINUTES = 5
+
+#: Three turns of the loop: a slow Mongo should not blink the page between
+#: "here" and "gone".
+PRESENT_SECONDS = 20
 
 
 def enqueue(db: Database, kind: JobKind, payload: dict | None = None,
@@ -93,8 +98,7 @@ def claim(db: Database, worker: str, busy: set[str] | None = None) -> Job | None
         query,
         {"$set": {"state": str(JobState.CLAIMED), "worker": worker,
                   "heartbeat_at": moment}},
-        # `_id` only breaks a tie. Two jobs queued inside one millisecond
-        # share a created_at, and the order would otherwise be arbitrary.
+        # `_id` only breaks a tie: two jobs can share a created_at.
         sort=[("created_at", 1), ("_id", 1)],
         return_document=True)
     if document is None:
@@ -318,6 +322,38 @@ def count(db: Database, *, kind: str = "", state: str = "", actor: str = "") -> 
     query = {name: value for name, value
              in (("kind", kind), ("state", state), ("actor", actor)) if value}
     return db[COLLECTION].count_documents(query)
+
+
+def mark_present(db: Database, name: str) -> None:
+    """Say that this worker is here, right now.
+
+    A worker that is idle holds no job and writes nothing else, so without
+    this the page cannot tell "nobody started the worker" from "the worker
+    is waiting for something to do" – and those need different things from
+    the person reading it.
+    """
+    db[WORKERS].update_one({"_id": name}, {"$set": {"seen_at": now()}}, upsert=True)
+
+
+def mark_gone(db: Database, name: str) -> None:
+    """Take the mark back when the worker leaves on its own.
+
+    Without it a stopped worker would go on looking alive until its mark
+    goes stale, which is exactly the moment somebody is deciding whether
+    to start one.
+    """
+    db[WORKERS].delete_one({"_id": name})
+
+
+def workers_present(db: Database, seconds: int = PRESENT_SECONDS) -> list[str]:
+    """Names of the workers that have said they are here lately.
+
+    Empty means nobody is taking jobs off the queue: they will pile up
+    until somebody runs `pauk admin worker`.
+    """
+    fresh = now() - timedelta(seconds=seconds)
+    return sorted(row["_id"] for row in
+                  db[WORKERS].find({"seen_at": {"$gte": fresh}}, {"_id": 1}))
 
 
 def _as_job(document: dict) -> Job:

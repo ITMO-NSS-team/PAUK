@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterator
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -23,7 +24,7 @@ from pymongo.errors import PyMongoError
 
 from pauk.admin.auth import COOKIE, User, check_csrf, read_session
 from pauk.jobs import store
-from pauk.jobs.models import GRAPH
+from pauk.jobs.models import GRAPH, aware, now
 from pauk.settings import Settings
 
 
@@ -35,14 +36,10 @@ def get_config(request: Request) -> Settings:
     return request.app.state.config
 
 
-#: How long the panel waits for Mongo before saying it is not there. The
-#: driver's own default is thirty seconds, which is a command being patient
-#: and a web request hanging.
+#: How long the panel waits for Mongo; the driver's own default is thirty seconds.
 MONGO_TIMEOUT_MS = 2000
 
-#: Said whenever the panel cannot reach Mongo at all. Accounts, sessions,
-#: decisions and the queue all live there, so this is the whole panel being
-#: down rather than one page failing.
+#: Said when Mongo cannot be reached: that is the whole panel, not one page.
 MONGO_SILENT = "MongoDB не отвечает. Панель без неё работать не может."
 
 
@@ -191,8 +188,7 @@ def graph_if_up(request: Request, user: Annotated[User, Depends(require_user)]) 
         client.close()
 
 
-# Named aliases so routes read as `db: Db` instead of repeating the
-# Annotated form in every signature.
+# Named aliases so routes read as `db: Db`, not the whole Annotated form.
 logger = logging.getLogger("pauk.admin")
 
 def plural(count: int, one: str, few: str, many: str) -> str:
@@ -220,6 +216,31 @@ def moment(value) -> str:
     return value.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def ago(value) -> str:
+    """How long ago, in words: "только что", "вчера в 18:24", "23.09 в 18:24".
+
+    A summary is read at a glance, and a stamp like 2026-09-23 18:24:00
+    makes the reader do the subtraction. Takes both shapes the stores keep:
+    a datetime from the queue, an ISO string from the health snapshot.
+    """
+    if not value:
+        return ""
+    moment_at = datetime.fromisoformat(value) if isinstance(value, str) else value
+    moment_at = aware(moment_at)
+    minutes = int((now() - moment_at).total_seconds() // 60)
+    if minutes < 1:
+        return "только что"
+    if minutes < 60:
+        return f"{minutes} {plural(minutes, 'минуту', 'минуты', 'минут')} назад"
+    local = moment_at.astimezone()
+    today = now().astimezone().date()
+    if local.date() == today:
+        return f"сегодня в {local:%H:%M}"
+    if (today - local.date()).days == 1:
+        return f"вчера в {local:%H:%M}"
+    return f"{local:%d.%m} в {local:%H:%M}"
+
+
 def running_job(request: Request) -> dict:
     """The graph job under way, for the warning strip on every page.
 
@@ -245,6 +266,7 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"),
                             context_processors=[running_job])
 templates.env.filters["plural"] = plural
 templates.env.filters["moment"] = moment
+templates.env.filters["ago"] = ago
 
 
 def job_words(kind) -> str:
@@ -260,9 +282,19 @@ def job_words(kind) -> str:
 templates.env.filters["job_words"] = job_words
 
 
-# Length past which a value is rendered already folded. Low on purpose: a
-# needless button the script removes beats text cut with nothing saying so.
+# Length past which a value arrives folded; the script drops a needless button.
 LONG_VALUE = 160
+
+
+def safe_path(target: str, default: str = "/") -> str:
+    """A path from the query string, refused if it leaves this site.
+
+    Unchecked, `?next=https://evil.example` turns a redirect or a "back"
+    link into one that looks like ours and lands somewhere else.
+    """
+    if not target.startswith("/") or target.startswith("//"):
+        return default
+    return target
 
 
 def is_long(value) -> bool:

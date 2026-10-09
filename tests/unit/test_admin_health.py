@@ -139,6 +139,10 @@ class PageTest(unittest.TestCase):
         body = self.client.get("/health").text
         self.assertIn("Сотрудники без департамента", body)
         self.assertIn("117", body)
+        # In words, as on the overview: a snapshot taken a minute ago was
+        # shown as 2026-10-02T19:14:04, which is read by subtracting.
+        self.assertIn("Посчитаны только что", body)
+        self.assertNotIn("T19", body)
 
     def test_only_a_check_with_rows_is_a_link(self):
         self.fill()

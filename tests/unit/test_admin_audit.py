@@ -181,10 +181,13 @@ class DeletedNodeTest(unittest.TestCase):
         self.assertIn("удалено", response.text)
         self.assertIn("user:roman", response.text)
 
-    def test_an_id_nobody_ever_touched_is_a_plain_404(self):
+    def test_an_id_nobody_ever_touched_says_so_and_invents_no_history(self):
+        # A page instead of the JSON of an unhandled 404, but without the
+        # deletion decision beside it: there was never one to offer.
         response = self.client.get("/nodes/Publication/never-existed")
         self.assertEqual(response.status_code, 404)
-        self.assertNotIn("Этой записи в графе нет", response.text)
+        self.assertIn("Этой записи в графе нет", response.text)
+        self.assertNotIn("только решение об удалении", response.text)
 
     def test_an_editor_is_offered_the_record_back(self):
         # One button, nothing around it: what comes back and what happens

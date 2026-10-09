@@ -20,13 +20,13 @@ class Check:
         count: Cypher returning a single number.
         warn: Threshold above which the check is "warn".
         fail: Threshold above which the check is "fail".
-        of: Cypher for the denominator, or None — then warn/fail compare
+        of: Cypher for the denominator, or None – then warn/fail compare
             against the raw count instead of a share.
         hint: User-facing explanation (Russian), or None.
         hint_en: User-facing explanation (English), or None.
         examples: Cypher returning example rows, taking a $lim parameter,
             or None if this check has no drill-down. Column aliases stay
-            Russian — the examples table/CSV isn't translated yet.
+            Russian – the examples table/CSV isn't translated yet.
     """
 
     id: str
@@ -55,7 +55,7 @@ RU_NAME_FIELDS = "[p.surname_ru, p.first_name_ru, p.second_name_ru]"
 
 # Staff used to be told from external authors by a label (:Person:Itmo
 # against :Person:External). The labels are gone: the loader writes a single
-# :Person and carries ITMO membership as the sticky is_itmo property — see
+# :Person and carries ITMO membership as the sticky is_itmo property – see
 # itmo_person and external_person in pauk/graph/extract.py. Checks left on
 # the labels counted zero out of zero and reported "ok" (#150).
 _ITMO_TOTAL = "MATCH (p:Person) WHERE p.is_itmo RETURN count(p)"
@@ -70,7 +70,7 @@ _PARTS = (
 # whole comes first, the parts glued together second: the parts can be empty
 # for everybody at once, and a column built from them alone is a column of
 # dashes.
-_FIO = f"coalesce(p.name_ru, CASE WHEN {_PARTS} <> '' THEN {_PARTS} ELSE null END, '—')"
+_FIO = f"coalesce(p.name_ru, CASE WHEN {_PARTS} <> '' THEN {_PARTS} ELSE null END, '–')"
 
 _PUB_YEAR = "toInteger(left(toString(p.publication_date), 4))"
 
@@ -137,8 +137,8 @@ CHECKS = [
         of=_PUB_TOTAL,
         warn=0.05,
         fail=0.15,
-        hint="По аннотациям ищутся ссылки на код — часть репозиториев не находится.",
-        hint_en="Code links are found by searching abstracts — some repositories go undiscovered.",
+        hint="По аннотациям ищутся ссылки на код. Часть репозиториев так и не находится.",
+        hint_en="Code links are found by searching abstracts. Some repositories go undiscovered.",
         examples="""MATCH (p:Publication) WHERE p.abstract IS NULL OR p.abstract = ''
             RETURN p.id AS id, p.title AS `Заголовок`, p.year AS `Год`,
                    p.doi AS `DOI`, head(p.pdf_urls) AS `PDF`
@@ -175,10 +175,10 @@ CHECKS = [
         of=_ITMO_TOTAL,
         warn=0.25,
         fail=0.60,
-        hint="Подписываются как «Фамилия Имя» — сокращать до «Фамилия И.О.» нечем. "
-        "Отчество приходит только из справочника сотрудников.",
-        hint_en='Signed as "Surname Given name" — nothing to shorten to '
-        '"Surname G.P." with. The patronymic comes only from the staff directory.',
+        hint="Подписываются как «Фамилия Имя». Сократить до «Фамилия И.О.» нечем: "
+        "отчество приходит только из справочника сотрудников.",
+        hint_en='Signed as "Surname Given name". Nothing to shorten to '
+        '"Surname G.P." with: the patronymic comes only from the staff directory.',
         examples=f"""MATCH (p:Person)
             WHERE p.is_itmo AND (p.second_name_ru IS NULL OR trim(p.second_name_ru) = '')
             OPTIONAL MATCH (p)-[:AUTHORED]->(pub:Publication)
@@ -296,8 +296,8 @@ CHECKS = [
         of=_ITMO_TOTAL,
         warn=1e-9,
         fail=0.005,
-        hint="«Смоля́нская» — поиск по такому имени не найдёт человека.",
-        hint_en='"Смоля́нская" — searching for this name won\'t find the person.',
+        hint="«Смоля́нская». Поиск по такому имени человека не найдёт.",
+        hint_en='"Смоля́нская". Searching for this name will not find the person.',
         examples=f"""MATCH (p:Person) WHERE p.is_itmo AND any(v IN {RU_NAME_FIELDS}
               WHERE v IS NOT NULL AND v =~ '.*[\\\\u0300-\\\\u036F].*')
             RETURN p.id AS id, {_FIO} AS `Имя по-русски`, p.name_raw AS `Как подписан`
@@ -377,8 +377,9 @@ CHECKS = [
         of=_ITMO_TOTAL,
         warn=0.01,
         fail=0.05,
-        hint="Совпадает всё ФИО целиком — либо однофамильцы, либо один человек дважды.",
-        hint_en="The entire full name matches — either same-name coincidences, "
+        hint="Фамилия, имя и отчество совпадают полностью. Это либо однофамильцы, "
+        "либо одного человека завели дважды.",
+        hint_en="The full name matches completely. These are either namesakes, "
         "or one person entered twice.",
         examples=f"""MATCH (p:Person)
             WHERE p.is_itmo AND p.surname_ru IS NOT NULL AND size(trim(p.surname_ru)) > 1
@@ -406,9 +407,9 @@ CHECKS = [
         of=_ITMO_TOTAL,
         warn=0.05,
         fail=0.12,
-        hint="Именно так люди подписаны на карте — этих не различить визуально.",
-        hint_en="This is exactly how people are labeled on the map — "
-        "these can't be told apart visually.",
+        hint="Именно так люди подписаны на карте. Этих не различить на глаз.",
+        hint_en="This is exactly how people are labeled on the map. "
+        "These cannot be told apart by eye.",
         examples="""MATCH (p:Person)
             WHERE p.is_itmo AND p.surname_ru IS NOT NULL AND size(trim(p.surname_ru)) > 1
               AND p.first_name_ru IS NOT NULL AND trim(p.first_name_ru) <> ''
@@ -561,7 +562,7 @@ CHECKS = [
         examples="""MATCH (r:Repository)-[:IMPLEMENTS]->(p:Publication)
             WHERE p.has_code = false
             RETURN p.id AS id, p.title AS `Публикация`, p.year AS `Год`,
-                   r.url AS `Репозиторий`, coalesce(p.code_url,'—') AS `code_url`
+                   r.url AS `Репозиторий`, coalesce(p.code_url,'–') AS `code_url`
             ORDER BY p.year DESC LIMIT $lim""",
     ),
     Check(
@@ -578,7 +579,7 @@ CHECKS = [
         examples="""MATCH (p:Publication)
             WHERE p.has_code = true AND NOT (p)<-[:IMPLEMENTS]-()
             RETURN p.id AS id, p.title AS `Публикация`, p.year AS `Год`,
-                   coalesce(p.code_url,'—') AS `code_url`
+                   coalesce(p.code_url,'–') AS `code_url`
             ORDER BY p.year DESC LIMIT $lim""",
     ),
     Check(
@@ -593,8 +594,8 @@ CHECKS = [
         of="MATCH (r:Repository) RETURN count(r)",
         warn=0.005,
         fail=0.02,
-        hint="Мусор, вытащенный из PDF вместе с адресом.",
-        hint_en="Junk pulled out of the PDF along with the address.",
+        hint="В адрес попал лишний текст со страницы PDF.",
+        hint_en="Extra text from the PDF page ended up inside the address.",
         examples=r"""MATCH (r:Repository)
             WHERE r.url =~ '.*[^\x00-\x7F].*'
                OR NOT r.url =~ 'https?://[^/]+/[^/]+/[^/]+.*'

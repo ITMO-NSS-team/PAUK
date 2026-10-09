@@ -45,8 +45,7 @@ from .overrides import DELETE, LINK, tombstoned_ids, tombstoned_relationships
 
 logger = logging.getLogger(__name__)
 
-#: A relationship as both sides of the comparison name it: the triple, and
-#: the pairs of (source id, whatever addresses the far end).
+#: A relationship as both sides of the comparison name it.
 Triple = tuple[str, str, str]
 
 
@@ -87,9 +86,7 @@ class _WouldWrite:
         self._client = client
         self.nodes: dict[str, set[str]] = defaultdict(set)
         self.edges: dict[Triple, set[tuple[str, str]]] = defaultdict(set)
-        #: Ids a publish would fold into another record. Not expected to
-        #: exist afterwards, and not stale either: deleting one would take
-        #: its edges with it instead of moving them.
+        #: Ids a publish would fold: not stale, and not there afterwards.
         self.folding: set[str] = set()
 
     def __getattr__(self, name: str):
@@ -122,8 +119,7 @@ class _WouldWrite:
         return self._fold(merges)
 
     def promote_link_candidates_batch(self, candidates) -> None:
-        # A candidate that turned into a repository is removed by the
-        # publish itself, which is not this one's business either.
+        # A promoted candidate is removed by the publish itself.
         self.folding.update(candidate for candidate, _url in candidates)
 
 
@@ -166,9 +162,7 @@ def _claimed(mongo_db: Database) -> tuple[dict[str, set[str]], set[tuple[str, st
                 edges.add((row["src_label"], row["rel_type"], row["tgt_label"],
                            row["src_id"], row["target_id"]))
         elif row.get("op") != DELETE:
-            # Any decision about a record is a reason to keep it, not only
-            # a "create": somebody editing a field of a record no row
-            # explains is saying the same thing about it.
+            # Any decision about a record is a reason to keep it, not only "create".
             nodes[row["label"]].add(row["target_id"])
     return nodes, edges
 
@@ -209,16 +203,12 @@ def plan(client, mongo_db: Database) -> Plan:
                        tombstoned_ids(mongo_db, "LinkCandidate"))
     known = _rows_by_label(rows_by_file)
     claimed_nodes, claimed_edges = _claimed(mongo_db)
-    # A fold moves edges onto the survivor and the rows know nothing about
-    # it: after A2 is folded into A1, the edge to A2's work hangs off A1,
-    # and only A2's row asks for it. Read as it stands, that edge has no
-    # row behind it, and a prune would undo every fold the graph has made.
+    # A fold moves edges onto the survivor, and no row asks for them there.
     aliases = {label: client.fetch_merged_id_map(label)
                for label in ("Person", "Publication", "Repository")}
 
     result = Plan(folding=len(would.folding))
-    # LinkCandidate has no prepared file of its own — it is invented from
-    # repo_links rows — so the replay is the only thing that knows it.
+    # LinkCandidate has no file of its own: only the replay knows it.
     for label in sorted({*FILE_LABELS.values(), "LinkCandidate"}):
         live = client.fetch_node_ids(label)
         stale = live - known.get(label, set()) - would.nodes.get(label, set()) - would.folding

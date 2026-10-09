@@ -1,3 +1,4 @@
+import struct
 import threading
 import unittest
 from unittest.mock import patch
@@ -145,11 +146,53 @@ class PanelTest(unittest.TestCase):
     def test_the_icon_is_the_spider_and_not_the_web(self):
         # pauk-web.png is, despite the name, a cobweb; the spider is
         # pauk-frame.png. Putting the wrong one in the tab is easy and
-        # invisible from the code alone.
+        # invisible from the code alone. The page itself draws the web as
+        # decoration, so only the head is checked.
+        self.sign_in()
+        head = self.client.get("/").text.split("</head>")[0]
+        self.assertIn("pauk-frame", head)
+        self.assertNotIn("pauk-web", head)
+
+    def test_the_overview_says_how_the_work_is_going(self):
+        # Four pages answer four questions; the first page answers them at
+        # once, or nobody looks until something has already gone wrong.
+        from pauk.jobs import store
+        from pauk.jobs.models import JobKind
+        from pauk.storage import review
+        review.record_held(self.db, [{
+            "status": "held", "person_a": "A1", "name_a": "A", "person_b": "A2",
+            "name_b": "B", "shared_coauthors": 0, "shared_departments": 0,
+            "shared_fields": [],
+            "held_because": ["identical name with nothing corroborating it"]}])
+        store.mark_present(self.db, "worker-1")
+        # The health snapshot keeps its time as text, unlike a job's, and a
+        # page that ran it through the date filter crashed on the real data.
+        from pauk.admin import health
+        health.save(self.db, {"checks": [{"status": "fail"}, {"status": "ok"}]})
+        job = store.enqueue(self.db, JobKind.MAP, {"public": True})
+        store.claim(self.db, "worker-1")
+        store.start(self.db, job.id)
         self.sign_in()
         body = self.client.get("/").text
-        self.assertIn("pauk-frame", body)
-        self.assertNotIn("pauk-web", body)
+        # By what the cards are made of, not by their wording: the words are
+        # edited often and a test reading them breaks on every rewrite.
+        self.assertIn('class="summary"', body)
+        self.assertIn('class="pulse"', body)
+        self.assertIn("пересборка карты", body)
+        self.assertIn("вопрос ждёт ответа", body)
+        self.assertIn('class="tally bad"', body)
+        self.assertNotIn("воркер не работает", body)
+
+    def test_and_says_when_nobody_is_running_anything(self):
+        self.sign_in()
+        body = self.client.get("/").text
+        self.assertIn('class="summary"', body)
+        # No pulse: that mark belongs to a run under way.
+        self.assertNotIn('class="pulse"', body)
+        self.assertIn("воркер не работает", body)
+        # Zero is not a count to agree with: "0 вопросов ждут" is a page
+        # talking about nothing, and the card says so instead.
+        self.assertIn("вопросов не осталось", body)
 
     def test_the_panel_is_light_only(self):
         css = self.client.get("/static/panel.css").text
@@ -163,6 +206,16 @@ class PanelTest(unittest.TestCase):
             self.assertEqual(
                 self.client.get(f"/assets/fonts/golos-text-{part}.woff2").status_code, 200, part)
         self.assertEqual(self.client.get("/static/panel.css").text.count("@font-face"), 3)
+
+    def test_and_each_of_them_is_a_font_a_browser_will_take(self):
+        # Served is not the same as usable: a mangled woff2 answers 200 and
+        # every browser refuses it silently.
+        for part in ("latin", "cyrillic", "cyrillic-ext"):
+            body = self.client.get(f"/assets/fonts/golos-text-{part}.woff2").content
+            signature, _flavor, length, tables = struct.unpack(">4sIIH", body[:14])
+            self.assertEqual(signature, b"wOF2", part)
+            self.assertEqual(length, len(body), part)
+            self.assertLess(tables, 100, part)
 
     def test_the_panel_offers_no_way_to_create_an_account(self):
         # Accounts come from `pauk admin user add` only; a registration

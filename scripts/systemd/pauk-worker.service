@@ -1,0 +1,24 @@
+# PAUK worker as a service: without it the panel's buttons only queue jobs.
+# Installing it: docs/admin-panel.md.
+
+[Unit]
+Description=PAUK admin worker
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+User=asteb
+WorkingDirectory=/home/asteb/PAUK
+Environment=HOME=/home/asteb
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/asteb/.local/bin/uv run pauk admin worker
+Restart=always
+RestartSec=5
+# SIGTERM means "finish the job in hand, then leave", so stopping takes as long
+# as the step does; killed after five minutes, its job is picked up by the next.
+KillSignal=SIGTERM
+TimeoutStopSec=300
+
+[Install]
+WantedBy=multi-user.target

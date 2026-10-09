@@ -1,0 +1,22 @@
+# PAUK admin panel as a service. Installing it: docs/admin-panel.md.
+# User, WorkingDirectory and the path to uv are written for einsteinium.
+
+[Unit]
+Description=PAUK admin panel
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+User=asteb
+WorkingDirectory=/home/asteb/PAUK
+Environment=HOME=/home/asteb
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/asteb/.local/bin/uv run uvicorn pauk.admin.app:build --factory --host 0.0.0.0 --port 8505
+# The databases start alongside and may not answer yet; the panel dies
+# without Mongo, and trying again is the whole cure.
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
