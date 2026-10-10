@@ -7,18 +7,18 @@ interface Counter {
 }
 
 describe("Store", () => {
-  it("get() возвращает исходное состояние до первого set()", () => {
+  it("get() returns the initial state before the first set()", () => {
     const store = new Store<Counter>({ a: 1, b: 2 });
     expect(store.get()).toEqual({ a: 1, b: 2 });
   });
 
-  it("set() мержит патч поверх текущего состояния, не заменяя его целиком", () => {
+  it("set() merges the patch over the current state instead of replacing it whole", () => {
     const store = new Store<Counter>({ a: 1, b: 2 });
     store.set({ a: 10 });
     expect(store.get()).toEqual({ a: 10, b: 2 });
   });
 
-  it("subscribe() получает новое состояние при каждом set()", () => {
+  it("subscribe() receives the new state on every set()", () => {
     const store = new Store<Counter>({ a: 1, b: 2 });
     const listener = vi.fn();
     store.subscribe(listener);
@@ -29,7 +29,7 @@ describe("Store", () => {
     expect(listener).toHaveBeenCalledWith({ a: 5, b: 2 });
   });
 
-  it("вызванная функция отписки останавливает дальнейшие уведомления этого слушателя", () => {
+  it("calling the unsubscribe function stops further notifications for that listener", () => {
     const store = new Store<Counter>({ a: 1, b: 2 });
     const listener = vi.fn();
     const unsubscribe = store.subscribe(listener);
@@ -40,7 +40,7 @@ describe("Store", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
-  it("несколько подписчиков получают уведомление независимо друг от друга", () => {
+  it("several subscribers are notified independently of each other", () => {
     const store = new Store<Counter>({ a: 1, b: 2 });
     const first = vi.fn();
     const second = vi.fn();
@@ -53,12 +53,12 @@ describe("Store", () => {
     expect(second).toHaveBeenCalledTimes(1);
   });
 
-  it("упавший подписчик не мешает остальным получить состояние, а ошибка логируется", () => {
+  it("a failing subscriber does not stop the others from getting the state, and the error is logged", () => {
     const store = new Store<Counter>({ a: 1, b: 2 });
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const after = vi.fn();
     store.subscribe(() => {
-      throw new Error("подписчик упал");
+      throw new Error("subscriber failed");
     });
     store.subscribe(after);
 
@@ -69,7 +69,7 @@ describe("Store", () => {
     consoleError.mockRestore();
   });
 
-  it("notify() зовёт подписчиков с текущим состоянием, не меняя его", () => {
+  it("notify() calls subscribers with the current state without changing it", () => {
     const store = new Store<Counter>({ a: 1, b: 2 });
     const listener = vi.fn();
     store.subscribe(listener);
@@ -81,9 +81,9 @@ describe("Store", () => {
     expect(store.get()).toEqual({ a: 1, b: 2 });
   });
 
-  it("подписчик, вызвавший вложенный set() внутри своего колбэка, не заставляет ПОЗДНИЕ подписчики этого же раунда увидеть устаревшее состояние", () => {
-    // Regression: notify() used to pass one snapshot to the whole round, so a
-    // later subscriber overwrote the result of a nested set() with stale state.
+  it("a subscriber that calls a nested set() inside its callback does not make LATER subscribers of the same round see a stale state", () => {
+    // Regression: with one snapshot for the whole round, a later subscriber
+    // overwrote the result of a nested set() with stale state.
     const store = new Store<Counter>({ a: 1, b: 2 });
     let nested = false;
     let lastSeenByLateSubscriber: Counter | undefined;

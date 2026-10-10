@@ -27,7 +27,7 @@ def source_wrote(db, label, node_id, field, before, after, after_hours=1,
     The time is computed from the decision's own `created_at` rather than
     written as a date: conflicts only count writes that came *after* the
     edit, so a fixed timestamp silently changes meaning as the calendar
-    moves — these tests passed on one day and failed on the next.
+    moves - these tests passed on one day and failed on the next.
     """
     from datetime import timedelta
     row = db["graph_overrides"].find_one({"target_id": node_id})
@@ -245,8 +245,8 @@ class UndoRestoresTest(unittest.TestCase):
         self.csrf = self.db[SESSIONS].find_one({"_id": session_key(self.client.cookies[COOKIE])})["csrf"]
 
     def test_undoing_a_deleted_node_brings_it_back_with_its_fields(self):
-        # Lifting the ban alone left the graph unchanged: the record would
-        # reappear only at the next publish, and the button looked broken.
+        # Lifting the ban alone leaves the graph unchanged: the record would
+        # reappear only at the next publish, and the button would look broken.
         response = self.client.post("/overrides/undo", data={
             "csrf": self.csrf, "kind": "node", "op": "delete",
             "label": "Department", "target_id": "D1"})
@@ -313,7 +313,7 @@ class SnapshotTest(unittest.TestCase):
 
     def test_restoring_works_with_an_empty_feed(self):
         # The feed records history, not state, and summarises a bulk
-        # operation without listing fields — restoring must not depend on
+        # operation without listing fields - restoring must not depend on
         # finding a per-field entry there.
         self.delete_it()
         self.db[feed.COLLECTION].delete_many({})
@@ -335,7 +335,7 @@ class SnapshotTest(unittest.TestCase):
 
 
 class SourceValueTest(unittest.TestCase):
-    """Reapplying records the value it covers up — the source's own word."""
+    """Reapplying records the value it covers up - the source's own word."""
 
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
@@ -346,7 +346,7 @@ class SourceValueTest(unittest.TestCase):
 
     def test_applying_stores_what_the_pipeline_had(self):
         from pauk.graph.overrides import apply_overrides
-        self.graph.nodes[("Person", "A1")]["name_ru"] = "И. П. Петров"   # так сказал источник
+        self.graph.nodes[("Person", "A1")]["name_ru"] = "И. П. Петров"   # the source's word
         apply_overrides(self.graph, self.db)
         (row,) = active_overrides(self.db)
         self.assertEqual(row["source_value"]["name_ru"], "И. П. Петров")
@@ -362,7 +362,7 @@ class SourceValueTest(unittest.TestCase):
 
     def test_a_source_that_agrees_is_not_a_conflict(self):
         from pauk.graph.overrides import apply_overrides
-        self.graph.nodes[("Person", "A1")]["name_ru"] = "Иван"    # то же, что и было
+        self.graph.nodes[("Person", "A1")]["name_ru"] = "Иван"    # unchanged
         apply_overrides(self.graph, self.db)
         self.assertEqual(decisions.conflicts(self.db), [])
 
@@ -396,7 +396,7 @@ class PagingTest(unittest.TestCase):
     def test_the_second_page_shows_the_rest(self):
         body = self.client.get("/overrides", params={"page": 2}).text
         self.assertIn("страница 2 из 2", " ".join(body.split()))
-        # Проверяется ссылка, а не подпись: текст кнопки переписывают.
+        # The link is checked, not the label: button text gets rewritten.
         self.assertIn("/overrides?tab=list&page=1", body)
 
     def test_a_page_out_of_range_does_not_break(self):
@@ -405,7 +405,7 @@ class PagingTest(unittest.TestCase):
 
     def test_conflicts_are_paged_too(self):
         # They are computed rather than stored, so paging happens after the
-        # comparisons — but the page still has to be bounded.
+        # comparisons - but the page still has to be bounded.
         for n in range(decisions.PAGE + 5):
             record_override(self.db, "Person", f"B{n:03}", "set", {"name_ru": "Пётр"},
                             actor="user:roman", auto_value={"name_ru": "Иван"})
@@ -443,7 +443,7 @@ class UndoRestoresFieldTest(unittest.TestCase):
         # Waiting for a publish is not enough: apply_overrides applies what
         # is in force, and a withdrawn decision instructs nothing. The hand
         # value would sit in the graph until a run happened to touch that
-        # field — and for a record the pipeline no longer covers, forever.
+        # field - and for a record the pipeline no longer covers, forever.
         self.undo()
         self.assertEqual(self.graph.nodes[("Person", "A1")]["name_ru"], "Иван Петров")
 
@@ -469,10 +469,9 @@ class UndoRestoresFieldTest(unittest.TestCase):
 class PartiallyRewrittenTest(unittest.TestCase):
     """One decision, one field the pipeline fills and one it does not.
 
-    "Fixed the name and added an ORCID that OpenAlex never had" — ordinary
-    enough. Publishing rewrites the first field and leaves the second
-    alone, and the graph then holds the source's value for one and this
-    override's own value for the other.
+    E.g. a fixed name plus an ORCID that OpenAlex never had. Publishing rewrites the first field and
+    leaves the second alone, so the graph holds the source's value for one and this override's own value
+    for the other.
     """
 
     def setUp(self):
@@ -483,7 +482,7 @@ class PartiallyRewrittenTest(unittest.TestCase):
         record_override(self.db, "Person", "A1", "set",
                         {"name_en": "MAN-A", "name_ru": "MAN-B"}, actor="user:roman",
                         auto_value={"name_en": "SRC-A", "name_ru": "SRC-B"})
-        # публикация переписала только одно поле
+        # the publish rewrote only one field
         self.graph.nodes[("Person", "A1")]["name_en"] = "SRC-A2"
         from pauk.graph.overrides import apply_overrides
         apply_overrides(self.graph, self.db)
@@ -510,10 +509,8 @@ class PartiallyRewrittenTest(unittest.TestCase):
 class UndoingADeletionKeepsTheEditTest(unittest.TestCase):
     """Correcting a field, deleting the record, then taking the deletion back.
 
-    One document holds both decisions. Switching it off whole brought the
-    record back with the corrected value and dropped the correction, so the
-    next publish overwrote it — the edit vanished a week after it looked
-    like it had been restored.
+    One document holds both decisions. Switching it off whole would bring the record back with the
+    corrected value but drop the correction, so the next publish would overwrite it.
     """
 
     def setUp(self):

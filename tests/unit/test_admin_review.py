@@ -138,8 +138,8 @@ class ReviewPageTest(unittest.TestCase):
         self.assertLess(body.index("A0", first - 400), body.index("Zinaida Orlova"))
 
     def test_a_two_word_field_is_named_whole(self):
-        # "group spans 2 distinct staff record values" used to come out as
-        # "поля record": the field was read as the word before "values".
+        # The field is the whole phrase "staff record", not the word before
+        # "values" taken alone.
         self.assertEqual(_reason_words("group spans 2 distinct staff record values"),
                          "в группе 2 разных значения поля «запись в каталоге»")
 
@@ -661,8 +661,8 @@ class ChoiceFormGuardTest(unittest.TestCase):
 class QuestionKindIsVisibleTest(unittest.TestCase):
     """Four different questions sit in one table, one under another.
 
-    Which one a row is used to be readable only off the buttons beside it,
-    and only if you already knew what those meant.
+    Each row has to say which question it is, instead of leaving that to be read off the buttons beside
+    it.
     """
 
     def setUp(self):
@@ -696,10 +696,10 @@ class QuestionKindIsVisibleTest(unittest.TestCase):
 
 
 class ColumnsSayWhoSpeaksTest(unittest.TestCase):
-    """Three different voices used to sit in one cell.
+    """Three different voices sit in one cell and must be told apart.
 
-    What the rules collected, what a person decided, and what the rules say
-    now read as one list, and nothing told them apart.
+    What the rules collected, what a person decided, and what the rules say now must not read as one
+    list.
     """
 
     def setUp(self):
@@ -739,8 +739,8 @@ class ColumnsSayWhoSpeaksTest(unittest.TestCase):
         self.assertIn("теперь связывают", why)
 
     def test_a_viewer_sees_the_answer_without_the_buttons(self):
-        # The column used to appear only for an editor, so a viewer could
-        # not see what had been decided at all.
+        # The column is shown to a viewer too, who has to see what had
+        # been decided.
         decided = self.cells(login="guest")[3]
         self.assertIn("разные люди", decided)
         self.assertNotIn("/review/withdraw", decided)
@@ -767,8 +767,8 @@ class QuestionWithNoEvidenceTest(unittest.TestCase):
         return re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
 
     def test_the_row_still_says_who_it_is_about(self):
-        # Pairing members with an empty name list used to drop every subject
-        # and leave the row about nobody.
+        # Pairing members with an empty name list must not drop every
+        # subject and leave the row about nobody.
         about = self.cells()[0]
         self.assertIn("A1", about)
         self.assertIn("A2", about)

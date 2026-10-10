@@ -20,8 +20,7 @@ class GoldenColorTest(unittest.TestCase):
         self.assertRegex(golden_color(0), r"^#[0-9a-f]{6}$")
 
     def test_deterministic_and_distinct_for_different_indices(self):
-        """The same index always gives the same color; neighboring
-        departments shouldn't accidentally collide on color."""
+        """The same index always gives the same color; neighboring departments differ."""
         self.assertEqual(golden_color(5), golden_color(5))
         self.assertNotEqual(golden_color(0), golden_color(1))
 
@@ -31,9 +30,8 @@ class MajorityDeptTest(unittest.TestCase):
         self.assertEqual(majority_dept([["d1"], ["d1", "d2"], ["d2"]]), "d1")
 
     def test_tie_broken_by_id_not_by_global_popularity(self):
-        """This is exactly why department sorting can't use global
-        popularity - only id, or large departments would pull every close
-        call toward themselves."""
+        """Department sorting must not use global popularity, or large departments
+        would pull every close call toward themselves."""
         self.assertEqual(majority_dept([["dz"], ["da"]]), "da")
 
     def test_no_votes_returns_none(self):
@@ -99,18 +97,16 @@ class AssignDepartmentsTest(unittest.TestCase):
             ],
             pub_ids={"P_old", "P_new"},
         )
-        # P_old belongs to d1, P_new to d2 (emulated via direct assignment -
-        # majority_dept won't derive this on its own without real coauthor
-        # overlap, so this just checks the date sort here).
+        # P_old belongs to d1, P_new to d2 (emulated via direct assignment);
+        # majority_dept won't derive this without real coauthor overlap.
         assignment = DepartmentAssigner(db, authorship).assign({"d1": "К1", "d2": "К2"})
-        # Both vote for d1/d2 equally (one author per publication) - the real
-        # "most recent" check is done below, in a separate scenario.
+        # Both vote for d1/d2 equally (one author per publication); the real
+        # "most recent" check is in a separate scenario.
         self.assertIn(assignment.author_dept["A1"], ("d1", "d2"))
 
 
 def _assignment_stub(*, author_dept, pub_primary, repo_dept) -> DepartmentAssignment:
-    """Builds a DepartmentAssignment directly, without going through
-    assign() - for build_table() tests, which don't need the whole chain."""
+    """Builds a DepartmentAssignment directly, for build_table() tests that skip assign()."""
     return DepartmentAssignment(
         static_depts={},
         pub_dept_rows={},

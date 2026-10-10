@@ -27,15 +27,12 @@ def _http_404(url: str) -> requests.HTTPError:
 class NetworkAccessDenied(BaseException):
     """A bench test reached for a live socket.
 
-    Deliberately not an Exception subclass - see conftest.py, which raises
-    this from every requests.Session.send as a backstop against stages
-    whose client nobody patched. Several stages wrap their client calls in
-    `except Exception` to turn a real failure into a FAILED row instead of
-    crashing the run (repositories.py's per-organization lookup, emails.py's
-    _from_homepage, code_links.py's _pdf_pages), so an Exception subclass
-    raised here would be caught by that same code and silently swallowed -
-    the suite would stay green while quietly making a live call.
-    BaseException passes straight through instead.
+    Deliberately not an Exception subclass: conftest.py raises this from
+    every requests.Session.send as a backstop, and several stages wrap their
+    client calls in `except Exception` to turn a failure into a FAILED row
+    (repositories.py, emails.py, code_links.py). An Exception subclass would
+    be swallowed there and the suite would stay green while making a live
+    call. BaseException passes straight through.
     """
 
 
@@ -126,24 +123,23 @@ class MockOrcidClient:
 class MockOpenRouterClient:
     """Fakes author_names.py's LLM name-split call for the bench run.
 
-    Model output *quality* was already validated separately against the real
-    API - this mock isn't re-testing that, it's testing that the pipeline
-    wires the LLM step in and consumes its reply correctly, without a real
-    network call. It answers the way the real prompt asks a model to: copy a
-    catalog candidate verbatim when the folded surname matches (reusing
-    RussianNamesCatalog.match(), the same trusted logic the deterministic
-    degree lookup in author_names.py itself uses), otherwise a plain
-    transliteration (reusing to_cyrillic) - "reasonable" here means the same
-    thing it means there.
+    Answers the way the real prompt asks a model to: copy a catalog
+    candidate verbatim when the folded surname matches (via
+    RussianNamesCatalog.match()), otherwise transliterate (via to_cyrillic).
+    Output quality is validated elsewhere; this checks that the pipeline
+    wires the step in and consumes its reply.
     """
 
     _RAW_NAME_RE = re.compile(r"mixed:\n {2}(.+)")
 
     def __init__(self, catalog_rows: list[str]) -> None:
-        """catalog_rows: the same "name_ru,surname,name,patronymic,degree"
-        strings the bench fixture writes to russian_names.csv (see
-        tests.bench.universe.RUSSIAN_NAMES_CATALOG) - not part of the
-        `universe` dict itself, which build_universe() doesn't touch."""
+        """Build the double from the strings of the bench's russian_names.csv.
+
+        Args:
+            catalog_rows: "name_ru,surname,name,patronymic,degree" strings, as
+                the bench fixture writes them (see
+                tests.bench.universe.RUSSIAN_NAMES_CATALOG).
+        """
         self.last_response = None
         self.last_usage = None
         self.last_error = None
@@ -231,13 +227,10 @@ class MockOpenRouterClient:
 class MockPdfHttpClient:
     """Stands in for code_links.py's raw HttpClient.
 
-    The stage's own PDF-fetch fallback (used when a publication carries a
-    pdf_urls but the universe models no actual PDF bytes for it, e.g. W020's
-    "https://example.org/w20.pdf") always fails, the same way the real
-    HttpClient would on a 404 - code_links._pdf_pages already treats that as
-    an ordinary, expected failure and falls back to the abstract. Reaching
-    example.org for that verdict is a real network call in every bench run
-    that just happened to be harmless; this makes the same outcome local.
+    The stage's PDF-fetch fallback, used when a publication carries a
+    pdf_url but the universe models no PDF bytes for it (e.g. W020), always
+    fails here like a real 404, and code_links._pdf_pages falls back to the
+    abstract. This keeps that outcome local instead of reaching example.org.
     """
 
     def __init__(self, *args, **kwargs) -> None:
@@ -270,7 +263,6 @@ class RecordingNeo4jClient:
             else:
                 target[key] = value
 
-    # --- Neo4jClient interface -------------------------------------------------
     def upsert_nodes_batch(self, labels, nodes) -> None:
         label_str = ":".join(labels) if isinstance(labels, list) else labels
         primary = label_str.split(":")[0]
@@ -453,7 +445,6 @@ class RecordingNeo4jClient:
     def close(self) -> None:
         pass
 
-    # --- assertion helpers -------------------------------------------------------
     def edge_pairs(self, rel_type: str) -> set[tuple[str, str]]:
         return {(src_id, tgt_id) for (_, rel, _, src_id, tgt_id) in self.edges if rel == rel_type}
 
@@ -467,12 +458,10 @@ class RecordingNeo4jClient:
 class MockLinkRelevanceClient:
     """A fixed link-relevance verdict, so the bench never calls a real model.
 
-    Every link is judged the authors' own. The bench measures structure — how
-    many edges of each kind the pipeline builds — and a live model would make
-    those counts depend on its mood: run against a real endpoint, this
-    universe's synthetic URLs are judged someone else's tool 81 times out of
-    86, and the IMPLEMENTS count moves with the model. Whether the judgment
-    itself is right is settled in tests/unit/test_stages.py.
+    Every link is judged the authors' own. The bench measures structure, and
+    a live model would make counts such as IMPLEMENTS depend on its
+    judgments. Whether the judgment itself is right is settled in
+    tests/unit/test_stages.py.
     """
 
     def __init__(self, *args, **kwargs) -> None:

@@ -61,7 +61,7 @@ describe("mountFilters", () => {
     }
   }
 
-  it("подписывает секцию сайдбара («Фильтры»/«Filters») под текущий язык", () => {
+  it("labels the sidebar section (\"Фильтры\"/\"Filters\") for the current language", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState({ lang: "ru" }));
       mountFilters(store);
@@ -72,7 +72,7 @@ describe("mountFilters", () => {
     });
   });
 
-  it("на вкладке 1: зум рёбер (общий), порог соавторства, затем два общих регулятора регионов", () => {
+  it("on tab 1: edge zoom (shared), coauthorship threshold, then two shared region controls", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
@@ -85,7 +85,7 @@ describe("mountFilters", () => {
     });
   });
 
-  it("на вкладке 3: зум рёбер, общих авторов, год и два регулятора регионов", () => {
+  it("on tab 3: edge zoom, shared authors, year and two region controls", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState({ tab: 3 }));
       mountFilters(store);
@@ -94,7 +94,7 @@ describe("mountFilters", () => {
     });
   });
 
-  it("на вкладке 2 (репозитории) только общие регуляторы: зум рёбер и регионы, панель не скрыта", () => {
+  it("on tab 2 (repositories) only the shared controls: edge zoom and regions, the panel is not hidden", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState({ tab: 2 }));
       mountFilters(store);
@@ -105,7 +105,7 @@ describe("mountFilters", () => {
     });
   });
 
-  it("движение вкладко-специфичного ползунка пишет новое значение в store.filters — с задержкой (debounce), не мгновенно", () => {
+  it("moving a tab-specific slider writes the new value to store.filters with a delay (debounce), not instantly", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
@@ -127,7 +127,7 @@ describe("mountFilters", () => {
     });
   });
 
-  it("бегунок наклоняется в сторону движения ползунка", () => {
+  it("the thumb tilts in the direction of the slider movement", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
@@ -148,7 +148,7 @@ describe("mountFilters", () => {
     });
   });
 
-  it("быстрое перетаскивание ползунка (много тиков подряд) применяет ТОЛЬКО последнее значение, не каждый тик", () => {
+  it("fast slider dragging (many ticks in a row) applies ONLY the last value, not every tick", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
@@ -167,7 +167,7 @@ describe("mountFilters", () => {
     });
   });
 
-  it("движение общего ползунка зума рёбер пишет edgeZoomThreshold независимо от вкладки", () => {
+  it("moving the shared edge zoom slider writes edgeZoomThreshold regardless of the tab", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState({ tab: 2 })); // a tab without its own filters
       mountFilters(store);
@@ -181,7 +181,7 @@ describe("mountFilters", () => {
     });
   });
 
-  it("переключение вкладки перестраивает вкладко-специфичные регуляторы, но общий зум рёбер остаётся", () => {
+  it("switching tabs rebuilds the tab-specific controls, but the shared edge zoom stays", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
@@ -194,7 +194,7 @@ describe("mountFilters", () => {
     });
   });
 
-  it("на вкладках 1 и 3 есть чекбокс «показывать без департамента», на 2 — нет", () => {
+  it("tabs 1 and 3 have the \"Показывать без департамента\" checkbox, tab 2 does not", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
@@ -208,26 +208,26 @@ describe("mountFilters", () => {
     });
   });
 
-  it("снятие чекбокса «без департамента» пишет false в соответствующее поле filters", () => {
+  it("unchecking the \"Показывать без департамента\" checkbox writes false to the matching filters field", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
 
       const checkbox = checkboxByLabel("Показывать без департамента");
-      if (!checkbox) throw new Error("чекбокс «без департамента» должен быть на вкладке авторов");
+      if (!checkbox) throw new Error("the \"Показывать без департамента\" checkbox must be on the authors tab");
       checkbox.checked = false;
       checkbox.dispatchEvent(new Event("change"));
 
       expect(store.get().filters.showNoDeptAuthors).toBe(false);
     });
   });
-  it("чекбокс «Показывать внешних авторов» на вкладке авторов выключен по умолчанию и включает фильтр", () => {
+  it("the \"Показывать внешних авторов\" checkbox on the authors tab is off by default and enables the filter", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
 
       const checkbox = checkboxByLabel("Показывать внешних авторов");
-      if (!checkbox) throw new Error("чекбокс внешних авторов должен быть на вкладке авторов");
+      if (!checkbox) throw new Error("the external authors checkbox must be on the authors tab");
       expect(checkbox.checked).toBe(false);
       checkbox.checked = true;
       checkbox.dispatchEvent(new Event("change"));
@@ -236,7 +236,7 @@ describe("mountFilters", () => {
     });
   });
 
-  it("чекбокс «Регионы департаментов» есть на всех вкладках и переключает только текущую", () => {
+  it("the \"Регионы департаментов\" checkbox is on every tab and toggles only the current one", () => {
     withContainer(() => {
       const store = new Store<AppState>(
         initialState({
@@ -248,7 +248,7 @@ describe("mountFilters", () => {
 
       const checkbox = checkboxByLabel("Регионы департаментов");
       expect(checkbox?.checked).toBe(true);
-      if (!checkbox) throw new Error("чекбокс регионов должен быть на вкладке публикаций");
+      if (!checkbox) throw new Error("the regions checkbox must be on the publications tab");
       checkbox.checked = false;
       checkbox.dispatchEvent(new Event("change"));
       expect(store.get().filters.showRegions).toEqual({ 1: true, 2: false, 3: false });
@@ -258,7 +258,7 @@ describe("mountFilters", () => {
     });
   });
 
-  it("ползунки регионов пишут regionZoomThreshold и regionMinNodes, диапазон зума рёбер не заходит в диапазон регионов", () => {
+  it("region sliders write regionZoomThreshold and regionMinNodes, the edge zoom range does not overlap the region range", () => {
     withContainer(() => {
       const store = new Store<AppState>(initialState());
       mountFilters(store);
@@ -268,7 +268,7 @@ describe("mountFilters", () => {
       const [regionZoom, minNodes] = ranges.slice(-2); // region rows come last
       expect(Number(edgeZoom?.max)).toBeLessThanOrEqual(Number(regionZoom?.min));
 
-      if (!regionZoom || !minNodes) throw new Error("ползунки регионов должны быть в фильтрах");
+      if (!regionZoom || !minNodes) throw new Error("the region sliders must be in the filters");
       regionZoom.value = "0.4";
       regionZoom.dispatchEvent(new Event("input"));
       minNodes.value = "25";
@@ -307,7 +307,7 @@ describe("mountHiddenAuthorReveal", () => {
       },
     });
 
-  it("выбор скрытого внешнего автора включает фильтр внешних, иначе выбор ушёл бы в пустоту", () => {
+  it("selecting a hidden external author enables the external filter, otherwise the selection would go nowhere", () => {
     const store = new Store<AppState>(hiddenByDefault());
     mountHiddenAuthorReveal(store, data);
 
@@ -318,7 +318,7 @@ describe("mountHiddenAuthorReveal", () => {
     expect(store.get().selection).toEqual({ kind: "node", key: "E1" });
   });
 
-  it("выбор автора без связей включает фильтр авторов без связей", () => {
+  it("selecting an author without links enables the authors-without-links filter", () => {
     const store = new Store<AppState>(hiddenByDefault());
     mountHiddenAuthorReveal(store, data);
 
@@ -328,7 +328,7 @@ describe("mountHiddenAuthorReveal", () => {
     expect(store.get().filters.showExternalAuthors).toBe(false);
   });
 
-  it("выбор внешнего соавтора автора «без связей» включает только фильтр внешних — вместе с ним у автора появляется связь", () => {
+  it("selecting an external coauthor of an author without links enables only the external filter, which gives the author a link", () => {
     const soloWithExternal = {
       authors: [
         { key: "A1", is_itmo: true, pubs_count: 1 },
@@ -349,7 +349,7 @@ describe("mountHiddenAuthorReveal", () => {
     expect(store.get().filters.showIsolatedAuthors).toBe(false);
   });
 
-  it("выбор обычного автора из ИТМО фильтры не трогает", () => {
+  it("selecting a regular ITMO author leaves the filters untouched", () => {
     const store = new Store<AppState>(hiddenByDefault());
     mountHiddenAuthorReveal(store, data);
 

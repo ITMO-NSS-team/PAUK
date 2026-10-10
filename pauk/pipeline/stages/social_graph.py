@@ -11,16 +11,13 @@ harvested for the people behind them, and those people are matched like any
 other candidate. A person found this way becomes a seed once github_match confirms them,
 so running the two in turn walks the graph outward one ring at a time.
 
-An organization is only followed when it says ITMO itself — in its login, in
-its profile, or by being in data/static/itmo_github_orgs.json. The
-alternative is following every organization whose library a paper cited,
-which means walking into google and microsoft for nothing.
+An organization is only followed when it says ITMO itself (in its login,
+its profile, or data/static/itmo_github_orgs.json); otherwise the walk would
+enter every organization whose library a paper cited.
 
-The walk runs ring by ring until it converges. Seeds are only the accounts
-already confirmed — following the unproven ones would mean four hundred
-seeds and twelve thousand repositories. That is why github_match runs
-between rings: it turns candidates found on this ring into seeds for the
-next. A ring that walks no new repository ends the walk.
+Seeds are only confirmed accounts: following unproven ones would multiply
+seeds and repositories. github_match runs between rings to turn candidates
+into the next ring's seeds. A ring that walks no new repository ends the walk.
 """
 
 from __future__ import annotations
@@ -43,8 +40,7 @@ logger = logging.getLogger(__name__)
 # them; the rest are forks and abandoned coursework.
 MAX_REPOS_PER_SEED = 30
 
-# Rings walked before giving up on convergence. On earlier data the graph
-# settled in two; the rest is headroom, not an expectation.
+# Rings walked before giving up on convergence; the graph normally settles in two.
 MAX_RINGS = 5
 
 
@@ -54,9 +50,9 @@ def itmo_organization_status(login: str, profile: GitHubProfile | None,
                              confirmed: Collection[str] = ()) -> tuple[str, str]:
     """Classify the evidence that an organization belongs to ITMO.
 
-    Only ``confirmed`` organizations are safe traversal seeds. ``possible``
-    is intentionally diagnostic: a city or contributor can guide a review, but cannot make
-    us walk every Saint Petersburg organization.
+    Only ``confirmed`` organizations are safe traversal seeds. ``possible`` is
+    diagnostic: a city or contributor can guide a review but must not make us
+    walk every Saint Petersburg organization.
     """
     login_lower = login.lower()
     if login_lower in catalog:
@@ -177,10 +173,9 @@ class SocialGraphStage(EnrichmentStage):
         client = GitHubClient(self.config.request_timeout, self.config.github_token)
 
         # Repositories already harvested, from both sources that record one:
-        # the cited repositories the repositories stage fetched, and the ones
-        # this walk visited, which are named on the profiles it collected.
-        # Reading only the first would send every later run over the same
-        # hundreds of repositories again.
+        # those the repositories stage fetched and those this walk visited
+        # (named on the profiles it collected). Reading only the first would
+        # re-walk the same repositories on every run.
         visited = {repository.url for repository in repositories}
         visited |= {url for profile in profiles.values() for url in profile.repos}
         walked = added_profiles = rings = 0

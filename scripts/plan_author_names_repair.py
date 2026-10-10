@@ -1,9 +1,9 @@
 """Plan a targeted rerun for completed people with invalid split names.
 
-Reads MongoDB and writes a manifest plus one person-id file per selected
-group. It never changes MongoDB. Each global Person is assigned to exactly
-one group, using a deterministic greedy cover so the repair does not pay for
-the same LLM request through every group that references the person.
+Reads MongoDB and writes a manifest plus one person-id file per selected group;
+it never changes MongoDB. Each global Person is assigned to exactly one group by
+a deterministic greedy cover, so the repair does not pay for the same LLM request
+through every group that references the person.
 
 Run the printed `pauk enrich author_names ... --force` commands only after
 reviewing the manifest and taking a prepared-data snapshot.

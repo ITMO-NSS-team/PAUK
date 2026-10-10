@@ -1,8 +1,8 @@
 """The snapshot and the stand that loads it must name the same collections.
 
-Two lists in two languages, and the divergence only shows up as a rehearsal
-that came up a collection short — with every author it meets created fresh
-instead of merged with, which is the one thing the rehearsal exists to test.
+Two lists in two languages can diverge unnoticed. A rehearsal that comes
+up a collection short creates every author it meets fresh instead of
+merging with it, which is the one thing the rehearsal exists to test.
 """
 
 import importlib.util

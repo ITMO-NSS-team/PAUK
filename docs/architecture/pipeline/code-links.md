@@ -1,39 +1,39 @@
-# `code_links` — стейдж
+# `code_links` stage
 
-**Что здесь:** как публикация получает список найденных в ней ссылок на
-GitHub-репозитории — источники текста, регекс и его защита от типичных
-артефактов извлечения текста из PDF, кэш и фолбэк через внешний сервис.
+**What this covers:** how a publication gets its list of GitHub repository
+links: text sources, the regex and its defenses against PDF text-extraction
+artifacts, the cache, and the fallback through an external service.
 
-**Какие файлы задействует:** `pauk/pipeline/stages/code_links.py`.
+**Files involved:** `pauk/pipeline/stages/code_links.py`.
 
-Ищет упоминания GitHub-репозиториев публикации: в абстракте (всегда), в
-полном тексте PDF (если PDF удалось достать), и в архивных Zenodo-депозитах
-по заголовку.
+Looks for mentions of GitHub repositories in the abstract (always), in the full
+PDF text (if a PDF could be obtained), and, for archived Zenodo deposits, in
+the title.
 
-## Источники ссылок и порядок сохранения
+## Link sources and their order
 
-1. **Архивный репозиторий депозита** (`_archived_repository_url`) —
-   Zenodo минтит DOI на каждый GitHub-релиз, OpenAlex индексирует это как
-   отдельную работу типа `software`/`dataset` с заголовком вида
-   `"asl/BandageNG: Continuous build"`. `REPOSITORY_ARCHIVE` парсит
-   `owner/name:` в начале заголовка (обязательно с пробелом после
-   двоеточия — отсекает прозу вроде `"A/B testing: results"`). Если
-   распознано — эта ссылка идёт первой, ещё до абстракта: для депозита
-   это не «упоминание», а сама суть записи.
-2. **Абстракт** — тот же regex, что и для PDF-страниц, см. ниже.
-3. **PDF, постранично** — текст страницы + реальные PDF-гиперссылки
-   (аннотации), см. ниже.
+1. **Archived repository of a deposit** (`_archived_repository_url`): Zenodo
+   mints a DOI for every GitHub release, and OpenAlex indexes it as a separate
+   work of type `software` or `dataset` with a title like
+   `"asl/BandageNG: Continuous build"`. `REPOSITORY_ARCHIVE` parses
+   `owner/name:` at the start of the title (a space after the colon is
+   required, which rules out prose like `"A/B testing: results"`). If it
+   matches, this link goes first, before the abstract: for a deposit it is not
+   a "mention", it is the point of the record.
+2. **Abstract**: the same regex as for PDF pages, see below.
+3. **PDF, page by page**: page text plus real PDF hyperlinks (annotations), see
+   below.
 
-Все источники объединяются в `_collect_occurrences()`: один `CodeLink` на
-канонический URL, `occurrences: list[LinkOccurrence]` — все места, где он
-встретился. Порядок стабилен: архив, абстракт, затем страницы PDF. Сам
-`code_links` больше не трактует найденную ссылку как авторский код и не
-выставляет по ней `has_code`/`code_url`: эти поля пересчитывает следующий
-стейдж `link_relevance`. Повторный `code_links` удаляет его старый
-processing-статус, потому что вердикт по прежним контекстам после замены
-списка вхождений уже недействителен.
+All sources are merged in `_collect_occurrences()`: one `CodeLink` per
+canonical URL, with `occurrences: list[LinkOccurrence]` listing every place it
+appeared. The order is stable: archive, abstract, then PDF pages.
+`code_links` itself no longer treats a found link as author code and does not
+set `has_code`/`code_url` from it; the next stage, `link_relevance`,
+recomputes those fields. A repeat `code_links` run removes its old processing
+status, because a verdict on the earlier contexts is invalid once the
+occurrence list is replaced.
 
-## Regex — `GITHUB_URL`
+## The regex `GITHUB_URL`
 
 ```python
 _WRAP = r"(?:-\n[ \t]*|(?<=_)\n[ \t]*)?"
@@ -44,146 +44,140 @@ GITHUB_URL = re.compile(
     + _SEGMENT + r"/" + _SEGMENT, re.IGNORECASE)
 ```
 
-- **Схема необязательна** — ловит и голое `github.com/org/repo` в прозе,
-  не только `https://...`. Лукбихайнд `(?<![\w.])` не даёт совпасть внутри
-  более длинного хоста (`mygithub.com`, `sub.github.com` не матчатся).
-- **Перенос строки через дефис распознаётся, но только внутри уже
-  найденного совпадения** — `_WRAP` встроен прямо в сегменты паттерна, не
-  применяется как предобработка всего текста. Перенос трактуется только
-  пока regex-движок ещё активно разбирает `github.com/owner/repo`, не
-  после. Продолжение следующей строки может оказаться обычным текстом,
-  поэтому результат склейки хранится как кандидат. Контекст исходного решения и что рассматривалось вместо
-  этого — [`../../journal/2026-08-06-code-links-pdf-fulltext.md`](../../journal/2026-08-06-code-links-pdf-fulltext.md).
-- **Перенос после `_` также распознаётся**: сохраняются короткий адрес и
-  адрес с продолжением непосредственно следующей строки. Другие обычные
-  переносы не склеиваются; пустые строки и границы страниц не пересекаются.
-- **Глубокий путь схлопывается до `owner/repo`**
-  (`_canonical_github_url`) — `.../org/repo/blob/main/README.md` →
-  `.../org/repo`. Важно для PDF-гиперссылок: в отличие от regex-совпадений
-  в тексте (которые физически не могут выйти за 2 сегмента — `/` не входит
-  в символьный класс), реальный `href` аннотации может вести куда угодно
-  вглубь репозитория.
-- **Лигатуры PDF-шрифтов нормализуются** (`_normalize_ligatures`,
-  `unicodedata.normalize("NFKC", ...)`) до матчинга — некоторые шрифты
-  рендерят `ff`/`fi`/`fl` одним символом Unicode, который `\w` матчит как
-  обычную букву; без нормализации одна и та же ссылка с лигатурой и без
-  неё стала бы двумя разными URL.
-- **Приклеенный без разделителя хвост обрезается** (`_GLUED_TAIL`) — PDF
-  иногда рендерит следующее предложение или номер сноски вплотную к
-  ссылке без пробела. `repo.We evaluate...` → `repo`, `repo.12 citations`
-  → `repo`. Голая цифра без точки (`repo1`) не трогается — GitHub-репозиторий
-  может законно заканчиваться на цифру (`detectron2`).
+- **The scheme is optional**: it catches a bare `github.com/org/repo` in prose,
+  not only `https://...`. The lookbehind `(?<![\w.])` stops a match inside a
+  longer host (`mygithub.com` and `sub.github.com` do not match).
+- **A hyphenated line break is recognized, but only inside an already started
+  match**: `_WRAP` is built into the pattern's segments rather than applied as
+  preprocessing of the whole text. A break is handled only while the regex
+  engine is still parsing `github.com/owner/repo`, not after it. The next
+  line's continuation may be ordinary text, so the joined result is kept as a
+  candidate.
+- **A break after `_` is also recognized**: both the short address and the one
+  with the next line's continuation are kept. Other ordinary line breaks are not
+  joined; blank lines and page boundaries are not crossed.
+- **A deep path collapses to `owner/repo`** (`_canonical_github_url`):
+  `.../org/repo/blob/main/README.md` becomes `.../org/repo`. This matters for
+  PDF hyperlinks: unlike regex matches in text (which cannot go beyond two
+  segments, since `/` is not in the character class), a real annotation `href`
+  can point anywhere inside a repository.
+- **PDF font ligatures are normalized** (`_normalize_ligatures`,
+  `unicodedata.normalize("NFKC", ...)`) before matching: some fonts render
+  `ff`/`fi`/`fl` as a single Unicode character, which `\w` matches as an
+  ordinary letter. Without normalization the same link with and without a
+  ligature would become two different URLs.
+- **A tail glued on without a separator is trimmed** (`_GLUED_TAIL`): a PDF
+  sometimes renders the next sentence or a footnote number right against the
+  link with no space. `repo.We evaluate...` becomes `repo`, `repo.12 citations`
+  becomes `repo`. A bare digit without a dot (`repo1`) is left alone, since a
+  GitHub repository can legitimately end in a digit (`detectron2`).
 
-## Альтернативы при переносах
+## Alternatives at line breaks
 
-`_url_candidates` сохраняет оба прочтения `-\n` (с дефисом и без), а для
-`_\n` — адрес с продолжением и без. Несколько переносов дают комбинации;
-свыше 32 вариантов извлечение PDF завершается ошибкой, а не молчаливым
-усечением. `LinkOccurrence.raw_url` хранит исходный фрагмент,
-`raw_fragments` сохраняет также повторные написания на той же странице,
-`candidate_urls` — альтернативы одной находки, `continuous` отмечает
-непрерывное написание в видимом тексте.
+`_url_candidates` keeps both readings of `-\n` (with and without the hyphen),
+and for `_\n` the address with and without the continuation. Several breaks
+produce combinations; beyond 32 variants PDF extraction fails with an error
+instead of truncating silently. `LinkOccurrence.raw_url` holds the original
+fragment, `raw_fragments` also keeps repeated spellings on the same page,
+`candidate_urls` holds the alternatives of one finding, and `continuous` marks
+an unbroken spelling in the visible text.
 
-`_collect_occurrences` проверяет все страницы того же PDF. Подтверждением
-служит только полный `owner/repo` без переносов (сравнение без учёта
-регистра). Абстракт, URI аннотации и другая склейка переносов не разрешают
-неоднозначность PDF. Если непрерывно встречается один вариант, остаётся
-он; если оба — оба; если ни один — сохраняются альтернативы.
+`_collect_occurrences` checks all pages of the same PDF. Only a full
+`owner/repo` with no line breaks (compared case-insensitively) counts as
+confirmation. The abstract, an annotation URI and a different way of joining
+breaks do not resolve the ambiguity. If one variant appears continuously, it
+stays; if both do, both stay; if neither, the alternatives are kept.
 
-`repositories` запрашивает каждый адрес один раз за запуск независимо от
-количества публикаций. Результат сохраняется в `CodeLink.availability`:
-`available`, `not_found` (HTTP 404), `failed` (остальные ошибки), либо
-`unchecked` до проверки; причина — в `availability_error`. Доступность
-не доказывает правильность восстановления, поэтому сама по себе не удаляет
-альтернативы. Ошибки продолжают повторяться по обычным статусам репозитория.
+`repositories` requests each address once per run regardless of the number of
+publications. The result is stored in `CodeLink.availability`: `available`,
+`not_found` (HTTP 404), `failed` (other errors), or `unchecked` before the
+check; the reason goes to `availability_error`. Availability does not prove a
+reconstruction is right, so by itself it does not remove alternatives. Errors
+keep being retried according to the usual repository statuses.
 
-Если у адреса есть только неоднозначные вхождения, `url_ambiguous=true`:
-он не попадает в `Publication.code_url` и `Repository.publication_ids`,
-даже при положительном вердикте релевантности. В графе альтернативы
-помечаются свойствами `MENTIONS_LINK.url_ambiguous`, `candidate_urls` и
-`availability`; `is_relevant` такого ребра остаётся неопределённым.
+If an address has only ambiguous occurrences, `url_ambiguous=true`: it does not
+enter `Publication.code_url` or `Repository.publication_ids`, even with a
+positive relevance verdict. In the graph the alternatives are marked with the
+properties `MENTIONS_LINK.url_ambiguous`, `candidate_urls` and `availability`;
+the edge's `is_relevant` stays undefined.
 
-## Источники текста на одной PDF-странице
+## Text sources on one PDF page
 
-`_pdf_page_occurrences()` объединяет два источника, текст побеждает при
-конфликте:
+`_pdf_page_occurrences()` combines two sources; text wins on a conflict:
 
-1. Обычный regex по `page.get_text()`.
-2. **Реальные PDF-гиперссылки** (`page.get_links()`, `kind ==
-   fitz.LINK_URI`) — ссылки, чей видимый текст сам URL не показывает
-   (например, слово «здесь», ведущее на репозиторий). Контекст для такой
-   ссылки — видимый текст самой кликабельной области
-   (`_annotation_context`), не окружающий текст страницы. Если тот же URL
-   уже найден через обычный текст на этой странице — аннотация
-   игнорируется: текстовый контекст информативнее ярлыка «здесь».
+1. The plain regex over `page.get_text()`.
+2. **Real PDF hyperlinks** (`page.get_links()`, `kind == fitz.LINK_URI`): links
+   whose visible text does not show the URL (for example the word "here"
+   pointing to a repository). The context for such a link is the visible text
+   of the clickable area itself (`_annotation_context`), not the surrounding
+   page text. If the same URL was already found through plain text on that
+   page, the annotation is ignored: the text context is more informative than
+   a "here" label.
 
-## Fallback через PDF-Crawler-Service
+## Fallback through PDF-Crawler-Service
 
-Сначала пробуются уникальные `pdf_urls`: `best_oa_location.pdf_url`, затем
-непустые `locations[].pdf_url` в исходном порядке. Если все прямые ссылки
-завершились ошибкой загрузки
-или разбора PDF (либо ссылок нет), но есть `doi`, и задан
-`PAUK_PDF_CRAWLER_URL` — раз за весь прогон стейджа (не на каждую
-публикацию) проверяется `GET {url}/health` без ретраев; при успехе для
-таких публикаций идёт `GET {url}/download?url=<urlencoded
-https://doi.org/{doi}>`. Подробности сервиса и его конфигурация —
-[../deploy.md](../deploy.md).
+Unique `pdf_urls` are tried first: `best_oa_location.pdf_url`, then the
+non-empty `locations[].pdf_url` in source order. If all direct links failed to
+download or parse (or there are none), but the publication has a `doi` and
+`PAUK_PDF_CRAWLER_URL` is set, the stage probes `GET {url}/health` once per
+stage run (not per publication, no retries); on success, for such publications
+it calls `GET {url}/download?url=<urlencoded doi>`. Service details and
+configuration: [../deploy.md](../deploy.md).
 
-## Скачивание и кэш
+## Download and cache
 
-`data/pdf/<group>/<publication_id>.pdf`. Атомарная запись (временный файл
-+ `os.replace`) только после успешного разбора PDF: HTML-страницы ошибок
-не попадают в кэш. Если старый кэш не читается, пробуются прямые ссылки
-и краулер; успешный PDF заменяет повреждённый файл. Валидный кэш не
-перекачивается повторно. Текст
-каждой страницы (сырой, без нормализации лигатур — та применяется
-отдельно только для матчинга) склеивается в `Publication.full_text` через
-`"\n\n"`.
+`data/pdf/<publication_id>.pdf` (`PdfStore`, with a `{fetched_at}` pointer in
+the `pdfs` collection). The write is atomic (temporary file plus
+`os.replace`) and happens only after the PDF parsed successfully, so HTML error
+pages never reach the cache. If an old cached file cannot be read, direct links
+and the crawler are tried, and a successful PDF replaces the corrupt file. A
+valid cache is not downloaded again. The raw text of each page (without
+ligature normalization, which is applied separately and only for matching) is
+joined into `Publication.full_text` with `"\n\n"`.
 
-## Статусы
+## Statuses
 
-- Нет PDF-кандидатов и (краулер выключен, или у публикации нет `doi`) — стейдж
-  всё равно отрабатывает по абстракту, `COMPLETED`/`COMPLETED_EMPTY` по
-  факту найденных ссылок.
-- Скачивание/парсинг PDF (из `pdf_urls` или краулера) упали — `FAILED` с
-  текстом ошибки в `error`, результат по абстракту не теряется. Если PDF
-  уже успешно читался раньше, его `LinkOccurrence` тоже сохраняются до
-  успешного ретрая: временный 403/timeout не должен стирать ранее собранный
-  evidence. Ретраится на следующем прогоне `enrich` даже без `--force`
-  (`FAILED` — в списке статусов для повтора).
-- Health-check краулера, упавший сам по себе, не переводит публикации в
-  `FAILED` — отключает фолбэк на этот прогон, засчитывается как «нечего
-  пробовать».
+- No PDF candidates and (the crawler is off, or the publication has no `doi`):
+  the stage still works from the abstract, `COMPLETED` or `COMPLETED_EMPTY`
+  depending on whether links were found.
+- PDF download or parsing failed (from `pdf_urls` or the crawler): `FAILED`
+  with the error text in `error`; the abstract result is not lost. If a PDF was
+  read successfully before, its `LinkOccurrence` entries are kept until a
+  successful retry: a temporary 403 or timeout must not erase evidence
+  collected earlier. It is retried on the next `enrich` run even without
+  `--force` (`FAILED` is among the retried statuses).
+- A crawler health check that itself fails does not move publications to
+  `FAILED`: it disables the fallback for that run and counts as "nothing to
+  try".
 
-## `is_relevant`/`llm_confidence`/`llm_reason`
+## `is_relevant`, `llm_confidence`, `llm_reason`
 
-Обычные найденные ссылки `code_links` оставляет со статусом классификации
-`pending` и без вердикта. Следующий
-стейдж `link_relevance` передаёт модели **все** сохранённые вхождения одной
-ссылки в одном запросе: абстракт и каждый PDF-контекст помечены своим
-источником. Ответ строго валидируется:
+`code_links` leaves ordinary found links with classification status `pending`
+and no verdict. The next stage, `link_relevance`, sends the model **all** saved
+occurrences of one link in a single request: the abstract and each PDF context
+are labeled with their source. The response is validated strictly:
 
-- `is_relevant=true` — репозиторий выложен авторами публикации;
-- `is_relevant=false` — это сторонний инструмент или обычная ссылка;
-- `is_relevant=null` — модель успешно ответила, но контекста недостаточно
-  либо он противоречив.
+- `is_relevant=true`: the repository was published by the authors of the
+  publication;
+- `is_relevant=false`: it is a third-party tool or an ordinary link;
+- `is_relevant=null`: the model answered successfully, but the context is
+  insufficient or contradictory.
 
-`CodeLink.classification_status` разделяет состояния `pending`, `classified`
-и `failed`. Поэтому успешный неопределённый ответ (`classified` +
-`is_relevant=null`) не смешивается с ещё не обработанной ссылкой или ошибкой
-вызова. Явное неопределённое решение хранит `llm_confidence` и `llm_reason`;
-ошибка очищает прежний вердикт, выставляет `failed` и оставляет стейдж в
-`FAILED`, чтобы следующий запуск повторил запрос. `result_count` стейджа
-считает все ссылки со статусом `classified`, включая неопределённые.
-Архивный репозиторий Zenodo — единственное детерминированное исключение:
-`classified`, `true`, уверенность `1.0`, причина
-`"repository_archived_by_this_deposit"`, без вызова модели.
+`CodeLink.classification_status` separates `pending`, `classified` and
+`failed`, so a successful undetermined answer (`classified` plus
+`is_relevant=null`) is not confused with a link not yet processed or with a
+failed call. An explicit undetermined decision stores `llm_confidence` and
+`llm_reason`; an error clears the earlier verdict, sets `failed` and leaves the
+stage in `FAILED`, so the next run repeats the request. The stage's
+`result_count` counts all links with status `classified`, undetermined ones
+included. The Zenodo archived repository is the one deterministic exception:
+`classified`, `true`, confidence `1.0`, reason
+`"repository_archived_by_this_deposit"`, with no model call.
 
-После классификации `has_code=true`, только если есть хотя бы один
-`CodeLink.is_relevant=true`. `code_url` хранит JSON-список URL всех таких
-ссылок в исходном порядке обнаружения — это строковое поле сохраняет
-контракт prepared/Neo4j; генератор GUI декодирует его в обычный список и
-также понимает старое одиночное строковое значение. Сторонние и
-неопределённые ссылки в список не попадают. Если хотя бы один запрос к модели завершился ошибкой,
-публикационные `has_code`/`code_url` сохраняют последнее полностью
-классифицированное состояние до успешного ретрая.
+After classification, `has_code=true` only if at least one
+`CodeLink.is_relevant=true` exists. `code_url` holds a JSON list of the URLs of
+all such links in discovery order; it is a string field to preserve the
+prepared/Neo4j contract, and the GUI generator decodes it into a plain list.
+Third-party and undetermined links are not in the list. If at least one model request failed, the
+publication-level `has_code` and `code_url` keep the last fully classified
+state until a successful retry.

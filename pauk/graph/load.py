@@ -35,9 +35,9 @@ ENTITY_FILES = {
 
 # Which node label the rows of each prepared entity become, derived from
 # the loader's own map rather than written out again: an entity added to
-# the pipeline (organizations, when department matching landed) must not
-# silently lose its tombstones because a second list was never updated.
-# persons.jsonl is the one file FILE_SPECS does not carry — it feeds two
+# the pipeline must not silently lose its tombstones because a second list
+# was never updated.
+# persons.jsonl is the one file FILE_SPECS does not carry: it feeds two
 # registry entries, ITMO and external, that share the base label.
 FILE_LABELS = {
     filename: NODE_REGISTRY[spec_key].labels.split(":")[0]
@@ -112,11 +112,11 @@ def _load_locked(config: Settings, mongo_db: Database, group: str,
         create_constraints(client)
         # Large batches are recorded as one summary entry each (see
         # AuditedNeo4jClient.diff_threshold), so a publish costs a handful
-        # of audit rows, not one per node — but "who republished this group
-        # and when" stops being invisible.
+        # of audit rows, not one per node, while still recording who
+        # republished this group and when.
         with actor_context("etl-pipeline", source=f"publish:{group}"):
             # LinkCandidate is the one label with no prepared file of its
-            # own — it is made up from repo_links rows — so _drop_tombstoned
+            # own (it is made up from repo_links rows), so _drop_tombstoned
             # cannot filter it and the loader is told separately.
             load_prepared_rows(client, rows_by_file, tombstoned_relationships(mongo_db),
                                tombstoned_ids(mongo_db, "LinkCandidate"), report=report)

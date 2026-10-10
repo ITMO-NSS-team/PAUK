@@ -72,7 +72,7 @@ class ExtractNodeTest(unittest.TestCase):
         # company sits beside location and description as something the
         # account states about itself. The emails and commit names behind
         # it are evidence the matcher weighs, not facts about the account,
-        # and they are addresses of living people — they stay out of the
+        # and they are addresses of living people - they stay out of the
         # graph.
         labels, (node_id, props) = extract_node({
             "id": "github_ipetrov", "login": "ipetrov", "name": "Ivan Petrov",
@@ -137,11 +137,8 @@ class ExtractRelationshipsTest(unittest.TestCase):
 class GraphFieldCoverageTest(unittest.TestCase):
     """Every model field either reaches Neo4j or is excluded on purpose.
 
-    Nothing forces a new Person/Department field into prop_fields - it is
-    easy to add a field the pipeline computes and never notice the graph
-    (and everything downstream of it: cache/export.py, the GUI) never sees
-    it. This test is the safety net: a field must be in prop_fields
-    somewhere, or listed below with a reason it deliberately isn't.
+    A field must be in prop_fields somewhere, or listed below with the
+    reason it deliberately is not.
     """
 
     PERSON_EXCLUDED = {

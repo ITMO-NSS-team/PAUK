@@ -1,4 +1,4 @@
-"""The one-off repair that drops IMPLEMENTS claims left by the old stage.
+"""The one-off repair that drops stale IMPLEMENTS claims.
 
 Loaded from scripts/ by path: the directory is a collection of operator
 tools, not an importable package.
@@ -137,9 +137,9 @@ class ApplyTest(unittest.TestCase):
     def test_the_report_survives_a_run_that_died_halfway(self):
         """--apply writes to Mongo group by group.
 
-        A crash after the first group leaves the database changed, and the
-        report is the only record of what changed — so it is written from the
-        finally, with `complete` saying the walk did not finish.
+        A crash after the first group leaves the database changed, so the report
+        is written from the finally, with `complete` saying whether the walk
+        finished.
         """
         self.repos.insert_one(repo_doc("github_lab_tool", "https://github.com/lab/tool",
                                        publication_ids=["W1", "W2"]))

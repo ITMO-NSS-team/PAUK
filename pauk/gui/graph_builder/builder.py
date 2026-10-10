@@ -1,21 +1,19 @@
-"""Cache snapshot -> layout -> JSON for the site. The stage logic lives in
-`authorship.py`, `departments.py`, `layout.py`, `nodes.py` and `edges.py`;
-this file wires them together in order and writes the files.
+"""Cache snapshot -> layout -> JSON for the site.
 
-- Nodes come in two forms: "summary" (what the map needs to draw a point,
-  goes into `graph-data.json`) and "detail" (extended fields `pauk/gui/web`
-  loads lazily after the map). Departments have no detail file - they have
-  no field that isn't already in summary.
-- Output is plain JSON, which is what `core/data.ts::loadGraphData()` reads.
-- One build serves both variants. Public/private is decided by disk
-  location, not by trimming content: `public/` gets files with no personal
-  field, `authors-detail.json` goes only into `private/`. The map label is
-  the full form (`author_label(..., public=False)`, see `nodes.py`); flip it
-  to `public=True` there if a public deploy needs anonymized labels.
+The stage logic lives in `authorship.py`, `departments.py`, `layout.py`,
+`nodes.py` and `edges.py`; this file wires them together and writes the files.
+
+- Nodes come in two forms: "summary" (what the map needs to draw a point, in
+  `graph-data.json`) and "detail" (extended fields `pauk/gui/web` loads lazily).
+  Departments have no detail file.
+- Output is plain JSON, read by `core/data.ts::loadGraphData()`.
+- Public/private is decided by disk location, not by trimming content:
+  `authors-detail.json`, the only file with personal fields, goes only into
+  `private/`. The map label is the full form (`author_label(..., public=False)`,
+  see `nodes.py`); switch to `public=True` there for anonymized labels.
 - `graph-data.json` and the non-author detail files are also written into
-  `private/`, because Vite serves ONE folder (`vite.config.ts::publicDir`)
-  and local development needs all four files there. Deploy takes only
-  `public/`.
+  `private/`, because Vite serves ONE folder (`vite.config.ts::publicDir`) and
+  local development needs all four files there. Deploy takes only `public/`.
 """
 
 from __future__ import annotations
@@ -38,13 +36,13 @@ logger = logging.getLogger(__name__)
 
 
 class GraphDataBuilder:
-    """Builds the whole graph: layout + nodes + edges, from a
-    `pauk.cache` snapshot - holds `db`/`seed` as state, `build()` is
-    called exactly once per run.
+    """Builds the whole graph (layout, nodes, edges) from a `pauk.cache` snapshot.
+
+    `build()` is called exactly once per run.
     """
 
     def __init__(self, db: dict[str, list[dict]], seed: int) -> None:
-        """Stores the input - the actual build only happens in `build()`.
+        """Stores the input; the actual build only happens in `build()`.
 
         Args:
             db: Graph snapshot in the shape `pauk.cache.export::load_db()` returns.
@@ -54,7 +52,7 @@ class GraphDataBuilder:
         self.seed = seed
 
     def build(self) -> tuple[dict, dict[str, list[dict]]]:
-        """Builds the whole graph: layout + nodes + edges, from the snapshot.
+        """Builds the whole graph from the snapshot.
 
         Returns:
             `(summary, detail)`:
@@ -64,16 +62,14 @@ class GraphDataBuilder:
               each list written to its own `*-detail.json`.
         """
         db = self.db
-        # dept_name - the Russian name OR the English one as a fallback
-        # (only needed so a department "exists" at all - a filter in
-        # DepartmentAssigner.assign(), not for display); dept_name_en -
-        # separate, purely English, goes straight into the final table.
+        # dept_name falls back to the English name only so a department "exists"
+        # (a filter in DepartmentAssigner.assign(), not for display);
+        # dept_name_en is purely English and goes into the final table.
         dept_name = {row["id"]: (row["name_ru"] or row["name_en"] or "") for row in db["departments"]}
         dept_name_en = {row["id"]: (row["name_en"] or "") for row in db["departments"]}
 
-        # Stage order matters: authorship is needed for assign() (who
-        # authored what), assignment feeds both build_table() (who belongs
-        # to which department) and layout (department edges) and node/edge building below.
+        # Stage order matters: assign() needs authorship, and the assignment feeds
+        # build_table(), layout and the node/edge builders below.
         authorship = build_authorship_index(db)
         # The snapshot holds every external person and all their authorship;
         # only those with an ITMO coauthored publication make it into the graph.
@@ -90,9 +86,8 @@ class GraphDataBuilder:
         groups = repo_groups(db, assignment, table)
         layout = GraphLayoutBuilder(db, authorship, assignment).build(self.seed)
 
-        # The three node kinds are built independently (their own Builder
-        # each), but all need table (for dept/color) and their own slice of
-        # layout (positions).
+        # The three node kinds are built independently but all need table
+        # (dept/color) and their own slice of layout (positions).
         authors_summary, authors_detail = AuthorNodeBuilder(
             db, authorship, assignment, table, layout.pos_authors
         ).build()
@@ -100,9 +95,8 @@ class GraphDataBuilder:
         pubs_summary, pubs_detail = PubNodeBuilder(authorship, assignment, table, layout.pos_pubs).build()
         edges = EdgeBuilder(db, authorship, assignment, table, layout).build()
 
-        # **edges unpacks all seven edge keys (coauth_edges/pub_edges/...)
-        # directly into the top level of summary - that's how pauk/gui/web sees
-        # them, no nested "edges" object in the JSON.
+        # **edges puts the seven edge keys at the top level of summary, which is
+        # how pauk/gui/web reads them (no nested "edges" object).
         summary = {
             "departments": table.departments,
             "repo_groups": groups.groups,
@@ -116,16 +110,18 @@ class GraphDataBuilder:
 
 
 def dump_json(data, path: Path) -> None:
-    """Writes data as plain JSON, atomically: the web server may be serving
-    these files while a rebuild runs, and must never see a half-written one."""
+    """Writes data as plain JSON, atomically.
+
+    The web server may be serving these files during a rebuild and must never
+    see a half-written one.
+    """
     with AtomicWriter(path) as fh:
         json.dump(data, fh, ensure_ascii=False, separators=(",", ":"))
     logger.info("Wrote %s (%.1f MB)", path, path.stat().st_size / 1e6)
 
 
 def write_site_data(snapshot: Path, out_dir: Path, seed: int) -> dict[str, int]:
-    """Builds the site data from a snapshot and writes it into `out_dir` -
-    what `pauk gui build` runs.
+    """Builds the site data from a snapshot and writes it into `out_dir`; what `pauk gui build` runs.
 
     Args:
         snapshot: Graph snapshot taken by `pauk cache export`.
@@ -138,19 +134,18 @@ def write_site_data(snapshot: Path, out_dir: Path, seed: int) -> dict[str, int]:
     """
     public_dir = out_dir / "public"
     private_dir = out_dir / "private"
-    public_dir.mkdir(parents=True, exist_ok=True)  # exist_ok - a second run into the same folder shouldn't fail
+    public_dir.mkdir(parents=True, exist_ok=True)
     private_dir.mkdir(parents=True, exist_ok=True)
 
     t0 = time.time()
     summary, detail = GraphDataBuilder(read_snapshot(snapshot), seed=seed).build()
 
-    # graph-data.json and the detail files with no personal fields go into
-    # public (safe to deploy externally), and are ADDITIONALLY duplicated
-    # into private - the only reason is that pauk/gui/web today serves static
-    # files from ONE folder (vite.config.ts::publicDir), and Vite can't
-    # take two publicDirs at once. authors-detail.json goes only into
-    # private, nowhere else - it holds the only truly personal fields
-    # (email/google_scholar/affiliations/...).
+    # graph-data.json and the detail files without personal fields go into
+    # public (safe to deploy) and are duplicated into private, because
+    # pauk/gui/web serves static files from ONE folder
+    # (vite.config.ts::publicDir). authors-detail.json holds the only truly
+    # personal fields (email/google_scholar/affiliations/...) and goes only
+    # into private.
     dump_json(summary, public_dir / "graph-data.json")
     dump_json(summary, private_dir / "graph-data.json")
     for kind, rows in detail.items():

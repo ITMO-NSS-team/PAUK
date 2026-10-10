@@ -1,22 +1,12 @@
 """Who is allowed into the panel, and how the panel remembers them.
 
-The panel is the only door to the graph: Neo4j is not exposed outside the
-perimeter, so there is no second way in and no second place to check
-permissions. It also shows the names and addresses of real people, which
-makes anonymous access wrong even inside a VPN.
+The panel is the only door to the graph and shows names and addresses of real
+people, so access is never anonymous.
 
-Two decisions worth stating, because both could reasonably have gone the
-other way:
-
-- **Passwords are hashed with `hashlib.scrypt`**, from the standard
-  library, rather than `bcrypt` or `passlib`. The repository keeps its
-  dependency list short, and scrypt with the parameters below is a sound
-  choice for a handful of accounts.
-- **Sessions live in Mongo, not in a signed cookie.** A signed cookie
-  cannot be revoked: disabling an account would leave every browser that
-  already holds one logged in until it expires. A server-side row can be
-  deleted, which is what "log out everywhere" and "disable this user"
-  both need.
+- Passwords are hashed with the standard-library `hashlib.scrypt` to keep the
+  dependency list short.
+- Sessions live in Mongo rather than in a signed cookie, because a signed cookie
+  cannot be revoked when an account is disabled.
 """
 
 from __future__ import annotations
@@ -61,10 +51,8 @@ class AuthError(Exception):
 class TooManyAttempts(AuthError):
     """The account is locked for a while after too many failures.
 
-    Carries the wait in minutes so the page can say it in its own words.
-    The number is not a secret: failures are counted for logins that do not
-    exist too, so it tells an attacker nothing, and somebody who mistyped
-    their password needs to know whether to wait or to ask for help.
+    Carries the wait in minutes. It is not a secret: failures are counted for
+    nonexistent logins too.
     """
 
     def __init__(self, message: str, minutes: int) -> None:
@@ -78,12 +66,7 @@ def _now() -> datetime:
 
 
 def hash_password(password: str) -> str:
-    """Return `scrypt$<salt>$<hash>`, both halves hex-encoded.
-
-    The salt is stored beside the hash because it has to be: verifying a
-    password means repeating the derivation with the same salt, and there
-    is nowhere else to keep it.
-    """
+    """Return `scrypt$<salt>$<hash>`, both halves hex-encoded."""
     if not password:
         raise AuthError("password is empty")
     salt = secrets.token_bytes(_SALT)
@@ -97,11 +80,8 @@ _placeholder: str | None = None
 def _placeholder_hash() -> str:
     """A hash to check a made-up password against, derived once.
 
-    Deriving a fresh one per call cost a second scrypt, so a login that
-    does not exist answered about twice as slowly as one that does — the
-    opposite of the intent, and just as good a way to tell them apart.
-    Lazy rather than at import: `pauk.admin.auth` is pulled in by every
-    `pauk` command, and none of the others should pay for a key derivation.
+    Deriving per call would make an unknown login answer about twice as slowly
+    as a known one. Lazy because every `pauk` command imports this module.
     """
     global _placeholder
     if _placeholder is None:
@@ -168,9 +148,7 @@ def create_user(db: Database, login: str, password: str, role: str = "editor") -
 def set_active(db: Database, login: str, active: bool) -> bool:
     """Enable or disable an account.
 
-    Disabling also drops the user's sessions: leaving them alive would mean
-    a disabled account keeps working until its cookie expires, which is the
-    exact failure the server-side session table exists to prevent.
+    Disabling also drops the user's sessions so the account stops working at once.
     """
     result = db[USERS].update_one({"_id": login.strip().lower()}, {"$set": {"active": active}})
     if result.matched_count and not active:
@@ -186,9 +164,8 @@ def authenticate(db: Database, login: str, password: str) -> User:
     """Check a login and password.
 
     Raises:
-        AuthError: No such user, wrong password, or the account is
-            disabled. The message is the same for all three on purpose —
-            telling an attacker which logins exist is free information.
+        AuthError: No such user, wrong password, or the account is disabled.
+            The message is the same for all three so logins cannot be probed.
     """
     login = login.strip().lower()
     _refuse_while_locked(db, login)
@@ -209,9 +186,7 @@ def _refuse_while_locked(db: Database, login: str) -> None:
     """Raise if this login is inside its lockout.
 
     Raises:
-        TooManyAttempts: The lock is still on. The wait is stated: it is
-            not a secret, and a person who mistyped their password needs to
-            know whether to wait or to ask for help.
+        TooManyAttempts: The lock is still on.
     """
     row = db[ATTEMPTS].find_one({"_id": login})
     if row is None:
@@ -230,9 +205,7 @@ def _refuse_while_locked(db: Database, login: str) -> None:
 def _count_failure(db: Database, login: str) -> None:
     """Record one failure, locking the account once there are enough.
 
-    The window slides from the first failure of a run: thirty typos spread
-    over a working day are somebody forgetting a password, while thirty in
-    a quarter of an hour are not a person typing.
+    The window slides from the first failure of a run.
     """
     now = _now()
     row = db[ATTEMPTS].find_one({"_id": login})
@@ -251,24 +224,18 @@ def _count_failure(db: Database, login: str) -> None:
 def _aware(moment: datetime) -> datetime:
     """A stored time with a timezone on it.
 
-    pymongo hands datetimes back naive, in UTC; comparing one with an aware
-    `_now()` raises instead of answering.
+    pymongo hands datetimes back naive, and comparing one with the aware
+    `_now()` raises.
     """
     return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
 
 
 def session_key(token: str) -> str:
-    """How a session token is stored.
+    """How a session token is stored: its SHA-256, never the token itself.
 
-    Not the token itself. A session token is a bearer credential: whoever
-    holds it is signed in, no password needed. Kept verbatim, one read of
-    `admin_sessions` — a dump, a backup, a copy made for support — handed
-    over every live session, while the passwords beside them were hashed.
-
-    A fast hash, deliberately, and not `scrypt` like a password. A password
-    is slow-hashed because it is guessable; this is 256 bits of randomness
-    with nothing to guess. The session is read on every single request, so
-    a slow hash here would tax every page for no gain at all.
+    A token is a bearer credential, so a dump of `admin_sessions` must not hand
+    out live sessions. A fast hash suffices since the token is 256 random bits,
+    and the session is read on every request.
     """
     return hashlib.sha256(token.encode()).hexdigest()
 
@@ -276,9 +243,7 @@ def session_key(token: str) -> str:
 def open_session(db: Database, user: User) -> str:
     """Start a session and return the token that names it.
 
-    The token goes to the browser in a cookie and is not kept anywhere
-    else; the row holds only its hash, which is enough to find it again
-    and to end the session from the server side.
+    Only the token's hash is stored.
     """
     token = secrets.token_urlsafe(32)
     db[SESSIONS].insert_one({
@@ -296,8 +261,7 @@ def open_session(db: Database, user: User) -> str:
 def read_session(db: Database, token: str | None) -> dict | None:
     """The session behind a cookie, or None if there is not a live one.
 
-    An expired row is deleted on the way past: sessions are read on every
-    request, which makes this the cheapest place to keep the collection
+    An expired row is deleted on the way past, which keeps the collection
     from growing without a scheduled job.
     """
     if not token:
@@ -326,12 +290,7 @@ def close_session(db: Database, token: str | None) -> bool:
 
 
 def check_csrf(session: dict, submitted: str | None) -> bool:
-    """Whether a form carried this session's token.
-
-    Cookies travel with a cross-site POST on their own, so the cookie alone
-    cannot prove the request came from our page; a value the attacker's
-    page has no way to read can.
-    """
+    """Whether a form carried this session's token."""
     expected = session.get("csrf")
     if not expected or not submitted:
         return False

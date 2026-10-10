@@ -13,8 +13,7 @@ from .base import EnrichmentStage
 GITHUB_HOSTS = {"github.com", "www.github.com"}
 
 def _payload_date(value: str | None) -> date | None:
-    """GitHub timestamps are ISO-8601 with a `Z`, which date.fromisoformat
-    rejects before Python 3.11 and which carries a time we don't keep."""
+    """GitHub timestamps are ISO-8601 with a `Z` and a time, which we don't keep."""
     if not value:
         return None
     try:
@@ -26,7 +25,7 @@ def _payload_date(value: str | None) -> date | None:
 def _github_owner_name(url: str | None) -> tuple[str, str] | None:
     """(owner, name) for a github.com URL of exactly two path segments.
 
-    Anything else — a gist, a subdirectory link, another host — is not a
+    Anything else (a gist, a subdirectory link, another host) is not a
     repository this stage can fetch.
     """
     parsed = urlparse((url or "").rstrip("/"))
@@ -40,8 +39,7 @@ def _url_repo_id(url: str | None) -> str | None:
     """`github_{owner}_{name}` for a repository URL, or None if it is not one.
 
     The id a row is reached by, as opposed to `_canonical_repo_id`, which is
-    the identity the fetched payload gives it. Both passes of the stage key
-    their work by this, so it lives in one place.
+    the identity the fetched payload gives it.
     """
     parsed = _github_owner_name(url)
     return f"github_{parsed[0].lower()}_{parsed[1].lower()}" if parsed else None
@@ -90,16 +88,15 @@ class RepositoriesStage(EnrichmentStage):
                            name: str, source_url: str, profiles: dict[str, GitHubProfile],
                            state: ProcessingState | None,
                            fetched_orgs: set[str]) -> tuple[str, str | None]:
-        """One repository's metadata, its README status and its owner's
-        profile stub. The people behind it are a separate stage — see
-        repo_people.py for why.
+        """One repository's metadata, README status and owner profile stub.
 
-        `source_url` is the URL this repository was reached by — the cited one
-        when a publication led here, its own otherwise. It is what the raw
-        store records, and the fallback when the payload carries no html_url.
+        The people behind it are collected by repo_people.py.
 
-        `fetched_orgs` is the run's set of organizations already looked up; it
-        is what keeps the owner-profile call to one per organization.
+        `source_url` is the URL the repository was reached by (the cited one
+        when a publication led here). It is what the raw store records and the
+        fallback when the payload carries no html_url. `fetched_orgs` is the
+        run's set of organizations already looked up, keeping the owner-profile
+        call to one per organization.
         """
         fetched = False
         try:
@@ -108,8 +105,8 @@ class RepositoriesStage(EnrichmentStage):
             self.raw.append("github", payload, {"repository": source_url})
             repo.url = payload.get("html_url") or source_url
             repo.name = payload.get("name") or name
-            # Survives renames and owner transfers — the dedup stage
-            # uses it to recognise rows created before a rename.
+            # Survives renames and owner transfers; dedup uses it to recognise
+            # rows created before a rename.
             repo.github_id = payload.get("id")
             repo.description = payload.get("description")
             repo.stars_num = payload.get("stargazers_count")
@@ -141,10 +138,9 @@ class RepositoriesStage(EnrichmentStage):
                 # serves explicit nulls, which .get(key, "") passes on.
                 known.html_url = owner_data.get("html_url") or known.html_url
                 known.type = (owner_data.get("type") or "").lower() or known.type
-                # An organization is nobody's candidate, so the people stage
-                # skips it and the stub above is all its profile ever gets —
-                # leaving social_graph nothing to recognise an ITMO lab by.
-                # One call per organization per run fills the fields it reads.
+                # The people stage skips organizations, so the stub above would be
+                # all their profile gets, leaving social_graph nothing to
+                # recognise an ITMO lab by. One call per organization fills it.
                 if known.type == "organization" and profile_id not in fetched_orgs:
                     fetched_orgs.add(profile_id)
                     try:
@@ -202,21 +198,17 @@ class RepositoriesStage(EnrichmentStage):
     ) -> dict[str, list[Repository]]:
         """Rows still needing an attempt, grouped by the id their own URL gives.
 
-        A curated import writes the Repository row straight into the
-        collection with no link behind it, so a work list built only from
-        repo_links can never reach it again.
+        A curated import writes the Repository row with no link behind it, so a
+        work list built only from repo_links cannot reach it.
 
-        Keyed by the URL-derived id, not `repo.id`, because those two differ
-        once a row has been re-keyed to its canonical identity: the link pass
-        works from the cited URL, and without a shared key a forced run would
-        fetch such a row twice.
+        Keyed by the URL-derived id, not `repo.id`, because those differ once a
+        row has been re-keyed to its canonical identity; without a shared key a
+        forced run would fetch such a row twice.
 
-        A key can hold more than one row — a curated import brings its own id
-        and the link pass derives one from the cited URL, and both can point
-        at the same owner/name. They are one repository, so they are grouped
+        A key can hold more than one row (a curated import brings its own id and
+        the link pass derives another for the same owner/name). They are grouped
         rather than overwritten: `run()` fetches the group once and folds the
-        rest into what it fetched. Overwriting would starve the same row on
-        every run, since rows are read in a stable order.
+        rest in. Overwriting would starve the same row on every run.
         """
         found: dict[str, list[Repository]] = defaultdict(list)
         for repo in repositories.values():
@@ -232,13 +224,11 @@ class RepositoriesStage(EnrichmentStage):
                          repositories: dict[str, Repository]) -> Repository:
         """The one row of a URL group worth fetching, with the rest folded in.
 
-        The row that has been to the API wins: `github_id` only ever comes
-        from a payload, so that row's name and URL are the canonical ones, and
-        a `processing` entry for this stage is the attempt history that would
-        otherwise be lost. Ties fall back to the id, so the winner does not
-        depend on the order rows are read in. The losers leave their id behind
-        in `merged_ids`, which is what lets the graph loader resolve a link
-        that still points at them.
+        The row that has been to the API wins: `github_id` only comes from a
+        payload, so its name and URL are canonical, and its `processing` entry
+        is attempt history that would otherwise be lost. Ties fall back to the
+        id, so the winner is independent of read order. Losers leave their id
+        in `merged_ids` so the graph loader can resolve links pointing at them.
         """
         def rank(repo: Repository) -> tuple[int, int, str]:
             return (0 if repo.github_id else 1,
@@ -355,7 +345,7 @@ class RepositoriesStage(EnrichmentStage):
                 attempted_repo_ids.add(repo_id)
                 # A row reached by a link can carry a URL of its own that
                 # differs from the cited one; the second pass is keyed by
-                # that, so claim it here — before the fetch rewrites it.
+                # that, so claim it here, before the fetch rewrites it.
                 attempted_repo_ids.add(_url_repo_id(repo.url) or repo_id)
                 availability[repo_id] = self._enrich_repository(
                     client, repo, owner, name, url, profiles, state, fetched_orgs,
@@ -363,9 +353,9 @@ class RepositoriesStage(EnrichmentStage):
                 progress.update()
                 changed += 1
 
-        # Second pass: rows the links never reach. The loop above is what
-        # *discovers* repositories, this is what keeps already-known ones
-        # enriched — including the curated rows that arrived without a link.
+        # Second pass: rows the links never reach. The loop above discovers
+        # repositories; this keeps already-known ones enriched, including
+        # curated rows that arrived without a link.
         for url_id, group in sorted(unlinked.items()):
             repo = self._fold_duplicates(group, repositories)
             if url_id in attempted_repo_ids:
@@ -407,7 +397,7 @@ class RepositoriesStage(EnrichmentStage):
                 canonical[canonical_id] = repo
             else:
                 # The loser leaves behind its own id and every id it had
-                # already absorbed — same bookkeeping as _fold_duplicates.
+                # already absorbed (same bookkeeping as _fold_duplicates).
                 _fold_into(winner, repo)
                 aliases = [*winner.merged_ids, repo.id, *repo.merged_ids]
             # A row folded away earlier can have been keyed by the very id the

@@ -222,8 +222,11 @@ if __name__ == "__main__":
 
 
 class PressingTest(unittest.TestCase):
-    """The default view. 278 questions in one run, and most of them are
-    piles where the refusal is right and a reviewer would only be reading."""
+    """The default view hides piles where the refusal is right.
+
+    A real run asks 278 questions, and most of them are piles a reviewer
+    would only be reading.
+    """
 
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
@@ -281,9 +284,9 @@ class SkipTest(unittest.TestCase):
 class NameAlignmentTest(unittest.TestCase):
     """Names have to follow the ids, not the order the report was written.
 
-    Members are sorted; a pair is reported in whatever order the blocking
-    emitted it. Lining the two up wrongly puts one person's name against
-    the other's id, and nothing on the page would show it.
+    Members are sorted, while a pair is reported in whatever order the
+    blocking emitted it. Lining the two up wrongly puts one person's name
+    against the other's id.
     """
 
     def setUp(self):
@@ -310,9 +313,9 @@ class NameAlignmentTest(unittest.TestCase):
 class SplitGroupTest(unittest.TestCase):
     """A refused group is answered by naming who inside it is one person.
 
-    It cannot be answered as a whole: it was refused precisely because its
-    members disagree about an identity field. The split is written as
-    ordinary pair answers, because that is what the rules read.
+    It cannot be answered as a whole: it was refused because its members
+    disagree about an identity field. The split is written as ordinary pair
+    answers, because that is what the rules read.
     """
 
     def setUp(self):
@@ -369,9 +372,8 @@ class SplitGroupTest(unittest.TestCase):
 class SeparatorsInIdsTest(unittest.TestCase):
     """An id that carries the characters the key is built from.
 
-    The key joins on ":" and the form that answers it joins on ",". Person
-    ids cannot hold either today, but a LinkCandidate id turned out to be a
-    URL once already, and the failure there was silent.
+    The key joins on ":" and the form that answers it joins on ",". A
+    LinkCandidate id can be a URL, and a failure there would be silent.
     """
 
     def test_a_colon_in_an_id_is_refused(self):
@@ -392,9 +394,9 @@ class SeparatorsInIdsTest(unittest.TestCase):
 class WithdrawingAChoiceTest(unittest.TestCase):
     """Taking back a catalog answer has to take back what it chose.
 
-    The record chosen is what the merge rules read. Left on the document
-    after the verdict was withdrawn, it kept being applied by every later
-    run while the panel showed the question as open again.
+    The chosen record is what the merge rules read. Left on the document
+    after the verdict is withdrawn, it would keep being applied by every
+    run while the panel shows the question as open.
     """
 
     RECORDS = ["kuznetsov|andrei|gennadevich", "kuznetsov|andrei|dmitrievich"]
@@ -434,8 +436,8 @@ class StaffCannotBeAnsweredYesTest(unittest.TestCase):
     """"Yes" to "which of these two is he" names nobody.
 
     Recorded through the ordinary path it would set a verdict with no record
-    behind it: the question leaves the queue looking answered and nothing at
-    all changes.
+    behind it: the question leaves the queue looking answered and nothing
+    changes.
     """
 
     def setUp(self):
@@ -457,8 +459,8 @@ class StaffCannotBeAnsweredYesTest(unittest.TestCase):
 class WithdrawingWhatNobodyAskedTest(unittest.TestCase):
     """A split writes answers about pairs the rules never held.
 
-    Withdrawing one used to leave a row in the queue with no names, no
-    reason and nothing to decide on — a question that had never been put.
+    Withdrawing one must not leave a row in the queue with no names, no
+    reason and nothing to decide on.
     """
 
     def setUp(self):
@@ -486,9 +488,9 @@ class WithdrawingWhatNobodyAskedTest(unittest.TestCase):
 class AnswersSurviveAMergeTest(unittest.TestCase):
     """An answer is about a person, and a person can stop existing.
 
-    The dedup folds B into A; every answer made about B is stored under an
-    id nothing carries any more. Read without the alias map, the answer is
-    simply not found — and the rules go on to do what somebody refused.
+    The dedup folds B into A, so every answer made about B is stored under
+    an id nothing carries any more. Read without the alias map, it is not
+    found, and the rules go on to do what somebody refused.
     """
 
     RECORDS = ["kuznetsov|andrei|gennadevich", "kuznetsov|andrei|dmitrievich"]
@@ -521,10 +523,9 @@ class AnswersSurviveAMergeTest(unittest.TestCase):
 class UndoingAnAppliedAnswerTest(unittest.TestCase):
     """What the store has to change once a fold has been taken apart.
 
-    Both halves matter. Clearing `applied_at` says the graph no longer
-    holds one node where there were two; flipping the verdict is what stops
-    the next run folding them straight back, which would leave the person
-    who undid it looking at their undo undone.
+    Clearing `applied_at` says the graph no longer holds one node where
+    there were two; flipping the verdict stops the next run folding them
+    straight back.
     """
 
     def setUp(self):

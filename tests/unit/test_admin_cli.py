@@ -164,7 +164,7 @@ class RunTest(unittest.TestCase):
 
     def test_a_refused_edit_leaves_no_decision_behind(self):
         # Recording the decision before the write would apply it on the next
-        # publish — quietly making the change the person was just told was
+        # publish - quietly making the change the person was just told was
         # rejected.
         db = mongomock.MongoClient()["pauk_test"]
         stale = self.graph.nodes[("Person", "A1")]["updated_at"]
@@ -218,7 +218,7 @@ class RelationshipOverrideCliTest(unittest.TestCase):
                          {("Person", "AUTHORED", "Publication", "A1", "W1")})
 
     def test_linking_claims_the_link(self):
-        # Nothing reapplies it — the loader only creates edges, so the link
+        # Nothing reapplies it - the loader only creates edges, so the link
         # survives publishing on its own. It is written down because a
         # prune has no other way of telling it from an edge the pipeline
         # has stopped making.
@@ -250,7 +250,7 @@ class RelationshipOverrideCliTest(unittest.TestCase):
 
 
 class PrintingCommandsTest(unittest.TestCase):
-    """Commands that mostly print — still worth a run, they touch the graph."""
+    """Commands that mostly print - still worth a run, they touch the graph."""
 
     def setUp(self):
         self.graph = FakeGraph()
@@ -311,10 +311,9 @@ class PrintingCommandsTest(unittest.TestCase):
 class DeleteSnapshotTest(unittest.TestCase):
     """`pauk admin node delete` has to record what it removed.
 
-    The panel took a snapshot and the command did not, so a record deleted
-    from the terminal could only be restored from the feed — which keeps
-    history rather than state, and summarises a bulk operation without
-    listing a single field.
+    The panel takes a snapshot, so the command must too: otherwise a record deleted from the terminal can
+    only be restored from the feed, which keeps history rather than state and summarises a bulk
+    operation without listing a single field.
     """
 
     def setUp(self):

@@ -7,9 +7,11 @@ from pymongo.database import Database
 
 
 class LlmLogStore:
-    """Full request/response log for one LLM use case - one collection per
-    call site (e.g. "llm_logs_link_relevance"), not a shared collection,
-    so each use case's logs can be indexed/retained independently."""
+    """Full request/response log for one LLM use case.
+
+    Each call site gets its own collection (e.g. "llm_logs_link_relevance") so
+    its logs can be indexed and retained independently.
+    """
 
     def __init__(self, db: Database, collection: str) -> None:
         self.collection = db[collection]

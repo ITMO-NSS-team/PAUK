@@ -58,7 +58,7 @@ describe("mountStart", () => {
     vi.useRealTimers();
   });
 
-  it("setBootStage обновляет ширину прогресс-бара и статус-текст", () => {
+  it("setBootStage updates the progress bar width and the status text", () => {
     const store = new Store<AppState>(initialState());
     const { setBootStage } = mountStart(store);
 
@@ -72,7 +72,7 @@ describe("mountStart", () => {
     expect(document.getElementById("boot-status")?.textContent).toBe("Отрисовка графа…");
   });
 
-  it("setBootStage('error') не двигает бар — только меняет статус-текст", () => {
+  it("setBootStage('error') does not move the bar, it only changes the status text", () => {
     const store = new Store<AppState>(initialState());
     const { setBootStage } = mountStart(store);
     const bar = document.getElementById("boot-progress-bar") as HTMLElement;
@@ -84,7 +84,7 @@ describe("mountStart", () => {
     expect(document.getElementById("boot-status")?.textContent).toBe("Ошибка загрузки.");
   });
 
-  it("hideBootOnError прячет boot-экран немедленно, без задержки finishBoot и без доводки бара до 100%", () => {
+  it("hideBootOnError hides the boot screen immediately, without the finishBoot delay and without finishing the bar to 100%", () => {
     const store = new Store<AppState>(initialState());
     const { setBootStage, hideBootOnError } = mountStart(store);
     const boot = document.getElementById("boot-screen") as HTMLElement;
@@ -98,7 +98,7 @@ describe("mountStart", () => {
     expect(bar.style.width).toBe("70%"); // does not jump to 100% like finishBoot()
   });
 
-  it("finishBoot прячет boot-экран, видимость меню/приложения остаётся под управлением screen", () => {
+  it("finishBoot hides the boot screen, menu/app visibility stays under screen control", () => {
     const store = new Store<AppState>(initialState());
     const { finishBoot } = mountStart(store);
 
@@ -108,7 +108,7 @@ describe("mountStart", () => {
     expect((document.getElementById("boot-screen") as HTMLElement).hidden).toBe(true);
   });
 
-  it("screen: 'menu' — показано меню, приложение скрыто", () => {
+  it("screen: 'menu' shows the menu and hides the app", () => {
     const store = new Store<AppState>(initialState({ screen: "menu" }));
     mountStart(store);
 
@@ -116,7 +116,7 @@ describe("mountStart", () => {
     expect((document.getElementById("app") as HTMLElement).hidden).toBe(true);
   });
 
-  it("screen: 'app' — показано приложение, меню скрыто", () => {
+  it("screen: 'app' shows the app and hides the menu", () => {
     const store = new Store<AppState>(initialState({ screen: "app" }));
     mountStart(store);
 
@@ -124,7 +124,7 @@ describe("mountStart", () => {
     expect((document.getElementById("app") as HTMLElement).hidden).toBe(false);
   });
 
-  it("клик по кнопке входа переключает screen на 'app', всегда на первую вкладку", () => {
+  it("clicking the enter button switches screen to 'app', always on the first tab", () => {
     const store = new Store<AppState>(initialState());
     mountStart(store);
 
@@ -134,7 +134,7 @@ describe("mountStart", () => {
     expect(store.get().tab).toBe(1);
   });
 
-  it("клик по кнопке входа не трогает selection сам по себе — обнулять устаревший выбор при смене вкладки умеет map/build.ts::mountReactiveGraph (см. tests/build.test.ts)", () => {
+  it("clicking the enter button does not touch selection by itself, resetting a stale selection on tab change is done by map/build.ts::mountReactiveGraph (see tests/build.test.ts)", () => {
     const store = new Store<AppState>(
       initialState({ screen: "menu", tab: 2, selection: { kind: "node", key: "R1" } }),
     );
@@ -145,7 +145,7 @@ describe("mountStart", () => {
     expect(store.get().selection).toEqual({ kind: "node", key: "R1" });
   });
 
-  it("клик по кнопке языка в меню переключает store.lang", () => {
+  it("clicking the language button in the menu toggles store.lang", () => {
     const store = new Store<AppState>(initialState({ lang: "ru" }));
     mountStart(store);
 
@@ -154,7 +154,7 @@ describe("mountStart", () => {
     expect(store.get().lang).toBe("en");
   });
 
-  it("клик по #brand возвращает в меню", () => {
+  it("clicking #brand returns to the menu", () => {
     const store = new Store<AppState>(initialState({ screen: "app" }));
     mountStart(store);
 
@@ -163,7 +163,7 @@ describe("mountStart", () => {
     expect(store.get().screen).toBe("menu");
   });
 
-  it("смена языка перерисовывает текст меню", () => {
+  it("changing the language redraws the menu text", () => {
     const store = new Store<AppState>(initialState());
     mountStart(store);
 
@@ -174,7 +174,7 @@ describe("mountStart", () => {
     );
   });
 
-  it("#brand показывает «← Меню»/«← Menu» под текущий язык — не название проекта", () => {
+  it("#brand shows \"← Меню\"/\"← Menu\" for the current language, not the project name", () => {
     const store = new Store<AppState>(initialState({ lang: "ru" }));
     mountStart(store);
 

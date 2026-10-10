@@ -1,10 +1,9 @@
 """The queue of pairs the deduplicator could not settle, as a page.
 
-An answer is written down first and the rules read it on their next run
-(see `pauk.storage.review`); when both records are already published, the
-fold also happens straight away, so nobody waits a day to see their own
-decision take effect. Undoing one is the other way round — the graph comes
-apart first and the answer is rewritten only if it did (`split_back`).
+An answer is stored first and the rules read it on their next run (see
+`pauk.storage.review`); when both records are already published the fold also
+happens at once. Undoing is the reverse: the graph comes apart first and the
+answer is rewritten only if it did (`split_back`).
 """
 
 from __future__ import annotations
@@ -125,8 +124,7 @@ def _asks(row: dict) -> str:
 def _people(row: dict, evidence: dict, back: str = "") -> list[dict]:
     """The subjects of one question, each with somewhere to look.
 
-    A person is a node the panel can open. An account is not: it lives on
-    GitHub, and the only useful thing to do with it is go and look.
+    A person is a node the panel can open; a GitHub account is not.
     """
     names = evidence.get("names") or []
     login = evidence.get("login")
@@ -141,8 +139,7 @@ def _people(row: dict, evidence: dict, back: str = "") -> list[dict]:
         shown.append({
             "id": member,
             "name": name or member,
-            # The card carries the way back: the search is the only other
-            # way out, and it is not where the reader came from.
+            # The card carries the way back; the search is the only other exit.
             "href": None if record else
                     (evidence.get("url") if account
                      else f"/nodes/Person/{quote(member)}?back={quote(back, safe='')}"),
@@ -157,13 +154,12 @@ def _shown(row: dict, back: str = "") -> dict:
     evidence = row.get("evidence", {})
     return {
         "id": row["_id"],
-        # The row's own address on the page. Colons do not belong in a
-        # fragment, and a question id is built of them.
+        # Colons do not belong in a fragment, and a question id is built of them.
         "anchor": "q-" + row["_id"].replace(":", "-"),
         "kind": row["kind"],
         # Four kinds of question run one after another; the names do not say which.
         "asks": _asks(row),
-        # A flag, not a literal in the template: that was silently wrong once.
+        # A flag rather than a literal in the template.
         "is_group": row["kind"] == review.GROUP,
         "is_github": row["kind"] == review.GITHUB,
         "is_staff": row["kind"] == review.STAFF,
@@ -197,8 +193,7 @@ def _shown(row: dict, back: str = "") -> dict:
 def _tab(value: object, default: str) -> str:
     """A tab a form sent back, if it is one.
 
-    It goes straight into the address the form is sent back to, and a value
-    carrying "&" or "#" would add to that address whatever it liked.
+    It goes straight into a redirect address, so "&" or "#" must not pass.
     """
     return value if value in TABS else default
 
@@ -206,11 +201,7 @@ def _tab(value: object, default: str) -> str:
 @router.get("/review", response_class=HTMLResponse)
 def queue(request: Request, user: CurrentUser, session: Session, db: Db,
           graph: MaybeGraph, tab: str = "pressing", page: int = 1):
-    """Questions the rules left open, the longest-waiting first.
-
-    Readable by anyone who can sign in. Answering needs the editor role:
-    the answer changes what the graph will look like after the next run.
-    """
+    """Questions the rules left open, the longest-waiting first, readable by anyone who can sign in."""
     if tab not in TABS:
         tab = "pressing"
     page = max(page, 1)
@@ -229,10 +220,7 @@ def queue(request: Request, user: CurrentUser, session: Session, db: Db,
 def _with_facts(graph, rows: list[dict]) -> list[dict]:
     """Put a few known fields beside each person on the page.
 
-    A name and an id answer nothing: deciding whether two records are one
-    researcher means knowing an ORCID, an address, a department, how much
-    each has published. Asked in one query for the whole page, and skipped
-    when the graph is silent - the queue is readable without it.
+    Asked in one query for the whole page, and skipped when the graph is silent.
     """
     if graph is None:
         return rows
@@ -252,9 +240,8 @@ def _with_facts(graph, rows: list[dict]) -> list[dict]:
 def _splittable(db, rows: list[dict]) -> list[dict]:
     """Say which folded pairs can still be taken apart.
 
-    Asked once for the whole page: a fold is undone by rebuilding the
-    record from its prepared row, and the only thing the page needs to know
-    is whether both rows are still there.
+    A fold is undone by rebuilding the record from its prepared row, so both
+    rows must still exist.
     """
     wanted = {member for row in rows if row["applied_at"] for member in row["members"]}
     have = rebuildable(db, wanted) if wanted else set()
@@ -266,11 +253,9 @@ def _splittable(db, rows: list[dict]) -> list[dict]:
 def _fold_now(graph, db, members: list[str], actor: str) -> str:
     """Fold a confirmed pair straight away, when there is anything to fold.
 
-    A pair held by the collection stage names people who are prepared rows
-    and nothing else: their group has not been published, so no node exists
-    and the answer simply waits for one. A pair held by the graph-wide pass
-    names two live nodes, and making somebody wait for the next run to see
-    their own decision take effect would be for nothing.
+    A pair held by the collection stage names prepared rows with no node yet,
+    so the answer simply waits. A pair held by the graph-wide pass names two
+    live nodes and is merged now.
 
     Returns:
         "merged", or "waiting" when the graph cannot do it now. Either way
@@ -303,10 +288,8 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
                  _: CsrfChecked, __: StoresReady):
     """Write down what somebody decided about one question.
 
-    The decision is stored first and folded second, never the other way
-    round: stored, it survives anything that happens next and the rules
-    apply it themselves. A fold that ran before the decision was written
-    would be a merge nobody could explain and nobody could repeat.
+    The decision is stored before any fold, so it survives a failed fold and
+    the rules can apply it themselves.
     """
     form = await request.form()
     kind = str(form.get("kind", review.PAIR))
@@ -318,9 +301,7 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
     def back(problem: str = "", done: str = ""):
         """To the queue, with a word about what happened.
 
-        A form somebody filled in wrongly sends them back to it, not to an
-        error page: the checkboxes are three clicks to redo, and a dead end
-        with a status code on it explains nothing.
+        A wrongly filled form returns to the queue instead of an error page.
         """
         query = f"?tab={tab}"
         if problem:
@@ -373,11 +354,9 @@ async def split_back(request: Request, user: Editor, db: Db, graph: MaybeGraph,
                      _: CsrfChecked, __: StoresReady):
     """Take a fold apart again: the record merged away comes back.
 
-    The graph goes first here and the store second, the opposite of
-    answering. An answer is worth keeping whatever happens next, because
-    the rules apply it themselves; an undo is worth nothing until the graph
-    actually comes apart, and "different" written over a fold that refused
-    to open would describe a graph that does not exist.
+    The graph goes first and the store second, the opposite of answering:
+    "different" written over a fold that refused to open would describe a
+    graph that does not exist.
     """
     form = await request.form()
     kind = str(form.get("kind", review.PAIR))
@@ -426,8 +405,7 @@ async def split_back(request: Request, user: Editor, db: Db, graph: MaybeGraph,
 async def withdraw(request: Request, user: Editor, db: Db, _: CsrfChecked, __: StoresReady):
     """Take an answer back, leaving the question in the queue.
 
-    The question stays because a real run asked it. Deleting it would only
-    mean the next run asks the same thing from nothing.
+    The question stays because a real run asked it.
     """
     form = await request.form()
     kind = str(form.get("kind", review.PAIR))

@@ -1,12 +1,9 @@
 """Identify the GitHub account behind an ITMO author.
 
 A repository cited by a paper is worked on by people, and one of them is
-often the paper's author — but the two records share no identifier. The
+often the paper's author, but the two records share no identifier. The
 harvest in `repositories` collects the accounts; this stage decides which
-author, if any, each account belongs to.
-
-Nothing about an account proves identity on its own, so the decision
-weighs several signals at once:
+author, if any, each account belongs to. The decision weighs several signals:
 
     email      an address the account committed with, or published on its
                profile, that the author is also known by. Decisive: people
@@ -14,21 +11,18 @@ weighs several signals at once:
     name       the account's display name or the name in its commits,
                against the author's name and the spellings OpenAlex knows.
     bridge     the account was found on a repository cited by a paper this
-               author wrote. Not proof — a paper has many authors and a
-               repository many contributors — but it narrows the field
-               from every ITMO employee to a handful.
+               author wrote. Not proof (a paper has many authors and a
+               repository many contributors), but it narrows the field.
     profile    ITMO named in the account's company, location or bio.
     login      the author's surname inside the login itself.
     owner      the account owns the repository rather than contributing.
 
 An email settles the question by itself. A name needs the bridge or some
-corroboration behind it, and a fuzzy name needs both — the surnames this
-university's authors carry (Smirnov, Ivanov, Novikov) collide inside one
-department, let alone across GitHub.
+corroboration, and a fuzzy name needs both (common surnames such as Smirnov
+or Ivanov collide even within one department).
 
 Decisions are journalled to github_matches.jsonl: `matched` writes
-Person.github, `review` waits for a human, and the reason for either is
-recorded next to the evidence that produced it.
+Person.github, `review` waits for a human; the reason is recorded with the evidence.
 """
 
 from __future__ import annotations
@@ -55,9 +49,8 @@ MATCHES_FILENAME = "github_matches.jsonl"
 
 # Identical token sets score exactly 1.0, so anything under NAME_EXACT is a
 # character-level resemblance. The fuzzy threshold is deliberately loose and
-# catches names that are not the same person — "Ivan Petrov" against "Ivan
-# Petrovsky" scores 0.88 — which is why a fuzzy name never decides on its
-# own: decide() demands the bridge and corroboration behind it.
+# also catches different people ("Ivan Petrov" vs "Ivan Petrovsky" scores 0.88),
+# so a fuzzy name never decides alone: decide() demands the bridge and corroboration.
 NAME_EXACT = 0.999
 NAME_FUZZY = 0.86
 
@@ -89,8 +82,8 @@ STRONG = ("email_exact", "login_surname", "owner")
 # make an organization a social_graph seed.
 ITMO_IDENTITY_PATTERN = re.compile(r"\b(?:itmo|итмо)\b", re.I)
 
-# The city remains useful but is only a weak person-matching signal. Require
-# Petersburg too: a bare "Sankt" used to accept unrelated profile text.
+# The city is only a weak person-matching signal. Require Petersburg too:
+# a bare "Sankt" accepts unrelated profile text.
 PETERSBURG_PATTERN = re.compile(
     r"\b(?:saint|st\.?|sankt)[-\s]*peters?burg\b|\bсанкт[-\s]?петербург",
     re.I,
@@ -119,10 +112,9 @@ def _norm_email(value: str | None) -> str:
 def name_similarity(first: str, second: str) -> float:
     """How alike two normalized names are, from 0 to 1.
 
-    Word order carries no information here — "Petrov Ivan" and "Ivan
-    Petrov" are one name — so two names built from the same words match
-    exactly. A single word is not enough for that: half the surnames in
-    the pool would match each other.
+    Word order is ignored ("Petrov Ivan" equals "Ivan Petrov"), so names
+    built from the same words match exactly. A single word is not enough
+    for that: many surnames would match each other.
     """
     if not first or not second:
         return 0.0
@@ -147,8 +139,7 @@ def best_name_similarity(candidates: set[str], author: set[str]) -> tuple[float,
 def login_carries_surname(login: str, surnames: set[str]) -> bool:
     """Whether the login is built from one of the author's surnames.
 
-    Every spelling counts: an author published as both "Dukhanov" and
-    "Duhanov" may have built their login from either.
+    Every spelling counts, e.g. both "Dukhanov" and "Duhanov".
     """
     lowered = login.lower()
     return any(surname in lowered or SequenceMatcher(None, lowered, surname).ratio() >= 0.85
@@ -190,9 +181,9 @@ def score_account(account: dict, author: dict, email_hit: bool) -> tuple[float, 
 def confidence(signals: list[str], in_bridge: bool) -> str:
     """How much the match rests on evidence about this person specifically.
 
-    "probable" is not a doubt about the decision — those go to review — but
-    a note for whoever looks at the graph: this one stands on a name plus
-    an ITMO-wide signal, not on anything only this person has.
+    "probable" is not a doubt about the decision (those go to review) but a
+    note that the match stands on a name plus an ITMO-wide signal, not on
+    anything only this person has.
     """
     return "high" if in_bridge or any(signal in signals for signal in STRONG) else "probable"
 
@@ -200,11 +191,9 @@ def confidence(signals: list[str], in_bridge: bool) -> str:
 def hold_reason(signals: list[str]) -> str:
     """Why a pair goes to a person, in the words the queue files it under.
 
-    Only ever asked of a pair `decide` sent to review, and the two cases it
-    sends there are told apart by the name signal alone: an exact name with
-    nothing behind it, or a fuzzy one carried by a shared publication.
-    Left in English like the reasons the merge rules give — the panel is
-    where they are put into words for a reader.
+    Only asked of a pair `decide` sent to review; the two cases are told apart
+    by the name signal alone: an exact name with nothing behind it, or a fuzzy
+    one carried by a shared publication.
     """
     if "name_exact" in signals:
         return "the name matches exactly and nothing else backs it"
@@ -231,10 +220,8 @@ def match_account(account: dict, authors: dict[str, dict], email_index: dict[str
                   name_index: dict[str, set[str]], bridge: dict[str, set[str]]):
     """The author this account belongs to, or None if nobody fits.
 
-    Only three groups are considered: authors reachable through a shared
-    publication, through an address, or through a full name. Scoring every
-    author against every account would be both slow and pointless — the
-    rest produce no signal at all.
+    Only authors reachable through a shared publication, an address or a full
+    name are scored; the rest produce no signal and scoring them is slow.
     """
     bridge_ids: set[str] = set()
     for publication_id in account["publication_ids"]:
@@ -281,9 +268,9 @@ class GitHubMatchStage(EnrichmentStage):
     def _answered(self, decisions: list[dict]) -> list[dict]:
         """Let what people decided override the rules, and note the rest.
 
-        An answer outranks the signals both ways. "This is them" applies a
-        match the rules would only have shown; "this is not them" stops one
-        they would have made, which is the correction the queue exists for.
+        An answer outranks the signals both ways: "this is them" applies a match
+        the rules would only have shown, "this is not them" stops one they would
+        have made.
 
         Returns:
             Rows for the queue: pairs still unanswered that a person has to
@@ -478,12 +465,12 @@ class GitHubMatchStage(EnrichmentStage):
         review.record_held(self.prepared.db, questions, source=review.STAGE)
         review.record_disputed(self.prepared.db, questions)
         # Same place dedup keeps its review journal: prepared data lives in
-        # MongoDB since #102, and a journal a human reads is a file.
+        # MongoDB, and a journal a human reads is a file.
         journal_path = self.config.audit_dir / self.prepared.group / MATCHES_FILENAME
         with AtomicWriter(journal_path) as handle:
             for row in decisions:
                 handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-        logger.info("github_match: %d matched, %d for review, %d emails filled — see %s",
+        logger.info("github_match: %d matched, %d for review, %d emails filled; see %s",
                     stats["matched"], stats.get("review", 0), filled_emails, journal_path)
         return {"github_matched": stats["matched"],
                 "github_review": stats.get("review", 0),

@@ -28,7 +28,7 @@ export function groupsById(data: GraphData): Map<number, Department | RepoGroup>
 export async function loadGraphData(url: string): Promise<GraphData> {
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`не удалось загрузить ${url}: HTTP ${response.status}`);
+    throw new Error(`failed to load ${url}: HTTP ${response.status}`);
   }
 
   const data = (await response.json()) as GraphData;
@@ -40,7 +40,7 @@ export async function loadGraphData(url: string): Promise<GraphData> {
 export async function loadDetails<T>(url: string): Promise<T[]> {
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`не удалось загрузить ${url}: HTTP ${response.status}`);
+    throw new Error(`failed to load ${url}: HTTP ${response.status}`);
   }
   return (await response.json()) as T[];
 }
@@ -63,7 +63,7 @@ export function mergeDetailsInto<T extends { key: string }>(target: Map<string, 
  */
 export function assertGraphData(data: unknown): asserts data is GraphData {
   if (typeof data !== "object" || data === null) {
-    throw new Error("assertGraphData: ожидался объект");
+    throw new Error("assertGraphData: expected an object");
   }
 
   const graph = data as Record<string, unknown>;
@@ -78,14 +78,14 @@ export function assertGraphData(data: unknown): asserts data is GraphData {
   ];
   for (const key of requiredArrayKeys) {
     if (!Array.isArray(graph[key])) {
-      throw new Error(`assertGraphData: поле "${key}" отсутствует или не массив`);
+      throw new Error(`assertGraphData: field "${key}" is missing or not an array`);
     }
   }
 
   const firstAuthor = (graph.authors as unknown[])[0] as Record<string, unknown> | undefined;
   if (firstAuthor && (typeof firstAuthor.label_en !== "string" || typeof firstAuthor.key !== "string")) {
     throw new Error(
-      "assertGraphData: форма AuthorNode разошлась с контрактом (нет key/label_en) — проверь builder.py",
+      "assertGraphData: AuthorNode no longer matches the contract (missing key/label_en); check builder.py",
     );
   }
 }

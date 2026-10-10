@@ -30,10 +30,7 @@ def _decode_json_text(field: str, value: Any) -> Any:
 
 
 def summarize(graph: dict[str, list]) -> None:
-    """Prints each table's name and row count, column-aligned. Field names
-    are shown per-table instead (see describe_table) - a full field list
-    here wouldn't fit one line for a wide table like persons.
-    """
+    """Prints each table's name and row count, column-aligned."""
     if not graph:
         return
     name_width = max(len(name) for name in graph)
@@ -43,9 +40,7 @@ def summarize(graph: dict[str, list]) -> None:
 
 
 def describe_table(rows: list[dict], table: str) -> None:
-    """Prints each field's null count, type, and whether it's JSON-text.
-    Sorted by null percentage descending - the sparsest fields first.
-    """
+    """Prints each field's null count, type, and whether it's JSON-text, sparsest first."""
     if not rows:
         print(f"{table}: no rows")
         return
@@ -67,9 +62,7 @@ def describe_table(rows: list[dict], table: str) -> None:
 
 
 def sample_rows(rows: list[dict], n: int) -> None:
-    """Prints the first `n` rows, numbered, with JSON-text fields decoded
-    (see _decode_json_text) instead of shown as escaped strings.
-    """
+    """Prints the first `n` rows, numbered, with JSON-text fields decoded."""
     total = min(n, len(rows))
     for i, row in enumerate(rows[:n], start=1):
         decoded = {field: _decode_json_text(field, value) for field, value in row.items()}

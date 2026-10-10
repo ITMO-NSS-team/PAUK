@@ -28,7 +28,7 @@ class OpenAlexClient(HttpClient):
 
     def iter_works(self, ror_id: str, date_from: str, date_to: str) -> Iterator[dict]:
         cursor = "*"
-        # OpenAlex supports inclusive date filters; this fixes the old > / < boundary bug.
+        # Inclusive bounds via from_/to_publication_date, so boundary dates are not lost.
         filters = (
             f"authorships.institutions.ror:{ror_id},"
             f"from_publication_date:{date_from},to_publication_date:{date_to}"

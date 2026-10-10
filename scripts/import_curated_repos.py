@@ -1,22 +1,19 @@
 """Import a hand-curated `title,repo_url` list into the prepared repositories.
 
-The list pairs a paper with the repository holding its code — a judgement a
-human made, not something the pipeline can find in the text. It therefore
-becomes `Repository.publication_ids`, which the graph loader turns into
-`(:Repository)-[:IMPLEMENTS]->(:Publication)`. It deliberately does *not*
-become `MENTIONS_LINK`: that edge claims the URL was found inside the
-publication, and these were not.
+The list pairs a paper with the repository holding its code, a human judgement
+the pipeline cannot find in the text. It becomes `Repository.publication_ids`,
+which the graph loader turns into `(:Repository)-[:IMPLEMENTS]->(:Publication)`,
+not `MENTIONS_LINK` (that edge claims the URL was found inside the publication).
 
-Two steps, on purpose. `plan` only reads — it matches titles against the
-publications already in Mongo, asks GitHub for the repository metadata, and
-writes the result to a JSON file plus a report of everything it refused to
-touch. `apply` writes that reviewed file into Mongo and nothing else. What
-gets written is therefore exactly what was reviewed, and a re-run of `apply`
-cannot silently pick up a different match.
+Two steps, on purpose. `plan` only reads: it matches titles against the
+publications already in Mongo, asks GitHub for repository metadata, and writes
+a JSON file plus a report of everything it refused to touch. `apply` writes that
+reviewed file into Mongo and nothing else, so what is written is exactly what
+was reviewed.
 
-A paper the graph has never heard of is never created here: the CSV carries a
-title and nothing else, and a Publication invented from a title alone would
-have no OpenAlex id to ever reconcile with. Those rows go to the report.
+A paper the graph has never heard of is never created here: a Publication
+invented from a title alone would have no OpenAlex id to reconcile with. Those
+rows go to the report.
 """
 
 from __future__ import annotations
@@ -60,8 +57,8 @@ STAGE = "repositories"
 def normalize_title(title: str) -> str:
     """Fold a title to what two records of the same paper always share.
 
-    Case, punctuation and whitespace differ freely between a curated list and
-    OpenAlex; letters and digits do not.
+    Case, punctuation and whitespace differ between a curated list and OpenAlex;
+    letters and digits do not.
     """
     folded = unicodedata.normalize("NFKD", title or "").lower()
     return " ".join(re.sub(r"[^0-9a-zа-яё]+", " ", folded).split())
@@ -79,8 +76,7 @@ def read_csv(path: Path) -> list[dict]:
 def load_publications(db: Database) -> dict[str, list[dict]]:
     """Normalized title -> the publications carrying it.
 
-    A title matching more than one publication is not resolved here: the
-    curated row says nothing that could pick between them, so it is reported.
+    A title matching more than one publication is reported, not resolved.
     """
     by_title: dict[str, list[dict]] = defaultdict(list)
     for doc in db.publications.find({}, {"_id": 0, "id": 1, "title": 1, "year": 1}):
@@ -157,9 +153,8 @@ def classify(rows: list[dict], by_title: dict[str, list[dict]],
 def _license_of(payload: dict) -> str | None:
     """SPDX id of the repository licence, or None when GitHub found none.
 
-    GitHub answers an explicit `"license": null` for unlicensed repositories
-    and `"spdx_id": "NOASSERTION"` for one it cannot identify; neither is a
-    licence name worth storing.
+    GitHub answers `"license": null` for unlicensed repositories and
+    `"spdx_id": "NOASSERTION"` for one it cannot identify; neither is worth storing.
     """
     licence = payload.get("license") or {}
     spdx = licence.get("spdx_id")
@@ -176,9 +171,8 @@ def _pushed_date(payload: dict) -> date | None:
 def fetch_metadata(client: GitHubClient, selected: list[dict]) -> dict[str, dict]:
     """One GitHub call per distinct repository, keyed by the CSV-derived id.
 
-    A repository is cited by several papers in this list; the API must be paid
-    for once. A failure is recorded rather than raised so one dead repository
-    does not cost the other sixty.
+    A failure is recorded rather than raised so one dead repository does not
+    cost the others.
     """
     payloads: dict[str, dict] = {}
     repos = {row["repo_id"]: (row["owner"], row["name"]) for row in selected}
@@ -198,21 +192,18 @@ def build_documents(db: Database, selected: list[dict],
                     payloads: dict[str, dict]) -> tuple[list[dict], list[dict]]:
     """Merge the curated pairs and the GitHub metadata onto existing rows.
 
-    Keyed by the *canonical* id built from the payload, not from the cited URL:
-    GitHub redirects a renamed repository, so `nccr-itmo/FEDOT` answers as
-    `aimclub/FEDOT` and must land on the row that already holds it — otherwise
-    two rows would claim one URL and the graph's uniqueness constraint would
-    reject the publish.
+    Keyed by the *canonical* id built from the payload, not the cited URL:
+    GitHub redirects a renamed repository (`nccr-itmo/FEDOT` answers as
+    `aimclub/FEDOT`), and it must land on the row that already holds it, or two
+    rows would claim one URL and the uniqueness constraint would reject the publish.
 
     Existing rows are extended, never replaced: publication ids and cited URLs
     are unioned into what is already there.
 
-    A row found only under the id the CSV cited is re-keyed to the canonical
-    one, and then the row it came from has to go: an upsert under the new id
-    creates a second document while the old one stays behind holding the same
-    url — exactly the duplicate the canonical keying exists to prevent. The
-    old id travels in `merged_ids`, so a graph node still carrying it resolves
-    to the survivor, and `apply` deletes the document itself.
+    A row found only under the cited id is re-keyed to the canonical one, and the
+    old document has to go, or the upsert would leave a duplicate holding the same
+    url. The old id travels in `merged_ids`, so a graph node still carrying it
+    resolves to the survivor, and `apply` deletes the document itself.
     """
     existing = {doc["id"]: doc for doc in db.repositories.find({}, {"_id": 0})}
     built: dict[str, Repository] = {}
@@ -391,12 +382,12 @@ def command_plan(args, config: Settings, db: Database) -> None:
     write_report(args.report, rejected, failures, selected, documents)
 
     new = sum(1 for doc in documents if doc["is_new"])
-    print(f"\nplan: {len(documents)} repository row(s) — {new} new, {len(documents)-new} updated")
+    print(f"\nplan: {len(documents)} repository row(s): {new} new, {len(documents)-new} updated")
     print(f"      {sum(len(d['added_publication_ids']) for d in documents)} new IMPLEMENTS pair(s)")
     print(f"      {len(rejected) + len(failures)} row(s) reported, nothing written")
     renamed = sum(1 for doc in documents if doc.get("superseded_id"))
     if renamed:
-        print(f"      {renamed} row(s) renamed on GitHub — apply retires the old id")
+        print(f"      {renamed} row(s) renamed on GitHub; apply retires the old id")
 
 
 def command_apply(args, config: Settings, db: Database) -> None:

@@ -3,15 +3,15 @@ import { parseUrlState, serializeUrlState } from "../src/core/url";
 import { loadSampleGraphData } from "./fixtures";
 
 describe("serializeUrlState", () => {
-  it("screen: 'menu' — только tab=menu, tab/selection состояния игнорируются", () => {
+  it("screen: 'menu' gives only tab=menu, tab/selection state is ignored", () => {
     expect(serializeUrlState({ screen: "menu", tab: 2, selection: { kind: "dept", id: 0 } })).toBe("tab=menu");
   });
 
-  it("без selection кладёт только tab, слагом, не числом", () => {
+  it("without selection puts only tab, as a slug, not a number", () => {
     expect(serializeUrlState({ screen: "app", tab: 2, selection: null })).toBe("tab=repos");
   });
 
-  it("узел — tab+sel+key, без веса", () => {
+  it("node gives tab+sel+key, without weight", () => {
     const params = new URLSearchParams(
       serializeUrlState({ screen: "app", tab: 1, selection: { kind: "node", key: "A1" } }),
     );
@@ -20,7 +20,7 @@ describe("serializeUrlState", () => {
     expect(params.get("key")).toBe("A1");
   });
 
-  it("ребро — tab+sel+s+t, вес НЕ кладёт в URL (берётся из data при разборе)", () => {
+  it("edge gives tab+sel+s+t, the weight is NOT put in the URL (taken from data on parse)", () => {
     const params = new URLSearchParams(
       serializeUrlState({ screen: "app", tab: 1, selection: { kind: "edge", s: "A1", t: "A2", w: 2 } }),
     );
@@ -30,7 +30,7 @@ describe("serializeUrlState", () => {
     expect(params.has("w")).toBe(false);
   });
 
-  it("департамент — tab+sel+id", () => {
+  it("department gives tab+sel+id", () => {
     const params = new URLSearchParams(
       serializeUrlState({ screen: "app", tab: 3, selection: { kind: "dept", id: 0 } }),
     );
@@ -41,26 +41,26 @@ describe("serializeUrlState", () => {
 });
 
 describe("parseUrlState", () => {
-  it("пустая строка — меню, ничего не выбрано", async () => {
+  it("an empty string means the menu, nothing is selected", async () => {
     const data = await loadSampleGraphData();
     expect(parseUrlState("", data)).toEqual({ screen: "menu", tab: 1, selection: null });
   });
 
-  it("tab=menu — тоже меню (явная запись, см. features/urlSync.ts)", async () => {
+  it("tab=menu is also the menu (explicit entry, see features/urlSync.ts)", async () => {
     const data = await loadSampleGraphData();
     expect(parseUrlState("?tab=menu", data)).toEqual({ screen: "menu", tab: 1, selection: null });
   });
 
-  it("неизвестный слаг вкладки тоже откатывается на меню — безопаснее показать выбор, чем угадывать по битой ссылке", async () => {
+  it("an unknown tab slug also falls back to the menu, it is safer to show the choice than to guess from a broken link", async () => {
     const data = await loadSampleGraphData();
     expect(parseUrlState("?tab=nope", data)).toEqual({ screen: "menu", tab: 1, selection: null });
-    expect(parseUrlState("?tab=9", data)).toEqual({ screen: "menu", tab: 1, selection: null }); // the old numeric format is not recognized
+    expect(parseUrlState("?tab=9", data)).toEqual({ screen: "menu", tab: 1, selection: null }); // numeric tab ids are not recognized
   });
 
-  it("восстанавливает выбор узла по ключу, который реально есть в data", async () => {
+  it("restores the node selection by a key that really exists in data", async () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];
-    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    if (!author) throw new Error("the fixture must contain at least one author");
 
     expect(parseUrlState(`?tab=persons&sel=node&key=${author.key}`, data)).toEqual({
       screen: "app",
@@ -69,7 +69,7 @@ describe("parseUrlState", () => {
     });
   });
 
-  it("несуществующий ключ узла (устаревшая/битая ссылка) откатывается на null, а не падает", async () => {
+  it("a non-existent node key (stale/broken link) falls back to null instead of failing", async () => {
     const data = await loadSampleGraphData();
     expect(parseUrlState("?tab=persons&sel=node&key=NOPE", data)).toEqual({
       screen: "app",
@@ -78,7 +78,7 @@ describe("parseUrlState", () => {
     });
   });
 
-  it("восстанавливает ребро по s/t в исходном порядке и достаёт вес из data (не из URL)", async () => {
+  it("restores an edge by s/t in the original order and takes the weight from data (not from the URL)", async () => {
     const data = await loadSampleGraphData();
     // A1-A2 in the fixture: w=2.
     expect(parseUrlState("?tab=persons&sel=edge&s=A1&t=A2", data)).toEqual({
@@ -88,7 +88,7 @@ describe("parseUrlState", () => {
     });
   });
 
-  it("восстанавливает ребро и по перевёрнутому s/t — рёбра неориентированы (порядок концов берётся из data, не из URL)", async () => {
+  it("restores an edge by reversed s/t too, edges are undirected (the endpoint order comes from data, not from the URL)", async () => {
     const data = await loadSampleGraphData();
     expect(parseUrlState("?tab=persons&sel=edge&s=A2&t=A1", data)).toEqual({
       screen: "app",
@@ -97,7 +97,7 @@ describe("parseUrlState", () => {
     });
   });
 
-  it("несуществующая пара s/t для ребра откатывается на null", async () => {
+  it("a non-existent s/t pair for an edge falls back to null", async () => {
     const data = await loadSampleGraphData();
     expect(parseUrlState("?tab=persons&sel=edge&s=A1&t=A99", data)).toEqual({
       screen: "app",
@@ -106,7 +106,7 @@ describe("parseUrlState", () => {
     });
   });
 
-  it("восстанавливает выбор департамента по id, который реально есть в data", async () => {
+  it("restores the department selection by an id that really exists in data", async () => {
     const data = await loadSampleGraphData();
     expect(parseUrlState("?tab=pubs&sel=dept&id=0", data)).toEqual({
       screen: "app",
@@ -115,10 +115,10 @@ describe("parseUrlState", () => {
     });
   });
 
-  it("восстанавливает выбор группы репозиториев (org/field) — её id не из departments", async () => {
+  it("restores the repository group selection (org/field), its id is not from departments", async () => {
     const data = await loadSampleGraphData();
     const [dept] = data.departments;
-    if (!dept) throw new Error("в фикстуре нет департаментов");
+    if (!dept) throw new Error("the fixture has no departments");
     const withGroups = {
       ...data,
       repo_groups: [{ ...dept, id: 7, kind: "org" as const, name: "aimclub", name_en: "aimclub" }],
@@ -127,21 +127,21 @@ describe("parseUrlState", () => {
     expect(parseUrlState("?tab=repos&sel=dept&id=7", data).selection).toBeNull();
   });
 
-  it("выбор гранта переживает круговой обход через URL", async () => {
+  it("a grant selection survives a round trip through the URL", async () => {
     const data = await loadSampleGraphData();
     const state = { screen: "app" as const, tab: 3 as const, selection: { kind: "grant" as const, key: "075-15-2021-1349" } };
     expect(parseUrlState(`?${serializeUrlState(state)}`, data)).toEqual(state);
   });
 
-  it("несуществующий id департамента откатывается на null", async () => {
+  it("a non-existent department id falls back to null", async () => {
     const data = await loadSampleGraphData();
     expect(parseUrlState("?tab=pubs&sel=dept&id=999", data)).toEqual({ screen: "app", tab: 3, selection: null });
   });
 
-  it("serializeUrlState -> parseUrlState — круговой обход даёт тот же результат", async () => {
+  it("serializeUrlState -> parseUrlState round trip gives the same result", async () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];
-    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    if (!author) throw new Error("the fixture must contain at least one author");
     // tab 1, not 3: the node must belong to its tab (see the next test).
     const original = {
       screen: "app" as const,
@@ -152,10 +152,10 @@ describe("parseUrlState", () => {
     expect(parseUrlState(`?${serializeUrlState(original)}`, data)).toEqual(original);
   });
 
-  it("узел с другой вкладки (несовпадение kind) откатывается на null — ссылка не может подменить сущность", async () => {
+  it("a node from another tab (kind mismatch) falls back to null, a link cannot substitute the entity", async () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];
-    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    if (!author) throw new Error("the fixture must contain at least one author");
 
     // author.key exists, but not as a pub, so tab=pubs drops it.
     expect(parseUrlState(`?tab=pubs&sel=node&key=${author.key}`, data)).toEqual({
@@ -165,7 +165,7 @@ describe("parseUrlState", () => {
     });
   });
 
-  it("ребро с другой вкладки откатывается на null — ищем только среди рёбер своей вкладки", async () => {
+  it("an edge from another tab falls back to null, only the edges of its own tab are searched", async () => {
     const data = await loadSampleGraphData();
     // A1-A2 is a co-authorship edge, not among pub_edges.
     expect(parseUrlState("?tab=pubs&sel=edge&s=A1&t=A2", data)).toEqual({

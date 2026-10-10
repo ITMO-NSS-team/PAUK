@@ -162,7 +162,7 @@ class EmptyGraphTest(unittest.TestCase):
     """A graph with no ITMO authors is an empty map, not a failure.
 
     cKDTree and fa2_modified both refuse an empty graph, so the layout step
-    raised and the rebuild died on a fresh database or a group nobody had published.
+    must be skipped on a fresh database or a group nobody has published.
     """
 
     def setUp(self):

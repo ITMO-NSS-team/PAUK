@@ -57,7 +57,7 @@ class Settings:
     # over TLS, and the browser stops sending the cookie unencrypted.
     admin_secure_cookie: bool = os.getenv("PAUK_ADMIN_SECURE_COOKIE", "").lower() in ("1", "true", "yes")
     pdf_crawler_url: str = os.getenv("PAUK_PDF_CRAWLER_URL", "")
-    # Official ITMO staff records (personal data — never committed).
+    # Official ITMO staff records (personal data, never committed).
     # None means <static_dir>/russian_names.csv.
     russian_names_file: str | None = os.getenv("PAUK_RUSSIAN_NAMES_FILE") or None
 

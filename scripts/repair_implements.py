@@ -6,18 +6,16 @@ repair removes them.
 
 The rule is subtractive on purpose. A publication id is dropped only when
 *every* link from that publication to this repository was classified and none
-has `is_relevant=true`. Thus both `false` and a classified `null` remove an old
-claim, while `pending` and `failed` preserve it for a safe retry. This matters
-because `publication_ids` has a second source: repositories imported from the
-curated CSV carry ids that no `repo_links` row mentions at all. Recomputing the
-field from `repo_links` would silently erase those curated claims, which is why
-this walks the removals instead of rebuilding the list.
+has `is_relevant=true`. Both `false` and a classified `null` remove an old
+claim, while `pending` and `failed` preserve it for a safe retry. Recomputing
+`publication_ids` from `repo_links` would erase the curated-CSV claims, which
+no `repo_links` row mentions, so this walks the removals instead.
 
-Reads every group at once. A repository can be cited by publications in several
+Reads every group at once: a repository can be cited by publications in several
 groups, so a per-group pass would judge a link absent merely because it belongs
 to another group's rows.
 
-Dry run by default; `--apply` writes, through `upsert_models` — never
+Dry run by default; `--apply` writes, through `upsert_models`, never
 `write_models`, which would set the whole group's membership from a subset.
 """
 
@@ -53,13 +51,10 @@ def repo_id_from_url(url: str) -> str | None:
 def url_to_repo_id(db) -> dict[str, str]:
     """Every URL a stored repository is known by, mapped to its stored id.
 
-    The id cannot be guessed from the cited URL. A repository renamed on
-    GitHub is re-keyed to the canonical `github_{owner}_{name}` the API
-    answers with (`repositories._canonical_repo_id`), while the URL the paper
-    cited still carries the old name — deriving an id from that URL would
-    look up a row that no longer exists, and the stale claim would survive
-    the repair. `cited_urls` is what ties the two together: it keeps every
-    URL that ever produced the row.
+    The id cannot be guessed from the cited URL: a repository renamed on GitHub
+    is re-keyed to the canonical `github_{owner}_{name}`
+    (`repositories._canonical_repo_id`), while the cited URL keeps the old name.
+    `cited_urls` keeps every URL that ever produced the row.
     """
     index: dict[str, str] = {}
     for doc in db[PreparedStore.COLLECTIONS["repositories"]].find({}, {"url": 1, "cited_urls": 1}):
@@ -79,8 +74,8 @@ def _is_classified(link: dict) -> bool:
 def unsupported_claims(db) -> dict[str, set[str]]:
     """Claims whose links were all classified and none confirmed authorship.
 
-    A publication that links the same repository twice — once as a dependency
-    and once as its own code — keeps the claim: one relevant link is enough.
+    A publication that links the same repository twice (once as a dependency, once
+    as its own code) keeps the claim: one relevant link is enough.
     """
     known = url_to_repo_id(db)
     evidence: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
@@ -143,9 +138,9 @@ def main() -> int:
                 doc = collection.find_one({"_id": c["id"]})
                 groups = doc.get("groups") or []
                 # A row belonging to no group has no group to be written back
-                # under, and upsert_models tags whatever group it is given —
-                # a placeholder would land in `groups` as a real tag. Left
-                # alone and reported instead, as harvest_orphan_repos does.
+                # under, and upsert_models tags whatever group it is given, so a
+                # placeholder would land in `groups` as a real tag. Left alone and
+                # reported instead, as harvest_orphan_repos does.
                 if not groups:
                     logger.warning("skipping %s: belongs to no group", doc["_id"])
                     skipped.append(doc["_id"])
@@ -168,11 +163,11 @@ def main() -> int:
         complete = True
     finally:
         client.close()
-        # In the finally, not after it: under --apply the writes to Mongo are
-        # already made by the time anything downstream can fail, and a run that
-        # changed the database while leaving no record of what it changed is
-        # the one case there is no recovering from. `complete` says whether the
-        # walk finished, so a partial report cannot be read as a whole one.
+        # In the finally, not after it: under --apply the Mongo writes are already
+        # made by the time anything downstream can fail, and a run that changed
+        # the database without recording what it changed cannot be recovered.
+        # `complete` says whether the walk finished, so a partial report cannot be
+        # read as a whole one.
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(
             {"created_at": datetime.now(UTC).isoformat(), "applied": args.apply,

@@ -2,35 +2,28 @@
 
 Three stages reach a point where the evidence runs out. Refusing there is
 not a bug: two "A. V. Yulin" with no shared coauthor look identical to the
-rules, and there is nothing to decide on. Until now every refusal went to a
-JSONL journal nobody read back, and the next run refused the same thing
-again.
+rules. A refusal is stored as a question, and a person's answer outlives the
+run that asked. The answer is consulted *before* the algorithm decides
+rather than patched over its result. A fold can be taken apart afterwards
+(`pauk.graph.unmerge`), but only by rebuilding the record from the prepared
+row it was published from, and only for as long as that row is there.
 
-Kept here instead, a refusal becomes a question, and a person's answer
-outlives the run that asked. That is the whole point: the answer is
-consulted *before* the algorithm decides rather than patched over its
-result. A fold can be taken apart afterwards (`pauk.graph.unmerge`), but
-only by rebuilding the record from the prepared row it was published from,
-and only for as long as that row is there.
-
-Four shapes of question, because the three producers refuse in four ways:
+Four shapes of question:
 
 - a **pair** the person merge rules would not fold, answered "same" or
   "different";
 - a **group** those rules refused whole, because it spans two ORCIDs or two
-  addresses. Seven "Andrey Bogdanov" under two addresses are not seven
-  people and not one, so the group cannot be answered as a whole. It is
-  answered by naming which of its records are one person, and `record_split`
-  turns that into the pair answers the rules read;
-- a **github account** the matcher could not place, answered the same two
-  ways: this is them, or it is not;
+  addresses. It is answered by naming which of its records are one person,
+  and `record_split` turns that into the pair answers the rules read;
+- a **github account** the matcher could not place, answered "same" (this is
+  them) or "different";
 - a **catalog record**, where the staff directory holds several people under
-  one name. Not a yes or no — both namesakes are plausible and exactly one
-  is right — so `record_choice` names the record instead of taking a side.
+  one name. Both namesakes are plausible and exactly one is right, so
+  `record_choice` names the record instead of taking a side.
 
-Storage sits beside the prepared rows rather than in `pauk/graph/`, unlike
-`graph_overrides`: these are written long before anything is published, and
-`pauk/pipeline/` imports nothing from the graph layer.
+Storage sits beside the prepared rows rather than in `pauk/graph/`: these are
+written long before anything is published, and `pauk/pipeline/` imports
+nothing from the graph layer.
 """
 
 from __future__ import annotations
@@ -106,7 +99,7 @@ def members_of(row: dict) -> list[str]:
 
     Not always people: a catalog question pairs a person with directory
     rows, and a github question with an account. Callers should not have to
-    know which shape they are holding, so the four are read in one place —
+    know which shape they are holding, so the four are read in one place,
     together with `kind_of` and `names_of` just below, which split on the
     same fields.
     """
@@ -171,7 +164,7 @@ def record_held(db: Database, report: list[dict], source: str = STAGE) -> int:
 
     Args:
         db: Mongo database.
-        report: Rows any of the producers held back — `plan_person_merges`,
+        report: Rows any of the producers held back: `plan_person_merges`,
             the github matcher, or the catalog check. See `kind_of` for the
             shapes.
         source: Which pass asked, `STAGE` or `GRAPH`.
@@ -207,8 +200,8 @@ def record_disputed(db: Database, report: list[dict]) -> int:
 
     Somebody said two records are two people, or that an account is not
     theirs; the evidence has moved since, and a rule that had nothing to
-    stand on now fires. The answer stays in force — that is the point of
-    storing it — but the disagreement is worth a person's eye, exactly like
+    stand on now fires. The answer stays in force, which is the point of
+    storing it, but the disagreement is worth a person's eye, exactly like
     a source that starts contradicting a hand edit (see
     `pauk.graph.overrides`).
 
@@ -243,7 +236,7 @@ def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
         ReviewError: Unknown verdict, or "same" on a group. A group is
             refused because its members disagree about an identity field,
             so "these are all one person" would be a decision to ignore
-            two different ORCIDs — which the merge itself would refuse.
+            two different ORCIDs, which the merge itself would refuse.
     """
     if verdict not in VERDICTS:
         raise ReviewError(f"unknown verdict: {verdict!r} (known: {', '.join(VERDICTS)})")
@@ -296,7 +289,7 @@ def record_split(db: Database, members: list[str], same: list[str],
     the rest are somebody else.
 
     Written as ordinary pair answers, because that is what the rules read.
-    Saying only "these two are one person" is not enough on its own — the
+    Saying only "these two are one person" is not enough on its own: the
     rules would rebuild the same group through the members left over, and
     refuse it again for the same reason. So the pairs across the split are
     recorded as "different" too, and the group's own question is answered
@@ -311,7 +304,7 @@ def record_split(db: Database, members: list[str], same: list[str],
 
     Raises:
         ReviewError: The subset is not part of the group, is smaller than a
-            pair, or is the whole group — which is the answer the conflict
+            pair, or is the whole group, which is the answer the conflict
             rules out.
     """
     members = sorted(set(members))
@@ -356,9 +349,9 @@ def withdraw(db: Database, kind: str, members: list[str]) -> bool:
     would only mean the next run asks it again from scratch.
 
     Unless no run ever asked it. A split writes answers about pairs the
-    rules never held, and withdrawing one left a row in the queue with no
-    reason and nothing to decide on. A held question always says why it was
-    held; that is what tells the two apart.
+    rules never held, and keeping one of those after withdrawal would leave
+    a row in the queue with no reason and nothing to decide on. A held
+    question always says why it was held; that is what tells the two apart.
 
     Raises:
         ReviewError: The answer has already folded two records into one.
@@ -389,9 +382,9 @@ def mark_applied_merges(db: Database, merged_into: dict[str, str]) -> int:
     answers are matched against that map instead: a "same" whose two ids
     now land on one record has been applied, whoever applied it.
 
-    Without this the queue kept promising "will merge on the next run" for
-    pairs the last run had already merged, and offered to take the answer
-    back — which would have left the records folded and the question open.
+    Without this the queue would keep promising "will merge on the next run"
+    for pairs the last run had already merged, and offer to take the answer
+    back, which would leave the records folded and the question open.
 
     Args:
         merged_into: Folded-away id to the record that survived. What
@@ -427,7 +420,7 @@ def record_undo(db: Database, kind: str, members: list[str],
     Both halves of the undo are needed and neither is enough alone. Clearing
     `applied_at` says the graph no longer holds one node; the verdict has to
     flip because "same" is exactly what would fold the pair again on the
-    next run — the answer would undo the undo.
+    next run, and the answer would undo the undo.
 
     Raises:
         ReviewError: The question was never folded, so there is nothing to
@@ -462,7 +455,7 @@ def record_choice(db: Database, person: str, records: list[str], chosen: str | N
 
     Not a verdict like the others, because the question is not yes or no:
     two namesakes are both plausible and exactly one is right. The choice
-    rides along with the verdict — "same" plus the record chosen, or
+    rides along with the verdict: "same" plus the record chosen, or
     "different" when the catalog does not hold this person at all.
 
     Raises:
@@ -512,9 +505,9 @@ def github_decisions(db: Database, aliases: dict[str, str] | None = None
     """Answers about accounts, keyed by the login and person they are about.
 
     Read off `members`, not off the evidence. An answer can be given before
-    the question exists — from the CLI, or about an account this run has not
-    reached yet — and such a document carries no evidence at all, so keying
-    on it lost the answer exactly when it mattered.
+    the question exists (from the CLI, or about an account this run has not
+    reached yet), and such a document carries no evidence at all, so keying
+    on it would lose the answer exactly when it mattered.
 
     Args:
         aliases: Merged-away id to the id that survived, as for `decisions`.
@@ -543,9 +536,9 @@ def decisions(db: Database, aliases: dict[str, str] | None = None,
             this they would quietly stop applying.
         kinds: Which questions count as answers here. The default leaves
             out GITHUB, whose members are an account and a person rather
-            than two records of one researcher — the merge rules would look
-            such a pair up and never find it, but the pollution is the kind
-            of thing that goes unnoticed until it does not.
+            than two records of one researcher; the merge rules would look
+            such a pair up and never find it, and the stray entries would go
+            unnoticed.
 
     Returns:
         Members to verdict. Members are a frozenset, so the caller does not

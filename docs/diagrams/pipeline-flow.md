@@ -1,101 +1,131 @@
-# Поток данных пайплайна
+# Pipeline data flow
 
-Полный путь от внешних API до графа и статики GUI, по стадиям `pauk`
-(порядок enrichment-стадий — `ALL_STAGES` в
+The full path from external APIs to the graph and the GUI static data, by `pauk`
+stage (the order of the enrichment stages is `ALL_STAGES` in
 `pauk/pipeline/stages/__init__.py`).
 
 ```mermaid
 flowchart TD
-    subgraph EXT["Внешние источники"]
+    subgraph EXT["External sources"]
         OA["OpenAlex API"]
         CR["Crossref API"]
         ORC["ORCID API"]
         GH["GitHub API"]
         LLM["OpenRouter LLM"]
-        PDFC["PDF-Crawler-Service<br/>(опционально, PAUK_PDF_CRAWLER_URL)"]
+        HOME["Author homepages"]
+        PDFC["PDF-Crawler-Service<br/>(optional, PAUK_PDF_CRAWLER_URL)"]
     end
 
     subgraph MONGO["MongoDB"]
-        RAW[("raw<br/>openalex_works, openalex_authors,<br/>crossref, orcid, github")]
+        RAW[("raw<br/>openalex_works, openalex_authors,<br/>crossref, orcid, github, github_user")]
         PUB[("publications")]
         PER[("persons")]
-        DEP[("departments")]
+        DEP[("departments, organizations")]
         REPO[("repositories")]
         GHP[("github_profiles")]
         RL[("repo_links")]
+        REV[("review_pairs")]
     end
 
-    STATIC[("data/static/departments_catalog.json")]
-    AUDIT[("data/audit/&lt;group&gt;/dedup_candidates.jsonl<br/>журнал решений dedup")]
+    STATIC[("data/static: departments_catalog.json,<br/>itmo_github_orgs.json, russian_names.csv")]
+    PDFS[("data/pdf/&lt;publication_id&gt;.pdf")]
+    AUDIT[("data/audit/&lt;group&gt;/<br/>dedup_candidates.jsonl, github_matches.jsonl")]
     NEO[("Neo4j")]
-    CACHE[("data/cache/graph_snapshot.json")]
+    CACHE[("data/cache/graph_snapshot_&lt;date&gt;.json")]
     WEB[("data/gui: graph-data.json + *-detail.json")]
 
-    CLI_COLLECT["pauk collect"] -->|"GET works по ROR ИТМО / id"| OA
+    CLI_COLLECT["pauk collect"] -->|"GET works by ITMO ROR / id"| OA
     OA -->|"append: openalex_works"| RAW
 
-    CLI_NORM["pauk normalize"] -->|"читает openalex_works своей группы<br/>+ get_models по id для кросс-групповых ссылок"| RAW
-    CLI_NORM -->|"upsert"| PUB
-    CLI_NORM -->|"upsert"| PER
+    CLI_NORM["pauk normalize"] -->|"reads the group's openalex_works<br/>+ get_models by id for cross-group references"| RAW
+    CLI_NORM -->|"write"| PUB
+    CLI_NORM -->|"write"| PER
 
-    subgraph ENRICH["pauk enrich — стадии по порядку"]
+    subgraph ENRICH["pauk enrich: stages in order"]
         direction TB
-        S2["1. persons<br/>аффилиации, ORCID, профили"]
-        S3["2. departments<br/>сопоставление по каталогу"]
-        S4["3. code_links<br/>ссылки на код из PDF / абстракта"]
-        S5["4. link_relevance<br/>LLM-классификация ссылок"]
-        S6["5. repositories<br/>метаданные GitHub"]
-        S7["6. dedup<br/>локальное слияние дублей"]
-        S2 --> S3 --> S4 --> S5 --> S6 --> S7
+        S1["1. persons<br/>affiliations, ORCID, profiles"]
+        S2["2. departments<br/>catalog matching"]
+        S3["3. code_links<br/>code links from PDF / abstract"]
+        S4["4. link_relevance<br/>LLM classification of links"]
+        S5["5. emails<br/>addresses from text and homepages"]
+        S6["6. repositories<br/>GitHub metadata"]
+        S7["7. repo_people<br/>owner and contributors"]
+        S8["8. dedup<br/>local merge of duplicates"]
+        S9["9. github_match<br/>account to author matching"]
+        S10["10. author_names<br/>name parts in ru and en"]
+        S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8 --> S9 --> S10
     end
 
+    PER <--> S1
+    S1 -->|"GET author"| OA
+    S1 -->|"GET works by DOI"| CR
+    S1 -->|"GET record"| ORC
+    S1 -->|"append: crossref, openalex_authors,<br/>orcid"| RAW
+    S2 --> STATIC
+    DEP <--> S2
     PER <--> S2
-    S2 -->|"GET author"| OA
-    S2 -->|"GET works по DOI"| CR
-    S2 -->|"GET record"| ORC
-    S2 -->|"append: crossref, openalex_authors,<br/>orcid"| RAW
-    S3 --> STATIC
-    DEP <--> S3
-    PER <--> S3
+    PUB <--> S2
     PUB <--> S3
-    PUB <--> S4
+    RL <--> S3
+    S3 -->|"download a PDF if direct candidates gave none"| PDFC
+    S3 <--> PDFS
     RL <--> S4
-    S4 -->|"скачать PDF, если прямые кандидаты не дали PDF"| PDFC
-    RL <--> S5
-    S5 -->|"классифицировать ссылку"| LLM
+    S4 -->|"classify a link"| LLM
+    PUB <--> S5
+    PER <--> S5
+    S5 -->|"fetch the page"| HOME
     REPO <--> S6
     GHP <--> S6
-    S6 -->|"GET repo, GET contributors"| GH
-    S6 -->|"append: github"| RAW
-    PUB <--> S7
-    PER <--> S7
+    RL <--> S6
+    S6 -->|"GET repo, GET readme,<br/>GET owner organization"| GH
+    S6 -->|"append: github, github_user"| RAW
     REPO <--> S7
-    RL <--> S7
-    S7 -->|"читает openalex_authors<br/>(доверенный ORCID)"| RAW
-    S7 -->|"AtomicWriter"| AUDIT
+    GHP <--> S7
+    S7 -->|"GET contributors, commits, users"| GH
+    S7 -->|"append: github_user"| RAW
+    PUB <--> S8
+    PER <--> S8
+    REPO <--> S8
+    RL <--> S8
+    S8 -->|"reads openalex_works,<br/>openalex_authors (trusted ORCID)"| RAW
+    S8 -->|"person resolution"| LLM
+    S8 -->|"AtomicWriter"| AUDIT
+    S8 -->|"held pairs"| REV
+    PER <--> S9
+    GHP <--> S9
+    REPO <--> S9
+    S9 -->|"AtomicWriter"| AUDIT
+    PER <--> S10
+    S10 -->|"split the name"| LLM
+    S10 --> STATIC
 
-    CLI_PUB["pauk publish graph"] -->|"read_rows, все 6 коллекций своей группы"| PUB
+    CLI_PUB["pauk publish graph"] -->|"read_rows, all 7 collections of the group"| PUB
     CLI_PUB --> PER
     CLI_PUB --> DEP
     CLI_PUB --> REPO
     CLI_PUB --> GHP
     CLI_PUB --> RL
-    CLI_PUB -->|"MERGE: сначала узлы, потом связи"| NEO
+    CLI_PUB -->|"MERGE: nodes first, then relationships"| NEO
 
-    CLI_DEDUP["pauk dedup graph<br/>(по требованию, не часть run)"] -->|"Cypher, весь граф сразу"| NEO
-    CLI_DEDUP -->|"кросс-групповой скан<br/>openalex_authors"| RAW
+    CLI_DEDUP["pauk dedup graph<br/>(on demand, not part of run)"] -->|"Cypher, the whole graph at once"| NEO
+    CLI_DEDUP -->|"cross-group scan<br/>openalex_authors"| RAW
+    CLI_DEDUP -->|"journal"| CACHE_DIR[("data/cache/<br/>dedup_candidates_graph.jsonl")]
+    CLI_DEDUP -->|"held pairs"| REV
 
     CLI_CACHE["pauk cache export"] --> NEO
     CLI_CACHE --> CACHE
-    GUIGEN["pauk.gui.graph_builder"] --> CACHE
+    GUIGEN["pauk gui build"] --> CACHE
     GUIGEN --> WEB
 ```
 
-`pauk run` = `collect → normalize → enrich` (все стадии) одним вызовом,
-но **не включает** `publish graph` — загрузка в общую Neo4j остаётся
-отдельным ручным шагом. `dedup` (Cypher, весь граф) тоже отдельная
-команда, не часть `run`.
+`pauk run` is `collect`, `normalize`, `enrich` (all default stages) in one call,
+but it does **not** include `publish graph`: loading into the shared Neo4j stays
+a separate manual step. `dedup graph` (Cypher, the whole graph) is likewise a
+separate command, not part of `run`. The optional `social_graph` stage is not in
+the diagram: it starts only by name (see
+[`../architecture/pipeline/social-graph.md`](../architecture/pipeline/social-graph.md)).
 
-Стрелки `<-->` у стадий `enrich` — «читает и переписывает свою группу
-целиком» (`read_rows`/`write_rows`, см. [`../architecture/storage.md`](../architecture/storage.md)),
-не построчный поток.
+The `<-->` arrows at the `enrich` stages mean "reads and rewrites its group as a
+whole" (`read_rows` / `write_rows`, see
+[`../architecture/storage.md`](../architecture/storage.md)), not a row-by-row
+stream.

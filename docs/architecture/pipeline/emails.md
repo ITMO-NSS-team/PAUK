@@ -1,52 +1,51 @@
-# `emails` — стейдж
+# `emails` stage
 
-**Что здесь:** откуда берутся адреса авторов и почему адрес со страницы
-достаётся не всякому.
+**What this covers:** where author addresses come from, and why an address from
+a page is not assigned to just anyone.
 
-**Какие файлы задействует:** `pauk/pipeline/stages/emails.py`.
+**Files involved:** `pauk/pipeline/stages/emails.py`.
 
-Читает полный текст публикаций, скачанный `code_links`, и личные
-страницы, указанные авторами в ORCID. Заполняет `Person.email` и
-`Person.emails`. Идёт до `github_match`: найденный адрес — самый сильный
-сигнал, по которому опознаётся аккаунт.
+Reads the full text of publications downloaded by `code_links`, and the
+personal pages authors listed in ORCID. Fills `Person.email` and
+`Person.emails`. Runs before `github_match`: a found address is the strongest
+signal for recognizing an account.
 
-## Адрес из статьи
+## Address from a paper
 
-В тексте статьи адрес стоит рядом со списком авторов, и один адрес там
-почти никогда не один. Разбираются три формы: обычная, `mailto:`-ссылка
-и групповая запись вида `{ivanov, petrov}@itmo.ru`, которую издательства
-используют, чтобы не печатать общий домен трижды.
+In a paper's text an address sits next to the author list, and there is almost
+never just one. Three forms are parsed: plain, a `mailto:` link, and the group
+form `{ivanov, petrov}@itmo.ru` that publishers use to avoid printing a shared
+domain three times.
 
-## Чей это адрес
+## Whose address it is
 
-Адрес приписывается автору только если в локальной части (до собаки)
-есть его фамилия. Без этой проверки первый же адрес в тексте достался бы
-всем авторам статьи сразу. Если фамилия нашлась у двоих — у статьи
-однофамильцы, и адрес не называет однозначно никого; такой адрес не
-берётся вовсе.
+An address is assigned to an author only if the local part (before the @)
+contains their surname. Without this check the first address in the text would
+go to every author of the paper. If the surname is found for two people, the
+paper has namesakes and the address names neither unambiguously; such an
+address is not taken at all.
 
-Фамилия здесь — последнее слово латинского написания имени, достаточно
-длинное, чтобы не быть инициалом (`author_surnames`). Та же функция
-используется матчером, чтобы обе стадии читали имя одинаково.
+The surname here is the last word of the Latin spelling of the name, long
+enough not to be an initial (`author_surnames`). The matcher uses the same
+function, so both stages read a name the same way.
 
-## Адрес со страницы автора
+## Address from an author's page
 
-Для людей из ИТМО, у которых адреса так и нет, скачивается страница,
-которую автор сам указал в ORCID (`Person.homepage`). Берутся
-`mailto`-ссылки и текст, с которого снята обфускация: `name [at] itmo
-[dot] ru`, `&#64;`, пробелы вокруг собаки — так адрес прячут от
-спам-роботов на страницах лабораторий.
+For ITMO people who still have no address, the stage downloads the page the
+author listed in ORCID (`Person.homepage`). It takes `mailto` links and text
+with obfuscation removed: `name [at] itmo [dot] ru`, `&#64;`, spaces around
+the at sign, which is how addresses are hidden from spam bots on lab pages.
 
-Проверка фамилии здесь та же и по той же причине: страница лаборатории
-перечисляет всю группу, и без неё сотруднику достался бы адрес
-руководителя.
+The surname check is the same, for the same reason: a lab page lists the whole
+group, and without it an employee would get the head's address.
 
-Ошибки скачивания молчаливые: страница — источник-довесок, мёртвая
-ссылка не должна ронять прогон.
+Download errors are silent: the page is a supplementary source, and a dead link
+must not fail the run.
 
-## Какой адрес показывать
+## Which address to show
 
-`Person.emails` — все известные адреса, по ним матчер опознаёт аккаунт.
-`Person.email` — один, для карточки: институциональный важнее личного,
-при равенстве берётся короткий (`pick_email`). Адреса вида
-`...@users.noreply.github.com` не адреса вообще и отбрасываются.
+`Person.emails` holds all known addresses, and the matcher recognizes an
+account by them. `Person.email` is a single one, for the card: an institutional
+address beats a personal one, and on a tie the shorter wins (`pick_email`).
+Addresses like `...@users.noreply.github.com` are not real addresses and are
+dropped.

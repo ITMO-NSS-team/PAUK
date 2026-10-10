@@ -12,7 +12,7 @@ class GitHubProfile(BaseModel):
     The fields below the profile's own are what an author can be matched
     against: an email identifies a person outright, a name is evidence, and
     company or location corroborate. Emails and commit names come from the
-    git identity recorded in commits — the profile page itself usually
+    git identity recorded in commits; the profile page itself usually
     hides the address.
     """
 
@@ -27,11 +27,9 @@ class GitHubProfile(BaseModel):
     emails: list[str] = Field(default_factory=list)
     commit_names: list[str] = Field(default_factory=list)
     repos: list[str] = Field(default_factory=list)
-    # Whether GET /users/{login} has actually answered for this account. The
-    # repositories stage writes a stub profile from the nested owner object,
-    # which carries a login, a URL and a type and nothing else; without a
-    # marker of its own that stub is indistinguishable from a fetched profile
-    # whose optional fields GitHub happens to leave empty.
+    # Whether GET /users/{login} has answered for this account. The repositories
+    # stage writes a stub from the nested owner object (login, URL, type only);
+    # without this marker it looks like a fetched profile with empty optional fields.
     profile_fetched: bool = False
 
 
@@ -86,12 +84,11 @@ class Repository(BaseModel):
     id: str
     name: str
     url: str
-    # GitHub's own numeric id: stable across renames and owner transfers,
-    # which is what lets the dedup stage recognise rows created before a
-    # rename as the same repository.
+    # GitHub's numeric id: stable across renames and owner transfers, so dedup
+    # can recognise rows created before a rename as the same repository.
     github_id: int | None = None
     # URLs this repo was cited by before canonicalization (renames, case
-    # variants) — lets the graph loader resolve old links to this node.
+    # variants); lets the graph loader resolve old links to this node.
     cited_urls: list[str] = Field(default_factory=list)
     merged_ids: list[str] = Field(default_factory=list)
     description: str | None = None
@@ -101,7 +98,7 @@ class Repository(BaseModel):
     last_updated: date | None = None
     license: str | None = None
     # Everything below arrives in the same GET /repos/{owner}/{name} body as
-    # the fields above — no extra request, no extra rate limit.
+    # the fields above, so it costs no extra request.
     topics: list[str] = Field(default_factory=list)
     language: str | None = None
     forks_num: int | None = None

@@ -1,89 +1,84 @@
-# `repo_people` — стейдж
+# `repo_people` stage
 
-**Что здесь:** как собираются люди за репозиторием и почему это отдельный
-стейдж, а не часть `repositories`.
+**What this covers:** how the people behind a repository are collected, and why
+this is a separate stage rather than part of `repositories`.
 
-**Какие файлы задействует:** `pauk/pipeline/stages/repo_people.py`.
+**Files involved:** `pauk/pipeline/stages/repo_people.py`.
 
-Владелец и все, кому засчитаны коммиты, — кандидаты, против которых потом
-сопоставляют авторов ([github-match.md](github-match.md)). Логика сбора та
-же, что была раньше внутри `repositories`: `contributors` + `COMMIT_PAGES`
-страниц коммитов, из них git-идентичности (`emails`, `commit_names`), боты
-и организации отсеиваются.
+The owner and everyone credited with commits are candidates against whom
+authors are later matched ([github-match.md](github-match.md)). The stage reads
+`contributors` and `COMMIT_PAGES` pages of commits, extracts git identities
+(`emails`, `commit_names`) from them, and filters out bots and organizations.
 
-## Почему отдельный стейдж
+## Why a separate stage
 
-Обе работы делили один `processing`-статус, поэтому обновить метаданные
-репозитория означало заново обойти всех контрибьюторов и перезапросить
-каждый профиль. На данных за август 2026 это 6143 запроса из 6864, и
-часовая квота GitHub уходила целиком ради полей, которые приезжают в теле
-ответа по самому репозиторию бесплатно.
+Both jobs used to share one `processing` status, so refreshing a repository's
+metadata meant walking all contributors again and re-requesting every profile.
+In a measured run that was 6143 requests out of 6864, and the hourly GitHub
+quota was spent on fields that arrive free in the repository response body.
 
-Флаг `--skip-accounts` эту проблему не закрывает: статус остался бы один,
-строка после прогона утверждала бы `repositories: completed`, имея данные о
-людях от предыдущего раза, и ни человек, ни код не смогли бы отличить
-свежую половину от старой. Два стейджа дают два статуса, и каждый устаревает
-сам по себе.
+The `--skip-accounts` flag would not fix this: the status would stay single,
+the row would claim `repositories: completed` while holding people data from
+the previous run, and neither a person nor the code could tell the fresh half
+from the stale one. Two stages give two statuses, and each goes stale on its
+own.
 
-Замер на `aimclub/FEDOT` (40 контрибьюторов) после разделения:
+A measurement on `aimclub/FEDOT` (40 contributors):
 
-| прогон | запросов |
+| run | requests |
 |---|---:|
 | `enrich repositories --force` | 2 |
 | `enrich repo_people --force` | 44 |
-| `enrich repo_people` (строка уже `completed`) | 0 |
+| `enrich repo_people` (row already `completed`) | 0 |
 
-## Тип владельца читается из профиля
+## The owner's type comes from the profile
 
-Решение «человек или организация» для владельца берётся из уже сохранённого
-`GitHubProfile.type`, который проставил `repositories`. Тип там лежит в
-нижнем регистре, поэтому `_is_person` сравнивает регистронезависимо — у
-контрибьюторов тот же признак приходит из API как `User`.
+Whether the owner is a person or an organization is read from the already
+stored `GitHubProfile.type`, which `repositories` set. The type is lowercase
+there, so `_is_person` compares case-insensitively; for contributors the same
+attribute arrives from the API as `User`.
 
-## Профиль не перезапрашивается, если уже заполнен
+## A filled profile is not requested again
 
-`GET /users/{login}` идёт только для логина, для которого этот запрос ещё не
-отвечал (признак — `profile_fetched` на профиле), либо при `--force`. Судить
-по `html_url` было нельзя: стадия `repositories` сама пишет это поле в
-заготовку профиля владельца, так что гейт закрывался на данных, которые
-пайплайн только что и придумал, и владелец репозитория не запрашивался
-никогда. Содержимое полей больше не заменяет `profile_fetched`: имя и почта
-могут происходить из коммитов после неудачного запроса профиля. Старые
-профили без маркера будут запрошены при следующей обработке репозитория. Аккаунт,
-встреченный на втором репозитории, ничего нового из этого запроса не узнаёт.
-В августовском прогоне все 5059 профилей уже существовали, и все 5188
-вызовов были потрачены впустую; маркер позволяет избежать этих запросов
-после подтверждённой загрузки профиля.
+`GET /users/{login}` is made only for a login that has not yet had this request
+answered (marked by `profile_fetched` on the profile), or under `--force`.
+Judging by `html_url` was not possible: the `repositories` stage writes that
+field into the owner's profile stub itself, so the gate would close on data the
+pipeline had just made up and the repository owner would never be requested.
+The content of the fields does not replace `profile_fetched`: name and e-mail
+may come from commits after a failed profile request. Old profiles without the
+marker are requested the next time their repository is processed. An account
+seen on a second repository learns nothing new from this request, so the marker
+avoids those calls once a profile load is confirmed.
 
-## Ошибка — `FAILED` только у этого стейджа
+## An error is `FAILED` for this stage only
 
-GitHub отвечает `403` на репозитории, которые ещё не проанализировал.
-Раньше это молча глоталось, чтобы не потерять уже полученные метаданные;
-теперь глотать нечего — метаданные собирает другой стейдж, и его статус
-не меняется. Неудачный сбор людей записывается как
-`processing["repo_people"] = FAILED` с текстом причины.
+GitHub answers `403` for repositories it has not yet analyzed. A failed people
+collection is recorded as `processing["repo_people"] = FAILED` with the reason;
+the metadata stage's status is unaffected, since another stage collects the
+metadata.
 
-Это относится и к `GET /users/{login}`: исключение не подменяется пустым
-ответом, а доходит до обработчика репозитория. Уже полученные профили
-сохраняются; следующий обычный запуск повторяет неудачную обработку и
-пропускает профили с `profile_fetched=true`. При неудачном обновлении
-старый профиль не затирается. Ранее ошибочно выставленные `completed`
-автоматически не сбрасываются: для их исправления нужен отдельный повтор.
+This also applies to `GET /users/{login}`: an exception is not replaced by an
+empty response but reaches the repository handler. Profiles already received
+are saved; the next regular run retries the failed processing and skips
+profiles with `profile_fetched=true`. A failed refresh does not overwrite the
+old profile. Rows wrongly marked `completed` earlier are not reset
+automatically; fixing them needs a separate re-run.
 
-## Что значит здесь прогон, ограниченный публикациями
+## What a publication-scoped run means here
 
-`in_scope` сам по себе на репозитории не действует: селекция, наведённая на
-публикации, — это селекция по *другой* сущности, и он пропускает всё
-(см. [overview.md](overview.md)). Стейдж решает за себя: `_repo_in_scope`
-при `--entity publications` (и `repo_links`) оставляет только строки, чей
-`publication_ids` пересекается с выбранными. Без этого
-`enrich repo_people --input pubs.txt --entity publications` обходил бы все
-ожидающие репозитории группы и тратил квоту GitHub на те, о которых не
-просили. `RepositoriesStage` берёт скоуп со строки `RepoLink`, с которой
-работает; здесь `Repository` уже существует и несёт публикации сам.
+`in_scope` alone does nothing for repositories: a selection aimed at
+publications is a selection on a *different* entity, and it lets everything
+through (see [overview.md](overview.md)). The stage decides for itself:
+`_repo_in_scope` with `--entity publications` (and `repo_links`) keeps only rows
+whose `publication_ids` intersect the selected ones. Without it,
+`enrich repo_people --input pubs.txt --entity publications` would walk every
+pending repository of the group and spend GitHub quota on ones nobody asked
+about. `RepositoriesStage` takes its scope from the `RepoLink` row it works
+on; here the `Repository` already exists and carries its publications itself.
 
-## Запись
+## Writing
 
-`upsert_models`, не `write_models`: стейдж меняет в строке репозитория
-только `contributors` и свой `processing`, и не должен переопределять
-состав группы (см. [../storage.md](../storage.md)).
+`upsert_models`, not `write_models`: the stage changes only `contributors` and
+its own `processing` in the repository row, and must not redefine the group's
+membership (see [../storage.md](../storage.md)).

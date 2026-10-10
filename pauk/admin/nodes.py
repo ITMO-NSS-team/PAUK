@@ -1,15 +1,13 @@
 """Node screens: search, one node's page, editing it, removing it.
 
-Every write here repeats what `pauk admin node set|delete` does, in the
-same order and for the same reason: the graph write goes first, because
-it is the step that can be refused, and the decision is recorded only
-once the write succeeded. A decision stored for an edit that never
-happened would be applied by the next publish — quietly making a change
-the person was just told was rejected.
+Every write repeats what `pauk admin node set|delete` does, in the same order:
+the graph write goes first because it can be refused, and the decision is
+recorded only after it succeeds, so a rejected edit is never reapplied by the
+next publish.
 
-Nothing in this module talks to the driver directly. Labels and field
-names are interpolated into Cypher, so they can only come from the
-whitelists in `pauk.graph.mutations`, never from the request.
+Nothing here talks to the driver directly. Labels and field names are
+interpolated into Cypher, so they come only from the whitelists in
+`pauk.graph.mutations`, never from the request.
 """
 
 from __future__ import annotations
@@ -82,9 +80,8 @@ def _worded(relationships: list[dict], label: str) -> list[dict]:
 def _parse_new_value(raw: str):
     """A value for a node that does not exist yet.
 
-    Nothing in the graph to take a type from, so JSON decides: 42 is a
-    number, true is a boolean, ["a"] is a list, and anything JSON refuses
-    is plain text. Same rule as `pauk admin node create --set`.
+    With no stored type to go by, JSON decides (42 is a number, `["a"]` a list),
+    and anything JSON refuses is text. Same rule as `pauk admin node create --set`.
     """
     text = raw.strip()
     if not text:
@@ -98,11 +95,8 @@ def _parse_new_value(raw: str):
 def _node_url(label: str, node_id: str, query: str = "") -> str:
     """The panel's address for one node.
 
-    A LinkCandidate is identified by the address it was found at, so its
-    id can hold "?" and "#" of its own. Left as they are, the browser
-    reads them as the start of a query or a fragment and throws away the
-    rest of the id. Slashes are left alone: the routes match the id with
-    `{node_id:path}`, which takes them as part of it.
+    A LinkCandidate id is a URL and may hold "?" and "#", which are escaped.
+    Slashes stay, since the routes match the id with `{node_id:path}`.
     """
     address = f"/nodes/{label}/{quote(node_id, safe='/')}"
     return f"{address}?{query}" if query else address
@@ -111,23 +105,16 @@ def _node_url(label: str, node_id: str, query: str = "") -> str:
 def _record(undo, write) -> None:
     """Write the decision that protects a change already made to the graph.
 
-    Neo4j and Mongo are two databases with no transaction across them, so
-    the decision can fail after the graph has already moved. Left there,
-    the next publish takes the change back without a word: an edit reverts,
-    a deleted record returns, a created one disappears.
-
-    So the graph is put back instead. The undo lands in the audit feed
-    beside the change, which is the only way anybody later sees what
-    happened.
+    Neo4j and Mongo share no transaction, so the decision can fail after the
+    graph has moved, and the next publish would silently revert the change.
+    The graph is put back instead, and the undo lands in the audit feed.
 
     Args:
         undo: Puts the graph back the way it was.
         write: Records the decision.
 
     Raises:
-        HTTPException: 503. The wording says which of the two happened,
-            because "saved" and "saved but unprotected" need different
-            things from the person reading it.
+        HTTPException: 503. The wording says whether the graph was restored.
     """
     try:
         write()
@@ -156,20 +143,10 @@ def _known_label(label: str) -> str:
 def _parse_value(raw: str, current: object = None):
     """Turn a form field into what should be stored.
 
-    A browser submits every box on the form, including the ones nobody
-    touched, and all of them arrive as text. Without a type to guide it,
-    `stars_num` came back as "42" — different from 42, so it counted as an
-    edit and was written to the graph as a string. The same held for
-    booleans, years, counts and lists.
-
-    The type comes from what the field already holds, which is what the
-    pipeline put there. A field that is empty in the graph has nothing to
-    go by and stays text; numbers and lists are not invented out of a
-    string that merely looks like one.
-
-    An empty box means "clear this field": None rather than "", because
-    the pipeline writes None for what it did not find and a hand-cleared
-    field should look the same to everything downstream.
+    Browsers submit every box as text, so the type comes from what the field
+    already holds (`"42"` would otherwise differ from 42 and count as an edit).
+    An empty field in the graph stays text. An empty box means "clear this
+    field" and yields None, as the pipeline writes for what it did not find.
     """
     text = raw.strip()
     if not text:
@@ -201,10 +178,8 @@ def search(request: Request, label: str, user: CurrentUser, session: Session,
            graph: Graph, q: str = "", page: int = 1):
     """Nodes of one label, a page at a time.
 
-    Whether there is a page after this one is asked as its own one-row
-    question. The graph has no cheap count of what a search matches, and
-    the "one row more than a page" trick does not work here: the page cap
-    lives in the mutation layer and would clip the extra row away.
+    Whether a next page exists is a separate one-row query: the page cap lives
+    in the mutation layer, so fetching one extra row would be clipped.
     """
     _known_label(label)
     page = max(page, 1)
@@ -221,11 +196,8 @@ def search(request: Request, label: str, user: CurrentUser, session: Session,
 def create_form(request: Request, label: str, user: Editor, session: Session):
     """The form for a node the pipeline does not know about.
 
-    Declared before the node page: otherwise `/nodes/Person/new` matches
-    that route and goes looking for a node whose id is "new". The node
-    routes take `{node_id:path}` because a LinkCandidate's id is a URL —
-    slashes and all — and a plain segment would cut it into pieces and
-    answer 404.
+    Declared before the node page, or `/nodes/Person/new` would match it as a
+    node with id "new".
     """
     _known_label(label)
     return templates.TemplateResponse(request, "create.html", {
@@ -238,10 +210,8 @@ async def create(request: Request, label: str, user: Editor,
                  db: Db, graph: Graph, _: CsrfChecked, __: StoresReady):
     """Add a node by hand.
 
-    No override is recorded: the loader only touches ids it has rows for,
-    so an id invented here is never overwritten and needs nothing to
-    reapply. Compare a *changed* field on a node the pipeline does know,
-    which publishing would undo without one.
+    No override is recorded for the id itself: the loader only touches ids it
+    has rows for. A *changed* field on a known node does need one.
     """
     _known_label(label)
     form = await request.form()
@@ -259,7 +229,7 @@ async def create(request: Request, label: str, user: Editor,
         create_node(graph, label, node_id, fields)
     except MutationError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from None
-    # Claimed so a prune keeps it, and any earlier tombstone withdrawn.
+    # Claimed so a prune keeps it, and any earlier tombstone is withdrawn.
     def claim() -> None:
         deactivate_override(db, label, node_id, only_op="delete")
         record_override(db, label, node_id, CREATE, fields, actor=user.actor)
@@ -275,9 +245,7 @@ async def restore(label: str, node_id: str, user: Editor,
                   db: Db, graph: Graph, _: CsrfChecked, __: StoresReady):
     """Put a deleted node back as it was, from the snapshot on its decision.
 
-    A deletion records every field the node carried, so this is a real
-    restore rather than an empty shell. The tombstone goes with it —
-    otherwise the next publish would delete the node a second time.
+    The tombstone goes with it, or the next publish would delete the node again.
     """
     _known_label(label)
     fields = decisions.deleted_fields(db, label, node_id)
@@ -365,11 +333,8 @@ async def remove(request: Request, label: str, node_id: str, user: Editor,
 def _links_for(label: str) -> dict[str, list[dict]]:
     """The relationships this label is allowed to have, split by direction.
 
-    Read off `RELATIONSHIPS`, so the form can only ever offer one of the
-    eleven triples the graph knows. The match property travels with each
-    one: a Repository is matched by `url` and a GitHubProfile by `login`,
-    not by an id, and the form has to say so or people will paste the
-    wrong thing.
+    Read off `RELATIONSHIPS`. The match property travels with each one, since a
+    Repository is matched by `url` and a GitHubProfile by `login`, not by id.
     """
     outgoing, incoming = [], []
     for (src_label, rel_type, tgt_label), match_prop in sorted(RELATIONSHIPS.items()):
@@ -388,11 +353,7 @@ def _links_for(label: str) -> dict[str, list[dict]]:
 def _triple(raw: str) -> tuple[str, str, str]:
     """Split the form's `Label|TYPE|Label` into a triple.
 
-    Only the shape is checked here — that there are three parts at all.
-    Whether the triple is one the graph allows is `validate_relationship`'s
-    to decide, and it refuses before reaching the driver, listing every
-    permitted triple in the message. Repeating that check would be a second
-    copy of the whitelist to keep in step with the first.
+    Only the shape is checked; `validate_relationship` owns the whitelist.
     """
     parts = raw.split("|")
     if len(parts) != 3:
@@ -424,11 +385,7 @@ def _hint(match_prop: str) -> str:
 
 
 def _link_failed(label: str, node_id: str, message: str) -> RedirectResponse:
-    """Back to the node page with the reason, instead of a bare 400.
-
-    A failed link is an ordinary mistake — a typo, the wrong field — and
-    the person needs the form again, not a JSON error page.
-    """
+    """Back to the node page with the reason, instead of a bare 400."""
     return RedirectResponse(_node_url(label, node_id, f"error={quote(message, safe='')}"),
                             status_code=status.HTTP_303_SEE_OTHER)
 
@@ -438,10 +395,9 @@ async def link(request: Request, label: str, node_id: str, user: Editor,
                db: Db, graph: Graph, _: CsrfChecked, __: StoresReady):
     """Connect this node to another one.
 
-    Recorded as a decision, though nothing ever reapplies it: publishing
-    leaves an edge it has no row for alone, so the link survives on its own.
-    What it does not survive is a prune, which has no other way of telling
-    an edge a person added from one the pipeline has stopped making.
+    Recorded as a decision, though nothing reapplies it: publishing leaves an
+    edge it has no row for alone. A prune would otherwise remove it, since it
+    cannot tell a hand-added edge from one the pipeline stopped making.
     """
     _known_label(label)
     form = await request.form()
@@ -494,9 +450,7 @@ def _self_match_value(graph, label: str, node_id: str, match_prop: str) -> str:
     """This node's own value for the property an incoming edge is stored against.
 
     Raises:
-        HTTPException: 400 when the field is empty. The edge cannot be
-            named without it, and saying so beats removing nothing and
-            reporting success.
+        HTTPException: 400 when the field is empty and the edge cannot be named.
     """
     value = read_node(graph, label, node_id).get(match_prop)
     if not value:
@@ -511,9 +465,8 @@ async def unlink(request: Request, label: str, node_id: str, user: Editor,
                  db: Db, graph: Graph, _: CsrfChecked, __: StoresReady):
     """Disconnect two nodes and remember it, so a publish cannot relink them.
 
-    Here the override does matter: the edge comes from a prepared row, and
-    `MERGE` would recreate it on the next publish. The loader skips the
-    tombstoned ones before writing.
+    The edge comes from a prepared row and `MERGE` would recreate it, so the
+    loader skips tombstoned ones.
     """
     _known_label(label)
     form = await request.form()

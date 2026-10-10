@@ -34,9 +34,7 @@ class AtomicWriter:
 
 
 def atomic_write_bytes(target: Path, data: bytes) -> None:
-    """Binary counterpart to AtomicWriter, for content already fully in memory
-    (e.g. a downloaded PDF) - no streaming writer needed, just one safe swap.
-    """
+    """Binary counterpart to AtomicWriter, for content already fully in memory."""
     target.parent.mkdir(parents=True, exist_ok=True)
     with NamedTemporaryFile(
         mode="wb", delete=False,

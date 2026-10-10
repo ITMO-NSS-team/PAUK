@@ -2,29 +2,29 @@ import { describe, expect, it } from "vitest";
 import { kindLabel, localize, t } from "../src/core/i18n";
 
 describe("localize", () => {
-  it("на ru всегда возвращает первый аргумент, даже если есть en-вариант", () => {
+  it("on ru always returns the first argument, even when an en variant exists", () => {
     expect(localize("Иванов", "Ivanov", "ru")).toBe("Иванов");
   });
 
-  it("на en возвращает второй аргумент, если он есть", () => {
+  it("on en returns the second argument when present", () => {
     expect(localize("Иванов", "Ivanov", "en")).toBe("Ivanov");
   });
 
-  it("на en остаётся на ru-варианте, если en-варианта нет (undefined или пустая строка)", () => {
+  it("on en falls back to the ru variant when there is no en variant (undefined or empty string)", () => {
     expect(localize("Иванов", undefined, "en")).toBe("Иванов");
     expect(localize("Иванов", "", "en")).toBe("Иванов");
   });
 });
 
 describe("t", () => {
-  it("возвращает разные строки для ru и en по одному и тому же ключу", () => {
+  it("returns different strings for ru and en for the same key", () => {
     expect(t("tab.authors", "ru")).toBe("Авторы");
     expect(t("tab.authors", "en")).toBe("Authors");
   });
 });
 
 describe("kindLabel", () => {
-  it("собирает ключ kind.<вид> и возвращает нужный перевод", () => {
+  it("builds the kind.<kind> key and returns the right translation", () => {
     expect(kindLabel("author", "ru")).toBe("Автор");
     expect(kindLabel("dept", "en")).toBe("Department");
   });
