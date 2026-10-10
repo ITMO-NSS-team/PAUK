@@ -27,13 +27,13 @@ function initialState(overrides: Partial<AppState> = {}): AppState {
   };
 }
 
-describe("темы", () => {
-  it("у всех тем уникальные id и один и тот же акцент", () => {
+describe("themes", () => {
+  it("all themes have unique ids and the same accent", () => {
     expect(new Set(THEMES.map((theme) => theme.id)).size).toBe(THEMES.length);
     expect(new Set(THEMES.map((theme) => theme.ui.accent)).size).toBe(1);
   });
 
-  it("apply пишет CSS-переменные и color-scheme на корень", () => {
+  it("apply writes CSS variables and color-scheme to the root", () => {
     const root = document.createElement("div");
     themeById("light").apply(root);
     expect(root.style.getPropertyValue("--bg")).toBe(themeById("light").ui.bg);
@@ -41,7 +41,7 @@ describe("темы", () => {
     expect(root.style.colorScheme).toBe("light");
   });
 
-  it("смена темы перезаписывает все переменные прошлой", () => {
+  it("switching themes overwrites all variables of the previous one", () => {
     const root = document.createElement("div");
     themeById("light").apply(root);
     themeById("dark").apply(root);
@@ -50,13 +50,13 @@ describe("темы", () => {
     }
   });
 
-  it("неизвестный id — тема по умолчанию, а не падение", () => {
+  it("an unknown id gives the default theme, not a crash", () => {
     expect(themeById("no-such-theme")).toBe(THEMES[0]);
   });
 });
 
 describe("mountThemePicker", () => {
-  it("по кнопке на тему, подписи на текущем языке, активная — текущая тема", () => {
+  it("one button per theme, labels in the current language, the active one is the current theme", () => {
     document.body.innerHTML = `<div id="menu-theme"></div>`;
     const store = new Store(initialState());
     mountThemePicker(store);
@@ -71,7 +71,7 @@ describe("mountThemePicker", () => {
     expect(buttons.map((b) => b.textContent)).toEqual(THEMES.map((theme) => theme.name.en));
   });
 
-  it("клик по кнопке переключает store.theme и активную кнопку", () => {
+  it("clicking a button switches store.theme and the active button", () => {
     document.body.innerHTML = `<div id="menu-theme"></div>`;
     const store = new Store(initialState());
     mountThemePicker(store);

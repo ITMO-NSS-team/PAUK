@@ -1,127 +1,121 @@
-# `pauk/pipeline/` — оркестрация
+# `pauk/pipeline/`: orchestration
 
-**Что здесь:** как связаны сбор данных, нормализация и запуск
-enrichment-этапов; резюмируемость.
+**What this covers:** how collection, normalization and the enrichment stages
+fit together, and how a run resumes.
 
-**Какие файлы задействует:** `pauk/pipeline/collect.py`, `normalize.py`,
-`enrich.py`, `runner.py`, `selectors.py`, `stages/base.py`,
-`stages/__init__.py`.
+**Files involved:** `pauk/pipeline/collect.py`, `normalize.py`, `enrich.py`,
+`runner.py`, `selectors.py`, `stages/base.py`, `stages/__init__.py`.
 
-Четыре шага, каждый — отдельная команда CLI (см. [../cli.md](../cli.md)):
-`collect` → `normalize` → `enrich [stage]` → (`dedup` внутри `enrich` как
-последний стейдж). `publish graph` и `dedup graph` — уже не `pipeline/`,
-а `pauk/graph/`.
+Three CLI commands, each a separate step (see [../cli.md](../cli.md)):
+`collect`, `normalize`, `enrich [stage]`. `dedup` runs inside `enrich` as one
+of the stages. `pauk run` chains all three under a per-group lock held by
+`PipelineRunner`; `Enricher` itself takes no lock. `publish graph` and
+`dedup graph` live in `pauk/graph/`, not here.
 
 ## `collect.py::Collector`
 
-Тянет сырые работы с OpenAlex в MongoDB (коллекция `raw`, источник
-`openalex_works`, см. [../storage.md](../storage.md)). Три режима выборки (`pauk/pipeline/selectors.py`): `WorkSelector` (один
-id), `WorksFileSelector` (файл со списком id, по одному на строку),
-`PeriodSelector` (диапазон дат, курсорная пагинация по ROR ИТМО —
-`ITMO_ROR_ID = "04txgxn49"`).
+Fetches raw works from OpenAlex into MongoDB (collection `raw`, source
+`openalex_works`, see [../storage.md](../storage.md)). Three selectors
+(`pauk/pipeline/selectors.py`): `WorkSelector` (one id), `WorksFileSelector`
+(a file of ids, one per line) and `PeriodSelector` (a date range, cursor
+pagination by ITMO's ROR id, `ITMO_ROR_ID = "04txgxn49"`).
 
-**Обрезанные списки авторов.** OpenAlex list-эндпоинт отдаёт не больше
-100 авторств на работу без явного маркера обрезки — `_authors_truncated()`
-считает payload обрезанным либо по `is_authors_truncated`, либо по
-точному совпадению длины списка с лимитом. Для периодического сбора это
-чинится сразу: обрезанная запись перезапрашивается через single-work
-эндпоинт, у которого список полный всегда. `refetch_truncated()` вызывается
-автоматически в начале каждого `collect`, но доступна и отдельно —
-дозаполняет уже сохранённую группу, у которой список авторов оказался
-обрезан лимитом list-эндпоинта, без повторного обхода всего периода.
+**Truncated author lists.** The OpenAlex list endpoint returns at most 100
+authorships per work and does not always flag the cut. `_authors_truncated()`
+treats a payload as truncated if `is_authors_truncated` is set or the list
+length equals the limit. Such records are re-fetched through the single-work
+endpoint, whose author list is always complete. `refetch_truncated()` runs at
+the start of every `collect`, and can also be called alone to repair a stored
+group without re-crawling the period.
 
-Повторный сбор идёт с дедупом по уже сохранённым id (`known_ids`) — второй
-`collect` на ту же выборку не плодит дубликатов сырых записей.
+Collection skips ids already stored (`known_ids`), so a second `collect` over
+the same selection does not duplicate raw records.
 
 ## `normalize.py::OpenAlexNormalizer`
 
-Разбирает `openalex_works` (raw, MongoDB) в `Publication`/`Person`. Не тривиальный
-проход — здесь же живёт:
+Turns `openalex_works` (raw, MongoDB) into `Publication` and `Person` rows.
+Beyond the plain mapping it does the following:
 
-- **Финансирование** (`_funding`) — из `awards` берёт `funder_display_name`
-  и `funder_award_id` напрямую в `Funding.funder` и `Funding.grant_id`.
-  Дополнительные организации из `funders`, не представленные в `awards`
-  по `awards.funder_id = funders.id`, сохраняются с `grant_id=None`.
-  Одинаковая пара названия фонда и номера гранта сохраняется один раз;
-  запись без номера опускается, если у того же названия фонда есть запись
-  с номером. Разные номера одного фонда сохраняются отдельными элементами
-  списка. Номера сохраняются без изменения; полностью пустые записи пропускаются.
-- **Очистка publisher-разметки** (`_clean_markup`) — химия/физика
-  депонируют формулы MathML/HTML-тегами (`<mml:math>`, `<sub>`), OpenAlex
-  отдаёт заголовок как есть. Формула схлопывается в текст без внутренних
-  пробелов и остаётся приклеенной к тому, что она индексирует
-  (`monolayer WSe2`, не `monolayer WS e 2`), остальная разметка просто
-  теряет теги.
-- **Фильтр организаций в позиции автора** (`ORG_AUTHOR_NAME`) — ACL
-  Anthology депонирует венью автором, консорциумы — коллектив; OpenAlex
-  даже заводит на них author-сущности. Регекс по ключевым словам
-  (`association`, `committee`, `consortium`, ...) не даёт им стать
+- **Funding** (`_funding`): `awards` give `funder_display_name` and
+  `funder_award_id`, stored as `Funding.funder` and `Funding.grant_id`.
+  Organizations from `funders` that no award covers (matched by
+  `awards.funder_id = funders.id`) are kept with `grant_id=None`. An identical
+  funder and grant pair is stored once; an entry without a grant number is
+  dropped when the same funder has a numbered one. Different grant numbers of
+  one funder stay as separate entries. Numbers are stored unchanged and fully
+  empty entries are skipped.
+- **Publisher markup** (`_clean_markup`): chemistry and physics publishers
+  deposit formulas as MathML or HTML tags (`<mml:math>`, `<sub>`) and OpenAlex
+  serves the title verbatim. A formula collapses to text without inner spaces
+  and stays attached to what it indexes (`monolayer WSe2`, not
+  `monolayer WS e 2`); other markup just loses its tags.
+- **Non-person author names** (`NOT_A_PERSON_NAME`): author slots sometimes
+  hold a venue, a collaboration or a contact address, and OpenAlex mints
+  author entities for them. A keyword regex (`association`, `committee`,
+  `consortium`, ...), plus e-mail and URL patterns, keeps them from becoming a
   `Person`.
-- **Локальный id для неопознанного автора** (`_fallback_person_id`) —
-  свежая запись может прийти с `author.id = null`, но с именем и часто
-  ORCID. Вместо потери авторства — детерминированный id (ORCID, если
-  есть, иначе хэш имени), который дедуп потом сможет схлопнуть в реального
-  автора, когда OpenAlex его распознает.
-- **Лимит внешних соавторов** (`EXTERNAL_AUTHORS_LIMIT = 500`) —
-  консорциумные статьи несут сотни авторов; все ИТМО-авторы сохраняются
-  всегда, внешние — с потолком, чтобы одна эпидемиологическая консорция
-  не забила граф.
-- **Повторная нормализация не теряет обогащение.** Уже собранные
-  enrichment-данные, `_processing` и слитые дедупом id (`merged_ids`) на
-  существующей строке сохраняются при повторном прогоне — новый заход по
-  сырым данным только дополняет, не затирает. Работает не только внутри
-  одной группы: сущности в MongoDB глобальные, так что тот же work id из
-  другой, пересекающейся группы видит то же самое состояние
-  (`OpenAlexNormalizer._seed`, см. [../storage.md](../storage.md)).
+- **Local id for an unidentified author** (`_fallback_person_id`): a fresh
+  record can arrive with `author.id = null` but a name and often an ORCID.
+  Instead of losing the authorship it gets a deterministic id (the ORCID if
+  present, otherwise a hash of the name) that `dedup` can later fold into the
+  real author.
+- **External author cap** (`EXTERNAL_AUTHORS_LIMIT = 500`): consortium papers
+  carry hundreds of authors. All ITMO authors are always kept; external ones
+  are capped so one large consortium does not flood the graph.
+- **Re-normalization keeps enrichment.** Existing enrichment data,
+  `_processing` and ids folded by dedup (`merged_ids`) survive a repeat run:
+  new raw data only adds to a row. This works across groups, because entities
+  in MongoDB are global: the same work id seen from another, overlapping group
+  finds the same state (`OpenAlexNormalizer._seed`, see
+  [../storage.md](../storage.md)).
 
-## `enrich.py::Enricher` + `pipeline/stages/base.py`
+## `enrich.py::Enricher` and `pipeline/stages/base.py`
 
-`Enricher.run(stage_name, selection, force)` — прогоняет один этап или
-все (`ALL_STAGES`, порядок фиксирован в `pipeline/stages/__init__.py`:
-`persons → departments → code_links → link_relevance → emails →
-repositories → repo_people → dedup → github_match → author_names`).
-Блокировки на группу больше нет — атомарность на уровне документа даёт
-сама MongoDB (см. [../storage.md](../storage.md)).
+`Enricher.run(stage_name, selection, force)` runs one stage or all of them
+(`ALL_STAGES`, in the order fixed in `pipeline/stages/__init__.py`: `persons`,
+`departments`, `code_links`, `link_relevance`, `emails`, `repositories`,
+`repo_people`, `dedup`, `github_match`, `author_names`). Atomicity is
+per-document in MongoDB (see [../storage.md](../storage.md)).
 
-Порядок не произвольный: `emails` читает полный текст, скачанный
-`code_links`, и идёт до `github_match`, чтобы найденный адрес мог опознать
-аккаунт; `github_match` нужны и аккаунты, собранные `repo_people`, и
-авторства, уже схлопнутые `dedup`.
+The order is not arbitrary. `emails` reads the full text downloaded by
+`code_links` and runs before `github_match`, so that a found address can
+identify an account. `github_match` needs both the accounts collected by
+`repo_people` and the authorships already folded by `dedup`.
 
-`repositories` и `repo_people` — две половины одной работы, разведённые
-намеренно: первая берёт метаданные репозитория, вторая — людей за ним.
-У каждой свой `processing`-статус, поэтому устареть и быть перезапущенной
-они могут порознь (см. [repo-people.md](repo-people.md)).
+`repositories` and `repo_people` are two halves of one job, split on purpose:
+the first fetches repository metadata, the second the people behind it. Each
+has its own `processing` status, so they go stale and are re-run
+independently (see [repo-people.md](repo-people.md)).
 
-`OPTIONAL_STAGES` — стадии вне общего прогона, запускаются только по
-имени. Там сейчас одна, `social_graph`: она идёт вширь от уже
-подтверждённых аккаунтов, поэтому имеет смысл лишь после того, как
-`github_match` кого-то подтвердил, и стоит сотни запросов к API за прогон.
+`OPTIONAL_STAGES` are outside the default run and start only by name. There is
+one, `social_graph`: it walks outward from accounts that are already
+confirmed, so it only makes sense after `github_match` has confirmed some, and
+it costs hundreds of API requests per run.
 
-`EnrichmentStage` — общий базовый класс:
+`EnrichmentStage` is the shared base class:
 
-- `needs_attempt(state)` — `True`, если `state is None` или статус
-  `NOT_STARTED`/`FAILED`; всё остальное пропускается без `--force`.
-- `selected(entity, id)` — фильтр по `PreparedSelection`, когда прогон
-  ограничен `--input`.
-- `in_scope(entity, id)` — то же, но селекция по **другой** сущности не
-  фильтрует: стейдж, доходящий до своих строк через несколько сущностей,
-  сам решает, что значит для каждой из них прогон, ограниченный
-  публикациями.
+- `needs_attempt(state)` is `True` under `--force`, if `state is None`, or if
+  the status is `NOT_STARTED` or `FAILED`; everything else is skipped.
+- `selected(entity, id)` filters by `PreparedSelection` when the run is
+  limited with `--input`.
+- `in_scope(entity, id)` does the same, except that a selection on a
+  *different* entity does not filter. A stage that reaches its rows through
+  several entities decides for itself what a publication-scoped run means for
+  each of them.
 
-Каждый стейдж — отдельный файл, см. соседние заметки:
+Each stage has its own note:
 [persons.md](persons.md), [departments.md](departments.md),
 [code-links.md](code-links.md), [emails.md](emails.md),
 [repositories.md](repositories.md), [repo-people.md](repo-people.md),
-[dedup.md](dedup.md),
-[github-match.md](github-match.md), [author-names.md](author-names.md),
-[social-graph.md](social-graph.md). Заметка про `author_names` также описывает
-отдельный LLM-контракт, повторные попытки и ремонт исторически некорректных
-`completed`.
+[dedup.md](dedup.md), [github-match.md](github-match.md),
+[author-names.md](author-names.md), [social-graph.md](social-graph.md). The
+`author_names` note also covers its separate LLM contract, retries and the
+repair of invalid `completed` rows.
 
-## Резюмируемость
+## Resumability
 
-Между прогонами `pauk enrich` — `_processing` на каждой строке переживает
-процесс, повторный запуск трогает только `NOT_STARTED`/`FAILED` строки.
-Каждый стейдж копит изменения в памяти и вызывает `write_models()` один
-раз в конце `run()`, после цикла по всем строкам.
+`_processing` on each row survives between `pauk enrich` runs, and a repeat run
+touches only `NOT_STARTED` and `FAILED` rows. Stages save in one of two ways:
+`write_models()` once at the end of `run()` over all rows, or `upsert_models()`
+per row right after an external response, so an interrupted run does not
+repeat finished requests.

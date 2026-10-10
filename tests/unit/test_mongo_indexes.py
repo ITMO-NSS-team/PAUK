@@ -26,9 +26,8 @@ class EnsureIndexesTest(unittest.TestCase):
 class CompressionTest(unittest.TestCase):
     """The two heavy collections are asked for compressed, once, at creation.
 
-    `raw` keeps a verbatim copy of every API answer and `revisions` a full
-    snapshot per changed row; between them they are most of a working
-    database, and both are repetitive JSON.
+    `raw` and `revisions` are most of a working database, and both are
+    repetitive JSON.
     """
 
     class Recorder:
@@ -53,7 +52,7 @@ class CompressionTest(unittest.TestCase):
     def test_a_collection_that_exists_is_left_alone(self):
         # WiredTiger takes the compressor when the collection is made.
         # Changing it afterwards needs collMod and a rewrite, which holds a
-        # lock — an operator's decision, not a thing to do on startup.
+        # lock - an operator's decision, not a thing to do on startup.
         db = self.Recorder(["raw", "revisions"])
         self.assertEqual(ensure_compression(db), [])
         self.assertEqual(db.made, [])

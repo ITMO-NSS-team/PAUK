@@ -1,11 +1,7 @@
 """Scheduled runs as a page: what is under way, what has been, starting one.
 
-Nothing here performs work. A form writes a job document and a separate
-process picks it up, so no request waits on a publish.
-
-Every value a form can carry is checked against a closed set: the kind
-against `JobKind`, the group against the groups that have prepared rows,
-the dates against the selectors the CLI uses. No command line is assembled.
+A form only writes a job document; a separate worker performs it. Every form
+value is checked against a closed set, and no command line is assembled.
 """
 
 from __future__ import annotations
@@ -93,11 +89,7 @@ PAYLOAD_WORDS = {
 
 
 def _payload_lines(kind, payload: dict) -> list[str]:
-    """What a run was started with, one line per setting.
-
-    Empty fields are left out: `work_id=None` on a run over a period is not
-    a setting but the absence of one.
-    """
+    """What a run was started with, one line per setting; empty fields are left out."""
     if JobKind(kind) is JobKind.PRUNE:
         # "apply=False" would read as "found nothing", not "left it alone".
         return ["убрать найденное" if payload.get("apply")
@@ -124,12 +116,7 @@ def _phases(job) -> list[str] | None:
 
 
 def _last_done(db) -> dict[str, object]:
-    """When each kind of run last finished.
-
-    Shown beside its step, because the question a person opens this page
-    with is usually "has anybody published since the last collection", and
-    counting rows in the history to answer it is work the page can do.
-    """
+    """When each kind of run last finished."""
     found = {}
     for kind in JobKind:
         row = db[store.COLLECTION].find_one(
@@ -143,11 +130,7 @@ def _last_done(db) -> dict[str, object]:
 @router.get("/jobs", response_class=HTMLResponse)
 def jobs(request: Request, user: CurrentUser, session: Session, db: Db,
          kind: str = "", state: str = "", actor: str = "", page: int = 1):
-    """The queue and the history of runs.
-
-    Readable by anyone who can sign in, viewers included. Whether a publish
-    is under way explains what somebody is looking at.
-    """
+    """The queue and the history of runs, readable by anyone who can sign in."""
     page = max(page, 1)
     filters = {"kind": kind, "state": state, "actor": actor}
     total = store.count(db, **filters)
@@ -163,8 +146,7 @@ def jobs(request: Request, user: CurrentUser, session: Session, db: Db,
         "final": {str(name) for name in FINAL},
         "actors": sorted(db[store.COLLECTION].distinct("actor")),
         "last_done": _last_done(db),
-        # Nobody taking jobs is the difference between "running" and "queued
-        # forever", and only this page can say it.
+        # Nobody taking jobs is the difference between "running" and "queued forever".
         "workers": store.workers_present(db),
         "result_open_upto": RESULT_OPEN_UPTO,
         # Read off the pipeline: a new stage must not leave the page stale.
@@ -177,8 +159,7 @@ def jobs(request: Request, user: CurrentUser, session: Session, db: Db,
 def _collect_payload(form) -> dict:
     """One collection run, from a work id or a date range.
 
-    The group is derived with `group_name`, the same as `pauk run`. A name
-    invented here would be a second rule to keep in step with the first.
+    The group comes from `group_name`, as in `pauk run`, so there is one naming rule.
     """
     work_id = str(form.get("work_id", "")).strip()
     date_from = str(form.get("date_from", "")).strip()
@@ -241,10 +222,8 @@ def _payload_from(kind: JobKind, db, form) -> dict:
 def _map_options(form) -> dict:
     """How to rebuild the map, left for the payload model to check.
 
-    Converting here meant `int(...)` on whatever arrived, and `int("null")`
-    raises ValueError, which nothing above turns into an answer — the
-    request ended in a 500. An absent key is left out rather than passed as
-    an empty string, so the model's own default applies.
+    Values are not converted here (`int("null")` would end in a 500), and an
+    absent key is left out so the model's default applies.
     """
     options: dict = {}
     seed = str(form.get("seed", "")).strip()
@@ -257,9 +236,8 @@ def _map_options(form) -> dict:
 async def cancel(request: Request, user: Admin, db: Db, _: CsrfChecked):
     """Ask a run to stop.
 
-    A queued job is cancelled outright. One already under way is only asked:
-    the worker looks at the request between steps, so a half-written batch
-    is never abandoned. A publish has no steps inside it and runs to the end.
+    A queued job is cancelled outright; a running one is only asked, and the
+    worker checks between steps. A publish has no inner steps and runs to the end.
     """
     form = await request.form()
     job_id = str(form.get("job_id", "")).strip()
@@ -274,10 +252,8 @@ async def cancel(request: Request, user: Admin, db: Db, _: CsrfChecked):
 async def give_up(request: Request, user: Admin, db: Db, _: CsrfChecked):
     """Close a run nothing is performing any more.
 
-    The worker settles abandoned jobs on its own, but only a running worker
-    does, and only after the lock lease has run out. A job cancelled before
-    it ever started holds nothing and is doing nothing; leaving it in "under
-    way" for a quarter of an hour tells everybody a lie.
+    The worker settles abandoned jobs only while running and after the lock
+    lease expires; this closes e.g. a job cancelled before it ever started.
     """
     form = await request.form()
     job_id = str(form.get("job_id", "")).strip()
@@ -303,11 +279,7 @@ async def repeat(request: Request, user: Admin, db: Db, _: CsrfChecked):
 
 @router.post("/jobs")
 async def schedule(request: Request, user: Admin, db: Db, _: CsrfChecked):
-    """Put a run in the queue.
-
-    The job document is the whole of it and the worker does the rest, so
-    there is no ordering to get wrong here.
-    """
+    """Put a run in the queue."""
     form = await request.form()
     try:
         kind = JobKind(str(form.get("kind", "")))

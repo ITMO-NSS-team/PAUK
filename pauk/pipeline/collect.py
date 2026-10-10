@@ -15,7 +15,7 @@ ITMO_ROR_ID = "04txgxn49"
 # OpenAlex serves at most this many authorships on the list endpoint (large
 # consortium papers have hundreds), without any marker field; the single-work
 # endpoint serves the complete list. A list payload carrying exactly the cap
-# is treated as truncated — the ITMO participant is often beyond it.
+# is treated as truncated, since the ITMO participant is often beyond it.
 AUTHORSHIP_TRUNCATION_LIMIT = 100
 
 # Request marker on envelopes whose payload came from the single-work
@@ -31,16 +31,18 @@ def _authors_truncated(work: dict) -> bool:
 
 class Collector:
     def __init__(self, client, raw: RawStore) -> None:
-        """Args: client: An open OpenAlexClient (or a compatible double)."""
+        """Initializes the collector.
+
+        Args:
+            client: An open OpenAlexClient (or a compatible double).
+        """
         self.client = client
         self.raw = raw
         self._progress: tqdm | None = None
 
     def collect(self, selector: WorkSelector | PeriodSelector | WorksFileSelector) -> int:
-        # No GroupLock here (unlike origin/main pre-Mongo): the migration to
-        # MongoDB (#102) deleted GroupLock entirely - RawStore writes are now
-        # atomic per-document Mongo inserts, so the coarse file lock this used
-        # to need doesn't exist any more (see docs/architecture/storage.md).
+        # No group lock: RawStore writes are atomic per-document Mongo inserts
+        # (see docs/architecture/storage.md).
         with logging_redirect_tqdm():
             try:
                 return self._collect(selector)
@@ -60,15 +62,18 @@ class Collector:
         self._progress.update()
 
     def refetch_truncated(self) -> int:
-        """Re-fetch full author lists for stored works that carry truncated
-        ones. Runs as part of every collect; callable on its own to repair a
-        group collected before truncation was handled, without re-crawling
-        the whole period."""
+        """Re-fetches full author lists for stored works whose lists were truncated.
+
+        Runs as part of every collect; callable on its own to repair a group
+        without re-crawling the whole period.
+        """
         return self._refetch_truncated(self._last_payload_by_id())
 
     def _last_payload_by_id(self) -> dict[str, tuple[dict, dict]]:
-        """The latest stored (payload, request) per work id — a repair appends
-        a second envelope for a work, and the latest one is authoritative."""
+        """The latest stored (payload, request) per work id.
+
+        A repair appends a second envelope for a work; the latest is authoritative.
+        """
         rows: dict[str, tuple[dict, dict]] = {}
         for row in self.raw.read("openalex_works"):
             payload = row.get("payload") or {}
@@ -80,8 +85,7 @@ class Collector:
     def _refetch_truncated(self, rows: dict[str, tuple[dict, dict]]) -> int:
         count = 0
         for work_id, (payload, request) in rows.items():
-            # Envelopes fetched from the single-work endpoint are complete
-            # even at exactly the cap.
+            # Single-work envelopes are complete even at exactly the cap.
             if request.get("refetch") == FULL_AUTHOR_LIST or "work_id" in request:
                 continue
             if not _authors_truncated(payload):

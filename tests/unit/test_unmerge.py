@@ -1,10 +1,9 @@
 """Taking a fold apart again.
 
-Every test here folds two people the way the panel folds them — through
-`merge_nodes`, against a double that moves edges and fills fields the way
-the real client does — and then asks for it back. Building the fold by hand
-would prove nothing: what has to come back is exactly what a real merge
-takes away.
+Every test here folds two people through `merge_nodes`, against a double
+that moves edges and fills fields the way the real client does, and then
+asks for it back. Building the fold by hand would prove nothing: what has
+to come back is exactly what a real merge takes away.
 """
 
 import unittest
@@ -142,7 +141,7 @@ class HandWorkTest(UnmergeTest):
                      person("A2", "I. Smirnov", works=["W2"]))
 
     def test_an_unlinked_edge_is_never_offered_back(self):
-        # Not just absent at the end — `apply_overrides` would delete it
+        # Not just absent at the end - `apply_overrides` would delete it
         # again anyway. It must not be created in the first place, or every
         # undo writes a creation and a deletion into the journal.
         record_relationship_override(self.db, "Person", "AUTHORED", "Publication",
@@ -186,7 +185,7 @@ class RefusalTest(UnmergeTest):
             split_person(self.graph, self.db, ["A1", "A2"])
 
     def test_a_fold_that_happened_somewhere_else(self):
-        # A2 is gone, but not into A1 — undoing "the fold" would be undoing
+        # A2 is gone, but not into A1 - undoing "the fold" would be undoing
         # one that never happened.
         self.publish(person("A1", "Ivan Smirnov"), person("A2", "I. Smirnov"),
                      person("A3", "Ivan S."))

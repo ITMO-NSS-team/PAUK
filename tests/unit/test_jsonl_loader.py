@@ -265,11 +265,10 @@ if __name__ == "__main__":
 class MergesSurviveAPublishTest(unittest.TestCase):
     """A fold the rows never learned about must outlive a republish.
 
-    Only the collection stage writes a fold into the prepared rows. The
-    graph-wide pass and the review queue write it onto the node and nowhere
-    else, and publishing the survivor from its row used to replace that list
-    with the row's empty one — after which the alias map resolved nothing
-    and the duplicate came back with all of its relationships.
+    Only the collection stage writes a fold into the prepared rows; the
+    graph-wide pass and the review queue write it onto the node only.
+    Republishing the survivor must not replace its list with the row's empty
+    one, or the alias map resolves nothing and the duplicate comes back.
     """
 
     def setUp(self):
@@ -334,9 +333,7 @@ class StoppedMidPublishError(Exception):
 class PublishProgressTest(unittest.TestCase):
     """A publish says how far it has got, and can be given up between chunks.
 
-    Until now the whole load was one call that came back when it was done.
-    A cancel pressed during it was noticed after it finished, which for a
-    large group is the one moment nobody was waiting for.
+    A cancel is honoured between chunks, not after the whole load.
     """
 
     def setUp(self):

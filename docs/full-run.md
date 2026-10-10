@@ -1,46 +1,46 @@
-# Полный прогон PAUK (end-to-end)
+# Full PAUK run (end to end)
 
-Сквозной цикл: сбор -> обогащение -> граф -> web. Первый прогон делают на копии БД; прод трогают после проверки на копии (раздел 7).
+The full cycle: collect -> enrich -> graph -> web. Do the first run on a copy
+of the databases; touch production only after the copy checks out (section 7).
 
-## Требуется
+## Requirements
 
-- Установлены Docker и `uv`.
-- Клон репозитория с зависимостями: `git clone <repo> pauk && cd pauk && uv sync`.
-- SSH-доступ к `<server>`.
-- Файл `data/static/russian_names.csv` (каталог сотрудников, персональные данные,
-  в репозитории не хранится) - нужен стадии `author_names` (без него полный
-  enrich падает). Положить его в `data/static/` или указать путь через
-  `PAUK_RUSSIAN_NAMES_FILE`.
+- Docker and `uv` installed.
+- A clone of the repository with dependencies: `git clone <repo> pauk && cd pauk && uv sync`.
+- SSH access to `<server>`.
+- The file `data/static/russian_names.csv` (the staff directory; it contains
+  personal data and is not stored in the repository). The `author_names` stage
+  needs it, and a full enrich fails without it. Put it in `data/static/` or set
+  its path in `PAUK_RUSSIAN_NAMES_FILE`.
 
 ## 0. Pre-flight
 
-Проверить место на диске и занятые порты:
+Check disk space and busy ports:
 
 ```bash
 df -h
 docker ps
 ```
 
-Порты `27018`, `7688`, `8501` должны быть свободны. Ещё нужна свободная RAM под
-Mongo и Neo4j (на Linux - `free -g`). Наличие ключей проверяется после настройки
-`.env` (раздел 1).
+Ports `27018`, `7688` and `8501` must be free. You also need free RAM for Mongo
+and Neo4j (on Linux, `free -g`). API keys are checked after `.env` is set up
+(section 1).
 
-Для полного круга нужны `OPENALEX_API_KEY`, `GITHUB_TOKEN`,
-`OPENROUTER_API_KEY`
-(+ `OPENROUTER_PROXY_URL`, если OpenRouter недоступен из сети напрямую).
+A full cycle needs `OPENALEX_API_KEY`, `GITHUB_TOKEN` and `OPENROUTER_API_KEY`
+(plus `OPENROUTER_PROXY_URL` if OpenRouter is not reachable directly).
 
-## 1. Копия БД
+## 1. Database copy
 
-### Снять дамп
+### Take a dump
 
-`<MONGO_URI>` - строка подключения из серверного `.env`. На Windows запускать из
-Git Bash.
+`<MONGO_URI>` is the connection string from the server's `.env`. On Windows,
+run from Git Bash.
 
 ```bash
 ssh <server> "docker exec pauk-mongo mongodump --uri='<MONGO_URI>' --archive --gzip" > pauk_dump.archive.gz
 ```
 
-### Поднять локальные Mongo и Neo4j
+### Start local Mongo and Neo4j
 
 ```bash
 docker run -d --name pauk-mongo-copy -p 27018:27017 mongo:4.4 --wiredTigerCacheSizeGB 0.5
@@ -54,9 +54,9 @@ docker run -d --name pauk-neo4j-copy -p 7688:7687 \
   neo4j:2026.05.0
 ```
 
-### Направить окружение на копию
+### Point the environment at the copy
 
-В `.env` репозитория (из «Требуется») прописать локальные адреса БД и ключи:
+Put the local database addresses and the keys in the repository's `.env`:
 
 ```
 MONGO_URI=mongodb://localhost:27018
@@ -64,29 +64,33 @@ MONGO_DB=pauk
 NEO4J_URI=bolt://localhost:7688
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=testtest
-OPENALEX_API_KEY=<ключ>
-GITHUB_TOKEN=<ключ>
-OPENROUTER_API_KEY=<ключ>
-OPENROUTER_PROXY_URL=<url, если OpenRouter недоступен из сети напрямую>
+OPENALEX_API_KEY=<key>
+GITHUB_TOKEN=<key>
+OPENROUTER_API_KEY=<key>
+OPENROUTER_PROXY_URL=<url, if OpenRouter is not reachable directly>
 ```
 
-Проверить, что окружение смотрит на копию и ключи на месте (адреса - локальные, ключи - `True`):
+Check that the environment points at the copy and the keys are set (addresses
+are local, keys are `True`):
 
 ```bash
 uv run python -c "from pauk.settings import settings as s; print('db:', s.mongo_uri, s.neo4j_uri); print('keys:', {k:bool(getattr(s,k)) for k in ['openalex_api_key','github_token','openrouter_api_key']})"
 ```
 
-## 2. Сбор и обогащение
+## 2. Collect and enrich
 
-`testrun` в примерах - имя группы, которое вы выбираете сами и используете одно и то же во всех шагах (`--name` задаёт его, `--group` на него ссылается). Без `--name` имя генерируется автоматически с датой; для многодневного прогона фиксировать `--name`. Диапазон `--from`/`--to` - под ваш прогон.
+`testrun` in the examples is a group name you choose and reuse in every step
+(`--name` sets it, `--group` refers to it). Without `--name` a name with the
+date is generated; for a multi-day run, fix `--name`. Adjust `--from`/`--to`
+to your run.
 
-Одной командой (collect + normalize + enrich; publish отдельно):
+All at once (collect + normalize + enrich; publish is separate):
 
 ```bash
 uv run pauk run --from 2025-01-01 --to 2025-03-31 --name testrun
 ```
 
-Пофазно:
+Phase by phase:
 
 ```bash
 uv run pauk collect --from 2025-01-01 --to 2025-03-31 --name testrun
@@ -94,100 +98,108 @@ uv run pauk normalize --group testrun
 uv run pauk enrich --group testrun
 ```
 
-Стадии (порядок исполнения):
-`persons -> departments -> code_links -> link_relevance -> emails -> repositories -> dedup -> github_match -> author_names` (+ `social_graph`, опционально). Одна стадия: `uv run pauk enrich <stage> --group testrun`.
+Stages, in execution order: `persons -> departments -> code_links ->
+link_relevance -> emails -> repositories -> repo_people -> dedup ->
+github_match -> author_names` (plus the optional `social_graph`). One stage:
+`uv run pauk enrich <stage> --group testrun`.
 
-Стадия `dedup` сворачивает дубли внутри одной группы. Дедуп всего графа - отдельная команда в разделе 3.
+The `dedup` stage folds duplicates within one group. Deduplicating the whole
+graph is a separate command (section 3).
 
-## 3. Граф
+## 3. Graph
 
 ```bash
-uv run pauk publish graph --group testrun     # по группам
-uv run pauk dedup graph                         # по всему графу
+uv run pauk publish graph --group testrun     # per group
+uv run pauk dedup graph                         # whole graph
 ```
 
-`dedup graph` на большом графе идёт десятки минут; фаза планирования пишет в лог в конце. Сведённые слияния и отложенные пары - в `data/cache/dedup_candidates_graph.jsonl`.
+`dedup graph` takes tens of minutes on a large graph; the planning phase logs
+only at its end. Merges it held back and deferred pairs go to
+`data/cache/dedup_candidates_graph.jsonl`.
 
-## 4. Обновление web
+## 4. Update the web
 
 ```bash
-uv run pauk cache export                        # -> data/cache/graph_snapshot_<дата>.json
+uv run pauk cache export                        # -> data/cache/graph_snapshot_<date>.json
 uv run pauk gui build                           # -> data/gui/{public,private}/*.json
-cd pauk/gui/web && npm install && npm run dev   # локально
-./scripts/deploy.sh                             # на сервер, порт 8501
+cd pauk/gui/web && npm install && npm run dev   # locally
+./scripts/deploy.sh                             # to the server, port 8501
 ```
 
-После правок графа пересобирать web этой же цепочкой.
+After graph changes, rebuild the web with the same chain.
 
-## 5. Проверка
+## 5. Verification
 
-- Счётчики графа:
+Graph counters:
 
-  ```bash
-  uv run python -c "from neo4j import GraphDatabase; from pauk.settings import settings as s; d=GraphDatabase.driver(s.neo4j_uri,auth=(s.neo4j_user,s.neo4j_password)); ses=d.session(); print({l:ses.run(f'MATCH (n:{l}) RETURN count(n) AS c').single()['c'] for l in ['Publication','Repository','Person','Department']}); d.close()"
-  ```
+```bash
+uv run python -c "from neo4j import GraphDatabase; from pauk.settings import settings as s; d=GraphDatabase.driver(s.neo4j_uri,auth=(s.neo4j_user,s.neo4j_password)); ses=d.session(); print({l:ses.run(f'MATCH (n:{l}) RETURN count(n) AS c').single()['c'] for l in ['Publication','Repository','Person','Department']}); d.close()"
+```
 
-## 6. Догнать частичный прогон
+## 6. Catching up a partial run
 
-Что прошло не всё, видно по:
+What did not finish is visible from:
 
-- группам в Mongo против опубликованного в граф;
-- счётчикам графа против Mongo (меньше в графе - группа недопубликована);
-- распределению статусов по стадиям (`_processing` - поле в каждом документе со
-  статусом каждой стадии):
+- groups in Mongo versus what was published to the graph;
+- graph counters versus Mongo (fewer in the graph means a group is not fully
+  published);
+- the distribution of stage statuses (`_processing` is a field in every
+  document holding the status of each stage):
 
   ```bash
   uv run python -c "from pymongo import MongoClient; from pauk.settings import settings as s; import collections,pprint; db=MongoClient(s.mongo_uri)[s.mongo_db]; c=collections.Counter(); [c.update({(k,(v or {}).get('status')):1 for k,v in (p.get('_processing') or {}).items()}) for p in db.persons.find({},{'_processing':1})]; pprint.pprint(dict(c))"
   ```
 
-  Статусы: `completed` / `completed_empty` / `failed` / `not_started` /
+  Statuses: `completed` / `completed_empty` / `failed` / `not_started` /
   `not_applicable`.
 
-Точечный догон:
+Targeted catch-up:
 
-| Что | Команда |
+| Situation | Command |
 |---|---|
-| стадия не доехала / есть `failed` | `uv run pauk enrich <stage> --group <группа>` (берёт не-completed) |
-| переделать и `completed` | добавить `--force` |
-| только конкретные id | `--input ids.txt --entity <entity>` |
-| группа недопубликована | `uv run pauk publish graph --group <группа>` |
-| дубли после доливки | `uv run pauk dedup graph` |
-| граф изменился, web устарел | `cache export -> gui build` |
+| a stage did not finish / has `failed` | `uv run pauk enrich <stage> --group <group>` (takes non-completed rows) |
+| redo `completed` rows too | add `--force` |
+| only specific ids | `--input ids.txt --entity <entity>` |
+| group not fully published | `uv run pauk publish graph --group <group>` |
+| duplicates after a top-up | `uv run pauk dedup graph` |
+| graph changed, web is stale | `cache export -> gui build` |
 
-`--entity` принимает ключи `PreparedStore.COLLECTIONS`: publications, persons,
-departments, organizations, repositories, github_profiles, repo_links.
+`--entity` accepts the keys of `PreparedStore.COLLECTIONS`: publications,
+persons, departments, organizations, repositories, github_profiles, repo_links.
 
-Исторически некорректные `author_names=completed` сначала планируются read-only
-скриптом, потому что `Person` глобальна и один общий файл с одной группой не
-охватит все id:
+Rows with a wrongly recorded `author_names=completed` are first planned with a
+read-only script, because `Person` is global and one shared file for one group
+would not cover all ids:
 
 ```bash
 uv run python scripts/plan_author_names_repair.py --out data/reports/author-names-repair
 ```
 
-Перед выполнением напечатанных скриптом команд снять `snapshot_mongo.py`.
-Команды запускать последовательно, после них повторно проверить планировщиком
-нулевой остаток, опубликовать затронутые группы и пересобрать cache/web.
+Take a `snapshot_mongo.py` snapshot before running the commands the script
+prints. Run them sequentially, then re-run the planner to confirm zero
+remaining rows, publish the affected groups and rebuild cache and web.
 
-## 7. Промоут в прод
+## 7. Promote to production
 
-После проверки на копии повторить разделы 2-5 с прод-окружением: в `.env` репозитория вернуть прод-адреса БД (из серверного `.env`) вместо локальных.
+After the copy checks out, repeat sections 2-5 against production: in the
+repository's `.env`, restore the production database addresses (from the
+server's `.env`) instead of the local ones.
 
-Убрать копию по завершении:
+Remove the copy when done:
 
 ```bash
 docker rm -f pauk-mongo-copy pauk-neo4j-copy
 ```
 
-## Чек-лист
+## Checklist
 
 ```
-[ ] 0. pre-flight: диск / RAM / порты / ключи
-[ ] 1. дамп -> restore в локальный Mongo -> локальный Neo4j; env на копию, проверить
-[ ] 2. pauk run --from … --to … --name testrun
+[ ] 0. pre-flight: disk / RAM / ports / keys
+[ ] 1. dump -> restore into local Mongo -> local Neo4j; env on the copy, verified
+[ ] 2. pauk run --from ... --to ... --name testrun
 [ ] 3. pauk publish graph --group testrun ; pauk dedup graph
 [ ] 4. cache export ; gui build ; deploy.sh
-[ ] 5. счётчики графа
-[ ] 6. догон точечно при недоборе
-[ ] 7. проверка на копии пройдена -> повторить на проде
+[ ] 5. graph counters
+[ ] 6. targeted catch-up if anything is missing
+[ ] 7. copy verified -> repeat on production
 ```

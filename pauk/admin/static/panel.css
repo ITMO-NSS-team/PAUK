@@ -1,6 +1,6 @@
-/* PAUK admin – the map's design system, applied to forms.
+/* PAUK admin: the map's design system, applied to forms.
 
-   Palette and fonts come from pauk/gui/web/style.css verbatim: one product,
+   Palette and fonts are taken verbatim from the map (pauk/gui/web): one product,
    one place to update. Light only, unlike the map. */
 
 @font-face {
@@ -49,7 +49,7 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   --font: "Golos Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
-  /* Removed, added, changed – all at 6.3-6.6:1, the weight of --danger. */
+  /* Removed, added, changed: all at 6.3-6.6:1, the weight of --danger. */
   --danger: #A33A2B;
   --ok: #2F6B45;
   --warn: #7E5410;

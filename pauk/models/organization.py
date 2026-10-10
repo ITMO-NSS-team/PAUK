@@ -2,9 +2,10 @@ from pydantic import BaseModel
 
 
 class Organization(BaseModel):
-    """A top-level organisation (university, institute, company) — the root of an
-    org hierarchy. Departments hang off it via Department-[:PART_OF]->Organization;
-    several organisations can coexist in one graph (ITMO plus co-affiliations).
+    """A top-level organisation (university, institute, company), the root of a hierarchy.
+
+    Departments hang off it via Department-[:PART_OF]->Organization; several
+    organisations can coexist in one graph (ITMO plus co-affiliations).
     """
 
     id: str

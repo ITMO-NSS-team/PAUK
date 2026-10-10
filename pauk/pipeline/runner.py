@@ -26,7 +26,7 @@ class PipelineRunner:
 
         Holds the group for the whole run. Every stage reads its group's
         full working set and writes it back, so two runs over the same
-        group overwrite each other's rows — the same reason publishing
+        group overwrite each other's rows, the same reason publishing
         holds the graph.
 
         Raises:

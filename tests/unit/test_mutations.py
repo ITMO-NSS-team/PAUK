@@ -24,14 +24,10 @@ from pauk.graph.mutations import (
 class FakeGraph:
     """An in-memory stand-in for Neo4jClient.
 
-    Mirrors the parts manual edits rely on, including the `updated_at`
-    the real client stamps on every write — the optimistic check is built
-    on it, so a fake without it would let a broken check pass.
-
-    Kept level with the real client on purpose. Every gap between the two
-    has hidden a real bug at least once — `updated_at`, the property fill a
-    fold does, a node listed among its own `merged_ids` — so a behaviour
-    the client gains belongs here too.
+    Mirrors the parts manual edits rely on, including the `updated_at` the
+    real client stamps on every write (the optimistic check is built on it).
+    Kept level with the real client on purpose: a behaviour the client gains
+    belongs here too.
     """
 
     def __init__(self):
@@ -101,11 +97,8 @@ class FakeGraph:
     def merge_person_nodes_batch(self, merges):
         """Fold duplicates, moving their edges the way the real client does.
 
-        A double that only deleted the node left the duplicate's edges
-        pointing at nothing, which is a graph the real client never produces.
-        The survivor also takes over the fields it had none of, through the
-        real client's own rule — undoing a fold is mostly about giving those
-        back, and a double that skipped them could not fail.
+        The survivor also takes over the fields it had none of, through the real
+        client's own rule: undoing a fold is mostly about giving those back.
         """
         self.calls.append("merge_person_nodes_batch")
         removed = 0
@@ -136,7 +129,7 @@ class FakeGraph:
         """Persons carry the sticky is_itmo rule of the real client.
 
         A row arriving with is_itmo=False never downgrades a node that is
-        already ITMO, so the blind property merge cannot clobber a True.
+        already ITMO.
         """
         self.calls.append("upsert_person_nodes_batch")
         nodes = list(nodes)
@@ -164,9 +157,7 @@ class FakeGraph:
     def fetch_relationship_pairs(self, src_label, rel_type, tgt_label, tgt_match_prop="id"):
         """Edges of one triple, the way the real query reports them.
 
-        Both ends have to exist: the real one is a MATCH on two nodes, and
-        an edge in this dict whose far end was never created would be a
-        graph the driver cannot produce.
+        Both ends have to exist: the real query is a MATCH on two nodes.
         """
         def node(label, match_value):
             for (node_label, node_id), props in self.nodes.items():
@@ -208,8 +199,7 @@ class FakeGraph:
     def fetch_merged_id_map(self, label):
         """Aliases the way the real client reads them: off the nodes.
 
-        An empty map made a publish unable to re-fold anything, so nothing
-        that depends on `merged_ids` outliving a run could be tested here.
+        Needed so a publish can re-fold from `merged_ids`.
         """
         return {alias: node_id
                 for (node_label, node_id), props in self.nodes.items() if node_label == label
@@ -224,10 +214,9 @@ class WhitelistTest(unittest.TestCase):
     """The closed sets that keep user input out of interpolated Cypher."""
 
     def test_every_label_the_loader_publishes_is_editable(self):
-        # Compared against the registry itself, not a list written out here:
-        # the graph grows (Organization arrived with department matching),
-        # and a hand-kept copy would either fail on every such change or,
-        # worse, quietly stop covering the new label.
+        # Compared against the registry itself, not a list written out here: a
+        # hand-kept copy would either fail on every new label or, worse, quietly
+        # stop covering it.
         published = {spec.labels.split(":")[0] for spec in NODE_REGISTRY.values()}
         self.assertEqual(set(NODE_FIELDS), published)
 
@@ -265,8 +254,8 @@ class WhitelistTest(unittest.TestCase):
             validate_fields("Person", {"salary": 100})
 
     def test_fields_the_database_owns_are_refused_by_name(self):
-        # These are refused twice over — they are not in the whitelist
-        # either — but the reason has to be the accurate one: "the database
+        # These are refused twice over - they are not in the whitelist
+        # either - but the reason has to be the accurate one: "the database
         # sets this", not "no such field". Someone who typed `updated_at`
         # should learn it exists and is not theirs to set.
         for field in ("id", "created_at", "updated_at"):
@@ -442,7 +431,7 @@ class StoredShapeTest(unittest.TestCase):
 
 
 class MergeChainTest(unittest.TestCase):
-    """A folded into B, then B into C — A must still resolve to C."""
+    """A folded into B, then B into C - A must still resolve to C."""
 
     def setUp(self):
         self.graph = FakeGraph()

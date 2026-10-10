@@ -44,8 +44,7 @@ class PdfStoreTest(unittest.TestCase):
         self.assertEqual(store.read("W1"), b"new bytes")
 
     def test_file_handle_is_released_after_read(self):
-        # PR #45's regression (WinError 32: a handle held open across a delete)
-        # is only possible if something holds the file open past its call -
+        # Guards against WinError 32 (a handle held open across a delete):
         # read() must open, read, and close in one step so the caller is free
         # to replace or remove the file immediately after.
         store = PdfStore(self.db, self.pdf_dir)

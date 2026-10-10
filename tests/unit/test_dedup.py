@@ -68,8 +68,7 @@ def load_group(client: RecordingNeo4jClient, prepared: PreparedStore) -> None:
 class DedupStageTest(unittest.TestCase):
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
-        # The dedup audit journal still writes a real file - unrelated to
-        # the raw/prepared Mongo migration.
+        # The dedup audit journal is a real file, not Mongo.
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.config = Settings(data_dir=Path(tmp.name), person_resolution_enabled=False)
@@ -256,7 +255,7 @@ class DedupStageTest(unittest.TestCase):
     def test_a_staff_record_is_not_claimed_by_initials_alone(self):
         # "A. V. Dukhanov" fits every Dukhanov whose given name starts with
         # an A, including the ones no catalog lists. It still gets named
-        # from the record — it just cannot be folded onto it.
+        # from the record - it just cannot be folded onto it.
         result, people = self.run_stage(
             [person("A1", "Alexey Dukhanov", ["W1"]),
              person("A2", "A. V. Dukhanov", ["W2"])],
@@ -352,7 +351,7 @@ class DedupStageTest(unittest.TestCase):
             person("A1", "Li Li", ["W1"], itmo=False, orcid="0000-0001"),
             person("A2", "Li Li", ["W2"], itmo=False, orcid="0000-0001"),
         ])
-        # Without raw records prepared orcids are trusted — they merge...
+        # Without raw records prepared orcids are trusted - they merge...
         self.assertEqual(result["dedup_merged"], 1)
         # ...but with raw author records showing different ORCIDs they must
         # not. A fresh db: same group name "sample", but isolated from the
@@ -376,7 +375,7 @@ class DedupStageTest(unittest.TestCase):
 
     def test_transitive_bridge_between_different_orcids_blocks_the_group(self):
         # A and B each legitimately pair with the no-ORCID bridge M, but the
-        # resulting group would span two distinct ORCIDs — refuse it whole.
+        # resulting group would span two distinct ORCIDs - refuse it whole.
         result, people = self.run_stage([
             person("A1", "Anna Ivanova", ["W1", "W2"], orcid="0000-0001",
                    variants=["A. Ivanova"]),
@@ -421,7 +420,7 @@ class PublicationDedupTest(unittest.TestCase):
 
     def test_same_doi_under_two_work_ids_is_one_publication(self):
         # OpenAlex re-indexing leaves a second record for one DOI, often
-        # without any authors at all — the documented one must survive.
+        # without any authors at all - the documented one must survive.
         result, publications = self.run_stage(
             [
                 publication("W1", "A study", doi="https://doi.org/10.1/x", journal="Journal"),
@@ -1041,10 +1040,9 @@ class BlockingTest(unittest.TestCase):
 class ReviewDecisionsTest(unittest.TestCase):
     """What a person decided outranks the rules, and outlives the run.
 
-    The rules hold a pair back when the evidence runs out, and until now
-    every later run held the same pair back again. An answer has to reach
-    the rules themselves: undoing a merge afterwards means rebuilding the
-    record from its prepared row, and this stage deletes that row when it
+    The rules hold a pair back when the evidence runs out, and without a stored answer every later run
+    would hold the same pair back again. An answer has to reach the rules themselves: undoing a merge
+    afterwards means rebuilding the record from its prepared row, and this stage deletes that row when it
     folds a pair.
     """
 
@@ -1126,7 +1124,7 @@ class ReviewDecisionsTest(unittest.TestCase):
     def test_the_queue_learns_the_merge_has_happened(self):
         # Otherwise the page goes on promising "will merge on the next run"
         # for a pair the last run already merged, and offers to take the
-        # answer back — which would leave the records folded and the
+        # answer back - which would leave the records folded and the
         # question open.
         self.run_stage(self.namesakes())
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)
@@ -1251,7 +1249,7 @@ class GraphPassReviewTest(unittest.TestCase):
 
     def test_and_writes_down_that_it_carried_them_out(self):
         # This pass leaves the prepared rows alone, so the pair it folds can
-        # still be taken apart — but only if the queue knows it was folded.
+        # still be taken apart - but only if the queue knows it was folded.
         self.publish(self.namesakes())
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME,
                               actor="user:roman")
@@ -1336,9 +1334,8 @@ class DisputedAnswerTest(unittest.TestCase):
 class SplitGroupEndToEndTest(unittest.TestCase):
     """A group refused by the rules, resolved by a person, applied by the rules.
 
-    The case the panel was a dead end for: three records under one name,
-    two addresses between them, and a bridge record carrying no address at
-    all — which is how the group forms in the first place.
+    Three records under one name, two addresses between them, and a bridge record carrying no address at
+    all, which is how the group forms in the first place.
     """
 
     def setUp(self):
@@ -1499,7 +1496,7 @@ class StaffCatalogQuestionTest(unittest.TestCase):
     def test_a_person_the_catalog_already_places_is_not_asked(self):
         # One spelling names the patronymic and resolves to a single record;
         # another is ambiguous. The catalog knows who this is, so there is
-        # nothing to ask — and asking anyway would put a settled person in
+        # nothing to ask - and asking anyway would put a settled person in
         # the queue for somebody to puzzle over.
         self.run_stage([person("A1", "Andrei Gennadevich Kuznetsov", ["W1"],
                                variants=["Andrei Kuznetsov"])])

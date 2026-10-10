@@ -31,7 +31,7 @@ def selected_row(owner, name, publication_id="W1"):
 
 
 def payload_for(owner, name, *, repo_id=1):
-    """What GitHub answers — with `owner`/`name` already redirected."""
+    """What GitHub answers - with `owner`/`name` already redirected."""
     return {"ok": True, "has_readme": True, "payload": {
         "id": repo_id, "name": name, "html_url": f"https://github.com/{owner}/{name}",
         "owner": {"login": owner, "type": "Organization"},
@@ -47,10 +47,9 @@ class RenamedRepositoryTest(unittest.TestCase):
     """A row found under the cited id must not be left behind by the re-key.
 
     GitHub redirects a renamed repository, so `nccr-itmo/FEDOT` answers as
-    `aimclub/FEDOT`. The row is re-keyed to the canonical id; upserting it
-    then creates a second document, and the one it was read from stays in
-    place holding the same url — the duplicate the canonical keying exists
-    to prevent, and one the graph's uniqueness constraint rejects.
+    `aimclub/FEDOT` and the row is re-keyed to the canonical id. Upserting it
+    then creates a second document while the original stays in place with the
+    same url, which the graph's uniqueness constraint rejects.
     """
 
     def setUp(self):
@@ -90,8 +89,8 @@ class RenamedRepositoryTest(unittest.TestCase):
         self.assertIsNone(documents[0]["superseded_id"])
 
     def test_a_row_never_lists_the_id_it_ends_up_with(self):
-        # The old row can already name the canonical id — an earlier fold
-        # wrote it there — and would otherwise be merged into itself.
+        # The old row can already name the canonical id - an earlier fold
+        # wrote it there - and would otherwise be merged into itself.
         self.db.repositories.insert_one(
             stored("github_nccr-itmo_fedot", "https://github.com/nccr-itmo/FEDOT",
                    merged_ids=["github_aimclub_fedot"]))

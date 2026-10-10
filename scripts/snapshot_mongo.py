@@ -1,9 +1,9 @@
 """Write prepared collections out as Extended JSON, one file per collection.
 
-The rollback point for anything that rewrites prepared data, and at the same
-time the input the rehearsal stand loads (`rehearsal_up.sh` runs mongoimport
-over exactly these files). Extended JSON is what `bson.json_util` emits and
-what mongoimport reads natively, so dates and ObjectIds survive the trip.
+The rollback point for anything that rewrites prepared data, and the input the
+rehearsal stand loads (`rehearsal_up.sh` runs mongoimport over these files).
+Extended JSON (`bson.json_util`) is read natively by mongoimport, so dates and
+ObjectIds survive the trip.
 
 Reads only. Point it at a database with --uri; without one it uses the
 configured connection, which for this checkout is the server.
@@ -60,7 +60,7 @@ def main() -> int:
         args.out.mkdir(parents=True, exist_ok=True)
         report = [dump(db, name, args.out, args.gzip) for name in args.collections]
         # Read the address while the client is still open; it is unavailable
-        # once closed, and the manifest is worthless without naming the source.
+        # once closed, and the manifest needs to name the source.
         host = client.address[0] if client.address else None
     finally:
         client.close()

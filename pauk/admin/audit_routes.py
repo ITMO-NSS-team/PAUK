@@ -17,12 +17,7 @@ def changes(request: Request, user: CurrentUser, session: Session, db: Db,
             actor: str = "", entity_type: str = "", entity_id: str = "",
             kind: str = "", since: str = "", until: str = "",
             order: str = "new", page: int = 1):
-    """The feed. Readable by anyone who can sign in, including viewers.
-
-    Reading who changed what is not a privilege: the feed is how a wrong
-    value gets explained, and a viewer looking at a suspicious field needs
-    it as much as an editor does.
-    """
+    """The change feed, readable by anyone who can sign in, viewers included."""
     page = max(page, 1)
     filters = {"actor": actor, "entity_type": entity_type, "entity_id": entity_id,
                "kind": kind, "since": since, "until": until}

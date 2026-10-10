@@ -19,7 +19,7 @@ import {
 } from "./fixtures";
 
 describe("loadSampleGraphData", () => {
-  it("загружает фикстуру и проходит проверку формы", async () => {
+  it("loads the fixture and passes the shape check", async () => {
     const data = await loadSampleGraphData();
 
     expect(() => assertGraphData(data)).not.toThrow();
@@ -29,8 +29,8 @@ describe("loadSampleGraphData", () => {
   });
 });
 
-describe("indexByKey и nodeLabel", () => {
-  it("indexByKey находит любой узел (автора, репозиторий, публикацию) по его key", async () => {
+describe("indexByKey and nodeLabel", () => {
+  it("indexByKey finds any node (author, repository, publication) by its key", async () => {
     const data = await loadSampleGraphData();
     const index = indexByKey(data);
 
@@ -40,11 +40,11 @@ describe("indexByKey и nodeLabel", () => {
     expect(index.get("такого-ключа-точно-нет")).toBeUndefined();
   });
 
-  it("nodeLabel берёт label у автора/репозитория и key у публикации (у PubNode label нет)", async () => {
+  it("nodeLabel takes label from an author/repository and key from a publication (PubNode has no label)", async () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];
     const pub = data.pubs[0];
-    if (!author || !pub) throw new Error("фикстура должна содержать хотя бы одного автора и одну публикацию");
+    if (!author || !pub) throw new Error("the fixture must contain at least one author and one publication");
 
     expect(nodeLabel(author, "ru")).toBe(author.label);
     expect(nodeLabel(pub, "ru")).toBe(pub.key);
@@ -52,7 +52,7 @@ describe("indexByKey и nodeLabel", () => {
 });
 
 describe("loadSampleAuthorDetails / loadSampleRepoDetails / indexDetailsByKey", () => {
-  it("у каждого автора из graph-data есть запись в authors-detail (даже с пустыми полями)", async () => {
+  it("every author in graph-data has an entry in authors-detail (even with empty fields)", async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
 
@@ -61,7 +61,7 @@ describe("loadSampleAuthorDetails / loadSampleRepoDetails / indexDetailsByKey", 
     }
   });
 
-  it("у каждого репозитория из graph-data есть запись в repos-detail", async () => {
+  it("every repository in graph-data has an entry in repos-detail", async () => {
     const data = await loadSampleGraphData();
     const repoDetails = indexDetailsByKey(await loadSampleRepoDetails());
 
@@ -70,7 +70,7 @@ describe("loadSampleAuthorDetails / loadSampleRepoDetails / indexDetailsByKey", 
     }
   });
 
-  it("indexDetailsByKey работает с любым видом *Detail — не только с публикациями", async () => {
+  it("indexDetailsByKey works with any *Detail kind, not only publications", async () => {
     const repoDetails = indexDetailsByKey(await loadSampleRepoDetails());
     expect(repoDetails.get("R1")?.description).toBe("Инструменты для построения раскладки графа");
     expect(repoDetails.get("такого-ключа-точно-нет")).toBeUndefined();
@@ -82,7 +82,7 @@ function repoDetailStub(key: string, description: string): RepoDetail {
 }
 
 describe("mergeDetailsInto", () => {
-  it("добавляет записи в УЖЕ СУЩЕСТВУЮЩУЮ карту по той же ссылке, не создаёт новую", async () => {
+  it("adds entries to the ALREADY EXISTING map by the same reference, does not create a new one", async () => {
     const target = new Map<string, RepoDetail>();
     expect(target.has("R1")).toBe(false);
 
@@ -93,7 +93,7 @@ describe("mergeDetailsInto", () => {
     expect(target.get("R1")?.description).toBe("Инструменты для построения раскладки графа");
   });
 
-  it("не трогает записи, которых нет во входном списке (мержит, а не заменяет карту целиком)", () => {
+  it("leaves entries absent from the input list untouched (merges instead of replacing the whole map)", () => {
     const target = new Map<string, RepoDetail>([["custom", repoDetailStub("custom", "уже был до мержа")]]);
 
     mergeDetailsInto(target, [repoDetailStub("R1", "новый")]);
@@ -104,20 +104,20 @@ describe("mergeDetailsInto", () => {
 });
 
 describe("groupIdOf / groupsById", () => {
-  it("репозиторий красится по group, остальные узлы и старые данные без group — по dept", async () => {
+  it("a repository is coloured by group, other nodes and old data without group by dept", async () => {
     const data = await loadSampleGraphData();
     const [repo] = data.repos;
     const [author] = data.authors;
-    if (!repo || !author) throw new Error("в фикстуре нет репозитория или автора");
+    if (!repo || !author) throw new Error("the fixture has no repository or author");
     expect(groupIdOf({ ...repo, group: 7 })).toBe(7);
     expect(groupIdOf(repo)).toBe(repo.dept);
     expect(groupIdOf(author)).toBe(author.dept);
   });
 
-  it("один индекс на департаменты и группы репозиториев, без repo_groups — только департаменты", async () => {
+  it("one index for departments and repository groups, only departments without repo_groups", async () => {
     const data = await loadSampleGraphData();
     const [dept] = data.departments;
-    if (!dept) throw new Error("в фикстуре нет департаментов");
+    if (!dept) throw new Error("the fixture has no departments");
     const group = { ...dept, id: 7, kind: "field" as const, name: "Physics", name_en: "Physics" };
     expect(groupsById({ ...data, repo_groups: [group] }).get(7)).toBe(group);
     expect([...groupsById(data).keys()]).toEqual(data.departments.map((d) => d.id));
@@ -125,9 +125,9 @@ describe("groupIdOf / groupsById", () => {
 });
 
 describe("grantIndex", () => {
-  it("собирает публикации по grant_key, имя и фонд — самые частые написания", async () => {
+  it("groups publications by grant_key, the name and funder are the most frequent spellings", async () => {
     const [detail] = await loadSamplePubDetails();
-    if (!detail) throw new Error("в фикстуре нет деталей публикации");
+    if (!detail) throw new Error("the fixture has no publication details");
     const rsf = (grantId: string, key: string | null) => ({ funder: "RSF", grant_id: grantId, grant_key: key });
     const pubDetails = indexDetailsByKey([
       { ...detail, key: "P1", funding: [rsf("18-19-00627", "18-19-00627")] },
@@ -140,9 +140,9 @@ describe("grantIndex", () => {
     expect(grantIndex(pubDetails).size).toBe(1); // a cut-short number without a key is not a grant
   });
 
-  it("пересчитывается, когда детали домержились фоном", async () => {
+  it("recomputes when details are merged in the background", async () => {
     const [detail] = await loadSamplePubDetails();
-    if (!detail) throw new Error("в фикстуре нет деталей публикации");
+    if (!detail) throw new Error("the fixture has no publication details");
     const pubDetails = new Map<string, typeof detail>();
     expect(grantIndex(pubDetails).size).toBe(0);
     mergeDetailsInto(pubDetails, [
@@ -153,7 +153,7 @@ describe("grantIndex", () => {
 });
 
 describe("toCsv", () => {
-  it("BOM для Excel, кавычки и запятые экранированы по RFC 4180", () => {
+  it("Excel BOM, quotes and commas are escaped per RFC 4180", () => {
     expect(toCsv([["a", "b"], ['x,"y"', "z"]])).toBe('\uFEFFa,b\r\n"x,""y""",z');
   });
 });

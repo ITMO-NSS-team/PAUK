@@ -2,13 +2,11 @@
 
 Writes a CSV with one row per input row and a verdict for each: is the
 repository a node, is the paper a node, is there an edge between them. Reads
-only — nothing here changes a database.
+only; nothing here changes a database.
 
-Deliberately does *not* reuse the matching code from
-`import_curated_repos.py`. A verifier that shares its subject's logic cannot
-catch a bug in that logic: if title normalization were wrong, both would be
-wrong the same way and the report would look clean. The two implementations
-agreeing is itself part of the evidence.
+Deliberately does *not* reuse the matching code from `import_curated_repos.py`:
+a verifier sharing its subject's logic cannot catch a bug in that logic, and the
+two implementations agreeing is itself part of the evidence.
 
 Run where Neo4j is reachable (the server), then fetch the CSV.
 """
@@ -47,7 +45,7 @@ REPORT_COLUMNS = [
 
 
 def fold(text: str) -> str:
-    """Letters and digits only — what two records of one paper always share."""
+    """Letters and digits only, which is what two records of one paper always share."""
     folded = unicodedata.normalize("NFKD", text or "").lower()
     return " ".join(re.sub(r"[^0-9a-zа-яё]+", " ", folded).split())
 
@@ -57,7 +55,7 @@ def canonical_url(url: str) -> str:
 
 
 def load_graph(session) -> tuple[dict, dict, dict, set, set]:
-    """Everything the verdicts need, in five lookups instead of 259 × 4 queries."""
+    """Everything the verdicts need, in five lookups instead of one query per row and check."""
     repos_by_url: dict[str, dict] = {}
     repos_by_id: dict[str, dict] = {}
     for record in session.run(

@@ -97,7 +97,7 @@ export class Store<S extends object> {
       try {
         listener(this.state);
       } catch (error: unknown) {
-        console.error("[store] подписчик упал при рассылке состояния:", error);
+        console.error("[store] a subscriber threw while receiving state:", error);
       }
     });
   }

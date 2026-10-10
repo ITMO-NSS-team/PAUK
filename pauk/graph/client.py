@@ -8,9 +8,8 @@ logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 2000
 
-# false and [] are meaningful values rather than missing data.  
-# Keep this explicit per graph label so newly added fields
-# do not accidentally acquire lossy behaviour.
+# false and [] are meaningful values rather than missing data. Keep this
+# explicit per graph label so newly added fields do not acquire lossy behaviour.
 BOOLEAN_MERGE_FIELDS = {
     "Person": {"is_itmo"},
     "Publication": {"has_code"},
@@ -100,7 +99,7 @@ def chunked(seq: list, size: int = CHUNK_SIZE):
 class Neo4jClient:
     """Thin wrapper around batched node/relationship upserts into Neo4j.
 
-    The constructor only opens a driver connection — it does not create
+    The constructor only opens a driver connection; it does not create
     constraints. Call schema.create_constraints() explicitly before loading
     any data (see pauk/graph/schema.py).
     """
@@ -270,7 +269,7 @@ class Neo4jClient:
 
         The dedup enrichment stage records the ids it merged away on the
         surviving row (merged_ids). A publish performed before the merge may
-        still hold a node for such an id — move its relationships onto the
+        still hold a node for such an id: move its relationships onto the
         canonical node (existing canonical relationships win, the duplicate's
         properties only fill gaps) and delete the duplicate. Rows whose
         duplicate node does not exist are no-ops.
@@ -352,7 +351,7 @@ class Neo4jClient:
             SET canonical.updated_at = datetime()
             """,
         )
-        # The canonical node must exist — otherwise deleting the duplicate
+        # The canonical node must exist; otherwise deleting the duplicate
         # would lose the entity entirely.
         delete_query = cast(
             LiteralString,
@@ -482,8 +481,8 @@ class Neo4jClient:
                                  tgt_match_prop: str = "id") -> set[tuple[str, str]]:
         """Every edge of one triple, as the loader would name it.
 
-        The far end is reported by whatever the loader matches it on — a
-        url for a Repository, a login for a GitHubProfile — so the answer
+        The far end is reported by whatever the loader matches it on (a
+        url for a Repository, a login for a GitHubProfile), so the answer
         can be compared with what the prepared rows ask for without
         translating either side.
         """
@@ -561,7 +560,7 @@ class Neo4jClient:
 
         Returns:
             The surviving node's id, or None when nothing swallowed this id.
-            A node of its own is not looked for here — the caller has
+            A node of its own is not looked for here: the caller has
             already failed to find one.
         """
         query = cast(
@@ -631,7 +630,7 @@ class Neo4jClient:
             tgt_label: Label of the target node.
             rel_type: Cypher relationship type to create, e.g. "AUTHORED".
             relationships: List of (src_id, tgt_id, rel_properties) tuples.
-            tgt_match_prop: Property used to look up the target node — not
+            tgt_match_prop: Property used to look up the target node, not
                 always "id" (e.g. Repository is matched by "url",
                 GitHubProfile by "login").
 
@@ -666,7 +665,7 @@ class Neo4jClient:
 
         if matched < len(batch):
             logger.warning(
-                "(:%s)-[:%s]->(:%s): requested %d, matched %d — %d row(s) whose source/target node was not found",
+                "(:%s)-[:%s]->(:%s): requested %d, matched %d; %d row(s) whose source/target node was not found",
                 src_label,
                 rel_type,
                 tgt_label,
@@ -680,11 +679,11 @@ class Neo4jClient:
         """Every property of one node, or None if there is no such node.
 
         The dedup fetchers return the few fields they compare on; a manual
-        edit needs the whole node — to show it, and to read the
+        edit needs the whole node, to show it and to read the
         `updated_at` an optimistic check is made against.
 
         Args:
-            label: Node label, interpolated into Cypher — whitelist only.
+            label: Node label, interpolated into Cypher; whitelist only.
             node_id: Value of the node's `id` property.
         """
         query = cast(
@@ -699,7 +698,7 @@ class Neo4jClient:
         """How many nodes carry this label.
 
         Args:
-            label: Node label, interpolated into Cypher — whitelist only.
+            label: Node label, interpolated into Cypher; whitelist only.
         """
         query = cast(LiteralString, f"MATCH (n:{label}) RETURN count(n) AS total")
         with self.driver.session() as session:
@@ -714,11 +713,11 @@ class Neo4jClient:
         is the whole list, on a large one the beginning of it.
 
         Args:
-            label: Node label, interpolated into Cypher — whitelist only.
+            label: Node label, interpolated into Cypher; whitelist only.
             fields: Property names to return, also interpolated.
             limit: How many rows to bring back.
             skip: How many to pass over first, for paging.
-            order: Property to sort by, largest first, also interpolated —
+            order: Property to sort by, largest first, also interpolated;
                 whitelist only. A node that has no such property sorts
                 last: in Cypher null is the largest value, so the ones
                 with nothing to show would otherwise open the list. Ties
@@ -744,8 +743,8 @@ class Neo4jClient:
         name, and that lookup must not be buried under fuzzy matches.
 
         Args:
-            label: Node label, interpolated into Cypher — whitelist only.
-            fields: Property names to return, also interpolated —
+            label: Node label, interpolated into Cypher; whitelist only.
+            fields: Property names to return, also interpolated;
                 whitelist only.
             searched: Property names the query is matched against, a subset
                 of `fields`. Separate because a listing can show a column
@@ -798,7 +797,7 @@ class Neo4jClient:
     def delete_nodes_batch(self, label: str, ids: list[str], detach: bool = True) -> int:
         """Delete nodes by id, optionally taking their relationships with them.
 
-        Nothing in the pipeline deletes a node — the loader only ever
+        Nothing in the pipeline deletes a node: the loader only ever
         MERGEs, and dedup folds duplicates rather than removing them. This
         exists for manual removal from the admin layer, which is why it
         reports how many nodes actually went: a caller asking to delete an
@@ -811,7 +810,7 @@ class Neo4jClient:
             ids: Node ids to delete.
             detach: True deletes the node together with its relationships.
                 False leaves a node that still has any relationship
-                untouched — Neo4j refuses to delete a connected node, and
+                untouched. Neo4j refuses to delete a connected node, and
                 that refusal is the point: it stops a careless delete from
                 silently tearing edges out of the graph.
 
@@ -849,7 +848,7 @@ class Neo4jClient:
             tgt_label: Label of the target node.
             rel_type: Relationship type to delete, e.g. "AUTHORED".
             pairs: (src_id, tgt_id) pairs whose relationship goes.
-            tgt_match_prop: Property the target is looked up by — not
+            tgt_match_prop: Property the target is looked up by, not
                 always "id" (Repository by "url", GitHubProfile by "login").
 
         Returns:

@@ -1,27 +1,24 @@
 """Export code links (or whole papers) to CSV for manual annotation.
 
 The only harness in this repository that measures how well link extraction
-works, so the numbers it produces are what any claim about extractor quality
-rests on. Two modes, because precision and recall need different inputs and
-only one of them can be measured from the links the pipeline already found:
+works. Two modes, because precision and recall need different inputs:
 
   links  (default)  One row per extracted link, with two independent label
                     columns because the pipeline makes two independent
                     decisions: `url_ok` scores the extractor (PRECISION), and
                     `authors_own` scores the model, which predicts exactly that
-                    one binary. Whether the repository exists at all is a third
-                    decision, already answered by the GitHub lookup and carried
-                    in `resolved_on_github` rather than labelled by hand.
+                    one binary. Whether the repository exists at all is already
+                    answered by the GitHub lookup and carried in
+                    `resolved_on_github`.
 
   papers            One row per sampled publication. The annotator opens the
-                    PDF and lists every repository it actually references.
-                    Answers "what did the extractor miss" - i.e. extraction
-                    RECALL, which is invisible from the extracted set alone.
+                    PDF and lists every repository it actually references,
+                    which measures extraction RECALL.
 
-In papers mode the URLs PAUK found are withheld by default: showing them first
+In papers mode the URLs PAUK found are withheld by default, since showing them
 turns an independent search into a confirmation task and inflates recall. Pass
---show-extracted only when reviewing the extractor, never when producing the
-ground truth it will be scored against.
+--show-extracted only when reviewing the extractor, never when producing ground
+truth.
 
 Usage:
     uv run python scripts/export_link_labels.py --group <group> [--mode links]
@@ -163,9 +160,10 @@ def _occurrence_cells(occurrence) -> tuple[str, str]:
 
 
 def _richest_occurrence(link):
-    """The occurrence that best settles the own/third-party call for a human:
-    a PDF page over the abstract, then the longest context. The abstract
-    context is usually one truncated sentence."""
+    """The occurrence that best settles the own/third-party call for a human.
+
+    A PDF page over the abstract, then the longest context.
+    """
     if not link.occurrences:
         return None
     return max(
@@ -181,11 +179,7 @@ def _verdict_source(link) -> str:
 
 
 def _resolution_index(store: PreparedStore) -> dict[str, str]:
-    """Map every URL a repository is known by to whether GitHub resolved it.
-
-    The repositories stage answers "is this a real repository" with an API
-    call, so it is not something a human should be labelling.
-    """
+    """Map every URL a repository is known by to whether GitHub resolved it."""
     index: dict[str, str] = {}
     for repo in store.read_models("repositories", Repository):
         state = repo.processing.get("repositories")
@@ -276,13 +270,11 @@ def _row_key(row: dict) -> str:
 
 
 def _sample(rows: list[dict], limit: int | None, seed: int) -> list[dict]:
-    """Seeded sample so the same --limit/--seed always yields the same sheet -
-    a re-export must not silently reshuffle work already annotated.
+    """Seeded sample so the same --limit/--seed always yields the same sheet.
 
-    Selection is by a hash of the row's own identity, not by its position:
-    read_models() returns whatever order Mongo holds, which shifts as the
-    pipeline updates documents, and a positional sample would also redraw the
-    whole sheet the moment the group gains a single row.
+    Selection is by a hash of the row's own identity, not its position, because
+    Mongo returns rows in a shifting order and a positional sample would redraw
+    the sheet whenever the group gains a row.
     """
     ordered = sorted(rows, key=_row_key)
     if limit is None or limit >= len(ordered):

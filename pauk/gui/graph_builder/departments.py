@@ -1,9 +1,10 @@
-"""Assigns a department to every author/publication/repository - rules in
-`docs/architecture/gui.md`: a publication gets the majority vote among its
-ITMO authors; an author gets their most recent publication's department; a
-repository gets the majority among the departments of the publications it
-implements. Ties break by id, not by global popularity (otherwise large
-departments would only keep growing themselves).
+"""Assigns a department to every author/publication/repository.
+
+Rules are in `docs/architecture/gui.md`: a publication gets the majority vote
+among its ITMO authors; an author gets their most recent publication's
+department; a repository gets the majority among the departments of the
+publications it implements. Ties break by id, not by global popularity, or
+large departments would only keep growing.
 """
 
 from __future__ import annotations
@@ -63,15 +64,15 @@ def repo_owner(row: dict) -> str:
         >>> repo_owner({"url": "https://github.com/AimClub/FEDOT"})
         'aimclub'
     """
-    # Snapshots taken before `owner` was exported only have the URL.
+    # Snapshots exported before `owner` existed only have the URL.
     url_parts = (row.get("url") or "").rstrip("/").split("/")
     return (row.get("owner") or (url_parts[-2] if len(url_parts) >= 2 else "")).lower()
 
 
 def majority_dept(dept_lists: Iterable[Iterable[str]]) -> str | None:
-    """Department by majority vote; ties break by id, not by global
-    popularity - that would create a "rich get richer" feedback loop
-    favoring already-large departments.
+    """Department by majority vote; ties break by id.
+
+    Breaking ties by global popularity would favor already-large departments.
 
     Args:
         dept_lists: A list of departments per "voter" (e.g. each coauthor's
@@ -127,8 +128,7 @@ class DepartmentTable:
 
 @dataclass(frozen=True)
 class RepoGroups:
-    """Colour groups of the repositories tab: department, else owning GitHub
-    organization, else field of the implemented publications."""
+    """Colour groups of the repositories tab: department, else GitHub organization, else field."""
 
     groups: list[dict]
     """Org/field rows for `graph-data.json["repo_groups"]`, shaped like department rows plus `kind`."""
@@ -137,10 +137,10 @@ class RepoGroups:
 
 
 class DepartmentAssigner:
-    """Assigns a department to every entity and builds the final table for
-    the frontend - two methods instead of two free functions, because both
-    share the same context (`db`/`authorship`) and builder.py calls
-    them back to back exactly once per run.
+    """Assigns a department to every entity and builds the final table for the frontend.
+
+    `builder.py` calls both methods back to back once per run, and they share
+    the same context (`db`/`authorship`).
     """
 
     def __init__(self, db: dict[str, list[dict]], authorship: Authorship) -> None:
@@ -159,29 +159,26 @@ class DepartmentAssigner:
         """
         db, authorship = self.db, self.authorship
 
-        # Step 1: BELONGS_TO as-is - every real department of every author
-        # (can be several, can be none). A key is created for EVERY author in
-        # persons (even with zero edges) - otherwise a KeyError below, in the
-        # author_dept loop, for an author with no BELONGS_TO at all.
+        # Step 1: BELONGS_TO as-is: every real department of every author
+        # (several or none). Every author in persons gets a key, even with zero
+        # edges, or the author_dept loop below would raise KeyError.
         static_depts: dict[str, list[str]] = {row["id"]: [] for row in db["persons"]}
         for row in db["person_depts"]:
             per, did = row["per"], row["did"]
             if did in dept_name:  # silently drop an edge to a nonexistent/deleted department
                 static_depts[per].append(did)
 
-        # Step 2: PRODUCED_BY as-is - a publication's full department list,
-        # not just the primary one (computed below, in pub_primary). Filtered
-        # by pub_ids - publications with no ITMO author never reach here at all.
+        # Step 2: PRODUCED_BY as-is: a publication's full department list, not
+        # just the primary one (pub_primary, below). Filtered by pub_ids.
         pub_dept_rows: dict[str, list[str]] = defaultdict(list)
         for row in db["pub_depts"]:
             pid, did = row["pid"], row["did"]
             if pid in authorship.pub_ids and did in dept_name and did not in pub_dept_rows[pid]:
                 pub_dept_rows[pid].append(did)
 
-        # Step 3: a publication's primary department - majority vote among
-        # its authors (by their static_depts - only ITMO people have BELONGS_TO,
-        # so external coauthors never vote), falling back to the first
-        # PRODUCED_BY if there were no votes at all (authors with zero BELONGS_TO).
+        # Step 3: a publication's primary department is the majority vote among
+        # its authors' static_depts (only ITMO people have BELONGS_TO, so
+        # external coauthors never vote), falling back to the first PRODUCED_BY.
         pub_primary: dict[str, str | None] = {}
         for pid in authorship.pub_ids:
             primary = majority_dept(static_depts.get(per, []) for per in authorship.pub_authors[pid])
@@ -189,10 +186,9 @@ class DepartmentAssigner:
                 primary = pub_dept_rows[pid][0]
             pub_primary[pid] = primary
 
-        # Step 4: an author's department - the primary department of their
-        # MOST RECENT publication (sorted by date descending, take the first
-        # one that actually has a pub_primary - older publications with no
-        # department are skipped, not treated as a dead end).
+        # Step 4: an author's department is the primary department of their most
+        # recent publication that has one; older publications with no department
+        # are skipped, not treated as a dead end.
         pub_date = {r["id"]: (r["publication_date"] or "") for r in authorship.pubs_rows}
         author_dept: dict[str, str | None] = {}
         for per in static_depts:
@@ -203,16 +199,15 @@ class DepartmentAssigner:
                     break
             author_dept[per] = dept
 
-        # Step 5: repository -> the publications it implements (IMPLEMENTS,
-        # see edges.py), within pub_ids - needed below to compute a
-        # repository's department from THOSE publications' departments.
+        # Step 5: repository -> the publications it implements (IMPLEMENTS, see
+        # edges.py), within pub_ids, to derive the repository's department.
         repo_pub_map: dict[str, list[str]] = defaultdict(list)
         for row in db["repo_pubs"]:
             rid, pid = row["rid"], row["pid"]
             if pid in authorship.pub_ids:
                 repo_pub_map[rid].append(pid)
-        # DEVELOPED_BY as-is - the same role for a repository that
-        # PRODUCED_BY plays for a publication (full list, not just primary).
+        # DEVELOPED_BY as-is: for a repository what PRODUCED_BY is for a
+        # publication (full list, not just primary).
         repo_dept_rows: dict[str, list[str]] = defaultdict(list)
         for row in db["repo_depts"]:
             rid, did = row["rid"], row["did"]
@@ -223,10 +218,9 @@ class DepartmentAssigner:
         for row in db["repo_persons"]:
             repo_contributors[row["rid"]].add(row["per"])
 
-        # Step 6: a repository's primary department - majority vote among the
-        # departments of the publications it implements (via repo_pub_map +
-        # pub_primary), falling back to DEVELOPED_BY the same way publications
-        # do, then to its ITMO contributors' departments.
+        # Step 6: a repository's primary department is the majority vote among
+        # the departments of the publications it implements, falling back to
+        # DEVELOPED_BY, then to its ITMO contributors' departments.
         repo_dept: dict[str, str | None] = {}
         for row in db["repositories"]:
             rid = row["id"]
@@ -236,9 +230,8 @@ class DepartmentAssigner:
             if primary is None and repo_dept_rows.get(rid):
                 primary = repo_dept_rows[rid][0]
             if primary is None:
-                # Weaker than the publication it implements - someone can
-                # contribute far outside their own department - so it only
-                # speaks when nothing else does.
+                # Weaker than the implemented publication (someone can contribute
+                # far outside their department), so it only speaks last.
                 primary = majority_dept(static_depts.get(per, []) for per in repo_contributors.get(rid, ()))
             repo_dept[rid] = primary
 
@@ -255,10 +248,10 @@ class DepartmentAssigner:
     def build_table(
         self, dept_name: dict[str, str], dept_name_en: dict[str, str], assignment: DepartmentAssignment
     ) -> DepartmentTable:
-        """Counts how many entities each department has, sorts by size, and
-        reindexes into dense ids 0..N (plus a separate "no department"
-        bucket last) - so the frontend never needs to know the graph's real
-        (arbitrary) department ids.
+        """Counts entities per department and reindexes them into dense ids 0..N.
+
+        The "no department" bucket comes last, so the frontend never needs the
+        graph's real (arbitrary) department ids.
 
         Args:
             dept_name: Department id -> Russian name.
@@ -270,9 +263,9 @@ class DepartmentAssigner:
         """
         db, authorship = self.db, self.authorship
 
-        # Count how many times each department was SOMEONE's primary
-        # (author_dept/pub_primary/repo_dept) - this sum drives the sort
-        # order below: larger departments get a smaller (more prominent) dense id.
+        # Count how many times each department was someone's primary
+        # (author_dept/pub_primary/repo_dept); larger departments get a smaller,
+        # more prominent dense id.
         usage: Counter[str] = Counter()
         for d in assignment.author_dept.values():
             if d:  # None means "this entity has no department", not a vote
@@ -283,40 +276,33 @@ class DepartmentAssigner:
         for d in assignment.repo_dept.values():
             if d:
                 usage[d] += 1
-        # += 0, not just "remember the id set": a department that only ever
-        # shows up as secondary (PRODUCED_BY/DEVELOPED_BY), never as anyone's
-        # primary, must still get a key in usage - otherwise it's missing from
-        # gid below, and table.g() raises KeyError the first time it's
-        # referenced as a non-primary department of a publication/repository.
+        # += 0 so a department that only appears as secondary (PRODUCED_BY/
+        # DEVELOPED_BY) still gets a key in usage, or table.g() would raise
+        # KeyError for it.
         for rows in (assignment.pub_dept_rows, assignment.repo_dept_rows):
             for depts in rows.values():
                 for d in depts:
                     usage[d] += 0
 
-        # Sorted by usage descending, ties broken by name (deterministic, not
-        # dict iteration order). gid - dense ids 0..N-1 in this order;
-        # no_dept_gid - the id right after the last real department, for the
-        # "no department" bucket.
+        # Sorted by usage descending, ties by name (deterministic). gid are dense
+        # ids 0..N-1 in this order; no_dept_gid follows the last real department.
         ordered = sorted(usage, key=lambda d: (-usage[d], dept_name[d]))
         gid = {d: i for i, d in enumerate(ordered)}
         no_dept_gid = len(ordered)
 
         def g(dept_db_id: str | None) -> int:
-            # Falsy (None or "") -> the "no department" bucket, not a KeyError.
+            # Falsy (None or "") goes to the "no department" bucket, not a KeyError.
             return gid[dept_db_id] if dept_db_id else no_dept_gid
 
-        # Counts authors/publications/repositories for EVERY dense id at once
-        # (via Counter), rather than one loop per count - these three numbers
-        # go straight into the n_authors/n_pubs/n_repos fields below.
+        # One Counter per entity type counts every dense id at once.
         n_auth = Counter(g(d) for d in assignment.author_dept.values())
         n_pub = Counter(g(assignment.pub_primary[p]) for p in authorship.pub_ids)
         n_repo = Counter(g(assignment.repo_dept[r["id"]]) for r in db["repositories"])
-        # Other spellings of a department's name (catalog variants) - only for
-        # search on the site, never shown.
+        # Other spellings of a department's name (catalog variants), used only
+        # for search on the site, never shown.
         variants = {row["id"]: name_list(row.get("name_variants")) for row in db.get("departments", [])}
 
-        # One row per real department, in sorted order (ordered), with dense
-        # id/color/the three counts.
+        # One row per real department, in sorted order.
         departments = [
             {
                 "id": gid[d],
@@ -331,8 +317,8 @@ class DepartmentAssigner:
             }
             for d in ordered
         ]
-        # Plus one extra row - the synthetic "no department" bucket (id/name/
-        # color from config.py, not from any real graph department), always last.
+        # Plus the synthetic "no department" bucket (values from config.py),
+        # always last.
         departments.append(
             {
                 "id": no_dept_gid,
@@ -351,10 +337,10 @@ class DepartmentAssigner:
 
 
 def repo_groups(db: dict[str, list[dict]], assignment: DepartmentAssignment, table: DepartmentTable) -> RepoGroups:
-    """Groups every repository, strongest claim first: its department, else
-    the GitHub organization that owns it, else the majority field of the
-    publications it implements. A department is known for well under half the
-    repositories, so colouring by department alone leaves most of the tab grey.
+    """Groups every repository: department, else owning GitHub organization, else field.
+
+    The field is the majority field of the publications it implements. A department is known for well under half the repositories, so colouring
+    by department alone leaves most of the tab grey.
 
     A department group reuses the department's own id, so selecting a
     department means the same thing on every tab; org/field groups get ids

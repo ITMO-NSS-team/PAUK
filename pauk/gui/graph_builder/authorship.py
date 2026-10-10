@@ -1,8 +1,4 @@
-"""Authorship index: who wrote what, which publications even make it into the graph.
-
-Called once per run, never reused with a different config - a plain
-function rather than a class, nothing to hold as state between calls.
-"""
+"""Authorship index: who wrote what, which publications even make it into the graph."""
 
 from __future__ import annotations
 
@@ -15,8 +11,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Authorship:
-    """Who wrote what: the authorship index and publications, filtered down
-    to those with at least one ITMO author."""
+    """Authorship index and publications, filtered to those with an ITMO author."""
 
     pub_authors: dict[str, list[str]]
     """Publication -> list of all its authors, ITMO and external."""
@@ -33,9 +28,8 @@ class Authorship:
 def build_authorship_index(db: dict[str, list[dict]]) -> Authorship:
     """Builds the authorship index and drops publications with no ITMO author.
 
-    A person counts as external only when the snapshot explicitly says
-    `is_itmo: false` - snapshots exported before external authors were
-    included carry no such field and only ever held ITMO people.
+    A person counts as external only when the snapshot says `is_itmo: false`;
+    older snapshots carry no such field and held only ITMO people.
 
     Args:
         db: Graph snapshot in the shape `pauk.cache.export::load_db()` returns.

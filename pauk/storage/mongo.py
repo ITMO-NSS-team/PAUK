@@ -40,7 +40,7 @@ def ensure_compression(db: Database) -> list[str]:
 
     Only ones that do not exist yet. WiredTiger takes the compressor when
     the collection is created, and changing it afterwards applies to new
-    blocks alone — an existing collection needs `collMod` and a rewrite,
+    blocks alone; an existing collection needs `collMod` and a rewrite,
     which is an operator's decision with a lock attached, not something a
     command does on startup.
 
@@ -67,8 +67,10 @@ def ensure_compression(db: Database) -> list[str]:
 
 
 def ensure_indexes(db: Database) -> None:
-    """Create indexes the storage layer relies on. Idempotent - safe to call
-    on every command startup, same spot as Neo4j's create_constraints()."""
+    """Create indexes the storage layer relies on.
+
+    Idempotent, so safe to call on every command startup.
+    """
     ensure_compression(db)
     db.revisions.create_index([("entity_type", 1), ("entity_id", 1), ("version", 1)])
     db.raw.create_index([("source", 1), ("group", 1), ("fetched_at", 1)])
@@ -77,7 +79,7 @@ def ensure_indexes(db: Database) -> None:
     # entity, and everything one person did.
     db.audit.create_index([("entity_type", 1), ("entity_id", 1), ("timestamp", -1)])
     db.audit.create_index([("actor", 1), ("timestamp", -1)])
-    # The unfiltered feed — the page the panel opens on — sorts by time
+    # The unfiltered feed (the page the panel opens on) sorts by time
     # alone. Without this it is a collection scan plus an in-memory sort,
     # over a collection nothing ever trims.
     db.audit.create_index([("timestamp", -1)])
