@@ -88,7 +88,13 @@ def ensure_indexes(db: Database) -> None:
     # the panel warns an editor whenever a run is under way.
     db.jobs.create_index([("state", 1), ("created_at", 1)])
     db.jobs.create_index([("created_at", -1)])
+    # A restarted worker leaves its old name behind; Mongo drops the stale
+    # marks itself.
+    db.job_workers.create_index([("seen_at", 1)], expireAfterSeconds=3600)
     # The review queue is opened on the unanswered questions, oldest first,
     # and every dedup run reads back every answer given so far.
     db.review_pairs.create_index([("verdict", 1), ("seen_at", 1)])
     db.review_pairs.create_index([("members", 1)])
+    # Without these, every tab count walks the collection that grows fastest.
+    db.review_pairs.create_index([("kind", 1), ("verdict", 1)])
+    db.review_pairs.create_index([("evidence.held_because", 1), ("verdict", 1)])

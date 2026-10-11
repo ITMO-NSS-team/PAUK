@@ -47,25 +47,20 @@ COLLECTION = "review_pairs"
 
 PAIR = "person_pair"
 GROUP = "person_group"
-#: An account against the author it may belong to. A pair like the others,
-#: only its two halves are different things: a GitHub login and a person.
+#: An account against the author it may belong to: a login and a person.
 GITHUB = "github_person"
-#: A person against the catalog records their name cannot be told apart
-#: from. Answered by choosing one, or by saying none of them fits.
+#: A person against the catalog records their name matches; answered by choice.
 STAFF = "staff_record"
 KINDS = (PAIR, GROUP, GITHUB, STAFF)
 
-#: What the person merge rules read. GITHUB and STAFF pair a person with an
-#: account or a directory row, which is not two records of one researcher.
+#: What the merge rules read: the kinds that pair two records of one person.
 PERSON_KINDS = (PAIR, GROUP)
 
 SAME = "same"
 DIFFERENT = "different"
 VERDICTS = (SAME, DIFFERENT)
 
-#: Where the question came from. The dedup stage runs inside a collection,
-#: before anything is published; the graph-wide pass runs over nodes. The
-#: same pair can be asked by both, and it is one question either way.
+#: Which pass asked. The same pair can come from both, and it is one question.
 STAGE = "stage"
 GRAPH = "graph"
 
@@ -99,9 +94,7 @@ def question_id(kind: str, members: list[str]) -> str:
     unique = sorted(set(members))
     if len(unique) < 2:
         raise ReviewError("a question needs at least two distinct members")
-    # The key joins on ":" and the form that answers it on ",". Nothing that
-    # lands here carries either today, but a LinkCandidate id turned out to
-    # be a URL once already: fail loudly rather than collide quietly.
+    # The key joins on ":" and the form on ",": fail loudly, not silently.
     bad = [member for member in unique if ":" in member or "," in member]
     if bad:
         raise ReviewError(f"an id cannot contain ':' or ',': {', '.join(bad)}")
@@ -187,8 +180,7 @@ def record_held(db: Database, report: list[dict], source: str = STAGE) -> int:
         How many questions were written or refreshed.
     """
     moment = _now()
-    # One upsert per question, like PreparedStore.upsert_models: a few
-    # hundred rows once per run, so a bulk write would buy nothing.
+    # One upsert per question: a few hundred rows once per run.
     written = 0
     for row in report:
         if row.get("status") != "held":
@@ -259,9 +251,7 @@ def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
         raise ReviewError("a refused group cannot be answered 'same'; "
                           "answer the pairs inside it instead")
     if kind == STAFF and verdict == SAME:
-        # "Yes" to a question that asks which of two namesakes this is
-        # names nobody. Recorded, it would leave the queue looking answered
-        # and change nothing at all.
+        # "Yes" names nobody: the queue would look answered and change nothing.
         raise ReviewError("a catalog question is answered by choosing a record; "
                           "see record_choice")
     key = question_id(kind, members)
@@ -270,14 +260,11 @@ def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
         {"_id": key},
         {"$set": {"verdict": verdict, "actor": actor, "note": note,
                   "decided_at": moment},
-         # Answering settles what a skip only postponed, and answers the
-         # disagreement the rules raised, whichever way it is answered.
+         # An answer settles what a skip postponed and what the rules disputed.
          "$unset": {"skipped_at": "", "skipped_by": "",
                     "disputed_at": "", "disputed_rule": ""},
          "$setOnInsert": {"kind": kind, "members": sorted(set(members)),
-                          # Names when the caller has them: a pair answered
-                          # before any run held it has no evidence of its
-                          # own, and a row of bare ids asks nothing.
+                          # A pair answered before any run held it has no evidence.
                           "evidence": {"names": names} if names else {},
                           "seen_at": moment, "source": STAGE}},
         upsert=True)
@@ -337,8 +324,7 @@ def record_split(db: Database, members: list[str], same: list[str],
         raise ReviewError("the group was refused precisely because all of it "
                           "cannot be one person")
     rest = [member for member in members if member not in same]
-    # The group knows what its members are called; the pairs it writes would
-    # otherwise be rows of bare ids.
+    # The group knows the names; without them the pairs are rows of bare ids.
     asked = db[COLLECTION].find_one({"_id": question_id(GROUP, members)}) or {}
     known = dict(zip(members, (asked.get("evidence") or {}).get("names") or [],
                      strict=False))
@@ -346,8 +332,7 @@ def record_split(db: Database, members: list[str], same: list[str],
     def named(*people: str) -> list[str | None]:
         return [known.get(person) for person in people]
 
-    # Inside the subset first, so a write that stops halfway merges nothing:
-    # the rules rebuild the whole group and refuse it again.
+    # Inside the subset first: a write that stops halfway merges nothing.
     written = 0
     for first, second in combinations(same, 2):
         record_verdict(db, PAIR, [first, second], SAME, actor=actor, note=note,
@@ -381,9 +366,7 @@ def withdraw(db: Database, kind: str, members: list[str]) -> bool:
     key = question_id(kind, members)
     asked = db[COLLECTION].find_one({"_id": key})
     if asked is not None and asked.get("applied_at"):
-        # The records are one node by now. Dropping the answer would leave
-        # them folded with the question open, and nothing would ever fold
-        # or ask about them again.
+        # They are one node by now: dropping the answer strands both.
         raise ReviewError(f"{key} has been folded; take it apart instead (record_undo)")
     if asked is not None and not (asked.get("evidence") or {}).get("held_because"):
         return db[COLLECTION].delete_one({"_id": key}).deleted_count > 0
@@ -391,9 +374,7 @@ def withdraw(db: Database, kind: str, members: list[str]) -> bool:
         {"_id": key},
         {"$unset": {"verdict": "", "actor": "", "note": "",
                     "decided_at": "", "applied_at": "",
-                    # The catalog record chosen goes with the answer that
-                    # chose it. Left behind, it kept being applied by every
-                    # later run while the panel showed the question as open.
+                    # The record chosen goes with the answer that chose it.
                     "chosen": "",
                     # Nothing left to disagree with once the answer is gone.
                     "disputed_at": "", "disputed_rule": ""}})
@@ -494,8 +475,7 @@ def record_choice(db: Database, person: str, records: list[str], chosen: str | N
     moment = _now()
     db[COLLECTION].update_one(
         {"_id": key},
-        # `person` on the document, not in the evidence: an answer given
-        # before the question exists has no evidence to read it from.
+        # On the document, not in the evidence: an answer can come first.
         {"$set": {"verdict": SAME if chosen else DIFFERENT, "chosen": chosen,
                   "person": person, "actor": actor, "note": note,
                   "decided_at": moment},
@@ -577,15 +557,13 @@ def decisions(db: Database, aliases: dict[str, str] | None = None,
                                     "verdict": {"$exists": True}}):
         members = frozenset(aliases.get(member, member) for member in row["members"])
         if len(members) < 2:
-            # Both sides ended up the same person, so the question is moot:
-            # whatever was decided, they are already one node.
+            # Both sides are the same person by now: the question is moot.
             continue
         found[members] = row["verdict"]
     return found
 
 
-#: Reasons a person can actually settle. One real run held 278 pairs, and
-#: only these 18 were worth an eye. Groups count too, whatever their wording.
+#: Reasons worth a person's time: one run held 278 pairs, 18 of them these.
 PRESSING_REASONS = ("identical name with nothing corroborating it",)
 
 

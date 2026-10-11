@@ -6,9 +6,8 @@ Cyrillic, sometimes mixed) — name_raw. This stage splits it, and every
 known spelling variant, into surname/first name/second name (patronymic),
 in both Russian and English. It also composes name_ru and name_en - one
 flat "surname first name second name" string per language, matching
-gui/generate_data.py's author_label() shape - so a graph consumer that
-just wants a display string (Cypher diagnostics in gui/checks.py, for
-instance) doesn't have to reassemble it from the parts itself:
+gui/nodes.py's author_label() shape - so a graph consumer that
+just wants a display string doesn't have to reassemble it from the parts itself:
 
 1. Catalog match, for identity and the academic degree only. A CSV of
    official ITMO staff records (columns: name_ru, surname, name,
@@ -832,13 +831,8 @@ def _guard_broken_transliteration(parsed: dict) -> dict:
     return parsed
 
 
-# A patronymic suffix is not enough on its own to prove a word IS a
-# patronymic (Бабич, Томкович and Ходасевич are surnames ending the same
-# way), but it's enough to catch a word the model already put in the
-# patronymic slot that doesn't even carry the shape - that's very likely a
-# second given name forced into the wrong slot (Spanish "Pedro Luis
-# González", Portuguese, Western double given names), the exact mistake
-# rule 5 exists to head off.
+# The suffix proves nothing (Бабич, Ходасевич are surnames), but a word in the
+# patronymic slot without it is likely a second given name forced there.
 _PATRONYMIC_LIKE_RU = re.compile(
     r"(ович|евич|ьевич|иевич|овна|евна|ьевна|иевна|инична|ична)$", re.IGNORECASE
 )
@@ -1097,21 +1091,20 @@ class AuthorNamesStage(EnrichmentStage):
                 block = asked[start:start + workers * 8]
                 with ThreadPoolExecutor(max_workers=min(workers, len(block))) as pool:
                     futures = [pool.submit(ask, person) for person in block]
-                    for future in as_completed(futures):
-                        yield future.result()
+                    try:
+                        for future in as_completed(futures):
+                            yield future.result()
+                    except BaseException:
+                        pool.shutdown(wait=False, cancel_futures=True)
+                        raise
 
         for person, parsed, second_name_corrected, llm_error in self.progress(
             answers(), total=len(asked)
         ):
             state = person.processing.get(self.name)
             if parsed is None:
-                # Reverse transliteration for name_ru, same as before this
-                # stage called an LLM at all - guessing the parts from word
-                # order is not reliable enough to store, so they stay
-                # whatever an earlier successful run left them. name_en has
-                # no transliteration to do: name_raw already comes from
-                # OpenAlex romanized, so it is already a reasonable English
-                # display name. Retried on the next pipeline run (FAILED).
+                # Word order is not reliable enough to store, so the parts
+                # stay as an earlier run left them. Retried next run (FAILED).
                 person.name_ru = person.name_ru or to_cyrillic(person.name_raw)
                 person.name_en = person.name_en or person.name_raw
                 person.processing[self.name] = self._state(

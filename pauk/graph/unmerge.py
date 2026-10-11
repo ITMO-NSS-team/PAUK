@@ -40,8 +40,7 @@ class NothingToRebuild(MutationError):
     """The folded record cannot be put back: there is no row describing it."""
 
 
-#: Edges of one person, keyed the way `extract_relationships` keys them:
-#: (src_label, tgt_label, rel_type, tgt_match_field) -> (src_id, tgt_id, props).
+#: Edges of one person, keyed the way `extract_relationships` keys them.
 Edges = dict[tuple[str, str, str, str], list[tuple[str, str, dict]]]
 
 
@@ -222,25 +221,18 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
         _labels, (_id, canonical_props) = extract_node(canonical_row, canonical_spec)
         canonical_edges = extract_relationships(canonical_row, canonical_spec)
     else:
-        # Its own row is gone (folded away by a later run), so there is
-        # nothing to restore the survivor's fields from. Its `merged_ids`
-        # still has to let the duplicate go, or the next publish folds the
-        # pair straight back.
+        # No row to restore the fields from, but `merged_ids` must let go.
         logger.warning("Person %s has no prepared row; only its merged_ids is corrected",
                        canonical_id)
 
     patch = _survivor_patch(canonical, canonical_props, duplicate_props,
                             duplicate_id, duplicate_row.get("merged_ids") or [])
     if patch:
-        # The plain upsert, not the person one: `is_itmo` is sticky there
-        # and never goes back down, and a survivor made ITMO by the record
-        # it swallowed has to stop being it.
+        # The plain upsert: `is_itmo` is sticky in the person one.
         client.upsert_nodes_batch("Person", [(canonical_id, patch)])
     given_back = _give_back(client, db, node_id, duplicate_props, duplicate_edges)
     taken_off = _take_off(client, canonical_id, duplicate_edges, canonical_edges)
-    # Last, as in a publish: rebuilding a node from its source row is the
-    # one thing that can bury a hand-made correction under what the source
-    # says.
+    # Last, as in a publish: rebuilding from a row buries hand corrections.
     apply_overrides(client, db)
     logger.info("split %s back out of %s: %d edge(s) given back, %d taken off",
                 duplicate_id, canonical_id, given_back, taken_off)

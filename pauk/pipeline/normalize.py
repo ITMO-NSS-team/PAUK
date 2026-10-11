@@ -19,13 +19,8 @@ _PreparedModel = TypeVar("_PreparedModel", Publication, Person)
 
 ITMO_ROR_ID = "04txgxn49"
 
-# Metadata sometimes puts something that is not a person in an author slot:
-# ACL Anthology deposits name the venue there ("Association for Computational
-# Linguistics 2026"), consortium papers name their collaborator group, and a
-# submission form's contact field leaks through as the author's name
-# ("vasilinetc.ira@gmail.com"). OpenAlex mints author entities for all of
-# them; they are not people and never become persons. An address or a link is
-# also a name no transliteration should ever be asked to render.
+# An author slot sometimes holds a venue, a collaborator group or a contact
+# address. OpenAlex mints author entities for all of them; persons they are not.
 NOT_A_PERSON_NAME = re.compile(
     r"\b(association|conference|proceedings|workshop|committee|consortium"
     r"|collaborat\w*|society)\b"

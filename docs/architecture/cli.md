@@ -191,12 +191,25 @@ pauk admin trim [--keep-days N] [--apply]
 ## `cache export`
 
 ```
-pauk cache export [--output <путь>]
+pauk cache export [--output <путь>] [--only <группа>[,<группа>...]]
 ```
 
 Снимает снепшот текущего состояния графа в
-`data/cache/graph_snapshot.json` (или указанный путь) — готовит вход для
-`pauk.gui.generate_data`. См. [cache.md](cache.md).
+`data/cache/graph_snapshot_<дата>.json` (или указанный путь) — готовит вход для
+`pauk gui build`. `--only repos` (и `persons`, `publications`,
+`departments`, `organizations`) перечитывает из Neo4j только таблицы этой
+сущности, остальное берёт из самого свежего снепшота. См. [cache.md](cache.md).
+
+## `gui build`
+
+```
+pauk gui build [--cache <снепшот>] [--out-dir <папка>] [--seed 42]
+```
+
+Снепшот → раскладка → JSON для сайта `pauk/gui/web`
+(`pauk/gui/graph_builder/builder.py::write_site_data`). По умолчанию берёт
+самый свежий снепшот из `cache_dir` и пишет в `gui_dir`
+(`data/gui/{public,private}`). См. [gui.md](gui.md).
 
 ## `--input`: точечный выбор строк у `enrich`
 

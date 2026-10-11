@@ -15,6 +15,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from neo4j.exceptions import AuthError, ServiceUnavailable
 
 from pauk.admin.deps import (
     CsrfChecked,
@@ -27,7 +28,13 @@ from pauk.admin.deps import (
     plural,
     templates,
 )
-from pauk.graph.mutations import MutationError, NotFound, merge_nodes, read_node
+from pauk.graph.mutations import (
+    MutationError,
+    NotFound,
+    merge_nodes,
+    person_facts,
+    read_node,
+)
 from pauk.graph.unmerge import NothingToRebuild, rebuildable, split_person
 from pauk.pipeline.stages.dedup import merge_rank
 from pauk.storage import review
@@ -38,9 +45,7 @@ router = APIRouter()
 
 PAGE = 50
 
-#: The tabs, and what each one asks the store for. "pressing" is the day's
-#: work, "open" is everything nobody has answered, and the other two are
-#: there so nothing the page does is hidden from it.
+#: The tabs, and what each one asks the store for.
 TABS = {
     "pressing": {"pressing": True, "answered": False, "skipped": False},
     "open": {"answered": False, "skipped": False},
@@ -49,8 +54,7 @@ TABS = {
     "answered": {"answered": True},
 }
 
-#: Rules in the words the page uses. A rule name is written for the code
-#: that applies it, not for the person reading why it fired.
+#: Rules in the words the page uses.
 RULES = {
     "orcid": "совпал ORCID",
     "staff_catalog": "одна запись в каталоге сотрудников",
@@ -74,12 +78,10 @@ WORDS = {
 }
 
 
-#: A group's reason is composed when it is refused, so it is matched rather
-#: than looked up. The field can be two words ("staff record").
+#: Composed when the group is refused, so matched rather than looked up.
 GROUP_SPANS = re.compile(r"group spans (\d+) distinct (.+) values")
 
-#: Identity fields a refused group can disagree on, where the page says
-#: them differently from the code.
+#: Identity fields the page names differently from the code.
 FIELD_WORDS = {"staff record": "«запись в каталоге»"}
 
 
@@ -120,7 +122,7 @@ def _asks(row: dict) -> str:
     return "две записи"
 
 
-def _people(row: dict, evidence: dict) -> list[dict]:
+def _people(row: dict, evidence: dict, back: str = "") -> list[dict]:
     """The subjects of one question, each with somewhere to look.
 
     A person is a node the panel can open. An account is not: it lives on
@@ -128,55 +130,52 @@ def _people(row: dict, evidence: dict) -> list[dict]:
     """
     names = evidence.get("names") or []
     login = evidence.get("login")
-    # A staff question is about one person and the records they might be;
-    # only the person has a card to open.
+    # In a staff question only the person has a card to open.
     person = row.get("person") or evidence.get("person")
     shown = []
     for index, member in enumerate(row["members"]):
-        # An answer given before the question existed carries no evidence at
-        # all, so there are no names to pair with. Zipping the two dropped
-        # every subject and left the row about nobody.
+        # An answer given before the question has no names to pair with.
         name = names[index] if index < len(names) else None
         account = row["kind"] == review.GITHUB and member == login
         record = row["kind"] == review.STAFF and member != person
         shown.append({
             "id": member,
             "name": name or member,
+            # The card carries the way back: the search is the only other
+            # way out, and it is not where the reader came from.
             "href": None if record else
-                    (evidence.get("url") if account else f"/nodes/Person/{quote(member)}"),
+                    (evidence.get("url") if account
+                     else f"/nodes/Person/{quote(member)}?back={quote(back, safe='')}"),
             "account": account,
             "record": record,
         })
     return shown
 
 
-def _shown(row: dict) -> dict:
+def _shown(row: dict, back: str = "") -> dict:
     """One question as the page reads it."""
     evidence = row.get("evidence", {})
     return {
         "id": row["_id"],
+        # The row's own address on the page. Colons do not belong in a
+        # fragment, and a question id is built of them.
+        "anchor": "q-" + row["_id"].replace(":", "-"),
         "kind": row["kind"],
-        # Named on the row rather than left to the buttons to imply: the
-        # table holds four kinds of question one after another, and the
-        # names under each do not say which one it is.
+        # Four kinds of question run one after another; the names do not say which.
         "asks": _asks(row),
-        # A flag rather than the constant in the template: a page comparing
-        # kind to a literal was already wrong once, and silently — it put
-        # the "one person" button on a group, which the route then refused.
+        # A flag, not a literal in the template: that was silently wrong once.
         "is_group": row["kind"] == review.GROUP,
         "is_github": row["kind"] == review.GITHUB,
         "is_staff": row["kind"] == review.STAFF,
         "chosen": row.get("chosen"),
         "members": row["members"],
-        # Paired with their names and with somewhere to look, because a page
-        # listing bare OpenAlex ids asks a question nobody can answer. An
-        # account is not a node the panel can open, so it points at GitHub.
-        "people": _people(row, evidence),
+        # Bare OpenAlex ids ask a question nobody can answer.
+        "people": _people(row, evidence,
+                          f"{back}#q-" + row["_id"].replace(":", "-") if back else ""),
         "url": evidence.get("url"),
         "signals": [SIGNALS.get(name, name) for name in evidence.get("signals") or []],
         "repos": evidence.get("repos") or [],
-        # A degree is what tells two namesakes apart when the catalog has
-        # one; collected already, and useless sitting in the document.
+        # A degree is what tells two namesakes apart.
         "degrees": dict(zip(evidence.get("records") or [],
                             evidence.get("record_degrees") or [], strict=False)),
         "reasons": [_reason_words(reason) for reason in evidence.get("held_because", [])],
@@ -206,7 +205,7 @@ def _tab(value: object, default: str) -> str:
 
 @router.get("/review", response_class=HTMLResponse)
 def queue(request: Request, user: CurrentUser, session: Session, db: Db,
-          tab: str = "pressing", page: int = 1):
+          graph: MaybeGraph, tab: str = "pressing", page: int = 1):
     """Questions the rules left open, the longest-waiting first.
 
     Readable by anyone who can sign in. Answering needs the editor role:
@@ -216,14 +215,38 @@ def queue(request: Request, user: CurrentUser, session: Session, db: Db,
         tab = "pressing"
     page = max(page, 1)
     total = review.count(db, **TABS[tab])
+    back = f"/review?tab={tab}&page={page}"
     return templates.TemplateResponse(request, "review.html", {
         "user": user, "csrf": session["csrf"], "tab": tab, "page": page,
         "pages": max((total + PAGE - 1) // PAGE, 1), "total": total,
-        "rows": _splittable(db, [_shown(row) for row in
-                                 review.questions(db, limit=PAGE, skip=(page - 1) * PAGE,
-                                                  **TABS[tab])]),
+        "rows": _with_facts(graph, _splittable(db, [
+            _shown(row, back) for row in
+            review.questions(db, limit=PAGE, skip=(page - 1) * PAGE, **TABS[tab])])),
         "counts": {name: review.count(db, **filters) for name, filters in TABS.items()},
     })
+
+
+def _with_facts(graph, rows: list[dict]) -> list[dict]:
+    """Put a few known fields beside each person on the page.
+
+    A name and an id answer nothing: deciding whether two records are one
+    researcher means knowing an ORCID, an address, a department, how much
+    each has published. Asked in one query for the whole page, and skipped
+    when the graph is silent - the queue is readable without it.
+    """
+    if graph is None:
+        return rows
+    wanted = sorted({person["id"] for row in rows for person in row["people"]
+                     if not person["account"] and not person["record"]})
+    try:
+        facts = person_facts(graph, wanted)
+    except (ServiceUnavailable, AuthError) as error:
+        logger.warning("queue shown without the facts, the graph did not answer: %s", error)
+        return rows
+    for row in rows:
+        for person in row["people"]:
+            person["facts"] = facts.get(person["id"], {})
+    return rows
 
 
 def _splittable(db, rows: list[dict]) -> list[dict]:
@@ -267,8 +290,7 @@ def _fold_now(graph, db, members: list[str], actor: str) -> str:
     try:
         merge_nodes(graph, "Person", duplicate, canonical)
     except MutationError as error:
-        # Not the caller's problem: the answer stands and the next dedup
-        # will fold the pair with the rest.
+        # The answer stands; the next dedup folds the pair with the rest.
         logger.warning("could not fold %s into %s now: %s", duplicate, canonical, error)
         return "waiting"
     review.mark_applied(db, review.PAIR, members)
@@ -312,13 +334,10 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
             if not review.skip(db, kind, members, actor=user.actor):
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "такого вопроса нет")
         elif verdict == "choose":
-            # Not a yes or no: two namesakes are both plausible and exactly
-            # one is right, so the answer names a record instead of taking
-            # a side. An empty choice means the catalog does not hold them.
+            # Not a yes or no: the answer names a record. Empty means none fits.
             person = str(form.get("person", ""))
             if person not in members:
-                # Without this an empty or stray person builds a key with a
-                # blank segment, and the answer describes nobody.
+                # An empty person would build a key with a blank segment.
                 raise HTTPException(status.HTTP_400_BAD_REQUEST,
                                     "не указано, о ком вопрос")
             chosen = str(form.get("chosen", "")).strip()
@@ -327,17 +346,14 @@ async def answer(request: Request, user: Editor, db: Db, graph: MaybeGraph,
                                  chosen or None, actor=user.actor, note=note)
             return back(done="chosen")
         elif verdict == "split":
-            # Checked here and not only in the store: the store's guards are
-            # the contract, these are what a person reads after mis-clicking.
+            # The store guards this too; this is what a person reads.
             same = form.getlist("same")
             if len(same) < 2:
                 return back("Отметьте хотя бы двоих, кого считаете одним человеком.")
             if len(same) >= len(members):
                 return back("Вся группа не может быть одним человеком — её отклонили "
                             "как раз потому, что внутри разные люди.")
-            # Nothing is folded here even when the nodes exist: a split is
-            # several merges, and the later ones would point at a node the
-            # earlier ones had already swallowed.
+            # Nothing is folded here: later merges would name a swallowed node.
             review.record_split(db, members, same, actor=user.actor, note=note)
             return back(done="split")
         else:
@@ -377,14 +393,11 @@ async def split_back(request: Request, user: Editor, db: Db, graph: MaybeGraph,
         return RedirectResponse(f"/review{query}", status_code=status.HTTP_303_SEE_OTHER)
 
     if kind != review.PAIR:
-        # Only a pair is ever folded: a group is answered by splitting it,
-        # and the other two kinds link things rather than merge them.
+        # Only a pair is ever folded; the other kinds link rather than merge.
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "слитой была только пара")
     if graph is None:
         return back("Граф недоступен, разделить записи сейчас нельзя.")
-    # Before the graph is touched, not after: an undo the store would then
-    # refuse to record leaves the pair apart in the graph and "one person"
-    # in the queue, and the next run puts them back together.
+    # Before the graph is touched: an undo the store refuses would strand it.
     try:
         applied = review.applied(db, kind, members)
     except review.ReviewError as error:
@@ -403,9 +416,7 @@ async def split_back(request: Request, user: Editor, db: Db, graph: MaybeGraph,
     except MutationError as error:
         logger.warning("%s could not split %s: %s", user.actor, members, error)
         return back("Разделить не удалось, подробности в журнале сервиса.")
-    # Written only now, and written as a verdict rather than dropped: an
-    # answer taken back would leave the question open, and the next run
-    # would fold the pair again for the same reason it did the first time.
+    # A verdict, not a withdrawal: "same" would fold the pair again.
     review.record_undo(db, kind, members, actor=user.actor)
     logger.info("%s split %s back apart", user.actor, members)
     return back(done="apart")

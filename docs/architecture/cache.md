@@ -4,18 +4,31 @@
 дальше читает `pauk/gui/`.
 
 **Какие файлы задействует:** `pauk/cache/export.py`, `graph_snapshot.py`,
-`freshness.py`, `__init__.py`.
+`inspect.py`, `__init__.py`.
 
 Единственное место в `pauk/gui`-цепочке, которое реально ходит в Neo4j.
-Всё остальное (`generate_data.py`, `serve.py` за исключением `/api/stats`)
+Всё остальное (`pauk/gui/graph_builder/builder.py`)
 читает результат этого шага с диска, не базу.
 
 ## `export.py`
 
-`GraphSnapshotExporter.export(path=None)` — открывает драйвер, читает
-восемь запросов (`load_db()`) в плоские структуры, пишет
-`data/cache/graph_snapshot.json` (или путь по флагу `--output`). Пустой
+`GraphSnapshotExporter.export(path=None, only=None)` — открывает драйвер, читает
+тринадцать запросов (`load_db()`) в плоские структуры, пишет
+`data/cache/graph_snapshot_<дата>.json` (или путь по флагу `--output`). Пустой
 пароль Neo4j — сразу `ValueError`, не поздняя ошибка от драйвера.
+
+**Частичный экспорт (`--only`).** Полный экспорт идёт около часа, почти всё
+время — `persons`/`publications`/`authorship`/`pub_depts`. Если в графе
+менялась одна сущность (например, удалили репозитории со связями),
+`pauk cache export --only repos` перечитывает только её таблицы
+(`SNAPSHOT_GROUPS` в `export.py`), остальные берёт из самого свежего
+снепшота и пишет новый файл с сегодняшней датой; старый снепшот не
+меняется. Группа — это сущность плюс все таблицы связей, где она
+участвует: удалённый человек, оставшийся в `authorship`, был бы висящим
+ребром. В лог пишется "было → стало" строк по каждой перечитанной таблице.
+Годится, только если менялось именно это: правка свойств публикаций при
+удалении репозиториев (`has_code`, `code_url`) частичным экспортом `repos`
+не подхватится.
 
 `_execute_retrying()` — общий retry-цикл на `ServiceUnavailable`/
 `SessionExpired`/`TransientError`/`OSError`, до `CYPHER_RETRIES = 5`
@@ -32,23 +45,18 @@
 `load_db()` возвращает плоский словарь из восьми ключей:
 `persons`/`publications`/`repositories`/`departments`/`authorship`/
 `person_depts`/`pub_depts`/`repo_pubs`/`repo_persons`/`repo_depts` — ровно
-то, что `generate_data.py::build_graph_data()` ожидает на входе.
+то, что `pauk/gui/graph_builder/builder.py::GraphDataBuilder` ожидает на входе.
 Департаменты авторов и владельцы репозиториев — не плоские колонки в
 графовой модели, а связи (`BELONGS_TO`, `OWNED_BY`), поэтому здесь они
 отдельными запросами через `OPTIONAL MATCH`.
 
 ## `graph_snapshot.py`
 
-`write_snapshot`/`read_snapshot` — конверт вокруг `load_db()`'s словаря:
-`schema_version`, `generated_at`, `graph`. Версия 3: строки `persons`,
-`repositories` и `publications` — словари (`cypher_dict`), не позиционные
-кортежи, потому что все три растут колонками, а распаковка кортежа по
-позиции живёт в нескольких местах `generate_data.py`. `read_snapshot` кидает
-`ValueError`, если версия схемы не совпадает — снепшот от старой версии
-кода не будет молча скормлен в несовместимый `generate_data.py`.
-
-## `freshness.py`
-
-`is_fresh(path, max_age)` — сравнивает mtime файла снепшота с TTL,
-заготовка под предупреждение о том, что снепшот пора пересобрать
-(`pauk cache export`).
+`write_snapshot`/`read_snapshot` — запись (атомарно) и чтение плоского
+словаря `load_db()` как JSON; `read_snapshot` кидает `ValueError`, если
+верхний уровень файла не объект. Снепшот пишется в
+`data/cache/graph_snapshot_<дд-мм-гггг>.json` (`dated_snapshot_path`), и
+`latest_snapshot` находит самый свежий по дате в имени — его по умолчанию
+берут `pauk cache inspect` и `pauk gui build`, а `gui build` пишет путь
+выбранного снепшота в лог. Отдельной проверки "снепшот протух" по TTL нет:
+дата видна в имени файла.
