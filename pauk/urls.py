@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from urllib.parse import urlparse, urlunparse
 
 
@@ -19,3 +20,11 @@ def normalize_repo_url(url: str) -> str:
     if parsed.netloc == "www.github.com":
         normalized = urlunparse(parsed._replace(netloc="github.com"))
     return normalized
+
+
+def deduplicate_repo_urls(urls: Iterable[str]) -> list[str]:
+    """Keep the first spelling of each repository URL identity."""
+    unique: dict[str, str] = {}
+    for url in urls:
+        unique.setdefault(normalize_repo_url(url), url)
+    return list(unique.values())

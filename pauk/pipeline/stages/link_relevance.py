@@ -8,12 +8,16 @@ from pauk.models import ClassificationStatus, CodeLink, LinkOccurrence, Publicat
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.sources import OpenRouterClient
 from pauk.storage import LlmLogStore
+from pauk.urls import deduplicate_repo_urls
 
 from .base import EnrichmentStage
 from .code_links import ARCHIVED_DEPOSIT_REASON
 
 logger = logging.getLogger(__name__)
 
+# A context spans up to 500 characters on either side. Twelve keeps the
+# evidence near 12,000 characters while leaving room for all six source
+# types and repeated confirmations without making every LLM call unbounded.
 MODEL_CONTEXT_LIMIT = 12
 AMBIGUOUS_URL_REASON = "ambiguous_url_extraction"
 
@@ -151,14 +155,17 @@ def _parse_verdict(result: dict) -> tuple[bool | None, float, str | None]:
 
 
 def _update_publication_code(publication: Publication, links: list[CodeLink]) -> None:
-    relevant = [link for link in links if link.is_relevant is True and not link.url_ambiguous]
-    publication.has_code = bool(relevant)
-    if not relevant:
+    urls = deduplicate_repo_urls(
+        link.url for link in links
+        if link.is_relevant is True and not link.url_ambiguous
+    )
+    publication.has_code = bool(urls)
+    if not urls:
         publication.code_url = None
         return
     # code_url predates the graph model and remains JSON text for compatibility
     # with the GUI, which displays every author-produced artifact of a paper.
-    publication.code_url = json.dumps([link.url for link in relevant], ensure_ascii=False)
+    publication.code_url = json.dumps(urls, ensure_ascii=False)
 
 
 class LinkRelevanceStage(EnrichmentStage):

@@ -111,7 +111,7 @@ from pauk.pipeline.normalize import (
 from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
 from pauk.storage.review import DIFFERENT, SAME
-from pauk.urls import normalize_repo_url
+from pauk.urls import deduplicate_repo_urls, normalize_repo_url
 
 from .author_names import (
     RussianNamesCatalog,
@@ -789,7 +789,10 @@ def _merge_publication(base: Publication, extra: Publication,
     an abstract or a PDF link present on only one record is never lost.
     """
     base.has_code = base.has_code or extra.has_code
-    code_urls = _union(_stored_code_urls(base.code_url), _stored_code_urls(extra.code_url))
+    code_urls = deduplicate_repo_urls([
+        *_stored_code_urls(base.code_url),
+        *_stored_code_urls(extra.code_url),
+    ])
     base.code_url = json.dumps(code_urls, ensure_ascii=False) if code_urls else None
     base.pdf_urls = _union(base.pdf_urls, extra.pdf_urls)
     base.versions = _merge_versions(base.versions, extra.versions,

@@ -586,10 +586,12 @@ class PublicationDedupTest(unittest.TestCase):
     def test_same_repository_keeps_occurrences_from_every_publication_version(self):
         older = publication("W1", "One work", doi="10.1/x", day="2026-01-01")
         older.has_code = True
-        older.code_url = '["https://github.com/org/repo"]'
+        older.code_url = '["https://github.com/Org/Repo/"]'
         newer = publication("W2", "One work", doi="10.1/x", day="2026-02-01")
         newer.has_code = True
-        newer.code_url = '["https://github.com/org/other"]'
+        newer.code_url = (
+            '["https://github.com/org/repo", "https://github.com/org/other"]'
+        )
 
         _, publications = self.run_stage(
             [older, newer],
@@ -615,10 +617,10 @@ class PublicationDedupTest(unittest.TestCase):
             [occurrence.context for occurrence in links.links[0].occurrences],
             ["Preprint context", "Journal context"],
         )
-        self.assertEqual(
-            set(json.loads(publications["W2"].code_url)),
-            {"https://github.com/org/repo", "https://github.com/org/other"},
-        )
+        self.assertEqual(json.loads(publications["W2"].code_url), [
+            "https://github.com/org/repo",
+            "https://github.com/org/other",
+        ])
 
     def test_conflicting_version_verdicts_are_retried_without_losing_last_claim(self):
         older = publication("W1", "One work", doi="10.1/x", day="2026-01-01")

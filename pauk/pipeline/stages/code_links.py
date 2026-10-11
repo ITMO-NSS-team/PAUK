@@ -44,6 +44,14 @@ _REFERENCE_HEADING = re.compile(
     r"(?:references|bibliography|литература|список (?:использованной )?литературы)"
     r"[ \t]*:?[ \t]*$"
 )
+_POST_REFERENCE_HEADING = re.compile(
+    r"(?im)^[ \t]*(?:(?:S\d+|[A-Z]|\d+(?:\.\d+)*)[.)]?[ \t]+)?"
+    r"(?:append(?:ix|ices)(?:[ \t]+[A-Z])?|"
+    r"supplement(?:ary)?(?:[ \t]+(?:material(?:s)?|information|data))?|"
+    r"supporting[ \t]+information|приложени[ея](?:[ \t]+[A-ZА-Я])?|"
+    r"дополнительные[ \t]+материалы)"
+    r"(?:[ \t]*[:.\u2013\u2014-][ \t]*[^\n]+)?[ \t]*$"
+)
 _REFERENCE_ENTRY = re.compile(
     r"(?m)^[ \t]*(?:\[(?P<bracket>\d{1,4})\][.):]?|(?P<plain>\d{1,4})[.)])[ \t]+"
 )
@@ -146,16 +154,34 @@ def _annotation_context(
     if rect is None:
         return None, None, None
     try:
-        visible = _normalize_ligatures(cast(str, page.get_text("text", clip=rect))).strip()
+        raw_visible = cast(str, page.get_text("text", clip=rect)).strip()
+        visible = _normalize_ligatures(raw_visible)
     except Exception:
         return None, None, None
     if not visible:
         return None, None, None
-    idx = page_text.find(visible)
-    if idx < 0:
+    matches = list(re.finditer(re.escape(visible), page_text))
+    if not matches:
         return " ".join(visible.split()) or None, None, None
-    end = idx + len(visible)
-    return _slice_context(page_text, idx, end), idx, end
+    match = matches[0]
+    if len(matches) > 1:
+        try:
+            hits = page.search_for(raw_visible)
+            if len(hits) != len(matches):
+                return " ".join(visible.split()) or None, None, None
+            target = fitz.Rect(rect)
+            index = min(
+                range(len(hits)),
+                key=lambda current: (
+                    hits[current].x0 + hits[current].x1 - target.x0 - target.x1
+                ) ** 2 + (
+                    hits[current].y0 + hits[current].y1 - target.y0 - target.y1
+                ) ** 2,
+            )
+            match = matches[index]
+        except Exception:
+            return " ".join(visible.split()) or None, None, None
+    return _slice_context(page_text, match.start(), match.end()), match.start(), match.end()
 
 
 def _pdf_page_occurrences(
@@ -211,8 +237,9 @@ def _link_reference_contexts(
     reference_candidates: dict[str, dict[str, set[str]]] = defaultdict(
         lambda: defaultdict(set)
     )
-    body_ends = [len(text) for text in pages]
+    excluded_ranges: list[list[tuple[int, int]]] = [[] for _ in pages]
     in_references = False
+    references_finished = False
 
     def record_reference(label: str, url: str, occurrence: LinkOccurrence) -> None:
         occurrence.source = "reference"
@@ -221,26 +248,34 @@ def _link_reference_contexts(
         reference_candidates[label][url].update(occurrence.candidate_urls or [url])
 
     for page_index, text in enumerate(pages):
+        if references_finished:
+            continue
         section_start = 0
+        reference_start = 0
         if not in_references:
             heading = _REFERENCE_HEADING.search(text)
             if heading is None:
                 continue
             in_references = True
             section_start = heading.end()
-            body_ends[page_index] = heading.start()
-        else:
-            body_ends[page_index] = 0
+            reference_start = heading.start()
 
-        entries = list(_REFERENCE_ENTRY.finditer(text, section_start))
+        next_section = _POST_REFERENCE_HEADING.search(text, section_start)
+        section_end = next_section.start() if next_section else len(text)
+        excluded_ranges[page_index].append((reference_start, section_end))
+
+        entries = list(_REFERENCE_ENTRY.finditer(text, section_start, section_end))
         for index, entry in enumerate(entries):
             label = str(int(entry.group("bracket") or entry.group("plain")))
-            entry_end = entries[index + 1].start() if index + 1 < len(entries) else len(text)
+            entry_end = entries[index + 1].start() if index + 1 < len(entries) else section_end
             for url, occurrences in page_occurrences[page_index].items():
                 for occurrence in occurrences:
                     if occurrence.text_start is None or not entry.start() <= occurrence.text_start < entry_end:
                         continue
                     record_reference(label, url, occurrence)
+        if next_section:
+            in_references = False
+            references_finished = True
 
     # Numbered footnotes often have no heading. Link one only when the same
     # marker occurs earlier on that page, which keeps ordinary numbered lists
@@ -248,6 +283,9 @@ def _link_reference_contexts(
     for page_index, text in enumerate(pages):
         entries = list(_REFERENCE_ENTRY.finditer(text))
         for index, entry in enumerate(entries):
+            if any(start <= entry.start() < end
+                   for start, end in excluded_ranges[page_index]):
+                continue
             label = str(int(entry.group("bracket") or entry.group("plain")))
             cited_before = any(
                 label in _citation_labels(citation.group("labels"))
@@ -264,14 +302,16 @@ def _link_reference_contexts(
                     record_reference(label, url, occurrence)
                     linked = True
             if linked:
-                body_ends[page_index] = min(body_ends[page_index], entry.start())
+                excluded_ranges[page_index].append((entry.start(), entry_end))
 
     if not reference_urls:
         return
 
     for page_index, text in enumerate(pages):
-        body = text[:body_ends[page_index]]
-        for citation in _CITATION.finditer(body):
+        for citation in _CITATION.finditer(text):
+            if any(start <= citation.start() < end
+                   for start, end in excluded_ranges[page_index]):
+                continue
             for label in _citation_labels(citation.group("labels")):
                 urls = sorted(reference_urls.get(label, ()))
                 for url in urls:

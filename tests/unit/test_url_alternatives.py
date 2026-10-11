@@ -136,6 +136,20 @@ class UrlAlternativesTest(unittest.TestCase):
             self.assertTrue(props["url_ambiguous"])
             self.assertIsNone(props["is_relevant"])
 
+    def test_code_url_deduplicates_equivalent_repository_spellings(self):
+        publication = Publication(id="W1", title="Test")
+        links = [
+            CodeLink(url="https://github.com/Org/Repo", is_relevant=True),
+            CodeLink(url="https://github.com/org/repo/", is_relevant=True),
+        ]
+
+        _update_publication_code(publication, links)
+
+        self.assertEqual(
+            publication.code_url,
+            '["https://github.com/Org/Repo"]',
+        )
+
     def test_github_checks_both_once_and_preserves_temporary_failures(self):
         for status_code, expected in [(404, "not_found"), (403, "failed"), (502, "failed")]:
             with self.subTest(status_code=status_code):
