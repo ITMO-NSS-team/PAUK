@@ -48,7 +48,6 @@ from pauk.urls import normalize_repo_url
 
 from .audit import actor_context, audited_client
 from .client import chunked
-from .extract import NODE_REGISTRY, extract_node
 from .overrides import apply_overrides
 
 logger = logging.getLogger(__name__)
@@ -246,11 +245,14 @@ def dedup_graph_persons(
                 canonical.name_variants = _union(canonical.name_variants, [duplicate.name_raw])
             canonical.merged_ids = _union(canonical.merged_ids, [duplicate.id])
             merges.append((duplicate.id, canonical.id))
-        # The canonical node inherits what its duplicates knew (variants,
-        # filled scalars, merged_ids) before their nodes disappear.
-        spec = NODE_REGISTRY["itmo_person" if canonical.is_itmo else "external_person"]
-        _labels, node = extract_node(canonical.model_dump(by_alias=True, exclude_none=True), spec)
-        canonical_nodes.append(node)
+        # These Person objects are projections for matching, not full graph
+        # records. Serializing their defaults would erase fields never read.
+        # The fold below merges the complete stored properties transactionally.
+        canonical_nodes.append((canonical.id, {
+            "is_itmo": canonical.is_itmo,
+            "name_variants": canonical.name_variants,
+            "merged_ids": canonical.merged_ids,
+        }))
 
     for chunk in chunked(canonical_nodes):
         client.upsert_person_nodes_batch(chunk)

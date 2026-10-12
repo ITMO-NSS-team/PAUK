@@ -28,7 +28,7 @@ from pymongo.database import Database
 
 from pauk.storage.prepared import PreparedStore
 
-from .client import chunked
+from .client import _merge_duplicate_properties, chunked
 from .extract import extract_node, extract_relationships, person_spec
 from .mutations import RESERVED_FIELDS, MutationError, NotFound, create_node
 from .overrides import apply_overrides, tombstoned_ids, tombstoned_relationships
@@ -176,6 +176,23 @@ def _take_off(client, canonical_id: str, duplicate_edges: Edges, canonical_edges
     return removed
 
 
+def _restore_corresponding(client, canonical_id: str, duplicate_edges: Edges, remaining_edges: Edges) -> None:
+    key = ("Person", "Publication", "AUTHORED", "id")
+    affected = {target for _src, target, _props in duplicate_edges.get(key, ())}
+    flags: dict[str, bool | None] = {}
+    for _src, target, props in remaining_edges.get(key, ()):
+        if target not in affected:
+            continue
+        value = props.get("is_corresponding")
+        if value is not None:
+            flags[target] = bool(flags.get(target) or value)
+        else:
+            flags.setdefault(target, None)
+    rows = [(canonical_id, target, {"is_corresponding": value}) for target, value in flags.items()]
+    for chunk in chunked(rows):
+        client.set_relationship_properties_batch("Person", "Publication", "AUTHORED", chunk)
+
+
 def split_person(client, db: Database, members: list[str]) -> dict[str, int | str]:
     """Undo one merge: give the folded person back their node and their work.
 
@@ -200,7 +217,7 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
         MutationError: Nothing was folded — both ids are live nodes.
     """
     duplicate_id, canonical_id, canonical = _folded_side(client, members)
-    rows = _prepared_persons(db, [duplicate_id, canonical_id])
+    rows = _prepared_persons(db, [duplicate_id, canonical_id, *(canonical.get("merged_ids") or [])])
     duplicate_row = rows.get(duplicate_id)
     if duplicate_row is None:
         raise NothingToRebuild(
@@ -229,6 +246,34 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
         logger.warning("Person %s has no prepared row; only its merged_ids is corrected",
                        canonical_id)
 
+    # Undoing one member must not retract facts supplied by another member
+    # which remains folded. Missing source rows are not evidence of false.
+    returning = {duplicate_id, *(duplicate_row.get("merged_ids") or [])}
+    remaining = {canonical_id, *(canonical.get("merged_ids") or [])} - returning
+    complete = remaining <= rows.keys()
+    for person_id in sorted(remaining - {canonical_id}):
+        row = rows.get(person_id)
+        if row is None:
+            continue
+        spec = person_spec(row)
+        _labels, (_id, props) = extract_node(row, spec)
+        if canonical_props is not None:
+            canonical_props.update(_merge_duplicate_properties("Person", canonical_props, props))
+        for key, rels in extract_relationships(row, spec).items():
+            canonical_edges.setdefault(key, []).extend(rels)
+    if not complete:
+        canonical_props = None
+        logger.warning("Person %s has missing source rows; aggregate fields and edges are retained", canonical_id)
+
+    publication_aliases = client.fetch_merged_id_map("Publication")
+    authored_key = ("Person", "Publication", "AUTHORED", "id")
+    for edges in (duplicate_edges, canonical_edges):
+        if authored_key in edges:
+            edges[authored_key] = [
+                (src, publication_aliases.get(target, target), props)
+                for src, target, props in edges[authored_key]
+            ]
+
     patch = _survivor_patch(canonical, canonical_props, duplicate_props,
                             duplicate_id, duplicate_row.get("merged_ids") or [])
     if patch:
@@ -237,7 +282,9 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
         # it swallowed has to stop being it.
         client.upsert_nodes_batch("Person", [(canonical_id, patch)])
     given_back = _give_back(client, db, node_id, duplicate_props, duplicate_edges)
-    taken_off = _take_off(client, canonical_id, duplicate_edges, canonical_edges)
+    taken_off = _take_off(client, canonical_id, duplicate_edges, canonical_edges) if complete else 0
+    if complete:
+        _restore_corresponding(client, canonical_id, duplicate_edges, canonical_edges)
     # Last, as in a publish: rebuilding a node from its source row is the
     # one thing that can bury a hand-made correction under what the source
     # says.

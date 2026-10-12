@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from dataclasses import replace
 
 from pauk.graph.person_resolution import (
     DEFAULT_POLICY,
@@ -17,10 +18,14 @@ from pauk.graph.person_resolution import (
     _tokens,
     apply_first_verdict,
     apply_second_verdict,
+    is_multi_person_name,
     resolve_pair,
+    shared_identity_facts,
 )
 from pauk.graph.person_resolution_model import LogisticModel
 from pauk.models import Person
+from pauk.pipeline.person_name_blocking import NAME_RESCUE_TEAM_LIMIT
+from pauk.pipeline.person_name_facts import name_comparison_facts
 
 SAME = "same"
 DIFFERENT = "different"
@@ -54,35 +59,32 @@ def plan_person_merges_resolved(
     fields_of = fields_of or {}
     staff_ids = staff_ids or {}
     decisions = decisions or {}
-    publication_ids = {
-        person.id: {authorship.publication_id for authorship in person.authored}
-        for person in people
-    }
+    publication_ids = {person.id: {authorship.publication_id for authorship in person.authored} for person in people}
     publication_authors: dict[str, set[str]] = defaultdict(set)
     for person in people:
         for publication_id in publication_ids[person.id]:
             publication_authors[publication_id].add(person.id)
 
     def all_coauthors(
-        person_id: str, excluded_works: set[str] | None = None
+        person_id: str, excluded_works: set[str] | None = None, *, small_team_only: bool = False
     ) -> set[str]:
         found: set[str] = set()
         for publication_id in publication_ids[person_id] - (excluded_works or set()):
-            found |= publication_authors.get(publication_id, set())
+            authors = publication_authors.get(publication_id, set())
+            if not small_team_only or len(authors) <= NAME_RESCUE_TEAM_LIMIT:
+                found |= authors
         found.discard(person_id)
         return found
 
-    def corroborating_coauthors(first_id: str, second_id: str) -> set[str]:
+    def corroborating_coauthors(first_id: str, second_id: str, *, small_team_only: bool = False) -> set[str]:
         together = publication_ids[first_id] & publication_ids[second_id]
-        shared = all_coauthors(first_id, together) & all_coauthors(second_id, together)
+        shared = all_coauthors(first_id, together, small_team_only=small_team_only) & all_coauthors(
+            second_id, together, small_team_only=small_team_only
+        )
         return shared - {first_id, second_id}
 
     def research_fields(person_id: str) -> set[str]:
-        return {
-            field
-            for publication_id in publication_ids[person_id]
-            for field in fields_of.get(publication_id, ())
-        }
+        return {field for publication_id in publication_ids[person_id] for field in fields_of.get(publication_id, ())}
 
     surname_counts: Counter[str] = Counter()
     for person in people:
@@ -131,12 +133,12 @@ def plan_person_merges_resolved(
             "person_b": second.id,
             "name_b": second.name_raw,
             "shared_coauthors": evidence.shared_coauthors,
+            "small_team_shared_coauthors": evidence.small_team_shared_coauthors,
+            "small_team_shared_publications": evidence.small_team_shared_publications,
             "shared_departments": evidence.shared_departments,
             "shared_publications": evidence.shared_publications,
             "shared_fields": sorted(shared_fields),
-            "logreg_probability": round(
-                resolve_pair(evidence, policy, logreg_model).probability, 6
-            ),
+            "logreg_probability": round(resolve_pair(evidence, policy, logreg_model).probability, 6),
             "route": route,
             "reason": reason,
             "held_because": [reason],
@@ -153,11 +155,7 @@ def plan_person_merges_resolved(
         first_id, second_id = sorted(members)
         if first_id not in by_id or second_id not in by_id or members in seen:
             continue
-        if (
-            in_scope is not None
-            and first_id not in in_scope
-            and second_id not in in_scope
-        ):
+        if in_scope is not None and first_id not in in_scope and second_id not in in_scope:
             continue
         candidates.append((by_id[first_id], by_id[second_id]))
 
@@ -165,11 +163,13 @@ def plan_person_merges_resolved(
         if _is_pooled_record(first) or _is_pooled_record(second):
             continue
         answer = decisions.get(frozenset((first.id, second.id)))
-        if answer == SAME:
+        malformed = is_multi_person_name(first.name_raw or "") or is_multi_person_name(second.name_raw or "")
+        if answer == SAME and not malformed:
             plan_merge(first, second, "manual")
             continue
 
         shared_coauthors = corroborating_coauthors(first.id, second.id)
+        small_team_coauthors = corroborating_coauthors(first.id, second.id, small_team_only=True)
         shared_departments = set(first.department_ids) & set(second.department_ids)
         shared_fields = research_fields(first.id) & research_fields(second.id)
         shared_publications = publication_ids[first.id] & publication_ids[second.id]
@@ -187,6 +187,10 @@ def plan_person_merges_resolved(
             catalog_status_a="trusted_staff_identity" if first.id in staff_ids else "",
             catalog_status_b="trusted_staff_identity" if second.id in staff_ids else "",
             shared_coauthors=len(shared_coauthors),
+            small_team_shared_coauthors=len(small_team_coauthors),
+            small_team_shared_publications=sum(
+                len(publication_authors[work]) <= NAME_RESCUE_TEAM_LIMIT for work in shared_publications
+            ),
             shared_departments=len(shared_departments),
             shared_fields=len(shared_fields),
             shared_publications=len(shared_publications),
@@ -202,23 +206,44 @@ def plan_person_merges_resolved(
         if resolution.decision is Decision.MERGE:
             plan_merge(first, second, resolution.route)
         elif resolution.decision is Decision.FIRST_MODEL:
+            evidence = replace(evidence, name_facts=name_comparison_facts(first, second))
+            pair_data[pair_id] = (first, second, evidence, shared_coauthors, shared_fields)
             pending_first.append((pair_id, evidence))
+        elif resolution.decision is Decision.REVIEW:
+            if answer == SAME:
+                report.append(
+                    {
+                        "status": "disputed",
+                        "person_a": first.id,
+                        "name_a": first.name_raw,
+                        "person_b": second.id,
+                        "name_b": second.name_raw,
+                        "rule": resolution.route,
+                    }
+                )
+            else:
+                hold(first, second, evidence, shared_fields, resolution.route, resolution.reason)
 
     first_results = models.first_many(pending_first) if models is not None else {}
     pending_second: list[SecondStageContext] = []
     first_verdicts: dict[int, ModelVerdict] = {}
 
+    context_cache: dict[str, ResearcherContext] = {}
+
     def researcher_context(person: Person) -> ResearcherContext:
+        if person.id in context_cache:
+            return context_cache[person.id]
         field_counts = Counter(
-            field
-            for publication_id in publication_ids[person.id]
-            for field in fields_of.get(publication_id, ())
+            field for publication_id in publication_ids[person.id] for field in fields_of.get(publication_id, ())
         )
         coauthor_counts = Counter()
+        small_team_counts = Counter()
         for publication_id in publication_ids[person.id]:
             for coauthor in publication_authors.get(publication_id, ()) - {person.id}:
                 coauthor_counts[coauthor] += 1
-        return ResearcherContext(
+                if len(publication_authors[publication_id]) <= NAME_RESCUE_TEAM_LIMIT:
+                    small_team_counts[coauthor] += 1
+        context = ResearcherContext(
             person_id=person.id,
             name=person.name_raw or "",
             aliases=tuple(person.name_variants),
@@ -231,10 +256,15 @@ def plan_person_merges_resolved(
                     "id": coauthor_id,
                     "name": by_id[coauthor_id].name_raw if coauthor_id in by_id else "",
                     "shared_works": count,
+                    "small_team_shared_works": small_team_counts[coauthor_id],
                 }
-                for coauthor_id, count in coauthor_counts.most_common(12)
+                for coauthor_id, count in sorted(
+                    coauthor_counts.items(), key=lambda item: (-small_team_counts[item[0]], -item[1], item[0])
+                )[:12]
             ),
         )
+        context_cache[person.id] = context
+        return context
 
     for pair_id, _evidence in pending_first:
         first, second, evidence, shared_coauthors, shared_fields = pair_data[pair_id]
@@ -252,40 +282,41 @@ def plan_person_merges_resolved(
         first_verdicts[pair_id] = verdict
         coauthors_a = all_coauthors(first.id)
         coauthors_b = all_coauthors(second.id)
+        small_team_coauthors = corroborating_coauthors(first.id, second.id, small_team_only=True)
         pending_second.append(
             SecondStageContext(
                 pair_id=pair_id,
                 researcher_a=researcher_context(first),
                 researcher_b=researcher_context(second),
-                trusted_orcid_relation=_identifier_relation(
-                    evidence.orcid_a, evidence.orcid_b
-                ),
-                staff_identity_relation=_identifier_relation(
-                    evidence.staff_id_a, evidence.staff_id_b
-                ),
-                shared_work_ids=tuple(
-                    sorted(publication_ids[first.id] & publication_ids[second.id])[:12]
-                ),
+                trusted_orcid_relation=_identifier_relation(evidence.orcid_a, evidence.orcid_b),
+                staff_identity_relation=_identifier_relation(evidence.staff_id_a, evidence.staff_id_b),
+                shared_work_ids=tuple(sorted(publication_ids[first.id] & publication_ids[second.id])[:12]),
                 shared_coauthors=tuple(
                     {
                         "id": coauthor_id,
-                        "name": (
-                            by_id[coauthor_id].name_raw if coauthor_id in by_id else ""
-                        ),
+                        "name": (by_id[coauthor_id].name_raw if coauthor_id in by_id else ""),
+                        "small_team_supported": coauthor_id in small_team_coauthors,
                     }
-                    for coauthor_id in sorted(shared_coauthors)[:12]
+                    for coauthor_id in sorted(
+                        shared_coauthors, key=lambda identifier: (identifier not in small_team_coauthors, identifier)
+                    )[:12]
                 ),
                 shared_fields=tuple(sorted(shared_fields)[:12]),
-                logreg_probability=resolve_pair(
-                    evidence, policy, logreg_model
-                ).probability,
+                logreg_probability=resolve_pair(evidence, policy, logreg_model).probability,
                 first_verdict=verdict,
+                identity_facts=shared_identity_facts(evidence),
+                collaboration_evidence={
+                    "small_team_size_limit": NAME_RESCUE_TEAM_LIMIT,
+                    "shared_coauthors": evidence.shared_coauthors,
+                    "small_team_shared_coauthors": evidence.small_team_shared_coauthors,
+                    "shared_publications": evidence.shared_publications,
+                    "small_team_shared_publications": evidence.small_team_shared_publications,
+                },
                 impact_not_identity_evidence={
                     "distinct_neighbors_a": len(coauthors_a - coauthors_b),
                     "distinct_neighbors_b": len(coauthors_b - coauthors_a),
                     "shared_neighbors": len(coauthors_a & coauthors_b),
-                    "potential_cross_neighbor_pairs": len(coauthors_a - coauthors_b)
-                    * len(coauthors_b - coauthors_a),
+                    "potential_cross_neighbor_pairs": len(coauthors_a - coauthors_b) * len(coauthors_b - coauthors_a),
                 },
             )
         )
@@ -306,9 +337,7 @@ def plan_person_merges_resolved(
             )
             continue
         resolution = apply_second_verdict(
-            apply_first_verdict(
-                resolve_pair(evidence, policy, logreg_model), first_verdicts[pair_id]
-            ),
+            apply_first_verdict(resolve_pair(evidence, policy, logreg_model), first_verdicts[pair_id]),
             verdict,
         )
         if resolution.decision is Decision.MERGE:

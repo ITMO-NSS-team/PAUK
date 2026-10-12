@@ -92,7 +92,7 @@ class OpenRouterResolutionModels:
                 pair_id=context.pair_id,
                 stage="qwen_second",
                 system_prompt=SECOND_STAGE_SYSTEM_PROMPT,
-                payload=context.as_payload(),
+                payload=context.as_judge_payload(),
                 max_tokens=220,
                 parser=parse_second_stage_response,
             )
