@@ -127,7 +127,7 @@ class StagesTest(unittest.TestCase):
             "html_url": "https://github.com/org/repo", "name": "repo", "owner": {"login": "org"},
         }
         # Without this the stage stores the MagicMock itself in Repository.has_readme,
-        # which is typed bool — the row still round-trips, but as a mock repr.
+        # which is typed bool - the row still round-trips, but as a mock repr.
         github_client.return_value.has_readme.return_value = True
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
@@ -946,10 +946,10 @@ class HarvestAccountsTest(unittest.TestCase):
                                          "https://github.com/alice/second"])
 
     def test_a_failing_contributor_call_keeps_the_repository(self):
-        # GitHub answers 403 on repositories it has not analysed. Since the
-        # split that is a failure of repo_people alone: the metadata the
-        # repositories stage already fetched keeps its completed status, and
-        # the two halves record their state separately.
+        # GitHub answers 403 on repositories it has not analysed. That fails
+        # repo_people alone: the metadata the repositories stage already fetched
+        # keeps its completed status, and the two halves record their state
+        # separately.
         with patch("pauk.pipeline.stages.repositories.GitHubClient") as client, \
                 patch("pauk.pipeline.stages.repo_people.GitHubClient", client):
             client.return_value.contributors.side_effect = RuntimeError("403")
@@ -969,11 +969,10 @@ class HarvestAccountsTest(unittest.TestCase):
 class AccountTypeSpellingTest(unittest.TestCase):
     """The account type reaches _is_person in two spellings.
 
-    The stage passes what GitHub answered ("User", "Organization"); anything
-    reading a stored GitHubProfile passes what the store keeps, which is
-    lowercased. Comparing exactly made scripts/harvest_orphan_repos.py drop
-    every owner whose profile was already in the database — silently, since
-    a missing owner looks exactly like a repository nobody owns.
+    The stage passes what GitHub answered ("User", "Organization"); a stored
+    GitHubProfile keeps it lowercased. Comparing exactly would make
+    scripts/harvest_orphan_repos.py drop every owner whose profile is already
+    in the database.
     """
 
     def test_both_spellings_of_a_user_are_a_person(self):
@@ -1057,7 +1056,7 @@ class OrganizationOwnerProfileTest(unittest.TestCase):
     def test_a_personal_owner_is_left_to_the_harvest(self, github_client):
         # Only organizations are fetched here. A user owning the repository is
         # a contributor candidate, and RepoPeopleStage fetches them with
-        # everyone else — this stage does not call get_user for them at all.
+        # everyone else - this stage does not call get_user for them at all.
         client, _ = self.run_stage(github_client, "User")
         self.assertEqual([call.args for call in client.get_user.call_args_list], [])
 
@@ -1066,10 +1065,9 @@ class OwnerProfileIsFetchedTest(unittest.TestCase):
     """The owner stub must not pass for a fetched profile.
 
     `repositories` writes a GitHubProfile for the owner out of the nested
-    owner object, which carries a login, a URL and a type. `repo_people` then
-    decides whether GET /users/{login} is still worth a call. Deciding that on
-    `html_url` meant the stub answered for the real profile, and no repository
-    owner was ever fetched — the one person most likely to be an ITMO author.
+    owner object, which carries a login, a URL and a type. `repo_people`
+    then decides whether GET /users/{login} is still worth a call, and that
+    decision must not rest on `html_url`, which the stub also has.
     """
 
     PAYLOAD = {"html_url": "https://github.com/alice/tool", "name": "tool", "id": 1,
@@ -1369,8 +1367,8 @@ class GithubUrlRegexTest(unittest.TestCase):
         self.assertEqual(list(found), ["https://github.com/org/repo"])
 
     def test_keeps_a_bare_trailing_digit_with_no_period(self):
-        # Unsolvable ambiguity, same as the old script: a GitHub repo name can
-        # genuinely end in a digit (detectron2), so this is left alone.
+        # Unsolvable ambiguity: a GitHub repo name can genuinely end in a digit
+        # (detectron2), so this is left alone.
         found = _occurrences_in_text("Our tool https://github.com/org/repo1 does the job.", None)
         self.assertEqual(list(found), ["https://github.com/org/repo1"])
 
@@ -1386,9 +1384,9 @@ class NormalizeLigaturesTest(unittest.TestCase):
         self.assertEqual(_normalize_ligatures("eﬃcient"), "efficient")
 
     def test_two_ligature_variants_of_the_same_repo_collapse_to_one_url(self):
-        # Real bug, found on an actual paper (SSD, arXiv:1512.02325): PDF fonts
-        # render "ff" as one glyph (U+FB00), which \w matches as a letter, so
-        # "caﬀe" and "caffe" used to become two different repos.
+        # PDF fonts render "ff" as one glyph (U+FB00), which \w matches as a
+        # letter, so "caﬀe" and "caffe" must resolve to one repo (seen in a real
+        # paper, arXiv:1512.02325).
         text = "See https://github.com/weiliu89/caﬀe and also https://github.com/weiliu89/caffe."
         found = _occurrences_in_text(_normalize_ligatures(text), None)
         self.assertEqual(list(found), ["https://github.com/weiliu89/caffe"])
@@ -1417,7 +1415,7 @@ class UnlinkedRepositoriesTest(unittest.TestCase):
         github_client.return_value.has_readme.return_value = True
         github_client.return_value.contributors.return_value = []
         github_client.return_value.commits.return_value = []
-        # The owner in PAYLOAD is an organization, which the stage now fetches.
+        # The owner in PAYLOAD is an organization, which the stage fetches.
         github_client.return_value.get_user.return_value = {}
         return github_client
 
@@ -1477,9 +1475,8 @@ class UnlinkedRepositoriesTest(unittest.TestCase):
     def test_a_row_whose_url_was_rewritten_is_not_fetched_twice(self, github_client):
         """A rename redirects the fetch, and the row keeps the canonical URL.
 
-        The failure comes later, so the row still needs an attempt — and the
-        second pass, keyed by `repo.url`, must recognise it as one already
-        made instead of spending another call on the same repository.
+        The failure comes later, so the row still needs an attempt, and the
+        second pass, keyed by `repo.url`, must recognise it as one already made.
         """
         self._client(github_client)
         github_client.return_value.get_repository.return_value = {
@@ -1499,11 +1496,11 @@ class UnlinkedRepositoriesTest(unittest.TestCase):
 
     @patch("pauk.pipeline.stages.repositories.GitHubClient")
     def test_two_rows_for_one_url_are_folded_rather_than_dropped(self, github_client):
-        """Same repository under two ids — a curated import and a link pass.
+        """Same repository under two ids: a curated import and a link pass.
 
         Keying the second pass by URL collapses them onto one key. The loser
-        must not simply vanish from the work list: rows are read in a stable
-        order, so it would lose on every run and never be enriched at all.
+        must not vanish from the work list: rows are read in a stable order, so
+        it would lose on every run and never be enriched.
         """
         self._client(github_client)
         self.prepared.write_models("repositories", [
@@ -1561,7 +1558,7 @@ class UnlinkedRepositoriesTest(unittest.TestCase):
     @patch("pauk.pipeline.stages.repositories.GitHubClient")
     def test_the_attempt_history_survives_the_fold(self, github_client):
         """With no payload on either row, the one that has already been tried
-        wins — folding it away would reset the attempt counter."""
+        wins - folding it away would reset the attempt counter."""
         self._client(github_client)
         github_client.return_value.get_repository.side_effect = RuntimeError("404")
         tried = Repository(id="zzz_last_by_id", name="curated",
@@ -1644,7 +1641,7 @@ class RepoPeopleStageTest(unittest.TestCase):
         self.assertEqual(repo.processing["repositories"].status, ProcessingStatus.COMPLETED)
         self.assertEqual(repo.processing["repo_people"].status, ProcessingStatus.COMPLETED)
         # The owner's type round-tripped through the stored profile, which
-        # lowercased it — he still counts as a person.
+        # lowercased it - he still counts as a person.
         self.assertEqual(repo.contributors, ["alice", "bob"])
 
     @patch("pauk.pipeline.stages.repo_people.GitHubClient")
@@ -1706,9 +1703,8 @@ class RepoPeopleStageTest(unittest.TestCase):
         """`--input pubs.txt --entity publications` means those publications.
 
         `in_scope` alone answers True for every repository when the selection
-        names publications, so without a scope of its own this stage would
-        walk the whole group and spend the GitHub quota on repositories
-        nobody asked about.
+        names publications, so without a scope of its own this stage would walk
+        the whole group and spend GitHub quota on repositories nobody asked about.
         """
         users = {"bob": {"html_url": "https://github.com/bob", "name": "Bob"}}
         self._client(repos_client, users=users)
@@ -1733,7 +1729,7 @@ class RepoPeopleStageTest(unittest.TestCase):
     @patch("pauk.pipeline.stages.repo_people.GitHubClient")
     @patch("pauk.pipeline.stages.repositories.GitHubClient")
     def test_an_id_scoped_run_still_filters_by_repository(self, repos_client, people_client):
-        """A selection aimed at repositories keeps working as it did."""
+        """A selection aimed at repositories still selects them."""
         self._client(repos_client, users={})
         self._client(people_client, users={})
         repos_client.return_value.get_repository.side_effect = lambda owner, name: {
@@ -1775,9 +1771,8 @@ class CountingStage(EnrichmentStage):
 class StageProgressTest(unittest.TestCase):
     """A run has to say where it is and stop when it is asked to.
 
-    Before, the only seam was between stages: a cancel pressed inside a
-    stage that takes an hour was honoured an hour later, and the page said
-    nothing in the meantime.
+    The seam has to exist inside a stage, not only between stages: one stage
+    can take an hour.
     """
 
     def setUp(self):

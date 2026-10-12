@@ -1,68 +1,68 @@
-# `author_names` — части имени на русском и английском
+# `author_names`: Russian and English name parts
 
-**Что здесь:** контракт LLM-ответа, guards, повторные попытки и ремонт
-исторически некорректных имён.
+**What this covers:** the LLM response contract, guards, retries and the repair
+of invalid names from earlier runs.
 
-**Какие файлы задействует:** `pauk/pipeline/stages/author_names.py`,
+**Files involved:** `pauk/pipeline/stages/author_names.py`,
 `pauk/sources/llm.py`, `scripts/plan_author_names_repair.py`.
 
-Стадия обрабатывает и сотрудников ИТМО, и внешних соавторов. Каталог
-сотрудников даёт кандидатов и учёную степень, а LLM разделяет `name_raw` и
-варианты имени на фамилию, имя и, когда оно известно, отчество в двух языках.
+The stage handles both ITMO staff and external coauthors. The staff catalog
+provides candidates and the academic degree, and the LLM splits `name_raw` and
+the name variants into surname, first name and, when known, second name
+(patronymic), in two languages.
 
-## Условие завершения
+## Completion condition
 
-`author_names=completed` означает, что `surname_ru`, `first_name_ru`,
-`surname_en` и `first_name_en` — непустые строки. Русские обязательные поля
-должны состоять из кириллических букв, английские — из латинских; дефисы,
-пробелы и апострофы допустимы. `second_name_ru`/`second_name_en` могут быть
-пустыми.
+`author_names=completed` means `surname_ru`, `first_name_ru`, `surname_en` and
+`first_name_en` are non-empty strings. The required Russian fields must consist
+of Cyrillic letters and the English ones of Latin letters; hyphens, spaces and
+apostrophes are allowed. `second_name_ru` and `second_name_en` may be empty.
 
-Проверка принадлежит стадии: общий клиент проверяет JSON-транспорт,
-а разные точки вызова имеют разные схемы ответа. До проверки обязательных
-полей стадия нормализует строки и валидирует `matched_candidate`,
-затем запускает guards для выдуманного/ошибочно классифицированного отчества
-и сломанной транслитерации. Финальная проверка идёт после guards,
-потому что guard сам может признать обязательное поле недостоверным.
+The check belongs to the stage: the shared client validates the JSON transport,
+while each call site has its own response schema. Before checking the required
+fields, the stage normalizes strings and validates `matched_candidate`, then
+runs guards for an invented or misclassified second name and for broken
+transliteration. The final check comes after the guards, because a guard can
+itself declare a required field unreliable.
 
-Неполный семантический ответ получает один повтор с точной причиной отказа.
-Если повтор тоже неполон, строка получает `failed`, а частичный ответ не
-переносится в `Person`. Уже сохранённое полное имя при forced-прогоне не
-стирается. Для новой строки остаётся только безопасный fallback составных
-`name_ru`/`name_en`; компоненты имени не угадываются по порядку слов.
+An incomplete semantic response gets one retry with the exact reason for the
+rejection. If the retry is also incomplete, the row is marked `failed` and the
+partial response is not copied into `Person`. A full name already stored is not
+erased by a forced run. For a new row only a safe fallback remains, the
+composite `name_ru`/`name_en`; name components are never guessed from word
+order.
 
-`OpenRouterClient` отдельно повторяет сетевую ошибку, `429` и
-`500`/`502`/`503`/`504`: максимум три транспортные попытки с exponential
-backoff и `Retry-After`. Обычные `4xx` не повторяются. Каждая семантическая
-попытка записывается в `llm_logs_author_names` со своим
-`context.response_attempt`; transport retry остаётся внутри одного такого
-вызова.
+`OpenRouterClient` separately retries a network error, `429` and
+`500`/`502`/`503`/`504`: at most three transport attempts with exponential
+backoff, honoring `Retry-After`. Other `4xx` errors are not retried. Every
+semantic attempt is logged to `llm_logs_author_names` with its own
+`context.response_attempt`; a transport retry stays inside one such call.
 
-## Ремонт старых `completed`
+## Repairing invalid `completed` rows
 
-Подготовить план без записи в Mongo:
+Build a plan without writing to Mongo:
 
 ```bash
 uv run python scripts/plan_author_names_repair.py \
   --out data/reports/author-names-repair
 ```
 
-Скрипт ищет `_processing.author_names.status=completed`, нарушающий тот же
-контракт: обязательное поле отсутствует, равно `null`, пустое, пробельное,
-нестроковое, не содержит букв или использует неверный алфавит. `Person`
-глобальна и может принадлежать нескольким группам, поэтому каждый id
-назначается ровно одной группе; greedy cover уменьшает число прогонов. В
-manifest остаются исходные группы, нарушения полей и точные команды вида:
+The script looks for `_processing.author_names.status=completed` rows that
+violate the same contract: a required field is missing, `null`, empty,
+whitespace, not a string, has no letters, or uses the wrong alphabet. `Person`
+is global and can belong to several groups, so each id is assigned to exactly
+one group; a greedy cover minimizes the number of runs. The manifest keeps the
+original groups, the field violations and the exact commands:
 
 ```bash
 uv run pauk enrich author_names --group <group> \
   --input <group>.txt --entity persons --force
 ```
 
-До запуска команд нужен `snapshot_mongo.py`. Команды выполняются
-последовательно: отдельные `pauk enrich` не берут межгрупповой lock, а две
-группы могут ссылаться на одну глобальную `Person`.
+Run `snapshot_mongo.py` before executing the commands. Run them sequentially:
+separate `pauk enrich` invocations take no cross-group lock, and two groups can
+reference the same global `Person`.
 
-После ремонта повторный запуск планировщика должен показать ноль. Затем
-затронутые группы публикуются через `pauk publish graph --group <group>` и
-пересобираются cache/web; исправление Mongo само по себе Neo4j не обновляет.
+After the repair, rerunning the planner should report zero. Then publish the
+affected groups with `pauk publish graph --group <group>` and rebuild the
+cache and web data; fixing Mongo does not update Neo4j by itself.

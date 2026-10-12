@@ -9,8 +9,8 @@ back, because MERGE creates it again.
 So a manual edit is kept as a *decision*, not only as a value in the
 graph: one document per target in `graph_overrides`, reapplied after
 every publish and after every graph-wide dedup. The graph ends up
-carrying the same edit again, which is why applying has to be idempotent
-— reapplying an override that is already in place must produce no audit
+carrying the same edit again, which is why applying has to be idempotent:
+reapplying an override that is already in place must produce no audit
 entry at all, or the change feed fills with edits nobody made.
 
 Two things this buys beyond survival:
@@ -21,7 +21,7 @@ Two things this buys beyond survival:
 
 Deletion is a tombstone as much as an operation. The loader has to skip
 tombstoned ids *before* writing, otherwise every run recreates the node
-and every reapply deletes it again — the graph would be correct and the
+and every reapply deletes it again, so the graph would be correct and the
 audit log would be nonsense.
 """
 
@@ -88,7 +88,7 @@ def relationship_override_id(src_label: str, rel_type: str, tgt_label: str,
 
     A relationship needs five parts to be named: a node is one id, an edge
     is a type plus both ends. The target id is whatever the loader matches
-    the target by — `url` for a Repository, `login` for a GitHubProfile —
+    the target by (`url` for a Repository, `login` for a GitHubProfile),
     so the key matches what the publish path actually compares.
     """
     return f"rel:{src_label}:{rel_type}:{tgt_label}:{src_id}:{tgt_id}"
@@ -114,13 +114,13 @@ def record_override(db: Database, label: str, target_id: str, op: str,
         actor: Who decided, for the audit trail.
         note: Free-text reason, shown in the panel.
         auto_value: What the pipeline had before the edit. Recorded only
-            for fields seen for the first time — otherwise a second edit
+            for fields seen for the first time; otherwise a second edit
             would overwrite the original automatic value with the previous
             manual one, and the conflict report would compare an edit with
             an edit.
         snapshot: For a deletion, every field the node carried. The
             decision then holds what is needed to put the record back, and
-            restoring stops depending on the audit feed — which records
+            restoring stops depending on the audit feed, which records
             history, not state, and summarises a bulk operation without
             listing fields at all.
 
@@ -190,8 +190,8 @@ def record_relationship_override(db: Database, src_label: str, rel_type: str, tg
 
     Two kinds, and they are not symmetrical. `delete` is an instruction:
     the loader would recreate the edge from the same prepared row on every
-    run, and this is what stops it. `link` is only a claim — the edge is
-    there already and publishing leaves it alone — but without it nothing
+    run, and this is what stops it. `link` is only a claim: the edge is
+    there already and publishing leaves it alone, but without it nothing
     tells an edge somebody added by hand from one the pipeline made and has
     since stopped making, and a prune would remove both.
 
@@ -269,9 +269,8 @@ def deactivate_override(db: Database, label: str, target_id: str,
 
     Withdrawing a deletion from a node that was also edited leaves the edit
     standing: one document holds both, and switching the whole thing off
-    used to drop a field correction the next publish then overwrote. The
-    record came back with the right value and lost it a week later, which
-    is the worst way for a decision to disappear.
+    would drop a field correction, and the next publish would overwrite
+    the value again.
 
     Args:
         db: Mongo database.
@@ -336,8 +335,8 @@ def apply_overrides(client, db: Database) -> dict[str, int]:
     """Reapply every active manual decision to the graph.
 
     Called right after an edit is saved (so it takes effect at once), at
-    the end of a publish and at the end of a graph-wide dedup — both of
-    which can undo manual work — and by `pauk overrides apply`.
+    the end of a publish and at the end of a graph-wide dedup (both of
+    which can undo manual work) and by `pauk overrides apply`.
 
     Args:
         client: Graph client; pass the audited one so real changes are

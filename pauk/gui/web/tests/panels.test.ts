@@ -48,7 +48,7 @@ describe("mountPanel", () => {
     return () => panel.remove();
   });
 
-  it("«Обзор» вкладки авторов — число авторов/департаментов, среднее публикаций, заполненность полей — LOADING, пока detail пуст", async () => {
+  it("the \"Обзор\" of the authors tab shows author/department counts, average publications, field completeness, and LOADING while detail is empty", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ tab: 1 }));
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
@@ -63,7 +63,7 @@ describe("mountPanel", () => {
     expect(panel.querySelectorAll(".loading-indicator").length).toBeGreaterThan(0);
   });
 
-  it("«Обзор» вкладки авторов считает всех авторов, с разбивкой ИТМО/внешние, даже когда внешние скрыты фильтром", async () => {
+  it("the \"Обзор\" of the authors tab counts all authors, split into ITMO/external, even when externals are hidden by the filter", async () => {
     const sample = await loadSampleGraphData();
     const data = {
       ...sample,
@@ -81,7 +81,7 @@ describe("mountPanel", () => {
     expect(rows).toContainEqual(["Внешних", "1"]);
   });
 
-  it("«Обзор» вкладки репозиториев — число репозиториев, доля с README/лицензией", async () => {
+  it("the \"Обзор\" of the repositories tab shows the repository count and the share with README/license", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ tab: 2 }));
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
@@ -90,7 +90,7 @@ describe("mountPanel", () => {
     expect(panel.querySelectorAll(".loading-indicator").length).toBeGreaterThan(0);
   });
 
-  it("«Обзор» вкладки публикаций — число публикаций, доля с известным годом/DOI/аннотацией", async () => {
+  it("the \"Обзор\" of the publications tab shows the publication count and the share with a known year/DOI/abstract", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ tab: 3 }));
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
@@ -102,13 +102,13 @@ describe("mountPanel", () => {
     expect(panel.querySelectorAll(".loading-indicator").length).toBeGreaterThan(0); // DOI/abstract wait for pubDetails
   });
 
-  it("«Обзор» вкладки авторов — график «Авторы по департаментам», не топ конкретных авторов", async () => {
+  it("the \"Обзор\" of the authors tab has an \"Авторы по департаментам\" chart, not a top of individual authors", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ tab: 1 }));
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     const chart = panel.querySelector(".panel-chart");
-    if (!chart) throw new Error("карточка «Обзор» должна содержать график");
+    if (!chart) throw new Error("the \"Обзор\" card must contain a chart");
     expect(chart.querySelector("h4")?.textContent).toBe("Авторы по департаментам");
     // Fixture: A1/A2/A6 dept 0, A3/A4/A8 dept 1, A5/A7 dept 2.
     const rows = [...chart.querySelectorAll(".chart-bar-row")];
@@ -124,13 +124,13 @@ describe("mountPanel", () => {
     expect(byLabel.get("Центр робототехники")).toBe("2");
   });
 
-  it("«Обзор» вкладки публикаций — график «Публикации по годам», в хронологическом порядке, без публикаций с неизвестным годом", async () => {
+  it("the \"Обзор\" of the publications tab has a \"Публикации по годам\" chart in chronological order, without publications of unknown year", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ tab: 3 }));
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     const chart = panel.querySelector(".panel-chart");
-    if (!chart) throw new Error("карточка «Обзор» должна содержать график");
+    if (!chart) throw new Error("the \"Обзор\" card must contain a chart");
     expect(chart.querySelector("h4")?.textContent).toBe("Публикации по годам");
     // Fixture: 2021x1, 2022x1, 2023x1, 2024x2 (P1, P6); P2 has no year and is left out.
     const labels = [...chart.querySelectorAll(".chart-bar-row__label")].map((el) => el.textContent);
@@ -139,13 +139,13 @@ describe("mountPanel", () => {
     expect(values).toEqual(["1", "1", "1", "2"]);
   });
 
-  it("«Обзор» вкладки репозиториев — график «Репозитории по звёздам» корзинами, не топ конкретных репозиториев", async () => {
+  it("the \"Обзор\" of the repositories tab has a \"Репозитории по звёздам\" chart in buckets, not a top of individual repositories", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ tab: 2 }));
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     const chart = panel.querySelector(".panel-chart");
-    if (!chart) throw new Error("карточка «Обзор» должна содержать график");
+    if (!chart) throw new Error("the \"Обзор\" card must contain a chart");
     expect(chart.querySelector("h4")?.textContent).toBe("Репозитории по звёздам");
     // Fixture: R4=3, R2=7 -> "1–9" (2); R3=15, R5=21, R1=42 -> "10–99" (3); other buckets empty.
     const byLabel = new Map(
@@ -163,10 +163,10 @@ describe("mountPanel", () => {
     expect(chart.querySelector("button.panel-entity-ref")).toBeNull();
   });
 
-  it("показывает карточку узла с полями, специфичными для автора", async () => {
+  it("shows a node card with author-specific fields", async () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];
-    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    if (!author) throw new Error("the fixture must contain at least one author");
     const store = new Store<AppState>({
       ...initialState(),
       selection: { kind: "node", key: author.key },
@@ -179,10 +179,10 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain(String(author.pubs_count));
   });
 
-  it("карточка автора показывает бейдж «Автор» и кнопку «← Обзор»", async () => {
+  it("the author card shows the \"Автор\" badge and the \"← Обзор\" button", async () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];
-    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    if (!author) throw new Error("the fixture must contain at least one author");
     const store = new Store<AppState>({
       ...initialState(),
       selection: { kind: "node", key: author.key },
@@ -194,7 +194,7 @@ describe("mountPanel", () => {
     expect(panel.querySelector(".panel-back")?.textContent).toBe("← Обзор");
   });
 
-  it("карточка автора после domержа detail показывает имя на ВТОРОМ языке под заголовком (мельче, серым)", async () => {
+  it("after the detail merge the author card shows the name in the SECOND language under the title (smaller, grey)", async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     // A1: name_ru "Иванов Иван Иванович", name_en "Ivan Ivanov".
@@ -213,7 +213,7 @@ describe("mountPanel", () => {
     expect(panel.querySelector(".panel-card__subtitle")?.textContent).toBe("Иванов Иван Иванович");
   });
 
-  it("имя на втором языке стоит в шапке сразу под заголовком, а не отдельным блоком после неё", async () => {
+  it("the second-language name sits in the header right under the title, not in a separate block after it", async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     const store = new Store<AppState>({
@@ -228,7 +228,7 @@ describe("mountPanel", () => {
     expect(titles?.children[1]?.className).toBe("panel-card__subtitle");
   });
 
-  it("карточка автора разделена на «Общее», «Приватное» и «Служебное»", async () => {
+  it("the author card is split into \"Общее\", \"Приватное\" and \"Служебное\"", async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     const store = new Store<AppState>({
@@ -266,7 +266,7 @@ describe("mountPanel", () => {
     expect(service?.textContent).not.toContain("T10:23");
   });
 
-  it("пока authors-detail не пришёл, индикатор загрузки стоит в «Приватном», а служебные ключ/тип видны сразу", async () => {
+  it("until authors-detail arrives, the loading indicator sits in \"Приватное\", while the service key/type are visible at once", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>({
       ...initialState(),
@@ -282,7 +282,7 @@ describe("mountPanel", () => {
     expect(panel.querySelectorAll(".panel-section")[2]?.textContent).toContain("A1");
   });
 
-  it("аффилиации с одним названием склеиваются в один пункт: ссылка на ROR, диапазон лет и источники", async () => {
+  it("affiliations with the same name are merged into one item: ROR link, year range and sources", async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     // A1: "Sample University" from OpenAlex (2023, 2024) and ORCID (2021); "Other Institute" has no ROR or years.
@@ -305,7 +305,7 @@ describe("mountPanel", () => {
     expect(items[1]?.querySelector(".panel-list__meta")?.textContent).toBe("OpenAlex");
   });
 
-  it("публикации автора — по одной на строку, с позицией автора и отметкой «автор для переписки»", async () => {
+  it("an author's publications go one per line, with the author position and an \"автор для переписки\" mark", async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     // A1: P1 position 1, corresponding; P2 position 3; P5 has no role.
@@ -329,10 +329,10 @@ describe("mountPanel", () => {
     expect(byPub.get("P5")).toBeNull();
   });
 
-  it("карточка автора не падает на authors-detail.json, сгенерированном до появления pub_roles/created_at/updated_at", async () => {
+  it("the author card does not crash on an authors-detail.json generated before pub_roles/created_at/updated_at appeared", async () => {
     const data = await loadSampleGraphData();
     const [a1] = await loadSampleAuthorDetails();
-    if (!a1) throw new Error("фикстура должна содержать автора A1");
+    if (!a1) throw new Error("the fixture must contain author A1");
     const staleA1: AuthorDetail = { ...a1 };
     delete staleA1.pub_roles;
     delete staleA1.created_at;
@@ -352,10 +352,10 @@ describe("mountPanel", () => {
     expect(panel.textContent).not.toContain("Создан");
   });
 
-  it("длинный список: первые 3, «+ ещё» добавляет по 20, «свернуть» на любом шаге возвращает 3", async () => {
+  it("long list: first 3, \"+ ещё\" adds 20 at a time, \"свернуть\" at any step returns to 3", async () => {
     const data = await loadSampleGraphData();
     const [a1] = await loadSampleAuthorDetails();
-    if (!a1) throw new Error("фикстура должна содержать автора A1");
+    if (!a1) throw new Error("the fixture must contain author A1");
     const variants = Array.from({ length: 50 }, (_, i) => `Variant ${i + 1}`);
     const authorDetails = indexDetailsByKey([
       { ...a1, name_variants: { openalex: variants, orcid: [] } },
@@ -399,10 +399,10 @@ describe("mountPanel", () => {
     expect(count()).toBe(3);
   });
 
-  it("карточка автора БЕЗ domержённого detail (только сокращённая подпись узла) не показывает подзаголовок", async () => {
+  it("an author card WITHOUT merged detail (only the short node label) shows no subtitle", async () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];
-    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    if (!author) throw new Error("the fixture must contain at least one author");
     const store = new Store<AppState>({
       ...initialState(),
       selection: { kind: "node", key: author.key },
@@ -413,10 +413,10 @@ describe("mountPanel", () => {
     expect(panel.querySelector(".panel-card__subtitle")).toBeNull();
   });
 
-  it("клик по «← Обзор» сбрасывает selection и возвращает карточку «Обзор»", async () => {
+  it("clicking \"← Обзор\" clears selection and returns the \"Обзор\" card", async () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];
-    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    if (!author) throw new Error("the fixture must contain at least one author");
     const store = new Store<AppState>({
       ...initialState(),
       selection: { kind: "node", key: author.key },
@@ -424,7 +424,7 @@ describe("mountPanel", () => {
 
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
     const back = panel.querySelector<HTMLButtonElement>(".panel-back");
-    if (!back) throw new Error("на карточке автора должна быть кнопка «← Обзор»");
+    if (!back) throw new Error("the author card must have a \"← Обзор\" button");
 
     back.click();
 
@@ -432,7 +432,7 @@ describe("mountPanel", () => {
     expect(panel.querySelector("h3")?.textContent).toBe("Обзор");
   });
 
-  it("«Обзор» показывает бейдж текущей вкладки, но НЕ показывает кнопку «← Обзор» — возвращаться уже некуда", async () => {
+  it("the \"Обзор\" shows the current tab badge but NOT the \"← Обзор\" button, there is nowhere to go back to", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState()); // selection: null, tab: 1
 
@@ -442,7 +442,7 @@ describe("mountPanel", () => {
     expect(panel.querySelector(".panel-back")).toBeNull();
   });
 
-  it("карточка автора показывает его публикации и топ соавторов по убыванию веса", async () => {
+  it("the author card shows their publications and top coauthors by descending weight", async () => {
     const data = await loadSampleGraphData();
     // A1: pubs P1, P2, P5; co-authors A2 (w=2) and A3 (w=1).
     const store = new Store<AppState>({
@@ -464,7 +464,7 @@ describe("mountPanel", () => {
     expect(text.indexOf("Петрова А.С.")).toBeLessThan(text.indexOf("Сидоров П."));
   });
 
-  it("клик по соавтору в карточке автора делает его новым selection — 'прослеживать связи' одним кликом", async () => {
+  it("clicking a coauthor in the author card makes them the new selection, 'following links' in one click", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>({
       ...initialState(),
@@ -477,7 +477,7 @@ describe("mountPanel", () => {
       (button) => button.textContent === "Петрова А.С.",
     ) as HTMLButtonElement | undefined;
     if (!coauthorButton)
-      throw new Error("кнопка-ссылка на соавтора А2 (Петрова А.С.) должна быть в карточке");
+      throw new Error("the link button for coauthor A2 (Петрова А.С.) must be in the card");
 
     coauthorButton.click();
 
@@ -485,7 +485,7 @@ describe("mountPanel", () => {
     expect(store.get().tab).toBe(1); // same kind: the tab stays
   });
 
-  it("клик по публикации в карточке автора делает её новым selection И переключает вкладку на 'Публикации'", async () => {
+  it("clicking a publication in the author card makes it the new selection AND switches the tab to 'Публикации'", async () => {
     // Regression: a pub is another kind than the current (authors) tab. Without
     // switching the tab the camera cannot find P1 in the graph.
     const data = await loadSampleGraphData();
@@ -499,7 +499,7 @@ describe("mountPanel", () => {
     const pubButton = [...panel.querySelectorAll("button.panel-entity-ref")].find(
       (button) => button.textContent === "P1",
     ) as HTMLButtonElement | undefined;
-    if (!pubButton) throw new Error("кнопка-ссылка на публикацию P1 должна быть в карточке");
+    if (!pubButton) throw new Error("the link button for publication P1 must be in the card");
 
     pubButton.click();
 
@@ -507,7 +507,7 @@ describe("mountPanel", () => {
     expect(store.get().tab).toBe(3);
   });
 
-  it("внешние ссылки (GitHub/ORCID) остаются <a>, не кнопками — открываются в новой вкладке, а не меняют selection", async () => {
+  it("external links (GitHub/ORCID) stay <a>, not buttons, they open in a new tab instead of changing selection", async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     const store = new Store<AppState>({
@@ -522,7 +522,7 @@ describe("mountPanel", () => {
     expect(githubLink?.getAttribute("target")).toBe("_blank");
   });
 
-  it("карточка автора показывает GitHub, ORCID и учёную степень, когда они заполнены", async () => {
+  it("the author card shows GitHub, ORCID and academic degree when they are filled in", async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     // A1: degree, github and orcid are filled.
@@ -546,7 +546,7 @@ describe("mountPanel", () => {
     expect(orcidLink?.textContent).toBe("0000-0001-2345-6789");
   });
 
-  it("карточка автора показывает OpenAlex/Google Scholar/email/аффилиации, когда они заполнены", async () => {
+  it("the author card shows OpenAlex/Google Scholar/email/affiliations when they are filled in", async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     // A1: all these fields are filled.
@@ -573,7 +573,7 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain("Sample University");
   });
 
-  it("не показывает строки GitHub/ORCID/степени у автора без этих полей", async () => {
+  it("does not show GitHub/ORCID/degree rows for an author without those fields", async () => {
     const data = await loadSampleGraphData();
     // A2 has a record with empty degree/github/orcid: "fields are empty", not
     // "detail has not arrived".
@@ -590,7 +590,7 @@ describe("mountPanel", () => {
     expect(panel.querySelector(".loading-indicator")).toBeNull();
   });
 
-  it("карточка автора показывает его репозитории (repo_author_edges)", async () => {
+  it("the author card shows their repositories (repo_author_edges)", async () => {
     const data = await loadSampleGraphData();
     // A1 maintains R1 (repo_author_edges).
     const store = new Store<AppState>({
@@ -601,11 +601,11 @@ describe("mountPanel", () => {
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     const r1 = data.repos.find((repo) => repo.key === "R1");
-    if (!r1) throw new Error("фикстура должна содержать репозиторий R1");
+    if (!r1) throw new Error("the fixture must contain repository R1");
     expect(panel.textContent).toContain(r1.label);
   });
 
-  it("не показывает строку репозиториев у автора без единого repo_author_edges", async () => {
+  it("does not show the repositories row for an author with no repo_author_edges", async () => {
     const data = await loadSampleGraphData();
     // A2 is in no repo_author_edges.
     const store = new Store<AppState>({
@@ -618,7 +618,7 @@ describe("mountPanel", () => {
     expect(panel.textContent).not.toContain("Репозитории");
   });
 
-  it("карточка автора показывает варианты имени раздельно по источнику (OpenAlex/ORCID), когда они есть", async () => {
+  it("the author card shows name variants separately per source (OpenAlex/ORCID) when present", async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     // A1: openalex ["Ivanov Ivan"], orcid ["I. Ivanov"].
@@ -635,7 +635,7 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain("I. Ivanov");
   });
 
-  it("не показывает строки вариантов имени у автора без name_variants ни по одному источнику", async () => {
+  it("does not show name variant rows for an author with no name_variants from any source", async () => {
     const data = await loadSampleGraphData();
     // A2: detail arrived, openalex/orcid are empty.
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
@@ -649,7 +649,7 @@ describe("mountPanel", () => {
     expect(panel.textContent).not.toContain("Варианты написания");
   });
 
-  it("заголовок карточки автора — полное имя (name_ru/name_en) на текущем языке, как только detail пришёл", async () => {
+  it("the author card title is the full name (name_ru/name_en) in the current language as soon as detail arrives", async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     // A1: name_ru "Иванов Иван Иванович", name_en "Ivan Ivanov".
@@ -665,10 +665,10 @@ describe("mountPanel", () => {
     expect(panel.querySelector("h3")?.textContent).toBe("Ivan Ivanov");
   });
 
-  it("заголовок карточки автора остаётся сокращённой подписью, пока detail не пришёл", async () => {
+  it("the author card title stays the short label until detail arrives", async () => {
     const data = await loadSampleGraphData();
     const author = data.authors.find((a) => a.key === "A1");
-    if (!author) throw new Error("фикстура должна содержать автора A1");
+    if (!author) throw new Error("the fixture must contain author A1");
     const store = new Store<AppState>({
       ...initialState(),
       selection: { kind: "node", key: "A1" },
@@ -679,12 +679,12 @@ describe("mountPanel", () => {
     expect(panel.querySelector("h3")?.textContent).toBe(author.label);
   });
 
-  it("заголовок карточки автора остаётся сокращённой подписью, если полное имя пустое, даже когда detail уже пришёл", async () => {
+  it("the author card title stays the short label if the full name is empty, even when detail has already arrived", async () => {
     const data = await loadSampleGraphData();
     const authorDetails = indexDetailsByKey(await loadSampleAuthorDetails());
     // A2: detail arrived, name_ru/name_en are empty.
     const author2 = data.authors.find((a) => a.key === "A2");
-    if (!author2) throw new Error("фикстура должна содержать автора A2");
+    if (!author2) throw new Error("the fixture must contain author A2");
     const store = new Store<AppState>({
       ...initialState(),
       selection: { kind: "node", key: "A2" },
@@ -695,7 +695,7 @@ describe("mountPanel", () => {
     expect(panel.querySelector("h3")?.textContent).toBe(author2.label);
   });
 
-  it("карточка репозитория показывает участников с ролью и публикации репозитория", async () => {
+  it("the repository card shows contributors with their role and the repository's publications", async () => {
     const data = await loadSampleGraphData();
     // R1: A1 is maintainer (repo_author_edges), P1 is its pub (repo_pub_edges).
     const store = new Store<AppState>({
@@ -715,12 +715,12 @@ describe("mountPanel", () => {
     }
   });
 
-  describe("implementation rate пары публикация–репозиторий", () => {
+  describe("implementation rate of a publication-repository pair", () => {
     afterEach(() => {
       vi.unstubAllGlobals();
     });
 
-    it("сначала из чего собран, потом процент — в карточке репозитория и публикации", async () => {
+    it("first what it is built from, then the percentage, in the repository and publication cards", async () => {
       const data = await loadSampleGraphData();
       // R1 implements P1 (repo_pub_edges).
       const rates = [{ pub: "P1", repo: "R1", implemented: 32, total: 57, pct: 56 }];
@@ -746,10 +746,10 @@ describe("mountPanel", () => {
     });
   });
 
-  it("длинная аннотация — первые N слов и «читать полностью», по клику — целиком, повторный клик — снова коротко", async () => {
+  it("a long abstract shows the first N words and \"читать полностью\"; a click expands it fully, another click collapses it again", async () => {
     const data = await loadSampleGraphData();
     const [detail] = await loadSamplePubDetails();
-    if (!detail) throw new Error("в фикстуре нет деталей публикации");
+    if (!detail) throw new Error("the fixture has no publication details");
     const words = Array.from({ length: 80 }, (_, i) => `w${i + 1}`);
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: detail.key } });
     mountPanel(store, data, indexDetailsByKey([{ ...detail, abstract: words.join(" ") }]), NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
@@ -768,10 +768,10 @@ describe("mountPanel", () => {
     expect(dd?.textContent).not.toContain("w51");
   });
 
-  it("короткая аннотация — целиком и без кнопки", async () => {
+  it("a short abstract is shown in full and without a button", async () => {
     const data = await loadSampleGraphData();
     const [detail] = await loadSamplePubDetails();
-    if (!detail) throw new Error("в фикстуре нет деталей публикации");
+    if (!detail) throw new Error("the fixture has no publication details");
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: detail.key } });
     mountPanel(store, data, indexDetailsByKey([{ ...detail, abstract: "Short abstract." }]), NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
@@ -780,10 +780,10 @@ describe("mountPanel", () => {
     expect(dd?.querySelector(".panel-list__more")).toBeNull();
   });
 
-  it("карточка репозитория ведёт на GitHub, карточка группы-организации — на профиль организации", async () => {
+  it("the repository card links to GitHub, the organization group card links to the organization profile", async () => {
     const data = await loadSampleGraphData();
     const [dept] = data.departments;
-    if (!dept) throw new Error("в фикстуре нет департаментов");
+    if (!dept) throw new Error("the fixture has no departments");
     const org = { ...dept, id: 99, kind: "org" as const, name: "example-org", name_en: "example-org" };
     const field = { ...dept, id: 98, kind: "field" as const, name: "Physics", name_en: "Physics" };
     const repoDetails = indexDetailsByKey(await loadSampleRepoDetails());
@@ -801,7 +801,7 @@ describe("mountPanel", () => {
     expect(panel.querySelector("a[href^='https://github.com']")).toBeNull();
   });
 
-  it("карточки публикации и репозитория: разделы «Общее»/«Служебное», авторы списком, OpenAlex сразу после DOI", async () => {
+  it("publication and repository cards: \"Общее\"/\"Служебное\" sections, authors as a list, OpenAlex right after DOI", async () => {
     const data = await loadSampleGraphData();
     const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "node", key: "P1" } });
@@ -820,7 +820,7 @@ describe("mountPanel", () => {
     expect(sectionTitles()).toEqual(["Общее", "Служебное"]);
   });
 
-  it("гранты публикации — нумерованный список: первые три, остальные по кнопке", async () => {
+  it("publication grants are a numbered list: the first three, the rest behind a button", async () => {
     const data = await loadSampleGraphData();
     const funding = ["11-11-11111", "22-22-22222", "33-33-33333", "44-44-44444"].map((key) => ({
       funder: "Russian Science Foundation",
@@ -845,7 +845,7 @@ describe("mountPanel", () => {
     expect(list()?.querySelector(".panel-list__more")?.textContent).toBe("− свернуть");
   });
 
-  it("грант: номер в карточке публикации ведёт на карточку гранта со списком статей и CSV", async () => {
+  it("grant: the number in the publication card leads to the grant card with the article list and CSV", async () => {
     const data = await loadSampleGraphData();
     const details = await loadSamplePubDetails();
     const grant = { funder: "Russian Science Foundation", grant_id: "Grant 18-19-00627", grant_key: "18-19-00627" };
@@ -888,7 +888,7 @@ describe("mountPanel", () => {
     expect(lines.slice(1).map((line) => line.split(",")[0]).sort()).toEqual(["P1", "P3"]);
   });
 
-  it("грант из URL до прихода pubs-detail.json — индикатор загрузки, а не пустая панель", async () => {
+  it("a grant from the URL before pubs-detail.json arrives shows a loading indicator, not an empty panel", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "grant", key: "18-19-00627" } });
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
@@ -896,11 +896,11 @@ describe("mountPanel", () => {
     expect(panel.querySelector(".loading-indicator")).not.toBeNull();
   });
 
-  it("карточка репозитория показывает описание (RepoDetail.description)", async () => {
+  it("the repository card shows the description (RepoDetail.description)", async () => {
     const data = await loadSampleGraphData();
     const repoDetails = indexDetailsByKey(await loadSampleRepoDetails());
     const repoDetail = repoDetails.get("R1");
-    if (!repoDetail) throw new Error("repos-detail.sample.json должен содержать репозиторий R1");
+    if (!repoDetail) throw new Error("repos-detail.sample.json must contain repository R1");
     const store = new Store<AppState>({
       ...initialState(),
       selection: { kind: "node", key: "R1" },
@@ -911,7 +911,7 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain(repoDetail.description);
   });
 
-  it("карточка репозитория показывает тип владельца, лицензию и наличие README", async () => {
+  it("the repository card shows the owner type, license and README presence", async () => {
     const data = await loadSampleGraphData();
     // R1: has_readme=true, license="MIT", owner_type="organization".
     const repoDetails = indexDetailsByKey(await loadSampleRepoDetails());
@@ -927,7 +927,7 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain("✓");
   });
 
-  it("не показывает строку лицензии у репозитория без неё (R2 во фикстуре)", async () => {
+  it("does not show the license row for a repository without one (R2 in the fixture)", async () => {
     const data = await loadSampleGraphData();
     const repoDetails = indexDetailsByKey(await loadSampleRepoDetails());
     const store = new Store<AppState>({
@@ -940,7 +940,7 @@ describe("mountPanel", () => {
     expect(panel.textContent).not.toContain("Лицензия");
   });
 
-  it("не показывает строки участников/публикаций у репозитория без единой связи", async () => {
+  it("does not show the contributors/publications rows for a repository with no links", async () => {
     const data = await loadSampleGraphData();
     // R4 is in no repo_pub_edges.
     const store = new Store<AppState>({
@@ -953,7 +953,7 @@ describe("mountPanel", () => {
     expect(panel.textContent).not.toContain("Публикации");
   });
 
-  it("карточка публикации показывает список её авторов (all_edges)", async () => {
+  it("the publication card shows the list of its authors (all_edges)", async () => {
     const data = await loadSampleGraphData();
     // P1: authors A1 and A2 (all_edges).
     const store = new Store<AppState>({
@@ -967,11 +967,11 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain("Петрова А.С.");
   });
 
-  it("показывает настоящее название публикации из pubDetails, а не её ключ", async () => {
+  it("shows the real publication title from pubDetails, not its key", async () => {
     const data = await loadSampleGraphData();
     const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
     const pub = data.pubs[0];
-    if (!pub) throw new Error("фикстура должна содержать хотя бы одну публикацию");
+    if (!pub) throw new Error("the fixture must contain at least one publication");
     const store = new Store<AppState>({
       ...initialState(),
       selection: { kind: "node", key: pub.key },
@@ -984,7 +984,7 @@ describe("mountPanel", () => {
     expect(title).not.toBe(pub.key);
   });
 
-  it("карточка публикации показывает тип, направления, аннотацию и ссылку на OpenAlex", async () => {
+  it("the publication card shows the type, topics, abstract and an OpenAlex link", async () => {
     const data = await loadSampleGraphData();
     const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
     // P1: type="article", fields=["Computer Science"], non-empty abstract.
@@ -1005,14 +1005,14 @@ describe("mountPanel", () => {
     expect(openalexLink?.textContent).toBe("OpenAlex");
   });
 
-  it("показывает DOI и ссылку на код как кликабельные <a>, когда есть pubDetails и нет связанного репозитория", async () => {
+  it("shows DOI and the code link as clickable <a> when pubDetails exists and there is no linked repository", async () => {
     const data = await loadSampleGraphData();
     const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
     // P4: has_code, one code_url, no repo_pub_edges, so the code shows as a link.
     const detail = pubDetails.get("P4");
     if (!detail?.has_code || detail.code_url.length === 0) {
       throw new Error(
-        "фикстура pubs-detail.sample.json должна содержать P4 с has_code и хотя бы одним code_url",
+        "fixture pubs-detail.sample.json must contain P4 with has_code and at least one code_url",
       );
     }
     const store = new Store<AppState>({
@@ -1033,16 +1033,16 @@ describe("mountPanel", () => {
     expect(codeLink?.textContent).toBe(detail.code_url[0]?.replace("https://github.com/", ""));
   });
 
-  it("показывает ссылку на связанный репозиторий ВМЕСТО code_url, когда публикация связана с репозиторием (repo_pub_edges)", async () => {
+  it("shows the link to the linked repository INSTEAD of code_url when the publication is linked to a repository (repo_pub_edges)", async () => {
     const data = await loadSampleGraphData();
     const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
     // P1 is linked to R1 and also has a code_url: the repo wins.
     const detail = pubDetails.get("P1");
     if (!detail?.has_code || detail.code_url.length === 0) {
-      throw new Error("фикстура pubs-detail.sample.json должна содержать P1 с has_code и code_url");
+      throw new Error("fixture pubs-detail.sample.json must contain P1 with has_code and code_url");
     }
     const repo = data.repos.find((r) => r.key === "R1");
-    if (!repo) throw new Error("фикстура должна содержать репозиторий R1");
+    if (!repo) throw new Error("the fixture must contain repository R1");
     const store = new Store<AppState>({
       ...initialState(),
       selection: { kind: "node", key: "P1" },
@@ -1054,11 +1054,11 @@ describe("mountPanel", () => {
     expect(panel.querySelector(`a[href="${detail.code_url[0]}"]`)).toBeNull();
   });
 
-  it("заменяет code_url с небезопасной схемой (javascript:) на about:blank вместо того, чтобы класть её в href", async () => {
+  it("replaces a code_url with an unsafe scheme (javascript:) by about:blank instead of putting it in href", async () => {
     const data = await loadSampleGraphData();
     // P2, not P1: P1's repo link would hide code_url entirely.
     const pub = data.pubs.find((p) => p.key === "P2");
-    if (!pub) throw new Error("фикстура должна содержать публикацию P2");
+    if (!pub) throw new Error("the fixture must contain publication P2");
     const malicious: PubDetail = {
       key: pub.key,
       label: "Тестовая публикация",
@@ -1085,13 +1085,13 @@ describe("mountPanel", () => {
     expect(codeLink?.getAttribute("href")).toBe("about:blank");
   });
 
-  it("не показывает строку кода, когда has_code === false, но DOI всё равно показывает", async () => {
+  it("does not show the code row when has_code === false, but still shows DOI", async () => {
     const data = await loadSampleGraphData();
     const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
     // P2: has_code false, empty code_url, has a DOI.
     const detail = pubDetails.get("P2");
     if (!detail || detail.has_code)
-      throw new Error("фикстура должна содержать P2 с has_code: false");
+      throw new Error("the fixture must contain P2 with has_code: false");
     const store = new Store<AppState>({
       ...initialState(),
       selection: { kind: "node", key: "P2" },
@@ -1103,10 +1103,10 @@ describe("mountPanel", () => {
     expect(panel.textContent).not.toContain("Код");
   });
 
-  it("показывает карточку ребра с обоими концами и весом", async () => {
+  it("shows an edge card with both endpoints and the weight", async () => {
     const data = await loadSampleGraphData();
     const edge = data.coauth_edges[0];
-    if (!edge) throw new Error("фикстура должна содержать хотя бы одно coauth-ребро");
+    if (!edge) throw new Error("the fixture must contain at least one coauth edge");
     const store = new Store<AppState>({
       ...initialState(),
       selection: { kind: "edge", s: edge.s, t: edge.t, w: edge.w },
@@ -1118,7 +1118,7 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain(String(edge.w));
   });
 
-  it("клик по 'От'/'К' в карточке ребра переходит к этому узлу", async () => {
+  it("clicking 'От'/'К' in the edge card goes to that node", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>({
       ...initialState(),
@@ -1131,14 +1131,14 @@ describe("mountPanel", () => {
       (button) => button.textContent === "Петрова А.С.",
     ) as HTMLButtonElement | undefined;
     if (!toButton)
-      throw new Error("кнопка-ссылка на 'К' (А2, Петрова А.С.) должна быть в карточке ребра");
+      throw new Error("the link button for 'К' (A2, Петрова А.С.) must be in the edge card");
 
     toButton.click();
 
     expect(store.get().selection).toEqual({ kind: "node", key: "A2" });
   });
 
-  it("карточка ребра автор-автор показывает список общих публикаций", async () => {
+  it("the author-author edge card shows the list of shared publications", async () => {
     const data = await loadSampleGraphData();
     // A1-A2: w=2 and exactly two shared pubs (P1, P5) in all_edges.
     const store = new Store<AppState>({
@@ -1155,7 +1155,7 @@ describe("mountPanel", () => {
     expect(items.map((el) => el.textContent).sort()).toEqual(["P1", "P5"]);
   });
 
-  it("карточка ребра публикация-публикация показывает список общих авторов", async () => {
+  it("the publication-publication edge card shows the list of shared authors", async () => {
     const data = await loadSampleGraphData();
     // P1-P2: w=1, shared author A1 (Иванов И.И.).
     const store = new Store<AppState>({
@@ -1169,7 +1169,7 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain("Иванов И.И.");
   });
 
-  it("не показывает строку общих публикаций, когда общих публикаций реально нет", async () => {
+  it("does not show the shared publications row when there really are none", async () => {
     const data = await loadSampleGraphData();
     // A3-A4: has a weight, but no shared pubs in all_edges, so no row.
     const store = new Store<AppState>({
@@ -1182,10 +1182,10 @@ describe("mountPanel", () => {
     expect(panel.textContent).not.toContain("Общие публикации");
   });
 
-  it("показывает карточку департамента со сводными числами", async () => {
+  it("shows a department card with summary numbers", async () => {
     const data = await loadSampleGraphData();
     const dept = data.departments[0];
-    if (!dept) throw new Error("фикстура должна содержать хотя бы один департамент");
+    if (!dept) throw new Error("the fixture must contain at least one department");
     const store = new Store<AppState>({
       ...initialState(),
       selection: { kind: "dept", id: dept.id },
@@ -1201,7 +1201,7 @@ describe("mountPanel", () => {
     expect(panel.querySelector(".panel-back")?.textContent).toBe("← Обзор");
   });
 
-  it("карточка департамента показывает связанные департаменты по убыванию веса (dept_edges)", async () => {
+  it("the department card shows related departments by descending weight (dept_edges)", async () => {
     const data = await loadSampleGraphData();
     // Department 0 links to 1 (w=2) and 2 (w=1); 1 comes first.
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "dept", id: 0 } });
@@ -1210,7 +1210,7 @@ describe("mountPanel", () => {
 
     const dept1 = data.departments.find((d) => d.id === 1);
     const dept2 = data.departments.find((d) => d.id === 2);
-    if (!dept1 || !dept2) throw new Error("фикстура должна содержать департаменты 1 и 2");
+    if (!dept1 || !dept2) throw new Error("the fixture must contain departments 1 and 2");
 
     const text = panel.textContent ?? "";
     expect(text).toContain("Связанные департаменты");
@@ -1222,28 +1222,28 @@ describe("mountPanel", () => {
     expect(text.indexOf(dept1.name)).toBeLessThan(text.indexOf(dept2.name));
   });
 
-  it("клик по связанному департаменту делает его новым selection", async () => {
+  it("clicking a related department makes it the new selection", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>({ ...initialState(), selection: { kind: "dept", id: 0 } });
     const dept1 = data.departments.find((d) => d.id === 1);
-    if (!dept1) throw new Error("фикстура должна содержать департамент 1");
+    if (!dept1) throw new Error("the fixture must contain department 1");
 
     mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
 
     const dept1Button = [...panel.querySelectorAll("button.panel-entity-ref")].find(
       (button) => button.textContent === dept1.name,
     ) as HTMLButtonElement | undefined;
-    if (!dept1Button) throw new Error("кнопка-ссылка на департамент 1 должна быть в карточке");
+    if (!dept1Button) throw new Error("the link button for department 1 must be in the card");
 
     dept1Button.click();
 
     expect(store.get().selection).toEqual({ kind: "dept", id: 1 });
   });
 
-  it("возвращается к карточке «Обзор», когда selection сбрасывают в null", async () => {
+  it("returns to the \"Обзор\" card when selection is reset to null", async () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];
-    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    if (!author) throw new Error("the fixture must contain at least one author");
     const store = new Store<AppState>({
       ...initialState(),
       selection: { kind: "node", key: author.key },
@@ -1257,10 +1257,10 @@ describe("mountPanel", () => {
     expect(panel.querySelector("h3")?.textContent).toBe("Обзор");
   });
 
-  it("показывает индикатор загрузки, пока authorDetails ещё пуст (файл не домержился)", async () => {
+  it("shows a loading indicator while authorDetails is still empty (the file has not been merged yet)", async () => {
     const data = await loadSampleGraphData();
     const author = data.authors[0];
-    if (!author) throw new Error("фикстура должна содержать хотя бы одного автора");
+    if (!author) throw new Error("the fixture must contain at least one author");
     const store = new Store<AppState>({
       ...initialState(),
       selection: { kind: "node", key: author.key },
@@ -1273,7 +1273,7 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain("Подробнее");
   });
 
-  it("после того как authorDetails домержился и пришёл store.notify(), индикатор сменяется реальными полями", async () => {
+  it("after authorDetails is merged and store.notify() arrives, the indicator is replaced by the real fields", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>({
       ...initialState(),
@@ -1292,10 +1292,10 @@ describe("mountPanel", () => {
     expect(panel.textContent).toContain("к.т.н."); // A1.degree from authors-detail.sample.json
   });
 
-  it("показывает индикатор загрузки для репозитория, пока repoDetails ещё пуст", async () => {
+  it("shows a loading indicator for a repository while repoDetails is still empty", async () => {
     const data = await loadSampleGraphData();
     const repo = data.repos[0];
-    if (!repo) throw new Error("фикстура должна содержать хотя бы один репозиторий");
+    if (!repo) throw new Error("the fixture must contain at least one repository");
     const store = new Store<AppState>({
       ...initialState(),
       selection: { kind: "node", key: repo.key },

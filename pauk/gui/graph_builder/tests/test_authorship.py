@@ -37,8 +37,7 @@ class BuildAuthorshipIndexTest(unittest.TestCase):
         self.assertEqual(result.external_ids, {"E1", "E2"})
 
     def test_person_without_is_itmo_field_counts_as_itmo(self):
-        """Snapshots exported before external authors were added have no
-        is_itmo field at all - everyone in them is ITMO."""
+        """Snapshots exported before external authors were added have no is_itmo field; everyone in them is ITMO."""
         db = {
             "persons": [{"id": "A1"}],
             "publications": [{"id": "P1"}],

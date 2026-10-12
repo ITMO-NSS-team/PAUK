@@ -32,12 +32,10 @@ def _assignment(**overrides) -> DepartmentAssignment:
 
 class DeptEdgesOrderTest(unittest.TestCase):
     def test_order_follows_sorted_pub_ids_not_set_iteration_order(self):
-        """Regression test: dept_pair_w used to accumulate by iterating
-        authorship.pub_ids (a set) directly - insertion order, and so the
-        final dept_edges list order, then depended on per-process string
-        hash randomization. Two live runs against the same real snapshot
-        with the same seed produced byte-different graph-data.json files -
-        identical content as sets, only dept_edges' list order differed.
+        """dept_pair_w must accumulate over sorted pub_ids, not set iteration order.
+
+        Otherwise string hash randomization made dept_edges list order (and so
+        graph-data.json bytes) differ between runs on the same snapshot and seed.
         """
         db = {"repositories": [], "repo_persons": [], "repo_pubs": [], "authorship": []}
         authorship = Authorship(
@@ -54,9 +52,8 @@ class DeptEdgesOrderTest(unittest.TestCase):
 
         edges = EdgeBuilder(db, authorship, assignment, table, _layout()).build()
 
-        # P1 connects d1-d2, P2 connects d3-d4, P3 connects d5-d6 - processed
-        # in sorted pid order (P1, P2, P3), dept_edges must list them in that
-        # same order regardless of how pub_ids itself happens to iterate.
+        # P1 connects d1-d2, P2 connects d3-d4, P3 connects d5-d6; dept_edges must
+        # list them in sorted pid order regardless of pub_ids iteration order.
         self.assertEqual([(e["s"], e["t"]) for e in edges["dept_edges"]], [(1, 2), (3, 4), (5, 6)])
 
 

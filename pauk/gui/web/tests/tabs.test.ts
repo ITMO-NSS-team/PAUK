@@ -77,7 +77,7 @@ function manyAuthorsData(count: number): GraphData {
 }
 
 describe("authorsTab", () => {
-  it("отрисовывает авторов по убыванию pubs_count и подсвечивает выбранного", async () => {
+  it("renders authors by descending pubs_count and highlights the selected one", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
@@ -90,16 +90,16 @@ describe("authorsTab", () => {
     );
 
     const first = sorted[0];
-    if (!first) throw new Error("во фикстуре должен быть хотя бы один автор");
+    if (!first) throw new Error("the fixture must contain at least one author");
     store.set({ selection: { kind: "node", key: first.key } });
 
     expect(listItems(container)[0]?.classList.contains("tab-list-item--selected")).toBe(true);
   });
 
-  it("внешние авторы появляются в списке только с включённым фильтром", async () => {
+  it("external authors appear in the list only with the filter on", async () => {
     const sample = await loadSampleGraphData();
     const [first, ...rest] = [...sample.authors].sort((a, b) => b.pubs_count - a.pubs_count);
-    if (!first) throw new Error("во фикстуре должен быть хотя бы один автор");
+    if (!first) throw new Error("the fixture must contain at least one author");
     const data = { ...sample, authors: [{ ...first, is_itmo: false }, ...rest] };
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
@@ -113,7 +113,7 @@ describe("authorsTab", () => {
     expect(listItems(container)[0]?.textContent).toBe(`${first.label}${first.pubs_count}`);
   });
 
-  it("переключение lang на en показывает label_en вместо label", async () => {
+  it("switching lang to en shows label_en instead of label", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
@@ -127,7 +127,7 @@ describe("authorsTab", () => {
     );
   });
 
-  it("клик по автору пишет выбор в store — камерой подлетает map/build.ts, не сама вкладка", async () => {
+  it("clicking an author writes the selection to the store, the camera flight is done by map/build.ts, not the tab", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
@@ -139,14 +139,14 @@ describe("authorsTab", () => {
     expect(store.get().selection).toEqual({ kind: "node", key: author?.key });
   });
 
-  it("поле поиска фильтрует список по вхождению подстроки в подпись, без учёта регистра", async () => {
+  it("the search field filters the list by substring of the label, case-insensitively", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
     authorsTab.mount(container, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
     const search = container.querySelector<HTMLInputElement>(".tab-search");
-    if (!search) throw new Error("вкладка должна содержать поле поиска");
+    if (!search) throw new Error("the tab must contain a search field");
 
     search.value = "иванов";
     search.dispatchEvent(new Event("input"));
@@ -154,14 +154,14 @@ describe("authorsTab", () => {
     expect(listItems(container).map((el) => el.textContent)).toEqual(["Иванов И.И.4"]);
   });
 
-  it("пустой запрос поиска снова показывает весь список", async () => {
+  it("an empty search query shows the whole list again", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
     authorsTab.mount(container, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
     const search = container.querySelector<HTMLInputElement>(".tab-search");
-    if (!search) throw new Error("вкладка должна содержать поле поиска");
+    if (!search) throw new Error("the tab must contain a search field");
 
     search.value = "иванов";
     search.dispatchEvent(new Event("input"));
@@ -171,14 +171,14 @@ describe("authorsTab", () => {
     expect(listItems(container)).toHaveLength(data.authors.length);
   });
 
-  it("запрос без совпадений показывает 'Ничего не найдено', а не пустой список", async () => {
+  it("a query with no matches shows 'Ничего не найдено' instead of an empty list", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
 
     authorsTab.mount(container, store, fakeRenderer(), data, NO_PUB_DETAILS, NO_REPO_DETAILS);
     const search = container.querySelector<HTMLInputElement>(".tab-search");
-    if (!search) throw new Error("вкладка должна содержать поле поиска");
+    if (!search) throw new Error("the tab must contain a search field");
 
     search.value = "лщывалщыв"; // matches no fixture label
     search.dispatchEvent(new Event("input"));
@@ -189,7 +189,7 @@ describe("authorsTab", () => {
 });
 
 describe("reposTab", () => {
-  it("сортирует репозитории по звёздам по убыванию", async () => {
+  it("sorts repositories by stars in descending order", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
@@ -201,7 +201,7 @@ describe("reposTab", () => {
   });
 });
 
-describe("mountTabs — переключение вкладок", () => {
+describe("mountTabs tab switching", () => {
   function buttonsMarkup(): HTMLElement {
     const nav = document.createElement("nav");
     nav.innerHTML = `
@@ -212,7 +212,7 @@ describe("mountTabs — переключение вкладок", () => {
     return nav;
   }
 
-  it("по умолчанию монтирует вкладку 1 (авторы) и подсвечивает её кнопку", async () => {
+  it("by default mounts tab 1 (authors) and highlights its button", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
     const buttons = buttonsMarkup();
@@ -226,7 +226,7 @@ describe("mountTabs — переключение вкладок", () => {
     );
   });
 
-  it("клик по кнопке вкладки размонтирует старую и монтирует новую", async () => {
+  it("clicking a tab button unmounts the old tab and mounts the new one", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
     const buttons = buttonsMarkup();
@@ -245,7 +245,7 @@ describe("mountTabs — переключение вкладок", () => {
     );
   });
 
-  it("клик по кнопке вкладки не трогает selection сам по себе — обнулять устаревший выбор при пересборке графа умеет map/build.ts::mountReactiveGraph (см. tests/build.test.ts)", async () => {
+  it("clicking a tab button does not touch selection by itself, resetting a stale selection on graph rebuild is done by map/build.ts::mountReactiveGraph (see tests/build.test.ts)", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ selection: { kind: "node", key: "A1" } }));
     const buttons = buttonsMarkup();
@@ -259,7 +259,7 @@ describe("mountTabs — переключение вкладок", () => {
 });
 
 describe("pubsTab", () => {
-  it("публикации без года (year === null) идут в конце списка", async () => {
+  it("publications without a year (year === null) go to the end of the list", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
@@ -274,7 +274,7 @@ describe("pubsTab", () => {
     }
   });
 
-  it("показывает настоящее название публикации из pubDetails вместо ключа", async () => {
+  it("shows the real publication title from pubDetails instead of the key", async () => {
     const data = await loadSampleGraphData();
     const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
     const store = new Store<AppState>(initialState());
@@ -291,8 +291,8 @@ describe("pubsTab", () => {
   });
 });
 
-describe("createNodeListTab — постраничный список (TAB_LIST_CONFIG.pageSize)", () => {
-  it("показывает подпись-раздел «Быстрый поиск»/«Quick Search» под текущий язык", async () => {
+describe("createNodeListTab paged list (TAB_LIST_CONFIG.pageSize)", () => {
+  it("shows the section label (\"Быстрый поиск\"/\"Quick Search\") for the current language", async () => {
     const data = await loadSampleGraphData();
     const store = new Store<AppState>(initialState({ lang: "ru" }));
     const container = document.createElement("div");
@@ -304,7 +304,7 @@ describe("createNodeListTab — постраничный список (TAB_LIST_
     expect(container.querySelector(".sidebar-section-label")?.textContent).toBe("Quick Search");
   });
 
-  it("режет список до TAB_LIST_CONFIG.pageSize строк за раз и листает через '‹'/'›'", () => {
+  it("cuts the list to TAB_LIST_CONFIG.pageSize rows at a time and pages with '‹'/'›'", () => {
     const data = manyAuthorsData(25);
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
@@ -318,7 +318,7 @@ describe("createNodeListTab — постраничный список (TAB_LIST_
     const next = container.querySelector<HTMLButtonElement>(
       '.tab-pagination__button[aria-label="Следующая страница"]',
     );
-    if (!next) throw new Error("должна быть кнопка 'следующая страница'");
+    if (!next) throw new Error("there must be a 'next page' button");
     next.click();
 
     expect(listItems(container)).toHaveLength(10);
@@ -328,14 +328,14 @@ describe("createNodeListTab — постраничный список (TAB_LIST_
     const prev = container.querySelector<HTMLButtonElement>(
       '.tab-pagination__button[aria-label="Предыдущая страница"]',
     );
-    if (!prev) throw new Error("должна быть кнопка 'предыдущая страница'");
+    if (!prev) throw new Error("there must be a 'previous page' button");
     prev.click();
 
     expect(listItems(container)[0]?.textContent).toContain("Автор 00");
     expect(container.querySelector(".tab-pagination__status")?.textContent).toBe("1 / 3");
   });
 
-  it("новый поисковый запрос сбрасывает страницу на первую", () => {
+  it("a new search query resets the page to the first", () => {
     const data = manyAuthorsData(25);
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");
@@ -347,7 +347,7 @@ describe("createNodeListTab — постраничный список (TAB_LIST_
     expect(container.querySelector(".tab-pagination__status")?.textContent).toBe("2 / 3");
 
     const search = container.querySelector<HTMLInputElement>(".tab-search");
-    if (!search) throw new Error("вкладка должна содержать поле поиска");
+    if (!search) throw new Error("the tab must contain a search field");
     // Exactly "Автор 10".."Автор 19": one full page.
     search.value = "Автор 1";
     search.dispatchEvent(new Event("input"));
@@ -357,7 +357,7 @@ describe("createNodeListTab — постраничный список (TAB_LIST_
     expect(container.querySelector(".tab-pagination")?.children).toHaveLength(0);
   });
 
-  it("короткий список (меньше pageSize) не показывает пагинацию вовсе", async () => {
+  it("a short list (less than pageSize) shows no pagination at all", async () => {
     const data = await loadSampleGraphData(); // 8 authors, fewer than pageSize
     const store = new Store<AppState>(initialState());
     const container = document.createElement("div");

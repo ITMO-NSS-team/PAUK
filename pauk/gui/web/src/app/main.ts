@@ -104,14 +104,14 @@ loggedStep("graph-data.json", () => loadGraphData(DATA_CONFIG.graphDataUrl))
     try {
       renderApp(data);
     } catch (error: unknown) {
-      console.error("[rendering] сбой после успешной загрузки graph-data.json:", error);
+      console.error("[rendering] failed after graph-data.json loaded:", error);
       start.setBootStage("error");
       start.hideBootOnError();
       showLoadError(t("start.errorRender", store.get().lang));
     }
   })
   .catch((error: unknown) => {
-    console.error("[graph-data.json] не удалось загрузить:", error);
+    console.error("[graph-data.json] failed to load:", error);
     start.setBootStage("error");
     start.hideBootOnError();
     showLoadError(
@@ -166,7 +166,7 @@ function renderApp(data: GraphData): void {
     container.style.background = themeById(state.theme).map.background;
     renderer.refresh();
   });
-  // Temporary: remove once zoom thresholds are tuned.
+  // TODO: remove once zoom thresholds are tuned.
   mountZoomDebug(renderer);
 
   // Features talk only through the Store and live for the whole page.
@@ -186,11 +186,11 @@ function renderApp(data: GraphData): void {
   mountGlobalSearch(store, data, pubDetailsByKey, repoDetailsByKey, authorDetailsByKey);
   mountUrlSync(store, data);
 
-  console.info("Граф отрисован (списки видны сразу, detail-файлы догружаются):", {
-    департаменты: data.departments.length,
-    авторы: data.authors.length,
-    репозитории: data.repos.length,
-    публикации: data.pubs.length,
+  console.info("Graph rendered (lists are ready, detail files load in the background):", {
+    departments: data.departments.length,
+    authors: data.authors.length,
+    repos: data.repos.length,
+    pubs: data.pubs.length,
   });
 
   // Each detail file merges as soon as it arrives. The panel shows a loading

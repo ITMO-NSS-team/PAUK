@@ -45,11 +45,11 @@ CRAWLER_DOWNLOAD_TIMEOUT = 180
 
 
 def _normalize_ligatures(text: str) -> str:
-    """PDF fonts commonly render "ff"/"fi"/"fl"/... as a single ligature
-    glyph (found on real papers: "caﬀe" vs "caffe" for the same repo, split
-    into two different URLs). NFKC decomposes it back to plain letters -
-    character-for-character, so unlike the line-wrap handling above this
-    can't glue unrelated text together.
+    """Decompose typographic ligatures ("ﬀ", "ﬁ") back to plain letters.
+
+    PDF fonts render "ff"/"fi"/"fl" as one glyph, which splits one repo into
+    two URLs ("caﬀe" vs "caffe"). NFKC is character-for-character, so unlike
+    line-wrap handling it cannot glue unrelated text together.
     """
     return unicodedata.normalize("NFKC", text)
 
@@ -60,11 +60,11 @@ ARCHIVED_DEPOSIT_REASON = "repository_archived_by_this_deposit"
 
 
 def _canonical_github_url(url: str) -> str:
-    """Collapse to https://github.com/owner/repo - the repo's identity,
+    """Collapse to https://github.com/owner/repo, the repo's identity.
 
-    regardless of a deeper path (/tree/main, /blob/..., a trailing slash) or
-    a "www." host. Real PDF hyperlinks (unlike our own regex matches) can
-    point deep into a repo, so this can't just trust a 2-segment path.
+    Ignores a deeper path (/tree/main, /blob/..., a trailing slash) and a
+    "www." host. PDF hyperlinks can point deep into a repo, so a 2-segment
+    path cannot be assumed.
     """
     parsed = urlparse(url)
     netloc = "github.com" if parsed.netloc.lower() == "www.github.com" else parsed.netloc
@@ -76,9 +76,11 @@ def _canonical_github_url(url: str) -> str:
 
 
 def _clean_match(raw: str) -> str:
-    """Drop any embedded line-wrap the match itself spans, strip trailing
-    punctuation and a glued-on sentence/footnote tail, add a scheme if the
-    match was bare, then canonicalize."""
+    """Clean a raw regex match into a canonical URL.
+
+    Drops embedded line-wraps, trailing punctuation and a glued-on
+    sentence/footnote tail, and adds a scheme if the match was bare.
+    """
     url = _EMBEDDED_WRAP.sub("", raw).rstrip(URL_TRAILING_PUNCT)
     url = _GLUED_TAIL.sub("", url)
     if not url.lower().startswith(("http://", "https://")):
@@ -115,8 +117,7 @@ def _url_candidates(raw: str) -> list[str]:
 def _occurrences_in_text(text: str, page_number: int | None) -> dict[str, LinkOccurrence]:
     """Canonical URL -> first occurrence found in this text.
 
-    One entry per URL: a link repeated within the same page/abstract adds no
-    new information, it just restates the same context.
+    One entry per URL: a repeat within the same page/abstract adds no information.
     """
     found: dict[str, LinkOccurrence] = {}
     for match in GITHUB_URL.finditer(text):
@@ -141,8 +142,10 @@ def _occurrences_in_text(text: str, page_number: int | None) -> dict[str, LinkOc
 
 
 def _annotation_context(page: fitz.Page, page_text: str, rect) -> str | None:
-    """The clickable rectangle's own visible label, e.g. a hyperlinked "here" -
-    that's the only context a bare-URI annotation can offer."""
+    """The clickable rectangle's visible label, e.g. a hyperlinked "here".
+
+    It is the only context a bare-URI annotation can offer.
+    """
     if rect is None:
         return None
     try:
@@ -160,9 +163,11 @@ def _annotation_context(page: fitz.Page, page_text: str, rect) -> str | None:
 def _pdf_page_occurrences(
     page: fitz.Page, text: str, page_number: int
 ) -> dict[str, LinkOccurrence]:
-    """Everything found on one page: URLs spelled out in the text, plus GitHub
-    links reachable only through a clickable annotation whose visible label
-    doesn't spell out the URL (e.g. a hyperlinked "here")."""
+    """Everything found on one page.
+
+    URLs spelled out in the text, plus GitHub links reachable only through an
+    annotation whose visible label does not spell out the URL.
+    """
     found = _occurrences_in_text(text, page_number)
     for link in page.get_links() or []:
         uri = link.get("uri")
@@ -199,8 +204,8 @@ def _collect_occurrences(
     """Canonical URL -> every place it was found, abstract first then PDF pages in order.
 
     page_number=None marks the abstract (it isn't paginated); PDF pages are
-    1-indexed. dict insertion order keeps abstract-sourced URLs first, so
-    Publication.code_url stays biased toward the abstract like before.
+    1-indexed. Insertion order keeps abstract-sourced URLs first, so
+    Publication.code_url favours the abstract.
     """
     occurrences: dict[str, list[LinkOccurrence]] = defaultdict(list)
     for url, occ in _occurrences_in_text(abstract, None).items():
@@ -258,11 +263,9 @@ def _preserve_pdf_occurrences(
 def _archived_repository_url(publication: Publication) -> str | None:
     """The repository a software or dataset deposit is an archive of.
 
-    Zenodo mints a DOI for every GitHub release, and OpenAlex indexes each
-    one as a work of its own — which is why "asl/BandageNG: Continuous
-    build" sits in the graph looking like a paper. The repository it
-    archives is named in the title, so the deposit can point at it instead
-    of standing alone.
+    Zenodo mints a DOI for every GitHub release and OpenAlex indexes each as a
+    work of its own (e.g. "asl/BandageNG: Continuous build"). The archived
+    repository is named in the title, so the deposit can point at it.
     """
     if publication.type not in DEPOSIT_TYPES:
         return None
@@ -311,8 +314,7 @@ class CodeLinksStage(EnrichmentStage):
                     occurrences_by_url, links_by_publication.get(pub.id)
                 )
             if archived and archived not in occurrences_by_url:
-                # The deposit's own archived repo takes priority - it's what
-                # code_url should point at, same as before this stage read PDFs.
+                # The deposit's own archived repo takes priority as code_url.
                 occurrences_by_url = {
                     archived: [LinkOccurrence(page_number=None)],
                     **occurrences_by_url,
@@ -379,13 +381,12 @@ class CodeLinksStage(EnrichmentStage):
         """Download (if not already cached) and extract per-page text + link occurrences.
 
         Tries every direct PDF candidate before falling back to the
-        PDF-Crawler-Service (resolves a PDF from the DOI - arXiv, Unpaywall,
-        publisher pages, ...) when it's configured and reachable.
+        PDF-Crawler-Service (resolves a PDF from the DOI) when configured and
+        reachable.
 
-        Returns (pages, page_occurrences, error). On any failure both lists
-        are empty and error carries the reason (e.g. a 403 for a
-        non-open-access PDF) — the caller still falls back to the
-        abstract-only result rather than losing it.
+        Returns:
+            (pages, page_occurrences, error). On failure both lists are empty
+            and error carries the reason (e.g. a 403 for a non-open-access PDF).
         """
         errors = []
         if self.pdf_store.exists(pub.id):

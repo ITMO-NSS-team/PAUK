@@ -3,7 +3,7 @@
 `merge_nodes` moves the duplicate's relationships onto the survivor and
 deletes it, and the graph keeps no record of which edge came from where.
 The prepared rows do. A person's edges are declared by that person's own
-row and by nothing else — no spec in the registry points *at* a Person —
+row and by nothing else (no spec in the registry points *at* a Person),
 so the row says exactly what node the merge removed and exactly what the
 survivor took from it.
 
@@ -48,7 +48,7 @@ def _prepared_persons(db: Database, ids: list[str]) -> dict[str, dict]:
     """Prepared rows for these people, whichever group holds them.
 
     `get_rows` looks across groups, so the store's own group is not used
-    here — and the panel has no group to name anyway.
+    here (and the panel has no group to name anyway).
     """
     return {row["id"]: row for row in PreparedStore(db, group="").get_rows("persons", ids)}
 
@@ -98,7 +98,7 @@ def _survivor_patch(node: dict, canonical_props: dict | None, duplicate_props: d
     A fold fills the survivor's empty fields from the duplicate, unions its
     lists and ORs `is_itmo`. The inverse is narrow on purpose: only fields
     the duplicate's row explains are touched, and each goes back to what
-    the survivor's own row says — or to None, which removes it. Fields the
+    the survivor's own row says, or to None, which removes it. Fields the
     duplicate never had are left alone, so an edit somebody made to one of
     them is not caught in the crossfire.
 
@@ -130,7 +130,7 @@ def _give_back(client, db: Database, node_id: str, props: dict, edges: Edges) ->
     """Recreate the removed person and the edges their own row declares.
 
     Edges somebody unlinked by hand are skipped, exactly as a publish skips
-    them — otherwise the undo would recreate them and the next
+    them, otherwise the undo would recreate them and the next
     `apply_overrides` would delete them again, writing a creation and a
     deletion into the journal every time.
 
@@ -157,7 +157,7 @@ def _take_off(client, canonical_id: str, duplicate_edges: Edges, canonical_edges
 
     An edge both rows declare stays: the fold merged the two into one, and
     the survivor had it in its own right. An edge neither row declares is
-    left alone too — it was put there by hand, and nothing says by whom or
+    left alone too: it was put there by hand, and nothing says by whom or
     onto which of the two.
 
     Returns:
@@ -196,7 +196,7 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
             was deleted by hand afterwards. The collection stage deletes
             the rows it folds, and there is no other copy of what the node
             held.
-        MutationError: Nothing was folded — both ids are live nodes.
+        MutationError: Nothing was folded: both ids are live nodes.
     """
     duplicate_id, canonical_id, canonical = _folded_side(client, members)
     rows = _prepared_persons(db, [duplicate_id, canonical_id])

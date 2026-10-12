@@ -1,8 +1,8 @@
-"""Grant numbers from `Publication.funding` -> one key per grant, so the site
-can list every publication of a grant. The raw numbers come from OpenAlex as
-the authors typed them: `Project 075-15-2019-1896`, `075-15-2019-1896?`,
-unicode dashes, and numbers cut short (`18-19-`, `075-15`) that would
-otherwise glue unrelated papers together.
+"""Grant numbers from `Publication.funding` -> one key per grant.
+
+The raw numbers come from OpenAlex as the authors typed them (`Project
+075-15-2019-1896`, `075-15-2019-1896?`, unicode dashes) or cut short (`18-19-`,
+`075-15`), which would glue unrelated papers together.
 """
 
 from __future__ import annotations
@@ -40,16 +40,13 @@ def _strip_words(raw: str) -> str:
 
 
 def add_grant_keys(pubs_detail: list[dict]) -> None:
-    """Adds `grant_key` to every `funding` entry of `pubs_detail` and drops
-    redundant entries, in place.
+    """Adds `grant_key` to every `funding` entry and drops redundant ones, in place.
 
     A key that is a dash-prefix of longer keys is a number cut short: it joins
     the longest one when there is exactly one, and is dropped (`None`) when
-    there are several - `075-15` prefixes hundreds of ministry contracts.
-
-    OpenAlex often lists one grant several times per paper, sometimes next to
-    a fragment of it (`075-15-` beside `075-15-2021-1349`) or its funder with
-    no number. Within a publication those repeats are dropped, see `_dedupe`.
+    there are several (`075-15` prefixes hundreds of ministry contracts).
+    Repeats within a publication, fragments and bare funders are removed by
+    `_dedupe`.
 
     Args:
         pubs_detail: `pubs-detail.json` rows with `funding: [{funder, grant_id}]`.
@@ -82,8 +79,7 @@ def add_grant_keys(pubs_detail: list[dict]) -> None:
 
 
 def _dedupe(funding: list) -> list:
-    """One entry per grant, no fragment of a listed grant, no bare funder that
-    is already listed with a number."""
+    """One entry per grant, without fragments of a listed grant or bare funders already listed with a number."""
     keyed = [e for e in funding if isinstance(e, dict) and e.get("grant_key")]
     keys = {e["grant_key"] for e in keyed}
     numbered_funders = {e.get("funder") for e in keyed}

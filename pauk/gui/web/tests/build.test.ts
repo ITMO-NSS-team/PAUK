@@ -210,7 +210,7 @@ function fakeRenderer(graph: Graph): {
     cameraAnimate: camera.animate,
     getReducer: (key) => {
       const reducer = reducers.get(key);
-      if (!reducer) throw new Error(`reducer "${key}" ещё не зарегистрирован`);
+      if (!reducer) throw new Error(`reducer "${key}" is not registered yet`);
       return reducer;
     },
     fire: (event, payload) => handlers.get(event)?.(payload),
@@ -221,8 +221,8 @@ function fakeRenderer(graph: Graph): {
   };
 }
 
-describe("populateGraph на фикстур-данных", () => {
-  it("отдаёт только узлы вкладки, а не всех сущностей сразу", async () => {
+describe("populateGraph on fixture data", () => {
+  it("returns only the tab's nodes, not all entities at once", async () => {
     const data = await loadSampleGraphData();
 
     // Three separate graphs: kinds never mix in one tab.
@@ -239,7 +239,7 @@ describe("populateGraph на фикстур-данных", () => {
     expect(realNodeKeys(pubsGraph)).toHaveLength(data.pubs.length);
   });
 
-  it("красит узлы цветом их департамента", async () => {
+  it("colours nodes by their department colour", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     populateGraph(graph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
@@ -251,7 +251,7 @@ describe("populateGraph на фикстур-данных", () => {
     }
   });
 
-  it("подставляет настоящее название публикации из pubDetails вместо ключа (с учётом обрезки на карте, см. labelMaxLength)", async () => {
+  it("substitutes the real publication title from pubDetails instead of the key (accounting for map truncation, see labelMaxLength)", async () => {
     const data = await loadSampleGraphData();
     const pubDetails = indexDetailsByKey(await loadSamplePubDetails());
     const graph = new Graph();
@@ -266,11 +266,11 @@ describe("populateGraph на фикстур-данных", () => {
     }
   });
 
-  it("обрезает длинную подпись до MAP_CONFIG.node.labelMaxLength с многоточием", async () => {
+  it("truncates a long label to MAP_CONFIG.node.labelMaxLength with an ellipsis", async () => {
     const data = await loadSampleGraphData();
     const longTitle = "А".repeat(MAP_CONFIG.node.labelMaxLength + 10);
     const pub = data.pubs[0];
-    if (!pub) throw new Error("фикстура должна содержать хотя бы одну публикацию");
+    if (!pub) throw new Error("the fixture must contain at least one publication");
     const pubDetails = new Map([[pub.key, { key: pub.key, label: longTitle } as PubDetail]]);
 
     const graph = new Graph();
@@ -281,7 +281,7 @@ describe("populateGraph на фикстур-данных", () => {
     expect(label.endsWith("…")).toBe(true);
   });
 
-  it("отдаёт рёбра только своей вкладки", async () => {
+  it("returns only the edges of its own tab", async () => {
     const data = await loadSampleGraphData();
 
     const authorsGraph = new Graph();
@@ -297,7 +297,7 @@ describe("populateGraph на фикстур-данных", () => {
     expect(realEdgeKeys(pubsGraph)).toHaveLength(data.pub_edges.length);
   });
 
-  it("filters.minCoauth скрывает слабые связи соавторства на вкладке 1", async () => {
+  it("filters.minCoauth hides weak coauthorship links on tab 1", async () => {
     const data = await loadSampleGraphData();
     const strong = data.coauth_edges.filter((e) => e.w >= 2).length;
 
@@ -307,7 +307,7 @@ describe("populateGraph на фикстур-данных", () => {
     expect(strong).toBeLessThan(data.coauth_edges.length); // the fixture has a spread of weights
   });
 
-  it("filters.minSharedAuthors скрывает слабые связи публикаций на вкладке 3", async () => {
+  it("filters.minSharedAuthors hides weak publication links on tab 3", async () => {
     const data = await loadSampleGraphData();
     const strong = data.pub_edges.filter((e) => e.w >= 2).length;
 
@@ -316,7 +316,7 @@ describe("populateGraph на фикстур-данных", () => {
     expect(realEdgeKeys(graph)).toHaveLength(strong);
   });
 
-  it("filters.yearMax скрывает публикации позже указанного года, но не публикации без известного года", async () => {
+  it("filters.yearMax hides publications later than the given year, but not publications with no known year", async () => {
     const data = await loadSampleGraphData();
     const filters = { ...NO_FILTER, yearMax: 2022 };
     const expectedPubs = data.pubs.filter((p) => p.year === null || p.year <= 2022);
@@ -334,7 +334,7 @@ describe("populateGraph на фикстур-данных", () => {
     }
   });
 
-  it("filters.showNoDeptAuthors=false скрывает авторов синтетического департамента «Без департамента»", () => {
+  it("filters.showNoDeptAuthors=false hides authors of the synthetic \"Без департамента\" department", () => {
     const data = dataWithNoDept();
 
     const shown = new Graph();
@@ -353,7 +353,7 @@ describe("populateGraph на фикстур-данных", () => {
     expect(realNodeKeys(hidden)).toEqual(["A1"]); // A2 is in "no department"
   });
 
-  it("внешние авторы (is_itmo: false) скрыты, пока filters.showExternalAuthors выключен", () => {
+  it("external authors (is_itmo: false) are hidden while filters.showExternalAuthors is off", () => {
     const data = dataWithNoDept();
     data.authors = data.authors.map((a) => (a.key === "A1" ? { ...a, is_itmo: false } : a));
 
@@ -373,7 +373,7 @@ describe("populateGraph на фикстур-данных", () => {
     expect(realNodeKeys(shown)).toEqual(["A1", "A2"]);
   });
 
-  it("isolatedAuthors: одна публикация, без соавторов и репозиториев; внешний соавтор — связь, только пока внешние показаны", () => {
+  it("isolatedAuthors: one publication, no coauthors and no repositories; an external coauthor counts as a link, only while externals are shown", () => {
     const data = {
       authors: [
         { key: "A1", pubs_count: 1 }, // alone on P1, only external E1 nearby
@@ -401,10 +401,10 @@ describe("populateGraph на фикстур-данных", () => {
     expect([...isolatedAuthors(data, true)]).toEqual([]);
   });
 
-  it("авторы без связей скрыты с карты, пока filters.showIsolatedAuthors выключен", () => {
+  it("authors without links are hidden from the map while filters.showIsolatedAuthors is off", () => {
     const data = dataWithNoDept();
     const isolated = [...isolatedAuthors(data, NO_FILTER.showExternalAuthors)];
-    if (isolated.length === 0) throw new Error("во фикстуре должен быть автор без связей");
+    if (isolated.length === 0) throw new Error("the fixture must contain an author without links");
 
     const hidden = new Graph();
     populateGraph(
@@ -424,10 +424,10 @@ describe("populateGraph на фикстур-данных", () => {
     }
   });
 
-  it("автор, у которого соавторы только внешние, появляется вместе с внешними, даже когда «без связей» скрыты", () => {
+  it("an author whose coauthors are all external appears together with the externals, even when \"без связей\" authors are hidden", () => {
     const base = dataWithNoDept();
     const [author] = base.authors;
-    if (!author) throw new Error("во фикстуре должен быть автор");
+    if (!author) throw new Error("the fixture must contain an author");
     const external = { ...author, key: "E1", is_itmo: false };
     const data: GraphData = {
       ...base,
@@ -456,13 +456,13 @@ describe("populateGraph на фикстур-данных", () => {
     expect(realNodeKeys(externalsOn)).toEqual([author.key, "E1"]);
   });
 
-  it("автор без поля is_itmo (graph-data.json до внешних авторов) считается ИТМО и виден всегда", () => {
+  it("an author without an is_itmo field (graph-data.json from before external authors) counts as ITMO and is always visible", () => {
     const graph = new Graph();
     populateGraph(graph, dataWithNoDept(), "ru", 1, NO_FILTER, NO_PUB_DETAILS);
     expect(realNodeKeys(graph)).toEqual(["A1", "A2"]);
   });
 
-  it("filters.showNoDeptPubs=false скрывает публикации синтетического департамента «Без департамента»", () => {
+  it("filters.showNoDeptPubs=false hides publications of the synthetic \"Без департамента\" department", () => {
     const data = dataWithNoDept();
 
     const shown = new Graph();
@@ -476,20 +476,20 @@ describe("populateGraph на фикстур-данных", () => {
 });
 
 describe("deptNodeKey / parseDeptNodeKey", () => {
-  it("парсинг возвращает то же число, что было закодировано", () => {
+  it("parsing returns the same number that was encoded", () => {
     for (const id of [0, 1, 42]) {
       expect(parseDeptNodeKey(deptNodeKey(id))).toBe(id);
     }
   });
 
-  it("обычный ключ узла — не департамент", () => {
+  it("a regular node key is not a department", () => {
     expect(parseDeptNodeKey("A5133538481")).toBeNull();
     expect(parseDeptNodeKey("example-org/graph-toolkit")).toBeNull();
   });
 });
 
-describe("populateGraph — якоря подписей департаментов (не блоб вместо реальных узлов)", () => {
-  it("добавляет по якорю на каждый департамент, у которого есть хотя бы один узел в этой вкладке", async () => {
+describe("populateGraph department label anchors (not a blob in place of real nodes)", () => {
+  it("adds one anchor per department that has at least one node in this tab", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     populateGraph(graph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
@@ -500,23 +500,23 @@ describe("populateGraph — якоря подписей департаменто
     }
   });
 
-  it("якорь невидим (size: 0) — не подменяет реальные узлы блобом", async () => {
+  it("an anchor is invisible (size: 0) and does not replace real nodes with a blob", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     populateGraph(graph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
 
     const [deptId] = [...new Set(data.authors.map((a) => a.dept))];
-    if (deptId === undefined) throw new Error("фикстура должна содержать хотя бы одного автора");
+    if (deptId === undefined) throw new Error("the fixture must contain at least one author");
     expect(graph.getNodeAttribute(deptNodeKey(deptId), "size")).toBe(0);
   });
 
-  it("позиция якоря — центроид узлов департамента в этой вкладке", async () => {
+  it("the anchor position is the centroid of the department's nodes in this tab", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     populateGraph(graph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
 
     const [deptId] = [...new Set(data.authors.map((a) => a.dept))];
-    if (deptId === undefined) throw new Error("фикстура должна содержать хотя бы одного автора");
+    if (deptId === undefined) throw new Error("the fixture must contain at least one author");
     const deptAuthors = data.authors.filter((a) => a.dept === deptId);
 
     expect(graph.getNodeAttribute(deptNodeKey(deptId), "x")).toBeCloseTo(
@@ -527,7 +527,7 @@ describe("populateGraph — якоря подписей департаменто
     );
   });
 
-  it("рёбра между департаментами берутся из data.dept_edges, а не считаются заново", async () => {
+  it("edges between departments come from data.dept_edges instead of being recomputed", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     populateGraph(graph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
@@ -540,8 +540,8 @@ describe("populateGraph — якоря подписей департаменто
   });
 });
 
-describe("applyGraphStyling (через mountReactiveGraph) — якоря департаментов", () => {
-  it("якорь департамента скрыт, не подписывается и не подсвечивается — ни на любом зуме, ни при выборе самого департамента", async () => {
+describe("applyGraphStyling (via mountReactiveGraph) department anchors", () => {
+  it("a department anchor is hidden, has no label and is not highlighted, at any zoom and when the department itself is selected", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0, dept: 0 });
@@ -565,11 +565,11 @@ describe("applyGraphStyling (через mountReactiveGraph) — якоря де�
   });
 });
 
-describe("applyGraphStyling (через mountReactiveGraph) — выбор гранта", () => {
-  it("статьи гранта остаются яркими, остальные притушены, рёбра спрятаны", async () => {
+describe("applyGraphStyling (via mountReactiveGraph) grant selection", () => {
+  it("grant papers stay bright, the rest are dimmed, edges are hidden", async () => {
     const data = await loadSampleGraphData();
     const [detail] = await loadSamplePubDetails();
-    if (!detail) throw new Error("в фикстуре нет деталей публикации");
+    if (!detail) throw new Error("the fixture has no publication details");
     const pubDetails = indexDetailsByKey([
       { ...detail, key: "P1", funding: [{ funder: "RSF", grant_id: "18-19-00627", grant_key: "18-19-00627" }] },
       { ...detail, key: "P2", funding: [] },
@@ -593,8 +593,8 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор гр�
   });
 });
 
-describe("applyGraphStyling (через mountReactiveGraph) — выбор/наведение и притухание соседей", () => {
-  it("nodeReducer подсвечивает выбранный узел, соседей оставляет обычного размера с форсированной подписью, остальных притушает", async () => {
+describe("applyGraphStyling (via mountReactiveGraph) selection/hover and neighbour dimming", () => {
+  it("nodeReducer highlights the selected node, keeps neighbours at normal size with a forced label, dims the rest", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0 });
@@ -624,7 +624,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     }); // not a neighbour: dimmed
   });
 
-  it("selection на ключ, которого нет в ТЕКУЩЕМ графе (например, после смены вкладки), не роняет reducer", async () => {
+  it("selection on a key that is not in the CURRENT graph (e.g. after a tab change) does not crash the reducer", async () => {
     // Regression: areNeighbors() threw on a focus missing from the graph (e.g.
     // a selection surviving a tab switch). The reducer must be safe on its own.
     const data = await loadSampleGraphData();
@@ -638,7 +638,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     expect(() => getReducer("nodeReducer")("A2", NODE_BASE)).not.toThrow();
   });
 
-  it("без выбора и без наведения ничего не притушено", async () => {
+  it("with no selection and no hover nothing is dimmed", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0 });
@@ -650,7 +650,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     expect(getReducer("nodeReducer")("A2", NODE_BASE)).toEqual(NODE_BASE);
   });
 
-  it("наведение мышью (enterNode) — фокус, только когда ничего не выбрано кликом; leaveNode его снимает", async () => {
+  it("mouse hover (enterNode) sets focus only when nothing is selected by click; leaveNode clears it", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0 });
@@ -677,7 +677,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     expect(nodeReducer("A1", NODE_BASE)).toEqual(NODE_BASE); // hover gone: no focus
   });
 
-  it("выбор остаётся фокусом при наведении на ДРУГОЙ узел, И ОДНОВРЕМЕННО наведение подсвечивает СВОИХ соседей — оба источника фокуса работают независимо", async () => {
+  it("the selection stays the focus when hovering ANOTHER node, AND hover highlights ITS neighbours at the same time, both focus sources work independently", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0 });
@@ -695,7 +695,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     const edgeReducer = getReducer("edgeReducer");
     const [edgeA1A2] = graph.edges("A1", "A2");
     const [edgeA3A4] = graph.edges("A3", "A4");
-    if (!edgeA1A2 || !edgeA3A4) throw new Error("граф должен содержать оба ребра");
+    if (!edgeA1A2 || !edgeA3A4) throw new Error("the graph must contain both edges");
 
     // Hover A4 while A1 is selected: both focus sources stay active.
     fire("enterNode", { node: "A4" });
@@ -720,7 +720,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     }); // neither: dimmed
   });
 
-  it("выбор департамента оставляет яркими его узлы, остальные притушает, рёбра не показывает — у региона нет своего узла", async () => {
+  it("selecting a department keeps its nodes bright, dims the rest, shows no edges, a region has no node of its own", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0, dept: 0 });
@@ -754,7 +754,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     expect(edgeReducer(edgeKey("A3", "A4"), EDGE_BASE)).toMatchObject({ hidden: true }); // both ends outside
   });
 
-  it("выбор РЕБРА подсвечивает оба его конца с подписями, как соседей выбора узла — но не увеличивает и не помечает highlighted", async () => {
+  it("selecting an EDGE highlights both its endpoints with labels, like neighbours of a node selection, but does not enlarge them or mark them highlighted", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0 });
@@ -780,7 +780,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     });
   });
 
-  it("выбор РЕБРА оставляет видимыми ДРУГИЕ рёбра его концов (и не тушит узлы на другом конце тех рёбер) — не только сам выбранный отрезок", async () => {
+  it("selecting an EDGE keeps OTHER edges of its endpoints visible (and does not dim the nodes at the other end of those edges), not only the selected segment", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0 });
@@ -801,7 +801,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     const edgeReducer = getReducer("edgeReducer");
     const [edgeA1A5] = graph.edges("A1", "A5");
     const [edgeA6A7] = graph.edges("A6", "A7");
-    if (!edgeA1A5 || !edgeA6A7) throw new Error("граф должен содержать оба вспомогательных ребра");
+    if (!edgeA1A5 || !edgeA6A7) throw new Error("the graph must contain both helper edges");
 
     // Other edges of the selected edge's endpoints stay visible.
     expect(edgeReducer(edgeA1A5, EDGE_BASE)).toMatchObject({ color: EDGE_BASE.color });
@@ -814,7 +814,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     expect(edgeReducer(edgeA6A7, EDGE_BASE)).toMatchObject({ hidden: true });
   });
 
-  it("edgeReducer скрывает рёбра, не задевающие фокус, но не трогает задевающие", async () => {
+  it("edgeReducer hides edges that do not touch the focus, but leaves touching ones alone", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0 });
@@ -830,13 +830,13 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
 
     const [touchingFocus] = graph.edges("A1", "A2");
     const [notTouchingFocus] = graph.edges("A2", "A3");
-    if (!touchingFocus || !notTouchingFocus) throw new Error("граф должен содержать оба ребра");
+    if (!touchingFocus || !notTouchingFocus) throw new Error("the graph must contain both edges");
 
     expect(edgeReducer(touchingFocus, EDGE_BASE)).toMatchObject({ color: EDGE_BASE.color });
     expect(edgeReducer(notTouchingFocus, EDGE_BASE)).toMatchObject({ hidden: true }); // hidden, not dimmed
   });
 
-  it("edgeReducer подсвечивает выбранное ребро независимо от порядка s/t", async () => {
+  it("edgeReducer highlights the selected edge regardless of the s/t order", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0 });
@@ -851,7 +851,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
     const edgeReducer = getReducer("edgeReducer");
     const [edgeKey] = graph.edges();
-    if (!edgeKey) throw new Error("граф должен содержать хотя бы одно ребро");
+    if (!edgeKey) throw new Error("the graph must contain at least one edge");
 
     expect(edgeReducer(edgeKey, EDGE_BASE)).toMatchObject({
       color: darkTheme.map.edgeSelected,
@@ -859,7 +859,7 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     });
   });
 
-  it("рёбра между департаментами никогда не рисуются линией", async () => {
+  it("edges between departments are never drawn as a line", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode(deptNodeKey(0), { x: 0, y: 0, size: 0 });
@@ -871,14 +871,14 @@ describe("applyGraphStyling (через mountReactiveGraph) — выбор/на�
     // Real edges would be visible at this zoom; department edges still are not.
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
     const [edgeKey] = graph.edges();
-    if (!edgeKey) throw new Error("граф должен содержать ребро");
+    if (!edgeKey) throw new Error("the graph must contain an edge");
 
     expect(getReducer("edgeReducer")(edgeKey, EDGE_BASE)).toMatchObject({ hidden: true });
   });
 });
 
-describe("applyGraphStyling — видимость рёбер по camera.ratio", () => {
-  it("прячет рёбра, когда ratio выше порога (filters.edgeZoomThreshold), показывает — когда ниже", async () => {
+describe("applyGraphStyling edge visibility by camera.ratio", () => {
+  it("hides edges when ratio is above the threshold (filters.edgeZoomThreshold), shows them when below", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0 });
@@ -893,7 +893,7 @@ describe("applyGraphStyling — видимость рёбер по camera.ratio"
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
     const edgeReducer = getReducer("edgeReducer");
     const [edgeKey] = graph.edges();
-    if (!edgeKey) throw new Error("граф должен содержать ребро");
+    if (!edgeKey) throw new Error("the graph must contain an edge");
 
     fireCameraUpdated(edgeZoomThreshold + 0.1);
     expect(edgeReducer(edgeKey, EDGE_BASE)).toMatchObject({ hidden: true });
@@ -904,7 +904,7 @@ describe("applyGraphStyling — видимость рёбер по camera.ratio"
 });
 
 describe("mountZoomDebug", () => {
-  it("рисует индикатор ВНУТРИ контейнера карты (не document.body), показывает camera.ratio, обновляется, unmount убирает элемент", () => {
+  it("draws the indicator INSIDE the map container (not document.body), shows camera.ratio, updates, unmount removes the element", () => {
     let ratioHandler: ((state: { ratio: number }) => void) | undefined;
     let ratio = 1.234;
     const container = document.createElement("div");
@@ -934,7 +934,7 @@ describe("mountZoomDebug", () => {
 });
 
 describe("mountReactiveGraph", () => {
-  it("не пересобирает граф при монтировании (он уже наполнен снаружи) и пересобирает при смене tab/lang/filters, но не при смене selection", async () => {
+  it("does not rebuild the graph on mount (it is already populated outside), rebuilds on tab/lang/filters change, but not on selection change", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     populateGraph(graph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
@@ -962,12 +962,12 @@ describe("mountReactiveGraph", () => {
     expect(refresh).toHaveBeenCalledTimes(2); // rebuilds alone never call refresh()
   });
 
-  it("смена фильтра, скрывающего выбранную публикацию (filters.yearMax), тоже обнуляет устаревший выбор", async () => {
+  it("changing a filter that hides the selected publication (filters.yearMax) also clears the stale selection", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     populateGraph(graph, data, "ru", 3, NO_FILTER, NO_PUB_DETAILS);
     const pub2024 = data.pubs.find((p) => p.year === 2024);
-    if (!pub2024) throw new Error("фикстура должна содержать публикацию 2024 года");
+    if (!pub2024) throw new Error("the fixture must contain a 2024 publication");
     const store = new Store<AppState>(
       initialState({ tab: 3, selection: { kind: "node", key: pub2024.key } }),
     );
@@ -980,7 +980,7 @@ describe("mountReactiveGraph", () => {
     expect(store.get().selection).toBeNull();
   });
 
-  it("выбор узла подлетает камерой к координатам из getNodeDisplayData (framed graph), а НЕ к сырым graph.getNodeAttributes()", async () => {
+  it("selecting a node flies the camera to the coordinates from getNodeDisplayData (framed graph), NOT to raw graph.getNodeAttributes()", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A1", { x: 12, y: 34 });
@@ -1001,7 +1001,7 @@ describe("mountReactiveGraph", () => {
     );
   });
 
-  it("смена вкладки И selection ОДНИМ патчем (как делает features/globalSearch.ts) тоже подлетает камерой — не только раздельные store.set()", async () => {
+  it("changing the tab AND selection in ONE patch (as features/globalSearch.ts does) also flies the camera, not only separate store.set() calls", async () => {
     // Regression: a tab change returned early, so the camera ignored a selection in the same patch.
     const data = await loadSampleGraphData();
     const graph = new Graph();
@@ -1009,7 +1009,7 @@ describe("mountReactiveGraph", () => {
     const store = new Store<AppState>(initialState({ tab: 1 }));
     const { renderer, cameraAnimate } = fakeRenderer(graph);
     const repo = data.repos[0];
-    if (!repo) throw new Error("фикстура должна содержать хотя бы один репозиторий");
+    if (!repo) throw new Error("the fixture must contain at least one repository");
 
     mountReactiveGraph(renderer, store, data, NO_PUB_DETAILS);
     store.set({ tab: 2, selection: { kind: "node", key: repo.key } }); // one patch, like global search
@@ -1024,7 +1024,7 @@ describe("mountReactiveGraph", () => {
     );
   });
 
-  it("выбор департамента сдвигает камеру к его якорю, но не приближает — иначе регионы пропали бы", async () => {
+  it("selecting a department moves the camera to its anchor without zooming in, otherwise the regions would disappear", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode(deptNodeKey(0), { x: 5, y: 6, size: 0 });
@@ -1043,7 +1043,7 @@ describe("mountReactiveGraph", () => {
     );
   });
 
-  it("выбор ребра камеру не двигает — у ребра нет одной точки для подлёта", async () => {
+  it("selecting an edge does not move the camera, an edge has no single point to fly to", async () => {
     const data = await loadSampleGraphData();
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0 });
@@ -1058,13 +1058,13 @@ describe("mountReactiveGraph", () => {
     expect(cameraAnimate).not.toHaveBeenCalled();
   });
 
-  it("выбор ребра переживает пересборку графа (смена lang) независимо от порядка s/t — graph.hasEdge() чувствителен к направлению, ребро выбора — нет", async () => {
+  it("an edge selection survives a graph rebuild (lang change) regardless of the s/t order, graph.hasEdge() is direction-sensitive, the selected edge is not", async () => {
     // mergeEdge on a mixed graph makes a directed edge, so selectionExistsIn() must check both orders.
     const data = await loadSampleGraphData();
     const graph = new Graph();
     populateGraph(graph, data, "ru", 1, NO_FILTER, NO_PUB_DETAILS);
     const edge = data.coauth_edges[0];
-    if (!edge) throw new Error("фикстура должна содержать хотя бы одно coauth-ребро");
+    if (!edge) throw new Error("the fixture must contain at least one coauth edge");
     const store = new Store<AppState>(
       initialState({ selection: { kind: "edge", s: edge.t, t: edge.s, w: edge.w } }), // s/t swapped on purpose
     );

@@ -85,10 +85,10 @@ def claim(db: Database, worker: str, busy: set[str] | None = None) -> Job | None
 
     Args:
         busy: Resources somebody already holds. Jobs waiting on those are
-            passed over rather than taken and handed straight back. Without
-            it the oldest job was claimed every turn, and while it waited
-            for the graph it held up everything behind it — including runs
-            wanting a different resource entirely.
+            passed over rather than taken and handed straight back. Otherwise
+            the oldest job would be claimed every turn, and while it waited
+            for the graph it would hold up everything behind it, including
+            runs wanting a different resource entirely.
     """
     moment = now()
     query: dict = {"state": str(JobState.QUEUED)}
@@ -194,7 +194,7 @@ def is_quiet(job: Job, minutes: int = QUIET_MINUTES) -> bool:
     """Whether the job has stopped saying it is alive.
 
     Enough to warn about, not enough to act on. The beat comes from a
-    thread of its own, so silence usually means the process is gone — but
+    thread of its own, so silence usually means the process is gone, but
     it can also mean Mongo was unreachable for a few minutes while the run
     carried on.
     """
@@ -215,7 +215,7 @@ def reap_stale(db: Database, minutes: int = LEASE_MINUTES) -> int:
     Waits out the lock lease rather than the shorter quiet threshold. A job
     that has been silent for five minutes may still hold a live lease and
     still be writing; declaring it dead then would settle a run that is
-    going on, and would not free anything either — the lock outlives the
+    going on, and would not free anything either: the lock outlives the
     verdict by another ten minutes. The page warns at five; this acts at
     fifteen, when the lease cannot be alive any more.
 
@@ -279,9 +279,8 @@ def give_up(db: Database, job_id: str, busy: set[str] | None = None) -> bool:
 def repeat(db: Database, job_id: str, actor: str = "unknown") -> Job | None:
     """Queue the same run again, from what the old one recorded.
 
-    The payload is on the job, so a rerun needs nothing typed in twice —
-    which is where a period gets mistyped and the run collects the wrong
-    months. A new document rather than a reset: the failure stays in the
+    The payload is on the job, so a rerun needs nothing typed in twice, which is where a period gets mistyped and the run
+    collects the wrong months. A new document rather than a reset: the failure stays in the
     history, and two attempts read as two attempts.
     """
     job = read(db, job_id)
@@ -329,7 +328,7 @@ def mark_present(db: Database, name: str) -> None:
 
     A worker that is idle holds no job and writes nothing else, so without
     this the page cannot tell "nobody started the worker" from "the worker
-    is waiting for something to do" – and those need different things from
+    is waiting for something to do", and those need different things from
     the person reading it.
     """
     db[WORKERS].update_one({"_id": name}, {"$set": {"seen_at": now()}}, upsert=True)

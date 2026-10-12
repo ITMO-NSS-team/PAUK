@@ -1,9 +1,7 @@
-"""The graph's health, as a page.
+"""The graph's health page.
 
-The thirty-two checks of `pauk.admin.checks`, read from the answer a run
-wrote down (see `pauk.admin.health`). The page itself asks the graph
-nothing — except when somebody opens one check to see the rows behind it,
-which is a `LIMIT`-ed query and worth running fresh.
+Reads the answer a run saved (see `pauk.admin.health`); only the page for one
+check queries the graph, with a `LIMIT`.
 """
 
 from __future__ import annotations
@@ -27,11 +25,7 @@ router = APIRouter()
 
 @router.get("/health", response_class=HTMLResponse)
 def overview(request: Request, user: CurrentUser, session: Session, db: Db):
-    """What the last run of the checks found.
-
-    Readable by anyone who can sign in: it says what the data looks like
-    and changes nothing.
-    """
+    """What the last run of the checks found, readable by anyone who can sign in."""
     saved = health.latest(db)
     checks = (saved or {}).get("stats", {}).get("checks") or []
     return templates.TemplateResponse(request, "health.html", {
@@ -48,11 +42,7 @@ def overview(request: Request, user: CurrentUser, session: Session, db: Db):
 @router.get("/health/{check_id}", response_class=HTMLResponse)
 def behind(request: Request, check_id: str, user: CurrentUser, session: Session,
            db: Db, graph: Graph, limit: int = EXAMPLES_LIMIT_DEFAULT):
-    """The rows behind one check, asked of the graph right now.
-
-    Not read from the saved answer: a list of records that were wrong last
-    Tuesday is the wrong kind of wrong, and the query is capped anyway.
-    """
+    """The rows behind one check, queried from the graph now rather than read from the saved answer."""
     if check_id not in BY_ID:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "такой проверки нет")
     try:
@@ -68,11 +58,7 @@ def behind(request: Request, check_id: str, user: CurrentUser, session: Session,
 @router.get("/health/{check_id}/csv")
 def as_csv(check_id: str, user: CurrentUser, graph: Graph,
            limit: int = EXAMPLES_LIMIT_DEFAULT):
-    """The same rows as a file, for the person who has to go and fix them.
-
-    A list of a few hundred records is worked through in a spreadsheet, not
-    in a browser tab.
-    """
+    """The rows behind one check as a CSV file."""
     if check_id not in BY_ID:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "такой проверки нет")
     try:

@@ -1,8 +1,7 @@
 """Rebuilding the map: a fresh snapshot, then the site data.
 
-Two steps that were only ever run one after another by hand (`pauk cache
-export`, `pauk gui build`). Naming the sequence lets the worker ask for a
-rebuild instead of building two command lines.
+The worker asks for a rebuild instead of assembling the two command lines
+(`pauk cache export`, `pauk gui build`).
 """
 
 from __future__ import annotations
@@ -25,9 +24,9 @@ def rebuild_map(config: Settings, mongo_db: Database, *, seed: int = 42,
                 snapshot_path: Path | None = None) -> dict[str, int]:
     """Export a fresh snapshot and write every file the map is served from.
 
-    Holds the graph throughout, because the snapshot reads Neo4j and a
-    publish alongside would picture it half-written. Both builds are written
-    at once - `public/` and `private/` under `config.gui_dir`.
+    Holds the graph throughout: the snapshot reads Neo4j, and a concurrent
+    publish would leave it half-written. Both builds (`public/` and `private/`
+    under `config.gui_dir`) are written.
 
     Args:
         seed: Layout seed. Held steady between runs, or a rebuild moves a

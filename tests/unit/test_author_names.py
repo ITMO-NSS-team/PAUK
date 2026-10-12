@@ -667,7 +667,7 @@ class StaffIdentityTest(unittest.TestCase):
 
     def test_a_disagreeing_middle_initial_withdraws_the_claim(self):
         # OpenAlex knows this author as "Alexey Dmitriev" too, which fits the
-        # record — but A.D. is not A.A., and one of them is somebody else.
+        # record - but A.D. is not A.A., and one of them is somebody else.
         catalog = self.catalog(
             ("Дмитриев Алексей Андреевич", "Дмитриев", "Алексей", "Андреевич", ""))
         self.assertIsNone(catalog.staff_id(person(
@@ -677,7 +677,7 @@ class StaffIdentityTest(unittest.TestCase):
 
     def test_an_initial_that_folds_to_two_letters_still_agrees(self):
         # "Yu." is one initial, but folding writes it with two letters
-        # ("iu") — it must still read as Юрьевич and veto nothing.
+        # ("iu") - it must still read as Юрьевич and veto nothing.
         catalog = self.catalog(
             ("Кохановский Алексей Юрьевич", "Кохановский", "Алексей", "Юрьевич", ""))
         self.assertIsNotNone(catalog.staff_id(person(

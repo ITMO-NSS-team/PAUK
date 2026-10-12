@@ -49,7 +49,7 @@ function fakeRenderer(
 }
 
 describe("mountSelection", () => {
-  it("клик по узлу выбирает узел", () => {
+  it("clicking a node selects the node", () => {
     const graph = new Graph();
     const store = new Store<AppState>(initialState());
     const { renderer, fire } = fakeRenderer(graph);
@@ -60,7 +60,7 @@ describe("mountSelection", () => {
     expect(store.get().selection).toEqual({ kind: "node", key: "A1" });
   });
 
-  it("клик по ребру выбирает ребро — s/t/w читаются из графа по ключу ребра", () => {
+  it("clicking an edge selects the edge, s/t/w are read from the graph by the edge key", () => {
     const graph = new Graph();
     graph.addNode("A1", { x: 0, y: 0 });
     graph.addNode("A2", { x: 1, y: 1 });
@@ -74,7 +74,7 @@ describe("mountSelection", () => {
     expect(store.get().selection).toEqual({ kind: "edge", s: "A1", t: "A2", w: 3 });
   });
 
-  it("клик по пустому месту (clickStage) снимает выбор", () => {
+  it("clicking an empty spot (clickStage) clears the selection", () => {
     const graph = new Graph();
     const store = new Store<AppState>({
       ...initialState(),
@@ -88,7 +88,7 @@ describe("mountSelection", () => {
     expect(store.get().selection).toBeNull();
   });
 
-  it("клик по пустому месту внутри видимого региона выбирает его департамент", () => {
+  it("clicking an empty spot inside a visible region selects its department", () => {
     const graph = new Graph();
     const store = new Store<AppState>({
       ...initialState(),
@@ -106,7 +106,7 @@ describe("mountSelection", () => {
     fire("clickStage", { event: { x: 90, y: 20 } }); // outside regions: selection cleared
     expect(store.get().selection).toBeNull();
   });
-  it("в режиме регионов (регионы включены, камера дальше порога) клик по узлу или ребру выбирает регион под курсором, а не узел", () => {
+  it("in region mode (regions on, camera beyond the threshold) clicking a node or edge selects the region under the cursor, not the node", () => {
     const graph = new Graph();
     graph.addNode("A1");
     graph.addNode("A2");
@@ -130,7 +130,7 @@ describe("mountSelection", () => {
     expect(container.style.cursor).toBeUndefined();
   });
 
-  it("ближе порога (режим узлов) клик по узлу выбирает узел, даже если регионы включены", () => {
+  it("closer than the threshold (node mode) clicking a node selects the node, even if regions are on", () => {
     const graph = new Graph();
     graph.addNode("A1");
     const state = initialState();

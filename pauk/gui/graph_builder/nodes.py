@@ -1,6 +1,7 @@
-"""Builds all three kinds of nodes (authors/repositories/publications) in
-two forms at once - "summary" (what's needed to draw a point on the map)
-and "detail" (extended fields pauk/gui/web lazily loads after the map).
+"""Builds author, repository and publication nodes in two forms each.
+
+"summary" is what's needed to draw a point on the map; "detail" holds extended
+fields that pauk/gui/web loads lazily after the map.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from .grants import add_grant_keys
 
 
 def dense_rank(values: dict[str, int]) -> dict[str, float]:
-    """rank = dense rank of the metric / number of unique values, rounded to 3.
+    """Dense rank of the metric divided by the number of unique values, rounded to 3.
 
     Args:
         values: A metric by node id (e.g. an author's publication count).
@@ -30,18 +31,16 @@ def dense_rank(values: dict[str, int]) -> dict[str, float]:
     return {k: round(pos[v], 3) for k, v in values.items()}
 
 
-# Only used in one place (truncating a publication title in detail) - a
-# local constant next to the class it's for, not in config.py, the same
-# principle as STRANDED_JITTER in layout.py.
+# Local rather than in config.py: used in one place only (same as STRANDED_JITTER in layout.py).
 PUB_TITLE_MAX_LEN = 200
 
 
 def _parse_json_list(text: str | None) -> list:
-    """Parses JSON-text (`funding`/`versions`/`affiliations`/`code_url` -
-    everything `pauk.cache.export` writes as a serialized list, see
-    `JSON_TEXT_FIELDS` in `pauk/graph/extract.py`) into a list, silently
-    falling back to an empty list on missing/broken data - this is a
-    snapshot field, not something worth failing the whole generation over.
+    """Parses a JSON-text snapshot field into a list.
+
+    Covers `funding`/`versions`/`affiliations`/`code_url`, see `JSON_TEXT_FIELDS`
+    in `pauk/graph/extract.py`. Missing or broken data gives an empty list: it's
+    not worth failing the whole generation over.
     """
     if not text:
         return []
@@ -60,13 +59,9 @@ def _initial(value: str) -> str:
 def _fmt_part(value: str, *, force_initial: bool) -> str:
     """Formats one part of a name (given name or patronymic) for the label.
 
-    Collapses to an initial for the public display, or whenever the part
-    sits next to another part (surname_ru/first_name_ru/second_name_ru all
-    filled at once). Otherwise left as the author gave it - except a part
-    that's ALREADY a bare initial (a single letter, with or without a
-    period - that's how some LLM/catalog data arrives): a period is always
-    added, which isn't truncation, just correct punctuation for what the
-    data already says.
+    Collapses to an initial for the public display, or when the part sits next
+    to another part. Otherwise left as the author gave it, except that a bare
+    initial (some LLM/catalog data) always gets a period.
     """
     stripped = value.rstrip(".")
     if force_initial or len(stripped) == 1:
@@ -79,14 +74,11 @@ def author_label(
 ) -> str:
     """One format for any author: surname first, then initials.
 
-    Takes three name parts of one language at a time - a label per language
-    has to be assembled separately from surname_ru/first_name_ru/
-    second_name_ru and surname_en/first_name_en/second_name_en. No fallback
-    to a raw combined string: guessing surname/given-name/patronymic by word
-    order is exactly the failure mode an LLM step in author_names.py already
-    replaced - repeating it here for display would bring it back. An empty
-    surname returns "" - the caller picks the fallback (e.g. the other
-    language's label, or the free-text name_ru).
+    Takes the three name parts of one language; a label per language is
+    assembled separately. There is no fallback to a raw combined string:
+    guessing surname/given-name/patronymic by word order is what the LLM step in
+    author_names.py replaced. An empty surname returns "", and the caller picks
+    the fallback.
     """
     surname, first, second = surname or "", first or "", second or ""
     if not surname:
@@ -103,21 +95,15 @@ def author_label(
 
 
 def author_variants(row: dict, label_ru: str, label_en: str) -> dict[str, list[str]]:
-    """Other spellings of this person's name, minus whatever's already shown
-    as the card title - kept separate by source.
+    """Other spellings of this person's name, minus whatever is already the card title.
 
     The private card's title (`pauk/gui/web/src/features/panels.ts`) is the
-    truncated label (`label`/`label_en`) UNTIL detail has merged in, and
-    once it has - the full `name_ru`/`name_en` (the full name instead of
-    "Surname I.O."). Since `name_ru`/`name_en` become the title themselves,
-    they're excluded from candidates for the collapsed list here - otherwise
-    the same name would show twice. Sources that do go into the list:
-    `name_variants` - what OpenAlex saw across the author's different
-    publications; `other_names` - the name the author asks to be credited
-    under (ORCID credit name), plus variants they registered on their own
-    profile. Different in origin, so not merged into one list - that's the
-    card's job (see `field.nameVariantsOpenAlex`/`field.nameVariantsOrcid`
-    in `pauk/gui/web/src/core/i18n.ts`).
+    truncated label until detail has merged in, then the full `name_ru`/`name_en`.
+    Those are excluded here so the same name does not show twice. Sources are
+    kept separate: `name_variants` is what OpenAlex saw across publications,
+    `other_names` is the ORCID credit name plus self-registered variants (see
+    `field.nameVariantsOpenAlex`/`field.nameVariantsOrcid` in
+    `pauk/gui/web/src/core/i18n.ts`).
     """
     shown = {
         label_ru.casefold(),
@@ -142,9 +128,7 @@ def author_variants(row: dict, label_ru: str, label_en: str) -> dict[str, list[s
 
 
 class AuthorNodeBuilder:
-    """Builds author rows in two forms at once - holds the context shared
-    by every row (assignment/table/positions) instead of threading it as a
-    parameter to a free function."""
+    """Builds author rows in two forms, holding the shared context as state."""
 
     def __init__(
         self,
@@ -167,11 +151,10 @@ class AuthorNodeBuilder:
             `(summary, detail)` - `summary` goes into `graph-data.json`,
             `detail` into `authors-detail.json`. Privacy is decided by which
             folder `write_site_data()` puts the file in, not by trimming
-            fields here (see `builder.py`). The map label is the full
-            "Фамилия И.О." form, `author_label(..., public=False)`.
+            fields here. The map label is the full "Surname I.O." form,
+            `author_label(..., public=False)`.
         """
-        # set() - a publication could have been counted twice from some data
-        # mismatch, so count unique ids, not the raw list length.
+        # set() because a data mismatch could count a publication twice.
         pubs_count = {per: len(set(self.authorship.author_pubs.get(per, []))) for per in self.assignment.static_depts}
         rank_a = dense_rank(pubs_count)
         pub_roles: dict[str, dict[str, dict]] = {}
@@ -183,9 +166,9 @@ class AuthorNodeBuilder:
         summary: list[dict] = []
         detail: list[dict] = []
         for row in self.db["persons"]:
-            pid_ = row["id"]  # "id", not "key" - that's the column name in the snapshot
+            pid_ = row["id"]  # "id", not "key": the snapshot column name
             x, y = self.pos[pid_]
-            # Full surname + initials (public=False) - see build()'s docstring.
+            # Full surname + initials, see build()'s docstring.
             label_ru = author_label(row.get("surname_ru"), row.get("first_name_ru"), row.get("second_name_ru"), public=False) or row.get("name_ru") or ""
             # The *_en name parts are not populated by any pipeline stage, but
             # name_en (free-text transliteration) is. Falling back to it, not
@@ -257,7 +240,7 @@ class RepoNodeBuilder:
             `(summary, detail)` - `summary` in `graph-data.json["repos"]`,
             `detail` in `repos-detail.json`.
         """
-        # rank - the same dense 0..1 scale as authors (dense_rank), but ranked by stars.
+        # rank: the same dense 0..1 scale as authors, but by stars.
         stars = {r["id"]: (r["stars_num"] or 0) for r in self.db["repositories"]}
         rank_r = dense_rank(stars)
         summary: list[dict] = []
@@ -279,8 +262,7 @@ class RepoNodeBuilder:
                     "gy": y,
                 }
             )
-            # Unlike authors, repositories have no --public restriction -
-            # detail is written for every repository unconditionally.
+            # Unlike authors, repository detail is written unconditionally.
             detail.append(
                 {
                     "key": rid,
@@ -318,18 +300,16 @@ class PubNodeBuilder:
             `(summary, detail)` - `summary` in `graph-data.json["pubs"]`,
             `detail` in `pubs-detail.json`.
         """
-        # rank - by author count (n_authors), not by year or department.
+        # rank is by author count, not by year or department.
         n_authors_of = {pid: len(set(self.authorship.pub_authors[pid])) for pid in self.authorship.pub_ids}
         rank_p = dense_rank(n_authors_of)
         summary: list[dict] = []
         for row in self.authorship.pubs_rows:
             pid, year = row["id"], row["year"]
             x, y = self.pos[pid]
-            # depts_all - ALL of a publication's departments (the full
-            # PRODUCED_BY list plus the primary one, unioned in case the
-            # primary somehow wasn't in pub_dept_rows) - used by the frontend
-            # to highlight a publication in every one of its departments at
-            # once, not just the primary one ("dept" below).
+            # depts_all: ALL of a publication's departments (PRODUCED_BY list plus
+            # the primary, in case it wasn't in pub_dept_rows), so the frontend
+            # can highlight it in each of them.
             depts_all = sorted(
                 {self.table.g(d) for d in self.assignment.pub_dept_rows.get(pid, [])}
                 | {self.table.g(self.assignment.pub_primary[pid])}
@@ -352,7 +332,7 @@ class PubNodeBuilder:
         for row in self.authorship.pubs_rows:
             title = row["title"] or ""
             if len(title) > PUB_TITLE_MAX_LEN:
-                title = title[: PUB_TITLE_MAX_LEN - 1] + "…"  # -1 so the ellipsis doesn't push the total past the limit
+                title = title[: PUB_TITLE_MAX_LEN - 1] + "…"  # -1 keeps the ellipsis within the limit
             detail.append(
                 {
                     "key": row["id"],

@@ -15,9 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class EdgeBuilder:
-    """Builds all seven edge types at once - holds the shared context
-    (db/authorship/assignment/table/layout) as state instead of a parameter
-    on every individual method."""
+    """Builds all seven edge types at once, holding the shared context as state."""
 
     def __init__(
         self,
@@ -42,11 +40,9 @@ class EdgeBuilder:
         """
         db, authorship, assignment, table, layout = self.db, self.authorship, self.assignment, self.table, self.layout
 
-        # The first three take REAL weights from layout (not the
-        # layout-only inflated ones - see the Layout docstring for why
-        # those are different things); coauth/pub have a minimum-weight
-        # threshold (EDGE_THRESHOLDS), repo has none - there aren't many
-        # repo edges to begin with.
+        # The first three use the real weights from layout, not the inflated
+        # layout-only ones (see the Layout docstring). Repo edges have no
+        # threshold since there are few of them.
         coauth_edges = [
             {"s": a, "t": b, "w": w} for (a, b), w in layout.coauth.items() if w >= EDGE_THRESHOLDS.coauth_min_w
         ]
@@ -58,15 +54,10 @@ class EdgeBuilder:
             for (a, b), w in layout.repo_edge_w.items()
         ]
 
-        # Department-to-department edges: how many publications connect a
-        # pair of departments through shared authors. table.no_dept_gid is
-        # dropped from the set BEFORE combinations - "no department" isn't a
-        # department, an edge to it would be meaningless.
-        # sorted() - pub_ids is a set; without this, insertion order into
-        # dept_pair_w (and so the final dept_edges list order) depends on
-        # per-process string hash randomization, producing a different byte
-        # sequence in graph-data.json on every run even with the same seed
-        # and the same input snapshot (content is identical, just reordered).
+        # Department-to-department edges: publications connecting a pair through
+        # shared authors. "No department" is dropped before combinations, since
+        # an edge to it is meaningless. sorted() because pub_ids is a set, and
+        # hash randomization would otherwise reorder dept_edges between runs.
         dept_pair_w: dict[tuple[int, int], int] = defaultdict(int)
         for pid in sorted(authorship.pub_ids):
             itmo_authors = [per for per in authorship.pub_authors[pid] if per not in authorship.external_ids]
@@ -75,23 +66,19 @@ class EdgeBuilder:
                 dept_pair_w[(a, b)] += 1
         dept_edges = [{"s": a, "t": b, "w": w} for (a, b), w in dept_pair_w.items()]
 
-        # Author-repository (CONTRIBUTED_TO) - only for authors who actually
-        # made it into the graph (static_depts covers every person in the
-        # snapshot); the filter is a silent guard against a data mismatch,
-        # not the expected case.
+        # Author-repository (CONTRIBUTED_TO); the filter is a silent guard
+        # against a data mismatch, not the expected case.
         repo_author_edges = [
             {"s": row["rid"], "t": row["per"], "role": row["role"]}
             for row in db["repo_persons"]
             if row["per"] in assignment.static_depts
         ]
-        # Repository-publication (IMPLEMENTS) - only for publications with
-        # at least one ITMO author (pub_ids); the rest never make it into the
-        # graph at all.
+        # Repository-publication (IMPLEMENTS), only for publications in pub_ids.
         repo_pub_edges = [
             {"s": row["rid"], "t": row["pid"]} for row in db["repo_pubs"] if row["pid"] in authorship.pub_ids
         ]
-        # Author-publication directly (AUTHORED), ITMO and external authors
-        # alike - db["authorship"] is already cut down to pub_ids in builder.py.
+        # Author-publication (AUTHORED), ITMO and external alike; db["authorship"]
+        # is already cut down to pub_ids in builder.py.
         all_edges = [{"s": row["per"], "t": row["pid"]} for row in db["authorship"]]
 
         logger.info(

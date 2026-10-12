@@ -77,7 +77,7 @@ class NothingToDoTest(PruneTest):
 
 
 class RetractedClaimTest(PruneTest):
-    """The case the issue was opened for: a claim a repair took away."""
+    """A claim a repair took away leaves a record to prune."""
 
     def setUp(self):
         super().setUp()
@@ -210,7 +210,7 @@ class FoldedRecordTest(PruneTest):
         merge_nodes(self.graph, "Person", "A2", "A1")
         plan = self.plan()
         self.assertEqual(plan.nodes, {})
-        # A1 now owns A2's work, which no row of A1 asks for — but A2's row
+        # A1 now owns A2's work, which no row of A1 asks for - but A2's row
         # does, and the loader moves it there on every publish.
         self.assertEqual(plan.edges, {})
 

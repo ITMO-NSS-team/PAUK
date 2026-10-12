@@ -1,8 +1,8 @@
 """Generic CSV loader for nodes/relationships, independent of the JSONL
 pipeline path. Node files use columns id/labels/properties, relationship
 files use start_id/end_id/src_label/tgt_label/type/properties. Nothing in
-this repository currently produces such CSV files — this path exists for
-external/manual data loads and stays ready for when one shows up.
+this repository produces such CSV files; the path serves external/manual
+data loads.
 """
 
 import csv

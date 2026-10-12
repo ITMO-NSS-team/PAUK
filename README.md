@@ -1,83 +1,83 @@
 # PAUK
 
-PAUK собирает публикации, обогащает их данными внешних источников (промежуточное и загружает результат в Neo4j.
+PAUK collects publications from OpenAlex, enriches them with data from external sources (Crossref, ORCID, GitHub), finds code links in them, and loads the result into Neo4j.
 
-## Данные
+## Data
 
 ```text
-data/static/                 # версионируемые справочники, включая departments_catalog.json
-MongoDB: raw                 # полные неизменяемые ответы API, по группам
-MongoDB: publications/persons/departments/repositories/github_profiles/repo_links
-                              # prepared-сущности для Neo4j, глобальные — не по группе
+data/static/                 # versioned reference data, including departments_catalog.json
+MongoDB: raw                 # full immutable API responses, per group
+MongoDB: publications/persons/departments/organizations/repositories/github_profiles/repo_links
+                             # prepared entities for Neo4j, global (not per group)
 ```
 
-## Запуск
+## Usage
 
 ```bash
-# Одна публикация OpenAlex
+# One OpenAlex work
 pauk run --work W2741809807
 
-# Публикации за период
+# Publications for a period
 pauk run --from 2025-01-01 --to 2025-03-31
 
-# Произвольный список OpenAlex ID
+# Arbitrary list of OpenAlex IDs
 pauk run --works-file selected_works.txt --name selected-july
 
-# Отдельные шаги
+# Individual steps
 pauk collect --work W2741809807
 pauk normalize --group 2026-07-31__W2741809807
 pauk enrich code_links --group 2026-07-31__W2741809807 --input selected_ids.txt --entity publications
 pauk publish graph --group 2026-07-31__W2741809807
 ```
 
-`enrich --group` обязателен всегда; `--input <файл> --entity <сущность>`
-дополнительно сужает запуск до id, перечисленных в файле (по одному на
-строку). Повторный `collect` не добавляет уже сохранённые OpenAlex works, а
-повторный `normalize` сохраняет данные enrichment — в том числе если тот же
-work попал в другую, пересекающуюся группу: сущности в MongoDB глобальные,
-не по группе. Флаг `enrich --force` переобрабатывает и строки со статусом
-`completed` (например, после исправления этапа).
+`enrich --group` is always required; `--input <file> --entity <entity>`
+further narrows the run to the ids listed in the file (one per line). A
+repeated `collect` does not add OpenAlex works that are already stored, and a
+repeated `normalize` keeps enrichment data, even when the same work appears in
+another, overlapping group: entities in MongoDB are global, not per group.
+`enrich --force` reprocesses rows with status `completed` too (for example,
+after fixing a stage).
 
-Ссылки на код извлекаются из абстракта и, если есть `pdf_urls` (или PDF
-находится по DOI через `PAUK_PDF_CRAWLER_URL`, см. `.env.example`), из PDF
-постранично (`pauk enrich code_links`, кэш PDF — `data/pdf/`) —
-и голые упоминания вида `github.com/org/repo`, и настоящие гиперссылки.
-Текст PDF сохраняется в `Publication.full_text`.
+Code links are extracted from the abstract and, when `pdf_urls` exist (or a PDF
+is found by DOI via `PAUK_PDF_CRAWLER_URL`, see `.env.example`), from the PDF
+page by page (`pauk enrich code_links`; PDFs are cached in `data/pdf/`). Both
+bare mentions like `github.com/org/repo` and real hyperlinks are found. The PDF
+text is saved in `Publication.full_text`.
 
-`context`/`page_number` у `MENTIONS_LINK` — список вхождений на публикацию
-(абстракт и страницы PDF). Перенос через дефис на границе строки
-склеивается, без дефиса — нет. Если скачать/распарсить PDF не удалось,
-этап помечается `failed` и ретраится при следующем прогоне, но результат
-по абстракту сохраняется.
+`context` and `page_number` on `MENTIONS_LINK` are lists of occurrences per
+publication (abstract and PDF pages). A hyphenated line break is joined; a line
+break without a hyphen is not. If a PDF cannot be downloaded or parsed, the
+stage is marked `failed` and retried on the next run, but the abstract result
+is kept.
 
-Каждый prepared-документ содержит `_processing` со статусом этапа:
-`not_started`, `completed`, `completed_empty`, `not_applicable` или `failed`.
-Это поле не загружается в граф.
+Every prepared document has a `_processing` field with a status per stage:
+`not_started`, `completed`, `completed_empty`, `not_applicable` or `failed`.
+This field is not loaded into the graph.
 
-## Схема графовой БД
+## Graph schema
 
-`pauk publish graph --group <group>` загружает prepared-коллекции этой
-группы из MongoDB в Neo4j через `MERGE`. Для всех типов узлов уникален
-`id`; у `GitHubProfile` также уникален `login`.
+`pauk publish graph --group <group>` loads this group's prepared collections
+from MongoDB into Neo4j with `MERGE`. `id` is unique for every node type;
+`GitHubProfile` also has a unique `login`.
 
-`id` персоны — голый OpenAlex ID автора (один человек — один узел). Свойство
-`is_itmo` выставляется в `true`, если хотя бы в одной работе встретилась
-аффилиация ИТМО, и не понижается обратно до `false` данными других групп.
-Репозитории, чей этап `repositories` завершился со статусом `failed`
-(например, 404), в граф не загружаются до успешного ретрая — их ссылки
-остаются узлами `LinkCandidate`.
+A person's `id` is the bare OpenAlex author ID (one person, one node).
+`is_itmo` is set to `true` if at least one work has an ITMO affiliation, and
+data from other groups never lowers it back to `false`. Repositories whose
+`repositories` stage ended with status `failed` (for example, a 404) are not
+loaded until a successful retry; their links remain `LinkCandidate` nodes.
 
-| Узел | Метка Neo4j | Основные свойства |
+| Node | Neo4j label | Main properties |
 |---|---|---|
-| Подразделение | `Department` | `id`, `name_en`, `name_ru`, `name_variants` |
-| Сотрудник ИТМО | `Person {is_itmo: true}` | `id`, `openalex_id`, `orcid`, ФИО, контакты, профили |
-| Внешний автор | `Person {is_itmo: false}` | `id`, `openalex_id`, `orcid`, `name_raw`, `name_variants`, `email` |
-| Публикация | `Publication` | `id`, `title`, `doi`, дата, журнал, код, funding, OpenAlex/PDF URL, abstract |
-| Репозиторий | `Repository` | `id`, `name`, `url`, описание, звёзды, лицензия, даты |
-| GitHub-профиль | `GitHubProfile` | `id`, `login`, `name`, URL, описание, location, type |
-| Кандидат ссылки | `LinkCandidate` | `id` (URL), `url`, `host` |
+| Department | `Department` | `id`, `name_en`, `name_ru`, `name_variants` |
+| Organization | `Organization` | `id`, `name_en` |
+| ITMO employee | `Person {is_itmo: true}` | `id`, `openalex_id`, `orcid`, full name, contacts, profiles |
+| External author | `Person {is_itmo: false}` | `id`, `openalex_id`, `orcid`, `name_raw`, `name_variants`, `email` |
+| Publication | `Publication` | `id`, `title`, `doi`, date, journal, code, funding, OpenAlex/PDF URLs, abstract |
+| Repository | `Repository` | `id`, `name`, `url`, description, stars, license, dates |
+| GitHub profile | `GitHubProfile` | `id`, `login`, `name`, URL, description, location, type |
+| Link candidate | `LinkCandidate` | `id` (the URL), `url`, `host` |
 
-Связи:
+Relationships:
 
 ```text
 (:Person {is_itmo: true})  -[:BELONGS_TO]->  (:Department)
@@ -85,7 +85,9 @@ work попал в другую, пересекающуюся группу: су
 (:Person {is_itmo: false}) -[:AUTHORED]->    (:Publication)
 (:Person {is_itmo: true})  -[:CONTRIBUTED_TO]-> (:Repository)
 
-(:Publication) -[:PRODUCED_BY]-> (:Department)
+(:Department)  -[:PART_OF]->       (:Department | :Organization)
+
+(:Publication) -[:PRODUCED_BY]->   (:Department)
 (:Publication) -[:MENTIONS_LINK]-> (:Repository | :LinkCandidate)
 
 (:Repository) -[:DEVELOPED_BY]-> (:Department)
@@ -93,22 +95,38 @@ work попал в другую, пересекающуюся группу: су
 (:Repository) -[:OWNED_BY]->     (:GitHubProfile)
 ```
 
-У `AUTHORED` сохраняются `position`, `affiliation`, `is_corresponding`; у
-`CONTRIBUTED_TO` — `role`; у `MENTIONS_LINK` — контекст, номер страницы и
-результат проверки ссылки. Служебное `_processing` и поля, не перечисленные в
-`pauk/graph/extract.py`, в Neo4j не попадают.
+`AUTHORED` keeps `position`, `affiliation` and `is_corresponding`;
+`CONTRIBUTED_TO` keeps `role`; `MENTIONS_LINK` keeps the context, page number
+and link-check result. The internal `_processing` field and any fields not
+listed in `pauk/graph/extract.py` do not reach Neo4j.
 
-`MENTIONS_LINK` означает, что ссылка встретилась в публикации, независимо от
-результата проверки. `IMPLEMENTS` создаётся только для репозитория, который
-классифицирован как авторский результат этой публикации.
+`MENTIONS_LINK` means the link occurred in the publication, regardless of the
+check result. `IMPLEMENTS` is created only for a repository classified as the
+authors' own result for that publication.
+
+Full details: [`docs/architecture/neo4j-graph.md`](docs/architecture/neo4j-graph.md).
 
 ## GUI
 
-Визуализация расположена в `pauk/gui`. После загрузки данных в Neo4j можно
-снять снепшот, сгенерировать данные для сайта и запустить его:
+The visualization lives in `pauk/gui`. After the data is in Neo4j, snapshot the
+graph, build the site data, and start the dev server:
 
 ```bash
 pauk cache export
 pauk gui build
 cd pauk/gui/web && npm install && npm run dev
 ```
+
+- `pauk cache export` writes a graph snapshot to `data/cache/graph_snapshot_<date>.json`.
+  `--output` sets another path; `--only persons,publications,repos,departments,organizations`
+  re-reads just those groups and takes the rest from the newest snapshot.
+- `pauk cache inspect [path_to_snapshot] [--table T] [--sample N]` prints table
+  sizes and field stats; with `--table` and `--sample` it prints N sample rows.
+- `pauk gui build` reads the newest snapshot (`--cache` picks another) and writes
+  the site data into `data/gui/public` and `data/gui/private` (`--out-dir` changes
+  the base folder). `--seed` sets the layout seed (default 42). `authors-detail.json`,
+  which holds personal fields, is written only to `private/`.
+- The Vite dev server serves `data/gui/private`.
+
+Details: [`docs/architecture/gui.md`](docs/architecture/gui.md) and
+[`docs/architecture/cache.md`](docs/architecture/cache.md).

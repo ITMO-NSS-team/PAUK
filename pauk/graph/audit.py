@@ -1,44 +1,25 @@
 """Audit-logging wrapper around Neo4jClient.
 
-Wraps every mutating Neo4jClient method: snapshots the affected entities before and after the underlying call,
-computes a field-level diff, and hands the resulting AuditEntry batch to an AuditSink. Read-only methods
-(fetch_*, close, ...) pass straight through untouched.
+AuditedNeo4jClient snapshots the affected entities before and after every
+mutating Neo4jClient call, computes a field-level diff and hands the
+resulting AuditEntry batch to an AuditSink. Read-only methods pass straight
+through.
 
-Usage
------
+Example:
     client = Neo4jClient(uri, user, password)
     audited = AuditedNeo4jClient(client, JSONLAuditSink(Path("audit.jsonl")))
 
-    # ETL / bulk load — cheap summary entries, no per-node diff:
     with actor_context("etl-pipeline", source="jsonl_loader"):
         load_prepared_rows(audited, rows_by_file)
 
-    # Future front-end — single-entity mutation, full diff:
-    with actor_context(f"user:{current_user.email}", source="admin-ui"):
-        audited.upsert_nodes_batch("Person", [(person_id, {"email": new_email})])
+`actor` and `source` travel via contextvars, so only the outermost caller
+sets them. Batches at or above `diff_threshold` get one coarse "bulk" entry
+(counts only) instead of one entry per row: diffing every node of a large
+ETL chunk would double the query count for little audit value.
 
-Failure behaviour
------------------
-If the wrapped Neo4jClient call raises, the exception propagates before any AuditEntry is built or written — a failed
-write never produces an audit record, so the log never claims a change that didn't happen. Because jsonl_loader.py
-chunks its own batches and calls each chunk through this wrapper separately, a failure partway through a load leaves
-the already-processed chunks consistent between Neo4j and the audit log (each chunk's Neo4j commit and its audit
-write both happened, or neither did). The one gap this can't close: the audit write happens *after* the Neo4j
-transaction commits, as a separate step — a crash in that narrow window leaves the graph updated with no matching
-audit entry. Closing that gap needs the audit write inside the same Neo4j transaction as the data write (e.g. a
-future Neo4jAuditSink writing :AuditEvent nodes as part of the same execute_write call) — out of scope for the JSONL
-sink.
-
-Design notes
-------------
-- `actor`/`source` travel via contextvars rather than as an explicit argument to every call, so `jsonl_loader.py` and
-  any future CRUD code don't need to thread an actor through every function signature — only the outermost caller
-  sets it, once, for the whole operation.
-- Batches at or above `diff_threshold` get a single coarse "bulk_write" entry (counts only) instead of one AuditEntry
-  per row: diffing every node in a 2000-row ETL chunk would double the query count for very little audit value. Small
-  batches (typical of a front-end edit) get a full before/after field diff.
-- AuditSink is a narrow protocol so the storage backend (JSONL file today, Neo4j :AuditEvent nodes or Postgres later)
-  can change without touching AuditedNeo4jClient or any caller.
+If the wrapped call raises, no entry is written, so the log never claims a
+change that did not happen. The audit write is a separate step after the
+Neo4j commit, so a crash in that window leaves a graph change with no entry.
 """
 
 from __future__ import annotations
@@ -121,12 +102,9 @@ class AuditSink(Protocol):
 
 
 class JSONLAuditSink:
-    """Append-only JSONL sink — one line per AuditEntry. Base implementation.
+    """Append-only JSONL sink, one line per AuditEntry.
 
-    Good enough to start with and to grep/tail during development. Swap for
-    a Neo4jAuditSink (writing :AuditEvent nodes linked to the changed
-    entity) or a Postgres sink later — nothing outside this module needs
-    to change, AuditedNeo4jClient only knows about the AuditSink protocol.
+    Easy to grep and tail; AuditedNeo4jClient only knows the AuditSink protocol.
     """
 
     def __init__(self, path: Path):
@@ -163,8 +141,8 @@ def _storable(value: Any) -> Any:
     Property values come back from the driver as whatever type Neo4j used
     (neo4j.time.DateTime among them), and pymongo refuses what it cannot
     encode. The audit path must never be the thing that fails a write, so
-    anything unrecognised is kept as text — same reasoning as `default=str`
-    in the JSONL sink.
+    anything unrecognised is kept as text, like `default=str` in the JSONL
+    sink.
     """
     if isinstance(value, (str, int, float, bool, type(None))):
         return value
@@ -180,7 +158,7 @@ class MongoAuditSink:
 
     JSONL stays useful for grepping a run; a feed in the UI needs filters
     by actor and entity plus pagination, which a flat file cannot serve.
-    Both sinks can run side by side — AuditedNeo4jClient takes one sink, so
+    Both sinks can run side by side; AuditedNeo4jClient takes one sink, so
     pair them with `MultiAuditSink` when both are wanted.
     """
 
@@ -288,13 +266,13 @@ class AuditedNeo4jClient:
             client: The real Neo4jClient to wrap.
             sink: Where audit entries go.
             diff_threshold: Batches with this many rows or more get one coarse summary entry instead of a per-row
-                diff. Keeps large ETL loads cheap while front-end single-row edits still get full field-level diffs.
+                diff.
             actor: Who to record as the author, fixed for this client's
                 lifetime. Callers that cannot rely on `actor_context` pass
-                it here — a web request enters its dependency in one
+                it here: a web request enters its dependency in one
                 context and runs the route in another, and a contextvar
-                does not cross that boundary: entries came out as
-                "unknown" even though a person was signed in.
+                does not cross that boundary, so entries would be
+                recorded as "unknown".
             source: Where the change came from, alongside `actor`.
         """
         self._client = client
@@ -312,7 +290,6 @@ class AuditedNeo4jClient:
     def __getattr__(self, name: str):
         return getattr(self._client, name)
 
-    # -- shared plumbing ---------------------------------------------------
     
     @staticmethod
     def _now() -> str:
@@ -322,11 +299,10 @@ class AuditedNeo4jClient:
         """Write the journal entries, never failing the change they describe.
 
         The journal is a record *of* a change, not a condition *for* one.
-        Letting the sink raise meant a mutation that had already gone into
-        Neo4j came back as an error from inside `update_node`, before the
-        caller could either record its decision or put the graph back: the
-        change stayed, unrecorded and unexplained, and the request looked
-        like it had failed.
+        If the sink were allowed to raise, a mutation already committed to
+        Neo4j would surface as an error before the caller could record its
+        decision or put the graph back: the change would stay, unrecorded,
+        while the request looked like it had failed.
 
         A lost entry is logged whole, so it can be read back out of the log
         if anyone needs it.
@@ -368,9 +344,8 @@ class AuditedNeo4jClient:
             if not diff and kind == "updated":
                 # A write that changed nothing is not worth a line. Coming
                 # into existence and going out of it are, even with nothing
-                # to show field by field — and most relationships carry no
-                # properties at all, so linking and unlinking used to leave
-                # the journal completely silent.
+                # to show field by field; most relationships carry no
+                # properties at all, so they would otherwise never appear.
                 continue
             entries.append(AuditEntry(now, actor, source, operation, entity_type, entity_id, kind, diff))
         self._record(entries)
@@ -381,7 +356,7 @@ class AuditedNeo4jClient:
         label_list = labels if isinstance(labels, list) else [labels]
         # Match a node carrying ANY of the given labels, not all of them: upsert_nodes_batch can add a label
         # a node doesn't have yet, and the "before" snapshot must still find the node by whichever label(s)
-        # it already carries — otherwise a real update on a node that's about to gain a label looks like
+        # it already carries, otherwise a real update on a node about to gain a label looks like
         # "created" and the old field values are lost from the audit log.
         label_match = " OR ".join(f"n:{label}" for label in label_list)
         query = cast(
@@ -409,8 +384,6 @@ class AuditedNeo4jClient:
         with self._client.driver.session() as session:
             rows = session.execute_read(lambda tx: [dict(r) for r in tx.run(query, batch=batch)])
         return {f"{r['src_id']} -> {r['tgt_id']}": r["props"] for r in rows}
-
-    # -- wrapped write methods ----------------------------------------------
 
     def upsert_nodes_batch(self, labels, nodes: list[tuple[str, dict]]):
         if not nodes:
@@ -483,7 +456,7 @@ class AuditedNeo4jClient:
 
         Diffs only the node properties (duplicate -> None = "deleted", canonical's filled-in fields = "updated").
         Relationship rewiring inside _fold_nodes_batch is a mechanical consequence of the merge and isn't diffed
-        separately — the node-level entry already tells an operator "id X was folded into id Y at time T by actor Z".
+        separately: the node-level entry already tells an operator "id X was folded into id Y at time T by actor Z".
         """
         method = getattr(self._client, method_name)
         if not merges:

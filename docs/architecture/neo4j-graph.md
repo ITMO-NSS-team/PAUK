@@ -1,31 +1,32 @@
-# `pauk/graph/` — коннектор и реальная схема графа
+# `pauk/graph/`: connector and the actual graph schema
 
-**Что здесь:** схема графа Neo4j, как её строит код, и как устроен
-коннектор (prepared-строки из MongoDB → узлы/связи → загрузка → дедуп на
-уровне графа).
+**What it covers:** the Neo4j graph schema as the code builds it, and how
+the connector works: prepared rows from MongoDB to nodes and relationships,
+loading, and graph-level dedup.
 
-**Какие файлы задействует:** `pauk/graph/extract.py`, `jsonl_loader.py`,
-`client.py`, `audit.py`, `mutations.py`, `schema.py`, `csv_loader.py`, `dedup.py`,
-`load.py`, `pauk/urls.py`.
+**Files:** `pauk/graph/extract.py`, `jsonl_loader.py`, `client.py`,
+`audit.py`, `mutations.py`, `overrides.py`, `schema.py`, `csv_loader.py`,
+`dedup.py`, `load.py`, `pauk/urls.py`.
 
-Диаграмма той же схемы как Mermaid — [`diagrams/neo4j-schema.md`](../diagrams/neo4j-schema.md).
-Контекст, почему словарь связей именно такой, а не по предложенной
-Камилем схеме — [`journal/2026-08-01-kamil-schema-stub-fields.md`](../journal/2026-08-01-kamil-schema-stub-fields.md).
+The same schema as a Mermaid diagram:
+[`diagrams/neo4j-schema.md`](../diagrams/neo4j-schema.md). Field-by-field
+description of all nodes and relationships:
+[`diagrams/neo4j-schema-desc.md`](../diagrams/neo4j-schema-desc.md).
 
-## Узлы и связи
+## Nodes and relationships
 
-`Publication.pdf_urls` хранит упорядоченные уникальные ссылки на PDF как
-массив строк Neo4j. В журнале `versions` у каждой версии свой `pdf_urls`.
+`Publication.pdf_urls` holds the ordered unique PDF links as a Neo4j string
+array. In the `versions` ledger each version has its own `pdf_urls`.
 
-| Узел | Уникальный ключ | Метки |
+| Node | Unique key | Labels |
 |---|---|---|
-| Person | `id` (голый OpenAlex author ID) | `Person` |
-| Department | `id` (uid-слаг из `name_en`) | `Department` |
-| Organization | `id` и `name_en` (оба уникальны) | `Organization` |
-| Publication | `id` (голый OpenAlex work ID) | `Publication` |
-| Repository | `id` и `url` (оба уникальны) | `Repository` |
-| GitHubProfile | `id` и `login` (оба уникальны) | `GitHubProfile` |
-| LinkCandidate | `id` (сам URL) | `LinkCandidate` |
+| Person | `id` (bare OpenAlex author ID) | `Person` |
+| Department | `id` (the catalog `uid`) | `Department` |
+| Organization | `id` and `name_en` (both unique) | `Organization` |
+| Publication | `id` (bare OpenAlex work ID) | `Publication` |
+| Repository | `id` and `url` (both unique) | `Repository` |
+| GitHubProfile | `id` and `login` (both unique) | `GitHubProfile` |
+| LinkCandidate | `id` (the URL itself) | `LinkCandidate` |
 
 ```text
 (:Person {is_itmo: true})  -[:BELONGS_TO]->     (:Department)
@@ -43,327 +44,317 @@
 (:Repository) -[:OWNED_BY]->     (:GitHubProfile)
 ```
 
-`Repository` несёт, кроме `name`/`url`/`description`/`stars_num`, ещё
-`topics`/`language`/`forks_num`/`archived`/`is_fork`/`license`/`last_updated` —
-всё это приходит в том же теле ответа `GET /repos/{owner}/{name}`, что и
-основные поля, и стоит ноль дополнительных запросов
+Besides `name`, `url`, `description` and `stars_num`, `Repository` carries
+`topics`, `language`, `forks_num`, `archived`, `is_fork`, `license` and
+`last_updated`. They come in the same `GET /repos/{owner}/{name}` response as
+the main fields, at no extra request
 ([pipeline/repositories.md](pipeline/repositories.md)).
 
-`AUTHORED` несёт `position`/`affiliation`/`affiliation_source`/
-`is_corresponding`; `CONTRIBUTED_TO` — `role`; `MENTIONS_LINK` — `context`
-(список), `page_number` (список, `0` = абстракт — Neo4j не хранит `null`
-внутри массива-свойства, поэтому сентинел не `None`, см.
-[pipeline/code-links.md](pipeline/code-links.md)), `is_relevant`,
-`classification_status`, `llm_confidence`, `llm_reason`.
+`AUTHORED` carries `position`, `affiliation`, `affiliation_source` and
+`is_corresponding`; `CONTRIBUTED_TO` carries `role`; `MENTIONS_LINK` carries
+`context` (a list), `page_number` (a list; `0` means the abstract, because
+Neo4j cannot store `null` inside an array property, so the sentinel is not
+`None`; see [pipeline/code-links.md](pipeline/code-links.md)),
+`is_relevant`, `classification_status`, `llm_confidence` and `llm_reason`.
 
-Для ссылок, извлечённых с учётом альтернатив переносов, `MENTIONS_LINK`
-также хранит `url_ambiguous`, `candidate_urls` (плоский список строк) и
-`availability`. Неоднозначное вхождение не подтверждает авторский
-репозиторий: `is_relevant` ребра остаётся `null`, и оно не создаёт
-`IMPLEMENTS`. Исходный фрагмент переноса хранится в prepared-данных.
+For links extracted with line-break alternatives, `MENTIONS_LINK` also
+stores `url_ambiguous`, `candidate_urls` (a flat list of strings) and
+`availability`. An ambiguous occurrence does not confirm an authored
+repository: the edge's `is_relevant` stays `null` and it does not create
+`IMPLEMENTS`. The original break fragment stays in the prepared data.
 
-`MENTIONS_LINK` фиксирует сам факт присутствия ссылки и создаётся при
-`is_relevant=true`, `false` и `null`. `IMPLEMENTS` имеет более сильную
-семантику: репозиторий является подтверждённым авторским результатом
-публикации, поэтому строится только из `Repository.publication_ids`, куда
-попадают ссылки с `is_relevant=true`.
+`MENTIONS_LINK` records the bare fact that a link is present and is created
+for `is_relevant` of `true`, `false` and `null`. `IMPLEMENTS` has stronger
+semantics: the repository is a confirmed authored result of the publication,
+so it is built only from `Repository.publication_ids`, which holds the links
+with `is_relevant=true`.
 
-`CONTRIBUTED_TO` строит стадия `github_match`: подтверждённый аккаунт —
-это тот же человек, поэтому репозитории аккаунта становятся его работой.
-`role` — `owner`, если репозиторий принадлежит самому аккаунту, иначе
-`contributor`. Ребро создаётся только на репозиторий, который есть в
-`repositories.jsonl`: соцграф проходит и те, что никем не процитированы,
-но их самих не сохраняет, и ссылаться на несуществующий узел нельзя.
+`CONTRIBUTED_TO` is built by the `github_match` stage: a confirmed account is
+the same person, so the account's repositories become their work. `role` is
+`owner` if the account owns the repository, otherwise `contributor`. The edge
+is created only to a repository present in the prepared `repositories`
+collection: the social graph walks uncited repositories too but does not
+store them, and a relationship cannot point at a missing node.
 
-Доказательства, на которых матчер строит решение, — `GitHubProfile.emails`
-и `commit_names` (из git-идентичности в коммитах), `repos`, `Person.emails` —
-в граф не публикуются. Это не факты об аккаунте, а рабочие данные
-сопоставления, к тому же адреса живых людей; они остаются в prepared
-JSONL и в журнале `github_matches.jsonl`. В граф из собранного профиля
-идёт только `company` — то же по сути, что `location` и `description`.
+The evidence the matcher decides on (`GitHubProfile.emails`, `commit_names`,
+`repos`, and `Person.emails`) is not published to the graph. These are
+working data for matching and also real people's addresses; they stay in the
+prepared rows and in the `github_matches.jsonl` journal. Of the collected
+profile, only `company` goes into the graph.
 
-Person всегда имеет одну метку `:Person`; принадлежность к ИТМО — булево
-свойство `is_itmo`, не метка (раньше была пара меток `Person:Itmo`/
-`Person:External`). Свойство «липкое»: один и тот же автор может быть ИТМО в
-одной группе и внешним в другой, но
-`is_itmo` только растёт — external-строка никогда не понижает уже
-проставленный `is_itmo=true`
-(`n.is_itmo = coalesce(n.is_itmo, false) OR row.is_itmo` в
-`client.py::upsert_person_nodes_batch`). При кросс-групповом дедупе то же
-правило соблюдает `BOOLEAN_MERGE_FIELDS["Person"]` в `_fold_nodes_batch`.
+A person always has the single label `:Person`; ITMO membership is the
+boolean property `is_itmo`, not a label. The property is sticky: the same
+author can be ITMO in one group and external in another, but `is_itmo` only
+grows, and an external row never lowers an existing `is_itmo=true`
+(`n.is_itmo = coalesce(n.is_itmo, false) OR row.is_itmo` in
+`client.py::upsert_person_nodes_batch`). In cross-group dedup the same rule
+is applied by `BOOLEAN_MERGE_FIELDS["Person"]` in `_fold_nodes_batch`.
 
-Иерархия подразделений рекурсивна: каждый `Department` `PART_OF` ровно одного
-родителя — другого `Department` (`parent_id`) или корневого `Organization`
-(`organization_id`), — так `кафедра → факультет → мегафакультет → организация`
-собирается цепочкой рёбер одного типа. Пополевое описание всех узлов и связей —
-в [`diagrams/neo4j-schema-desc.md`](../diagrams/neo4j-schema-desc.md).
+The department hierarchy is recursive: each `Department` is `PART_OF` exactly
+one parent, either another `Department` (`parent_id`) or a root
+`Organization` (`organization_id`). A chain such as department, faculty,
+megafaculty, organization is therefore a chain of edges of one type.
 
-## `extract.py` — декларативный реестр
+## `extract.py`: declarative registry
 
-`NODE_REGISTRY: dict[str, NodeSpec]` — по одному рецепту на тип строки
-prepared JSONL. `NodeSpec` несёт белый список простых свойств
-(`prop_fields` — всё, чего нет в списке, в узел не попадает, это и есть
-защита от мусорных полей вроде отладочных значений) и список `RelSpec` —
-какие поля строки на самом деле спрятанные связи. `RelSpec` умеет:
+`NODE_REGISTRY: dict[str, NodeSpec]` has one recipe per prepared row type. A
+`NodeSpec` carries a whitelist of simple properties (`prop_fields`; anything
+not listed does not reach the node, which keeps stray fields such as debug
+values out) and a list of `RelSpec`: which row fields are really hidden
+relationships. A `RelSpec` can describe:
 
-- **скалярное поле** (`scalar=True`) — одно значение, не список
-  (`Repository.owner_login` → `OWNED_BY`);
-- **список голых id** (`tgt_id_field=None`) — например `department_ids`;
-- **список объектов с полями-свойствами связи** — `authored` →
-  `AUTHORED`, с `prop_fields=("position", "affiliation", ...)`;
-- **дискриминированное поле** (`guard`) — `mentions_links`/`repo_links`
-  ведут либо на `Repository`, либо на `LinkCandidate`, различаются по
-  `target_kind` — это два разных `RelSpec` на одно поле данных, каждый со
-  своим `guard`.
+- a **scalar field** (`scalar=True`): one value, not a list
+  (`Repository.owner_login` to `OWNED_BY`);
+- a **list of bare ids** (`tgt_id_field=None`), for example `department_ids`;
+- a **list of objects with relationship properties**: `authored` to
+  `AUTHORED`, with `prop_fields=("position", "affiliation", ...)`;
+- a **discriminated field** (`guard`): `mentions_links` / `repo_links` lead
+  either to `Repository` or to `LinkCandidate`, told apart by `target_kind`;
+  these are two `RelSpec`s on one data field, each with its own `guard`.
 
-`extract_node`/`extract_relationships` — чистые функции `dict -> dict`, ни
-одна не ходит в сеть, поэтому тестируются без живого Neo4j
+`extract_node` and `extract_relationships` are pure `dict -> dict` functions
+that never touch the network, so they are tested without a live Neo4j
 (`tests/unit/test_graph_extract.py`).
 
-Вложенные map/list-of-map (`funding`, `versions`, `affiliations`,
-`counts_by_year`) Neo4j как свойство узла не хранит — `extract_node`
-сериализует их в JSON-текст (`JSON_TEXT_FIELDS`).
+Neo4j cannot store nested maps or lists of maps (`funding`, `versions`,
+`affiliations`, `counts_by_year`) as node properties, so `extract_node`
+serializes them to JSON text (`JSON_TEXT_FIELDS`).
 
-## `jsonl_loader.py` — порядок загрузки
+## `jsonl_loader.py`: load order
 
-Жёсткое правило: сначала загружаются **все** узлы, только потом **все**
-связи. Если связь ссылается на узел, которого ещё нет в базе — она просто
-не создаётся (в лог идёт warning с точным числом непроставленных связей) —
-заглушка-узел не заводится никогда, это осознанное решение.
+Hard rule: **all** nodes are loaded first, then **all** relationships. If a
+relationship refers to a node that does not exist, it is simply not created
+(a warning with the exact count goes to the log). A placeholder node is never
+created; that is deliberate.
 
-`repo_links.jsonl` — не узел, обрабатывается отдельно
-(`extract_repo_links()`): для каждой ссылки сверяет URL с уже известными
-`Repository.url` (через `normalize_repo_url` — регистронезависимо, без
-`www.`/трейлинг-слэша/`.git`); совпало — `MENTIONS_LINK` на `Repository`;
-не совпало — заводится `LinkCandidate` на лету и связь на него. Это
-**реальный путь** загрузки ссылок в граф — `Publication.mentions_links`
-не читается вообще, несмотря на то, что рецепт для него в `NODE_REGISTRY`
-формально существует.
+`repo_links` is not a node and is handled separately
+(`extract_repo_links()`): each link's URL is compared with known
+`Repository.url` values (through `normalize_repo_url`: case-insensitive,
+ignoring `www.`, trailing slash and `.git`). A match gives `MENTIONS_LINK` to
+the `Repository`; otherwise a `LinkCandidate` is created on the fly and the
+link points to it. This is the **actual** path links take into the graph;
+`Publication.mentions_links` is not read at all, even though a recipe for it
+exists in `NODE_REGISTRY`.
 
-Строка `repositories.jsonl`, у которой стейдж `repositories` завершился
-статусом `failed` — пропускается: `name`/`url`-заглушка от неуспешного
-запроса к GitHub API не грузится в граф до успешного ретрая, а ссылка на
-неё остаётся `LinkCandidate`.
+A `repositories` row whose `repositories` stage ended as `failed` is skipped:
+the `name`/`url` stub from an unsuccessful GitHub API request is not loaded
+until a retry succeeds, and the link to it stays a `LinkCandidate`.
 
-В конце каждой загрузки — `promote_link_candidates_batch`: если
-предыдущий publish создал `LinkCandidate`, пока GitHub был недоступен, а
-теперь репозиторий успешно зарезолвился — старые связи переносятся на
-`Repository` с сохранением свойств, кандидат без других ссылок удаляется.
-И `fetch_merged_id_map` на каждый лейбл: если этот конкретный publish
-принёс id, который граф-дедуп уже когда-то схлопнул в другой узел —
-перефолдить сразу, не дожидаясь следующего `pauk dedup graph`.
+At the end of every load, `promote_link_candidates_batch` handles the case
+where an earlier publish created a `LinkCandidate` while GitHub was
+unavailable and the repository has since resolved: the old relationships move
+to the `Repository` with their properties, and a candidate left with no other
+links is deleted. `fetch_merged_id_map` runs for each label: if this publish
+brought an id that graph dedup had already folded into another node, it is
+folded again immediately, without waiting for the next `pauk dedup graph`.
 
-После загрузки и схлопывания алиасов `sync_implements_relationships_batch`
-сверяет существующие `IMPLEMENTS` с полным набором подтверждённых
-репозиториев публикации. Устаревшие рёбра удаляются только для публикаций,
-у которых `link_relevance` завершился как `completed`/`completed_empty`.
-Статус `failed` ничего не удаляет: временная ошибка модели не должна
-уничтожать последнее подтверждённое состояние графа.
+After loading and alias folding, `sync_implements_relationships_batch`
+reconciles existing `IMPLEMENTS` edges with the publication's full set of
+confirmed repositories. Stale edges are removed only for publications whose
+`link_relevance` ended as `completed` or `completed_empty`. A `failed` status
+removes nothing: a transient model error must not destroy the last confirmed
+state of the graph.
 
-## `client.py` — как говорим с Neo4j
+## `client.py`: talking to Neo4j
 
-Батчевый `UNWIND ... MERGE`, чанки по `CHUNK_SIZE = 2000`.
-`upsert_relationships_batch` возвращает число реально совпавших пар
-источник/цель — Neo4j-счётчик `relationships_created` для этого не
-годится: он остаётся `0`, когда `MERGE` находит уже существующую связь
-(повторный прогон), и это не ошибка, а норма.
+Batched `UNWIND ... MERGE`, in chunks of `CHUNK_SIZE = 2000`.
+`upsert_relationships_batch` returns the number of source/target pairs that
+actually matched. The Neo4j counter `relationships_created` is no good for
+this: it stays `0` when `MERGE` finds an existing relationship (a rerun),
+which is normal, not an error.
 
-Конструктор `Neo4jClient.__init__` не создаёт констрейнты — это отдельный
-явный шаг, `schema.create_constraints()`, до самого первого прогона
-данных. Пустой пароль — сразу понятный `ValueError`, а не поздняя ошибка
-аутентификации от самого драйвера при первом запросе.
+`Neo4jClient.__init__` does not create constraints. That is a separate
+explicit step, `schema.create_constraints()`, before the first data run. An
+empty password raises a clear `ValueError` instead of a late authentication
+error from the driver.
 
-`_fold_nodes_batch` — общий механизм схлопывания дублей (используется
-`merge_person_nodes_batch`/`merge_publication_nodes_batch`/
-`merge_repository_nodes_batch`, вызывается из `pauk/graph/dedup.py`):
-переносит все исходящие/входящие связи с дубля на канонический узел
-(существующая связь канонического узла побеждает, свойства дубля только
-заполняют пробелы — `SET new += properties(old); SET new += keep`,
-Cypher-идиома «не дать дублю выиграть»), поля самого узла — через
-Python-логику в `_merge_duplicate_properties` (списки — union с
-сохранением порядка, булевы — OR, JSON-списки — распаковка+union+запаковка
-обратно), затем `DETACH DELETE` дубля. Свойства узла нельзя слить прямо в
-Cypher тем же трюком, что и связи — это на мгновение выставило бы
-`canonical.id` в id дубля, пока дубль ещё существует, и упало бы на
-констрейнте уникальности.
+`_fold_nodes_batch` is the shared duplicate-folding mechanism (used by
+`merge_person_nodes_batch`, `merge_publication_nodes_batch` and
+`merge_repository_nodes_batch`, called from `pauk/graph/dedup.py`). It moves
+all outgoing and incoming relationships from the duplicate to the canonical
+node (an existing relationship of the canonical node wins; the duplicate's
+properties only fill gaps: `SET new += properties(old); SET new += keep`).
+Node fields go through Python logic in `_merge_duplicate_properties` (lists
+are unioned preserving order, booleans OR-ed, JSON lists unpacked, unioned and
+repacked), then the duplicate is `DETACH DELETE`d. Node properties cannot be
+merged directly in Cypher with the same trick: it would briefly set
+`canonical.id` to the duplicate's id while the duplicate still exists, and
+fail on the uniqueness constraint.
 
-## `audit.py` — журнал изменений
+## `audit.py`: change log
 
-`AuditedNeo4jClient` — прозрачная обёртка вокруг `Neo4jClient`: перехватывает
-только мутирующие методы (`upsert_*_batch`, `merge_*_batch`,
-`promote_link_candidates_batch`), всё остальное (`fetch_*`, `close`, доступ к
-`driver`) уходит в исходный клиент через `__getattr__`. На каждый перехваченный
-вызов — снапшот затронутых узлов/связей **до**, сам вызов, снапшот **после**,
-диф по полям, запись в `AuditSink`. Если исходный вызов бросает исключение —
-запись в лог не попадает вообще: аудит никогда не утверждает, что изменение
-случилось, если оно не случилось.
+`AuditedNeo4jClient` is a transparent wrapper around `Neo4jClient`. It
+intercepts only mutating methods (`upsert_*_batch`, `merge_*_batch`,
+`delete_*_batch`, `sync_implements_relationships_batch`,
+`promote_link_candidates_batch`); everything else (`fetch_*`, `close`, access
+to `driver`) goes to the wrapped client through `__getattr__`. For each
+intercepted call it takes a snapshot of the affected nodes and relationships
+**before**, makes the call, takes a snapshot **after**, diffs the fields and
+writes to an `AuditSink`. If the wrapped call raises, nothing is logged:
+the audit never claims a change that did not happen.
 
-Актор (кто меняет) и источник (откуда) обёртка берёт не из аргумента, а из
-`contextvars` — `actor_context("user:...", source="admin-ui")`. Так
-`jsonl_loader.py` и любой будущий CRUD-код не должны прокидывать актёра через
-каждую сигнатуру, достаточно одного `with` на весь вызывающий код.
+The actor (who) and source (from where) come from `contextvars`, not from an
+argument: `actor_context("user:...", source="admin-ui")`. The loader and any
+CRUD code do not have to pass the actor through every signature; one `with`
+around the calling code is enough.
 
-Батчи от `diff_threshold` (по умолчанию 50) строк и больше пишут одну грубую
-запись `bulk_write` (только счётчик) без подиффа — диффить каждый узел
-двухтысячного ETL-чанка удвоило бы число запросов почти без пользы для
-аудита. Батчи меньше порога получают полный `AuditEntry` на строку с
-`diff: dict[поле, (было, стало)]`.
+Batches of `diff_threshold` (default 50) rows or more write one coarse
+`bulk_write` entry (a count only) with no per-field diff: diffing every node
+of a two-thousand-row ETL chunk would double the number of queries for almost
+no audit value. Smaller batches get a full `AuditEntry` per row with `diff:
+dict[field, (before, after)]`. `created_at` and `updated_at`
+(`TECHNICAL_DIFF_FIELDS`) are excluded from the diff in all three branches
+(`created`, `updated`, `deleted`).
 
-`created_at`/`updated_at` (`TECHNICAL_DIFF_FIELDS`) исключены из дифа во всех
-трёх ветках — `created`, `updated` и `deleted` — иначе `created`/`deleted`
-записи тащат в диф технические поля, не относящиеся к реальному изменению.
-
-Синков два, и они работают вместе (`MultiAuditSink`, собирается в
+There are two sinks, used together (`MultiAuditSink`, assembled by
 `build_audit_sink`):
 
-- `JSONLAuditSink` — append-only JSONL в `audit_dir` (`{timestamp, actor,
-  source, operation, entity_type, entity_id, change_kind, diff}` на
-  строку). Остаётся, потому что его удобно грепать из консоли.
-- `MongoAuditSink` — коллекция `audit`, индексы по
-  `(entity_type, entity_id, timestamp)` и `(actor, timestamp)`. Файл не
-  умеет то, что нужно ленте изменений в панели: фильтры и пагинацию.
-  Значения, которые BSON не принимает (драйвер отдаёт свои типы вроде
-  `neo4j.time.DateTime`), сохраняются текстом — аудит не должен быть тем,
-  что уронит запись.
+- `JSONLAuditSink`: append-only JSONL, `audit.jsonl` in `audit_dir`
+  (`{timestamp, actor, source, operation, entity_type, entity_id,
+  change_kind, diff}` per line). It stays because it is easy to grep from a
+  shell. Without a Mongo database, only this sink is used.
+- `MongoAuditSink`: the `audit` collection, indexed by `(entity_type,
+  entity_id, timestamp)` and `(actor, timestamp)`. A file cannot do what the
+  panel's change feed needs: filtering and pagination. Values BSON cannot
+  accept (the driver returns its own types such as `neo4j.time.DateTime`) are
+  stored as text, since the audit must never be what crashes a write.
 
-`audited_client(config, db)` — то, чем следует открывать граф всюду, где
-он меняется. `publish graph` и `dedup graph` открывают его именно так:
-до этого обёртка существовала, но не была подключена ни к одному
-боевому пути, и массовые загрузки не оставляли следов вовсе.
+`audited_client(config, db)` is how the graph should be opened wherever it is
+modified. `publish graph` and `dedup graph` open it this way.
 
-Единственный незакрываемый именно JSONL-синком разрыв: аудит-запись пишется
-*после* коммита транзакции Neo4j, отдельным шагом — падение в этом узком окне
-оставит граф изменённым без аудит-записи. Закрыть до конца можно только
-записью аудита в той же транзакции, что и сама запись данных (будущий
-`Neo4jAuditSink`, пишущий `:AuditEvent`-узлы тем же `execute_write`).
+One gap remains: an audit entry is written *after* the Neo4j transaction
+commits, as a separate step, so a crash in that narrow window leaves a graph
+change with no entry. Closing it fully would require writing the audit in the
+same transaction as the data (a possible `Neo4jAuditSink` writing `:AuditEvent`
+nodes in the same `execute_write`; it does not exist).
 
-## `mutations.py` — ручная правка графа
+## `mutations.py`: manual graph edits
 
-Всё, что меняет граф в обход пайплайна, идёт через этот модуль: сегодня
-команды `pauk admin`, позже — маршруты панели. Снаружи остаются только
-разбор аргументов и `actor_context`; что считается допустимой правкой,
-описано здесь и больше нигде.
+Everything that changes the graph outside the pipeline goes through this
+module: the `pauk admin` commands and the panel's routes. Callers keep only
+argument parsing and `actor_context`; what counts as a valid edit is defined
+here and nowhere else.
 
-Почему отдельный слой, а не вызов `Neo4jClient` прямо из обработчика:
+Why a separate layer instead of calling `Neo4jClient` from a handler:
 
-- **Метки и типы связей попадают в Cypher интерполяцией.** Это
-  идентификаторы, параметром их передать нельзя — `client.py` собирает
-  `f"MERGE (n:{label} ...)"` строкой. Пока источник этих строк — наши
-  собственные литералы, всё в порядке; как только источником станет
-  HTTP-запрос, отсутствие белого списка превращается в инъекцию. Белые
-  списки (`NODE_FIELDS`, `RELATIONSHIPS`) выводятся из
-  `extract.py::NODE_REGISTRY`, а не переписываются рядом: поле, которое
-  загрузчик не публикует, нельзя проставить и руками.
-- **Одинаковые правила для всех вызывающих.** CLI и веб-форма, каждый со
-  своей валидацией, разъедутся.
-- **Одновременные редакторы.** `update_node` принимает `updated_at`,
-  который редактор видел при открытии, и отклоняет запись, если узел с
-  тех пор изменился. Иначе двое молча затирают друг друга, а в аудите это
-  выглядит как две законные правки.
+- **Labels and relationship types reach Cypher by interpolation.** They are
+  identifiers and cannot be passed as parameters; `client.py` builds
+  `f"MERGE (n:{label} ...)"` as a string. While the source of those strings
+  is our own literals, that is fine; once the source is an HTTP request,
+  the lack of a whitelist becomes an injection. The whitelists (`NODE_FIELDS`,
+  `RELATIONSHIPS`) are derived from `extract.py::NODE_REGISTRY` rather than
+  rewritten beside it: a field the loader does not publish cannot be set by
+  hand either.
+- **The same rules for all callers.** A CLI and a web form, each with its own
+  validation, would drift apart.
+- **Concurrent editors.** `update_node` accepts the `updated_at` the editor
+  saw when opening the record and rejects the write if the node has changed
+  since. Otherwise two people silently overwrite each other, and the audit
+  shows two legitimate edits.
 
-Служебные поля (`id`, `created_at`, `updated_at`) правке не подлежат: их
-проставляет сам `client.py`, и в список редактируемых они не попадают —
-иначе `pauk admin schema` обещал бы поле, которое любая запись отвергнет.
+Service fields (`id`, `created_at`, `updated_at`) cannot be edited: `client.py`
+sets them itself, and they are excluded from the editable list, otherwise
+`pauk admin schema` would promise a field every write rejects.
 
-`merge_nodes` дописывает `merged_ids` на канонический узел **до** фолда:
-без этой записи `fetch_merged_id_map` не удержит дубль, и следующий
-`publish` создаст его заново. Операция необратима — дубль удаляется
-вместе со связями, а диф аудита покрывает только свойства узлов, так что
-восстановить рёбра потом не из чего; CLI поэтому спрашивает подтверждение.
+`merge_nodes` appends `merged_ids` to the canonical node **before** folding:
+without that, `fetch_merged_id_map` cannot hold the duplicate down, and the
+next publish would create it again. The operation is irreversible: the
+duplicate is deleted with its relationships, and the audit diff covers node
+properties only, so there is nothing to restore the edges from. The CLI
+therefore asks for confirmation.
 
-## `overrides.py` — правки, переживающие публикацию
+## `overrides.py`: edits that survive publishing
 
-Neo4j — витрина, а не источник правды: `publish graph` льёт в него
-prepared-документы через `MERGE ... ON MATCH SET n += row.properties`.
-Поле, поправленное руками и записываемое пайплайном, при следующей
-публикации затрётся; удалённый руками узел воскреснет, потому что `MERGE`
-создаст его заново.
+Neo4j is a display copy, not the source of truth: `publish graph` pours the
+prepared documents into it with `MERGE ... ON MATCH SET n += row.properties`.
+A field corrected by hand and also written by the pipeline is overwritten on
+the next publish, and a node deleted by hand comes back because `MERGE`
+creates it again.
 
-Обратной стороны у публикации нет: она только добавляет и обновляет, а
-удалять — не её дело. Mongo при этом чистится сама (строка, которую не
-заявила ни одна группа, удаляется), так что витрина расходится с
-источником в одну сторону. Сводит их `pauk admin prune`
-([cli.md](cli.md)), отдельным шагом и по требованию.
+Publishing has no reverse side: it only adds and updates, and deleting is not
+its job. Mongo cleans itself (a row no group claims is deleted), so the
+display copy diverges from the source in one direction. `pauk admin prune`
+([cli.md](cli.md)) reconciles them, as a separate on-demand step.
 
-Поэтому ручная правка хранится **решением**, а не только значением в
-графе: по документу на цель в коллекции `graph_overrides`, и решения
-переприменяются после каждой публикации и каждого графового дедупа.
+So a manual edit is stored as a **decision**, not only as a value in the
+graph: one document per target in the `graph_overrides` collection, and the
+decisions are reapplied after every publish and every graph dedup.
 
-| Поле | Что значит |
+| Field | Meaning |
 |---|---|
-| `_id` | `node:<Label>:<id>` — детерминированный, правка того же узла обновляет один документ |
-| `op` | `set`, `delete` или `create` — заявка на запись, заведённую вручную |
-| `fields` | что проставить; **мержится** с уже записанным, а не заменяет его |
-| `created` | запись заведена вручную; в отличие от `op`, не перезаписывается удалением, по нему восстановление возвращает заявку |
-| `auto_value` | что было до первой правки — для экрана конфликтов |
-| `active` | снимается при откате; документ остаётся, чтобы панель показала, что правка была |
+| `_id` | `node:<Label>:<id>`, deterministic, so editing the same node updates one document |
+| `op` | `set`, `delete`, or `create` (a claim on a hand-made record) |
+| `fields` | what to set; **merged** with what is already stored, not replacing it |
+| `created` | the record was created by hand; unlike `op`, a delete does not overwrite it, and restoring uses it to bring the claim back |
+| `auto_value` | what the field held before the first edit, for the conflicts screen |
+| `snapshot` | for a deletion, every field the node carried, so restoring does not depend on the audit feed |
+| `active` | cleared on undo; the document stays so the panel can show that an edit existed |
 
-Применение (`apply_overrides`) обязано быть идемпотентным: значение
-сверяется с тем, что уже в графе, и запись не делается, если сходится.
-Иначе каждая публикация писала бы оверрайды заново и штамповала записи
-аудита об изменениях, которых не было.
+Applying (`apply_overrides`) must be idempotent: the value is compared with
+what is already in the graph and no write is made if they match. Otherwise
+every publish would rewrite the overrides and stamp audit entries for
+changes that never happened.
 
-`op: "delete"` работает и как надгробие: `load.py::_drop_tombstoned`
-выбрасывает такие строки **до** загрузки. Если фильтровать после, `MERGE`
-создавал бы узел, а переприменение удаляло — состояние верное, а в
-аудите каждый прогон появлялись бы создание и удаление, которых никто не
-делал.
+`op: "delete"` also works as a tombstone: `load.py::_drop_tombstoned` drops
+such rows **before** loading. If filtering happened afterwards, `MERGE` would
+create the node and reapplying would delete it, so the state would be right
+while every run showed a create and a delete nobody made.
 
-Точки вызова: сразу при сохранении правки (`pauk admin node set`), в
-конце `publish graph`, в конце `dedup graph` и вручную —
+Call sites: right when an edit is saved (`pauk admin node set`), at the end
+of `publish graph`, at the end of `dedup graph`, and manually with
 `pauk admin overrides apply`.
 
-**Заявки.** `op: "create"` у узла и `op: "link"` у ребра — не указание, а
-заявка: запись или связь добавлена человеком. Переприменять нечего —
-загрузчик никогда не удаляет то, о чём не знает, — но без заявки
-`pauk admin prune` не отличит сделанное вручную от того, что пайплайн
-когда-то создал и перестал заявлять. `apply_overrides` заявки на связи
-пропускает, у заявки на узел переприменяет поля: это значения, которые
-выбрал человек. Правка поля у заведённой вручную записи остаётся заявкой
-(`op` не перезаписывается на `set`): иначе отмена правки сняла бы заявку, и
-следующая сверка удалила бы запись.
+**Claims.** `op: "create"` on a node and `op: "link"` on an edge are not
+instructions but claims: the record or link was added by a person. There is
+nothing to reapply (the loader never deletes what it does not know about),
+but without a claim `pauk admin prune` cannot tell a hand-made record from
+something the pipeline once created and stopped asserting. `apply_overrides`
+skips claims on links; for a claim on a node it reapplies the fields, which
+are values a person chose. Editing a field of a hand-made record keeps it a
+claim (`op` is not overwritten with `set`); otherwise undoing the edit would
+drop the claim and the next reconciliation would delete the record.
 
-**Связи.** Удаление ребра записывается указанием (`kind: "rel"`,
-`op: "delete"`): удалённое пересоздаётся `MERGE` из той же prepared-строки, поэтому
-`load_prepared_rows` принимает набор `dropped_relationships` и
-выбрасывает такие пары перед загрузкой — по той же причине, что и
-надгробия узлов. Ключ решения — пятёрка
-`(метка источника, тип, метка цели, id источника, id цели)`, где id цели
-берётся в том виде, в каком её ищет загрузчик: `url` для репозитория,
-`login` для GitHub-профиля.
+**Relationships.** Deleting an edge is recorded as an instruction (`kind:
+"rel"`, `op: "delete"`): a deleted edge would be recreated by `MERGE` from the
+same prepared row, so `load_prepared_rows` accepts a set
+`dropped_relationships` and discards those pairs before loading, for the same
+reason as node tombstones. The decision key is the five-tuple `(source label,
+type, target label, source id, target id)`, where the target id is in the form
+the loader looks it up by: `url` for a repository, `login` for a GitHub
+profile.
 
-Порядок в CLI важен: правка сначала уходит в граф и только потом
-записывается решением. Иначе отклонённая правка — по конфликту версий
-или валидацией — оставила бы решение, которое следующая публикация
-применила бы молча, сделав то, в чём человеку только что отказали.
+Order in the CLI matters: the edit goes to the graph first and only then is
+recorded as a decision. Otherwise a rejected edit (version conflict or
+validation) would leave a decision that the next publish silently applies,
+doing exactly what the person was just refused.
 
 ## `csv_loader.py`
 
-Параллельный путь для общего CSV-формата (`id/labels/properties`), держится
-про запас. Сегодня ни один этап пайплайна такой CSV не производит — грузить
-нечем, но код рабочий, не мёртвый по конструкции.
+A parallel path for a shared CSV format (`id/labels/properties`), kept in
+reserve. No pipeline stage produces such a CSV today, so there is nothing to
+load with it, but the code works.
 
-## `dedup.py` — дедуп по всему графу
+## `dedup.py`: graph-wide dedup
 
-Отдельный документ — [pipeline/dedup.md](pipeline/dedup.md), там же и
-про дедуп внутри одной группы: правила слияния общие, различается только
-источник строк (Cypher вместо MongoDB) и место записи результата.
+See [pipeline/dedup.md](pipeline/dedup.md), which also covers in-group dedup.
+The merge rules are shared; only the source of rows (Cypher instead of
+MongoDB) and the place where the result is written differ.
 
 ## `load.py`
 
-Точка входа `pauk publish graph` — `load_jsonl_group(config, mongo_db,
-group)` читает prepared-коллекции группы из MongoDB
-(`PreparedStore.read_rows`) и передаёт строки в
-`jsonl_loader.load_prepared_rows` (общая функция, источник строк ей не
-важен). Отдельно — `uv run python -m pauk.graph.load --dir <папка>`
-напрямую: самостоятельный инструмент для внешнего CSV-экспорта, не
-завязан на MongoDB, использует `csv_loader.load_csv_dir`. Оба пути
-создают констрейнты, затем грузят, закрывают соединение в `finally`.
+The entry point of `pauk publish graph`: `load_jsonl_group(config, mongo_db,
+group)` reads the group's prepared collections from MongoDB
+(`PreparedStore.read_rows`) and passes the rows to
+`jsonl_loader.load_prepared_rows` (a shared function that does not care where
+rows come from). Separately, `uv run python -m pauk.graph.load --dir
+<folder>` runs a standalone tool for an external CSV export, with no MongoDB,
+using `csv_loader.load_csv_dir`. Both paths create constraints, then load,
+and close the connection in `finally`.
 
 ## `urls.py`
 
-Единственная функция вне `graph/`, `storage/` и `pipeline/`, которую
-использует и пайплайн, и граф-слой: `normalize_repo_url()` — ключ
-сравнения URL репозитория (регистр, `www.`, трейлинг-слэш, `.git` —
-всё это косметика, без нормализации один и тот же репозиторий расщепился
-бы на `Repository` и `LinkCandidate`).
+The one function outside `graph/`, `storage/` and `pipeline/` used by both
+the pipeline and the graph layer: `normalize_repo_url()`, the comparison key
+for repository URLs (case, `www.`, trailing slash and `.git` are cosmetic;
+without normalization the same repository would split into a `Repository` and
+a `LinkCandidate`).

@@ -1,8 +1,7 @@
 """Unit tests for export.py: cypher_dict, retry logic, load_db's table contract.
 
-Stub driver only, no real Neo4j - these tests catch shape/logic regressions
-in this module's own code, not whether a query is structurally valid against
-the real graph model (that needs a real database, out of scope here).
+Stub driver only, so these catch shape/logic regressions, not whether a query
+is valid against the real graph model.
 """
 
 from __future__ import annotations
@@ -108,19 +107,16 @@ class LoadDbTest(unittest.TestCase):
         self.assertEqual(set(db.keys()), set(TABLE_ORDER))
 
     def test_maps_each_query_response_to_its_own_table(self):
-        # Responses are tagged with their table name, not real field data - a
-        # stub driver can't verify actual Cypher field names, only that
-        # response N lands under the right dict key (a real, easy mistake
-        # with thirteen near-identical cypher_dict() calls in a row).
+        # Tagged with table names: a stub driver can't verify Cypher field names,
+        # only that response N lands under the right key.
         responses = [[{"table": name}] for name in TABLE_ORDER]
         db = load_db(SequentialFakeDriver(responses))
         for name in TABLE_ORDER:
             self.assertEqual(db[name], [{"table": name}])
 
     def test_person_queries_filter_by_property_not_legacy_label(self):
-        # Regression guard: load_db() used to MATCH (p:Person:Itmo), a label
-        # the ingestion pipeline stopped writing after the is_itmo migration -
-        # any author added afterward was silently invisible to this query.
+        # The pipeline no longer writes the :Itmo label, so a query matching it
+        # would silently miss every new author.
         driver = SequentialFakeDriver([[] for _ in TABLE_ORDER])
         load_db(driver)
         combined = " ".join(driver.queries)

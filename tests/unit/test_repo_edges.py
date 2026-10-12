@@ -1,5 +1,4 @@
-"""Pipeline helpers for repositories. The map-side repository edges and
-clusters of the old GUI (#155) go with its port to pauk/gui/web."""
+"""Pipeline helpers for repositories."""
 
 import unittest
 

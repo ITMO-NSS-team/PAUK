@@ -19,8 +19,7 @@ from tests.unit.test_admin_nodes import FakePanelGraph
 class JobsPageTest(unittest.TestCase):
     """The queue and the history, read-only.
 
-    Starting a run is a later step; until then the page exists so that a
-    person looking at a field can tell whether a publish is rewriting it.
+    The page lets a person looking at a field tell whether a publish is rewriting it.
     """
 
     def setUp(self):
@@ -148,8 +147,8 @@ BANNER = "переписывается"
 class GraphBusyBannerTest(unittest.TestCase):
     """The strip that warns an editor, on whatever page they are on.
 
-    Decided deliberately: warn, do not block. The edit goes through, and if
-    the publish covers it the disagreement shows up on the decisions screen.
+    It warns and does not block: the edit goes through, and if the publish covers it the disagreement
+    shows up on the decisions screen.
     """
 
     def setUp(self):
@@ -181,8 +180,8 @@ class GraphBusyBannerTest(unittest.TestCase):
         self.assertIn("Идёт пересборка карты", self.client.get("/nodes/Person/A1").text)
 
     def test_it_shows_up_on_pages_that_know_nothing_about_jobs(self):
-        # The strip lives in the layout, so a screen written before jobs
-        # existed warns too.
+        # The strip lives in the layout, so every screen warns, including
+        # ones that know nothing about jobs.
         self.start()
         for path in ("/", "/audit", "/overrides", "/nodes/Person"):
             with self.subTest(path=path):
@@ -234,7 +233,7 @@ class SchedulingTest(unittest.TestCase):
     """Putting a run in the queue from the panel.
 
     The form writes a document and nothing else: the worker does the work,
-    so there is no ordering to get wrong here — the run was either asked
+    so there is no ordering to get wrong here - the run was either asked
     for or it was not.
     """
 
@@ -262,7 +261,7 @@ class SchedulingTest(unittest.TestCase):
         """The complaint a mis-filled form comes back with.
 
         A wrong period sends somebody back to the form with everything they
-        typed still there, not to a page with a status code on it — so the
+        typed still there, not to a page with a status code on it - so the
         answer is a redirect carrying the reason, not a 400.
         """
         response = self.post(**data)
@@ -346,7 +345,7 @@ class SchedulingTest(unittest.TestCase):
 
     def test_an_empty_form_says_what_to_fill_in(self):
         # The commonest mistake: press the button without touching the
-        # dates. It used to answer with raw JSON and lose the form.
+        # dates. The form must survive it.
         self.assertIn("укажите период", self.refused(kind="collect"))
 
     def test_the_complaint_is_shown_on_the_page_it_returns_to(self):
@@ -456,8 +455,8 @@ class CancelTest(unittest.TestCase):
     def offered(self, action):
         """Job ids the page offers a given button for.
 
-        Read per form, not off the whole page: several buttons carry a
-        job_id now, and looking for the id alone finds any of them.
+        Read per form, not off the whole page: several buttons carry a job_id, and looking for the id
+        alone finds any of them.
         """
         body = self.client.get("/jobs").text
         return re.findall(
@@ -531,8 +530,8 @@ class DedupConfirmationTest(unittest.TestCase):
 class PipelineOrderTest(unittest.TestCase):
     """The four buttons are not four equal choices.
 
-    Three of them are a sequence — nothing reaches the graph until it is
-    published, and nothing reaches the map until it is rebuilt — and the
+    Three of them are a sequence - nothing reaches the graph until it is
+    published, and nothing reaches the map until it is rebuilt - and the
     page has to say so, or a person picks one at random.
     """
 
@@ -598,8 +597,7 @@ class PipelineOrderTest(unittest.TestCase):
                 self.assertIn(marker, page)
 
     def test_the_cards_are_not_glued_together(self):
-        # Three cards run one after another, and the gap used to be an
-        # inline style on each — it went with the card that carried it.
+        # Three cards run one after another and need a gap between them.
         from pathlib import Path
         css = Path("pauk/admin/static/panel.css").read_text(encoding="utf-8")
         self.assertIn(".card + .card", css)
@@ -644,7 +642,7 @@ class PipelineOrderTest(unittest.TestCase):
 class MapOptionsTest(unittest.TestCase):
     """The seed and the flag are checked by the payload model, not converted
     by hand: `int("null")` raises ValueError, and nothing above the route
-    turns that into an answer — the request ended in a 500."""
+    turns that into an answer, so the request would end in a 500."""
 
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
@@ -687,9 +685,8 @@ class MapOptionsTest(unittest.TestCase):
 class SilentJobOnThePageTest(unittest.TestCase):
     """A run whose worker went away, seen from the panel.
 
-    Clearing it needs a worker, and the complaint came from a panel with no
-    worker running at all: the page has to say so on its own, or the row
-    sits under "under way" claiming to be in progress for ever.
+    Clearing it needs a worker. With none running the page has to say so on its own, or the row sits
+    under "under way" claiming to be in progress for ever.
     """
 
     def setUp(self):
@@ -722,9 +719,8 @@ class SilentJobOnThePageTest(unittest.TestCase):
         self.assertIn("не отвечает", self.page())
 
     def test_it_is_marked_even_after_somebody_asked_it_to_stop(self):
-        # This is the shape the complaint arrived in: cancelled, and then
-        # sitting there saying it had been asked to stop, with nothing
-        # ever moving it on.
+        # Cancelled, and then sitting there saying it had been asked to
+        # stop, with nothing ever moving it on.
         store.request_cancel(self.db, self.job.id)
         self.go_quiet()
         self.assertIn("не отвечает", self.page())

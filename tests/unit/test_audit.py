@@ -19,10 +19,11 @@ from pauk.settings import Settings
 
 
 class FakeNeo4jClient:
-    """Records calls instead of touching a real driver — no `driver`
-    attribute on purpose, so a test fails loudly if AuditedNeo4jClient
-    ever tries to reach through to a real session for something other
-    than the two snapshot methods we patch below."""
+    """Records calls instead of touching a real driver.
+
+    It has no `driver` attribute on purpose, so a test fails loudly if AuditedNeo4jClient reaches
+    through to a real session for anything other than the two snapshot methods patched below.
+    """
 
     def __init__(self):
         self.calls: list[tuple[str, tuple]] = []
@@ -176,13 +177,12 @@ class UpsertRelationshipsDiffTest(unittest.TestCase):
 
 
 class LinkWithoutPropertiesTest(unittest.TestCase):
-    """Most relationships carry no properties, and used to leave no trace.
+    """Most relationships carry no properties, but changes to them must still be journaled.
 
-    BELONGS_TO, IMPLEMENTS, PART_OF and the rest are bare edges: the diff
-    between "there is one" and "there is none" has no fields in it, and an
-    entry with an empty diff was dropped as a no-op write. Linking a person
-    to a department by hand, or unlinking them, was invisible in the
-    journal — the one screen that exists to answer "who did this".
+    BELONGS_TO, IMPLEMENTS, PART_OF and the rest are bare edges: the diff between "there is one" and
+    "there is none" has no fields in it, and an entry with an empty diff would be dropped as a no-op
+    write. Linking a person to a department by hand, or unlinking them, must show in the journal, the
+    one screen that exists to answer "who did this".
     """
 
     def setUp(self):
@@ -471,7 +471,7 @@ class FixedActorTest(unittest.TestCase):
 
     def test_a_pinned_actor_wins_over_the_context(self):
         # The panel opens its client in a dependency and edits in the
-        # route — different contexts, so a contextvar set in the first is
+        # route - different contexts, so a contextvar set in the first is
         # not visible in the second, and every entry read "unknown".
         client, sink = self.pinned(actor="user:roman", source="admin-ui")
         with patch.object(AuditedNeo4jClient, "_fetch_node_props",
@@ -494,10 +494,9 @@ class FixedActorTest(unittest.TestCase):
 class SinkFailureDoesNotUndoTheChangeTest(unittest.TestCase):
     """The journal records a change; it is not a condition for making one.
 
-    Letting the sink raise meant a mutation already written to Neo4j came
-    back as an error from inside `update_node`, before the caller could
-    record its decision or put the graph back. The change stayed, with no
-    override and no journal entry, and the request looked like it failed.
+    If the sink raised, a mutation already written to Neo4j would come back as an error from inside
+    `update_node`, before the caller could record its decision or put the graph back. The change would
+    stay, with no override and no journal entry, and the request would look like it failed.
     """
 
     class DeadSink:

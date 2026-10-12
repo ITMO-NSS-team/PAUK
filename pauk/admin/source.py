@@ -1,17 +1,8 @@
-"""What the source said about one record, run by run.
+"""What the pipeline decided about one record, run by run.
 
-The panel already shows what happened to a record in the graph: who edited
-it, what a publish overwrote. This is the other half — what the pipeline
-itself decided about the prepared row the graph is built from. Every time a
-run really changes a row (not a no-op re-run), the whole previous document
-is filed in `revisions`, and until now nothing could open that archive.
-
-Two different questions about one record, which is why they are two blocks
-and not one. "Who changed the ORCID" is the journal; "when did the ORCID
-appear at all, and which run brought it" is here.
-
-Reading only. The archive is written by `PreparedStore` and shortened by
-`pauk admin trim`.
+Reads the `revisions` archive of previous prepared rows (written by
+`PreparedStore`, shortened by `pauk admin trim`). The audit journal answers
+"who changed the ORCID"; this answers "which run brought it".
 """
 
 from __future__ import annotations
@@ -39,10 +30,8 @@ BOOKKEEPING = frozenset({"_id", "_version", "groups", "_processing"})
 def _shown(value: Any) -> Any:
     """One field value, short enough to read in a table.
 
-    A person's publications or a work's funding are lists of objects that
-    change on most runs: printed whole they bury the one field somebody
-    came to look at, and clipped they say nothing either. The count is the
-    part that reads.
+    Lists and dicts change on most runs and would bury the field of interest,
+    so only their size is shown.
     """
     if isinstance(value, list):
         return f"{len(value)} элем." if value else "пусто"
@@ -63,11 +52,8 @@ def _between(before: dict, after: dict) -> list[tuple[str, tuple[Any, Any]]]:
 def history(db: Database, label: str, node_id: str, limit: int = PAGE) -> list[dict]:
     """Every run that changed this record's row, newest first.
 
-    The archive holds the state *before* each replacement, so a change is
-    the gap between two of them — and the newest gap is between the last
-    archived version and the row as it stands now. Without the live row the
-    most recent change, the one somebody is usually asking about, would be
-    the one missing.
+    The archive holds the state *before* each replacement, so the newest
+    change is the gap between the last archived version and the live row.
 
     Args:
         label: Node label as the panel knows it; the prepared entity is

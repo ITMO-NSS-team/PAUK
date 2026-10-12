@@ -1,13 +1,7 @@
-"""Tuning constants for pauk/gui, grouped by which part of the
-layout/build they configure - the group name says what a value is for
-without needing to read further.
+"""Tuning constants for pauk/gui, grouped by which part of the layout/build they configure.
 
-Plain frozen dataclasses, no env var overrides - nobody tunes ForceAtlas2
-iteration counts through the environment, easier to just edit the number here.
-
-Constants needed by exactly one function, with no variation between calls
-(e.g. the frontend coordinate space, jitter sigma when blending stranded
-nodes) live locally next to that function in layout.py instead.
+Plain frozen dataclasses with no env overrides. Constants used by exactly one
+function live next to it in layout.py instead.
 """
 
 from __future__ import annotations
@@ -49,9 +43,7 @@ FA2_ITERATIONS = Fa2Iterations()
 
 @dataclass(frozen=True)
 class SyntheticDeptEdges:
-    """Weak synthetic "same department" edges - not real connections, a hint
-    for layout so a department doesn't sprawl into a shapeless cloud (see
-    `layout.py::sparse_dept_edges`)."""
+    """Weak synthetic "same department" edges that keep a department from sprawling (see `layout.py::sparse_dept_edges`)."""
 
     dept_edge_k: int = 3
     """How many random department colleagues each node (author) connects to."""
@@ -72,9 +64,7 @@ SYNTHETIC_DEPT_EDGES = SyntheticDeptEdges()
 
 @dataclass(frozen=True)
 class MinSeparation:
-    """Minimum distance between nodes - a pass after layout itself
-    (`layout.py::spread_min_distance`), so coincident points don't clump
-    into a solid blob."""
+    """Minimum distance between nodes, applied after layout (`layout.py::spread_min_distance`)."""
 
     authors: float = 5.0
     """Authors are usually far more numerous than publications on the map - points need more breathing room to stay visually distinct."""
@@ -89,8 +79,7 @@ MIN_SEPARATION = MinSeparation()
 
 @dataclass(frozen=True)
 class RepoEdges:
-    """Repository-repository edges: one weight per signal, ordered by how
-    much the signal says about the code itself (see `layout.py::repo_edge_signals`)."""
+    """Repository-repository edge weights, ordered by how much a signal says about the code (see `layout.py::repo_edge_signals`)."""
 
     w_pub: float = 3.0
     """Both implement the same publication."""
@@ -111,11 +100,9 @@ class RepoEdges:
 REPO_EDGES = RepoEdges()
 
 
-# --- Display placeholders ------------------------------------------------------
-# A trio for the same synthetic bucket "publication/author/repository with no
-# known department" (see departments.py::DepartmentAssigner) - not a real
-# department, so it doesn't go through golden_color() (departments.py) and
-# gets its own neutral gray, unmistakable for a real one.
+# Placeholders for the synthetic bucket "no known department" (see
+# departments.py::DepartmentAssigner). It is not a real department, so it
+# skips golden_color() and gets a neutral gray.
 NO_DEPT_NAME = "Без департамента"
 NO_DEPT_NAME_EN = "No department"
 NO_DEPT_COLOR = "#8a8f98"

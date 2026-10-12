@@ -1,11 +1,8 @@
 """Wiring shared by every route: the database, the graph, the caller.
 
-The rule this module enforces is the one that matters most for the panel.
-Neo4j is not reachable from outside the perimeter, so the panel is the
-only way to write to the graph, and every write has to go through
-`pauk.graph.mutations`. Routes therefore never receive a raw driver —
-they receive the audited client, and the audit sink records who did what
-while `actor_context` is held.
+Neo4j is not reachable from outside the perimeter, so every write goes through
+`pauk.graph.mutations`. Routes never receive a raw driver, only the audited
+client, which records who did what.
 """
 
 from __future__ import annotations
@@ -47,11 +44,8 @@ def get_session(request: Request, db: Annotated[Database, Depends(get_db)]) -> d
     """The caller's session, or None when there is not one.
 
     Raises:
-        HTTPException: 503 when Mongo cannot be reached. Sessions live
-            there, so an unreachable Mongo is not an anonymous visitor —
-            answering None would bounce somebody to a login page that
-            cannot work either, and every page would meanwhile have shown
-            a stack trace.
+        HTTPException: 503 when Mongo cannot be reached. Sessions live there,
+            so an unreachable Mongo is not an anonymous visitor.
     """
     try:
         return read_session(db, request.cookies.get(COOKIE))
@@ -64,9 +58,7 @@ def require_user(session: Annotated[dict | None, Depends(get_session)]) -> User:
     """The signed-in caller.
 
     Raises:
-        HTTPException: 401 when there is no live session. The panel shows
-            personal data and is the only door to the graph, so this is
-            the default for every route except the login page itself.
+        HTTPException: 401 when there is no live session.
     """
     if session is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "sign in first")
@@ -83,19 +75,13 @@ def require_editor(user: Annotated[User, Depends(require_user)]) -> User:
 def require_stores(db: Annotated[Database, Depends(get_db)]) -> None:
     """Refuse a write when the store that has to record it is not answering.
 
-    A change to the graph is only protected by a decision in Mongo, and the
-    two are separate databases with no transaction across them.
-
-    This does not close that gap and is not meant to: Mongo can still fail
-    in the moment between this check and the write. What it does catch is
-    the sustained case — Mongo down or unreachable — which becomes a clean
-    refusal with the graph untouched, instead of a change nobody recorded.
-    The moment-of-failure case is caught afterwards, by putting the graph
+    A graph change is protected only by a decision in Mongo, and there is no
+    transaction across the two. This catches sustained Mongo outages; a failure
+    in the instant between check and write is handled by putting the graph
     back (see `pauk.admin.nodes._record`).
 
     Raises:
-        HTTPException: 503, so the person is told to wait rather than shown
-            a stack trace.
+        HTTPException: 503.
     """
     try:
         db.client.admin.command("ping")
@@ -110,10 +96,8 @@ def require_admin(user: Annotated[User, Depends(require_user)]) -> User:
     """A caller allowed to set the pipeline going.
 
     Raises:
-        HTTPException: 403 for anyone else. Editing one record is a change
-            somebody can look at and undo; starting a publish rewrites the
-            whole graph, and a collection run spends hours of somebody's
-            API quota.
+        HTTPException: 403 for anyone else. A publish rewrites the whole graph
+            and a collection run spends hours of API quota.
     """
     if not user.can_run:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
@@ -125,9 +109,8 @@ async def require_csrf(request: Request,
                        session: Annotated[dict | None, Depends(get_session)]) -> None:
     """Reject a form that did not come from our own page.
 
-    The session cookie travels with a cross-site POST by itself, so it
-    cannot prove where the request came from; a token the other site has
-    no way to read can. Read the body through the request so the check
+    The session cookie travels with a cross-site POST, so only a token the
+    other site cannot read proves origin. The body is read here so the check
     runs before the route sees anything.
     """
     if session is None:
@@ -140,18 +123,11 @@ async def require_csrf(request: Request,
 def graph_for(request: Request, user: Annotated[User, Depends(require_user)]) -> Iterator:
     """An audited graph client with the caller's name attached.
 
-    The driver is shared by the whole application and the audited wrapper
-    is per request. That became possible once the actor moved onto the
-    wrapper: while it was read from a contextvar, a shared driver would
-    have reported whoever was set last, so each request opened and tore
-    down its own connection pool — twice on the overview, which counts
-    nodes through a second client of its own.
+    The driver is shared by the application; the audited wrapper is per request.
 
     Raises:
-        HTTPException: 503 when the graph cannot be reached — no password
-            configured, or nothing listening. Both are setup problems, not
-            programming errors, and answering them with a stack trace tells
-            the person nothing about what to fix.
+        HTTPException: 503 when the graph cannot be reached (no password
+            configured, or nothing listening).
     """
     try:
         client = request.app.state.graph.audited(actor=user.actor, source="admin-ui")
@@ -171,10 +147,8 @@ def graph_for(request: Request, user: Annotated[User, Depends(require_user)]) ->
 def graph_if_up(request: Request, user: Annotated[User, Depends(require_user)]) -> Iterator:
     """The audited client, or None when the graph is not answering.
 
-    For a route that has something worth doing either way. Answering a
-    review question is one: the answer is written to Mongo and the rules
-    read it on their next run, so an unreachable Neo4j costs the merge that
-    could have happened now, not the decision itself.
+    For routes that are still useful without the graph: a review answer is
+    written to Mongo and read by the rules on their next run.
     """
     try:
         client = request.app.state.graph.audited(actor=user.actor, source="admin-ui")
@@ -188,15 +162,10 @@ def graph_if_up(request: Request, user: Annotated[User, Depends(require_user)]) 
         client.close()
 
 
-# Named aliases so routes read as `db: Db`, not the whole Annotated form.
 logger = logging.getLogger("pauk.admin")
 
 def plural(count: int, one: str, few: str, many: str) -> str:
-    """Russian noun agreement: 1 узел, 2 узла, 5 узлов.
-
-    Counts are shown beside every label on the overview, and "1 полей"
-    reads as a bug in the page rather than as a number.
-    """
+    """Russian noun agreement: 1 узел, 2 узла, 5 узлов."""
     if count % 10 == 1 and count % 100 != 11:
         return one
     if 2 <= count % 10 <= 4 and not 12 <= count % 100 <= 14:
@@ -207,9 +176,7 @@ def plural(count: int, one: str, few: str, many: str) -> str:
 def moment(value) -> str:
     """A stored time as "2026-08-28 14:03:11", or "" when there is none.
 
-    Job times are datetimes, unlike the feed's isoformat strings, and a
-    bare str() of one carries microseconds and a timezone that say nothing
-    to a reader.
+    Job times are datetimes; a bare str() carries microseconds and a timezone.
     """
     if value is None:
         return ""
@@ -219,9 +186,7 @@ def moment(value) -> str:
 def ago(value) -> str:
     """How long ago, in words: "только что", "вчера в 18:24", "23.09 в 18:24".
 
-    A summary is read at a glance, and a stamp like 2026-09-23 18:24:00
-    makes the reader do the subtraction. Takes both shapes the stores keep:
-    a datetime from the queue, an ISO string from the health snapshot.
+    Takes a datetime (from the queue) or an ISO string (from the health snapshot).
     """
     if not value:
         return ""
@@ -244,12 +209,8 @@ def ago(value) -> str:
 def running_job(request: Request) -> dict:
     """The graph job under way, for the warning strip on every page.
 
-    A context processor rather than an argument threaded through every
-    route: the strip belongs to the layout, and a route that forgot to pass
-    it would silently stop warning.
-
-    Reading the queue must never be what takes the panel down, so a failure
-    here leaves the strip off rather than the page.
+    A context processor so no route can forget to pass it. A queue failure
+    leaves the strip off rather than taking the page down.
     """
     db = getattr(request.app.state, "db", None)
     if db is None:
@@ -272,8 +233,7 @@ templates.env.filters["ago"] = ago
 def job_words(kind) -> str:
     """A job kind in the words the panel uses for it.
 
-    Imported late: `job_routes` reads `templates` from here, so naming it
-    at the top would close the circle.
+    Imported late because `job_routes` reads `templates` from here.
     """
     from pauk.admin.job_routes import KINDS
     return KINDS.get(kind, str(kind))
@@ -289,8 +249,7 @@ LONG_VALUE = 160
 def safe_path(target: str, default: str = "/") -> str:
     """A path from the query string, refused if it leaves this site.
 
-    Unchecked, `?next=https://evil.example` turns a redirect or a "back"
-    link into one that looks like ours and lands somewhere else.
+    Guards against `?next=https://evil.example` open redirects.
     """
     if not target.startswith("/") or target.startswith("//"):
         return default
@@ -298,17 +257,16 @@ def safe_path(target: str, default: str = "/") -> str:
 
 
 def is_long(value) -> bool:
-    """Whether a value should arrive folded rather than be folded on sight.
+    """Whether a value should arrive folded.
 
-    Decided here and not in the browser. The script used to measure every
-    value after the page had already been painted, so a screenful of article
-    text appeared in full and then collapsed under the reader.
+    Decided server-side so long text does not paint in full and then collapse.
     """
     return value is not None and len(str(value)) > LONG_VALUE
 
 
 templates.env.filters["is_long"] = is_long
 
+# Named aliases so routes read as `db: Db`, not the whole Annotated form.
 Db = Annotated[Database, Depends(get_db)]
 Config = Annotated[Settings, Depends(get_config)]
 Session = Annotated[dict | None, Depends(get_session)]

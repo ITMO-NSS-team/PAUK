@@ -25,8 +25,7 @@ class FitCoordsTest(unittest.TestCase):
         self.assertEqual(fit_coords({}), {})
 
     def test_scales_into_coordinate_bounds(self):
-        """Coordinate spread can be anything (FA2 doesn't constrain itself
-        to any range) - the output must land in [30, 970], the frontend space."""
+        """FA2 coordinates can have any range; the output must land in [30, 970], the frontend space."""
         pos = {"a": (-500.0, 1000.0), "b": (500.0, -1000.0), "c": (0.0, 0.0)}
         fitted = fit_coords(pos)
         for x, y in fitted.values():
@@ -36,20 +35,18 @@ class FitCoordsTest(unittest.TestCase):
             self.assertLessEqual(y, 970.0)
 
     def test_accepts_numpy_like_sequences_not_just_tuples(self):
-        """Layout positions can arrive as numpy arrays, not tuples -
-        fit_coords must accept both."""
+        """Layout positions can arrive as numpy arrays, not tuples."""
         fitted = fit_coords({"a": [1.0, 2.0], "b": [3.0, 4.0]})
         self.assertEqual(set(fitted), {"a", "b"})
 
 
 class SpreadMinDistanceTest(unittest.TestCase):
     def test_coincident_points_get_pushed_apart(self):
-        """Stopping threshold is max(2, n // 2000): "a couple of straggler
-        pairs out of thousands is fine". With only 2 points this allows not
-        moving them at all (1 possible pair <= the threshold of 2) - not a
-        bug, a heuristic tuned for real-world scale. So the test uses more
-        points than the threshold can hide, and checks the final count of
-        too-close pairs rather than the distance within one specific pair."""
+        """Stopping threshold is max(2, n // 2000): a couple of straggler pairs is fine.
+
+        With only 2 points the threshold allows not moving them at all, so the
+        test uses more points than it can hide and checks the final count of
+        too-close pairs."""
         pos = {str(i): (500.0, 500.0) for i in range(8)}
         result = spread_min_distance(pos, d_min=10.0, seed=1)
         coords = list(result.values())
@@ -139,8 +136,7 @@ class Fa2LayoutTest(unittest.TestCase):
         self.assertEqual(fa2_layout(graph, 100, seed=42), fa2_layout(graph, 100, seed=42))
 
     def test_does_not_touch_global_random_state(self):
-        """The seed must not leak through the global random/numpy state -
-        the next run of anything else stays unaffected."""
+        """The seed must not leak through the global random/numpy state."""
         import numpy as np
 
         graph, _, _ = self.two_communities()
@@ -180,8 +176,7 @@ class Fa2BlendedLayoutTest(unittest.TestCase):
         self.assertEqual(pos1, pos2)
 
     def test_isolated_singletons_without_any_edges_still_get_positions(self):
-        """No giant component (no edges at all) - everything goes through
-        singleton blending, must not raise."""
+        """No giant component (no edges at all): everything goes through singleton blending."""
         pos, (n_giant, e_giant, n_small, n_single) = fa2_blended_layout({}, {"a", "b", "c"}, max_iter=10, seed=1)
         self.assertEqual(set(pos), {"a", "b", "c"})
         self.assertEqual((n_giant, e_giant, n_small), (0, 0, 0))
@@ -189,10 +184,10 @@ class Fa2BlendedLayoutTest(unittest.TestCase):
 
 
 class ForceAtlasLayouterTest(unittest.TestCase):
-    """`ForceAtlasLayouter` is a thin wrapper around fa2_blended_layout/
-    spread_min_distance/fit_coords with seed as state - checks that the
-    wrapper actually forwards calls, not the math itself again (already
-    covered by the tests above)."""
+    """`ForceAtlasLayouter` wraps fa2_blended_layout/spread_min_distance with seed as state.
+
+    Checks that the wrapper forwards calls, not the math itself.
+    """
 
     def test_blended_positions_every_node_and_is_deterministic(self):
         layouter = ForceAtlasLayouter(seed=1)

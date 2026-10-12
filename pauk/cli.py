@@ -63,11 +63,7 @@ def _log_result(action: str, group: str | None, result: dict) -> None:
 
 @contextmanager
 def _mongo_db() -> Generator[Any, None, None]:
-    """Opens a Mongo connection for the duration of one command, runs
-    ensure_indexes() once, closes on exit - shared by every command that
-    touches Mongo (run/collect/normalize/enrich/publish/dedup) instead of
-    each repeating its own try/finally.
-    """
+    """Open a Mongo connection for one command, ensure indexes, close on exit."""
     mongo = get_mongo_client(settings)
     try:
         db = mongo[settings.mongo_db]
@@ -78,8 +74,7 @@ def _mongo_db() -> Generator[Any, None, None]:
 
 
 def _add_pipeline_parsers(sub: argparse._SubParsersAction) -> None:
-    """Registers the OpenAlex/Mongo pipeline subcommands: run, collect,
-    normalize, enrich, publish, dedup."""
+    """Register the pipeline subcommands: run, collect, normalize, enrich, publish, dedup."""
     for name in ("run", "collect"):
         p = sub.add_parser(name)
         p.add_argument("--work")
@@ -126,7 +121,7 @@ def _snapshot_groups(value: str) -> list[str]:
 
 
 def _add_cache_parsers(sub: argparse._SubParsersAction) -> None:
-    """Registers `cache export`/`cache inspect` - the Neo4j snapshot subcommands."""
+    """Register the Neo4j snapshot subcommands `cache export` and `cache inspect`."""
     p = sub.add_parser("cache")
     cache_sub = p.add_subparsers(dest="cache_command", required=True)
     p = cache_sub.add_parser("export", help="snapshot the graph from Neo4j to a file")
@@ -164,7 +159,7 @@ def _add_cache_parsers(sub: argparse._SubParsersAction) -> None:
 
 
 def _add_gui_parsers(sub: argparse._SubParsersAction) -> None:
-    """Registers `gui build` - snapshot -> layout -> JSON for the site (pauk/gui/web)."""
+    """Register `gui build`: snapshot -> layout -> JSON for the site (pauk/gui/web)."""
     p = sub.add_parser("gui")
     gui_sub = p.add_subparsers(dest="gui_command", required=True)
     p = gui_sub.add_parser("build", help="build the site data (layout + JSON) from a graph snapshot")
@@ -207,7 +202,7 @@ def _cmd_normalize(args) -> None:
 
 
 def _cmd_enrich(args, parser: argparse.ArgumentParser) -> None:
-    # social_graph is not in ALL_STAGES — it runs by name only, so the check
+    # social_graph is not in ALL_STAGES (it runs by name only), so the check
     # has to know the optional ones too.
     known = {stage.name for stage in (*ALL_STAGES, *OPTIONAL_STAGES)}
     if args.stage != "all" and args.stage not in known:
@@ -233,8 +228,7 @@ def _cmd_publish(args) -> None:
 
 
 def _cmd_dedup() -> None:
-    # args.target only ever validates as "graph" (argparse choices=["graph"])
-    # - nothing branches on it, there is no other target to dispatch on.
+    # args.target is always "graph" (argparse choices), so nothing branches on it.
     from pauk.graph.dedup import run_graph_dedup
 
     with _mongo_db() as db:

@@ -116,10 +116,10 @@ function safeHref(url: string, context: string): string {
   try {
     const parsed = new URL(url);
     if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.toString();
-    console.warn(`${context}: недопустимая схема, ссылка заменена на "about:blank": ${url}`);
+    console.warn(`${context}: disallowed URL scheme, replaced with "about:blank": ${url}`);
   } catch {
     console.warn(
-      `${context}: значение не распознано как URL, ссылка заменена на "about:blank": ${url}`,
+      `${context}: not a valid URL, replaced with "about:blank": ${url}`,
     );
   }
   return "about:blank";
@@ -203,7 +203,7 @@ export function mountPanel(
 ): () => void {
   const container = requireElement("panel");
 
-  // ponytail: static PDFs + file list next to the site data, move into repos-detail.json if this stays
+  // TODO: static PDFs and file list next to the site data; move into repos-detail.json if this stays.
   const reportFiles = new Map<string, string>();
   fetch(DATA_CONFIG.reportsIndexUrl)
     .then((response) => (response.ok ? (response.json() as Promise<string[]>) : []))
@@ -213,7 +213,7 @@ export function mountPanel(
     })
     .catch((error: unknown) => console.warn("reports/index.json:", error));
 
-  // ponytail: static file from paper_analysis run.json, move onto the IMPLEMENTS edge if this stays
+  // TODO: static file from paper_analysis run.json; move onto the IMPLEMENTS edge if this stays.
   const implementationRates = new Map<
     string,
     { implemented: number; total: number; pct: number }

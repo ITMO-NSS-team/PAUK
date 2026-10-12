@@ -24,9 +24,8 @@ def trim_revisions(db: Database, before: str, apply: bool = False) -> dict[str, 
     here, and nothing has ever removed one. Two thirds of a working
     database can end up being versions of persons nobody asks about.
 
-    The archive is worth keeping — it is the only record of what a row said
-    before a run changed it — but it is worth keeping for as long as
-    somebody might ask, not for ever.
+    The archive is the only record of what a row said before a run changed
+    it, but it is worth keeping only as long as somebody might ask.
 
     Args:
         before: ISO timestamp. Versions replaced earlier go. Compared as
@@ -47,7 +46,7 @@ def trim_revisions(db: Database, before: str, apply: bool = False) -> dict[str, 
 
 
 class PreparedStore:
-    # Collection name per prepared entity - 1:1 with the old FILES map.
+    # Collection name per prepared entity.
     COLLECTIONS = {
         "publications": "publications",
         "persons": "persons",
@@ -83,7 +82,7 @@ class PreparedStore:
         """Every group that has prepared rows, oldest name first.
 
         Rows carry the groups that claim them rather than belonging to one,
-        so there is no collection of groups to read — the names are gathered
+        so there is no collection of groups to read; the names are gathered
         from the rows themselves. Used by the panel, which must offer a
         group that exists instead of a box to mistype one into.
         """
@@ -129,8 +128,7 @@ class PreparedStore:
         """Set this group's complete state for `entity` to exactly `rows`.
 
         Every stage reads its group's full working set for an entity,
-        mutates it, and writes the whole thing back - the same contract the
-        old whole-file rewrite had. A row this group held before but didn't
+        mutates it, and writes the whole thing back. A row this group held before but didn't
         re-include here (folded into another row by dedup, renamed by
         normalize) has this group's claim retracted; a document no group
         claims any more is deleted so it doesn't linger unreachable.
@@ -161,7 +159,7 @@ class PreparedStore:
     def upsert_models(self, entity: str, rows: Iterable[BaseModel]) -> None:
         """Persist changed rows without redefining this group's full membership.
 
-        Enrichment stages use this after an external request completes.  Unlike
+        Enrichment stages use this after an external request completes. Unlike
         write_models(), it never removes the group marker from untouched rows.
         """
         collection = self._collection(entity)
