@@ -7,10 +7,11 @@ enrichment-этапов; резюмируемость.
 `enrich.py`, `runner.py`, `selectors.py`, `stages/base.py`,
 `stages/__init__.py`.
 
-Четыре шага, каждый — отдельная команда CLI (см. [../cli.md](../cli.md)):
-`collect` → `normalize` → `enrich [stage]` → (`dedup` внутри `enrich` как
-последний стейдж). `publish graph` и `dedup graph` — уже не `pipeline/`,
-а `pauk/graph/`.
+Основные команды CLI (см. [../cli.md](../cli.md)):
+`collect` → `normalize` → `enrich [stage]`. `dedup` входит в стандартный
+набор enrichment-стадий после `repo_people`, перед `github_match` и
+`author_names`. `publish graph` и `dedup graph` относятся уже не к
+`pipeline/`, а к `pauk/graph/`.
 
 ## `collect.py::Collector`
 

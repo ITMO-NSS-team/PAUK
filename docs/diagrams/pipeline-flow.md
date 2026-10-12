@@ -1,8 +1,9 @@
 # Поток данных пайплайна
 
-Полный путь от внешних API до графа и статики GUI, по стадиям `pauk`
-(порядок enrichment-стадий — `ALL_STAGES` в
-`pauk/pipeline/stages/__init__.py`).
+Основные связи от внешних API до графа и статики GUI; состав и порядок
+всех enrichment-стадий задаёт `ALL_STAGES` в `pauk/pipeline/stages/__init__.py`.
+Диаграмма сокращена: `emails`, `repo_people`, `github_match` и `author_names`
+не показаны. Подробнее — [обзор пайплайна](../architecture/pipeline/overview.md).
 
 ```mermaid
 flowchart TD
@@ -40,12 +41,12 @@ flowchart TD
 
     subgraph ENRICH["pauk enrich — стадии по порядку"]
         direction TB
-        S2["1. persons<br/>аффилиации, ORCID, профили"]
-        S3["2. departments<br/>сопоставление по каталогу"]
-        S4["3. code_links<br/>ссылки на код из PDF / абстракта"]
-        S5["4. link_relevance<br/>LLM-классификация ссылок"]
-        S6["5. repositories<br/>метаданные GitHub"]
-        S7["6. dedup<br/>локальное слияние дублей"]
+        S2["persons<br/>аффилиации, ORCID, профили"]
+        S3["departments<br/>сопоставление по каталогу"]
+        S4["code_links<br/>ссылки на код из PDF / абстракта"]
+        S5["link_relevance<br/>LLM-классификация ссылок"]
+        S6["repositories<br/>метаданные GitHub"]
+        S7["dedup<br/>слияние дублей внутри группы"]
         S2 --> S3 --> S4 --> S5 --> S6 --> S7
     end
 
@@ -73,6 +74,7 @@ flowchart TD
     RL <--> S7
     S7 -->|"читает openalex_authors<br/>(доверенный ORCID)"| RAW
     S7 -->|"AtomicWriter"| AUDIT
+    S7 -->|"неразрешённые пары персон: два Qwen"| LLM
 
     CLI_PUB["pauk publish graph"] -->|"read_rows, все 6 коллекций своей группы"| PUB
     CLI_PUB --> PER
@@ -84,6 +86,7 @@ flowchart TD
 
     CLI_DEDUP["pauk dedup graph<br/>(по требованию, не часть run)"] -->|"Cypher, весь граф сразу"| NEO
     CLI_DEDUP -->|"кросс-групповой скан<br/>openalex_authors"| RAW
+    CLI_DEDUP -->|"неразрешённые пары персон: два Qwen"| LLM
 
     CLI_CACHE["pauk cache export"] --> NEO
     CLI_CACHE --> CACHE

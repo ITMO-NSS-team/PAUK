@@ -29,7 +29,7 @@ MongoDB: raw                                 RawStore, append-only
   │  pauk normalize
 MongoDB: publications/persons/...            PreparedStore, 6 коллекций
   │  pauk enrich [stage]                     persons → departments → code_links → link_relevance →
-  │                                          emails → repositories → dedup → github_match → author_names
+  │                                          emails → repositories → repo_people → dedup → github_match → author_names
 MongoDB: publications/persons/...            те же коллекции, обогащённые
   │  pauk publish graph
 Neo4j                                        накопление между прогонами, MERGE
@@ -98,15 +98,20 @@ enrichment-этапа на этой строке: `not_started`, `completed`,
 ## Дедупликация — два уровня
 
 - **Внутри одной группы** (`pipeline/stages/dedup.py`, этап `dedup`,
-  всегда часть `pauk enrich`/`pauk run`): чистая, локальная, без сети —
+  часть стандартного набора стадий `pauk enrich`/`pauk run`):
   схлопывает персон/публикации/репозитории, у которых нашлось совпадение
-  внутри JSONL этого прогона.
+  в prepared-данных группы в MongoDB. Для персон по умолчанию использует
+  LogReg и два запроса Qwen через OpenRouter для неразрешённых локально пар;
+  это не режим без сети.
 - **По всему графу** (`pauk/graph/dedup.py`, `pauk dedup graph`, отдельная
   команда, не часть обычного прогона): те же правила слияния, но читает
   весь Neo4j — ловит дубли, чьи записи попали в граф из **разных** групп и
-  никогда не встречались бок о бок на диске.
+  никогда не встречались в одной группе.
 
-Обе используют одни и те же функции принятия решений (`plan_person_merges`
-и парная логика публикаций/репозиториев) — расхождение только в источнике
-строк (JSONL vs Cypher) и в месте, куда льётся результат. Подробнее —
+Обе используют `plan_person_merges_resolved` для персон по умолчанию и общую
+логику публикаций/репозиториев. При отключении `PAUK_PERSON_RESOLUTION_ENABLED`
+для персон вызывается legacy-планировщик `plan_person_merges` с другими
+правилами, без Qwen. Помимо источника и места записи результата, различается
+полнота полей: графовая проекция пока не передаёт часть разобранных полей имени.
+Подробнее —
 [pipeline/dedup.md](pipeline/dedup.md).
