@@ -85,10 +85,9 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from collections.abc import Callable, Iterable, Iterator
 from datetime import UTC, date, datetime
-from difflib import SequenceMatcher
 from itertools import combinations
 
 from pauk.models import Person, Publication, PublicationVersion, RepoLink, Repository, VersionAuthor
@@ -107,7 +106,6 @@ from pauk.urls import normalize_repo_url
 
 from .author_names import (
     RussianNamesCatalog,
-    _fold,
     _record_id,
     _unmix_alphabets,
     catalog_path,
@@ -161,147 +159,6 @@ def _norm_doi(doi: str | None) -> str | None:
     return value.rstrip("/") or None
 
 
-_NAME_PUNCT = re.compile(r"[^\w]", re.UNICODE)
-_AMBIGUOUS_SURNAME_BUCKET_LIMIT = 64
-_FUZZY_SURNAME_RATIO = 0.8
-
-
-def _name_tokens(name: str | None) -> tuple[str, ...]:
-    """Long normalized name parts; initials cannot become blocking keys."""
-    if not name:
-        return ()
-    return tuple(
-        token
-        for raw_token in _fold(name).split()
-        if len(token := _NAME_PUNCT.sub("", raw_token)) > 1
-    )
-
-
-def _surname_from_name(name: str | None) -> str:
-    """Best cheap surname guess for candidate blocking.
-
-    OpenAlex normally stores names as ``given surname`` and also emits
-    ``surname, given`` variants. Initials may appear on either side, so the
-    last non-initial token is a surname for the usual order and the only
-    non-initial token is a surname for ``Borisov A. A.``. A comma explicitly
-    marks the surname-first form and takes precedence over that fallback.
-
-    This is deliberately only a blocking hint. The resolver still receives
-    the complete names and all identity evidence before it may merge a pair.
-    """
-    if not name:
-        return ""
-    surname_part = name.split(",", 1)[0] if "," in name else name
-    tokens = _name_tokens(surname_part)
-    return tokens[-1] if tokens else ""
-
-
-def _given_token(name: str | None) -> str:
-    """Normalized given-name token for rejecting contaminated variants."""
-    if not name:
-        return ""
-    given_part = name.split(",", 1)[1] if "," in name else name
-    raw_tokens = _fold(given_part).split()
-    return _NAME_PUNCT.sub("", raw_tokens[0]) if raw_tokens else ""
-
-
-def _compatible_given_name(first: str, second: str) -> bool:
-    if not first or not second:
-        return False
-    if min(len(first), len(second)) <= 2:
-        return first[0] == second[0]
-    return SequenceMatcher(None, first, second).ratio() >= 0.8
-
-
-def _strong_surnames(person: Person, supported_tokens: set[str]) -> set[str]:
-    """Surname spellings whose position is explicit rather than guessed."""
-    surnames = {
-        _NAME_PUNCT.sub("", _fold(value))
-        for value in (person.surname_ru, person.surname_en)
-        if value
-    }
-    for value in (person.name_raw, *person.name_variants, *person.other_names):
-        tokens = _name_tokens(value)
-        surname = _surname_from_name(value)
-        if ("," in value or len(tokens) == 1) and surname in supported_tokens:
-            surnames.add(surname)
-    return {surname for surname in surnames if len(surname) > 1}
-
-
-def _blocking_surnames(people: list[Person]) -> dict[str, set[str]]:
-    """Infer bounded surname hints without making common given-name buckets.
-
-    Parsed surname fields, comma-first names and names containing only one
-    long token are unambiguous. For records without those signals, a token is
-    accepted only when it often occupies the surname position and occurs in
-    at most a small number of persons. The cap is the safety boundary: even a
-    reversed or otherwise malformed common given name cannot recreate the
-    multi-million ``Sergey``/``Andrey`` candidate buckets.
-    """
-    tokens_by_person: dict[str, set[str]] = {}
-    strong_by_person: dict[str, set[str]] = {}
-    token_occurrences: Counter[str] = Counter()
-    terminal_occurrences: Counter[str] = Counter()
-
-    for person in people:
-        names = (person.name_raw, *person.name_variants, *person.other_names)
-        # OpenAlex occasionally contaminates one author's variants with a
-        # complete, unrelated coauthor list. A token absent from the display
-        # name therefore needs a compatible given name before it may become
-        # blocking evidence for this person.
-        raw_given = _given_token(person.name_raw)
-        trusted_names = {
-            name
-            for name in names
-            if name == person.name_raw
-            or _compatible_given_name(raw_given, _given_token(name))
-        }
-        tokens = {token for name in trusted_names for token in _name_tokens(name)}
-        terminals = {
-            surname
-            for name in names
-            if (surname := _surname_from_name(name)) in tokens
-        }
-        tokens_by_person[person.id] = tokens
-        strong_by_person[person.id] = _strong_surnames(person, tokens)
-        token_occurrences.update(tokens)
-        terminal_occurrences.update(terminals)
-
-    inferred = {
-        token
-        for token, count in token_occurrences.items()
-        if count <= _AMBIGUOUS_SURNAME_BUCKET_LIMIT
-        and terminal_occurrences[token] * 2 >= count
-    }
-    return {
-        person.id: strong_by_person[person.id]
-        | (tokens_by_person[person.id] & inferred)
-        for person in people
-    }
-
-
-def _close_surnames(first: str, second: str) -> bool:
-    """Whether two non-trivial surname spellings are plausible variants."""
-    if min(len(first), len(second)) < 5:
-        return False
-    if first.startswith(second) or second.startswith(first):
-        return True
-    if first[0] != second[0]:
-        return False
-    return SequenceMatcher(None, first, second).ratio() >= _FUZZY_SURNAME_RATIO
-
-
-def _surname_fuzzy_keys(surname: str) -> set[str]:
-    """Linear-size keys for common transliteration differences."""
-    if len(surname) < 5:
-        return set()
-    simplified = re.sub(r"(.)\1+", r"\1", surname).replace("ou", "u")
-    return {
-        simplified,
-        *(simplified[:index] + simplified[index + 1 :] for index in range(len(simplified))),
-    }
-
-
 def _variant_set(person: Person) -> set[str]:
     return {_norm_name(variant) for variant in person.name_variants if _norm_name(variant)}
 
@@ -335,17 +192,9 @@ def _initials_conflict(first: Person, second: Person) -> bool:
     "В" meets a Latin "V", and an initial never contradicts the name it
     abbreviates: "Andrei Ivanov" agrees with "A. V. Ivanov".
     """
-    first_tokens = _fold(first.name_raw or "").split()
-    second_tokens = _fold(second.name_raw or "").split()
-    if len(first_tokens) < 2 or len(second_tokens) < 2 or first_tokens[-1] != second_tokens[-1]:
-        return False
-    # Names of unequal length are compared over the parts they both have:
-    # "A. Ivanov" states nothing about the middle name of "A. V. Ivanov".
-    return any(
-        (len(one) == 1 or len(other) == 1)
-        and not (one.startswith(other) or other.startswith(one))
-        for one, other in zip(first_tokens[:-1], second_tokens[:-1], strict=False)
-    )
+    from pauk.pipeline.person_name_blocking import conflicting_initials
+
+    return conflicting_initials(first, second)
 
 
 # An author record listing far more institutions than it has works is not a
@@ -362,92 +211,10 @@ def _is_pooled_record(person: Person) -> bool:
 
 def _paired_persons(people: list[Person], in_scope: set[str] | None,
                     staff_ids: dict[str, str] | None = None):
-    """Yield person pairs worth comparing.
+    """Shared candidate generation for the legacy and confidence resolvers."""
+    from pauk.pipeline.person_name_blocking import candidate_person_pairs
 
-    Name candidates share an exact or close normalized surname. Parsed
-    surnames are preferred; bounded corpus evidence handles reversed names
-    that have not been parsed yet. Given names and initials never create
-    unbounded buckets. ORCID and staff records remain exact independent
-    channels because their matching names may share no spelling at all.
-    """
-    by_orcid: dict[str, list[Person]] = {}
-    by_exact_name: dict[str, dict[str, Person]] = {}
-    by_surname: dict[str, dict[str, Person]] = {}
-    by_staff: dict[str, list[Person]] = {}
-    surnames_by_person = _blocking_surnames(people)
-    for person in people:
-        if person.orcid:
-            by_orcid.setdefault(person.orcid, []).append(person)
-        if exact_name := _norm_name(person.name_raw):
-            by_exact_name.setdefault(exact_name, {})[person.id] = person
-        staff_id = (staff_ids or {}).get(person.id)
-        if staff_id:
-            by_staff.setdefault(staff_id, []).append(person)
-        for surname in surnames_by_person[person.id]:
-            by_surname.setdefault(surname, {})[person.id] = person
-
-    fuzzy_index: dict[str, set[str]] = defaultdict(set)
-    for surname in by_surname:
-        for key in _surname_fuzzy_keys(surname):
-            fuzzy_index[key].add(surname)
-
-    emitted: set[tuple[str, str]] = set()
-    exact_name_buckets = [
-        bucket.values()
-        for bucket in by_exact_name.values()
-        if len(bucket) <= _AMBIGUOUS_SURNAME_BUCKET_LIMIT
-    ]
-    exact_buckets = [bucket.values() for bucket in by_surname.values()]
-    for bucket in (
-        *by_orcid.values(),
-        *exact_name_buckets,
-        *exact_buckets,
-        *by_staff.values(),
-    ):
-        unique = list({person.id: person for person in bucket}.values())
-        for i, first in enumerate(unique):
-            for second in unique[i + 1:]:
-                if in_scope is not None and first.id not in in_scope and second.id not in in_scope:
-                    continue
-                lower_id, higher_id = sorted((first.id, second.id))
-                pair = (lower_id, higher_id)
-                if pair in emitted:
-                    continue
-                emitted.add(pair)
-                yield first, second
-
-    # Exact buckets above handle one spelling once. Fuzzy buckets are capped,
-    # so a common deletion key cannot turn spelling comparison quadratic.
-    fuzzy_pairs: set[tuple[str, str]] = set()
-    for surnames in fuzzy_index.values():
-        if len(surnames) > _AMBIGUOUS_SURNAME_BUCKET_LIMIT:
-            continue
-        for first_surname, second_surname in combinations(sorted(surnames), 2):
-            fuzzy_pairs.add((first_surname, second_surname))
-    # A compound surname is also a bounded extension of its complete shorter
-    # form; direct dictionary lookups avoid a broad shared-prefix bucket.
-    for surname in by_surname:
-        for end in range(5, len(surname)):
-            if surname[:end] in by_surname:
-                fuzzy_pairs.add((surname[:end], surname))
-
-    for first_surname, second_surname in fuzzy_pairs:
-        if not _close_surnames(first_surname, second_surname):
-            continue
-        for first in by_surname[first_surname].values():
-            for second in by_surname[second_surname].values():
-                if (
-                    in_scope is not None
-                    and first.id not in in_scope
-                    and second.id not in in_scope
-                ):
-                    continue
-                lower_id, higher_id = sorted((first.id, second.id))
-                pair = (lower_id, higher_id)
-                if pair in emitted:
-                    continue
-                emitted.add(pair)
-                yield first, second
+    yield from candidate_person_pairs(people, in_scope, staff_ids)
 
 
 # Names given as initials ("I. V. Smirnov") stand for a whole range of first
@@ -581,6 +348,16 @@ def plan_person_merges(
         pair_rules[frozenset((first.id, second.id))] = rule
 
     for first, second in _paired_persons(people, in_scope, staff_ids):
+        from pauk.graph.person_resolution import is_multi_person_name
+
+        if is_multi_person_name(first.name_raw or "") or is_multi_person_name(second.name_raw or ""):
+            report.append({
+                "status": "held", "person_a": first.id, "name_a": first.name_raw,
+                "person_b": second.id, "name_b": second.name_raw,
+                "route": "multiple_people_record", "reason": "record contains multiple people",
+                "held_because": ["record contains multiple people"],
+            })
+            continue
         # A pooled record stands for everyone OpenAlex could not tell apart,
         # so it is nobody in particular and merges with nothing. Ahead of the
         # answers below: such a pair never reaches the queue to be asked about.
@@ -657,6 +434,7 @@ def plan_person_merges(
                 reasons.append("identical name with nothing corroborating it")
             if variant_evidence and both_itmo and not shared:
                 reasons.append("no shared coauthors")
+            reason = "; ".join(reasons)
             report.append({
                 "status": "held",
                 "person_a": first.id, "name_a": first.name_raw,
@@ -664,6 +442,8 @@ def plan_person_merges(
                 "shared_coauthors": len(shared),
                 "shared_departments": len(shared_departments),
                 "shared_fields": sorted(shared_fields),
+                "route": "heuristic_review",
+                "reason": reason,
                 "held_because": reasons,
             })
 
@@ -683,42 +463,281 @@ def plan_person_merges(
             continue
         plan_pair(by_id[first_id], by_id[second_id], "manual")
 
-    groups: list[tuple[Person, list[Person]]] = []
+    groups, group_report = _finalize_person_merge_groups(
+        merge_pairs,
+        pair_rules,
+        by_id,
+        trusted_orcid,
+        staff_ids,
+        decisions,
+    )
+    report.extend(group_report)
+    return groups, report
+
+
+def _finalize_person_merge_groups(
+    merge_pairs: list[tuple[str, str]],
+    pair_rules: dict[frozenset[str], str],
+    by_id: dict[str, Person],
+    trusted_orcid: dict[str, str | None],
+    staff_ids: dict[str, str] | None = None,
+    decisions: dict[frozenset[str], str] | None = None,
+) -> tuple[list[tuple[Person, list[Person]]], list[dict]]:
+    """Split a conflicted component instead of discarding every valid fold.
+
+    Pair decisions form transitive components. A single inferred bridge can
+    therefore connect two real people and make the old all-or-nothing safety
+    check discard every valid fold elsewhere in the component. Distinct
+    identity values act as fixed roots. Records without that identity are
+    attached to the uniquely nearest root; an equal-distance boundary stays
+    unresolved. The process repeats for every remaining identity conflict,
+    so every emitted group is internally consistent.
+
+    Contradictory manual answers remain all-or-nothing. Choosing an arbitrary
+    half of A=B, B=C, A!=C would silently reinterpret a human decision.
+    """
+    staff_ids = staff_ids or {}
+    decisions = decisions or {}
+    effective_rules = dict(pair_rules)
+    accepted: list[list[str]] = []
+    conflicts: list[tuple[list[str], str, set[str], list[tuple[str, str]]]] = []
+
     for members in _grouped(merge_pairs):
-        # Pairwise checks can't see transitive contradictions: A and B may
-        # each legitimately pair with a bridge person M yet differ from
-        # each other. A group spanning more than one ORCID (or any other
-        # explicit identity value) is refused whole, for manual review.
-        conflict = _group_conflict(members, by_id, trusted_orcid, staff_ids)
-        if conflict:
-            field, values = conflict
-            logger.warning(
-                "dedup: refusing to merge group %s — it spans %d distinct %s values",
-                sorted(members), len(values), field)
-            report.append({
-                "status": "held",
-                "persons": sorted(members),
-                "names": [by_id[member].name_raw for member in sorted(members)],
-                "held_because": [f"group spans {len(values)} distinct {field} values"],
-            })
+        manual_conflicts = [
+            tuple(sorted(pair))
+            for pair in combinations(members, 2)
+            if decisions.get(frozenset(pair)) == DIFFERENT
+        ]
+        if manual_conflicts:
+            conflicts.append((members, "manual decision", set(), manual_conflicts))
             continue
+
+        conflict = _group_conflict(members, by_id, trusted_orcid, staff_ids)
+        if conflict is None:
+            accepted.append(members)
+            continue
+
+        field, values = conflict
+        component_pairs = [
+            pair for pair in merge_pairs if pair[0] in members and pair[1] in members
+        ]
+        accepted.extend(
+            subgroup
+            for subgroup in _partition_conflicted_component(
+                members,
+                component_pairs,
+                by_id,
+                trusted_orcid,
+                staff_ids,
+            )
+            if len(subgroup) > 1
+        )
+        conflicts.append((members, field, values, []))
+
+    groups: list[tuple[Person, list[Person]]] = []
+    representative: dict[str, str] = {}
+    report: list[dict] = []
+    for members in accepted:
+        member_set = set(members)
         ranked = sorted(
             (by_id[member] for member in members),
-            key=lambda p: merge_rank(len(p.authored), p.orcid, p.id),
+            key=lambda person: merge_rank(
+                len(person.authored), person.orcid, person.id
+            ),
         )
         canonical, duplicates = ranked[0], ranked[1:]
         groups.append((canonical, duplicates))
+        for member in members:
+            representative[member] = canonical.id
         for duplicate in duplicates:
-            report.append({
-                "status": "merged",
-                "person_a": duplicate.id, "name_a": duplicate.name_raw,
-                "person_b": canonical.id, "name_b": canonical.name_raw,
-                "merged_into": canonical.id,
-                "rules": sorted({
-                    rule for pair, rule in pair_rules.items() if duplicate.id in pair
-                }),
-            })
+            rule_set = {
+                rule
+                for pair, rule in effective_rules.items()
+                if duplicate.id in pair and pair <= member_set
+            }
+            if (
+                trusted_orcid.get(duplicate.id)
+                and trusted_orcid.get(duplicate.id) == trusted_orcid.get(canonical.id)
+                and not rule_set.intersection({"orcid", "same_orcid"})
+            ):
+                rule_set.add("same_orcid")
+            if (
+                staff_ids.get(duplicate.id)
+                and staff_ids.get(duplicate.id) == staff_ids.get(canonical.id)
+                and not rule_set.intersection({"staff_catalog", "same_staff"})
+            ):
+                rule_set.add("same_staff")
+            rules = sorted(rule_set)
+            if "same_orcid" in rule_set:
+                route = "same_orcid"
+            elif "same_staff" in rule_set:
+                route = "same_staff"
+            else:
+                route = rules[0] if len(rules) == 1 else "transitive_merge"
+            report.append(
+                {
+                    "status": "merged",
+                    "person_a": duplicate.id,
+                    "name_a": duplicate.name_raw,
+                    "person_b": canonical.id,
+                    "name_b": canonical.name_raw,
+                    "merged_into": canonical.id,
+                    "route": route,
+                    "rules": rules,
+                }
+            )
+
+    for members, field, values, manual_conflicts in conflicts:
+        collapsed = sorted({representative.get(member, member) for member in members})
+        if len(collapsed) < 2:
+            continue
+        row = {
+            "status": "held",
+            "persons": collapsed,
+            "names": [by_id[member].name_raw for member in collapsed],
+        }
+        if manual_conflicts:
+            reason = "component contradicts a manual different-people decision"
+            row.update(
+                {
+                    "held_because": [reason],
+                    "reason": reason,
+                    "manual_conflicts": [
+                        list(pair) for pair in sorted(manual_conflicts)
+                    ],
+                    "route": "manual_conflict",
+                }
+            )
+        else:
+            logger.warning(
+                "dedup: keeping the conflicted remainder of group %s for review; "
+                "it spans %d distinct %s values",
+                sorted(members),
+                len(values),
+                field,
+            )
+            reason = f"group spans {len(values)} distinct {field} values"
+            row.update(
+                {
+                    "held_because": [reason],
+                    "reason": reason,
+                    "route": "component_conflict",
+                }
+            )
+        report.append(row)
+
     return groups, report
+
+
+def _partition_conflicted_component(
+    members: list[str],
+    pairs: list[tuple[str, str]],
+    by_id: dict[str, Person],
+    trusted_orcid: dict[str, str | None],
+    staff_ids: dict[str, str],
+) -> list[list[str]]:
+    """Return deterministic, conflict-free pieces of one connected component.
+
+    For the first conflicting identity field, every distinct non-empty value
+    is a fixed root. Identity-less records are assigned by shortest-path
+    distance over positive merge edges. A strict winner is safe to attach;
+    ties form their own unresolved boundary. Resulting induced components are
+    partitioned recursively when another identity field still conflicts.
+
+    The function deliberately does not choose between equally close roots.
+    Such a choice would make an arbitrary edge decide an identity and recreate
+    the false-merge risk this safety check exists to prevent.
+    """
+    member_set = set(members)
+    adjacency: dict[str, set[str]] = {member: set() for member in members}
+    for first, second in pairs:
+        if first in member_set and second in member_set:
+            adjacency[first].add(second)
+            adjacency[second].add(first)
+
+    def connected_parts(nodes: set[str]) -> list[list[str]]:
+        remaining = set(nodes)
+        parts: list[list[str]] = []
+        while remaining:
+            start = min(remaining)
+            queue = [start]
+            remaining.remove(start)
+            part: list[str] = []
+            while queue:
+                current = queue.pop()
+                part.append(current)
+                for neighbor in sorted(adjacency[current] & remaining, reverse=True):
+                    remaining.remove(neighbor)
+                    queue.append(neighbor)
+            parts.append(sorted(part))
+        return parts
+
+    def value_for(member: str, field: str) -> str | None:
+        if field == "ORCID":
+            return trusted_orcid.get(member) or None
+        if field == "staff record":
+            return staff_ids.get(member) or None
+        value = getattr(by_id[member], field)
+        return value if isinstance(value, str) and value else None
+
+    def split(part: list[str]) -> list[list[str]]:
+        conflict = _group_conflict(part, by_id, trusted_orcid, staff_ids)
+        if conflict is None:
+            return [sorted(part)]
+
+        field, values = conflict
+        part_set = set(part)
+        explicit = {member: value_for(member, field) for member in part}
+        distances: dict[str, dict[str, int]] = {}
+        for value in sorted(values):
+            distance = {
+                member: 0 for member in part if explicit[member] == value
+            }
+            queue = deque(sorted(distance))
+            while queue:
+                current = queue.popleft()
+                for neighbor in sorted(adjacency[current] & part_set):
+                    # A different explicit identity is a boundary, not a path
+                    # through which this root may claim records on the far side.
+                    if explicit[neighbor] not in (None, value):
+                        continue
+                    if neighbor not in distance:
+                        distance[neighbor] = distance[current] + 1
+                        queue.append(neighbor)
+            distances[value] = distance
+
+        buckets: dict[str | None, set[str]] = defaultdict(set)
+        for member in part:
+            if explicit[member] is not None:
+                buckets[explicit[member]].add(member)
+                continue
+            candidates = [
+                (distance[member], value)
+                for value, distance in distances.items()
+                if member in distance
+            ]
+            if not candidates:
+                buckets[None].add(member)
+                continue
+            nearest = min(distance for distance, _value in candidates)
+            winners = [
+                value for distance, value in candidates if distance == nearest
+            ]
+            buckets[winners[0] if len(winners) == 1 else None].add(member)
+
+        if any(bucket == part_set for bucket in buckets.values()):
+            # Nothing was separated, so recursing would repeat this step for
+            # ever. Every record goes back alone: the component keeps its
+            # conflict and a human decides, which is what the old refusal did.
+            return [[member] for member in sorted(part)]
+
+        result: list[list[str]] = []
+        for bucket in buckets.values():
+            for connected in connected_parts(bucket):
+                result.extend(split(connected))
+        return result
+
+    return split(sorted(members))
 
 
 def _group_conflict(
@@ -727,14 +746,17 @@ def _group_conflict(
     staff_ids: dict[str, str] | None = None,
 ) -> tuple[str, set[str]] | None:
     """The first identity field whose values split the group, if any."""
-    orcids = {orcid for member in members if (orcid := trusted_orcid.get(member)) is not None}
+    # An empty string is an absent identity, not a second one: counting it
+    # as a value splits a group on nothing, and the partitioner reads the
+    # same field back as absent, so the two disagree about the same record.
+    orcids = {orcid for member in members if (orcid := trusted_orcid.get(member))}
     if len(orcids) > 1:
         return "ORCID", orcids
-    staff = {(staff_ids or {}).get(member) for member in members} - {None}
+    staff = {(staff_ids or {}).get(member) for member in members} - {None, ""}
     if len(staff) > 1:
         return "staff record", staff
     for field in PROFILE_FIELDS:
-        values = {getattr(by_id[member], field) for member in members} - {None}
+        values = {getattr(by_id[member], field) for member in members} - {None, ""}
         if len(values) > 1:
             return field, values
     return None
@@ -942,13 +964,14 @@ class DedupStage(EnrichmentStage):
                 elif entity == "repositories":
                     repository_merges = result
                 else:
-                    merged_persons, candidates = result
+                    merged_persons, candidates, component_conflicts = result
                 progress.update()
         return {
             "dedup_publications_merged": len(publication_merges),
             "dedup_repositories_merged": len(repository_merges),
             "dedup_merged": merged_persons,
             "dedup_candidates": candidates,
+            "dedup_component_conflicts": component_conflicts,
         }
 
     # --- publications ---------------------------------------------------------
@@ -1173,7 +1196,7 @@ class DedupStage(EnrichmentStage):
 
     # --- persons ---------------------------------------------------------------
 
-    def _dedup_persons(self) -> tuple[int, int]:
+    def _dedup_persons(self) -> tuple[int, int, int]:
         people = list(self.prepared.read_models("persons", Person))
         fields_of = {
             publication.id: set(publication.fields)
@@ -1236,6 +1259,9 @@ class DedupStage(EnrichmentStage):
         review.mark_applied_merges(self.prepared.db, folded_ids(people))
 
         held = sum(1 for row in report if row["status"] == "held")
+        component_conflicts = sum(
+            row.get("route") == "component_conflict" for row in report
+        )
         # The queue the panel reads. The file below stays: it is the whole
         # run in one place, merges included, and people read it by eye.
         review.record_held(self.prepared.db, report, source=review.STAGE)
@@ -1247,7 +1273,7 @@ class DedupStage(EnrichmentStage):
         if report:
             logger.info("dedup: review journal in %s — %d merge(s) applied, %d pair(s) held",
                         report_path, len(removed), held)
-        return len(removed), held
+        return len(removed), held, component_conflicts
 
     def _staff_ids(self, people: list[Person]) -> dict[str, str]:
         """Staff-record identity per person, empty without a staff catalog.

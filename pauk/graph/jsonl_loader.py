@@ -16,7 +16,7 @@ from collections.abc import Callable
 from pauk.urls import normalize_repo_url
 
 from .audit import AuditedNeo4jClient
-from .client import Neo4jClient, chunked
+from .client import Neo4jClient, chunked, flatten_merges
 from .extract import NODE_REGISTRY, extract_node, extract_relationships, person_spec
 
 __all__ = ["extract_repo_links", "load_prepared_rows", "normalize_repo_url"]
@@ -163,7 +163,8 @@ def extract_repo_links(
     return candidate_nodes, repo_edges, candidate_edges, candidate_promotions
 
 
-def _keep_graph_merges(client, label: str, nodes: list[tuple[str, dict]]) -> int:
+def _keep_graph_merges(client, label: str, nodes: list[tuple[str, dict]],
+                       aliases: dict[str, str] | None = None) -> int:
     """Add back the folded-away ids the graph knows and the rows do not.
 
     A fold made on the graph — the graph-wide dedup pass, or a pair
@@ -179,7 +180,9 @@ def _keep_graph_merges(client, label: str, nodes: list[tuple[str, dict]]) -> int
     if not nodes:
         return 0
     held: dict[str, list[str]] = defaultdict(list)
-    for alias, canonical in client.fetch_merged_id_map(label).items():
+    if aliases is None:
+        aliases = client.fetch_merged_id_map(label)
+    for alias, canonical in aliases.items():
         if alias != canonical:
             held[canonical].append(alias)
     kept = 0
@@ -328,9 +331,22 @@ def load_prepared_rows(
 
     # Before anything is written: the three labels that can be folded carry
     # merges the prepared rows have never seen.
-    _keep_graph_merges(client, "Person", person_nodes)
+    known_merges = {
+        label: client.fetch_merged_id_map(label) for label in ("Person", "Publication", "Repository")
+    }
+    # Validate the complete alias graph before writes and before splitting it
+    # into chunks: a chain can span two different chunks or source groups.
+    merge_plans = {
+        label: flatten_merges([*pairs, *known_merges[label].items()])
+        for label, pairs in (
+            ("Person", person_merges),
+            ("Publication", node_merges["publication"]),
+            ("Repository", node_merges["repository"]),
+        )
+    }
+    _keep_graph_merges(client, "Person", person_nodes, known_merges["Person"])
     for label in ("Publication", "Repository"):
-        _keep_graph_merges(client, label, node_batches.get(label) or [])
+        _keep_graph_merges(client, label, node_batches.get(label) or [], known_merges[label])
 
     node_total = len(person_nodes) + sum(len(nodes) for nodes in node_batches.values())
     written = 0
@@ -356,16 +372,6 @@ def load_prepared_rows(
     # Repository and delete candidates that became orphaned.
     for chunk in chunked(list(candidate_promotions.items())):
         client.promote_link_candidates_batch(chunk)
-
-    # A previous publish may still hold nodes that the dedup stage has since
-    # folded into a canonical row — migrate their relationships and remove
-    # them before the canonical relationships are loaded.
-    for chunk in chunked(person_merges):
-        client.merge_person_nodes_batch(chunk)
-    for chunk in chunked(node_merges["publication"]):
-        client.merge_publication_nodes_batch(chunk)
-    for chunk in chunked(node_merges["repository"]):
-        client.merge_repository_nodes_batch(chunk)
 
     rel_total = sum(len(rels) for rels in rel_batches.values())
     linked = 0
@@ -396,14 +402,11 @@ def load_prepared_rows(
         ("Publication", client.merge_publication_nodes_batch),
         ("Repository", client.merge_repository_nodes_batch),
     ):
-        merged_id_map = client.fetch_merged_id_map(label)
+        # Load old-id relationships before deleting old-id nodes, otherwise
+        # MATCH silently drops the source edge before the fold can move it.
+        merged_id_map = dict(merge_plans[label])
         merged_id_maps[label] = merged_id_map
-        alias_pairs = [
-            (merged_id, canonical_id)
-            for merged_id, canonical_id in merged_id_map.items()
-            if merged_id != canonical_id
-        ]
-        for chunk in chunked(alias_pairs):
+        for chunk in chunked(merge_plans[label]):
             fold(chunk)
 
     publication_aliases = merged_id_maps["Publication"]

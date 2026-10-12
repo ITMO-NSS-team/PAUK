@@ -364,6 +364,30 @@ CHECKS = [
     ),
     # ---------------- duplicates ----------------
     Check(
+        id="person_shared_orcid",
+        group="Дубликаты",
+        title="Один ORCID у нескольких персон",
+        title_en="One ORCID assigned to multiple people",
+        count="""MATCH (p:Person)
+            WHERE p.orcid IS NOT NULL AND trim(p.orcid) <> ''
+            WITH toLower(trim(p.orcid)) AS k, count(*) AS c
+            WHERE c > 1 RETURN coalesce(sum(c - 1), 0)""",
+        of=None,
+        warn=1,
+        fail=20,
+        hint="Один человек остался несколькими узлами после дедупликации.",
+        hint_en="One person remained as several nodes after deduplication.",
+        examples="""MATCH (p:Person)
+            WHERE p.orcid IS NOT NULL AND trim(p.orcid) <> ''
+            WITH toLower(trim(p.orcid)) AS orcid, collect(p) AS ps
+            WHERE size(ps) > 1
+            RETURN orcid AS `ORCID`, size(ps) AS `Записей`,
+                   [x IN ps | x.id] AS `Идентификаторы`,
+                   [x IN ps | x.name_raw] AS `Как подписаны`,
+                   [x IN ps | x.is_itmo] AS `Сотрудник ИТМО`
+            ORDER BY size(ps) DESC, orcid LIMIT $lim""",
+    ),
+    Check(
         id="full_namesakes",
         group="Дубликаты",
         title="Полные тёзки среди сотрудников",

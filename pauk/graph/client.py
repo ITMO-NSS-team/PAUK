@@ -1,5 +1,6 @@
 import json
 import logging
+from collections import defaultdict, deque
 from typing import LiteralString, cast
 
 from neo4j import GraphDatabase
@@ -17,7 +18,7 @@ BOOLEAN_MERGE_FIELDS = {
     "Repository": {"has_readme"},
 }
 LIST_MERGE_FIELDS = {
-    "Person": {"name_variants", "other_names", "merged_ids"},
+    "Person": {"name_variants", "other_names", "emails", "merged_ids"},
     "Publication": {"fields", "merged_ids", "pdf_urls"},
     "Repository": {"cited_urls", "contributors", "merged_ids"},
 }
@@ -80,7 +81,64 @@ def _merge_duplicate_properties(label: str, canonical: dict, duplicate: dict) ->
                     updates[key] = encoded
         elif canonical_value is None:
             updates[key] = duplicate_value
+    if label == "Person":
+        addresses = updates.get("emails", canonical.get("emails")) or []
+        merged = _union_values(addresses, [
+            value for value in (canonical.get("email"), duplicate.get("email")) if value
+        ])
+        if merged and merged != canonical.get("emails"):
+            updates["emails"] = merged
     return updates
+
+
+def flatten_merges(merges: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Resolve aliases to one terminal survivor before any deletion.
+
+    Overlapping historical aliases may name both an intermediate node and
+    its survivor. They are safe only when all paths reach the same node.
+    Cycles and competing survivors are rejected without choosing a winner.
+    """
+    targets: dict[str, set[str]] = defaultdict(set)
+    parents: dict[str, set[str]] = defaultdict(set)
+    for duplicate, canonical in merges:
+        if duplicate != canonical:
+            targets[duplicate].add(canonical)
+            parents[canonical].add(duplicate)
+    remaining = {node: len(destinations) for node, destinations in targets.items()}
+    roots = {node: node for node in parents if node not in targets}
+    depth: dict[str, int] = defaultdict(int)
+    ready = deque(roots)
+    while ready:
+        node = ready.popleft()
+        for parent in parents.get(node, ()):
+            depth[parent] = max(depth[parent], depth[node] + 1)
+            root = roots.setdefault(parent, roots[node])
+            if root != roots[node]:
+                raise ValueError(f"Conflicting merge targets for {parent}")
+            remaining[parent] -= 1
+            if remaining[parent] == 0:
+                ready.append(parent)
+    if any(remaining.values()):
+        raise ValueError("Cyclic merge aliases cannot be applied")
+    # A nearer survivor's scalar values take precedence over the records it
+    # had swallowed; flat groups retain their original relative order.
+    return [(node, roots[node]) for node in sorted(targets, key=depth.__getitem__)]
+
+
+def _preserve_merged_person_lists(stored: dict, incoming: dict) -> dict:
+    """A source row cannot retract list evidence contributed by a graph fold.
+
+    Ordinary, unmerged rows still replace their lists. Explicit edits and
+    unmerge use the plain node upsert and can therefore remove stale values.
+    """
+    props = dict(incoming)
+    if not stored.get("merged_ids"):
+        return props
+    combined = {**stored, **_merge_duplicate_properties("Person", stored, incoming)}
+    for field in LIST_MERGE_FIELDS["Person"] | JSON_LIST_MERGE_FIELDS["Person"]:
+        if field in combined:
+            props[field] = combined[field]
+    return props
 
 
 def chunked(seq: list, size: int = CHUNK_SIZE):
@@ -172,7 +230,7 @@ class Neo4jClient:
             session.execute_write(lambda tx: tx.run(query, batch=batch))
 
     def upsert_person_nodes_batch(self, nodes: list[tuple[str, dict]]):
-        """Create or update a batch of Person nodes in one query.
+        """Create or update Person nodes, retaining lists from graph folds.
 
         is_itmo is a sticky boolean property, not a label: at least one ITMO
         affiliation anywhere makes the person ITMO, so a row that arrives
@@ -212,8 +270,26 @@ class Neo4jClient:
             """,
         )
 
+        def upsert(tx):
+            stored = {
+                record["id"]: record["props"]
+                for record in tx.run(
+                    "UNWIND $ids AS id MATCH (n:Person {id: id}) "
+                    "WHERE size(coalesce(n.merged_ids, [])) > 0 "
+                    "RETURN n.id AS id, properties(n) AS props",
+                    ids=[row["node_id"] for row in batch],
+                )
+            }
+            prepared = []
+            for row in batch:
+                props = _preserve_merged_person_lists(stored.get(row["node_id"], {}), row["properties"])
+                prepared.append({**row, "properties": props})
+                # The same id can occur more than once in an import batch.
+                stored[row["node_id"]] = {**stored.get(row["node_id"], {}), **props}
+            tx.run(query, batch=prepared).consume()
+
         with self.driver.session() as session:
-            session.execute_write(lambda tx: tx.run(query, batch=batch))
+            session.execute_write(upsert)
 
     def promote_link_candidates_batch(self, candidates: list[tuple[str, str]]) -> None:
         """Replace resolved LinkCandidates with their Repository targets.
@@ -286,8 +362,7 @@ class Neo4jClient:
         """
         batch = [
             {"dup_id": dup_id, "canonical_id": canonical_id}
-            for dup_id, canonical_id in merges
-            if dup_id != canonical_id
+            for dup_id, canonical_id in flatten_merges(merges)
         ]
         if not batch:
             return 0
@@ -301,6 +376,14 @@ class Neo4jClient:
         # laid back on top. Without it, a MERGE that finds an existing
         # canonical relationship silently drops the duplicate's properties —
         # e.g. the only AUTHORED edge carrying an affiliation.
+        # The aggregate edge means corresponding in ANY source record.
+        corresponding_merge = (
+            "SET new.is_corresponding = CASE "
+            "WHEN keep.is_corresponding IS NULL "
+            "AND none(edge IN old_edges WHERE edge.is_corresponding IS NOT NULL) THEN null "
+            "ELSE coalesce(keep.is_corresponding, false) "
+            "OR any(edge IN old_edges WHERE coalesce(edge.is_corresponding, false)) END"
+        )
         move_queries = [
             cast(
                 LiteralString,
@@ -308,13 +391,15 @@ class Neo4jClient:
                 UNWIND $batch AS row
                 MATCH (dup:{label} {{id: row.dup_id}})-[old:{rel_type}]->(other:{other_label})
                 MATCH (canonical:{label} {{id: row.canonical_id}})
+                WITH canonical, other, {"collect(DISTINCT old)" if rel_type == "AUTHORED" else "[old]"} AS old_edges
                 MERGE (canonical)-[new:{rel_type}]->(other)
-                ON CREATE SET new.created_at = coalesce(old.created_at, datetime())
-                WITH new, old, properties(new) AS keep
-                SET new += properties(old)
+                ON CREATE SET new.created_at = coalesce(old_edges[0].created_at, datetime())
+                WITH new, old_edges, properties(new) AS keep
+                FOREACH (old IN old_edges | SET new += properties(old))
                 SET new += keep
+                {corresponding_merge if rel_type == "AUTHORED" else ""}
                 SET new.updated_at = datetime()
-                DELETE old
+                FOREACH (old IN old_edges | DELETE old)
                 """,
             )
             for rel_type, other_label in outgoing
@@ -325,13 +410,15 @@ class Neo4jClient:
                 UNWIND $batch AS row
                 MATCH (other:{other_label})-[old:{rel_type}]->(dup:{label} {{id: row.dup_id}})
                 MATCH (canonical:{label} {{id: row.canonical_id}})
+                WITH canonical, other, {"collect(DISTINCT old)" if rel_type == "AUTHORED" else "[old]"} AS old_edges
                 MERGE (other)-[new:{rel_type}]->(canonical)
-                ON CREATE SET new.created_at = coalesce(old.created_at, datetime())
-                WITH new, old, properties(new) AS keep
-                SET new += properties(old)
+                ON CREATE SET new.created_at = coalesce(old_edges[0].created_at, datetime())
+                WITH new, old_edges, properties(new) AS keep
+                FOREACH (old IN old_edges | SET new += properties(old))
                 SET new += keep
+                {corresponding_merge if rel_type == "AUTHORED" else ""}
                 SET new.updated_at = datetime()
-                DELETE old
+                FOREACH (old IN old_edges | DELETE old)
                 """,
             )
             for other_label, rel_type in incoming
@@ -524,7 +611,9 @@ class Neo4jClient:
         )
         with self.driver.session() as session:
             return session.execute_read(
-                lambda tx: {record["merged_id"]: record["canonical_id"] for record in tx.run(query)})
+                lambda tx: dict(flatten_merges([
+                    (record["merged_id"], record["canonical_id"]) for record in tx.run(query)
+                ])))
 
     def merge_person_nodes_batch(self, merges: list[tuple[str, str]]) -> int:
         """Fold duplicate Person nodes into their canonical person."""
@@ -592,10 +681,34 @@ class Neo4jClient:
             return 0
 
         batch = []
+        authored_rows: dict[tuple[str, str], dict] = {}
         for src_id, tgt_id, rel_properties in relationships:
             rel_props_clean = {k: v for k, v in rel_properties.items() if k not in ("created_at", "updated_at")}
-            batch.append({"src_id": src_id, "tgt_id": tgt_id, "rel_properties": rel_props_clean})
+            key = (src_id, tgt_id)
+            if rel_type == "AUTHORED" and key in authored_rows:
+                row = authored_rows[key]
+                previous = row["rel_properties"].get("is_corresponding")
+                incoming = rel_props_clean.get("is_corresponding")
+                row["rel_properties"].update(rel_props_clean)
+                if previous is not None or incoming is not None:
+                    row["rel_properties"]["is_corresponding"] = bool(previous or incoming)
+                row["input_count"] += 1
+                continue
+            row = {"src_id": src_id, "tgt_id": tgt_id, "rel_properties": rel_props_clean, "input_count": 1}
+            batch.append(row)
+            if rel_type == "AUTHORED":
+                authored_rows[key] = row
 
+        corresponding_snapshot = ""
+        corresponding_merge = ""
+        if rel_type == "AUTHORED":
+            corresponding_snapshot = ", r.is_corresponding AS was_corresponding"
+            corresponding_merge = (
+                "SET r.is_corresponding = CASE "
+                "WHEN was_corresponding IS NULL AND row.rel_properties.is_corresponding IS NULL THEN null "
+                "ELSE coalesce(was_corresponding, false) "
+                "OR coalesce(row.rel_properties.is_corresponding, false) END"
+            )
         query = cast(
             LiteralString,
             f"""
@@ -603,26 +716,50 @@ class Neo4jClient:
             MATCH (src:{src_label} {{id: row.src_id}})
             MATCH (tgt:{tgt_label} {{{tgt_match_prop}: row.tgt_id}})
             MERGE (src)-[r:{rel_type}]->(tgt)
-            ON CREATE SET r += row.rel_properties, r.created_at = datetime(), r.updated_at = datetime()
-            ON MATCH SET  r += row.rel_properties, r.updated_at = datetime()
-            RETURN count(r) AS matched
+            ON CREATE SET r.created_at = datetime()
+            WITH r, row{corresponding_snapshot}
+            SET r += row.rel_properties, r.updated_at = datetime()
+            {corresponding_merge}
+            RETURN sum(row.input_count) AS matched
             """,
         )
 
         with self.driver.session() as session:
             matched = session.execute_write(lambda tx: tx.run(query, batch=batch).single()["matched"])
 
-        if matched < len(batch):
+        if matched < len(relationships):
             logger.warning(
                 "(:%s)-[:%s]->(:%s): requested %d, matched %d — %d row(s) whose source/target node was not found",
                 src_label,
                 rel_type,
                 tgt_label,
-                len(batch),
+                len(relationships),
                 matched,
-                len(batch) - matched,
+                len(relationships) - matched,
             )
         return matched
+
+    def set_relationship_properties_batch(
+        self, src_label: str, tgt_label: str, rel_type: str,
+        relationships: list[tuple[str, str, dict]], tgt_match_prop: str = "id",
+    ) -> int:
+        """Restore explicit properties on existing edges, without merge rules.
+
+        Undo must be able to clear an aggregate flag. It must neither create
+        a missing edge nor delete unrelated properties on the existing edge.
+        """
+        if not relationships:
+            return 0
+        query = cast(LiteralString, f"""
+            UNWIND $batch AS row
+            MATCH (src:{src_label} {{id: row.src_id}})-[r:{rel_type}]->
+                  (tgt:{tgt_label} {{{tgt_match_prop}: row.tgt_id}})
+            SET r += row.properties, r.updated_at = datetime()
+            RETURN count(r) AS matched
+        """)
+        batch = [{"src_id": src, "tgt_id": tgt, "properties": props} for src, tgt, props in relationships]
+        with self.driver.session() as session:
+            return session.execute_write(lambda tx: tx.run(query, batch=batch).single()["matched"])
 
     def fetch_node_properties(self, label: str, node_id: str) -> dict | None:
         """Every property of one node, or None if there is no such node.

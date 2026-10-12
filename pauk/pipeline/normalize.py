@@ -4,6 +4,7 @@ import html
 import logging
 import re
 from collections import OrderedDict
+from copy import deepcopy
 from datetime import date
 from hashlib import sha1
 from typing import TypeVar
@@ -185,29 +186,19 @@ def _merge_person(base: Person, extra: Person) -> Person:
     come from extra.
     """
     base.is_itmo = base.is_itmo or extra.is_itmo
-    base.name_variants = list(dict.fromkeys([*base.name_variants, *extra.name_variants]))
-    base.department_ids = list(dict.fromkeys([*base.department_ids, *extra.department_ids]))
-    base.merged_ids = list(dict.fromkeys([*base.merged_ids, *extra.merged_ids]))
-    for authorship in extra.authored:
-        if authorship not in base.authored:
-            base.authored.append(authorship)
-    for contribution in extra.contributed_to:
-        if contribution not in base.contributed_to:
-            base.contributed_to.append(contribution)
-    for field in (
-        "orcid",
-        "name_raw",
-        "email",
-        "first_name_ru",
-        "second_name_ru",
-        "surname_ru",
-        "degree",
-        "github",
-        "google_scholar",
-        "thesis",
-    ):
-        if getattr(base, field) is None:
-            setattr(base, field, getattr(extra, field))
+    for field in Person.model_fields:
+        if field in {"id", "openalex_id", "is_itmo", "processing"}:
+            continue
+        current, incoming = getattr(base, field), getattr(extra, field)
+        if isinstance(current, list):
+            for value in incoming:
+                if value not in current:
+                    current.append(deepcopy(value))
+        elif current is None and incoming is not None:
+            setattr(base, field, incoming)
+    for address in (base.email, extra.email):
+        if address and address not in base.emails:
+            base.emails.append(address)
     for stage, state in extra.processing.items():
         base.processing.setdefault(stage, state)
     return base
@@ -367,7 +358,9 @@ class OpenAlexNormalizer:
                 if existing_authorship is None:
                     person.authored.append(authorship_record)
                     continue
-                existing_authorship.is_corresponding = authorship_record.is_corresponding
+                existing_authorship.is_corresponding = (
+                    existing_authorship.is_corresponding or authorship_record.is_corresponding
+                )
                 if authorship_record.affiliation:
                     # What the work states always wins over a filled-in value.
                     existing_authorship.affiliation = authorship_record.affiliation

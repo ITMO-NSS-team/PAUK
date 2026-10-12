@@ -1,5 +1,6 @@
 import argparse
 import unittest
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import mongomock
@@ -349,18 +350,22 @@ class TrimCommandTest(unittest.TestCase):
     """`pauk admin trim`, the only thing that shortens either history."""
 
     def setUp(self):
+        """Stamps relative to today: a fixed date drifts past the cutoff and
+        fails the test on a day nobody changed anything."""
         self.db = mongomock.MongoClient()["pauk_test"]
+        old = (datetime.now(UTC) - timedelta(days=400)).isoformat()
+        recent = (datetime.now(UTC) - timedelta(days=1)).isoformat()
         self.db[REVISIONS].insert_many([
             {"entity_type": "persons", "entity_id": "OLD", "version": 1,
-             "snapshot": {}, "replaced_at": "2024-01-01T10:00:00"},
+             "snapshot": {}, "replaced_at": old},
             {"entity_type": "persons", "entity_id": "RECENT", "version": 1,
-             "snapshot": {}, "replaced_at": "2026-09-01T10:00:00"},
+             "snapshot": {}, "replaced_at": recent},
         ])
         self.db[feed.COLLECTION].insert_many([
-            {"timestamp": "2024-01-01T10:00:00", "actor": "pipeline", "source": "publish",
+            {"timestamp": old, "actor": "pipeline", "source": "publish",
              "operation": "upsert_nodes", "entity_type": "Person", "entity_id": "OLD",
              "change_kind": "updated", "diff": {}},
-            {"timestamp": "2026-09-01T10:00:00", "actor": "user:roman", "source": "admin-ui",
+            {"timestamp": recent, "actor": "user:roman", "source": "admin-ui",
              "operation": "upsert_nodes", "entity_type": "Person", "entity_id": "RECENT",
              "change_kind": "updated", "diff": {}},
         ])
