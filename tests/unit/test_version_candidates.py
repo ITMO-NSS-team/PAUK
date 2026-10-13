@@ -3,6 +3,7 @@ import unittest
 from pauk.graph.version_candidates import (
     MERGE_BUCKETS,
     _candidate_pairs,
+    _is_preprint,
     classify_pair,
     find_version_candidates,
 )
@@ -124,8 +125,9 @@ class ClassifyPairTest(unittest.TestCase):
         self.assertNotIn(bucket, MERGE_BUCKETS)
         self.assertEqual(signals["doi_b"], "10.60797/jbg.2026.32.4.1")
 
-    def test_cyrillic_doi_component_does_not_match_on_latin_fragments(self):
-        # Both titles fold to just "ux" - not evidence of one title.
+    def test_cyrillic_doi_component_with_a_similar_caption_is_not_a_version(self):
+        # The caption reads like the paper's title (similarity ~0.83), but a
+        # ".N" component typed as a deposit is never a revision.
         bucket, _signals = classify_pair(
             pub("W1", "КОМПЛЕКСНЫЙ ОБЗОР МУЛЬТИМОДАЛЬНЫХ ИНТЕРФЕЙСОВ И UX-ДИЗАЙНА ПРИЛОЖЕНИЙ",
                 doi="10.60797/irj.2026.168.48", authors=["A1"]),
@@ -230,6 +232,117 @@ class ClassifyPairTest(unittest.TestCase):
         )
         self.assertIsNone(result)
 
+    def test_russian_duplicates_are_compared_on_their_cyrillic_titles(self):
+        bucket, _signals = classify_pair(
+            pub("W1", "Исследование устойчивости нелинейных систем управления",
+                doi="10.1/a", pdate="2021-01-01", authors=["A1", "A2"]),
+            pub("W2", "Исследование устойчивости нелинейных систем автоматического управления",
+                doi="10.1/b", pdate="2021-06-01", authors=["A1", "A2"]),
+        )
+        self.assertIn(bucket, MERGE_BUCKETS)
+
+    def test_different_russian_titles_are_not_matched(self):
+        result = classify_pair(
+            pub("W1", "Исследование устойчивости нелинейных систем управления", doi="10.1/a", authors=["A1"]),
+            pub("W2", "Методы оптимизации маршрутов беспилотных летательных аппаратов", doi="10.1/b",
+                authors=["A1"]),
+        )
+        self.assertIsNone(result)
+
+    def test_title_in_another_script_is_not_matched_on_title_alone(self):
+        # Titles are compared as text, not translated: a Russian title and
+        # its English rendering share no letters to compare.
+        result = classify_pair(
+            pub("W1", "Исследование устойчивости нелинейных систем управления",
+                journal="Известия вузов. Приборостроение", authors=["A1"]),
+            pub("W2", "Stability study of nonlinear control systems",
+                journal="Journal of Instrument Engineering", authors=["A1"]),
+        )
+        self.assertIsNone(result)
+
+    def test_cyrillic_lookalike_inside_a_latin_word_is_folded(self):
+        bucket, _signals = classify_pair(
+            pub("W1", "Robust nonlinear сontrol of quadrotor formations", doi="10.1/a", authors=["A1"]),
+            pub("W2", "Robust nonlinear control of quadrotor formations", doi="10.1/b", authors=["A1"]),
+        )
+        self.assertEqual(bucket, "MISSED_BY_NORM")
+
+    def test_journal_name_containing_osf_or_hal_is_not_a_preprint_venue(self):
+        for journal in ("Journal of Biosfera", "The Marshal Journal"):
+            with self.subTest(journal=journal):
+                bucket, signals = classify_pair(
+                    pub("W1", "Adaptive observers for uncertain nonlinear systems with delays",
+                        doi="10.1/a", journal=journal, pdate="2020-01-01", authors=["A1", "A2"]),
+                    pub("W2", "Adaptive observers for uncertain nonlinear systems with time delays",
+                        doi="10.1/b", journal="Automatica", pdate="2020-09-01", authors=["A1", "A2"]),
+                )
+                self.assertFalse(signals["preprint_split"])
+                self.assertNotEqual(bucket, "PREPRINT_PUBLISHED")
+
+    def test_short_notice_subject_is_not_matched_by_containment(self):
+        result = classify_pair(
+            pub("W1", "Correction to: Introduction", type="erratum", authors=["A1"]),
+            pub("W2", "Introduction to deep learning methods for spectroscopy", authors=["A1"]),
+        )
+        self.assertIsNone(result)
+
+    def test_notice_subject_matches_only_on_word_boundaries(self):
+        result = classify_pair(
+            pub("W1", "Erratum: Graph networks traffic prediction", authors=["A1"]),
+            pub("W2", "Hypergraph networks traffic prediction for urban mobility under sparse sensor coverage",
+                authors=["A1"]),
+        )
+        self.assertIsNone(result)
+
+    def test_paper_titled_correction_for_is_not_a_notice(self):
+        bucket, _signals = classify_pair(
+            pub("W1", "Correction for motion artifacts in functional MRI data",
+                doi="10.1/a", pdate="2020-01-01", authors=["A1", "A2"]),
+            pub("W2", "Correction for motion artifacts in functional MRI data using deep networks",
+                doi="10.1/b", pdate="2020-06-01", authors=["A1", "A2"]),
+        )
+        self.assertIn(bucket, MERGE_BUCKETS)
+
+    def test_hyphenated_correction_title_is_not_a_notice(self):
+        bucket, _signals = classify_pair(
+            pub("W1", "Correction-based approach to robust state estimation in power grids",
+                doi="10.1/a", pdate="2020-01-01", authors=["A1", "A2"]),
+            pub("W2", "Correction-based approach to robust state estimation for power grids",
+                doi="10.1/b", pdate="2020-06-01", authors=["A1", "A2"]),
+        )
+        self.assertIn(bucket, MERGE_BUCKETS)
+
+    def test_erratum_for_with_a_colon_is_a_notice(self):
+        bucket, signals = classify_pair(
+            pub("W1", "Animal model of assessing cerebrovascular functional reserve"),
+            pub("W2", "Erratum for: Animal model of assessing cerebrovascular functional reserve"),
+        )
+        self.assertEqual(bucket, "ERRATUM")
+        self.assertEqual(signals["original"], "W1")
+
+    def test_trailing_number_on_one_title_only_is_not_a_series(self):
+        bucket, _signals = classify_pair(
+            pub("W1", "Spread forecasting model for the pandemic of COVID-19", doi="10.1101/2020.04.01.1",
+                journal="medRxiv", type="preprint", pdate="2020-04-01", authors=["A1"]),
+            pub("W2", "Spread forecasting model for the pandemic of COVID", doi="10.1/b",
+                journal="Mathematics", pdate="2021-01-01", authors=["A1"]),
+        )
+        self.assertEqual(bucket, "PREPRINT_PUBLISHED")
+
+    def test_series_number_after_hash_mid_title(self):
+        bucket, _signals = classify_pair(
+            pub("W1", "Lecture notes #2 on optimal control theory", doi="10.1/a", authors=["A1", "A2"]),
+            pub("W2", "Lecture notes #3 on optimal control theory", doi="10.1/b", authors=["A1", "A2"]),
+        )
+        self.assertEqual(bucket, "SERIES_NOT_VERSION")
+
+    def test_software_releases_with_one_title_are_not_missed_by_norm(self):
+        result = classify_pair(
+            pub("W1", "PAUK publication graph toolkit release", doi="10.5281/zenodo.1", type="software"),
+            pub("W2", "PAUK publication graph toolkit release", doi="10.5281/zenodo.2", type="software"),
+        )
+        self.assertIsNone(result)
+
     def test_generic_front_matter_title_is_never_a_match(self):
         result = classify_pair(
             pub("W1", "Contributors", doi="10.1/a"),
@@ -264,6 +377,32 @@ class CandidatePairsTest(unittest.TestCase):
         self.assertEqual(_candidate_pairs(rows), {("W1", "W2")})
 
 
+    def test_prolific_author_still_pairs_works_sharing_rare_words(self):
+        rows = [pub(f"T{i}", f"Distinct title number {i} about nothing in particular", authors=["A1"])
+                for i in range(120)]
+        rows += [
+            pub("WA", "Quadrotor formation control under wind disturbances", authors=["A1"]),
+            pub("WB", "Quadrotor formation control with wind disturbance rejection", authors=["A1"]),
+        ]
+        # The shared words are too common across the graph for title-token
+        # blocking, so only the author's own bucket can bring these together.
+        rows += [pub(f"O{i}", f"Quadrotor formation control wind study {i}", authors=[f"B{i}"])
+                 for i in range(50)]
+        self.assertIn(("WA", "WB"), _candidate_pairs(rows))
+
+
+class IsPreprintTest(unittest.TestCase):
+    def test_registrant_prefix_must_match_whole(self):
+        for doi in ("10.11016/x", "10.21390/x"):
+            with self.subTest(doi=doi):
+                self.assertFalse(_is_preprint({"doi": doi}))
+
+    def test_preprint_doi_matches_with_or_without_resolver(self):
+        for doi in ("10.1101/2020.01.01.123", "https://doi.org/10.1101/2020.01.01.123"):
+            with self.subTest(doi=doi):
+                self.assertTrue(_is_preprint({"doi": doi}))
+
+
 class FindVersionCandidatesTest(unittest.TestCase):
     class _StubClient:
         def __init__(self, rows):
@@ -291,6 +430,17 @@ class FindVersionCandidatesTest(unittest.TestCase):
         client = self._StubClient([pub("W1", "A publication with no version anywhere near it")])
         self.assertEqual(find_version_candidates(client), [])
 
+
+    def test_report_is_ordered_by_record_pair(self):
+        rows = []
+        for i in range(10):
+            title = f"Unique study {chr(97 + i) * 3} of nonlinear observers and estimators"
+            rows += [pub(f"W{i}a", title, doi=f"10.1/{i}a", authors=[f"A{i}"]),
+                     pub(f"W{i}b", title, doi=f"10.1/{i}b", authors=[f"A{i}"])]
+        report = find_version_candidates(self._StubClient(rows))
+        keys = [(row["record_a"], row["record_b"]) for row in report]
+        self.assertEqual(len(keys), 10)
+        self.assertEqual(keys, sorted(keys))
 
 if __name__ == "__main__":
     unittest.main()

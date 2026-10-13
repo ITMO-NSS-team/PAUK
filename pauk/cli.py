@@ -179,8 +179,7 @@ def main() -> None:
     elif args.command == "versions":
         # Read-only against Neo4j - no Mongo connection needed.
         from pauk.graph.version_candidates import run_version_report
-        path = run_version_report(settings, args.output)
-        logger.info("versions report: %s", path)
+        run_version_report(settings, args.output)
     else:
         from pauk.cache import GraphSnapshotExporter
         path = GraphSnapshotExporter(settings).export(args.output)

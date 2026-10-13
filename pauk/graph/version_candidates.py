@@ -51,12 +51,14 @@ MERGE_BUCKETS = frozenset({
 
 # Repository/preprint hosts, matched against either the DOI or the venue
 # name. Order does not matter - a work never carries two of these.
+# Anchored on a whole registrant: unanchored, "10.1101" also matched
+# "10.11016/..." and "10.2139" matched "10.21390/...".
 _PREPRINT_DOI = re.compile(
-    r"10\.(48550/arxiv|1101|21203|31219|26434|20944|31234|2139|35542|13140|"
-    r"55458|32942|33774|preprints)", re.I)
+    r"^10\.(?:48550/arxiv\.|(?:1101|21203|31219|26434|20944|31234|2139|35542|13140|"
+    r"55458|32942|33774)/)", re.I)
 _PREPRINT_VENUE = re.compile(
     r"arxiv|biorxiv|medrxiv|chemrxiv|techrxiv|research\s*square|ssrn|preprints\.org|"
-    r"osf|repec|authorea|figshare|zenodo|hal\b|working paper|preprint|cold spring harbor", re.I)
+    r"\bosf\b|\brepec\b|authorea|figshare|zenodo|\bhal\b|working paper|preprint|cold spring harbor", re.I)
 _ARXIV_IN_URL = re.compile(r"arxiv\.org/(?:abs|pdf)/([0-9]{4}\.[0-9]{4,5}|[a-z-]+/[0-9]{7})", re.I)
 _ARXIV_IN_DOI = re.compile(r"10\.48550/arxiv\.([0-9]{4}\.[0-9]{4,5}|[a-z-]+/[0-9]{7})", re.I)
 
@@ -69,8 +71,10 @@ _ERRATUM_PREFIX = re.compile(
     r"^(correction|corrigendum|erratum|retraction(?:\s+(?:note|notice))?|retracted|"
     r"notice of retraction|publisher correction|author correction|expression of concern|addendum)"
     # The separator is required: "Correction of chromatic aberration" is a
-    # paper, "Correction to: ..." / "Erratum: ..." is a notice.
-    r"\s*(\bto\b|\bfor\b|:|—|-|–)\s*", re.I)
+    # paper, "Correction to: ..." / "Erratum: ..." is a notice. "for" counts
+    # only with a colon and a hyphen only between spaces, or "Correction for
+    # motion artifacts" and "Correction-based approach" become notices.
+    r"(\s*\bto\b\s*:?|\s+for\s*:|\s*:|\s*[—–]|\s+-)\s*", re.I)
 # The same notice spelled as a suffix: "... (Erratum)", "...: publisher's note".
 _ERRATUM_SUFFIX = re.compile(
     r"\s*(?:\((?:erratum|corrigendum|retracted|retraction)\)|[:.]\s*publisher['’]?s\s+note)\s*$", re.I)
@@ -87,16 +91,22 @@ _DEPOSIT_HEAD = re.compile(
 
 # Titles that differ only by a trailing series marker are different works in
 # a series, not versions of one work ("Part I" / "Part II", "Volume 2").
+# A named marker is a series entry even when only one title carries it
+# ("... Chemistry" vs "...: Volume 2").
 _SERIES_TAIL = re.compile(
     r"\s*(?:[.,:;—–-]\s*)?(?:"
     r"part\s+(?:[ivx]+|\d+|one|two|three|four|five)"
     r"|(?:vol|volume)\s*\.?\s*\d+"
     r"|no\.?\s*\d+"
-    r"|[ivx]{1,4}"
-    r"|\d{1,3}"
     r"|supplementary (?:file|material|data)\s*\d*"
     r")\s*$", re.I)
-_SERIES_NUM = re.compile(r"\b(?:part|pt|episode|chapter|no|#)\s*\.?\s*([ivx]+|\d{1,3})\b", re.I)
+# A bare trailing number is one only when both titles end in one and the
+# numbers differ ("Game. I" / "Game. II"): otherwise "of COVID-19" vs "of
+# COVID" is a series.
+_SERIES_BARE_TAIL = re.compile(r"\s+([ivx]{1,4}|\d{1,3})$", re.I)
+# "#" sits outside \b: a word boundary before it needs a word character
+# right before, which " #3" never has.
+_SERIES_NUM = re.compile(r"(?:\b(?:part|pt|episode|chapter|no)|#)\s*\.?\s*([ivx]+|\d{1,3})\b", re.I)
 # A bare section number between sentences: "Disturbance Observers: Methods and
 # Applications. II. Applications", "... beer industries. 2. Study of ...".
 # Case-sensitive, so the English pronoun "I" mid-sentence never counts.
@@ -104,9 +114,16 @@ _SERIES_SECTION = re.compile(r"[.:]\s+([IVX]{1,4}|\d{1,2})\.(?:\s|$)")
 _ROMAN = {"i": 1, "ii": 2, "iii": 3, "iv": 4, "v": 5, "vi": 6, "vii": 7, "viii": 8, "ix": 9, "x": 10}
 
 _CYRILLIC = re.compile(r"[Ѐ-ӿ]")
+_NON_WORD = re.compile(r"[^a-z0-9а-я]+")
+_HAS_LATIN = re.compile(r"[a-z]")
+# Cyrillic letters a publisher's typesetting slips into a Latin word
+# ("nonlinear сontrol" with a Cyrillic "с"). Only mixed-script words are
+# mapped: a Russian word must keep its letters to be compared at all.
+_LATIN_LOOKALIKES = str.maketrans("аеорсухкмтвн", "aeopcyxkmtbh")
 _STOPWORDS = frozenset({
     "a", "an", "the", "of", "and", "or", "for", "to", "in", "on", "with",
     "by", "at", "as", "from", "via", "using", "based",
+    "и", "в", "во", "на", "с", "со", "по", "для", "от", "к", "из", "о", "об", "при", "или",
 })
 
 # Front/back matter: a shared title here means nothing about the work.
@@ -128,9 +145,11 @@ _NON_PAPER_TYPES = frozenset({"software", "dataset", "peer-review", "grant", "ot
 
 _MIN_TITLE_TOKENS = 4
 # Caps on how large a shared-author or shared-title-token bucket may be
-# before it stops producing pairs: a prolific author's whole back catalogue,
-# or a generic word every third title carries, would otherwise turn one
-# bucket into thousands of pairs that say nothing about identity.
+# before it stops being paired whole: a prolific author's whole back
+# catalogue, or a generic word every third title carries, would otherwise
+# turn one bucket into thousands of pairs that say nothing about identity.
+# An author over the cap is still blocked within (_prolific_author_pairs);
+# a token over it is dropped.
 _MAX_PUBS_PER_AUTHOR = 90
 _MAX_PUBS_PER_TOKEN = 45
 
@@ -147,9 +166,12 @@ def _fold_title(title: str | None) -> str:
     Cyrillic look-alikes) and drop words too common to carry identity."""
     if not title:
         return ""
-    text = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode()
-    text = re.sub(r"[^a-z0-9]+", " ", text.lower())
-    return " ".join(word for word in text.split() if word not in _STOPWORDS)
+    # Drop combining marks rather than everything non-ASCII: the latter
+    # folds a Russian title to "" (or to its stray Latin fragments).
+    text = "".join(ch for ch in unicodedata.normalize("NFKD", title) if not unicodedata.combining(ch))
+    words = _NON_WORD.sub(" ", text.lower()).split()
+    words = [word.translate(_LATIN_LOOKALIKES) if _HAS_LATIN.search(word) else word for word in words]
+    return " ".join(word for word in words if word not in _STOPWORDS)
 
 
 @lru_cache(maxsize=_TEXT_CACHE_SIZE)
@@ -196,7 +218,7 @@ def _arxiv_id(row: dict) -> str | None:
 
 
 def _is_preprint(row: dict) -> bool:
-    return (bool(_PREPRINT_DOI.search(row.get("doi") or ""))
+    return (bool(_PREPRINT_DOI.match(_norm_doi(row.get("doi")) or ""))
             or bool(_PREPRINT_VENUE.search(row.get("journal") or ""))
             or (row.get("type") or "").lower() == "preprint")
 
@@ -229,6 +251,10 @@ def _series_variant(title_a: str, title_b: str, folded_a: str, folded_b: str) ->
     ("... I. Methods" vs "... II. Applications")."""
     stem_a, stem_b = _SERIES_TAIL.sub("", folded_a).strip(), _SERIES_TAIL.sub("", folded_b).strip()
     if stem_a == stem_b and stem_a and folded_a != folded_b:
+        return True
+    bare_a, bare_b = _SERIES_BARE_TAIL.search(stem_a), _SERIES_BARE_TAIL.search(stem_b)
+    if bare_a and bare_b and bare_a.group(1) != bare_b.group(1) \
+            and stem_a[:bare_a.start()] == stem_b[:bare_b.start()] and bare_a.start():
         return True
     num_a, num_b = _series_num(title_a), _series_num(title_b)
     # Different numbers alone say nothing: "... beer industries. Part 3" and
@@ -274,7 +300,12 @@ def _erratum_of(a: dict, b: dict) -> tuple[dict, dict] | None:
         base = _fold_title(original.get("title"))
         if not stripped or not base:
             continue
-        if stripped == base or stripped in base or base in stripped or _title_similarity(
+        # Containment counts only for a subject long enough to identify a
+        # paper, and only on word boundaries: "Correction to: Introduction"
+        # is not about every title with "introduction" in it.
+        shorter, longer = sorted((stripped, base), key=len)
+        contained = len(shorter.split()) >= _MIN_TITLE_TOKENS and f" {shorter} " in f" {longer} "
+        if stripped == base or contained or _title_similarity(
                 stripped, base, _jaccard(_title_tokens(subject), _title_tokens(original.get("title"))),
                 floor=0.75) >= 0.75:
             return erratum, original
@@ -347,24 +378,26 @@ def classify_pair(a: dict, b: dict) -> tuple[str, dict] | None:
 
     doi_a, doi_b = _norm_doi(a.get("doi")), _norm_doi(b.get("doi"))
     min_tokens = min(len(folded_a.split()), len(folded_b.split()))
+    # Checked before the first bucket, not only before the fuzzy ones: two
+    # releases of one software package share their title verbatim.
+    non_paper = any((row.get("type") or "").lower() in _NON_PAPER_TYPES for row in (a, b))
 
-    if folded_a == folded_b and doi_a != doi_b and min_tokens >= _MIN_TITLE_TOKENS:
+    if folded_a == folded_b and doi_a != doi_b and min_tokens >= _MIN_TITLE_TOKENS and not non_paper:
         return "MISSED_BY_NORM", _signals(a, b, title_sim=1.0, doi_a=doi_a, doi_b=doi_b)
     if _doi_version_siblings(doi_a, doi_b):
         title_sim = _title_similarity(folded_a, folded_b, token_jaccard)
         # Publishers also mint "<article DOI>.N" for the article's own
         # figures and tables (Cifra 10.60797, AIP supplementary material):
         # the DOI relation is the same, but such a component carries its own
-        # caption as the title. A revision keeps the paper's title. A
-        # Cyrillic title folds down to its Latin fragments ("ux", "svg"),
-        # which then "match" trivially - too few tokens to compare at all.
-        similar = title_sim >= 0.75 and min_tokens >= _MIN_TITLE_TOKENS
+        # caption as the title. A revision keeps the paper's title. A caption
+        # can still read like the paper's title ("Классификация
+        # мультимодальных интерфейсов..." under "Обзор мультимодальных
+        # интерфейсов..."), so a component typed as a deposit never counts.
+        similar = title_sim >= 0.75 and min_tokens >= _MIN_TITLE_TOKENS and not non_paper
         bucket = "DOI_SIBLING" if similar else "SUPPLEMENT_OR_REVIEW"
         return bucket, _signals(a, b, title_sim=round(title_sim, 3), doi_a=doi_a, doi_b=doi_b)
 
-    if min_tokens < _MIN_TITLE_TOKENS:
-        return None
-    if (a.get("type") or "").lower() in _NON_PAPER_TYPES or (b.get("type") or "").lower() in _NON_PAPER_TYPES:
+    if min_tokens < _MIN_TITLE_TOKENS or non_paper:
         return None
 
     # 0.75 is the lowest title threshold of any bucket below.
@@ -403,6 +436,24 @@ def classify_pair(a: dict, b: dict) -> tuple[str, dict] | None:
     return None
 
 
+def _prolific_author_pairs(members: list[str], titles: dict[str, str | None]) -> set[tuple[str, str]]:
+    """Pairs within one prolific author's bucket that share at least two
+    title tokens rare for that author. Pairing the whole bucket is quadratic
+    noise, but dropping it loses exactly the authors most likely to have a
+    preprint and its journal version. Any pair that can reach the 0.75 title
+    threshold shares words, so this keeps recall at a fraction of the pairs."""
+    by_token: dict[str, list[str]] = defaultdict(list)
+    for pub_id in members:
+        for token in _title_tokens(titles[pub_id]):
+            by_token[token].append(pub_id)
+    shared: dict[tuple[str, str], int] = defaultdict(int)
+    for ids in by_token.values():
+        if len(ids) <= _MAX_PUBS_PER_TOKEN:
+            for pair in combinations(sorted(ids), 2):
+                shared[pair] += 1
+    return {pair for pair, count in shared.items() if count >= 2}
+
+
 def _candidate_pairs(rows: list[dict]) -> set[tuple[str, str]]:
     """Pairs worth classifying: rows sharing an author, a rare title token,
     or an arXiv id. Full O(n^2) comparison is not needed - see the module
@@ -411,6 +462,7 @@ def _candidate_pairs(rows: list[dict]) -> set[tuple[str, str]]:
     by_author: dict[str, list[str]] = defaultdict(list)
     by_token: dict[str, list[str]] = defaultdict(list)
     by_arxiv: dict[str, list[str]] = defaultdict(list)
+    titles = {row["id"]: row.get("title") for row in rows}
     for row in rows:
         for author in row.get("authors") or []:
             if author and author.get("person_id"):
@@ -422,11 +474,16 @@ def _candidate_pairs(rows: list[dict]) -> set[tuple[str, str]]:
             by_arxiv[arxiv_id].append(row["id"])
 
     pairs: set[tuple[str, str]] = set()
-    for bucket, limit in ((by_author, _MAX_PUBS_PER_AUTHOR), (by_token, _MAX_PUBS_PER_TOKEN)):
-        for members in bucket.values():
-            unique = sorted(set(members))
-            if 2 <= len(unique) <= limit:
-                pairs.update(combinations(unique, 2))
+    for members in by_author.values():
+        unique = sorted(set(members))
+        if len(unique) > _MAX_PUBS_PER_AUTHOR:
+            pairs.update(_prolific_author_pairs(unique, titles))
+        elif len(unique) >= 2:
+            pairs.update(combinations(unique, 2))
+    for members in by_token.values():
+        unique = sorted(set(members))
+        if 2 <= len(unique) <= _MAX_PUBS_PER_TOKEN:
+            pairs.update(combinations(unique, 2))
     for members in by_arxiv.values():
         unique = sorted(set(members))
         if len(unique) > 1:
@@ -442,7 +499,9 @@ def find_version_candidates(client) -> list[dict]:
     rows = client.fetch_publications_for_dedup()
     by_id = {row["id"]: row for row in rows}
     report = []
-    for a_id, b_id in _candidate_pairs(rows):
+    # Sorted, so two runs over one graph write the same journal and can be
+    # diffed to see what a publish added.
+    for a_id, b_id in sorted(_candidate_pairs(rows)):
         result = classify_pair(by_id[a_id], by_id[b_id])
         if result is None:
             continue
