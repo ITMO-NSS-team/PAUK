@@ -1,11 +1,12 @@
 import argparse
 import unittest
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import mongomock
 
 from pauk.admin import cli as admin_cli
-from pauk.admin import decisions
+from pauk.admin import decisions, feed
 from pauk.graph.audit import _actor_var, _source_var
 from pauk.graph.mutations import NotFound
 from pauk.graph.overrides import (
@@ -15,6 +16,7 @@ from pauk.graph.overrides import (
     tombstoned_relationships,
 )
 from pauk.settings import Settings
+from pauk.storage.prepared import REVISIONS
 from tests.unit.test_mutations import FakeGraph
 
 
@@ -162,7 +164,7 @@ class RunTest(unittest.TestCase):
 
     def test_a_refused_edit_leaves_no_decision_behind(self):
         # Recording the decision before the write would apply it on the next
-        # publish — quietly making the change the person was just told was
+        # publish - quietly making the change the person was just told was
         # rejected.
         db = mongomock.MongoClient()["pauk_test"]
         stale = self.graph.nodes[("Person", "A1")]["updated_at"]
@@ -215,9 +217,19 @@ class RelationshipOverrideCliTest(unittest.TestCase):
         self.assertEqual(tombstoned_relationships(self.db),
                          {("Person", "AUTHORED", "Publication", "A1", "W1")})
 
-    def test_linking_records_nothing(self):
-        # The loader only creates edges, so a hand-made link needs no help.
-        self.assertEqual(active_overrides(self.db), [])
+    def test_linking_claims_the_link(self):
+        # Nothing reapplies it - the loader only creates edges, so the link
+        # survives publishing on its own. It is written down because a
+        # prune has no other way of telling it from an edge the pipeline
+        # has stopped making.
+        (claim,) = active_overrides(self.db)
+        self.assertEqual((claim["kind"], claim["op"]), ("rel", "link"))
+
+    def test_linking_once_claims_nothing(self):
+        self.graph.add("Publication", "W2", title="another")
+        admin_cli.run(parse("rel", "add", "Person", "AUTHORED", "Publication",
+                            "A1", "W2", "--once"), self.config, self.db)
+        self.assertEqual([row["target_id"] for row in active_overrides(self.db)], ["W1"])
 
     def test_once_unlinks_without_remembering(self):
         admin_cli.run(parse("rel", "delete", "Person", "AUTHORED", "Publication", "A1", "W1",
@@ -238,7 +250,7 @@ class RelationshipOverrideCliTest(unittest.TestCase):
 
 
 class PrintingCommandsTest(unittest.TestCase):
-    """Commands that mostly print — still worth a run, they touch the graph."""
+    """Commands that mostly print - still worth a run, they touch the graph."""
 
     def setUp(self):
         self.graph = FakeGraph()
@@ -299,10 +311,9 @@ class PrintingCommandsTest(unittest.TestCase):
 class DeleteSnapshotTest(unittest.TestCase):
     """`pauk admin node delete` has to record what it removed.
 
-    The panel took a snapshot and the command did not, so a record deleted
-    from the terminal could only be restored from the feed — which keeps
-    history rather than state, and summarises a bulk operation without
-    listing a single field.
+    The panel takes a snapshot, so the command must too: otherwise a record deleted from the terminal can
+    only be restored from the feed, which keeps history rather than state and summarises a bulk
+    operation without listing a single field.
     """
 
     def setUp(self):
@@ -332,3 +343,63 @@ class DeleteSnapshotTest(unittest.TestCase):
         with self.assertRaises(NotFound):
             admin_cli._delete(self.args, self.graph, self.db, "user:roman")
         self.assertIsNone(self.db[COLLECTION].find_one({"op": "delete"}))
+
+
+class TrimCommandTest(unittest.TestCase):
+    """`pauk admin trim`, the only thing that shortens either history."""
+
+    def setUp(self):
+        """Stamps relative to today: a fixed date drifts past the cutoff and
+        fails the test on a day nobody changed anything."""
+        self.db = mongomock.MongoClient()["pauk_test"]
+        old = (datetime.now(UTC) - timedelta(days=400)).isoformat()
+        recent = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+        self.db[REVISIONS].insert_many([
+            {"entity_type": "persons", "entity_id": "OLD", "version": 1,
+             "snapshot": {}, "replaced_at": old},
+            {"entity_type": "persons", "entity_id": "RECENT", "version": 1,
+             "snapshot": {}, "replaced_at": recent},
+        ])
+        self.db[feed.COLLECTION].insert_many([
+            {"timestamp": old, "actor": "pipeline", "source": "publish",
+             "operation": "upsert_nodes", "entity_type": "Person", "entity_id": "OLD",
+             "change_kind": "updated", "diff": {}},
+            {"timestamp": recent, "actor": "user:roman", "source": "admin-ui",
+             "operation": "upsert_nodes", "entity_type": "Person", "entity_id": "RECENT",
+             "change_kind": "updated", "diff": {}},
+        ])
+
+    def run_trim(self, *argv):
+        printed = []
+        with patch("builtins.print", lambda *words: printed.append(" ".join(map(str, words)))):
+            admin_cli.run(parse("trim", *argv), Settings(), self.db)
+        return "\n".join(printed)
+
+    def versions(self):
+        return sorted(row["entity_id"] for row in self.db[REVISIONS].find())
+
+    def test_it_counts_without_being_asked_to_delete(self):
+        said = self.run_trim("--keep-days", "30")
+        self.assertIn("--apply", said)
+        self.assertEqual(feed.count(self.db), 2)
+        self.assertEqual(self.versions(), ["OLD", "RECENT"])
+
+    def test_it_deletes_when_asked(self):
+        self.run_trim("--keep-days", "30", "--apply")
+        self.assertEqual(feed.count(self.db), 1)
+        (left,) = feed.entries(self.db)
+        self.assertEqual(left["entity_id"], "RECENT")
+
+    def test_it_shortens_the_archive_of_replaced_rows_too(self):
+        # Both histories grow for the same reason and are cut on the same
+        # schedule; two commands would mean remembering the second one.
+        self.run_trim("--keep-days", "30", "--apply")
+        self.assertEqual(self.versions(), ["RECENT"])
+
+    def test_it_never_opens_a_graph_connection(self):
+        # The feed is a Mongo collection. Reaching for Neo4j to trim it
+        # would make the command fail wherever the graph happens to be down.
+        with patch.object(admin_cli, "audited_client",
+                          side_effect=AssertionError("the graph was opened")):
+            self.run_trim("--keep-days", "30", "--apply")
+        self.assertEqual(feed.count(self.db), 1)

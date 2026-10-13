@@ -1,9 +1,9 @@
 """Write prepared collections out as Extended JSON, one file per collection.
 
-The rollback point for anything that rewrites prepared data, and at the same
-time the input the rehearsal stand loads (`rehearsal_up.sh` runs mongoimport
-over exactly these files). Extended JSON is what `bson.json_util` emits and
-what mongoimport reads natively, so dates and ObjectIds survive the trip.
+The rollback point for anything that rewrites prepared data, and the input the
+rehearsal stand loads (`rehearsal_up.sh` runs mongoimport over these files).
+Extended JSON (`bson.json_util`) is read natively by mongoimport, so dates and
+ObjectIds survive the trip.
 
 Reads only. Point it at a database with --uri; without one it uses the
 configured connection, which for this checkout is the server.
@@ -25,15 +25,8 @@ from pymongo import MongoClient
 from pauk.settings import settings
 from pauk.storage.mongo import get_mongo_client
 
-# Everything the harvest chain writes: `repositories` gains contributors,
-# `github_profiles` is rewritten wholesale, `persons` gains github/email/
-# contributed_to. The rest are read-only to the harvest but the stand needs
-# them — the repositories stage iterates `repo_links`, and a rehearsal that
-# loads no publications, departments or organizations is not a rehearsal:
-# every author it meets is created fresh instead of merged with.
-#
-# This is the list `rehearsal_up.sh` imports. Keep the two in step; the stand
-# reads the manifest this script writes and refuses to start without a file.
+# What the harvest writes, plus what the stand reads: without publications,
+# departments and organizations a rehearsal creates every author fresh.
 DEFAULT = ("publications", "persons", "departments", "organizations",
            "repositories", "repo_links", "github_profiles")
 
@@ -67,7 +60,7 @@ def main() -> int:
         args.out.mkdir(parents=True, exist_ok=True)
         report = [dump(db, name, args.out, args.gzip) for name in args.collections]
         # Read the address while the client is still open; it is unavailable
-        # once closed, and the manifest is worthless without naming the source.
+        # once closed, and the manifest needs to name the source.
         host = client.address[0] if client.address else None
     finally:
         client.close()

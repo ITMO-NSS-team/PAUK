@@ -13,7 +13,7 @@ def pub(pid, title, *, doi=None, journal=None, type="article",  # noqa: A002 (ma
         year=None, pdate=None, abstract=None, authors=()):
     return {
         "id": pid, "title": title, "doi": doi, "journal": journal, "type": type,
-        "year": year, "publication_date": pdate, "abstract": abstract, "pdf_url": None,
+        "year": year, "publication_date": pdate, "abstract": abstract, "pdf_urls": [],
         "openalex_url": None,
         "authors": [{"person_id": a, "name": a, "position": i} for i, a in enumerate(authors, 1)],
     }
@@ -389,6 +389,14 @@ class CandidatePairsTest(unittest.TestCase):
         rows += [pub(f"O{i}", f"Quadrotor formation control wind study {i}", authors=[f"B{i}"])
                  for i in range(50)]
         self.assertIn(("WA", "WB"), _candidate_pairs(rows))
+
+    def test_arxiv_id_in_any_pdf_url_forms_a_pair(self):
+        rows = [
+            pub("W1", "Some paper", doi="10.48550/arxiv.2107.01278"),
+            pub("W2", "Some paper, revised", doi="10.1088/1361-6463/ac2f16"),
+        ]
+        rows[1]["pdf_urls"] = ["https://example.org/a.pdf", "https://arxiv.org/pdf/2107.01278"]
+        self.assertEqual(_candidate_pairs(rows), {("W1", "W2")})
 
 
 class IsPreprintTest(unittest.TestCase):

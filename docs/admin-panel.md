@@ -1,19 +1,109 @@
-# Админ-панель: запуск и устройство
+# Admin panel: running and internals
 
-Панель правит граф вручную так, чтобы правка пережила следующий
-`pauk publish graph`. Отдельный сервис на FastAPI, поднимается рядом с
-базой.
+The panel edits the graph by hand so that an edit survives the next
+`pauk publish graph`. It is a separate FastAPI service that runs next to the
+databases.
 
-## Что нужно для запуска
+The admin UI is in Russian. Button and page labels are quoted as they appear
+in the UI, with an English gloss the first time.
 
-Две базы:
+## Quick start
 
-- **MongoDB** — учётные записи панели, сессии, журнал правок, решения о
-  правках и очередь задач. Без неё панель не стартует.
-- **Neo4j** — сам граф. Без него панель работает. Вход и учётные записи не
-  зависят от Neo4j.
+### Start
 
-Настройки читаются из `.env` в корне репозитория, те же, что у пайплайна:
+Databases first: the panel does not start without Mongo, and shows no graph
+without Neo4j. On a workstation they run in Docker and do not restart after a
+reboot:
+
+```bash
+open -a Docker                              # macOS, if the daemon is not running
+docker start pauk-mongo pauk-neo4j-test
+docker ps --format '{{.Names}}\t{{.Status}}'   # both must be Up
+```
+
+If the containers do not exist yet, see "Setup" and "No draft" below.
+
+Then two processes, both from the repository root. The panel shows and edits;
+the worker executes what the buttons start:
+
+```bash
+uv run uvicorn pauk.admin.app:build --factory --port 8600   # window 1
+uv run pauk admin worker                                    # window 2
+```
+
+Open `http://127.0.0.1:8600`. Create an account first (the command prompts for
+the password):
+
+```bash
+uv run pauk admin user add <login> --role admin
+```
+
+On the server the same processes run as systemd services (or screen sessions)
+on port 8505, see "On the server".
+
+### Roles
+
+| role | edits the graph, answers review questions | starts runs |
+|---|---|---|
+| `viewer` | no | no |
+| `editor` | yes | no |
+| `admin` | yes | yes |
+
+`user add` without `--role` creates an `editor`; pass the role explicitly for
+read-only accounts.
+
+### Run the pipeline
+
+On the "Пайплайн" (Pipeline) page, the **"Запустить конвейер"** (Run the
+pipeline) button runs collect, publish and map rebuild as one job, in that
+order. The page shows the current phase.
+
+Two things the pipeline does not do, to be done by hand afterwards:
+
+1. "Здоровье БД" (DB health) -> **"Пересчитать"** (Recalculate): the numbers
+   there are a snapshot of the last calculation and do not refresh themselves.
+2. "Пайплайн" -> **"Сверка с источником"** (Reconcile with source), first
+   without the checkbox to see what publishing left in the graph after
+   deletions in Mongo, then with it if the list looks right.
+
+### The panel does not open
+
+Locally, check the databases first (`docker ps`, `docker start ...`). Without
+Mongo the panel does not start and says so in the window it was started from.
+
+On the server, check that the processes are alive before restarting:
+
+```bash
+systemctl status pauk-admin pauk-worker   # systemd
+screen -list                              # screen
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8505/login
+```
+
+`200` means the panel is up and the problem is the network or VPN. Empty
+output means start it again as described in "On the server". Do not restart
+the worker while it is running a job: that interrupts the run.
+
+### After a machine restart
+
+systemd services come back by themselves. Screen sessions do not survive a
+reboot: start the panel and the worker again. Accounts, answers, the audit
+log and sessions live in Mongo, so nobody has to log in again.
+
+After a code change, **restart the panel**: it reloads templates by itself but
+not Python code.
+
+## Setup
+
+Two databases:
+
+- **MongoDB**: accounts, sessions, the audit log, manual decisions, review
+  questions, the last health-check run and the job queue. The panel does not
+  start without it.
+- **Neo4j**: the graph itself. The panel runs without it; login and accounts do
+  not depend on Neo4j.
+
+Settings come from `.env` in the repository root, the same as for the
+pipeline:
 
 ```
 MONGO_URI=mongodb://localhost:27017
@@ -23,390 +113,540 @@ NEO4J_USER=neo4j
 NEO4J_PASSWORD=...
 ```
 
-Две необязательные:
+Optional: `PAUK_ADMIN_SECURE_COOKIE` sets the `Secure` flag on the session
+cookie. Set it only when the panel is behind HTTPS; without TLS login stops
+working.
 
-| переменная | зачем |
-|---|---|
-| `PAUK_MAP_DIR` | куда воркер пишет пересобранную карту. По умолчанию `pauk/gui/data`, то есть внутрь репозитория |
-| `PAUK_ADMIN_SECURE_COOKIE` | ставит флаг `Secure` на куку сессии. Нужна, только если панель за HTTPS. Без TLS вход с ней перестанет работать |
+There is no separate Neo4j user for the panel: permissions are enforced by the
+application, not the database.
 
-Отдельного пользователя Neo4j для панели нет. Разделение прав живёт на
-уровне приложения, а не базы.
-
-## Запуск
-
-Локальная MongoDB, если её нет:
+Local MongoDB, if you have none:
 
 ```bash
 docker run -d --name pauk-mongo -p 27017:27017 -v pauk-mongo-data:/data/db mongo:7
 ```
 
-Завести себе учётную запись. Пароль команда спросит сама:
+Create an account (`uv run pauk admin user add <name> --role admin`). This step
+matters beyond login: Mongo indexes are created by `pauk` commands, not by the
+panel, so a panel started on a fresh database works but is slow.
+
+### On the server
+
+The panel listens on its own address only, hence `--host 0.0.0.0`. On
+`einsteinium.nsslab` it uses port 8505.
+
+**As services.** They survive reboots and restart after a crash. The units are
+in `scripts/systemd/` and are installed once.
+
+First stop the old screen sessions, otherwise port 8505 stays busy and the
+service crash-loops:
 
 ```bash
-uv run pauk admin user add <name> --role admin
+ssh asteb@einsteinium.nsslab
+screen -S pauk-admin -X quit
+screen -S pauk-worker -X quit
+screen -list                  # neither pauk-admin nor pauk-worker may remain
 ```
 
-Этот шаг обязателен, и не только ради логина. Индексы в Mongo создают
-команды `pauk`, а панель сама этого не делает. Поднятая на чистой базе
-панель будет работать, но медленно.
-
-Поднять панель:
+Find where `uv` lives and put that path into both unit files instead of
+`/home/asteb/.local/bin/uv` (systemd does not read the shell profile and will
+not find a bare `uv`). Adjust `User=` and `WorkingDirectory=` if the repository
+is not in `/home/asteb/PAUK`.
 
 ```bash
-uv run uvicorn pauk.admin.app:build --factory --port 8600
+cd ~/PAUK
+which uv
 ```
 
-Открыть `http://127.0.0.1:8600`, войти под заведённым логином.
+Before enabling, check that `uv` works without a shell profile, exactly as
+systemd will run it. It must print the help text, not "command not found" or a
+cache error:
 
-### На сервере
+```bash
+sudo -u asteb env -i HOME=/home/asteb PATH=/usr/bin:/bin /home/asteb/.local/bin/uv run pauk --help
+```
 
-Панель слушает только свой адрес, поэтому наружу её отдаёт `--host 0.0.0.0`.
-Панель и воркер держатся в отдельных screen-сессиях, как и карта. На
-`einsteinium.nsslab` это порт 8505:
+Install, verify the unit syntax (`systemd-analyze verify` prints nothing when
+all is well) and enable:
+
+```bash
+sudo cp scripts/systemd/pauk-admin.service scripts/systemd/pauk-worker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+systemd-analyze verify /etc/systemd/system/pauk-admin.service /etc/systemd/system/pauk-worker.service
+sudo systemctl enable --now pauk-admin pauk-worker
+```
+
+Check all three signals, not just one:
+
+```bash
+systemctl status pauk-admin pauk-worker                              # active (running)
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8505/login # 200
+journalctl -u pauk-worker -n 20 --no-pager                           # "worker ... started"
+```
+
+Day-to-day:
+
+```bash
+git pull && sudo systemctl restart pauk-admin pauk-worker   # deploy new code
+journalctl -u pauk-worker -f                                # what the worker is doing
+sudo systemctl stop pauk-worker                             # pause it
+```
+
+The worker does not stop instantly: SIGTERM means "finish the current job and
+exit". After 300 seconds (`TimeoutStopSec`) systemd kills it, and the next
+worker picks up the abandoned job when its lock lease expires. The panel must
+be restarted after every `git pull`.
+
+If a service does not start, the reason is in the journal
+(`journalctl -u pauk-admin -n 50 --no-pager`). Common causes: `command not
+found` (wrong `uv` path in `ExecStart`); `Address already in use` (old screen
+session still alive); a Mongo error (database not up yet; the service retries
+after five seconds).
+
+**As screen sessions.** Used until the units are installed; they do not
+survive a reboot. Run both from the repository root, otherwise `uv run` does
+not find the project and the session dies silently:
 
 ```bash
 screen -dmS pauk-admin uv run uvicorn pauk.admin.app:build --factory --host 0.0.0.0 --port 8505
 screen -dmS pauk-worker uv run pauk admin worker
-```
-
-Обе команды запускать из каталога репозитория, иначе `uv run` не найдёт
-проект и сессия умрёт сразу, ничего не написав. Проверить, что поднялись:
-
-```bash
 screen -list
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8505/login
 ```
 
-Единственная граница здесь VPN лаборатории. Пароли идут по HTTP открытым
-текстом, как и у Mongo с Neo4j на той же машине. Выйдет панель за VPN,
-понадобится TLS и `PAUK_ADMIN_SECURE_COOKIE=1`.
+The only boundary here is the lab VPN. Passwords travel over plain HTTP, as do
+Mongo and Neo4j traffic on the same machine. If the panel ever leaves the VPN,
+it needs TLS and `PAUK_ADMIN_SECURE_COOKIE=1`.
 
-Сессии лежат в Mongo, а не в памяти процесса, поэтому перезапуск панели
-никого не разлогинивает.
+Sessions are stored in Mongo, not in process memory, so restarting the panel
+does not log anyone out.
 
-## Воркер
+## Worker
 
-Панель сама ничего не запускает. Прогон занимает от минут до часов, поэтому
-кнопка кладёт задачу в очередь, а выполняет её отдельный процесс:
+The panel never runs anything itself. A run takes minutes to hours, so a
+button puts a job in the queue and a separate process executes it:
 
 ```bash
 uv run pauk admin worker
 ```
 
-Держите его в соседнем окне рядом с панелью. Без него задачи просто копятся,
-и на странице «Задачи» видно, что все они ждут.
+Without the worker, jobs pile up and the "Пайплайн" page shows them all
+waiting. This also means a panel restart cannot interrupt a publish. The worker
+takes one job at a time. Flags: `--once` (take one job and exit), `--poll`
+(pause on an empty queue), `--name` (the name recorded on jobs it takes;
+default `host:pid`). On Ctrl+C it finishes the current run and exits.
 
-Так сделано, чтобы перезапуск панели не обрывал публикацию на середине.
-Воркер берёт одну задачу за раз. Флаг `--once` возьмёт одну и выйдет,
-`--poll` меняет паузу на пустой очереди, `--name` меняет имя, под которым
-воркер записывается в задачи.
+Only the `admin` role can start runs.
 
-Остановка по Ctrl+C: воркер досматривает текущий прогон и выходит, а не
-бросает его на середине.
+### What can be run
 
-Запускать прогоны может только роль `admin`.
+The main button is **"Запустить конвейер"**: collect, publish and map rebuild
+as one job. It cannot be three separate jobs, because publishing needs a group
+name that does not exist yet when the job is queued.
 
-### Что можно запустить
+The same steps are available individually below the button:
 
-Главная кнопка на странице одна, **«Запустить конвейер»**. Она делает сбор,
-публикацию и пересборку карты одной задачей, в этом порядке. Обычный день
-выглядит так.
-
-Тремя отдельными задачами конвейер не собрать: публикация требует имя
-группы, а в момент постановки в очередь этой группы ещё нет.
-
-Под кнопкой сложены те же шаги по отдельности, на случай когда что-то
-доделывают руками:
-
-| шаг | что делает |
+| step | what it does |
 |---|---|
-| 1. Собрать публикации | забирает работы из OpenAlex и прогоняет через десять этапов обогащения. Граф не трогает |
-| 2. Выложить группу в граф | переносит собранное в Neo4j, ручные правки применяются заново |
-| 3. Пересобрать карту | снимок графа, данные карты, статистика |
-| Дедупликация графа | не часть конвейера, запускается по необходимости |
+| "Собрать публикации" (Collect publications) | fetches works from OpenAlex and runs all enrichment stages; does not touch the graph |
+| "Выложить группу в граф" (Publish the group to the graph) | loads the collected data into Neo4j and reapplies manual edits |
+| "Пересобрать карту" (Rebuild the map) | graph snapshot and map data (`pauk cache export` + `pauk gui build`) into `data/gui/{public,private}` |
 
-Группа это результат одного сбора статей, имя даётся автоматически по дате
-и выборке. Публикация идёт по одной группе. Команды выложить всё сразу нет
-ни в панели, ни в CLI.
+Two more jobs are separate cards and are not part of the pipeline: graph
+deduplication (next section) and "Сверка с источником" (see "Reconcile with
+Mongo").
 
-Рядом с каждым шагом написано, когда он последний раз доходил до конца.
-Обычный вопрос при открытии страницы такой: публиковал ли кто-нибудь после
-последнего сбора.
+A group is the result of one collect run; its name is generated from the date
+and the selection. Publishing works on one group at a time; there is no
+"publish everything" command in the panel or the CLI.
 
-Конвейер пересобирает карту с персональными данными. Для публичного
-варианта есть отдельный шаг «Пересобрать карту» с галочкой «без
-персональных данных».
+Each step shows when it last completed, which answers the usual question
+"did anyone publish after the last collect?". The map rebuild writes both
+variants: `private/` with personal fields and `public/` without
+`authors-detail.json`. Deploying the site to the server is a separate step,
+`scripts/deploy.sh`.
 
-### Два разных дедупа
+### Two different dedups
 
-`dedup` есть и среди десяти этапов сбора, и отдельной кнопкой. Это не одно
-и то же:
+`dedup` is both a collect stage and a separate button:
 
-| | этап в сборе | кнопка |
+| | collect stage | button |
 |---|---|---|
-| видит | одну группу | весь граф, все опубликованные группы |
-| ловит | дубли внутри одного сбора | дубли из **разных** прогонов |
+| sees | one group | the whole graph, all published groups |
+| catches | duplicates within one collect | duplicates across **different** runs |
 
-Собрали 2024 в январе, 2025 в марте, один человек попал в оба под разными
-написаниями имени. Январский дедуп мартовских записей не видел и наоборот.
-Такую пару ловит только проход по всему графу.
+If 2024 was collected in January and 2025 in March, and one person appears in
+both under different spellings, neither group's dedup sees the other. Only a
+pass over the whole graph catches that pair.
 
-Спорные пары он не сводит, а откладывает в
-`data/cache/dedup_candidates_graph.jsonl` со статусом `held` и причиной.
-Сведённое обратно не разделяется, разъединения в коде нет. Поэтому кнопка
-спрашивает подтверждение, как удаление узла.
+Disputed pairs are not merged but held: written to
+`data/cache/dedup_candidates_graph.jsonl` with status `held` and a reason, and
+put in the "Спорные случаи" (Disputed cases) queue for a human answer.
 
-## Очередь и отмена
+Rule-based merges cannot be undone, so the button asks for confirmation, like
+deleting a node. Only a pair merged by an answer in the queue can be split
+again (next section).
 
-Одновременно граф пишет кто-то один. Публикация, дедуп, пересборка карты и
-конвейер берут его по очереди. Если занят, задача возвращается в очередь и
-ждёт. Сбор занимает только свою группу и идёт параллельно.
+## Review queue
 
-Та же защита работает для команд в терминале. `pauk publish graph` во время
-публикации из панели скажет, кто держит граф, и ничего не сделает.
+"Спорные случаи" holds questions the pipeline cannot settle by evidence. Four
+kinds:
 
-Ждущую задачу можно отменить, и она не начнётся. У начатой отмена только
-записывается, воркер смотрит на неё **между шагами**:
+| question | asked by | answer |
+|---|---|---|
+| are these two records one person? | person dedup: collect stage and whole-graph pass | "один человек" (one person) or "разные" (different) |
+| a group rejected as a whole | same dedup, when a group has two ORCIDs, two emails or two staff-catalog records | mark who in the group is the same person |
+| whose GitHub account is this? | `github_match` stage | "это его аккаунт" (this is their account) or "не его" (not theirs) |
+| which catalog record? | dedup, when the staff catalog has several people with that name | choose a record ("это выбранная запись") or "никто из них" (none of them) |
 
-- у конвейера шаги есть, и он остановится после сбора или после публикации,
-  не бросая начатое на середине;
-- у одиночной задачи шагов внутри нет, поэтому она дойдёт до конца.
+Questions live in the Mongo collection `review_pairs`, one document per
+question. If a later run hits the same question, it updates the evidence in the
+existing document instead of creating a second one. The default tab is
+"Приоритетные" (Priority): identical names without confirmation, groups,
+accounts and the catalog. The rest is under "Все нерешенные" (All unresolved).
 
-### Если воркер пропал
+**An answer beats the rules, both ways.** Rules read answers before deciding
+anything. "One person" merges the pair even with no evidence; "different"
+blocks the merge even if a shared coauthor appears later. An answered question
+is not asked again.
 
-Идущая задача каждую минуту отмечается, что жива. Перестала, значит процесса
-больше нет: воркер остановили, машина ушла, Ctrl+C не вовремя.
+**When an answer takes effect.** It is recorded immediately. If both person
+records are already graph nodes, the panel merges them right away. Otherwise
+the next run that sees both does it: a collect of the same group, or graph
+dedup after publishing. The queue shows "слито" (merged) with a date, or
+"сольется на следующем прогоне" (will merge on the next run). GitHub-account
+and catalog answers are never applied by the panel itself: the next collect
+binds the account, and the next collect or graph dedup uses the catalog
+record. Neo4j is not needed to record an answer.
 
-Через пять минут молчания на странице у неё появляется пометка **«не
-отвечает»**. Это предупреждение, а не приговор. Замок на графе живёт
-пятнадцать минут, и всё это время задача может быть жива и продолжать
-писать, а молчать из-за недоступной Mongo.
+**When the rules change their mind.** If, after a "different" answer, the
+evidence grows and a rule would now fire, the pair is not merged but goes to
+the "Расхождения" (Discrepancies) tab with the rule that fired. Any answer
+closes the discrepancy: confirm the old one or reverse it.
 
-Хоронят её только после пятнадцати минут, когда аренда замка кончилась
-наверняка. Делает это воркер: запустите его снова, и он на первом же круге
-подберёт такие задачи. Отменённую отметит отменённой, остальные неудачными.
+**Whole groups cannot be answered.** A group is rejected because it certainly
+contains more than one person. You mark the ones who are the same person, and
+the panel records pairwise answers: "one person" within the marked set,
+"different" between the marked and the rest. Without the second half, the
+rules would rebuild the same group through the remaining records.
 
-Пока ресурс занят, задачи, которым он нужен, ждут в очереди, **не мешая
-остальным**. Сбор по группе пойдёт, даже если публикация ждёт освобождения
-графа.
+**Skip and reverse.** "не знаю" (don't know) removes the question from the
+unseen tab without answering it. An answer that has not merged anything can be
+withdrawn with "передумать" (change my mind), and the question returns to the
+queue.
 
-Отдельно стоит знать: если воркер пропал **посреди публикации**, ручные
-правки в графе уже перекрыты значениями пайплайна и обратно не поставлены,
-потому что переприменение идёт последним шагом. Сами решения целы, вернуть
-их в граф можно командой:
+**Splitting a merged pair.** Withdrawing an answer is not enough once the graph
+has one node. **"разделить обратно"** (split back) rebuilds the removed record
+from its prepared row (node and all its relationships), strips from the
+surviving record what came only from the removed one, and records "different"
+so the next run does not merge them again. It works while the prepared row
+exists. The collect stage deletes rows it folded itself, so such pairs have no
+button and the panel says so. Merges done by dedup rules without a question
+and merges via `pauk admin merge` are not in the queue and cannot be undone
+from the panel.
+
+## Queue and cancellation
+
+Only one writer touches the graph at a time. Publish, dedup, map rebuild and
+the pipeline take turns; a job that finds the graph busy goes back to the
+queue. Collect locks only its own group and runs in parallel. The same lock
+applies to terminal commands: `pauk publish graph` during a publish from the
+panel reports who holds the graph and does nothing.
+
+A waiting job can be cancelled and will not start. For a running job, the
+cancel request is recorded and the worker notices it at the next seam: between
+pipeline phases, between collect stages, between publish batches, and roughly
+once a second inside most stages. A job is never dropped mid-write. Stages
+that cannot stop from inside are listed in "Known limitations".
+
+### If the worker disappears
+
+A running job reports every minute that it is alive. If it stops, the process
+is gone: worker stopped, machine down, badly timed Ctrl+C.
+
+After five minutes of silence the page marks the job **"не отвечает"** (not
+responding). That is a warning, not a verdict: the lock lives for fifteen
+minutes, and the job may still be alive and writing while merely unable to
+reach Mongo. The job is declared dead only after fifteen minutes, when the lock
+lease has certainly expired. The worker does this: start it again and it
+reaps such jobs on its first loop, marking a cancelled one as cancelled and
+the rest as failed.
+
+While a resource is busy, jobs that need it wait without blocking others;
+collect by group proceeds even if a publish is waiting for the graph.
+
+If the worker disappeared **in the middle of a publish**, manual edits in the
+graph have already been overwritten by pipeline values and not restored, since
+reapplication is the last step. The decisions themselves are intact; restore
+them with:
 
 ```bash
 uv run pauk admin overrides apply
 ```
 
-Следующая успешная публикация сделает то же самое.
+The next successful publish does the same.
 
-## Учётные записи
+## Accounts
 
-Аккаунт заводится только из терминала. В браузере нет ни регистрации, ни
-смены пароля.
+Accounts are created from the terminal only; the browser has no sign-up or
+password change.
 
 ```bash
-uv run pauk admin user add ivanov --role <admin/editor/viewer>   # создать
-uv run pauk admin user list                        # посмотреть
-uv run pauk admin user disable ivanov              # заблокировать
-uv run pauk admin user enable ivanov               # вернуть
+uv run pauk admin user add ivanov --role <admin/editor/viewer>   # create
+uv run pauk admin user list
+uv run pauk admin user disable ivanov
+uv run pauk admin user enable ivanov
 ```
 
-Без `--role` учётка получает `editor`, то есть право менять граф. Для тех,
-кому нужно только смотреть, роль указывают явно.
-
-Три роли:
-
-| роль | что может |
+| role | can do |
 |---|---|
-| `viewer` | только смотреть: поиск, карточка узла, связи, журнал, задачи |
-| `editor` | плюс править поля, удалять узлы, связывать и отвязывать |
-| `admin` | плюс запускать прогоны: сбор, публикацию, дедуп, пересборку карты |
+| `viewer` | view only: search, node card, relationships, audit log, manual decisions, review questions, DB health, pipeline |
+| `editor` | plus edit fields, create and delete records, link and unlink, answer review questions |
+| `admin` | plus start runs: pipeline, collect, publish, dedup, reconcile, map rebuild, health checks |
 
-Роли разграничивают ошибки, а не доступ. Роль указывается аргументом при
-создании, поэтому любой, у кого есть доступ к серверу, может выдать себе
-`admin`.
+Roles guard against mistakes, not against intruders: the role is a command
+argument, so anyone with server access can grant themselves `admin`.
 
-Пароль хранится как `scrypt`-хеш со своей солью. При входе создаётся строка
-сессии в MongoDB, в браузер уходит только случайный токен в куке `HttpOnly`.
-Поэтому `disable` действует мгновенно: сессии удаляются вместе с блокировкой,
-а не доживают до истечения куки.
+Passwords are stored as salted `scrypt` hashes. Login creates a session row in
+MongoDB and sends the browser only a random token in an `HttpOnly` cookie. So
+`disable` takes effect immediately: the sessions are deleted with the block
+instead of living until the cookie expires.
 
-Сам токен в базе не хранится, только его `sha256`. Токен как пропуск: кто им
-владеет, тот и вошёл, пароль не нужен. Лежи он открытым текстом, одного
-чтения `admin_sessions` хватило бы, чтобы работать от чужого имени. Дампа,
-бэкапа, копии для отладки.
+Only the token's `sha256` is stored. The token is a pass: whoever holds it is
+logged in, no password needed. In plaintext, a dump, backup or debug copy of
+`admin_sessions` would be enough to act as someone else.
 
-Сессия живёт двенадцать часов. После тридцати неудачных попыток подряд логин
-перестаёт отвечать на пятнадцать минут. Считается по логину, а не по адресу:
-панель за VPN и часто за одним прокси, адреса тут говорят мало.
+A session lasts 12 hours. After 30 consecutive failed attempts, login stops
+answering for 15 minutes. The count is per login, not per address, because the
+panel sits behind a VPN and often a single proxy.
 
-Каждая правка пишется в журнал с именем автора, `user:ivanov`.
+Every edit is written to the audit log with the author, e.g. `user:ivanov`.
 
-## Черновика нет
+## No draft
 
-Кнопка «Сохранить» пишет прямо в Neo4j, ту самую базу, которая указана в
-`.env`. Ни предпросмотра, ни отложенного применения нет, откатить можно
-только руками (`pauk admin overrides undo`) или встречной правкой.
+"Сохранить" (Save) writes straight to Neo4j, the database named in `.env`.
+There is no preview or deferred apply; the only ways back are
+`pauk admin overrides undo` or a counter-edit.
 
-Поэтому смотреть на боевых данных стоит с ролью `viewer`. Она видит всё и не
-может изменить ничего. А если нужно потренироваться именно на правках,
-поднимите свой Neo4j и укажите его в `NEO4J_URI`:
+So inspect live data as a `viewer`: it sees everything and can change
+nothing. To practice editing, run your own Neo4j and point `NEO4J_URI` at it:
 
 ```bash
 docker run -d --name pauk-neo4j-test -p 7688:7687 \
   -e NEO4J_AUTH=neo4j/testpass -v pauk-neo4j-test:/data neo4j:5
 ```
 
-Порт намеренно 7688, а не 7687, чтобы не конфликтовать с рабочей базой, если
-она тоже поднята. В `.env` тогда:
+Port 7688 avoids a clash with a working database on 7687. Then in `.env`:
 
 ```
 NEO4J_URI=bolt://localhost:7688
 NEO4J_PASSWORD=testpass
 ```
 
-Граф там будет пустой. Наполнить его можно двумя способами: выложить данные
-пайплайном (`pauk publish graph --group <группа>`) или завести узел руками.
-На странице поиска любой метки есть кнопка «Создать».
+The graph there is empty. Fill it by publishing (`pauk publish graph --group
+<group>`) or create a node by hand with "Создать" (Create) on any label's
+search page.
 
-Узел, созданный руками, переживает публикацию сам. Загрузчик трогает только
-те идентификаторы, для которых у него есть строки, и придуманный в панели не
-перезапишет. Поэтому для него ничего не записывается в `graph_overrides`, в
-отличие от правки поля у узла, который пайплайну известен.
+A hand-created node survives publishing on its own: the loader touches only
+ids it has rows for. It is still recorded in `graph_overrides` as a "this
+record was created by hand" claim. There is nothing to reapply, but without it
+reconcile could not tell the record from stale data and would delete it. A
+field edit on such a record is part of the same claim, so it cannot be undone
+in "Ручные решения" (Manual decisions); delete the record instead.
 
-## Что уже работает, а чего ещё нет
+## What the panel has
 
-Готово в панели:
-
-| раздел | что можно |
+| section | what you can do |
 |---|---|
-| обзор | метки графа, число узлов и полей у каждой |
-| поиск | список узлов метки сразу, поиск по идентификатору и тексту |
-| карточка записи | все поля, правка, удаление с подтверждением, история последних правок |
-| новая запись | создать запись, которой пайплайн не знает |
-| связи | связать с другой записью и отвязать, по одиннадцати разрешённым видам |
-| удалённая запись | что с ней происходило и кнопка вернуть её обратно |
-| журнал правок | кто, что и когда менял, и через панель, и пайплайном; фильтры и страницы |
-| ручные решения | что сейчас применяется поверх пайплайна, с отменой каждого |
-| расхождения | где источник после правки начал говорить иначе, чем говорил до неё |
-| задачи | очередь и история прогонов, запуск конвейера целиком или отдельным шагом |
+| overview | graph labels, node and field counts per label |
+| search | list of nodes per label, search by id and text |
+| record card | all fields, edit, delete with confirmation, edit history in the graph and source-row history |
+| new record | create a record the pipeline does not know |
+| relationships | link to and unlink from another record, over the 11 allowed types |
+| deleted record | what happened to it, and "Восстановить" (Restore) |
+| "Журнал правок" (Audit log) | who changed what and when, via the panel and via the pipeline; filters and pages |
+| "Ручные решения" (Manual decisions) | what is currently applied over the pipeline, each with "отменить" (undo) |
+| "Расхождения" (Discrepancies) | where the source started saying something different from what it said before the edit |
+| "Спорные случаи" (Review) | everything the pipeline is unsure about: person duplicates, GitHub accounts, namesakes in the catalog |
+| "Здоровье БД" (DB health) | 32 cheap graph checks (gaps, suspicious names, duplicates, contradictions); per check, the records behind it and a CSV export |
+| "Пайплайн" (Pipeline) | queue and run history, full pipeline or single step, a three-phase bar for full runs |
 
-Несколько вещей стоит знать заранее:
+Things worth knowing:
 
-- **Одновременная правка одной записи отклоняется.** Если её успели
-  изменить, пока была открыта форма, сохранение не пройдёт, иначе чужая
-  правка пропала бы молча. Страница вернётся с текущими значениями.
-- **Отмена решения об удалении возвращает запись сразу**, со всеми полями.
-  Снимок сохраняется в самом решении в момент удаления.
-- **Создание записи с идентификатором удалённой снимает пометку об
-  удалении**, иначе следующая публикация убрала бы её снова.
-- **Журнал и ручные решения разные вещи.** Журнал это история, из него
-  ничего не исчезает. Решения это то, что действует сейчас. Отменённое
-  остаётся в журнале, но применяться перестаёт. Одна правка, пережившая три
-  публикации, даёт семь записей в журнале и одну строку в решениях.
-- **Пока идёт задача над графом, вверху висит полоса.** Правки при этом
-  проходят, но публикация может их перекрыть. Расхождение потом видно на
-  экране решений.
-- **Длинные значения свёрнуты.** Полный текст статьи показывается началом,
-  дальше кнопка «развернуть».
+- **Concurrent edits to one record are rejected.** If the record changed while
+  the form was open, saving fails instead of silently losing the other edit;
+  the page returns with the current values.
+- **Undoing a deletion decision restores the record at once**, with all
+  fields: a snapshot is stored in the decision when the record is deleted.
+- **Creating a record with the id of a deleted one clears the deletion mark**,
+  otherwise the next publish would remove it again.
+- **The audit log and manual decisions are different things.** The log is
+  history and nothing leaves it; decisions are what is in force now. An undone
+  decision stays in the log but stops applying. One edit that survives three
+  publishes yields seven log entries and one decision row.
+- **A banner shows while a job is working on the graph.** Edits still go
+  through, but a publish may overwrite them; the discrepancy then shows on the
+  decisions screen.
+- **Long values are collapsed.** A paper's full text shows its beginning, then
+  a "развернуть" (expand) button.
 
-Чего в панели **нет**, хотя из терминала доступно:
+Not in the panel, though available in the terminal:
 
-- **слияния дублей**, есть `pauk admin merge`. Операция необратимая, в
-  интерфейс её пока не выносили.
-- **учётных записей**, заводятся только командой `pauk admin user add`, и
-  это намеренно.
-- **ручной модерации**, отдельная вкладка, где дедуп и сопоставление
-  показывают то, в чём не уверены, и человек решает сам. Не начата, план в
-  [plans/maintenance.md](plans/maintenance.md).
+- **Merging two arbitrary records** (`pauk admin merge`). The panel merges only
+  pairs proposed by dedup, with their own queue, evidence and split-back.
+- **Creating accounts** (`pauk admin user add`), deliberately.
 
-Известные ограничения:
+### Health checks
 
-- Связи в журнале не разбираются по полям, поэтому отвязанную связь панель
-  восстанавливает по самому решению, а не по истории.
-- Прогон нельзя прервать на середине шага. Просьба остановиться проверяется
-  между шагами, а внутри публикации шагов нет.
-- Упавшую задачу нельзя перезапустить из панели, только поставить такую же.
-- Брошенные задачи подбирает воркер, а не панель. Пока его не запустили,
-  такая задача видна с пометкой «не отвечает» и никуда не уходит.
-- Журнал правок не подрезается. Со временем коллекция `audit` будет расти.
+Checks run as a job, not when the page opens: more than thirty queries over the
+whole graph, some walking every person with regular expressions. The page shows
+the result of the last run with its date, and "Пересчитать" queues a new run.
+The records behind a given check are fetched from the graph immediately: the
+query is bounded, and nobody needs last week's bad records.
 
-## Две базы, одна правка
+### Reconcile with Mongo
 
-Правка живёт в двух местах. Значение в Neo4j и решение о нём в MongoDB. Это
-разные СУБД, общей транзакции между ними быть не может.
+The graph does not converge to Mongo by itself. Publishing only adds, so a
+record deleted from Mongo, or a relationship a row no longer claims, is removed
+separately: with the "Сверка с источником" button on the "Пайплайн" page, or
+from the terminal:
 
-Решено с двух сторон:
+```bash
+uv run pauk admin prune            # lists what is extra
+uv run pauk admin prune --apply    # removes it
+```
 
-- **перед записью** проверяется, отвечает ли Mongo. Если не отвечает,
-  панель отказывает, и граф остаётся нетронутым;
-- **если Mongo откажет уже между двумя записями**, графовая запись
-  откатывается назад.
+`--limit` sets how many items of each kind are printed (default 20). On the
+page this is one job with a checkbox: unchecked, it only counts and puts the
+numbers in the result; checked, it removes. Run it unchecked first and read the
+list: manual records created before hand-made records were tracked look extra.
 
-Так закрыты все правки, которые оставляют после себя решение: изменение
-поля, удаление узла, отвязывание, создание и восстановление. Связывание сюда
-не входит, и это не пропуск: оно вообще ничего не записывает в Mongo, значит
-расходиться нечему.
+It leaves three things alone: records and links made by hand (they are in the
+manual decisions, which is the only reason that record exists), what the next
+publish will fold into another record, and records whose Mongo rows exist but
+the loader skipped this time.
 
-У создания откат пессимистичный. Он удаляет узел, хотя чаще всего пометки об
-удалении не было и узел остался бы в порядке. Узнать это можно только у той
-базы, которая сейчас не отвечает, а узел, исчезающий на следующей публикации,
-хуже.
+### Trimming histories
 
-Откат виден в журнале рядом с самой правкой. Остаётся один случай, когда не
-прошёл и он, то есть отказали обе базы сразу. Тогда в ответе прямо написано,
-что правка осталась в графе без решения и следующая публикация её снимет.
+Two histories grow and are never trimmed on their own: the audit log (`audit`)
+and the archive of replaced rows (`revisions`, a full document snapshot before
+each real change). Trim them about twice a year:
 
-## Связывание узлов
+```bash
+uv run pauk admin trim            # counts what would go from both
+uv run pauk admin trim --apply    # removes it
+```
 
-На карточке узла, под таблицей связей, форма предлагает только те связи,
-которые допускает эта метка, из одиннадцати известных графу. Узел, чью
-карточку вы открыли, подставляется сам, вводить нужно только вторую сторону.
+180 days are kept by default (`--keep-days`). Restoring a deleted record is
+unaffected: its field snapshot is in the decision, and decisions are not
+trimmed.
 
-Важно, **чем адресуется вторая сторона**. Это написано в скобках рядом с
-каждым вариантом. Обычно идентификатор, но два исключения:
+### Mongo compression
 
-| связь | что вписывать |
+The heaviest collection is `raw`, the verbatim answers of external services. On
+a new database `pauk` creates it and `revisions` with zstd compression. An
+existing database cannot switch compressors, since WiredTiger takes it at
+creation time, except for new blocks:
+
+```bash
+docker exec pauk-mongo mongosh pauk --eval '
+  db.runCommand({collMod: "raw",
+    storageEngine: {wiredTiger: {configString: "block_compressor=zstd"}}});
+  db.runCommand({compact: "raw"});'
+```
+
+`collMod` changes the compressor for new blocks; `compact` rewrites the old
+ones and holds a lock meanwhile, so run it when no jobs are running.
+
+### Known limitations
+
+- An unlinked relationship is restored from the decision itself, not from
+  history: the decision stores the relationship, the log only records that it
+  appeared and disappeared.
+- Source history appears on the record card and nowhere else; there is no
+  "all changed rows" list, you start from a concrete record.
+- A run stops at the next seam, not instantly. Inside a stage the request is
+  checked about once a second; during publish, between batches. A stopped
+  stage loses what it had not written; an interrupted publish is completed by
+  the next one, because every write in it is a `MERGE`.
+- Four stages cannot be stopped from inside and run to their end: `emails`,
+  `repositories`, `dedup` and `github_match`. Cancellation is checked where a
+  stage reports progress, and these four do not use the shared counter; they
+  notice the cancel on exit.
+- Publishing only adds: a row deleted from Mongo does not leave the graph by
+  itself. Reconcile removes it, and it has to be run, not waited for.
+
+## Two databases, one edit
+
+An edit lives in two places: the value in Neo4j and the decision about it in
+MongoDB. They are different DBMSs, so there is no shared transaction.
+
+Handled from both sides:
+
+- **before writing**, the panel checks that Mongo responds; if not, it refuses
+  and the graph stays untouched;
+- **if Mongo fails between the two writes**, the graph write is rolled back.
+
+This covers every edit that leaves a decision behind: field change, node
+deletion, linking and unlinking, creation and restoration.
+
+The rollback for creation is pessimistic: it deletes the node even though
+usually there was no deletion mark and the node would have been fine. Only the
+database that is currently down could say, and a node that vanishes on the next
+publish is worse.
+
+A rollback is visible in the audit log next to the edit. One case remains where
+even that fails (both databases down at once); then the response says
+explicitly that the edit stayed in the graph without a decision and the next
+publish will remove it.
+
+## Linking nodes
+
+On a node card, under the relationship table, the form offers only the
+relationships allowed for that label, out of the eleven the graph knows. The
+node whose card you opened is filled in; you enter only the other side.
+
+What matters is **how the other side is addressed**, written in parentheses by
+each option. Usually it is the id, with two exceptions:
+
+| relationship | what to enter |
 |---|---|
-| `Publication → MENTIONS_LINK → Repository` | адрес репозитория (`url`), не идентификатор |
-| `Repository → OWNED_BY → GitHubProfile` | логин аккаунта (`login`), не идентификатор |
+| `Publication -> MENTIONS_LINK -> Repository` | the repository `url`, not the id |
+| `Repository -> OWNED_BY -> GitHubProfile` | the account `login`, not the id |
 
-Так эту связь ищет сам загрузчик, и панель повторяет его правило. Ошиблись
-полем, панель вернёт на форму и напишет, что именно нужно вписать. Ничего не
-упадёт.
+This is how the loader itself finds the target, and the panel repeats its rule.
+If you use the wrong field, the panel returns to the form and says what to
+enter; nothing breaks.
 
-## Как это устроено внутри
+## Internals
 
-Панель ничего не правит в графе напрямую. Все изменения идут через
-`pauk/graph/mutations.py`, где закрытые списки: 7 меток, 11 типов связей и
-поля, выведенные из `NODE_REGISTRY`. Ни метка, ни имя поля не могут прийти
-из формы, они подставляются в Cypher, и произвольный запрос невозможен.
+The panel never edits the graph directly. All changes go through
+`pauk/graph/mutations.py`, which has closed lists: 7 labels, 11 relationship
+types and fields derived from `NODE_REGISTRY`. Neither a label nor a field name
+can come from a form, since they are interpolated into Cypher; arbitrary
+queries are impossible.
 
-То же и на странице задач. Вид задачи проверяется по `JobKind`, группа по
-тем, у которых есть подготовленные строки, даты теми же селекторами, что у
-`pauk run`. Командная строка нигде не собирается.
+The "Пайплайн" page is the same: the job kind is checked against `JobKind`, the
+group against those that have prepared rows, dates with the same selectors as
+`pauk run`. No command line is ever assembled.
 
-Правки переживают публикацию так:
+How edits survive publishing:
 
-- **изменение поля** записывается в `graph_overrides` и применяется заново
-  после каждого `publish` и каждого дедупа;
-- **удаление узла** оставляет пометку, иначе `MERGE` создаст узел заново на
-  следующем прогоне;
-- **удаление связи** тоже оставляет пометку, по той же причине;
-- **создание связи** не записывает ничего, и это не упущение. Загрузчик
-  только добавляет связи, для которых у него есть строки, и никогда не
-  удаляет те, о которых не знает. Связь, созданная руками, переживает
-  публикацию сама.
+- **a field change** is written to `graph_overrides` and reapplied after every
+  `publish` and every dedup;
+- **node deletion** leaves a mark, otherwise `MERGE` would recreate the node on
+  the next run;
+- **relationship deletion** also leaves a mark, for the same reason;
+- **creating a record or relationship** is written as a claim. There is nothing
+  to reapply: the loader does not delete what it does not know about, so such a
+  record or link survives publishing by itself. The claim is read only by
+  reconcile, so that hand-made records are not mistaken for leftovers.
 
-Вместе с изменением поля сохраняется и то, что стояло там раньше. На этом
-держится экран расхождений: когда источник начинает говорить не то, что
-говорил в момент правки, панель показывает обе версии.
+A field change also stores the previous value. The discrepancy screen relies
+on it: when the source starts saying something different from what it said at
+edit time, the panel shows both versions.
 
-Журнал не может уронить правку, которую описывает. Он пишется после
-изменения, и раньше упавший приёмник возвращал ошибку из середины операции,
-когда в Neo4j всё уже записано. Правка оставалась в графе, решение не
-записывалось, а человек видел ошибку. Теперь потерянная запись целиком
-уходит в лог, а операция продолжается.
+The audit log cannot fail the edit it describes. It is written after the change;
+a failing sink must not return an error from the middle of an operation when
+Neo4j is already updated. A lost entry goes to the application log in full and
+the operation continues.

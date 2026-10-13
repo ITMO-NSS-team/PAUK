@@ -1,5 +1,6 @@
 import unittest
 
+from pauk.graph.client import _merge_duplicate_properties
 from pauk.graph.extract import NODE_REGISTRY
 from pauk.graph.mutations import (
     NODE_FIELDS,
@@ -23,9 +24,10 @@ from pauk.graph.mutations import (
 class FakeGraph:
     """An in-memory stand-in for Neo4jClient.
 
-    Mirrors the parts manual edits rely on, including the `updated_at`
-    the real client stamps on every write — the optimistic check is built
-    on it, so a fake without it would let a broken check pass.
+    Mirrors the parts manual edits rely on, including the `updated_at` the
+    real client stamps on every write (the optimistic check is built on it).
+    Kept level with the real client on purpose: a behaviour the client gains
+    belongs here too.
     """
 
     def __init__(self):
@@ -93,11 +95,31 @@ class FakeGraph:
         return removed
 
     def merge_person_nodes_batch(self, merges):
+        """Fold duplicates, moving their edges the way the real client does.
+
+        The survivor also takes over the fields it had none of, through the real
+        client's own rule: undoing a fold is mostly about giving those back.
+        """
         self.calls.append("merge_person_nodes_batch")
         removed = 0
-        for duplicate_id, _canonical_id in merges:
-            if self.nodes.pop(("Person", duplicate_id), None) is not None:
-                removed += 1
+        for duplicate_id, canonical_id in merges:
+            duplicate = self.nodes.get(("Person", duplicate_id))
+            canonical = self.nodes.get(("Person", canonical_id))
+            if duplicate is not None and canonical is not None:
+                canonical.update(_merge_duplicate_properties("Person", canonical, duplicate))
+            if self.nodes.pop(("Person", duplicate_id), None) is None:
+                continue
+            removed += 1
+            for key in list(self.relationships):
+                src_label, rel_type, tgt_label, src_id, tgt_id = key
+                if src_label == "Person" and src_id == duplicate_id:
+                    props = self.relationships.pop(key)
+                    self.relationships.setdefault(
+                        (src_label, rel_type, tgt_label, canonical_id, tgt_id), props)
+                elif tgt_label == "Person" and tgt_id == duplicate_id:
+                    props = self.relationships.pop(key)
+                    self.relationships.setdefault(
+                        (src_label, rel_type, tgt_label, src_id, canonical_id), props)
         return removed
 
     # The rest of the loader's surface, so load_prepared_rows can run
@@ -107,7 +129,7 @@ class FakeGraph:
         """Persons carry the sticky is_itmo rule of the real client.
 
         A row arriving with is_itmo=False never downgrades a node that is
-        already ITMO, so the blind property merge cannot clobber a True.
+        already ITMO.
         """
         self.calls.append("upsert_person_nodes_batch")
         nodes = list(nodes)
@@ -129,18 +151,72 @@ class FakeGraph:
     def promote_link_candidates_batch(self, candidates):
         self.calls.append("promote_link_candidates_batch")
 
+    def fetch_node_ids(self, label):
+        return {node_id for (node_label, node_id) in self.nodes if node_label == label}
+
+    def fetch_relationship_pairs(self, src_label, rel_type, tgt_label, tgt_match_prop="id"):
+        """Edges of one triple, the way the real query reports them.
+
+        Both ends have to exist: the real query is a MATCH on two nodes.
+        """
+        def node(label, match_value):
+            for (node_label, node_id), props in self.nodes.items():
+                if node_label != label:
+                    continue
+                if match_value == (node_id if tgt_match_prop == "id"
+                                   else props.get(tgt_match_prop)):
+                    return True
+            return False
+
+        return {
+            (src_id, tgt_id)
+            for source, rel, target, src_id, tgt_id in self.relationships
+            if (source, rel, target) == (src_label, rel_type, tgt_label)
+            and (src_label, src_id) in self.nodes and node(tgt_label, tgt_id)
+        }
+
+    def fetch_person_facts(self, node_ids):
+        """The same few fields the real client collects for a page."""
+        facts = {}
+        for node_id in node_ids:
+            props = self.nodes.get(("Person", node_id))
+            if props is None:
+                continue
+            department = None
+            works = 0
+            for (src_label, rel_type, tgt_label, src_id, tgt_id) in self.relationships:
+                if src_label != "Person" or src_id != node_id:
+                    continue
+                if rel_type == "AUTHORED":
+                    works += 1
+                elif rel_type == "BELONGS_TO" and department is None:
+                    named = self.nodes.get((tgt_label, tgt_id), {})
+                    department = named.get("name_ru") or named.get("name_en")
+            facts[node_id] = {"orcid": props.get("orcid"), "email": props.get("email"),
+                              "department": department, "works": works}
+        return facts
+
     def fetch_merged_id_map(self, label):
-        return {}
+        """Aliases the way the real client reads them: off the nodes.
+
+        Needed so a publish can re-fold from `merged_ids`.
+        """
+        return {alias: node_id
+                for (node_label, node_id), props in self.nodes.items() if node_label == label
+                for alias in props.get("merged_ids") or []}
+
+    def fetch_canonical_id(self, label, node_id):
+        """One alias resolved, the way the real client resolves it."""
+        return self.fetch_merged_id_map(label).get(node_id)
 
 
 class WhitelistTest(unittest.TestCase):
     """The closed sets that keep user input out of interpolated Cypher."""
 
     def test_every_label_the_loader_publishes_is_editable(self):
-        # Compared against the registry itself, not a list written out here:
-        # the graph grows (Organization arrived with department matching),
-        # and a hand-kept copy would either fail on every such change or,
-        # worse, quietly stop covering the new label.
+        # Compared against the registry itself, not a list written out here: a
+        # hand-kept copy would either fail on every new label or, worse, quietly
+        # stop covering it.
         published = {spec.labels.split(":")[0] for spec in NODE_REGISTRY.values()}
         self.assertEqual(set(NODE_FIELDS), published)
 
@@ -178,8 +254,8 @@ class WhitelistTest(unittest.TestCase):
             validate_fields("Person", {"salary": 100})
 
     def test_fields_the_database_owns_are_refused_by_name(self):
-        # These are refused twice over — they are not in the whitelist
-        # either — but the reason has to be the accurate one: "the database
+        # These are refused twice over - they are not in the whitelist
+        # either - but the reason has to be the accurate one: "the database
         # sets this", not "no such field". Someone who typed `updated_at`
         # should learn it exists and is not theirs to set.
         for field in ("id", "created_at", "updated_at"):
@@ -355,7 +431,7 @@ class StoredShapeTest(unittest.TestCase):
 
 
 class MergeChainTest(unittest.TestCase):
-    """A folded into B, then B into C — A must still resolve to C."""
+    """A folded into B, then B into C - A must still resolve to C."""
 
     def setUp(self):
         self.graph = FakeGraph()

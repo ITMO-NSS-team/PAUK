@@ -3,7 +3,7 @@
 The per-group dedup stage only sees one prepared group, but the graph
 accumulates every published group: the same researcher (or work, or
 repository) collected in two periods becomes two nodes that no group-level
-pass will ever compare — each group's JSONL holds only one of the ids.
+pass will ever compare, since each group's JSONL holds only one of the ids.
 This module applies the same merge rules (pauk/pipeline/stages/dedup.py)
 to all nodes of each kind at once and folds duplicates directly in Neo4j.
 
@@ -22,10 +22,14 @@ from datetime import date
 
 from pymongo.database import Database
 
+from pauk.graph.person_resolution import DEFAULT_POLICY, MODEL_FEATURES, ResolverPolicy
+from pauk.graph.person_resolution_model import LogisticModel, load_logistic_model
 from pauk.jobs.locks import held
 from pauk.jobs.models import GRAPH
 from pauk.models import Authorship, Person
 from pauk.pipeline.normalize import _merge_person
+from pauk.pipeline.person_resolution import OpenRouterResolutionModels
+from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
 from pauk.pipeline.stages.author_names import RussianNamesCatalog, catalog_path
 from pauk.pipeline.stages.dedup import (
     PLACEHOLDER_TITLES,
@@ -38,6 +42,7 @@ from pauk.pipeline.stages.dedup import (
     staff_identities,
 )
 from pauk.settings import Settings
+from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
 from pauk.urls import normalize_repo_url
 
@@ -82,7 +87,7 @@ def _node_version(row: dict) -> dict:
         "publication_date": str(row["publication_date"]) if row.get("publication_date") else None,
         "year": row.get("year"),
         "openalex_url": row.get("openalex_url"),
-        "pdf_url": row.get("pdf_url"),
+        "pdf_urls": row.get("pdf_urls"),
         "abstract": row.get("abstract"),
         "authors": authors or None,
     }
@@ -106,7 +111,9 @@ def _merged_versions_json(canonical: dict, duplicates: list[dict]) -> str:
             for key, value in entry.items():
                 # An empty author list counts as missing: entries written
                 # before author lists were versioned carry one.
-                if existing.get(key) in (None, [], ""):
+                if key == "pdf_urls":
+                    existing[key] = _union(existing.get(key) or [], value or [])
+                elif existing.get(key) in (None, [], ""):
                     existing[key] = value
 
     for row in (canonical, *duplicates):
@@ -157,8 +164,16 @@ def collect_raw_orcids(mongo_db: Database) -> dict[str, str | None]:
     return orcids
 
 
-def dedup_graph_persons(client, raw_orcids: dict[str, str | None],
-                        catalog: RussianNamesCatalog | None = None) -> tuple[int, list[dict]]:
+def dedup_graph_persons(
+    client,
+    raw_orcids: dict[str, str | None],
+    catalog: RussianNamesCatalog | None = None,
+    decisions: dict[frozenset[str], str] | None = None,
+    chosen: dict[str, str] | None = None,
+    models=None,
+    policy: ResolverPolicy = DEFAULT_POLICY,
+    logreg_model: LogisticModel | None = None,
+) -> tuple[int, list[dict]]:
     """Fold duplicate Person nodes across all published groups.
 
     Args:
@@ -169,6 +184,11 @@ def dedup_graph_persons(client, raw_orcids: dict[str, str | None],
             it. This is where it pays off most: person records split across
             groups reach each other here for the first time, and the
             catalog reconciles spellings no shared coauthor corroborates.
+        decisions: Answers people gave about pairs the rules held back, read
+            by the caller because this function is given a graph client and
+            no database.
+        chosen: Catalog records people picked for the names the catalog
+            cannot tell apart, read by the caller for the same reason.
 
     Returns:
         (removed, report): the number of folded nodes and the review
@@ -185,7 +205,6 @@ def dedup_graph_persons(client, raw_orcids: dict[str, str | None],
             orcid=row.get("orcid"),
             email=row.get("email"),
             github=row.get("github"),
-            openreview=row.get("openreview"),
             google_scholar=row.get("google_scholar"),
             merged_ids=list(row.get("merged_ids") or []),
             department_ids=list(row.get("department_ids") or []),
@@ -196,12 +215,20 @@ def dedup_graph_persons(client, raw_orcids: dict[str, str | None],
         )
         for row in client.fetch_persons_for_dedup()
     ]
-    trusted_orcid = {
-        person.id: raw_orcids.get(person.id, person.orcid) for person in people
-    }
-    groups, report = plan_person_merges(
-        people, trusted_orcid, fields_of=client.fetch_publication_fields(),
-        staff_ids=staff_identities(catalog, people))
+    trusted_orcid = {person.id: raw_orcids.get(person.id, person.orcid) for person in people}
+    planner = plan_person_merges_resolved if models is not None else plan_person_merges
+    options = (
+        {"models": models, "policy": policy, "decisions": decisions, "logreg_model": logreg_model}
+        if models is not None
+        else {"decisions": decisions}
+    )
+    groups, report = planner(
+        people,
+        trusted_orcid,
+        fields_of=client.fetch_publication_fields(),
+        staff_ids=staff_identities(catalog, people, chosen),
+        **options,
+    )
 
     merges: list[tuple[str, str]] = []
     canonical_nodes: list[tuple[str, dict]] = []
@@ -386,9 +413,10 @@ def dedup_graph_repositories(client) -> tuple[int, list[dict]]:
 
 
 def run_graph_dedup(config: Settings, mongo_db: Database) -> dict[str, int]:
-    """CLI entry point for `pauk dedup graph`: persons, publications and
-    repositories deduplicated across every published group, with one
-    combined review journal in the cache directory.
+    """Deduplicate persons, publications and repositories across every published group.
+
+    Entry point for `pauk dedup graph`. Writes one combined review journal
+    to the cache directory.
 
     Holds the graph for the whole run, like a publish does: folding
     duplicates while another run is writing the same nodes would move
@@ -407,13 +435,33 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         config.cache_dir.mkdir(parents=True, exist_ok=True)
         catalog = RussianNamesCatalog.load_if_present(catalog_path(config))
         if catalog is None:
-            logger.info("graph dedup: no staff catalog at %s — merging on names and profiles alone",
-                        catalog_path(config))
+            logger.info(
+                "graph dedup: no staff catalog at %s, merging on names and profiles alone", catalog_path(config)
+            )
+        folded = client.fetch_merged_id_map("Person")
+        answers = review.decisions(mongo_db, folded)
+        models = OpenRouterResolutionModels(config, mongo_db, "__graph__") if config.person_resolution_enabled else None
+        logreg_model = (
+            load_logistic_model(config.person_resolution_logreg_model_path, MODEL_FEATURES)
+            if config.person_resolution_enabled
+            else None
+        )
         # A fold deletes a node, and the review journal records the decision
         # but not what the node held. The audit entry does.
         with actor_context("etl-pipeline", source="dedup-graph"):
             persons_removed, person_report = dedup_graph_persons(
-                client, collect_raw_orcids(mongo_db), catalog)
+                client,
+                collect_raw_orcids(mongo_db),
+                catalog,
+                decisions=answers,
+                chosen=review.staff_choices(mongo_db, folded),
+                models=models,
+                policy=ResolverPolicy(
+                    separate_below=config.person_resolution_separate_below,
+                    merge_from=config.person_resolution_merge_from,
+                ),
+                logreg_model=logreg_model,
+            )
             publications_removed, publication_report = dedup_graph_publications(client)
             repositories_removed, repository_report = dedup_graph_repositories(client)
 
@@ -422,13 +470,21 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
             for row in (*person_report, *publication_report, *repository_report)
         ]
         held = sum(1 for row in report if row["status"] == "held")
+        # Only the person rows: publications and repositories are folded on
+        # a DOI or a url and never hold anything back, so there is nothing
+        # to ask about and no pair of people to key a question on.
+        review.record_held(mongo_db, person_report, source=review.GRAPH)
+        review.record_disputed(mongo_db, person_report)
+        # Re-read, not the map from before the pass: what this pass folded
+        # is exactly the difference between the two.
+        review.mark_applied_merges(mongo_db, client.fetch_merged_id_map("Person"))
         journal_path = config.cache_dir / CANDIDATES_FILENAME
         with AtomicWriter(journal_path) as fh:
             for row in report:
                 fh.write(json.dumps(row, ensure_ascii=False) + "\n")
         if report:
             logger.info(
-                "graph dedup: review journal in %s — %d merge(s) applied, %d pair(s) held",
+                "graph dedup: review journal in %s: %d merge(s) applied, %d pair(s) held",
                 journal_path,
                 persons_removed + publications_removed + repositories_removed,
                 held,

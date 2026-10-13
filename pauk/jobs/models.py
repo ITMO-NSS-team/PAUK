@@ -22,9 +22,9 @@ class JobKind(StrEnum):
     PUBLISH = "publish"
     DEDUP = "dedup"
     MAP = "map"
-    #: Collect, publish and rebuild the map, in that order, as one job.
-    #: Not three jobs queued together: publishing needs a group, and at the
-    #: moment the queue is filled that group has no rows yet.
+    PRUNE = "prune"
+    HEALTH = "health"
+    #: Collect, publish, rebuild the map: one job, since publishing needs a group.
     PIPELINE = "pipeline"
 
 
@@ -44,8 +44,7 @@ class JobState(StrEnum):
 #: States a job will never leave.
 FINAL = frozenset({JobState.DONE, JobState.FAILED, JobState.CANCELLED})
 
-#: Publishing, deduplicating and exporting a snapshot all rewrite or read
-#: the whole graph, so they take turns.
+#: Publishing, dedup and a snapshot all touch the whole graph: they take turns.
 GRAPH = "graph"
 
 
@@ -93,15 +92,30 @@ class DedupPayload(BaseModel):
     """Nothing to choose: dedup runs over every published group."""
 
 
+class HealthPayload(BaseModel):
+    """Nothing to choose: the checks run over the whole graph."""
+
+
+class PrunePayload(BaseModel):
+    """Whether to remove what the comparison finds, or only count it.
+
+    Off by default, and the page asks before turning it on. The first run
+    on a graph that has never been compared lists everything a person ever
+    added before their additions were written down, and that list is meant
+    to be read rather than acted on.
+    """
+
+    apply: bool = False
+
+
 class MapPayload(BaseModel):
-    public: bool = False
+    # No public/private switch: every rebuild writes both builds at once.
     seed: int = 42
 
 
 class PipelinePayload(CollectPayload):
     """The collection run, plus what to do with what it found."""
 
-    public: bool = False
     seed: int = 42
 
 
@@ -110,6 +124,8 @@ PAYLOADS: dict[JobKind, type[BaseModel]] = {
     JobKind.PUBLISH: PublishPayload,
     JobKind.DEDUP: DedupPayload,
     JobKind.MAP: MapPayload,
+    JobKind.PRUNE: PrunePayload,
+    JobKind.HEALTH: HealthPayload,
     JobKind.PIPELINE: PipelinePayload,
 }
 
@@ -136,6 +152,8 @@ class Job(BaseModel):
     result: dict[str, int] = Field(default_factory=dict)
     error: str | None = None
     cancel_requested: bool = False
+    #: Where inside the run it is; absent until something reports.
+    progress: dict | None = None
 
     @property
     def is_final(self) -> bool:

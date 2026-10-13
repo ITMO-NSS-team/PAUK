@@ -1,129 +1,131 @@
-# `pauk versions report` — кандидаты в версии, не пойманные dedup'ом
+# `pauk versions report`: version candidates that dedup did not catch
 
-**Что здесь:** почему точного совпадения DOI/заголовка ([dedup.md](dedup.md))
-недостаточно, какие сигналы использует эвристический поиск и почему он
-только докладывает, а не сливает.
+**What this covers:** why an exact DOI/title match ([dedup.md](dedup.md)) is
+not enough, which signals the heuristic search uses, and why it only reports
+and never merges.
 
-**Какие файлы задействует:** `pauk/graph/version_candidates.py`,
-подключение в CLI — `pauk/cli.py`.
+**Files involved:** `pauk/graph/version_candidates.py`; the CLI wiring is in
+`pauk/cli.py`.
 
-## Зачем это отдельно от `dedup`
+## Why this is separate from `dedup`
 
-Стадия `dedup` ([dedup.md](dedup.md)) сворачивает публикации, у которых
-совпал DOI или нормализованный заголовок. Этого достаточно для дубля
-OpenAlex и для многих пар «препринт + версия записи» — но не для случаев,
-где у одной работы несколько DOI **и** разный заголовок:
+The `dedup` stage ([dedup.md](dedup.md)) folds publications whose DOI or
+normalized title matches. That is enough for an OpenAlex duplicate and for
+many "preprint + version of record" pairs, but not for cases where one work
+has several DOIs **and** a different title:
 
-- препринт, чей заголовок отредактирован для журнальной публикации
-  (переставлены слова, изменено подназвание);
-- конференционная статья, расширенная позже в журнальную;
-- русскоязычный оригинал и его английский перевод (Pleiades/MAIK) — другой
-  DOI, другой журнал, часто другой язык заголовка;
-- `eLife`-подобная ревизия под собственным DOI (`10.7554/elife.84874.2`),
-  чей заголовок отличается сопроводительной пометкой.
+- a preprint whose title was edited for the journal (words reordered, the
+  subtitle changed);
+- a conference paper later extended into a journal article;
+- a Russian original and its English translation (Pleiades/MAIK): another
+  DOI, another journal, often a title in another language;
+- an eLife-style revision under its own DOI (`10.7554/elife.84874.2`) whose
+  title differs by an appended note.
 
-Обнаружено на реальном графе: из ≈460 уже схлопнутых `dedup`-ом групп 81%
-несли **два разных DOI** — то есть решение принял заголовок, а не DOI. Тот
-же анализ по несхлопнутым публикациям нашёл ещё ≈400 вероятных пар
-(подробности и метод — переписка по ветке `feature/papers-versions`,
-числа не хранятся в репозитории).
+Found on the real graph: of ≈460 groups already folded by `dedup`, 81%
+carried **two different DOIs**, so the title made the decision, not the DOI.
+The same analysis over unfolded publications found ≈400 more likely pairs
+(details and method are in the discussion of the `feature/papers-versions`
+branch; the numbers are not stored in the repository).
 
-## Почему только `held`, никогда `merged`
+## Why only `held`, never `merged`
 
-`dedup` мержит по имени как по улике, не по доказательству (см. «Merge
-policy» в `pipeline/stages/dedup.py`) — точно то же верно и для заголовка:
-`"Cliques and Constructors in 'Hats' Game. I"` и `"... II"` дают
-почти идеальную похожесть заголовка и общих авторов, но это две разные
-статьи. Поэтому `find_version_candidates` **никогда** не пишет
-`merged_ids` и не трогает граф — каждая пара уходит в журнал со
-`status: "held"`, как несогласованная пара в `dedup_candidates.jsonl`.
-Подтверждение — за человеком.
+`dedup` treats a name as evidence, not proof (see "Merge policy" in
+`pipeline/stages/dedup.py`), and exactly the same holds for a title:
+`"Cliques and Constructors in 'Hats' Game. I"` and `"... II"` have an almost
+perfect title similarity and share their authors, yet they are two different
+papers. So `find_version_candidates` **never** writes `merged_ids` and never
+touches the graph: every pair goes to the journal with `status: "held"`, like
+an unresolved pair in `dedup_candidates.jsonl`. A person confirms it.
 
-## Сигналы и bucket'ы
+## Signals and buckets
 
-Кандидатные пары находятся блокировкой (общий автор с ≤90 работами, общее
-редкое слово заголовка с ≤45 работами, общий arXiv-id), затем каждая пара
-классифицируется в `classify_pair()`. Автор с >90 работами не выпадает из
-блокировки: внутри его работ в пару идут те, что делят ≥2 слова заголовка,
-редких для этого автора (≤45 его работ) — иначе у самых продуктивных
-авторов, у которых пар «препринт/журнал» больше всего, их не находилось бы
-вовсе.
+Candidate pairs come from blocking (a shared author with ≤90 works, a shared
+rare title word carried by ≤45 works, a shared arXiv id), and then
+`classify_pair()` classifies each pair. An author with >90 works does not drop
+out of blocking: among their works, those sharing ≥2 title words that are
+rare for this author (≤45 of their works) are paired. Otherwise the most
+prolific authors, who have the most preprint/journal pairs, would get none
+at all.
 
-| Bucket | Условие | Смысл |
+| Bucket | Condition | Meaning |
 |---|---|---|
-| `MISSED_BY_NORM` | заголовок совпал после агрессивной нормализации (юникод, пунктуация), DOI разные | нормализация `dedup` не справилась (юникод-варианты `µ`/`μ`, LaTeX, перенос строки) |
-| `DOI_SIBLING` | один DOI = другой + `.vN`/`.N` · похожесть заголовка ≥0.75 на ≥4 словах после свёртки · ни одна запись не типа `dataset`/`other`/… | версия записи с собственным DOI (без похожего заголовка или с типом депозита — `SUPPLEMENT_OR_REVIEW`: Cifra `10.60797`, AIP выдают такие DOI рисункам и таблицам статьи, заголовок у них — подпись) |
-| `PREPRINT_PUBLISHED` | одна запись на препринт-сервере, другая нет · похожесть заголовка ≥0.80 · общий автор · разрыв дат ≤3 года | препринт ↔ публикация |
-| `RU_EN_TRANSLATION` | кириллица в журнале/заголовке одной записи и не другой · похожесть ≥0.75 · общий автор или похожесть абстрактов ≥0.4 | оригинал ↔ перевод (только если у оригинала английский заголовок — заголовки сравниваются как текст, не переводятся) |
-| `STRONG_FUZZY` | похожесть ≥0.90 · пересечение авторов (Жаккар ≥0.30 или ≥2 общих) · разрыв ≤1100 дн | переформулированный заголовок, сильное подтверждение |
-| `MEDIUM_FUZZY` | похожесть ≥0.78 · пересечение авторов ≥0.50 или похожесть абстрактов ≥0.45 · разрыв ≤4 года | то же, слабее — самый шумный bucket |
+| `MISSED_BY_NORM` | titles equal after aggressive normalization (unicode, punctuation), DOIs differ | `dedup` normalization failed (unicode variants `µ`/`μ`, LaTeX, a line break) |
+| `DOI_SIBLING` | one DOI = the other + `.vN`/`.N` · title similarity ≥0.75 on ≥4 words after folding · neither record is of type `dataset`/`other`/… | a version of the record under its own DOI (without a similar title, or with a deposit type, it is `SUPPLEMENT_OR_REVIEW`: Cifra `10.60797` and AIP mint such DOIs for an article's figures and tables, whose title is a caption) |
+| `PREPRINT_PUBLISHED` | one record on a preprint server, the other not · title similarity ≥0.80 · a shared author · date gap ≤3 years | preprint ↔ publication |
+| `RU_EN_TRANSLATION` | Cyrillic in the journal/title of one record and not the other · similarity ≥0.75 · a shared author or abstract similarity ≥0.4 | original ↔ translation (only when the original has an English title: titles are compared as text, not translated) |
+| `STRONG_FUZZY` | similarity ≥0.90 · author overlap (Jaccard ≥0.30 or ≥2 shared) · gap ≤1100 days | a reworded title, strong corroboration |
+| `MEDIUM_FUZZY` | similarity ≥0.78 · author overlap ≥0.50 or abstract similarity ≥0.45 · gap ≤4 years | the same, weaker: the noisiest bucket |
 
-Похожесть заголовка — `max(Жаккар по словам, difflib.SequenceMatcher.ratio())`
-на заголовке после NFKD-нормализации (снимаются диакритики, кириллица
-сохраняется; кириллические двойники латинских букв внутри латинского слова
-заменяются латиницей) и снятия пунктуации/стоп-слов (английских и русских):
-первое ловит переставленные слова, второе — точечные правки (дефис,
-окончание). Русский заголовок и его английский перевод общих букв не имеют,
-поэтому такая пара по одному заголовку не находится.
+Title similarity is `max(word Jaccard, difflib.SequenceMatcher.ratio())` over
+the title after NFKD normalization (diacritics removed, Cyrillic kept;
+Cyrillic look-alikes of Latin letters inside a Latin word are replaced with
+Latin ones) and removal of punctuation and stop words (English and Russian).
+The first catches reordered words, the second point edits (a hyphen, an
+ending). A Russian title and its English translation share no letters, so
+such a pair is not found by the title alone.
 
-Три bucket'а — не версии, а объяснённые похожие пары, тоже журналируются,
-но никогда не в `MERGE_BUCKETS`:
+Three buckets are not versions but explained look-alike pairs. They are
+journalled too, but are never in `MERGE_BUCKETS`:
 
-- `ERRATUM` — `"Correction to: …"` / `"Erratum to: …"` / `"RETRACTED: …"` /
-  `"Retraction notice to …"`, `"Erratum for: …"`, `"Correction — …"`, суффиксы `"(Erratum)"` и `": publisher's note"`,
-  а также записи с OpenAlex-типом `erratum`/`retraction`. Совпадение с
-  оригиналом — по заголовку без пометки, допускается близкий (≥0.75):
-  erratum часто повторяет формулировку переводного издания. `for` считается
-  разделителем только с двоеточием, дефис — только между пробелами: иначе
-  статьи `"Correction for motion artifacts…"` и `"Correction-based approach…"`
-  становились бы уведомлениями. Вхождение
-  одного заголовка в другой засчитывается только целыми словами и только
-  если в более коротком ≥4 слов — иначе `"Correction to: Introduction"`
-  цеплялся бы к любой статье со словом «introduction». Уведомление,
-  не совпавшее со второй записью пары, в fuzzy-слои не идёт вовсе;
-- `SERIES_NOT_VERSION` — `"Part I"`/`"Part II"`, `"Volume 2"`, голый номер
-  раздела (`"... Applications. II. Applications"`, `"... industries. 2. ..."`),
-  разные римские цифры в одинаковой позиции. Голое число или римская цифра в
-  конце — серия, только если они есть в конце обоих заголовков и различаются
-  (`"… COVID-19"` против `"… COVID"` — не серия); явный маркер (`Part`,
-  `Volume`, `No.`) достаточно и с одной стороны. Разные номера считаются
-  серией, только если текст до номера совпадает (≥0.9) — иначе
-  `"... Part 3"` и `"... Part 1"` двух разных серий попадали сюда;
-- `SUPPLEMENT_OR_REVIEW` — `"Additional file N of …"`, `"Data from: …"`,
-  `"Peer Review #…"`, чей заголовок реально отслеживает заголовок другой
-  записи (иначе — не считается парой вовсе, иначе любой депозит с общим
-  автором попал бы сюда).
+- `ERRATUM`: `"Correction to: …"` / `"Erratum to: …"` / `"RETRACTED: …"` /
+  `"Retraction notice to …"`, `"Erratum for: …"`, `"Correction — …"`, the
+  suffixes `"(Erratum)"` and `": publisher's note"`, and records with the
+  OpenAlex type `erratum`/`retraction`. The original is matched by the title
+  without the marker, and a close one (≥0.75) counts too: an erratum often
+  repeats the wording of the translated edition. `for` counts as a separator
+  only with a colon and a hyphen only between spaces; otherwise the papers
+  `"Correction for motion artifacts…"` and `"Correction-based approach…"`
+  would become notices. One title containing the other counts only on whole
+  words and only when the shorter one has ≥4 words; otherwise
+  `"Correction to: Introduction"` would attach to every paper with
+  "introduction" in its title. A notice that does not match the other record
+  of the pair does not reach the fuzzy buckets at all;
+- `SERIES_NOT_VERSION`: `"Part I"`/`"Part II"`, `"Volume 2"`, a bare section
+  number (`"... Applications. II. Applications"`, `"... industries. 2. ..."`,
+  `"Lecture notes #2 on …"`), different roman numerals in the same position.
+  A bare trailing number or roman numeral is a series only when both titles
+  end in one and they differ (`"… COVID-19"` vs `"… COVID"` is not a series);
+  an explicit marker (`Part`, `Volume`, `No.`) is enough on one side.
+  Different numbers count as a series only when the text before the number
+  matches (≥0.9); otherwise `"... Part 3"` and `"... Part 1"` of two
+  unrelated series landed here;
+- `SUPPLEMENT_OR_REVIEW`: `"Additional file N of …"`, `"Data from: …"`,
+  `"Peer Review #…"` whose title actually tracks the other record's title
+  (otherwise it is not a pair at all; else every deposit sharing an author
+  would land here).
 
-Типы `software`/`dataset`/`peer-review`/`grant`/`other` не попадают ни в
-`MISSED_BY_NORM`, ни в `DOI_SIBLING` (компонент `.N` такого типа —
-`SUPPLEMENT_OR_REVIEW`), ни в fuzzy-слои — у релизов ПО и депозитов данных своя версионность (её решает
-дедуп репозиториев), заголовок статьи ничего о них не говорит.
+The types `software`/`dataset`/`peer-review`/`grant`/`other` reach neither
+`MISSED_BY_NORM`, nor `DOI_SIBLING` (a `.N` component of such a type is
+`SUPPLEMENT_OR_REVIEW`), nor the fuzzy buckets: software releases and data
+deposits have their own versioning (repository dedup handles it), and a
+paper-title heuristic says nothing about them.
 
-## Запуск
+## Running
 
 ```
-pauk versions report [--output <путь>]
+pauk versions report [--output <path>]
 ```
 
-Только чтение графа (`Neo4jClient.fetch_publications_for_dedup()`), Mongo
-не требуется, блокировки графа не берёт — писать в граф нечему. Журнал
-(`data/cache/version_candidates.jsonl` по умолчанию) — построчный JSON,
-как у `dedup_candidates_graph.jsonl`: `status`, `entity`, `bucket`,
-`mergeable`, `record_a`/`record_b` и сигналы, на которых основано решение.
-Строки упорядочены по паре `(record_a, record_b)`, так что журналы двух
-прогонов можно сравнить диффом.
+Only reads the graph (`Neo4jClient.fetch_publications_for_dedup()`), needs no
+MongoDB and takes no graph lock, since there is nothing to write to the
+graph. The journal (`data/cache/version_candidates.jsonl` by default) is
+line-delimited JSON, like `dedup_candidates_graph.jsonl`: `status`,
+`entity`, `bucket`, `mergeable`, `record_a`/`record_b` and the signals the
+decision was based on. Lines are ordered by the `(record_a, record_b)` pair,
+so the journals of two runs can be diffed.
 
-Не входит в `run`/`enrich` — запускается вручную, как `pauk dedup graph`.
+It is not part of `run`/`enrich`; run it by hand, like `pauk dedup graph`.
 
-## Куда это идёт дальше
+## Where this goes next
 
-Первая версия — только отчёт: закрыть цикл «нашли → подтвердили → слили»
-можно дальше несколькими путями, ни один из них здесь не реализован:
+The first version is report-only. The "found → confirmed → merged" loop can be
+closed in several ways later; none of them is implemented here:
 
-- ручное подтверждение через `pauk admin merge` по `record_a`/`record_b`
-  из журнала;
-- перенос `MISSED_BY_NORM`/`DOI_SIBLING` (детерминированные, высокая
-  точность) в саму стадию `dedup` как автослияние;
-- сигнал уровня B — `relation` из ответа Crossref (`is-preprint-of`,
-  `has-version`, `is-translation-of`) как авторитетное подтверждение вместо
-  эвристики для `PREPRINT_PUBLISHED`/`RU_EN_TRANSLATION`.
+- manual confirmation through `pauk admin merge` using `record_a`/`record_b`
+  from the journal;
+- moving `MISSED_BY_NORM`/`DOI_SIBLING` (deterministic, high precision) into
+  the `dedup` stage itself as automatic merges;
+- a level-B signal: `relation` from the Crossref response (`is-preprint-of`,
+  `has-version`, `is-translation-of`) as authoritative confirmation instead
+  of the heuristic for `PREPRINT_PUBLISHED`/`RU_EN_TRANSLATION`.

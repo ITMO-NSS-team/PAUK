@@ -19,14 +19,16 @@ from pauk.settings import Settings
 
 
 class FakeNeo4jClient:
-    """Records calls instead of touching a real driver — no `driver`
-    attribute on purpose, so a test fails loudly if AuditedNeo4jClient
-    ever tries to reach through to a real session for something other
-    than the two snapshot methods we patch below."""
+    """Records calls instead of touching a real driver.
+
+    It has no `driver` attribute on purpose, so a test fails loudly if AuditedNeo4jClient reaches
+    through to a real session for anything other than the two snapshot methods patched below.
+    """
 
     def __init__(self):
         self.calls: list[tuple[str, tuple]] = []
         self.relationships_matched = 0
+        self.relationships_removed = 0
         self.nodes_removed = 0
 
     def upsert_nodes_batch(self, labels, nodes):
@@ -38,6 +40,10 @@ class FakeNeo4jClient:
     def upsert_relationships_batch(self, src_label, tgt_label, rel_type, relationships, tgt_match_prop="id"):
         self.calls.append(("upsert_relationships_batch", (src_label, tgt_label, rel_type, relationships)))
         return self.relationships_matched
+
+    def sync_implements_relationships_batch(self, publications):
+        self.calls.append(("sync_implements_relationships_batch", (publications,)))
+        return self.relationships_removed
 
     def merge_person_nodes_batch(self, merges):
         self.calls.append(("merge_person_nodes_batch", (merges,)))
@@ -168,6 +174,72 @@ class UpsertRelationshipsDiffTest(unittest.TestCase):
         self.assertEqual(entry.entity_type, "(Person)-[:AUTHORED]->(Publication)")
         self.assertEqual(entry.entity_id, "p1 -> pub1")
         self.assertEqual(entry.change_kind, "created")
+
+
+class LinkWithoutPropertiesTest(unittest.TestCase):
+    """Most relationships carry no properties, but changes to them must still be journaled.
+
+    BELONGS_TO, IMPLEMENTS, PART_OF and the rest are bare edges: the diff between "there is one" and
+    "there is none" has no fields in it, and an entry with an empty diff would be dropped as a no-op
+    write. Linking a person to a department by hand, or unlinking them, must show in the journal, the
+    one screen that exists to answer "who did this".
+    """
+
+    def setUp(self):
+        self.fake = FakeNeo4jClient()
+        self.fake.delete_relationships_batch = lambda s, t, r, pairs, m="id": len(pairs)
+        self.fake.relationships_matched = 1
+        self.sink = InMemorySink()
+        self.client = AuditedNeo4jClient(self.fake, self.sink)
+
+    def test_linking_is_recorded(self):
+        with patch.object(AuditedNeo4jClient, "_fetch_rel_props",
+                          side_effect=[{}, {"A1 -> D1": {}}]):
+            self.client.upsert_relationships_batch(
+                "Person", "Department", "BELONGS_TO", [("A1", "D1", {})])
+        (entry,) = self.sink.entries
+        self.assertEqual(entry.entity_type, "(Person)-[:BELONGS_TO]->(Department)")
+        self.assertEqual((entry.entity_id, entry.change_kind), ("A1 -> D1", "created"))
+
+    def test_unlinking_is_recorded(self):
+        with patch.object(AuditedNeo4jClient, "_fetch_rel_props",
+                          side_effect=[{"A1 -> D1": {}}, {}]):
+            self.client.delete_relationships_batch(
+                "Person", "Department", "BELONGS_TO", [("A1", "D1")])
+        (entry,) = self.sink.entries
+        self.assertEqual((entry.entity_id, entry.change_kind), ("A1 -> D1", "deleted"))
+
+    def test_a_write_that_changed_nothing_still_says_nothing(self):
+        # The guard this relaxes is worth keeping for what it was for: a
+        # publish rewrites every edge it knows on every run.
+        with patch.object(AuditedNeo4jClient, "_fetch_rel_props",
+                          side_effect=[{"A1 -> D1": {}}, {"A1 -> D1": {}}]):
+            self.client.upsert_relationships_batch(
+                "Person", "Department", "BELONGS_TO", [("A1", "D1", {})])
+        self.assertEqual(self.sink.entries, [])
+
+    def test_an_edge_whose_target_does_not_exist_is_not_invented(self):
+        # Nothing matched, so nothing was written and nothing happened.
+        with patch.object(AuditedNeo4jClient, "_fetch_rel_props", side_effect=[{}, {}]):
+            self.client.upsert_relationships_batch(
+                "Person", "Department", "BELONGS_TO", [("A1", "D9", {})])
+        self.assertEqual(self.sink.entries, [])
+
+
+class SyncImplementsAuditTest(unittest.TestCase):
+    def test_removed_relationships_are_recorded_as_a_bulk_change(self):
+        client, fake, sink = audited_client()
+        fake.relationships_removed = 2
+        batch = [("W1", ["github_org_authors_repo"])]
+
+        removed = client.sync_implements_relationships_batch(batch)
+
+        self.assertEqual(removed, 2)
+        self.assertEqual(fake.calls, [("sync_implements_relationships_batch", (batch,))])
+        [entry] = sink.entries
+        self.assertEqual(entry.operation, "sync_implements_relationships")
+        self.assertEqual(entry.entity_type, "(Repository)-[:IMPLEMENTS]->(Publication)")
+        self.assertEqual(entry.change_kind, "bulk")
 
 
 class MergeNodesDiffTest(unittest.TestCase):
@@ -399,7 +471,7 @@ class FixedActorTest(unittest.TestCase):
 
     def test_a_pinned_actor_wins_over_the_context(self):
         # The panel opens its client in a dependency and edits in the
-        # route — different contexts, so a contextvar set in the first is
+        # route - different contexts, so a contextvar set in the first is
         # not visible in the second, and every entry read "unknown".
         client, sink = self.pinned(actor="user:roman", source="admin-ui")
         with patch.object(AuditedNeo4jClient, "_fetch_node_props",
@@ -422,10 +494,9 @@ class FixedActorTest(unittest.TestCase):
 class SinkFailureDoesNotUndoTheChangeTest(unittest.TestCase):
     """The journal records a change; it is not a condition for making one.
 
-    Letting the sink raise meant a mutation already written to Neo4j came
-    back as an error from inside `update_node`, before the caller could
-    record its decision or put the graph back. The change stayed, with no
-    override and no journal entry, and the request looked like it failed.
+    If the sink raised, a mutation already written to Neo4j would come back as an error from inside
+    `update_node`, before the caller could record its decision or put the graph back. The change would
+    stay, with no override and no journal entry, and the request would look like it failed.
     """
 
     class DeadSink:

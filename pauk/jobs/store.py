@@ -28,13 +28,18 @@ logger = logging.getLogger(__name__)
 
 COLLECTION = "jobs"
 
+#: Where a running worker leaves its mark. Separate from the jobs it takes:
+#: an idle worker has no job to attach itself to.
+WORKERS = "job_workers"
+
 PAGE = 50
 
-# How long a job may go without saying it is alive before the page says so.
-# The beat is every minute (worker.BEAT_SECONDS), so this is several missed
-# beats, not a slow step: the beat runs in its own thread and does not wait
-# for the work.
+# Silence before the page says so: several missed beats, not a slow step.
 QUIET_MINUTES = 5
+
+#: Three turns of the loop: a slow Mongo should not blink the page between
+#: "here" and "gone".
+PRESENT_SECONDS = 20
 
 
 def enqueue(db: Database, kind: JobKind, payload: dict | None = None,
@@ -80,10 +85,10 @@ def claim(db: Database, worker: str, busy: set[str] | None = None) -> Job | None
 
     Args:
         busy: Resources somebody already holds. Jobs waiting on those are
-            passed over rather than taken and handed straight back. Without
-            it the oldest job was claimed every turn, and while it waited
-            for the graph it held up everything behind it — including runs
-            wanting a different resource entirely.
+            passed over rather than taken and handed straight back. Otherwise
+            the oldest job would be claimed every turn, and while it waited
+            for the graph it would hold up everything behind it, including
+            runs wanting a different resource entirely.
     """
     moment = now()
     query: dict = {"state": str(JobState.QUEUED)}
@@ -93,8 +98,7 @@ def claim(db: Database, worker: str, busy: set[str] | None = None) -> Job | None
         query,
         {"$set": {"state": str(JobState.CLAIMED), "worker": worker,
                   "heartbeat_at": moment}},
-        # `_id` only breaks a tie. Two jobs queued inside one millisecond
-        # share a created_at, and the order would otherwise be arbitrary.
+        # `_id` only breaks a tie: two jobs can share a created_at.
         sort=[("created_at", 1), ("_id", 1)],
         return_document=True)
     if document is None:
@@ -190,7 +194,7 @@ def is_quiet(job: Job, minutes: int = QUIET_MINUTES) -> bool:
     """Whether the job has stopped saying it is alive.
 
     Enough to warn about, not enough to act on. The beat comes from a
-    thread of its own, so silence usually means the process is gone — but
+    thread of its own, so silence usually means the process is gone, but
     it can also mean Mongo was unreachable for a few minutes while the run
     carried on.
     """
@@ -211,7 +215,7 @@ def reap_stale(db: Database, minutes: int = LEASE_MINUTES) -> int:
     Waits out the lock lease rather than the shorter quiet threshold. A job
     that has been silent for five minutes may still hold a live lease and
     still be writing; declaring it dead then would settle a run that is
-    going on, and would not free anything either — the lock outlives the
+    going on, and would not free anything either: the lock outlives the
     verdict by another ten minutes. The page warns at five; this acts at
     fifteen, when the lease cannot be alive any more.
 
@@ -229,6 +233,60 @@ def reap_stale(db: Database, minutes: int = LEASE_MINUTES) -> int:
     if settled:
         logger.warning("settled %d job(s) nobody was running", settled)
     return settled
+
+
+def progress(db: Database, job_id: str, step: str, done: int = 0, total: int = 0,
+             phase: int | None = None) -> bool:
+    """Say which part of a run is under way.
+
+    A run takes hours, and until now the only thing it said about itself was
+    that it was alive. Written on the job rather than logged: the page is
+    where somebody asks, and the log is on another machine.
+    """
+    result = db[COLLECTION].update_one(
+        {"_id": job_id, "state": {"$nin": [str(name) for name in FINAL]}},
+        {"$set": {"progress": {"step": step, "done": done, "total": total,
+                               "phase": phase, "at": now()}}})
+    return result.matched_count > 0
+
+
+def give_up(db: Database, job_id: str, busy: set[str] | None = None) -> bool:
+    """Settle a job whose worker is gone, without waiting for another one.
+
+    `reap_stale` waits out the whole lock lease because a silent job may
+    still hold one and still be writing. That reasoning does not apply when
+    the resource is free: a live worker beats every minute and holds what it
+    touches, so silence plus an unheld resource means nothing is in flight.
+
+    Args:
+        busy: Resources somebody holds, from `locks.taken`. A job waiting on
+            one of them is left alone whatever its state.
+
+    Returns:
+        Whether the job was settled. False for a job that is running fine,
+        has already ended, or whose resource is taken.
+    """
+    job = read(db, job_id)
+    if job is None or job.is_final or job.resource in (busy or set()):
+        return False
+    if not is_quiet(job):
+        return False
+    if job.cancel_requested:
+        return cancelled(db, job_id)
+    return fail(db, job_id, "воркер перестал отвечать")
+
+
+def repeat(db: Database, job_id: str, actor: str = "unknown") -> Job | None:
+    """Queue the same run again, from what the old one recorded.
+
+    The payload is on the job, so a rerun needs nothing typed in twice, which is where a period gets mistyped and the run
+    collects the wrong months. A new document rather than a reset: the failure stays in the
+    history, and two attempts read as two attempts.
+    """
+    job = read(db, job_id)
+    if job is None or not job.is_final:
+        return None
+    return enqueue(db, job.kind, dict(job.payload), actor=actor)
 
 
 def read(db: Database, job_id: str) -> Job | None:
@@ -263,6 +321,38 @@ def count(db: Database, *, kind: str = "", state: str = "", actor: str = "") -> 
     query = {name: value for name, value
              in (("kind", kind), ("state", state), ("actor", actor)) if value}
     return db[COLLECTION].count_documents(query)
+
+
+def mark_present(db: Database, name: str) -> None:
+    """Say that this worker is here, right now.
+
+    A worker that is idle holds no job and writes nothing else, so without
+    this the page cannot tell "nobody started the worker" from "the worker
+    is waiting for something to do", and those need different things from
+    the person reading it.
+    """
+    db[WORKERS].update_one({"_id": name}, {"$set": {"seen_at": now()}}, upsert=True)
+
+
+def mark_gone(db: Database, name: str) -> None:
+    """Take the mark back when the worker leaves on its own.
+
+    Without it a stopped worker would go on looking alive until its mark
+    goes stale, which is exactly the moment somebody is deciding whether
+    to start one.
+    """
+    db[WORKERS].delete_one({"_id": name})
+
+
+def workers_present(db: Database, seconds: int = PRESENT_SECONDS) -> list[str]:
+    """Names of the workers that have said they are here lately.
+
+    Empty means nobody is taking jobs off the queue: they will pile up
+    until somebody runs `pauk admin worker`.
+    """
+    fresh = now() - timedelta(seconds=seconds)
+    return sorted(row["_id"] for row in
+                  db[WORKERS].find({"seen_at": {"$gte": fresh}}, {"_id": 1}))
 
 
 def _as_job(document: dict) -> Job:

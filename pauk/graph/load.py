@@ -15,7 +15,7 @@ from .audit import actor_context, audited_client
 from .client import Neo4jClient
 from .csv_loader import load_csv_dir
 from .extract import NODE_REGISTRY
-from .jsonl_loader import FILE_SPECS, load_prepared_rows
+from .jsonl_loader import FILE_SPECS, Progress, load_prepared_rows
 from .overrides import apply_overrides, tombstoned_ids, tombstoned_relationships
 from .schema import create_constraints
 
@@ -35,9 +35,9 @@ ENTITY_FILES = {
 
 # Which node label the rows of each prepared entity become, derived from
 # the loader's own map rather than written out again: an entity added to
-# the pipeline (organizations, when department matching landed) must not
-# silently lose its tombstones because a second list was never updated.
-# persons.jsonl is the one file FILE_SPECS does not carry — it feeds two
+# the pipeline must not silently lose its tombstones because a second list
+# was never updated.
+# persons.jsonl is the one file FILE_SPECS does not carry: it feeds two
 # registry entries, ITMO and external, that share the base label.
 FILE_LABELS = {
     filename: NODE_REGISTRY[spec_key].labels.split(":")[0]
@@ -67,7 +67,8 @@ def _drop_tombstoned(rows_by_file: dict[str, list[dict]], mongo_db: Database) ->
     return filtered
 
 
-def load_jsonl_group(config: Settings, mongo_db: Database, group: str) -> dict[str, int]:
+def load_jsonl_group(config: Settings, mongo_db: Database, group: str,
+                     report: Progress | None = None) -> dict[str, int]:
     """Load one prepared group from Mongo into Neo4j. Used by `pauk publish graph`.
 
     Takes the graph lock for the whole run. Two publishes at once interleave
@@ -89,10 +90,11 @@ def load_jsonl_group(config: Settings, mongo_db: Database, group: str) -> dict[s
         Busy: Something else is already writing the graph.
     """
     with held(mongo_db, GRAPH):
-        return _load_locked(config, mongo_db, group)
+        return _load_locked(config, mongo_db, group, report)
 
 
-def _load_locked(config: Settings, mongo_db: Database, group: str) -> dict[str, int]:
+def _load_locked(config: Settings, mongo_db: Database, group: str,
+                 report: Progress | None = None) -> dict[str, int]:
     """The publish itself, with the graph already held.
 
     Split out so the lock wraps the whole run rather than each step: a
@@ -110,14 +112,14 @@ def _load_locked(config: Settings, mongo_db: Database, group: str) -> dict[str, 
         create_constraints(client)
         # Large batches are recorded as one summary entry each (see
         # AuditedNeo4jClient.diff_threshold), so a publish costs a handful
-        # of audit rows, not one per node — but "who republished this group
-        # and when" stops being invisible.
+        # of audit rows, not one per node, while still recording who
+        # republished this group and when.
         with actor_context("etl-pipeline", source=f"publish:{group}"):
             # LinkCandidate is the one label with no prepared file of its
-            # own — it is made up from repo_links rows — so _drop_tombstoned
+            # own (it is made up from repo_links rows), so _drop_tombstoned
             # cannot filter it and the loader is told separately.
             load_prepared_rows(client, rows_by_file, tombstoned_relationships(mongo_db),
-                               tombstoned_ids(mongo_db, "LinkCandidate"))
+                               tombstoned_ids(mongo_db, "LinkCandidate"), report=report)
             # Last step, after candidate promotion and every fold: publishing
             # overwrites hand-corrected fields with whatever the source says,
             # so the manual decisions are put back on top.

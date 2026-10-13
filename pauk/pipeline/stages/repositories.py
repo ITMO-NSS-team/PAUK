@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from pauk.models import GitHubProfile, RepoLink, Repository
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.redaction import redact_text
+from pauk.sources.base import HttpRequestError
 from pauk.sources.github import GitHubClient
 
 from .base import EnrichmentStage
@@ -12,8 +13,7 @@ from .base import EnrichmentStage
 GITHUB_HOSTS = {"github.com", "www.github.com"}
 
 def _payload_date(value: str | None) -> date | None:
-    """GitHub timestamps are ISO-8601 with a `Z`, which date.fromisoformat
-    rejects before Python 3.11 and which carries a time we don't keep."""
+    """GitHub timestamps are ISO-8601 with a `Z` and a time, which we don't keep."""
     if not value:
         return None
     try:
@@ -25,7 +25,7 @@ def _payload_date(value: str | None) -> date | None:
 def _github_owner_name(url: str | None) -> tuple[str, str] | None:
     """(owner, name) for a github.com URL of exactly two path segments.
 
-    Anything else — a gist, a subdirectory link, another host — is not a
+    Anything else (a gist, a subdirectory link, another host) is not a
     repository this stage can fetch.
     """
     parsed = urlparse((url or "").rstrip("/"))
@@ -39,8 +39,7 @@ def _url_repo_id(url: str | None) -> str | None:
     """`github_{owner}_{name}` for a repository URL, or None if it is not one.
 
     The id a row is reached by, as opposed to `_canonical_repo_id`, which is
-    the identity the fetched payload gives it. Both passes of the stage key
-    their work by this, so it lives in one place.
+    the identity the fetched payload gives it.
     """
     parsed = _github_owner_name(url)
     return f"github_{parsed[0].lower()}_{parsed[1].lower()}" if parsed else None
@@ -88,25 +87,26 @@ class RepositoriesStage(EnrichmentStage):
     def _enrich_repository(self, client: GitHubClient, repo: Repository, owner: str,
                            name: str, source_url: str, profiles: dict[str, GitHubProfile],
                            state: ProcessingState | None,
-                           fetched_orgs: set[str]) -> None:
-        """One repository's metadata, its README status and its owner's
-        profile stub. The people behind it are a separate stage — see
-        repo_people.py for why.
+                           fetched_orgs: set[str]) -> tuple[str, str | None]:
+        """One repository's metadata, README status and owner profile stub.
 
-        `source_url` is the URL this repository was reached by — the cited one
-        when a publication led here, its own otherwise. It is what the raw
-        store records, and the fallback when the payload carries no html_url.
+        The people behind it are collected by repo_people.py.
 
-        `fetched_orgs` is the run's set of organizations already looked up; it
-        is what keeps the owner-profile call to one per organization.
+        `source_url` is the URL the repository was reached by (the cited one
+        when a publication led here). It is what the raw store records and the
+        fallback when the payload carries no html_url. `fetched_orgs` is the
+        run's set of organizations already looked up, keeping the owner-profile
+        call to one per organization.
         """
+        fetched = False
         try:
             payload = client.get_repository(owner, name)
+            fetched = True
             self.raw.append("github", payload, {"repository": source_url})
             repo.url = payload.get("html_url") or source_url
             repo.name = payload.get("name") or name
-            # Survives renames and owner transfers — the dedup stage
-            # uses it to recognise rows created before a rename.
+            # Survives renames and owner transfers; dedup uses it to recognise
+            # rows created before a rename.
             repo.github_id = payload.get("id")
             repo.description = payload.get("description")
             repo.stars_num = payload.get("stargazers_count")
@@ -138,10 +138,9 @@ class RepositoriesStage(EnrichmentStage):
                 # serves explicit nulls, which .get(key, "") passes on.
                 known.html_url = owner_data.get("html_url") or known.html_url
                 known.type = (owner_data.get("type") or "").lower() or known.type
-                # An organization is nobody's candidate, so the people stage
-                # skips it and the stub above is all its profile ever gets —
-                # leaving social_graph nothing to recognise an ITMO lab by.
-                # One call per organization per run fills the fields it reads.
+                # The people stage skips organizations, so the stub above would be
+                # all their profile gets, leaving social_graph nothing to
+                # recognise an ITMO lab by. One call per organization fills it.
                 if known.type == "organization" and profile_id not in fetched_orgs:
                     fetched_orgs.add(profile_id)
                     try:
@@ -162,6 +161,7 @@ class RepositoriesStage(EnrichmentStage):
                 finished_at=datetime.now(UTC),
                 result_count=1,
             )
+            return "available", None
         except Exception as exc:
             repo.processing[self.name] = ProcessingState(
                 status=ProcessingStatus.FAILED,
@@ -169,6 +169,11 @@ class RepositoriesStage(EnrichmentStage):
                 finished_at=datetime.now(UTC),
                 error=redact_text(exc),
             )
+            # A later README failure cannot turn a fetched repository into a 404.
+            if fetched:
+                return "available", None
+            status = "not_found" if isinstance(exc, HttpRequestError) and exc.status_code == 404 else "failed"
+            return status, redact_text(exc)
 
     def _pending_repository_ids(
         self, rows: list[RepoLink], repositories: dict[str, Repository],
@@ -193,21 +198,17 @@ class RepositoriesStage(EnrichmentStage):
     ) -> dict[str, list[Repository]]:
         """Rows still needing an attempt, grouped by the id their own URL gives.
 
-        A curated import writes the Repository row straight into the
-        collection with no link behind it, so a work list built only from
-        repo_links can never reach it again.
+        A curated import writes the Repository row with no link behind it, so a
+        work list built only from repo_links cannot reach it.
 
-        Keyed by the URL-derived id, not `repo.id`, because those two differ
-        once a row has been re-keyed to its canonical identity: the link pass
-        works from the cited URL, and without a shared key a forced run would
-        fetch such a row twice.
+        Keyed by the URL-derived id, not `repo.id`, because those differ once a
+        row has been re-keyed to its canonical identity; without a shared key a
+        forced run would fetch such a row twice.
 
-        A key can hold more than one row — a curated import brings its own id
-        and the link pass derives one from the cited URL, and both can point
-        at the same owner/name. They are one repository, so they are grouped
+        A key can hold more than one row (a curated import brings its own id and
+        the link pass derives another for the same owner/name). They are grouped
         rather than overwritten: `run()` fetches the group once and folds the
-        rest into what it fetched. Overwriting would starve the same row on
-        every run, since rows are read in a stable order.
+        rest in. Overwriting would starve the same row on every run.
         """
         found: dict[str, list[Repository]] = defaultdict(list)
         for repo in repositories.values():
@@ -223,13 +224,11 @@ class RepositoriesStage(EnrichmentStage):
                          repositories: dict[str, Repository]) -> Repository:
         """The one row of a URL group worth fetching, with the rest folded in.
 
-        The row that has been to the API wins: `github_id` only ever comes
-        from a payload, so that row's name and URL are the canonical ones, and
-        a `processing` entry for this stage is the attempt history that would
-        otherwise be lost. Ties fall back to the id, so the winner does not
-        depend on the order rows are read in. The losers leave their id behind
-        in `merged_ids`, which is what lets the graph loader resolve a link
-        that still points at them.
+        The row that has been to the API wins: `github_id` only comes from a
+        payload, so its name and URL are canonical, and its `processing` entry
+        is attempt history that would otherwise be lost. Ties fall back to the
+        id, so the winner is independent of read order. Losers leave their id
+        in `merged_ids` so the graph loader can resolve links pointing at them.
         """
         def rank(repo: Repository) -> tuple[int, int, str]:
             return (0 if repo.github_id else 1,
@@ -254,6 +253,7 @@ class RepositoriesStage(EnrichmentStage):
         client = GitHubClient(self.config.request_timeout, self.config.github_token)
         changed = 0
         attempted_repo_ids: set[str] = set()
+        availability: dict[str, tuple[str, str | None]] = {}
         # Taken before the first fetch, because a fetch can rewrite `repo.url`
         # to the canonical one GitHub redirects to. Recomputing this after the
         # link pass would key the same row under its new URL, miss it in
@@ -262,6 +262,42 @@ class RepositoriesStage(EnrichmentStage):
         # Organizations fetched this run, shared across both passes so the
         # extra call happens once per organization and not once per repository.
         fetched_orgs: set[str] = set()
+        selected_repository_ids = (
+            self.selection.ids
+            if self.selection is not None and self.selection.entity == "repositories"
+            else None
+        )
+
+        repository_ids_by_citation: dict[str, set[str]] = {}
+        for repo in repositories.values():
+            if selected_repository_ids is not None and repo.id not in selected_repository_ids:
+                continue
+            repository_ids_by_citation.setdefault(repo.id, set()).add(repo.id)
+            for citation in [repo.url, *repo.cited_urls]:
+                citation_id = _url_repo_id(citation)
+                if citation_id is not None:
+                    repository_ids_by_citation.setdefault(citation_id, set()).add(repo.id)
+
+        # Refresh only claims backed by a matching discovered link. A
+        # publication_id can also come from an imported or curated repository
+        # row, so removing it from every repository mentioned by that paper
+        # would silently erase independent provenance.
+        for row in rows:
+            if not self._row_in_scope(row):
+                continue
+            for link in row.links:
+                repo_id = _url_repo_id(link.url)
+                if repo_id is None:
+                    continue
+                if selected_repository_ids is not None and repo_id not in selected_repository_ids:
+                    continue
+                for existing_id in repository_ids_by_citation.get(repo_id, ()):
+                    repo = repositories[existing_id]
+                    repo.publication_ids = [
+                        publication_id
+                        for publication_id in repo.publication_ids
+                        if publication_id != row.publication_id
+                    ]
         progress = self.progress_bar(
             total=len(self._pending_repository_ids(rows, repositories, unlinked)),
             unit="repository")
@@ -277,8 +313,7 @@ class RepositoriesStage(EnrichmentStage):
                 repo_id = f"github_{owner.lower()}_{name.lower()}"
                 if not self.in_scope("repositories", repo_id):
                     continue
-                # None is "not judged yet", not "no", and still implements.
-                implements = link.is_relevant is not False
+                implements = link.is_relevant is True and not link.url_ambiguous
                 repo = repositories.get(repo_id)
                 if repo is not None:
                     if implements and row.publication_id not in repo.publication_ids:
@@ -287,32 +322,40 @@ class RepositoriesStage(EnrichmentStage):
                         repo.cited_urls.append(url)
                     state = repo.processing.get(self.name)
                     if not self.needs_attempt(state):
+                        if state.status == ProcessingStatus.COMPLETED:
+                            availability[repo_id] = ("available", None)
                         continue
                 else:
-                    repo = Repository(id=repo_id, url=url, name=name,
-                                      publication_ids=[row.publication_id] if implements else [],
-                                      cited_urls=[url])
+                    repo = Repository(
+                        id=repo_id,
+                        url=url,
+                        name=name,
+                        publication_ids=[row.publication_id] if implements else [],
+                        cited_urls=[url],
+                    )
                     repositories[repo_id] = repo
                     state = None
                 # One repository can be mentioned by many publications. Its
-                # publication IDs are collected above, but the GitHub API must
-                # be called at most once per enrichment run (especially with
-                # --force, which otherwise retries every mention).
+                # author-artifact publication IDs and every cited URL are
+                # collected above, but the GitHub API must be called at most
+                # once per enrichment run (especially with --force, which
+                # otherwise retries every mention).
                 if repo_id in attempted_repo_ids:
                     continue
                 attempted_repo_ids.add(repo_id)
                 # A row reached by a link can carry a URL of its own that
                 # differs from the cited one; the second pass is keyed by
-                # that, so claim it here — before the fetch rewrites it.
+                # that, so claim it here, before the fetch rewrites it.
                 attempted_repo_ids.add(_url_repo_id(repo.url) or repo_id)
-                self._enrich_repository(client, repo, owner, name, url, profiles,
-                                        state, fetched_orgs)
+                availability[repo_id] = self._enrich_repository(
+                    client, repo, owner, name, url, profiles, state, fetched_orgs,
+                )
                 progress.update()
                 changed += 1
 
-        # Second pass: rows the links never reach. The loop above is what
-        # *discovers* repositories, this is what keeps already-known ones
-        # enriched — including the curated rows that arrived without a link.
+        # Second pass: rows the links never reach. The loop above discovers
+        # repositories; this keeps already-known ones enriched, including
+        # curated rows that arrived without a link.
         for url_id, group in sorted(unlinked.items()):
             repo = self._fold_duplicates(group, repositories)
             if url_id in attempted_repo_ids:
@@ -325,6 +368,19 @@ class RepositoriesStage(EnrichmentStage):
             progress.update()
             changed += 1
         progress.close()
+        updated_rows = []
+        for row in rows:
+            if not self._row_in_scope(row):
+                continue
+            updated = False
+            for link in row.links:
+                result = availability.get(_url_repo_id(link.url))
+                if result is not None:
+                    link.availability, link.availability_error = result
+                    updated = True
+            if updated:
+                updated_rows.append(row)
+        self.prepared.upsert_models("repo_links", updated_rows)
         # Re-key fetched rows to their canonical identity: a renamed repo (the
         # API redirects the old URL) or a case-variant citation must collapse
         # into one row, otherwise two rows share one canonical URL.
@@ -341,7 +397,7 @@ class RepositoriesStage(EnrichmentStage):
                 canonical[canonical_id] = repo
             else:
                 # The loser leaves behind its own id and every id it had
-                # already absorbed — same bookkeeping as _fold_duplicates.
+                # already absorbed (same bookkeeping as _fold_duplicates).
                 _fold_into(winner, repo)
                 aliases = [*winner.merged_ids, repo.id, *repo.merged_ids]
             # A row folded away earlier can have been keyed by the very id the

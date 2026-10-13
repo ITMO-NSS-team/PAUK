@@ -19,13 +19,8 @@ _PreparedModel = TypeVar("_PreparedModel", Publication, Person)
 
 ITMO_ROR_ID = "04txgxn49"
 
-# Metadata sometimes puts something that is not a person in an author slot:
-# ACL Anthology deposits name the venue there ("Association for Computational
-# Linguistics 2026"), consortium papers name their collaborator group, and a
-# submission form's contact field leaks through as the author's name
-# ("vasilinetc.ira@gmail.com"). OpenAlex mints author entities for all of
-# them; they are not people and never become persons. An address or a link is
-# also a name no transliteration should ever be asked to render.
+# An author slot sometimes holds a venue, a collaborator group or a contact
+# address. OpenAlex mints author entities for all of them; persons they are not.
 NOT_A_PERSON_NAME = re.compile(
     r"\b(association|conference|proceedings|workshop|committee|consortium"
     r"|collaborat\w*|society)\b"
@@ -41,14 +36,13 @@ EXTERNAL_AUTHORS_LIMIT = 500
 
 MATH_BLOCK = re.compile(r"<mml:math\b[^>]*>.*?</mml:math>", re.DOTALL | re.IGNORECASE)
 MATH_LEAF = re.compile(r"<mml:(mi|mn|mo|mtext)\b[^>]*>(.*?)</mml:\1>", re.DOTALL | re.IGNORECASE)
-# "CaF <sub>2</sub>" — the subscript belongs to the formula before it.
+# "CaF <sub>2</sub>": the subscript belongs to the formula before it.
 SUBSUP_OPEN = re.compile(r"\s+(<(?:sub|sup)\b[^>]*>)", re.IGNORECASE)
-# "Ag <sub>2</sub> B <sub>5</sub>" — an element symbol between two
+# "Ag <sub>2</sub> B <sub>5</sub>": an element symbol between two
 # subscripts continues the same formula, unlike a following word.
 SUBSUP_CHAIN = re.compile(r"(</(?:sub|sup)>)\s+(?=[A-Za-z]{1,2}\s*<(?:sub|sup)\b)", re.IGNORECASE)
-# "CaCO-=SUB=-3-=/SUB=-" — elibrary-style markup, which some Russian
-# journals deposit instead of HTML. Rewritten into the tags it stands for
-# so the rules above apply to it too, then dropped with everything else.
+# "CaCO-=SUB=-3-=/SUB=-": elibrary-style markup that some Russian journals
+# deposit instead of HTML. Rewritten into tags so the rules above apply to it.
 PSEUDO_TAG = re.compile(r"-=(/?)([A-Za-z][A-Za-z0-9]*)=-")
 TAG = re.compile(r"<[^>]+>")
 SPACE_AFTER_OPEN = re.compile(r"([(\[])\s+")
@@ -63,12 +57,10 @@ def _short_id(value: str | None) -> str | None:
 def _math_text(match: re.Match) -> str:
     """The text of one MathML formula.
 
-    Only leaf elements carry content, and the whitespace between them is
-    layout rather than text, so leaves are concatenated with nothing in
-    between: "<mml:mi>WSe</mml:mi> <mml:mn>2</mml:mn>" is "WSe2". A space
-    that is a leaf of its own survives — that is how publishers encode the
-    gap in "<mml:mi>a</mml:mi><mml:mi>b</mml:mi><mml:mo> </mml:mo>…",
-    which reads "ab initio".
+    Only leaf elements carry content and whitespace between them is layout,
+    so leaves are concatenated directly: "<mml:mi>WSe</mml:mi> <mml:mn>2</mml:mn>"
+    is "WSe2". A space that is a leaf of its own survives; publishers use that
+    to encode the gap in "ab initio".
     """
     leaves = MATH_LEAF.findall(match.group(0))
     if not leaves:
@@ -79,14 +71,11 @@ def _math_text(match: re.Match) -> str:
 def _clean_markup(text: str | None) -> str | None:
     """Drop the publisher markup OpenAlex passes through from Crossref.
 
-    Physics and chemistry publishers deposit formulas as MathML or HTML
-    (<sub>, <sup>) and species names in <i>, and OpenAlex serves the title
-    verbatim — "monolayer <mml:math>…<mml:mi>WSe</mml:mi><mml:mn>2</mml:mn>…"
-    where the title reads "monolayer WSe2". A formula collapses to its own
-    text with the inner spacing removed and stays attached to what it
-    subscripts; everything else just loses its tags. Journals published
-    through elibrary deposit the same formulas in its own markup
-    ("CaCO-=SUB=-3-=/SUB=-"), which is normalized to tags first.
+    Publishers deposit formulas as MathML or HTML (<sub>, <sup>) and OpenAlex
+    serves the title verbatim, e.g. "monolayer <mml:math>...</mml:math>" where
+    the title reads "monolayer WSe2". A formula collapses to its own text with
+    inner spacing removed and stays attached to what it subscripts; everything
+    else just loses its tags. elibrary markup is normalized to tags first.
     """
     if not text:
         return text
@@ -108,13 +97,11 @@ def _authorship_person_id(author: dict) -> str | None:
 def _fallback_person_id(author: dict) -> str | None:
     """Local identity for an author OpenAlex has not disambiguated yet.
 
-    Fresh records arrive with author.id null but the display name — and
-    often the ORCID — filled in. Keying on the OpenAlex id alone would drop
-    those authorships and leave the publication with no authors at all, so
-    they get a deterministic local id instead: the ORCID when there is one,
-    otherwise a hash of the name, which keeps one node per distinct name.
-    Either way the dedup stage can fold the person into the real author once
-    OpenAlex assigns an id, by ORCID or by name.
+    Fresh records arrive with author.id null but the display name (and often
+    the ORCID) filled in. Keying on the OpenAlex id alone would drop those
+    authorships, so they get a deterministic local id: the ORCID when there is
+    one, otherwise a hash of the name. The dedup stage can later fold the
+    person into the real author by ORCID or name.
     """
     orcid = _short_id(author.get("orcid"))
     if orcid:
@@ -143,18 +130,34 @@ def _fields(work: dict) -> list[str]:
 
 
 def _funding(work: dict) -> list[Funding]:
-    return [
-        Funding(funder=grant.get("funder_display_name"), grant_id=grant.get("grant_id"))
-        for grant in work.get("grants") or []
-    ]
+    funders = work.get("funders") or []
+    entries: dict[tuple[str | None, str | None], Funding] = {}
+    represented_ids = set()
+    for award in work.get("awards") or []:
+        funder_id = award.get("funder_id")
+        name = award.get("funder_display_name") or None
+        grant_id = award.get("funder_award_id") or None
+        if name or grant_id:
+            entries.setdefault((name, grant_id), Funding(funder=name, grant_id=grant_id))
+            if funder_id:
+                represented_ids.add(funder_id)
+    # Funders without an award still describe funding, but an award's funder
+    # must not also produce a redundant entry with an unknown grant number.
+    for funder in funders:
+        name = funder.get("display_name")
+        if name and funder.get("id") not in represented_ids:
+            entries.setdefault((name, None), Funding(funder=name))
+    # A funder-only record adds no information when its numbered grants
+    # are already present, regardless of their order in the source.
+    named_grant_funders = {name for name, grant_id in entries if name and grant_id}
+    return [entry for (name, grant_id), entry in entries.items() if grant_id or name not in named_grant_funders]
 
 
 def _canonical_person_id(person: Person) -> str:
     """A person's id is their bare OpenAlex author ID.
 
-    Older prepared files used affiliation-dependent ids ("itmo_A5X" /
-    "external_A5X"), which split one author into two graph nodes whenever
-    OpenAlex missed the ITMO affiliation on some of their works.
+    Legacy prepared files used affiliation-dependent ids ("itmo_A5X" /
+    "external_A5X"), which split one author into two graph nodes.
     """
     return person.openalex_id or person.id.removeprefix("itmo_").removeprefix("external_")
 
@@ -187,7 +190,6 @@ def _merge_person(base: Person, extra: Person) -> Person:
         "degree",
         "github",
         "google_scholar",
-        "openreview",
         "thesis",
     ):
         if getattr(base, field) is None:
@@ -203,15 +205,12 @@ class OpenAlexNormalizer:
         self.prepared = prepared
 
     def _seed(self, entity: str, model: type[_PreparedModel], ids: set[str]) -> list[_PreparedModel]:
-        """This group's own rows for `entity`, plus any of `ids` it hasn't
-        touched yet, looked up across every group.
+        """This group's own rows for `entity`, plus any of `ids` found in other groups.
 
-        The group's own rows come first (and always) so a legacy/renamed
-        row already sitting in this group's own state still gets
-        canonicalized on every re-run, even when nothing in fresh raw data
-        references it any more. The cross-group lookup is additive: a work
-        or author already enriched by a different, overlapping run is
-        found by id instead of re-created from scratch.
+        Own rows always come first so a legacy or renamed row is
+        canonicalized on every re-run even when no fresh raw data references
+        it. The cross-group lookup is additive: a work or author already
+        enriched by an overlapping run is found by id, not re-created.
         """
         known = list(self.prepared.read_models(entity, model))
         missing = ids - {row.id for row in known}
@@ -233,10 +232,8 @@ class OpenAlexNormalizer:
         )
         persons: OrderedDict[str, Person] = OrderedDict()
         for row in self._seed("persons", Person, person_ids):
-            # A row an earlier, narrower filter let through (the check below
-            # only knew about organizations, not contact addresses) is not a
-            # person now either. Re-normalization is where the current rule
-            # reaches rows already on disk.
+            # Re-normalization applies the current non-person rule to rows an
+            # earlier, narrower filter let through.
             if NOT_A_PERSON_NAME.search(row.name_raw or ""):
                 logger.info("normalize: dropping an author row that is not a person: %s", row.name_raw)
                 continue
@@ -273,7 +270,10 @@ class OpenAlexNormalizer:
                     publication_date=date.fromisoformat(pub_date) if pub_date else None,
                     year=int(pub_date[:4]) if pub_date else None,
                     journal=source.get("display_name"),
-                    pdf_url=(work.get("best_oa_location") or {}).get("pdf_url"),
+                    pdf_urls=list(dict.fromkeys(
+                        url for location in [work.get("best_oa_location"), *(work.get("locations") or [])]
+                        if (url := (location or {}).get("pdf_url"))
+                    )),
                     abstract=_abstract(work),
                     funding=_funding(work),
                 )
@@ -287,6 +287,10 @@ class OpenAlexNormalizer:
                     normalized_publication.versions = existing_publication.versions
                     normalized_publication.merged_ids = existing_publication.merged_ids
                     normalized_publication.processing = existing_publication.processing
+                    normalized_publication.pdf_urls = list(dict.fromkeys([
+                        *normalized_publication.pdf_urls, *existing_publication.pdf_urls,
+                    ]))
+                normalized_publication.processing.pop("pdf", None)
                 publications[work_id] = normalized_publication
             external_kept = 0
             for position, authorship in enumerate(work.get("authorships") or [], start=1):

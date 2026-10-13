@@ -7,7 +7,7 @@ lives in `docs/`, not duplicated here.
 ## What this project is
 
 PAUK collects ITMO's publications from OpenAlex, enriches them (Crossref,
-ORCID, OpenReview, GitHub), finds code links in them, and loads the result
+ORCID, GitHub), finds code links in them, and loads the result
 into Neo4j. `pauk/gui/` renders an interactive map of that graph.
 
 One Python package, `pauk/`. Full architecture starts at
@@ -61,7 +61,7 @@ wrong conclusion. Read them.
   description`, type by meaning (`feat`/`fix`/`refactor`/`chore`/`docs`) -
   see `git log` for this repo's actual style.
 - **Don't rename Neo4j relationships/labels without strong reason.**
-  `pauk/gui/generate_data.py` finds data by exact relationship names - a
+  `pauk/cache/export.py` finds data by exact relationship names - a
   silent mismatch won't break with an error, `MATCH` will just stop
   finding anything.
 - **Neo4j properties don't store nested map/list-of-map values, or `null`
@@ -82,7 +82,7 @@ wrong conclusion. Read them.
 
 1. `uv run python -m unittest discover -s tests/unit` - green.
 2. `uv run ruff check <changed files>` - clean.
-3. If something `pauk/gui/generate_data.py` reads changed (graph node,
+3. If something `pauk/cache/export.py` reads changed (graph node,
    relationship, or property names) - check against
    `docs/architecture/neo4j-graph.md`, don't rely on memory.
 4. Real check on live data if extraction/parsing changed - a synthetic

@@ -1,15 +1,9 @@
 """The people behind a repository, collected separately from its metadata.
 
-Split out of `repositories` deliberately. Both jobs used to share one
-`processing` entry, so refreshing a repository's metadata meant re-walking
-every contributor and re-fetching every profile: on the August 2026 data that
-was 6143 of 6864 GitHub requests, and it burned the whole hourly quota to
-pick up fields that arrive free in the repository payload.
-
-Two stages give the two jobs separate `processing` state, so each can be
-stale — and re-run — on its own. A `--skip-accounts` flag could not: the row
-would still claim `repositories: completed` with people data from an older
-run, and nothing would say which half was old.
+Kept apart from `repositories` so the two jobs have separate `processing`
+state: refreshing repository metadata must not re-walk every contributor and
+re-fetch every profile (the bulk of GitHub requests), and each half can be
+stale and re-run on its own.
 """
 
 from __future__ import annotations
@@ -25,9 +19,8 @@ from pauk.sources.github import GitHubClient
 from .base import EnrichmentStage
 from .repositories import _github_owner_name
 
-# Pages of commits read per repository, 100 commits each. Three is what the
-# previous pipeline used: enough for the git identities of everyone who
-# worked on a paper's code, without paying for the whole history.
+# Pages of commits read per repository, 100 commits each: enough for the git
+# identities of everyone who worked on a paper's code, without the whole history.
 COMMIT_PAGES = 3
 
 # GitHub hides a user's address behind this domain when they ask it to; it
@@ -52,8 +45,7 @@ def _git_identities(commits: list[dict]) -> dict[str, tuple[set[str], set[str]]]
 
     A commit pairs the GitHub account that owns it with the git identity
     configured on the machine that made it. Commits whose email matches no
-    account carry no login and are skipped: there is nobody to attribute
-    them to.
+    account carry no login and are skipped.
     """
     identities: dict[str, tuple[set[str], set[str]]] = {}
     for commit in commits:
@@ -71,25 +63,8 @@ def _git_identities(commits: list[dict]) -> dict[str, tuple[set[str], set[str]]]
 
 
 def _is_filled(profile: GitHubProfile | None) -> bool:
-    """Whether a stored profile already carries what GET /users/{login} adds.
-
-    An account reached from a second repository, or on a re-run, has nothing
-    new to learn from the endpoint. In the August 2026 run all 5059 profiles
-    already existed and all 5188 calls were spent re-fetching them.
-
-    Asking `html_url` instead would never fetch a repository owner at all: the
-    repositories stage writes that field into the owner stub itself, so the
-    gate would close on data this pipeline just made up.
-    """
-    if profile is None:
-        return False
-    if profile.profile_fetched:
-        return True
-    # Profiles stored before the marker existed. The stage that wrote them
-    # always called the endpoint, and the owner stub they could be confused
-    # with carries none of these fields.
-    return any((profile.name, profile.description, profile.location,
-                profile.company, profile.emails, profile.commit_names))
+    """Commit identities and owner stubs do not prove a successful user request."""
+    return profile is not None and profile.profile_fetched
 
 
 class RepoPeopleStage(EnrichmentStage):
@@ -99,13 +74,10 @@ class RepoPeopleStage(EnrichmentStage):
     def _repo_in_scope(self, repo: Repository) -> bool:
         """What a publication-scoped run means for a repository row.
 
-        `in_scope` alone would answer True for every row here: it only filters
-        a selection aimed at repositories, and lets one aimed at publications
-        through untouched. That would walk the whole group on
-        `--input pubs.txt --entity publications` and spend the GitHub quota on
-        repositories nobody asked about. `RepositoriesStage` reads the scope
-        off the RepoLink row it is working from; by this stage the Repository
-        exists and carries the publications itself.
+        `in_scope` alone would answer True for every row here, because it lets a
+        publication-scoped selection through untouched and would walk the whole
+        group. `RepositoriesStage` reads the scope off the RepoLink row; by this
+        stage the Repository carries its publications itself.
         """
         if self.selection is None:
             return True
@@ -119,8 +91,7 @@ class RepoPeopleStage(EnrichmentStage):
 
         These are the candidates an author is later matched against: the
         owner and everyone credited with a commit, each carrying the emails
-        and names their commits reveal. Organizations and bots are skipped —
-        neither is a person anyone can be matched to.
+        and names their commits reveal. Organizations and bots are skipped.
         """
         contributors = client.contributors(owner, name)
         identities = _git_identities(client.commits(owner, name, COMMIT_PAGES))
@@ -143,11 +114,8 @@ class RepoPeopleStage(EnrichmentStage):
             payload: dict = {}
             fetched = known.profile_fetched if known else False
             if self.force or not _is_filled(known):
-                try:
-                    payload = client.get_user(login)
-                    fetched = True
-                except Exception:
-                    payload = {}
+                payload = client.get_user(login)
+                fetched = True
                 self.raw.append("github_user", payload, {"login": login})
             profile_email = (payload.get("email") or "").strip().lower()
             if profile_email and NOREPLY_EMAIL not in profile_email:

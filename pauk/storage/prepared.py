@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
 from typing import TypeVar
@@ -7,11 +8,45 @@ from typing import TypeVar
 from pydantic import BaseModel
 from pymongo.database import Database
 
+logger = logging.getLogger(__name__)
+
 M = TypeVar("M", bound=BaseModel)
+
+#: Where a replaced row's previous version is filed. One collection for
+#: every entity, like `raw`.
+REVISIONS = "revisions"
+
+
+def trim_revisions(db: Database, before: str, apply: bool = False) -> dict[str, int]:
+    """Drop archived versions older than a cutoff.
+
+    Every real change to a prepared row files the whole previous document
+    here, and nothing has ever removed one. Two thirds of a working
+    database can end up being versions of persons nobody asks about.
+
+    The archive is the only record of what a row said before a run changed
+    it, but it is worth keeping only as long as somebody might ask.
+
+    Args:
+        before: ISO timestamp. Versions replaced earlier go. Compared as
+            text, which is the same as by time for ISO 8601 and is why
+            `replaced_at` is written that way.
+        apply: False counts what would go and changes nothing.
+
+    Returns:
+        How many versions matched and how many were removed.
+    """
+    query = {"replaced_at": {"$lt": before}}
+    matched = db[REVISIONS].count_documents(query)
+    if not apply:
+        return {"revisions_matched": matched, "revisions_removed": 0}
+    removed = db[REVISIONS].delete_many(query).deleted_count
+    logger.info("revisions: %d version(s) replaced before %s removed", removed, before)
+    return {"revisions_matched": matched, "revisions_removed": removed}
 
 
 class PreparedStore:
-    # Collection name per prepared entity - 1:1 with the old FILES map.
+    # Collection name per prepared entity.
     COLLECTIONS = {
         "publications": "publications",
         "persons": "persons",
@@ -47,7 +82,7 @@ class PreparedStore:
         """Every group that has prepared rows, oldest name first.
 
         Rows carry the groups that claim them rather than belonging to one,
-        so there is no collection of groups to read — the names are gathered
+        so there is no collection of groups to read; the names are gathered
         from the rows themselves. Used by the panel, which must offer a
         group that exists instead of a box to mistype one into.
         """
@@ -93,15 +128,14 @@ class PreparedStore:
         """Set this group's complete state for `entity` to exactly `rows`.
 
         Every stage reads its group's full working set for an entity,
-        mutates it, and writes the whole thing back - the same contract the
-        old whole-file rewrite had. A row this group held before but didn't
+        mutates it, and writes the whole thing back. A row this group held before but didn't
         re-include here (folded into another row by dedup, renamed by
         normalize) has this group's claim retracted; a document no group
         claims any more is deleted so it doesn't linger unreachable.
         """
         key_field = self._key_field(entity)
         collection = self._collection(entity)
-        revisions = self.db.revisions
+        revisions = self.db[REVISIONS]
         written_ids = []
         for row in rows:
             row_id = row[key_field]
@@ -125,11 +159,11 @@ class PreparedStore:
     def upsert_models(self, entity: str, rows: Iterable[BaseModel]) -> None:
         """Persist changed rows without redefining this group's full membership.
 
-        Enrichment stages use this after an external request completes.  Unlike
+        Enrichment stages use this after an external request completes. Unlike
         write_models(), it never removes the group marker from untouched rows.
         """
         collection = self._collection(entity)
-        revisions = self.db.revisions
+        revisions = self.db[REVISIONS]
         for model in rows:
             self._upsert_row(entity, model.model_dump(mode="json", by_alias=True), collection, revisions)
 

@@ -14,9 +14,8 @@ from pauk.settings import Settings
 class WorkerTest(unittest.TestCase):
     """One process taking jobs off the queue, one at a time.
 
-    Every step is replaced here. A worker test that reached a real Neo4j
-    would publish a group as a side effect of running the suite — which is
-    exactly what happened once while checking this by hand.
+    Every step is replaced here: a worker test that reached a real Neo4j
+    would publish a group as a side effect of running the suite.
     """
 
     def setUp(self):
@@ -28,7 +27,7 @@ class WorkerTest(unittest.TestCase):
 
     def step(self, result=None, raises=None):
         """A stand-in for the work, recording what it was handed."""
-        def run(config, db, payload, stop):
+        def run(config, db, payload, stop, report):
             self.seen.append(payload)
             if raises is not None:
                 raise raises
@@ -112,12 +111,12 @@ class WorkerTest(unittest.TestCase):
         """The only way a claimed job arrives already cancelled.
 
         Asked to stop while it was running, then handed back because the
-        resource was busy — `requeue` keeps the request, so the next worker
+        resource was busy - `requeue` keeps the request, so the next worker
         to pick it up has to honour it rather than start the run.
         """
         job = self.queue()
 
-        def cancel_then_wait(config, db, payload, stop):
+        def cancel_then_wait(config, db, payload, stop, report):
             store.request_cancel(db, job.id)
             raise locks.Busy("graph is busy")
 
@@ -152,7 +151,7 @@ class DispatchTest(unittest.TestCase):
 
     def test_every_kind_has_a_step(self):
         # A kind added without a step would be claimed, started and then
-        # raise KeyError — a job that fails for a reason nobody can read.
+        # raise KeyError - a job that fails for a reason nobody can read.
         self.assertEqual(set(worker.STEPS), set(JobKind))
 
     def test_every_kind_has_a_payload_model(self):
@@ -182,7 +181,7 @@ class HeartbeatTest(unittest.TestCase):
     def run_with_beat(self, body):
         beaten = threading.Event()
 
-        def step(config, db, payload, stop):
+        def step(config, db, payload, stop, report):
             beaten.wait(timeout=2)
             return {}
 
@@ -213,15 +212,14 @@ class HeartbeatTest(unittest.TestCase):
         self.assertGreaterEqual(len(seen), 2, "сердцебиение не обновлялось")
 
     def test_the_lease_is_pushed_out(self):
-        # The lock is taken inside the step, the way the real functions
-        # take it: taking it first would leave the resource busy and the
-        # worker would pass the job over instead of claiming it.
+        # Taken inside the step and as the process, as the real functions do:
+        # taken first the job is passed over, named otherwise `held` finds it not.
         store.enqueue(self.db, JobKind.PUBLISH, {"group": "2024"})
         beaten = threading.Event()
         first = []
 
-        def step(config, db, payload, stop):
-            locks.acquire(db, GRAPH, "worker-1")
+        def step(config, db, payload, stop, report):
+            locks.acquire(db, GRAPH, locks.this_process())
             first.append(self.db[locks.COLLECTION].find_one({"_id": GRAPH})["expires_at"])
             beaten.wait(timeout=2)
             return {}
@@ -275,7 +273,7 @@ class StopTest(unittest.TestCase):
     def test_the_job_in_hand_is_finished_first(self):
         job = store.enqueue(self.db, JobKind.PUBLISH, {"group": "2024"})
 
-        def step(config, db, payload, stop):
+        def step(config, db, payload, stop, report):
             self.worker.stop()
             return {"rows_persons": 3}
 
@@ -283,9 +281,23 @@ class StopTest(unittest.TestCase):
             self.worker.run_forever()
         self.assertEqual(store.read(self.db, job.id).state, JobState.DONE)
 
+    def test_an_idle_worker_still_says_it_is_here(self):
+        # It holds no job and writes nothing else, so an empty queue looked
+        # the same whether a worker was waiting or nobody had started one.
+        self.worker.run_once()
+        self.assertEqual(store.workers_present(self.db), ["worker-1"])
+
+    def test_and_takes_the_mark_back_when_it_leaves(self):
+        # The mark is put there first: asked to stop before its first turn the
+        # loop marks nothing, and the test would pass on any worker.
+        store.mark_present(self.db, "worker-1")
+        self.worker.stop()
+        self.worker.run_forever()
+        self.assertEqual(store.workers_present(self.db), [])
+
 
 class PipelineJobTest(unittest.TestCase):
-    """Collect, publish, rebuild the map — one job, three phases.
+    """Collect, publish, rebuild the map - one job, three phases.
 
     Not three queued jobs: publishing names a group, and when the queue is
     filled that group has no rows for the check to accept.
@@ -303,7 +315,7 @@ class PipelineJobTest(unittest.TestCase):
                              actor="user:chief")
 
     def phase(self, name, result=None, cancels=None, raises=None):
-        def step(config, db, payload, stop):
+        def step(config, db, payload, stop, report):
             self.done.append(name)
             if cancels is not None:
                 store.request_cancel(db, cancels)
@@ -369,10 +381,8 @@ class PipelineJobTest(unittest.TestCase):
 class AbandonedJobTest(unittest.TestCase):
     """A job whose worker is gone must not sit in "under way" for ever.
 
-    Nothing else ever moved a job out of that state: the only process that
-    could was the one that died holding it. Stopping the worker while a run
-    was going left the row there, and pressing cancel only added a line
-    saying somebody had asked it to stop.
+    Nothing else moves a job out of that state: the only process that could
+    is the one that died holding it.
     """
 
     def setUp(self):
@@ -455,14 +465,14 @@ class SeveralRunsAtOnceTest(unittest.TestCase):
         self.done = []
 
     def records(self, name):
-        def step(config, db, payload, stop):
+        def step(config, db, payload, stop, report):
             self.done.append(name)
             return {}
         return step
 
     def test_one_blip_does_not_end_the_beating(self):
-        # An unhandled error killed the thread outright, and the run then
-        # went on in silence until the lease it held expired under it.
+        # An unhandled error would kill the thread outright, and the run would
+        # go on in silence until the lease it held expired under it.
         job = store.enqueue(self.db, JobKind.PUBLISH, {"group": "g"})
         store.claim(self.db, "worker-1")
         store.start(self.db, job.id)
@@ -530,3 +540,125 @@ class SeveralRunsAtOnceTest(unittest.TestCase):
             {"$set": {"heartbeat_at": now() - timedelta(minutes=locks.LEASE_MINUTES + 1)}})
         self.assertEqual(store.reap_stale(self.db), 1)
         self.assertEqual(store.read(self.db, job.id).state, JobState.FAILED)
+
+
+class ProgressTest(unittest.TestCase):
+    """Where inside a run it is, not only that it is alive.
+
+    A collection run takes hours across ten enrichment stages, so a
+    heartbeat alone says too little.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.worker = worker.Worker(Settings(), self.db, name="w")
+
+    def run_step(self, kind, step):
+        job = store.enqueue(self.db, kind, {"group": "2024"} if kind is not JobKind.DEDUP else {})
+        with patch.dict(worker.STEPS, {kind: step}):
+            self.worker.run_once()
+        return store.read(self.db, job.id)
+
+    def test_a_step_says_which_part_is_under_way(self):
+        def step(config, db, payload, stop, report):
+            report("repositories", 6, 10)
+            return {}
+        self.assertEqual(store.read(self.db, self.run_step(JobKind.PUBLISH, step).id).progress["step"],
+                         "repositories")
+
+    def test_the_place_in_the_run_is_kept(self):
+        def step(config, db, payload, stop, report):
+            report("repositories", 6, 10)
+            return {}
+        progress = self.run_step(JobKind.PUBLISH, step).progress
+        self.assertEqual((progress["done"], progress["total"]), (6, 10))
+
+    def test_the_last_word_wins(self):
+        def step(config, db, payload, stop, report):
+            report("pdf", 0, 10)
+            report("dedup", 7, 10)
+            return {}
+        self.assertEqual(self.run_step(JobKind.PUBLISH, step).progress["step"], "dedup")
+
+    def test_a_step_that_says_nothing_leaves_it_empty(self):
+        def step(config, db, payload, stop, report):
+            return {}
+        self.assertIsNone(self.run_step(JobKind.PUBLISH, step).progress)
+
+    def test_a_publish_counts_rows_in_the_label_not_as_stages(self):
+        # The page reads done/total as "stage 3 of 10". Passed straight
+        # through, a publish's rows read as "stage 501 of 2000".
+        def load(config, db, group, report=None):
+            report("выкладка узлов", 500, 2000)
+            return {}
+
+        job = store.enqueue(self.db, JobKind.PUBLISH, {"group": "2024"})
+        with patch("pauk.graph.load.load_jsonl_group", load):
+            self.worker.run_once()
+        progress = store.read(self.db, job.id).progress
+        self.assertEqual((progress["step"], progress["done"], progress["total"]),
+                         ("выкладка узлов 500/2000", 0, 0))
+
+    def test_a_finished_run_is_not_asked_where_it_is(self):
+        # Reporting into a settled job would say a finished run is still
+        # somewhere inside itself.
+        job = store.enqueue(self.db, JobKind.DEDUP, {})
+        store.claim(self.db, "w")
+        store.start(self.db, job.id)
+        store.finish(self.db, job.id, {})
+        self.assertFalse(store.progress(self.db, job.id, "поздно"))
+
+
+class CancelBetweenStepsTest(unittest.TestCase):
+    """A cancel is heard between the parts a run is made of.
+
+    Looking only between the three phases would let a run stopped during
+    collection go through ten enrichment stages, hours after the button was
+    pressed.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.worker = worker.Worker(Settings(), self.db, name="w")
+
+    def run_with(self, step):
+        job = store.enqueue(self.db, JobKind.PUBLISH, {"group": "2024"})
+        with patch.dict(worker.STEPS, {JobKind.PUBLISH: step}):
+            self.worker.run_once()
+        return store.read(self.db, job.id)
+
+    def test_a_run_stops_at_the_next_step_it_reports(self):
+        seen = []
+
+        def step(config, db, payload, stop, report):
+            report("этап один", 0, 3)
+            seen.append("один")
+            store.request_cancel(db, store.recent(db)[0].id)
+            report("этап два", 1, 3)
+            seen.append("два")  # never reached
+            return {}
+
+        settled = self.run_with(step)
+        self.assertEqual(seen, ["один"])
+        self.assertEqual(settled.state, JobState.CANCELLED)
+
+    def test_a_run_nobody_stopped_goes_all_the_way(self):
+        def step(config, db, payload, stop, report):
+            for index, name in enumerate(("a", "b", "c")):
+                report(name, index, 3)
+            return {"rows": 1}
+
+        settled = self.run_with(step)
+        self.assertEqual(settled.state, JobState.DONE)
+        self.assertEqual(settled.result, {"rows": 1})
+
+    def test_where_it_stopped_is_recorded(self):
+        def step(config, db, payload, stop, report):
+            store.request_cancel(db, store.recent(db)[0].id)
+            report("выкладка в граф")
+            return {}
+
+        self.run_with(step)
+        # The progress of the step it refused to start, so the history says
+        # how far the run actually got.
+        self.assertEqual(store.recent(self.db)[0].progress["step"], "выкладка в граф")

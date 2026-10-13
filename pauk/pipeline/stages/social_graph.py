@@ -11,28 +11,26 @@ harvested for the people behind them, and those people are matched like any
 other candidate. A person found this way becomes a seed once github_match confirms them,
 so running the two in turn walks the graph outward one ring at a time.
 
-An organization is only followed when it says ITMO itself — in its login, in
-its profile, or by being in data/static/itmo_github_orgs.json. The
-alternative is following every organization whose library a paper cited,
-which means walking into google and microsoft for nothing.
+An organization is only followed when it says ITMO itself (in its login,
+its profile, or data/static/itmo_github_orgs.json); otherwise the walk would
+enter every organization whose library a paper cited.
 
-The walk runs ring by ring until it converges. Seeds are only the accounts
-already confirmed — following the unproven ones would mean four hundred
-seeds and twelve thousand repositories. That is why github_match runs
-between rings: it turns candidates found on this ring into seeds for the
-next. A ring that walks no new repository ends the walk.
+Seeds are only confirmed accounts: following unproven ones would multiply
+seeds and repositories. github_match runs between rings to turn candidates
+into the next ring's seeds. A ring that walks no new repository ends the walk.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Collection, Iterable
 
 from pauk.models import GitHubProfile, Person, Repository
 from pauk.sources.github import GitHubClient
 from pauk.storage.static import StaticStore
 
 from .base import EnrichmentStage
-from .github_match import ITMO_IN_TEXT, GitHubMatchStage
+from .github_match import ITMO_IDENTITY_PATTERN, PETERSBURG_PATTERN, GitHubMatchStage
 from .repo_people import COMMIT_PAGES, _git_identities, _is_person
 
 logger = logging.getLogger(__name__)
@@ -42,36 +40,45 @@ logger = logging.getLogger(__name__)
 # them; the rest are forks and abandoned coursework.
 MAX_REPOS_PER_SEED = 30
 
-# Rings walked before giving up on convergence. On earlier data the graph
-# settled in two; the rest is headroom, not an expectation.
+# Rings walked before giving up on convergence; the graph normally settles in two.
 MAX_RINGS = 5
 
 
-def is_itmo_organization(login: str, profile: GitHubProfile | None,
-                         catalog: frozenset[str]) -> bool:
-    """Whether an organization is ITMO's, and so worth walking into.
+def itmo_organization_status(login: str, profile: GitHubProfile | None,
+                             catalog: frozenset[str], *,
+                             repositories: Iterable[Repository] = (),
+                             confirmed: Collection[str] = ()) -> tuple[str, str]:
+    """Classify the evidence that an organization belongs to ITMO.
 
-    Three ways to tell, all of them about the organization itself: it is in
-    the curated catalogue, its login says ITMO, or its profile does.
-
-    Sharing a member with a confirmed account is deliberately *not* one of
-    them. That rule read as "an ITMO employee committed here", which is true
-    of google, microsoft, JetBrains and llvm-mirror — on real data it was the
-    only rule that ever fired, and it made seeds of all four. Walking into
-    them costs far more than API calls now: everyone credited on the
-    repositories they lead to becomes a GitHubProfile node.
-
-    A lab whose profile says nothing and whose login gives nothing away is
-    invisible here by design; that is what the catalogue is for.
+    Only ``confirmed`` organizations are safe traversal seeds. ``possible`` is
+    diagnostic: a city or contributor can guide a review but must not make us
+    walk every Saint Petersburg organization.
     """
-    if login.lower() in catalog:
-        return True
-    if ITMO_IN_TEXT.search(login):
-        return True
-    if profile is None:
-        return False
-    text = f"{profile.name or ''} {profile.description or ''} {profile.location or ''}"
-    return bool(ITMO_IN_TEXT.search(text))
+    login_lower = login.lower()
+    if login_lower in catalog:
+        return "confirmed", "catalog"
+    if ITMO_IDENTITY_PATTERN.search(login):
+        return "confirmed", "login"
+    profile = profile or GitHubProfile(id="", login=login)
+    identity_text = " ".join(filter(None, (
+        profile.name, profile.description, profile.company,
+    )))
+    if ITMO_IDENTITY_PATTERN.search(identity_text):
+        return "confirmed", "profile"
+    weak_text = " ".join(filter(None, (
+        profile.name, profile.description, profile.company, profile.location,
+    )))
+    if PETERSBURG_PATTERN.search(weak_text):
+        return "possible", "petersburg"
+    confirmed_lower = {item.lower() for item in confirmed}
+    if any(
+        (repository.owner_login or "").lower() == login_lower
+        and any(contributor.lower() in confirmed_lower for contributor in repository.contributors)
+        for repository in repositories
+    ):
+        # An employee may contribute to upstream projects outside ITMO.
+        return "possible", "itmo_contributor"
+    return "not_confirmed", ""
 
 
 class SocialGraphStage(EnrichmentStage):
@@ -86,12 +93,24 @@ class SocialGraphStage(EnrichmentStage):
         owner_logins = {repository.owner_login for repository in repositories
                         if repository.owner_login}
 
-        organizations = [
-            login for login in owner_logins
-            if (profiles.get(f"github_{login.lower()}") or GitHubProfile(
-                id="", login=login)).type == "organization"
-            and is_itmo_organization(login, profiles.get(f"github_{login.lower()}"), catalog)
-        ]
+        organizations = []
+        for login in owner_logins:
+            profile = profiles.get(f"github_{login.lower()}")
+            account_type = profile.type if profile else None
+            # The curated catalogue identifies organizations even before a profile is fetched.
+            if account_type != "organization" and not (
+                account_type is None and login.lower() in catalog
+            ):
+                continue
+            status, reason = itmo_organization_status(
+                login, profile, catalog, repositories=repositories, confirmed=confirmed,
+            )
+            if status == "confirmed":
+                logger.info("social_graph: confirmed ITMO organization %s (%s)", login, reason)
+                organizations.append(login)
+            elif status == "possible":
+                logger.info("social_graph: possible ITMO organization %s (%s), not a seed",
+                            login, reason)
         return sorted(confirmed | set(organizations))
 
     def _harvest(self, client: GitHubClient, owner: str, name: str, url: str,
@@ -154,10 +173,9 @@ class SocialGraphStage(EnrichmentStage):
         client = GitHubClient(self.config.request_timeout, self.config.github_token)
 
         # Repositories already harvested, from both sources that record one:
-        # the cited repositories the repositories stage fetched, and the ones
-        # this walk visited, which are named on the profiles it collected.
-        # Reading only the first would send every later run over the same
-        # hundreds of repositories again.
+        # those the repositories stage fetched and those this walk visited
+        # (named on the profiles it collected). Reading only the first would
+        # re-walk the same repositories on every run.
         visited = {repository.url for repository in repositories}
         visited |= {url for profile in profiles.values() for url in profile.repos}
         walked = added_profiles = rings = 0

@@ -9,8 +9,8 @@ back, because MERGE creates it again.
 So a manual edit is kept as a *decision*, not only as a value in the
 graph: one document per target in `graph_overrides`, reapplied after
 every publish and after every graph-wide dedup. The graph ends up
-carrying the same edit again, which is why applying has to be idempotent
-— reapplying an override that is already in place must produce no audit
+carrying the same edit again, which is why applying has to be idempotent:
+reapplying an override that is already in place must produce no audit
 entry at all, or the change feed fills with edits nobody made.
 
 Two things this buys beyond survival:
@@ -21,7 +21,7 @@ Two things this buys beyond survival:
 
 Deletion is a tombstone as much as an operation. The loader has to skip
 tombstoned ids *before* writing, otherwise every run recreates the node
-and every reapply deletes it again — the graph would be correct and the
+and every reapply deletes it again, so the graph would be correct and the
 audit log would be nonsense.
 """
 
@@ -51,7 +51,10 @@ COLLECTION = "graph_overrides"
 
 SET = "set"
 DELETE = "delete"
-OPERATIONS = (SET, DELETE)
+#: Added by a person: not an instruction, a claim that keeps a prune off it.
+CREATE = "create"
+LINK = "link"
+OPERATIONS = (SET, DELETE, CREATE)
 
 
 def _now() -> datetime:
@@ -65,6 +68,15 @@ def _now() -> datetime:
     return moment.replace(microsecond=moment.microsecond // 1000 * 1000)
 
 
+def _made_by_hand(row: dict | None) -> bool:
+    """Whether a node decision is about a record a person added.
+
+    The operation alone does not say: a deletion overwrites it. The `op`
+    check covers decisions written before the marker existed.
+    """
+    return bool(row) and bool(row.get("created") or row.get("op") == CREATE)
+
+
 def override_id(label: str, target_id: str) -> str:
     """Deterministic key, so editing the same node twice updates one document."""
     return f"node:{label}:{target_id}"
@@ -76,7 +88,7 @@ def relationship_override_id(src_label: str, rel_type: str, tgt_label: str,
 
     A relationship needs five parts to be named: a node is one id, an edge
     is a type plus both ends. The target id is whatever the loader matches
-    the target by — `url` for a Repository, `login` for a GitHubProfile —
+    the target by (`url` for a Repository, `login` for a GitHubProfile),
     so the key matches what the publish path actually compares.
     """
     return f"rel:{src_label}:{rel_type}:{tgt_label}:{src_id}:{tgt_id}"
@@ -97,18 +109,18 @@ def record_override(db: Database, label: str, target_id: str, op: str,
         db: Mongo database.
         label: Node label, checked against the whitelist.
         target_id: Node id the decision is about.
-        op: "set" or "delete".
-        fields: Field values for "set"; ignored for "delete".
+        op: "set", "delete" or "create".
+        fields: Field values for "set" and "create"; ignored for "delete".
         actor: Who decided, for the audit trail.
         note: Free-text reason, shown in the panel.
         auto_value: What the pipeline had before the edit. Recorded only
-            for fields seen for the first time — otherwise a second edit
+            for fields seen for the first time; otherwise a second edit
             would overwrite the original automatic value with the previous
             manual one, and the conflict report would compare an edit with
             an edit.
         snapshot: For a deletion, every field the node carried. The
             decision then holds what is needed to put the record back, and
-            restoring stops depending on the audit feed — which records
+            restoring stops depending on the audit feed, which records
             history, not state, and summarises a bulk operation without
             listing fields at all.
 
@@ -119,26 +131,20 @@ def record_override(db: Database, label: str, target_id: str, op: str,
         raise UnknownEntity(f"unknown override operation: {op!r} (known: {', '.join(OPERATIONS)})")
     validate_label(label)
     fields = dict(fields or {})
-    if op == SET:
+    if op in (SET, CREATE):
         validate_fields(label, fields)
-        if not fields:
+        if op == SET and not fields:
             raise MutationError("a 'set' override with no fields changes nothing")
 
     now = _now()
     document_id = override_id(label, target_id)
 
-    # Read-then-replace would lose an edit: two administrators changing
-    # different fields of the same node at the same time each write back a
-    # whole document built from the state they read, and the later write
-    # drops the earlier one. Setting the field paths instead lets the
-    # server merge them, and `created_at` is only written when the document
-    # is first inserted.
+    # Field paths, not a whole document: two parallel edits must both survive.
     update: dict = {
         "$set": {
             "kind": "node",
             "label": label,
             "target_id": target_id,
-            "op": op,
             "actor": actor,
             "active": True,
             "updated_at": now,
@@ -146,6 +152,14 @@ def record_override(db: Database, label: str, target_id: str, op: str,
         },
         "$setOnInsert": {"created_at": now},
     }
+    if op == SET:
+        # Settled by the conditional write below.
+        update["$setOnInsert"]["op"] = SET
+    else:
+        update["$set"]["op"] = op
+    if op == CREATE:
+        # Sticky, unlike `op`, which a deletion overwrites.
+        update["$set"]["created"] = True
     if snapshot:
         update["$set"]["snapshot"] = snapshot
     if note:
@@ -153,19 +167,19 @@ def record_override(db: Database, label: str, target_id: str, op: str,
     else:
         update["$setOnInsert"]["note"] = ""
     db[COLLECTION].update_one({"_id": document_id}, update, upsert=True)
+    if op == SET:
+        # A claim stays a claim: as a plain "set" it would go with the edit.
+        db[COLLECTION].update_one({"_id": document_id, "op": {"$ne": CREATE}},
+                                  {"$set": {"op": SET}})
 
-    # The automatic value is recorded once per field — the first edit is the
-    # one that replaced what the pipeline produced. A conditional update per
-    # field keeps that true without reading the document first.
+    # Once per field: the first edit is the one that replaced the pipeline's.
     for name, value in (auto_value or {}).items():
         db[COLLECTION].update_one(
             {"_id": document_id, f"auto_value.{name}": {"$exists": False}},
             {"$set": {f"auto_value.{name}": value}})
 
     logger.info("override recorded: %s %s (%s)", op, document_id, ", ".join(sorted(fields)))
-    # Read back rather than return what was sent: the driver hands
-    # timestamps back without a timezone, so the two would differ in type
-    # depending on whether this was the first edit or a later one.
+    # Read back: the driver hands timestamps back without a timezone.
     return db[COLLECTION].find_one({"_id": document_id})
 
 
@@ -174,18 +188,20 @@ def record_relationship_override(db: Database, src_label: str, rel_type: str, tg
                                  actor: str = "unknown", note: str = "") -> dict:
     """Write down a manual decision about one relationship.
 
-    Only `delete` carries weight here. A relationship added by hand already
-    survives publishing — the loader creates edges, it never removes the
-    ones it does not know about — while a deleted one is recreated by
-    `MERGE` from the same prepared row, which is what this prevents.
+    Two kinds, and they are not symmetrical. `delete` is an instruction:
+    the loader would recreate the edge from the same prepared row on every
+    run, and this is what stops it. `link` is only a claim: the edge is
+    there already and publishing leaves it alone, but without it nothing
+    tells an edge somebody added by hand from one the pipeline made and has
+    since stopped making, and a prune would remove both.
 
     Raises:
-        UnknownEntity: The triple is not a relationship the graph has.
+        UnknownEntity: The triple is not a relationship the graph has, or
+            the operation is neither of the two.
     """
-    if op != DELETE:
+    if op not in (DELETE, LINK):
         raise UnknownEntity(
-            f"relationship overrides support only {DELETE!r}, got {op!r}; "
-            "a relationship added by hand survives publishing on its own")
+            f"relationship overrides support {DELETE!r} and {LINK!r}, got {op!r}")
     validate_relationship(src_label, rel_type, tgt_label)
     now = _now()
     document_id = relationship_override_id(src_label, rel_type, tgt_label, src_id, tgt_id)
@@ -198,24 +214,34 @@ def record_relationship_override(db: Database, src_label: str, rel_type: str, tg
         "tgt_label": tgt_label,
         "src_id": src_id,
         "target_id": tgt_id,
-        "op": DELETE,
+        "op": op,
         "actor": actor,
         "note": note or existing.get("note", ""),
         "active": True,
         "created_at": existing.get("created_at", now),
         "updated_at": now,
     }, upsert=True)
-    logger.info("override recorded: unlink (%s %s)-[:%s]->(%s %s)",
+    logger.info("override recorded: %s (%s %s)-[:%s]->(%s %s)",
+                "unlink" if op == DELETE else "link",
                 src_label, src_id, rel_type, tgt_label, tgt_id)
     return db[COLLECTION].find_one({"_id": document_id})
 
 
 def deactivate_relationship_override(db: Database, src_label: str, rel_type: str, tgt_label: str,
-                                     src_id: str, tgt_id: str) -> bool:
-    """Stop keeping a relationship unlinked; the next publish restores it."""
-    result = db[COLLECTION].update_one(
-        {"_id": relationship_override_id(src_label, rel_type, tgt_label, src_id, tgt_id)},
-        {"$set": {"active": False, "updated_at": _now()}})
+                                     src_id: str, tgt_id: str,
+                                     only_op: str | None = None) -> bool:
+    """Stop keeping a relationship unlinked; the next publish restores it.
+
+    Args:
+        only_op: Act only on a decision of this kind. Both kinds share one
+            document id, so "restore the link somebody removed" would
+            otherwise withdraw the claim on a link somebody added and
+            report that a publish will rebuild it.
+    """
+    query = {"_id": relationship_override_id(src_label, rel_type, tgt_label, src_id, tgt_id)}
+    if only_op is not None:
+        query["op"] = only_op
+    result = db[COLLECTION].update_one(query, {"$set": {"active": False, "updated_at": _now()}})
     return result.modified_count > 0
 
 
@@ -243,9 +269,8 @@ def deactivate_override(db: Database, label: str, target_id: str,
 
     Withdrawing a deletion from a node that was also edited leaves the edit
     standing: one document holds both, and switching the whole thing off
-    used to drop a field correction the next publish then overwrote. The
-    record came back with the right value and lost it a week later, which
-    is the worst way for a decision to disappear.
+    would drop a field correction, and the next publish would overwrite
+    the value again.
 
     Args:
         db: Mongo database.
@@ -265,13 +290,12 @@ def deactivate_override(db: Database, label: str, target_id: str,
         return False
     if only_op is not None and row.get("op") != only_op:
         return False
-    if row.get("op") == DELETE and row.get("fields"):
-        # The deletion goes, the edit stays. The snapshot goes with the
-        # deletion: it describes a node that is no longer deleted, and a
-        # later delete writes its own.
+    if row.get("op") == DELETE and (row.get("fields") or _made_by_hand(row)):
+        # The deletion goes, the edit or the claim stays, the snapshot goes with it.
         db[COLLECTION].update_one(
             {"_id": document_id},
-            {"$set": {"op": SET, "updated_at": _now()}, "$unset": {"snapshot": ""}})
+            {"$set": {"op": CREATE if _made_by_hand(row) else SET, "updated_at": _now()},
+             "$unset": {"snapshot": ""}})
         return True
     db[COLLECTION].update_one(
         {"_id": document_id}, {"$set": {"active": False, "updated_at": _now()}})
@@ -311,8 +335,8 @@ def apply_overrides(client, db: Database) -> dict[str, int]:
     """Reapply every active manual decision to the graph.
 
     Called right after an edit is saved (so it takes effect at once), at
-    the end of a publish and at the end of a graph-wide dedup — both of
-    which can undo manual work — and by `pauk overrides apply`.
+    the end of a publish and at the end of a graph-wide dedup (both of
+    which can undo manual work) and by `pauk overrides apply`.
 
     Args:
         client: Graph client; pass the audited one so real changes are
@@ -325,15 +349,12 @@ def apply_overrides(client, db: Database) -> dict[str, int]:
     """
     applied = unchanged = missing = 0
     for override in active_overrides(db):
+        if override.get("op") == LINK:
+            # A claim, not an instruction: only a prune reads these.
+            unchanged += 1
+            continue
         if override.get("kind") == "rel":
-            # Belt and braces: the loader already skips these, but an edge
-            # created by anything else — a rerun of an older version, a hand
-            # written query — is removed here.
-            #
-            # A row naming something the registry no longer has (a
-            # relationship type dropped in a refactor, a hand-edited
-            # document) is reported and skipped: this runs inside publish,
-            # and one bad row must not take a whole group's publish down.
+            # The loader skips these; an edge made by anything else goes here.
             try:
                 removed = delete_relationship(
                     client, override["src_label"], override["rel_type"], override["tgt_label"],
@@ -349,8 +370,7 @@ def apply_overrides(client, db: Database) -> dict[str, int]:
         try:
             current = read_node(client, label, target_id)
         except MutationError:
-            # A deletion override whose node is already gone is the normal
-            # steady state, not a problem worth reporting.
+            # A deletion whose node is already gone is the steady state.
             if override["op"] != DELETE:
                 logger.warning("override %s: %s %s no longer exists",
                                override["_id"], label, target_id)
@@ -359,17 +379,16 @@ def apply_overrides(client, db: Database) -> dict[str, int]:
                 unchanged += 1
             continue
 
-        # The node was there a moment ago, but another publish or another
-        # editor can remove it between the read above and the write below.
-        # Losing that race is not an error worth failing a publish over.
+        # The node can go between the read above and the write below.
         try:
             if override["op"] == DELETE:
                 delete_node(client, label, target_id, cascade=True)
                 applied += 1
                 continue
 
+            # A hand-made record carries the same kind of row as a hand edit.
             fields = override.get("fields") or {}
-            if not _needs_write(current, fields):
+            if not fields or not _needs_write(current, fields):
                 unchanged += 1
                 continue
             covered = {name: current.get(name) for name, value in fields.items()

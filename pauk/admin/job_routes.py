@@ -1,25 +1,23 @@
 """Scheduled runs as a page: what is under way, what has been, starting one.
 
-Nothing here performs work. A form writes a job document and a separate
-process picks it up, so no request waits on a publish.
-
-Every value a form can carry is checked against a closed set: the kind
-against `JobKind`, the group against the groups that have prepared rows,
-the dates against the selectors the CLI uses. No command line is assembled.
+A form only writes a job document; a separate worker performs it. Every form
+value is checked against a closed set, and no command line is assembled.
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import date
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 
 from pauk.admin.deps import Admin, CsrfChecked, CurrentUser, Db, Session, templates
-from pauk.jobs import store
+from pauk.jobs import locks, store
 from pauk.jobs.models import FINAL, JobKind, JobState
+from pauk.jobs.worker import PHASES
 from pauk.pipeline.selectors import PeriodSelector
 from pauk.pipeline.stages import ALL_STAGES
 from pauk.storage import PreparedStore
@@ -29,14 +27,18 @@ logger = logging.getLogger("pauk.admin")
 
 router = APIRouter()
 
-# What each kind and state is called on the page. `JobKind.PUBLISH` is a
-# name for the code, not for a reader.
+#: How many numbers of a result are shown open; a full pipeline hands back forty.
+RESULT_OPEN_UPTO = 12
+
+# What each kind and state is called on the page.
 KINDS = {
     JobKind.PIPELINE: "весь конвейер",
     JobKind.COLLECT: "сбор",
     JobKind.PUBLISH: "публикация",
     JobKind.DEDUP: "дедуп",
     JobKind.MAP: "пересборка карты",
+    JobKind.PRUNE: "сверка с источником",
+    JobKind.HEALTH: "проверки по графу",
 }
 
 STATES = {
@@ -65,22 +67,56 @@ def _shown(job) -> dict:
         "resource": job.resource,
         "error": job.error,
         "cancel_requested": job.cancel_requested,
-        # Показывается, даже когда подбирать брошенные некому: без воркера
-        # такая задача так и висела бы «идёт» без всяких оговорок.
+        # Shown even with no worker to reap it: it would hang on "under way".
         "stale": store.is_quiet(job),
+        "progress": job.progress,
+        # One segment per pipeline phase; a single-step job gets none.
+        "phases": _phases(job),
         # Sorted so two renders list the counts the same way.
         "result": sorted((job.result or {}).items()),
-        "payload": sorted((job.payload or {}).items()),
+        "payload": _payload_lines(job.kind, job.payload or {}),
     }
 
 
-def _last_done(db) -> dict[str, object]:
-    """When each kind of run last finished.
+#: Payload fields in the page's words: `public=False` reads as its opposite.
+PAYLOAD_WORDS = {
+    "group": "группа",
+    "date_from": "с",
+    "date_to": "по",
+    "work_id": "одна работа",
+    "seed": "зерно раскладки",
+}
 
-    Shown beside its step, because the question a person opens this page
-    with is usually "has anybody published since the last collection", and
-    counting rows in the history to answer it is work the page can do.
-    """
+
+def _payload_lines(kind, payload: dict) -> list[str]:
+    """What a run was started with, one line per setting; empty fields are left out."""
+    if JobKind(kind) is JobKind.PRUNE:
+        # "apply=False" would read as "found nothing", not "left it alone".
+        return ["убрать найденное" if payload.get("apply")
+                else "только посчитать, ничего не удалять"]
+    lines = []
+    for name, value in sorted(payload.items()):
+        if value is None or value == "":
+            continue
+        if name == "public":
+            lines.append("карта без персональных данных" if value
+                         else "карта с персональными данными")
+            continue
+        lines.append(f"{PAYLOAD_WORDS.get(name, name)}: {value}")
+    return lines
+
+
+def _phases(job) -> list[str] | None:
+    """State of each pipeline phase: "done", "now" or "" for not yet."""
+    at = (job.progress or {}).get("phase")
+    if at is None:
+        return None
+    return ["done" if index < at else "now" if index == at else ""
+            for index in range(len(PHASES))]
+
+
+def _last_done(db) -> dict[str, object]:
+    """When each kind of run last finished."""
     found = {}
     for kind in JobKind:
         row = db[store.COLLECTION].find_one(
@@ -94,18 +130,13 @@ def _last_done(db) -> dict[str, object]:
 @router.get("/jobs", response_class=HTMLResponse)
 def jobs(request: Request, user: CurrentUser, session: Session, db: Db,
          kind: str = "", state: str = "", actor: str = "", page: int = 1):
-    """The queue and the history of runs.
-
-    Readable by anyone who can sign in, viewers included. Whether a publish
-    is under way explains what somebody is looking at.
-    """
+    """The queue and the history of runs, readable by anyone who can sign in."""
     page = max(page, 1)
     filters = {"kind": kind, "state": state, "actor": actor}
     total = store.count(db, **filters)
     return templates.TemplateResponse(request, "jobs.html", {
         "user": user, "csrf": session["csrf"],
-        # Apart from the history and above it. A run under way is what the
-        # page is opened for, and it need not be the newest row.
+        # Above the history: a run under way need not be the newest row.
         "under_way": [_shown(job) for job in store.running(db)],
         "rows": [_shown(job) for job in
                  store.recent(db, **filters, skip=(page - 1) * store.PAGE)],
@@ -115,11 +146,12 @@ def jobs(request: Request, user: CurrentUser, session: Session, db: Db,
         "final": {str(name) for name in FINAL},
         "actors": sorted(db[store.COLLECTION].distinct("actor")),
         "last_done": _last_done(db),
-        # Read off the pipeline, not written out here: a stage added to the
-        # registry would otherwise leave the page describing the old one.
+        # Nobody taking jobs is the difference between "running" and "queued forever".
+        "workers": store.workers_present(db),
+        "result_open_upto": RESULT_OPEN_UPTO,
+        # Read off the pipeline: a new stage must not leave the page stale.
         "stages": [stage.name for stage in ALL_STAGES],
-        # Only groups with prepared rows. Publishing an empty one loads
-        # nothing and looks like a broken publish.
+        # Only groups with prepared rows: an empty one looks like a broken publish.
         "groups": PreparedStore.known_groups(db),
         "today": date.today().isoformat()})
 
@@ -127,8 +159,7 @@ def jobs(request: Request, user: CurrentUser, session: Session, db: Db,
 def _collect_payload(form) -> dict:
     """One collection run, from a work id or a date range.
 
-    The group is derived with `group_name`, the same as `pauk run`. A name
-    invented here would be a second rule to keep in step with the first.
+    The group comes from `group_name`, as in `pauk run`, so there is one naming rule.
     """
     work_id = str(form.get("work_id", "")).strip()
     date_from = str(form.get("date_from", "")).strip()
@@ -136,13 +167,14 @@ def _collect_payload(form) -> dict:
     if work_id and (date_from or date_to):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "выберите либо одну работу, либо период — не оба сразу")
+    if not work_id and not date_from and not date_to:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "укажите период или одну работу по идентификатору")
     if not work_id and not (date_from and date_to):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "укажите работу или обе даты периода")
+                            "период задаётся двумя датами, вторая пустая")
     if date_from:
-        # PeriodSelector raises ValueError both for a value that is not a
-        # date and for a range the wrong way round, and one message for the
-        # two would be wrong half the time.
+        # PeriodSelector raises the same error for a bad date and a bad range.
         for what, value in (("начало", date_from), ("конец", date_to)):
             try:
                 date.fromisoformat(value)
@@ -150,8 +182,7 @@ def _collect_payload(form) -> dict:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST,
                                     f"{what} периода — не дата: {value!r}") from None
         try:
-            # The ordering rule stays where `pauk run` reads it. Only the
-            # wording is the panel's, since the selector talks about flags.
+            # The ordering rule stays in the selector; only the wording is here.
             PeriodSelector(date_from, date_to)
         except ValueError:
             raise HTTPException(status.HTTP_400_BAD_REQUEST,
@@ -171,33 +202,30 @@ def _payload_from(kind: JobKind, db, form) -> dict:
     if kind is JobKind.COLLECT:
         return _collect_payload(form)
     if kind is JobKind.PIPELINE:
-        # The group is not checked against the ones that exist here, unlike
-        # a plain publish: this run is the thing that creates it.
+        # Not checked against existing groups: this run creates one.
         return _collect_payload(form) | _map_options(form)
     if kind is JobKind.PUBLISH:
         group = str(form.get("group", "")).strip()
-        # Checked against the groups that exist, not only the shape of a
-        # name: a request arriving without the form meets the same list.
+        # Against the groups that exist: a request without the form meets it too.
         if group not in PreparedStore.known_groups(db):
             raise HTTPException(status.HTTP_400_BAD_REQUEST,
                                 f"нет подготовленных строк для группы {group!r}")
         return {"group": group}
     if kind is JobKind.MAP:
         return _map_options(form)
+    if kind is JobKind.PRUNE:
+        # An unticked checkbox sends nothing, which is the counting run.
+        return {"apply": bool(form.get("apply"))}
     return {}
 
 
 def _map_options(form) -> dict:
     """How to rebuild the map, left for the payload model to check.
 
-    Converting here meant `int(...)` on whatever arrived, and `int("null")`
-    raises ValueError, which nothing above turns into an answer — the
-    request ended in a 500. An absent key is left out rather than passed as
-    an empty string, so the model's own default applies.
+    Values are not converted here (`int("null")` would end in a 500), and an
+    absent key is left out so the model's default applies.
     """
     options: dict = {}
-    if form.get("public") is not None:
-        options["public"] = str(form.get("public"))
     seed = str(form.get("seed", "")).strip()
     if seed:
         options["seed"] = seed
@@ -208,9 +236,8 @@ def _map_options(form) -> dict:
 async def cancel(request: Request, user: Admin, db: Db, _: CsrfChecked):
     """Ask a run to stop.
 
-    A queued job is cancelled outright. One already under way is only asked:
-    the worker looks at the request between steps, so a half-written batch
-    is never abandoned. A publish has no steps inside it and runs to the end.
+    A queued job is cancelled outright; a running one is only asked, and the
+    worker checks between steps. A publish has no inner steps and runs to the end.
     """
     form = await request.form()
     job_id = str(form.get("job_id", "")).strip()
@@ -221,13 +248,38 @@ async def cancel(request: Request, user: Admin, db: Db, _: CsrfChecked):
     return RedirectResponse("/jobs", status_code=status.HTTP_303_SEE_OTHER)
 
 
+@router.post("/jobs/give-up")
+async def give_up(request: Request, user: Admin, db: Db, _: CsrfChecked):
+    """Close a run nothing is performing any more.
+
+    The worker settles abandoned jobs only while running and after the lock
+    lease expires; this closes e.g. a job cancelled before it ever started.
+    """
+    form = await request.form()
+    job_id = str(form.get("job_id", "")).strip()
+    if not store.give_up(db, job_id, busy=locks.taken(db)):
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "задача ещё жива или уже закончилась")
+    logger.info("%s gave up on job %s", user.actor, job_id)
+    return RedirectResponse("/jobs", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/jobs/repeat")
+async def repeat(request: Request, user: Admin, db: Db, _: CsrfChecked):
+    """Queue the same run again after it failed."""
+    form = await request.form()
+    job_id = str(form.get("job_id", "")).strip()
+    job = store.repeat(db, job_id, actor=user.actor)
+    if job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            "повторить можно только законченную задачу")
+    logger.info("%s queued %s again as %s", user.actor, job_id, job.id)
+    return RedirectResponse("/jobs", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.post("/jobs")
 async def schedule(request: Request, user: Admin, db: Db, _: CsrfChecked):
-    """Put a run in the queue.
-
-    The job document is the whole of it and the worker does the rest, so
-    there is no ordering to get wrong here.
-    """
+    """Put a run in the queue."""
     form = await request.form()
     try:
         kind = JobKind(str(form.get("kind", "")))
@@ -236,11 +288,16 @@ async def schedule(request: Request, user: Admin, db: Db, _: CsrfChecked):
                             f"неизвестный вид задачи: {form.get('kind')!r}") from None
     try:
         job = store.enqueue(db, kind, _payload_from(kind, db, form), actor=user.actor)
+    except HTTPException as error:
+        # Back to the form, not to an error page that loses what was typed.
+        if error.status_code != status.HTTP_400_BAD_REQUEST:
+            raise
+        return RedirectResponse(f"/jobs?problem={quote(str(error.detail))}",
+                                status_code=status.HTTP_303_SEE_OTHER)
     except ValidationError as error:
-        # The payload models refuse it before anything is stored.
         first = error.errors()[0]
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            f"{'.'.join(str(part) for part in first['loc'])}: "
-                            f"{first['msg']}") from None
+        detail = (f"{'.'.join(str(part) for part in first['loc'])}: {first['msg']}")
+        return RedirectResponse(f"/jobs?problem={quote(detail)}",
+                                status_code=status.HTTP_303_SEE_OTHER)
     logger.info("%s queued a %s job: %s", user.actor, kind, job.id)
     return RedirectResponse(f"/jobs?queued={job.id}", status_code=status.HTTP_303_SEE_OTHER)

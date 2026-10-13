@@ -54,8 +54,7 @@ class AffiliationBackfillTest(unittest.TestCase):
         prepared.write_models("publications", publications)
         with patch("pauk.pipeline.stages.persons.OpenAlexClient") as openalex, \
              patch("pauk.pipeline.stages.persons.OrcidClient") as orcid, \
-             patch("pauk.pipeline.stages.persons.CrossrefClient"), \
-             patch("pauk.pipeline.stages.persons.OpenReviewClient"):
+             patch("pauk.pipeline.stages.persons.CrossrefClient"):
             openalex.return_value.get_author.return_value = author_payload
             orcid.return_value.get_record.return_value = orcid_payload or {}
             PersonsStage(prepared, raw, Settings(data_dir=root)).run()

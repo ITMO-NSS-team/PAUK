@@ -9,6 +9,7 @@ from pauk.graph.extract import NODE_REGISTRY, extract_relationships
 from pauk.models import Department, Organization, Person, Publication
 from pauk.models.processing import ProcessingStatus
 from pauk.models.relations import Authorship
+from pauk.pipeline.stages.base import PreparedSelection
 from pauk.pipeline.stages.departments import DepartmentsStage
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
@@ -68,8 +69,8 @@ class DepartmentsStageTest(unittest.TestCase):
 
     def test_matches_numbered_affiliation_prefix(self):
         # Multi-affiliation papers glue an index to the name ("2School of ...").
-        # Substring matching keeps these; word-boundary matching (tried, reverted)
-        # dropped them because the digit is a word character.
+        # Substring matching keeps these; word-boundary matching would drop them
+        # because the digit is a word character.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             person = Person(
@@ -165,7 +166,7 @@ class DepartmentsStageTest(unittest.TestCase):
 
     def test_catalog_alias_becomes_name_variant_and_matches(self):
         # aliases in the catalogue are loaded as name_variants (static.py) and then
-        # drive matching — exercise the two together, not just a hand-built model.
+        # drive matching - exercise the two together, not just a hand-built model.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             catalog = [
@@ -275,7 +276,7 @@ class DepartmentHierarchyTest(unittest.TestCase):
             self.assertEqual(d["Department of Z"].parent_id, d["Faculty of Y"].id)
 
     def test_unknown_parent_uid_raises(self):
-        # A parent uid that names no entry is a catalogue typo — fail loudly rather
+        # A parent uid that names no entry is a catalogue typo - fail loudly rather
         # than silently orphan the unit (its PART_OF edge would just drop at load).
         with tempfile.TemporaryDirectory() as tmp:
             static = Path(tmp) / "static"
@@ -395,13 +396,13 @@ class DepartmentContextAliasTest(unittest.TestCase):
             self.assertEqual(self._match(Path(tmp), "ITMO University, Department of Physics"), ["d1"])
 
     def test_context_alias_matches_in_same_part_as_marker(self):
-        # No comma between the name and the org — both sit in one part.
+        # No comma between the name and the org - both sit in one part.
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(self._match(Path(tmp), "Department of Physics ITMO University, Saint Petersburg"), ["d1"])
 
     def test_context_alias_isolated_across_affiliations(self):
         # A generic alias in one authorship must not borrow an ITMO marker from a
-        # different authorship — parts are collected per affiliation.
+        # different authorship - parts are collected per affiliation.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             person = Person(
@@ -422,7 +423,7 @@ class DepartmentContextAliasTest(unittest.TestCase):
 
     def test_context_alias_prefers_longest_match_in_part(self):
         # "Department of Physics" must not fire inside "Department of Physics and
-        # Engineering" — only the more specific unit is credited for that part.
+        # Engineering" - only the more specific unit is credited for that part.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             person = self._person("Department of Physics and Engineering, ITMO University")
@@ -461,6 +462,52 @@ class DepartmentContextAliasTest(unittest.TestCase):
             self.assertEqual(departments["Faculty of Physics"].context_aliases, ["Department of Physics"])
             matched = {p.id: p for p in prepared.read_models("persons", Person)}["P1"]
             self.assertTrue(matched.department_ids)
+
+
+class CoverageLogTest(unittest.TestCase):
+    """The "matched N of M" line may only appear when the pass looked at every author."""
+
+    LOGGER = "pauk.pipeline.stages.departments"
+
+    def _stage(self, root: Path, *, selection=None, prepared=None):
+        static = root / "static"
+        static.mkdir(parents=True, exist_ok=True)
+        (static / "departments.jsonl").write_text(
+            Department(id="d1", name_en="Faculty of Physics").model_dump_json(), encoding="utf-8")
+        db = mongomock.MongoClient()["pauk_test"]
+        if prepared is None:
+            persons = [
+                Person(id=f"P{n}", is_itmo=True,
+                       authored=[Authorship(publication_id="W1",
+                                            affiliation="Faculty of Physics, ITMO University")])
+                for n in (1, 2)
+            ]
+            prepared = _prepare(db, persons, [Publication(id="W1", title="t")])
+        return prepared, DepartmentsStage(prepared, RawStore(db, "sample"),
+                                          config=Settings(data_dir=root), selection=selection)
+
+    def test_full_pass_reports_catalogue_coverage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, stage = self._stage(Path(tmp))
+            with self.assertLogs(self.LOGGER, level="INFO") as logs:
+                stage.run()
+            self.assertTrue(any("Matched 1 of 1 catalogue departments" in line for line in logs.output))
+
+    def test_scoped_pass_stays_quiet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, stage = self._stage(Path(tmp),
+                                   selection=PreparedSelection("persons", frozenset({"P1"})))
+            with self.assertNoLogs(self.LOGGER, level="INFO"):
+                stage.run()
+
+    def test_resumed_pass_stays_quiet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prepared, stage = self._stage(root)
+            stage.run()
+            _, resumed = self._stage(root, prepared=prepared)
+            with self.assertNoLogs(self.LOGGER, level="INFO"):
+                resumed.run()
 
 
 if __name__ == "__main__":

@@ -4,17 +4,36 @@ in-memory Neo4j stand-in that records what the loader would upsert."""
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import defaultdict
 
 import requests
 
 from pauk.graph.client import _merge_duplicate_properties
 from pauk.models import Person
-from pauk.pipeline.stages.author_names import RussianNamesCatalog, to_cyrillic
+from pauk.pipeline.stages.author_names import (
+    _CYR_TO_LAT,
+    RussianNamesCatalog,
+    required_name_field_issues,
+    to_cyrillic,
+)
+from pauk.sources.base import HttpRequestError
 
 
 def _http_404(url: str) -> requests.HTTPError:
     return requests.HTTPError(f"404 Client Error: Not Found for url: {url}")
+
+
+class NetworkAccessDenied(BaseException):
+    """A bench test reached for a live socket.
+
+    Deliberately not an Exception subclass: conftest.py raises this from
+    every requests.Session.send as a backstop, and several stages wrap their
+    client calls in `except Exception` to turn a failure into a FAILED row
+    (repositories.py, emails.py, code_links.py). An Exception subclass would
+    be swallowed there and the suite would stay green while making a live
+    call. BaseException passes straight through.
+    """
 
 
 class MockOpenAlexClient:
@@ -66,17 +85,8 @@ class MockGitHubClient:
     def has_readme(self, owner: str, name: str) -> bool:
         return True
 
-    # The people half of the GitHub API, used by repo_people. These answer
-    # empty, and that is not coverage of that stage: the universe models no
-    # contributors and no commits, so nothing in repo_people below the owner
-    # is exercised — bot filtering, git identities, the noreply-email skip.
-    # Modelling the people behind a repository moves GitHubProfile counts and
-    # the github_match candidate pool, so it is its own change.
-    #
-    # What they are here for is the bench's first promise, "no network": until
-    # repo_people was split out of repositories it reached the API through a
-    # patched client, and unpatched it fetches contributors, three pages of
-    # commits and a profile for each of the 80 repositories in the fixture.
+    # Empty answers, because the universe models no contributors: these are
+    # here for the bench's first promise, "no network".
     def contributors(self, owner: str, name: str) -> list[dict]:
         self.calls.append((owner, name))
         return []
@@ -113,30 +123,73 @@ class MockOrcidClient:
 class MockOpenRouterClient:
     """Fakes author_names.py's LLM name-split call for the bench run.
 
-    Model output *quality* was already validated separately against the real
-    API - this mock isn't re-testing that, it's testing that the pipeline
-    wires the LLM step in and consumes its reply correctly, without a real
-    network call. It answers the way the real prompt asks a model to: copy a
-    catalog candidate verbatim when the folded surname matches (reusing
-    RussianNamesCatalog.match(), the same trusted logic the deterministic
-    degree lookup in author_names.py itself uses), otherwise a plain
-    transliteration (reusing to_cyrillic) - "reasonable" here means the same
-    thing it means there.
+    Answers the way the real prompt asks a model to: copy a catalog
+    candidate verbatim when the folded surname matches (via
+    RussianNamesCatalog.match()), otherwise transliterate (via to_cyrillic).
+    Output quality is validated elsewhere; this checks that the pipeline
+    wires the step in and consumes its reply.
     """
 
     _RAW_NAME_RE = re.compile(r"mixed:\n {2}(.+)")
 
     def __init__(self, catalog_rows: list[str]) -> None:
-        """catalog_rows: the same "name_ru,surname,name,patronymic,degree"
-        strings the bench fixture writes to russian_names.csv (see
-        tests.bench.universe.RUSSIAN_NAMES_CATALOG) - not part of the
-        `universe` dict itself, which build_universe() doesn't touch."""
+        """Build the double from the strings of the bench's russian_names.csv.
+
+        Args:
+            catalog_rows: "name_ru,surname,name,patronymic,degree" strings, as
+                the bench fixture writes them (see
+                tests.bench.universe.RUSSIAN_NAMES_CATALOG).
+        """
         self.last_response = None
         self.last_usage = None
+        self.last_error = None
         self._catalog = RussianNamesCatalog([
             dict(zip(("name_ru", "surname", "name", "patronymic", "degree"), row.split(","), strict=True))
             for row in catalog_rows
         ])
+
+    @staticmethod
+    def _without_diacritics(value: str) -> str:
+        return "".join(
+            char
+            for char in unicodedata.normalize("NFKD", value)
+            if not unicodedata.combining(char)
+        )
+
+    @staticmethod
+    def _to_latin(value: str | None) -> str | None:
+        if not value:
+            return None
+        result = []
+        for char in value:
+            replacement = _CYR_TO_LAT.get(char.casefold())
+            if replacement is None:
+                result.append(char)
+            elif char.isupper():
+                result.append(replacement.capitalize())
+            else:
+                result.append(replacement)
+        return "".join(result)
+
+    @staticmethod
+    def _split_name(value: str) -> tuple[str | None, str | None]:
+        words = value.split()
+        if len(words) < 2:
+            return None, None
+        surname_start = 1
+        while surname_start < len(words) - 1:
+            initial = words[surname_start].strip(".-")
+            if len(initial) != 1 or not initial.isalpha():
+                break
+            surname_start += 1
+        return " ".join(words[:surname_start]), " ".join(words[surname_start:])
+
+    def _reply(self, result: dict) -> dict:
+        issues = required_name_field_issues(result)
+        if issues:
+            raise AssertionError(f"MockOpenRouterClient generated invalid required name fields: {issues}")
+        self.last_response = result
+        return result
 
     def chat_json(self, prompt: str) -> dict | None:
         match = self._RAW_NAME_RE.search(prompt)
@@ -146,34 +199,45 @@ class MockOpenRouterClient:
             surname_ru = (row.get("surname") or "").strip() or None
             first_ru = (row.get("name") or "").strip() or None
             second_ru = (row.get("patronymic") or "").strip() or None
-            return {
+            first_en, surname_en = self._split_name(self._to_latin(name_raw) or "")
+            return self._reply({
                 "matched_candidate": 0,
                 "surname_ru": surname_ru, "first_name_ru": first_ru, "second_name_ru": second_ru,
-                "surname_en": surname_ru, "first_name_en": first_ru, "second_name_en": second_ru,
+                "surname_en": surname_en,
+                "first_name_en": first_en,
+                "second_name_en": self._to_latin(second_ru),
                 "reason": "mock: exact catalog match",
-            }
-        words_ru = to_cyrillic(name_raw).split()
-        words_en = name_raw.split()
-        return {
+            })
+        latin_name = self._to_latin(name_raw) or ""
+        russian_name = to_cyrillic(self._without_diacritics(name_raw))
+        first_ru, surname_ru = self._split_name(russian_name)
+        first_en, surname_en = self._split_name(latin_name)
+        return self._reply({
             "matched_candidate": None,
-            "surname_ru": words_ru[-1] if words_ru else None,
-            "first_name_ru": words_ru[0] if len(words_ru) > 1 else None,
+            "surname_ru": surname_ru,
+            "first_name_ru": first_ru,
             "second_name_ru": None,
-            "surname_en": words_en[-1] if words_en else None,
-            "first_name_en": words_en[0] if len(words_en) > 1 else None,
+            "surname_en": surname_en,
+            "first_name_en": first_en,
             "second_name_en": None,
             "reason": "mock: no catalog match, transliterated",
-        }
+        })
 
 
-class UnexpectedNetworkClient:
-    """Any call means a stage tried the network although it shouldn't have."""
+class MockPdfHttpClient:
+    """Stands in for code_links.py's raw HttpClient.
+
+    The stage's PDF-fetch fallback, used when a publication carries a
+    pdf_url but the universe models no PDF bytes for it (e.g. W020), always
+    fails here like a real 404, and code_links._pdf_pages falls back to the
+    abstract. This keeps that outcome local instead of reaching example.org.
+    """
 
     def __init__(self, *args, **kwargs) -> None:
         pass
 
-    def __getattr__(self, name: str):
-        raise AssertionError(f"unexpected external call: {name}")
+    def get_bytes(self, url: str, **kwargs) -> bytes:
+        raise HttpRequestError("GET", url, status_code=404)
 
 
 class RecordingNeo4jClient:
@@ -190,13 +254,21 @@ class RecordingNeo4jClient:
         self.edges: dict[tuple[str, str, str, str, str], dict] = {}
         self.unresolved: list[tuple[str, str, str, str, str]] = []
 
-    # --- Neo4jClient interface -------------------------------------------------
+    @staticmethod
+    def _set_properties(target: dict, properties: dict) -> None:
+        """Mirror Neo4j SET += semantics, where a scalar null removes a property."""
+        for key, value in properties.items():
+            if value is None:
+                target.pop(key, None)
+            else:
+                target[key] = value
+
     def upsert_nodes_batch(self, labels, nodes) -> None:
         label_str = ":".join(labels) if isinstance(labels, list) else labels
         primary = label_str.split(":")[0]
         for node_id, props in nodes:
             clean = {k: v for k, v in props.items() if k not in ("id", "created_at", "updated_at")}
-            self.nodes[primary].setdefault(node_id, {}).update(clean)
+            self._set_properties(self.nodes[primary].setdefault(node_id, {}), clean)
 
     def upsert_person_nodes_batch(self, nodes) -> None:
         for node_id, props in nodes:
@@ -219,11 +291,28 @@ class RecordingNeo4jClient:
                              for node in self.nodes.get(tgt_primary, {}).values())
             if src_ok and tgt_ok:
                 key = (src_primary, rel_type, tgt_primary, src_id, tgt_id)
-                self.edges.setdefault(key, {}).update(props)
+                self._set_properties(self.edges.setdefault(key, {}), props)
                 matched += 1
             else:
                 self.unresolved.append((src_label, rel_type, tgt_label, src_id, tgt_id))
         return matched
+
+    def sync_implements_relationships_batch(self, publications) -> int:
+        removed = 0
+        for publication_id, repository_ids in publications:
+            desired = set(repository_ids)
+            for key in list(self.edges):
+                src_label, rel_type, tgt_label, src_id, tgt_id = key
+                if (
+                    src_label == "Repository"
+                    and rel_type == "IMPLEMENTS"
+                    and tgt_label == "Publication"
+                    and tgt_id == publication_id
+                    and src_id not in desired
+                ):
+                    del self.edges[key]
+                    removed += 1
+        return removed
 
     def promote_link_candidates_batch(self, candidates) -> None:
         """Mirror of Neo4jClient.promote_link_candidates_batch: move
@@ -283,7 +372,7 @@ class RecordingNeo4jClient:
                 "id": person_id,
                 **{field: props.get(field) for field in (
                     "openalex_id", "name_raw", "name_variants", "orcid", "email",
-                    "github", "openreview", "google_scholar", "merged_ids")},
+                    "github", "google_scholar", "merged_ids")},
                 "is_itmo": bool(props.get("is_itmo")),
                 "publication_ids": sorted({
                     tgt_id for (src_primary, rel_type, _tgt, src_id, tgt_id) in self.edges
@@ -319,7 +408,7 @@ class RecordingNeo4jClient:
                 "id": publication_id,
                 **{field: props.get(field) for field in (
                     "type", "doi", "title", "journal", "publication_date", "year",
-                    "openalex_url", "pdf_url", "abstract", "versions", "merged_ids")},
+                    "openalex_url", "pdf_urls", "abstract", "versions", "merged_ids")},
                 "author_count": len(authors),
                 "authors": authors,
             })
@@ -356,7 +445,6 @@ class RecordingNeo4jClient:
     def close(self) -> None:
         pass
 
-    # --- assertion helpers -------------------------------------------------------
     def edge_pairs(self, rel_type: str) -> set[tuple[str, str]]:
         return {(src_id, tgt_id) for (_, rel, _, src_id, tgt_id) in self.edges if rel == rel_type}
 
@@ -370,12 +458,10 @@ class RecordingNeo4jClient:
 class MockLinkRelevanceClient:
     """A fixed link-relevance verdict, so the bench never calls a real model.
 
-    Every link is judged the authors' own. The bench measures structure — how
-    many edges of each kind the pipeline builds — and a live model would make
-    those counts depend on its mood: run against a real endpoint, this
-    universe's synthetic URLs are judged someone else's tool 81 times out of
-    86, and the IMPLEMENTS count moves with the model. Whether the judgment
-    itself is right is settled in tests/unit/test_stages.py.
+    Every link is judged the authors' own. The bench measures structure, and
+    a live model would make counts such as IMPLEMENTS depend on its
+    judgments. Whether the judgment itself is right is settled in
+    tests/unit/test_stages.py.
     """
 
     def __init__(self, *args, **kwargs) -> None:

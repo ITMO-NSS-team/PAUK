@@ -1,56 +1,57 @@
-# `social_graph` — стейдж
+# `social_graph` stage
 
-**Что здесь:** как находятся сотрудники, чей код ни одна статья не
-процитировала.
+**What this covers:** how employees are found whose code no paper cited.
 
-**Какие файлы задействует:** `pauk/pipeline/stages/social_graph.py`.
+**Files involved:** `pauk/pipeline/stages/social_graph.py`.
 
-Не входит в общий прогон — это `OPTIONAL_STAGES`, запуск только по имени
-(`pauk enrich --group <g> social_graph`). Смысл появляется лишь после
-того, как `github_match` кого-то подтвердил, а стоит прогон сотни
-запросов к API.
+Not part of the default run: it is in `OPTIONAL_STAGES` and starts only by name
+(`pauk enrich --group <g> social_graph`). It makes sense only after
+`github_match` has confirmed someone, and a run costs hundreds of API requests.
 
-## Зачем
+## Why
 
-`repositories` доходит только до тех, кто работал над кодом, на который
-сослалась статья. Большинство сотрудников, пишущих код, процитированы
-не были: репозиторий лежит на их собственном аккаунте или на аккаунте
-лаборатории, и из публикаций на него не ведёт ничего.
+`repositories` reaches only the people who worked on code a paper cited. Most
+employees who write code were not cited: the repository sits on their own
+account or on a lab's account, and nothing in the publications leads to it.
 
-## Как идёт обход
+## How the walk goes
 
-Семя — подтверждённый аккаунт или организация ИТМО. Берутся публичные
-репозитории семени, с них собираются участники, и эти участники
-становятся кандидатами наравне с любыми другими.
+The starting point is a confirmed account or an ITMO organization. The stage
+takes that account's public repositories and collects participants from them;
+those participants become candidates like any others.
 
-Между кольцами запускается `github_match`: именно он превращает
-кандидата этого кольца в семя следующего. Без него обход закончился бы
-на первом кольце. Кольцо, не давшее ни одного нового репозитория,
-завершает обход; `MAX_RINGS = 5` — потолок на случай, если сходимости
-не будет.
+`github_match` runs between rings: it turns a candidate of this ring into a
+starting point for the next. Without it the walk would end after the first
+ring. A ring that yields no new repository ends the walk; `MAX_RINGS = 5` is a
+ceiling in case it never converges.
 
-Семенами берутся только подтверждённые аккаунты. Если брать всех
-кандидатов, семян будет несколько сотен, а репозиториев — тысячи.
+The walk starts only from confirmed accounts. Starting from all candidates
+would give several hundred starting points and thousands of repositories.
 
-## Какая организация считается своей
+## Which organization counts as ours
 
-Либо в ней уже работает кто-то подтверждённый, либо ИТМО назван в её
-собственном профиле. Иначе семенем стала бы каждая организация, чью
-библиотеку процитировала статья, — включая google и microsoft.
+An organization is confirmed if its login is in the curated catalog
+(`itmo_github_orgs.json` in the static directory) or if it explicitly names
+ITMO in its login, name, description or company. Otherwise every organization
+whose library a paper cited would qualify, google and microsoft included.
 
-Оговорка: первое правило раздаёт принадлежность к ИТМО и чужим
-лабораториям, куда наш сотрудник просто коммитил. Здесь это терпимо —
-цена ошибки только запросы к API. Поэтому в `github_match` тот же
-признак считается иначе, строже (см. [github-match.md](github-match.md)).
+Saint Petersburg is only a weak signal: such an organization is logged as
+possible but not walked. A link to a confirmed ITMO contributor also does not
+confirm an organization, since an employee may commit to someone else's lab. A
+real lab with an empty profile is added to the curated catalog. If the owner of
+a known repository is in the catalog, a missing profile or an unknown account
+type does not prevent starting the walk from it. An explicit type `user` rules
+out using the account as an organization seed even if it is in the catalog. For
+owners outside the catalog a profile with type `organization` is required.
 
-## Ограничения обхода
+## Limits of the walk
 
-`MAX_REPOS_PER_SEED = 30`, сортировка по времени последнего изменения:
-у плодовитого аккаунта репозиториев сотни, и люди есть на тех, которые
-он трогал недавно. Форки пропускаются — они несут участников исходного
-проекта, а не этого аккаунта.
+`MAX_REPOS_PER_SEED = 30`, sorted by last modification time: a prolific account
+has hundreds of repositories, and people are on the ones it touched recently.
+Forks are skipped, since they carry the upstream project's participants, not
+this account's.
 
-Пройденные репозитории запоминаются из двух источников: `repositories.jsonl`
-и поле `repos` на собранных профилях. Если читать только первое, каждый
-следующий прогон снова обойдёт те же сотни репозиториев — сам обход в
-`repositories.jsonl` ничего не пишет.
+Visited repositories are remembered from two sources: the `repositories`
+collection and the `repos` field on collected profiles. Reading only the first
+would make every later run walk the same hundreds of repositories again, since
+the walk itself writes nothing to `repositories`.

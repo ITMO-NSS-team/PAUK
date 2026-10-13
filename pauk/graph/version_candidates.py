@@ -208,7 +208,7 @@ def _title_similarity(folded_a: str, folded_b: str, token_jaccard: float, floor:
 
 
 def _arxiv_id(row: dict) -> str | None:
-    for value in (row.get("doi"), row.get("pdf_url"), row.get("openalex_url")):
+    for value in (row.get("doi"), *(row.get("pdf_urls") or ()), row.get("openalex_url")):
         if not value:
             continue
         match = _ARXIV_IN_DOI.search(value) or _ARXIV_IN_URL.search(value)

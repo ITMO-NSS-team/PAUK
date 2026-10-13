@@ -1,12 +1,8 @@
-"""`pauk admin ...` — editing the graph from the shell.
+"""`pauk admin ...`: editing the graph from the shell.
 
-The first consumer of `pauk.graph.mutations`, and a complete one: every
-operation the panel will offer is reachable here. Whatever the panel adds
-on top is a form and a login, not different rules.
-
-This module does three things and no more — parse arguments, name the
-actor, print the result. Validation and the writes themselves belong to
-the mutation layer.
+Every operation the panel offers is reachable here. This module only parses
+arguments, names the actor and prints the result; validation and writes belong
+to `pauk.graph.mutations`.
 """
 
 from __future__ import annotations
@@ -17,7 +13,9 @@ import logging
 
 from pymongo.database import Database
 
+from pauk.admin import feed
 from pauk.admin.auth import ROLES, AuthError, create_user, list_users, set_active
+from pauk.graph import prune
 from pauk.graph.audit import actor_context, audited_client
 from pauk.graph.mutations import (
     NODE_FIELDS,
@@ -32,6 +30,9 @@ from pauk.graph.mutations import (
     update_node,
 )
 from pauk.graph.overrides import (
+    CREATE,
+    DELETE,
+    LINK,
     active_overrides,
     apply_overrides,
     deactivate_override,
@@ -39,18 +40,19 @@ from pauk.graph.overrides import (
     record_override,
     record_relationship_override,
 )
+from pauk.jobs.locks import Busy
 from pauk.jobs.worker import POLL_SECONDS as WORKER_POLL
 from pauk.jobs.worker import Worker
 from pauk.settings import Settings
+from pauk.storage.prepared import REVISIONS, trim_revisions
 
 logger = logging.getLogger("pauk.admin")
 
 
 def _parse_value(raw: str):
-    """`--set stars_num=10` should store a number, not the text "10".
+    """Parse a `--set` value as JSON, falling back to a plain string.
 
-    JSON covers numbers, booleans, null and lists in one rule; anything it
-    rejects is taken as a plain string, which is what a name or a URL is.
+    So `stars_num=10` stores a number while a name or URL stays text.
     """
     try:
         return json.loads(raw)
@@ -87,6 +89,10 @@ def add_parser(subparsers) -> None:
     create.add_argument("label", choices=sorted(NODE_FIELDS))
     create.add_argument("id")
     create.add_argument("--set", dest="assignments", action="append", metavar="FIELD=VALUE")
+    create.add_argument("--note", default=None, help="why the record was added")
+    create.add_argument("--once", action="store_true",
+                        help="create without claiming it; a prune will then treat the "
+                             "record as a leftover")
 
     node_set = node.add_parser("set", help="change fields on a node")
     node_set.add_argument("label", choices=sorted(NODE_FIELDS))
@@ -121,6 +127,10 @@ def add_parser(subparsers) -> None:
         rel.add_argument("tgt_id")
         if name == "add":
             rel.add_argument("--set", dest="assignments", action="append", metavar="FIELD=VALUE")
+            rel.add_argument("--note", default=None, help="why the link was added")
+            rel.add_argument("--once", action="store_true",
+                             help="link without claiming it; a prune will then treat the "
+                                  "link as a leftover")
         else:
             rel.add_argument("--note", default=None, help="why the link was removed")
             rel.add_argument("--once", action="store_true",
@@ -148,6 +158,25 @@ def add_parser(subparsers) -> None:
         undo_rel.add_argument(argument)
 
     commands.add_parser("schema", help="list the labels, fields and relationships that can be edited")
+
+    graph_prune = commands.add_parser(
+        "prune", help="remove from the graph what the prepared rows no longer ask for")
+    graph_prune.add_argument(
+        "--apply", action="store_true",
+        help="remove them; without it the list is printed and nothing changes")
+    graph_prune.add_argument(
+        "--limit", type=int, default=20,
+        help="how many of each kind to print (default: 20)")
+
+    trim = commands.add_parser(
+        "trim", help="shorten the two histories that only ever grow: the change "
+                     "feed and the archive of replaced rows")
+    trim.add_argument(
+        "--keep-days", type=int, default=feed.KEEP_DAYS,
+        help=f"how much history to keep (default: {feed.KEEP_DAYS})")
+    trim.add_argument(
+        "--apply", action="store_true",
+        help="delete them; without it the counts are printed and nothing changes")
 
     worker = commands.add_parser(
         "worker", help="perform the scheduled runs, one at a time")
@@ -195,15 +224,17 @@ def run(args, config: Settings, db: Database | None) -> None:
         _print_schema()
         return
 
-    # Accounts live in Mongo alone: no graph connection, and nothing to
-    # audit into the change feed of the graph.
+    # Accounts live in Mongo alone: no graph connection, nothing to audit.
     if args.admin_command == "user":
         _run_user(args, db)
         return
 
-    # The worker opens its own connections, per job and per step, because a
-    # single one held open for hours is a connection that dies quietly. It
-    # also sets its own actor: each job records who asked for it.
+    # Both histories are Mongo collections; the graph is untouched.
+    if args.admin_command == "trim":
+        _run_trim(args, db)
+        return
+
+    # The worker opens its own connections per job: one held for hours dies.
     if args.admin_command == "worker":
         _run_worker(args, config, db)
         return
@@ -212,7 +243,10 @@ def run(args, config: Settings, db: Database | None) -> None:
     client = audited_client(config, db)
     try:
         with actor_context(actor, source="admin-cli"):
-            _dispatch(args, client, db, actor)
+            if args.admin_command == "prune":
+                _run_prune(args, client, db)
+            else:
+                _dispatch(args, client, db, actor)
     except MutationError as error:
         raise SystemExit(str(error)) from None
     finally:
@@ -222,9 +256,8 @@ def run(args, config: Settings, db: Database | None) -> None:
 def _run_worker(args, config: Settings, db: Database) -> None:
     """Perform scheduled runs until asked to stop.
 
-    A second process next to the panel, not a thread inside it: a
-    collection run takes hours, and restarting the web service must not cut
-    one in half.
+    A separate process from the panel, so restarting the web service does not
+    cut a collection run in half.
     """
     worker = Worker(config=config, db=db, name=args.name or "",
                     poll_seconds=args.poll)
@@ -235,11 +268,66 @@ def _run_worker(args, config: Settings, db: Database) -> None:
     worker.run_forever()
 
 
+def _run_prune(args, client, db: Database) -> None:
+    """Bring the graph back to what the prepared rows describe.
+
+    Lists by default; deleting needs `--apply`. The comparison and removal
+    happen under the graph lock (see `prune.run`).
+    """
+    try:
+        plan = prune.run(client, db, args.apply)
+    except Busy as error:
+        raise SystemExit(str(error)) from None
+    for label, ids in sorted(plan.nodes.items()):
+        print(f"{label}: {len(ids)} record(s) no row explains")
+        for node_id in ids[:args.limit]:
+            print(f"    {node_id}")
+        if len(ids) > args.limit:
+            print(f"    ... and {len(ids) - args.limit} more")
+    for (src_label, rel_type, tgt_label), pairs in sorted(plan.edges.items()):
+        print(f"({src_label})-[:{rel_type}]->({tgt_label}): {len(pairs)} link(s) no row asks for")
+        for src_id, tgt_id in pairs[:args.limit]:
+            print(f"    {src_id} -> {tgt_id}")
+        if len(pairs) > args.limit:
+            print(f"    ... and {len(pairs) - args.limit} more")
+    if plan.kept_by_hand:
+        print(f"kept: {plan.kept_by_hand} added by hand and claimed as a decision")
+    if plan.folding:
+        print(f"kept: {plan.folding} id(s) the next publish folds into another record")
+    if not plan.total():
+        print("the graph matches the prepared rows")
+        return
+    if not args.apply:
+        print(f"\n{plan.total()} in all; nothing removed, pass --apply to remove them")
+        return
+    print(f"\nremoved {plan.removed['pruned_relationships']} link(s) "
+          f"and {plan.removed['pruned_nodes']} record(s)")
+
+
+def _run_trim(args, db: Database) -> None:
+    """Keep the two growing histories (change feed, revision archive) bounded.
+
+    Counts by default; cutting needs `--apply`.
+    """
+    cutoff = feed.older_than(args.keep_days)
+    entries = feed.trim(db, cutoff, apply=args.apply)
+    versions = trim_revisions(db, cutoff, apply=args.apply)
+    if not args.apply:
+        print(f"older than {args.keep_days} days (before {cutoff[:10]}):")
+        print(f"    change feed:      {entries['audit_matched']} of {feed.count(db)}")
+        print(f"    replaced rows:    {versions['revisions_matched']} of "
+              f"{db[REVISIONS].count_documents({})}")
+        print("nothing removed; pass --apply to remove them")
+        return
+    print(f"removed {entries['audit_removed']} feed entr(y/ies) "
+          f"and {versions['revisions_removed']} archived version(s)")
+
+
 def _run_user(args, db: Database) -> None:
     """Manage the accounts that can log into the panel.
 
-    The password is read from a prompt, never from an argument: anything
-    passed on the command line lands in the shell history and in `ps`.
+    The password is read from a prompt, never an argument, which would land in
+    the shell history and `ps`.
     """
     if args.user_command == "add":
         password = getpass.getpass(f"password for {args.login}: ")
@@ -249,8 +337,7 @@ def _run_user(args, db: Database) -> None:
             created = create_user(db, args.login, password, role=args.role)
         except AuthError as error:
             raise SystemExit(str(error)) from None
-        # Print the stored login, not the typed one: logins are lowercased
-        # on the way in.
+        # The stored login, not the typed one: logins are lowercased on the way in.
         print(f"created {created['_id']} ({args.role})")
     elif args.user_command == "list":
         rows = list_users(db)
@@ -282,8 +369,14 @@ def _run_node(args, client, db, actor: str) -> None:
         print(json.dumps(read_node(client, args.label, args.id),
                          ensure_ascii=False, indent=2, default=str))
     elif args.node_command == "create":
-        node = create_node(client, args.label, args.id, _parse_assignments(args.assignments))
-        logger.info("created %s %s", args.label, args.id)
+        fields = _parse_assignments(args.assignments)
+        node = create_node(client, args.label, args.id, fields)
+        # Claimed, not reapplied: a prune would take it for a leftover.
+        if db is not None and not args.once:
+            record_override(db, args.label, args.id, CREATE, fields, actor=actor,
+                            note=args.note or "")
+        logger.info("created %s %s%s", args.label, args.id,
+                    "" if db is not None and not args.once else " (not recorded as a decision)")
         print(json.dumps(node, ensure_ascii=False, indent=2, default=str))
     elif args.node_command == "set":
         node = _set_fields(args, client, db, actor)
@@ -295,19 +388,13 @@ def _run_node(args, client, db, actor: str) -> None:
 def _set_fields(args, client, db, actor: str) -> dict:
     """Change fields, and remember the decision so a publish cannot undo it.
 
-    Writing straight to the graph would hold until the next
-    `pauk publish graph` and then be overwritten by whatever the source
-    says. So the edit is also kept as an override, with the automatic value
-    it replaces, so the conflict screen can later say what the source now
-    claims. The graph is written first and the decision recorded second —
-    see the comment below for why that order matters.
+    The edit is also kept as an override with the automatic value it replaces,
+    so the conflict screen can show what the source now claims. The graph is
+    written first because it is the step that can be refused.
     """
     fields = _parse_assignments(args.assignments)
     before = read_node(client, args.label, args.id)
-    # The graph write goes first. It is the step that can be refused — by a
-    # version conflict, or by validation — and a decision recorded for an
-    # edit that never happened would be applied by the next publish, quietly
-    # making a change the person was just told was rejected.
+    # Graph first: it is the step that can be refused.
     node = update_node(client, args.label, args.id, fields,
                        expected_updated_at=args.expect_updated_at)
     if db is not None and not args.once:
@@ -321,12 +408,7 @@ def _set_fields(args, client, db, actor: str) -> dict:
 
 def _delete(args, client, db, actor: str) -> None:
     """Remove a node, and tombstone it so publishing does not bring it back."""
-    # Same order as _set_fields: a node with relationships and no --cascade
-    # is refused, and a tombstone left behind would delete it on the next
-    # publish anyway.
-    # Snapshot first, like the panel does: afterwards the node is gone, and
-    # the decision has to carry what it removed or the record can only be
-    # restored from the feed — which keeps history, not state.
+    # Snapshot first: afterwards there is nothing left to read.
     snapshot = read_node(client, args.label, args.id)
     removed = delete_node(client, args.label, args.id, cascade=args.cascade)
     if db is not None and not args.once:
@@ -359,8 +441,9 @@ def _run_overrides(args, client, db) -> None:
         else:
             raise SystemExit(f"no override recorded for {args.label} {args.id}")
     elif args.overrides_command == "undo-rel":
+        # Only the removal: both kinds share one document id.
         if deactivate_relationship_override(db, args.src_label, args.rel_type, args.tgt_label,
-                                            args.src_id, args.tgt_id):
+                                            args.src_id, args.tgt_id, only_op=DELETE):
             print(f"({args.src_label} {args.src_id})-[:{args.rel_type}]->"
                   f"({args.tgt_label} {args.tgt_id}) will be rebuilt by the next publish")
         else:
@@ -372,16 +455,19 @@ def _run_overrides(args, client, db) -> None:
 
 def _run_relationship(args, client, db, actor: str) -> None:
     if args.rel_command == "add":
-        # No override needed: the loader only ever creates edges, so one
-        # added by hand is never taken away by a publish.
+        # Claimed, not reapplied: a prune would take it for a leftover.
         create_relationship(client, args.src_label, args.rel_type, args.tgt_label,
                             args.src_id, args.tgt_id, _parse_assignments(args.assignments))
-        logger.info("linked (%s %s)-[:%s]->(%s %s)", args.src_label, args.src_id,
-                    args.rel_type, args.tgt_label, args.tgt_id)
+        if db is not None and not args.once:
+            record_relationship_override(db, args.src_label, args.rel_type, args.tgt_label,
+                                         args.src_id, args.tgt_id, op=LINK, actor=actor,
+                                         note=args.note or "")
+        logger.info("linked (%s %s)-[:%s]->(%s %s)%s", args.src_label, args.src_id,
+                    args.rel_type, args.tgt_label, args.tgt_id,
+                    "" if db is not None and not args.once else " (not recorded as a decision)")
         return
 
-    # Deletion is the direction that needs remembering: the same prepared
-    # row rebuilds the edge on the next publish.
+    # Deletion needs remembering: the same row rebuilds the edge on a publish.
     removed = delete_relationship(client, args.src_label, args.rel_type, args.tgt_label,
                                   args.src_id, args.tgt_id)
     if db is not None and not args.once:
@@ -392,13 +478,12 @@ def _run_relationship(args, client, db, actor: str) -> None:
 
 
 def _run_merge(args, client) -> None:
-    # Merging deletes the duplicate together with its relationships, and
-    # the audit diff covers node properties only — there is nothing to
-    # restore the edges from afterwards.
+    # Not reversible: only a pair answered in the review queue can be split back apart.
     if not args.yes:
         answer = input(
             f"Merge {args.label} {args.duplicate_id} into {args.canonical_id}?\n"
-            "This cannot be undone: the duplicate and its relationships are removed. [y/N] ")
+            "The duplicate and its relationships are removed, and nothing here "
+            "puts them back. [y/N] ")
         if answer.strip().lower() not in ("y", "yes"):
             raise SystemExit("cancelled")
     removed = merge_nodes(client, args.label, args.duplicate_id, args.canonical_id)

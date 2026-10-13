@@ -1,83 +1,55 @@
 """Merge prepared rows that describe the same real-world entity.
 
-Three kinds of duplicates reach the prepared layer, each with its own
-evidence:
-
 Persons
-    OpenAlex author disambiguation sometimes splits one researcher into
-    several author records (e.g. "Nikolay Nikitin" and "Nikolay O. Nikitin").
-    Person identity in PAUK is the OpenAlex author ID, so each split record
-    becomes its own person. Three rules fold them back together:
+    OpenAlex sometimes splits one researcher into several author records
+    (e.g. "Nikolay Nikitin" and "Nikolay O. Nikitin"). Person identity is the
+    OpenAlex author ID, so each record is its own person until folded:
 
     1. ORCID: two persons carrying the same ORCID are the same author.
-    2. Name variant: one person's display name is listed among the other's
-       OpenAlex name variants, both are ITMO-affiliated, and they share at
-       least one coauthor.
-    3. Identical name plus corroboration: two ITMO-affiliated persons whose
-       full display names match exactly and who also share a coauthor, a
-       department or a research field.
+    2. Name variant: one person's display name is among the other's OpenAlex
+       name variants, both are ITMO-affiliated, and they share a coauthor.
+    3. Identical name plus corroboration: two ITMO-affiliated persons with
+       identical full display names who also share a coauthor, a department
+       or a research field.
     4. Staff record: two ITMO-affiliated persons whose names resolve to the
-       same row of the official ITMO staff catalog. One row is one employee,
-       so this survives the spellings the other rules cannot bridge — the
-       four records "Alexey Valentinovich Dukhanov", "Aleksei Dukhanov",
-       "Alexey Dukhanov" and "A. V. Dukhanov" share neither a display name
-       nor a coauthor, and every one of them is that one employee.
+       same row of the official staff catalog (one row is one employee). This
+       bridges spellings the other rules cannot, e.g. "Alexey Valentinovich
+       Dukhanov" and "A. V. Dukhanov".
 
-    Merge policy
-    ------------
-    A name is evidence, never proof. Transliteration collapses distinct
-    Russian names onto one Latin string, and the most common surnames
-    (Smirnov, Novikov, Ivanov) collide inside a single university's author
-    pool — an audit of merging on the name alone found "I. V. Smirnov" the
-    medical-anthropology reviewer folded into "I. V. Smirnov" the chemist.
-    So rule 3 requires an independent signal, and a name given as initials
-    ("I. V. Smirnov") is never enough on its own: initials stand for a whole
-    range of first names, multiplying the collisions a full name would not
-    produce.
+    Merge policy: a name is evidence, never proof. Transliteration collapses
+    distinct Russian names and common surnames (Smirnov, Ivanov) collide
+    within one university, so rule 3 requires an independent signal and a name
+    given as initials is never enough alone. An explicitly different identity
+    field (ORCID, email, GitHub login, Google Scholar id, staff record) always
+    keeps a pair separate. Pairs with weaker evidence (a variant match without
+    a shared coauthor, a namesake outside ITMO, a single-token name, an
+    identical name with nothing corroborating it) are not merged automatically;
+    they go to the review journal with the reason.
 
-    An explicitly different identity field (ORCID, email, GitHub login,
-    OpenReview id, Google Scholar id, staff record) always keeps a pair
-    separate — two official records are two employees. Pairs
-    with weaker evidence — a variant match without a shared coauthor, a
-    namesake outside ITMO, a single-token name, an identical name with
-    nothing corroborating it — are never merged automatically; they land in
-    the review journal with the reason, and a person who really was split
-    stays split until someone confirms it.
-
-    The corroboration signals are still coarse: a shared field ("Computer
-    Science") is weak on its own, a shared department is only as good as
-    the affiliation strings behind it, and neither says anything about two
-    namesakes in the same lab. Sharpening these - see #153.
+    The corroboration signals are coarse: a shared field is weak on its own,
+    and a shared department is only as good as the affiliation strings.
 
     Every heuristic decision is journalled to dedup_candidates.jsonl in the
-    group directory: applied merges carry status "merged" with the rule(s)
-    that justified them — so they can be audited and rolled back — and
-    held-back pairs and groups carry status "held" with the reasons.
-
-    The same rules serve the graph-wide pass (pauk dedup graph, see
-    pauk/graph/dedup.py), which compares persons across all published
-    groups — duplicates whose records live in different groups are
-    invisible to this per-group stage.
+    group directory: merges carry status "merged" with the rule(s) that
+    justified them, held-back pairs and groups carry status "held" with the
+    reasons. The same rules serve the graph-wide pass (pauk/graph/dedup.py),
+    which compares persons across published groups.
 
 Publications
-    One work reaches OpenAlex through several routes: a preprint and the
-    version of record, a dataset or software deposit re-released per version,
-    and plain duplicate records of one DOI created when OpenAlex re-indexes.
-    Rows sharing a DOI, or sharing a title, are one publication. Merging is
-    lossless: every record folds into `versions`, so all the places the work
-    appeared stay queryable on the surviving row.
+    Rows sharing a DOI or a title are one publication (preprint and version of
+    record, per-version deposits, duplicate OpenAlex records). Merging is
+    lossless: every record folds into `versions`.
 
 Repositories
-    A repository renamed or transferred on GitHub keeps its numeric id, so
-    rows sharing one are the same repository even though their URLs differ.
-    All URLs the repository was ever cited by survive in `cited_urls`.
+    A renamed or transferred GitHub repository keeps its numeric id, so rows
+    sharing one are the same repository. All URLs it was cited by survive in
+    `cited_urls`.
 
-The stage is deterministic and purely local (no network), so unlike other
-stages it re-examines the whole group on every run instead of tracking
-per-row processing states; merges already applied simply produce no new
-pairs. Merged-away ids are recorded on the surviving row (merged_ids) so
-that re-normalization keeps routing the old id to the canonical row and the
-graph loader can fold previously published duplicate nodes.
+The stage is deterministic and local (no network), so it re-examines the whole
+group on every run instead of tracking per-row processing states. Merged-away
+ids are recorded on the surviving row (merged_ids) so re-normalization keeps
+routing the old id to the canonical row and the graph loader can fold
+previously published duplicate nodes.
 """
 
 from __future__ import annotations
@@ -98,10 +70,18 @@ from pauk.pipeline.normalize import (
     _merge_person,
     _short_id,
 )
+from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
+from pauk.storage.review import DIFFERENT, SAME
 from pauk.urls import normalize_repo_url
 
-from .author_names import RussianNamesCatalog, _fold, _unmix_alphabets, catalog_path
+from .author_names import (
+    RussianNamesCatalog,
+    _fold,
+    _record_id,
+    _unmix_alphabets,
+    catalog_path,
+)
 from .base import EnrichmentStage
 
 logger = logging.getLogger(__name__)
@@ -137,8 +117,8 @@ def _norm_name(name: str | None) -> str:
     """A person's name, with mixed alphabets settled before comparing.
 
     OpenAlex serves the same author both as "Alexander A. Shtil" and with a
-    Cyrillic А in place of the Latin one. The two are one name to a reader
-    and two to casefold(), so the pair never reaches a merge rule.
+    Cyrillic А in place of the Latin one; casefold() treats these as two
+    names, so the pair would never reach a merge rule.
     """
     return _norm(_unmix_alphabets(name or ""))
 
@@ -151,13 +131,30 @@ def _norm_doi(doi: str | None) -> str | None:
     return value.rstrip("/") or None
 
 
+_NAME_PUNCT = re.compile(r"[^\w]", re.UNICODE)
+
+
+def _name_tokens(name: str | None) -> list[str]:
+    """Name tokens worth blocking on: initials carry no identity of their own.
+
+    Punctuation goes before the length check, so "A.A." collapses to a
+    two-letter token and drops out.
+    """
+    tokens = []
+    for token in _norm_name(name).split():
+        stripped = _NAME_PUNCT.sub("", token)
+        if len(stripped) > 2:
+            tokens.append(stripped)
+    return tokens
+
+
 def _variant_set(person: Person) -> set[str]:
     return {_norm_name(variant) for variant in person.name_variants if _norm_name(variant)}
 
 
 # Identity fields a person can carry explicitly; two persons differing in any
 # of them are two real people no matter how similar their names are.
-PROFILE_FIELDS = ("email", "github", "openreview", "google_scholar")
+PROFILE_FIELDS = ("email", "github", "google_scholar")
 
 
 def _profiles_conflict(first: Person, second: Person) -> bool:
@@ -172,17 +169,15 @@ def _initials_conflict(first: Person, second: Person) -> bool:
     """Whether an initial in one display name rules out the other name.
 
     An OpenAlex record is not always one person: the one displayed as
-    "А. В. Иванов" also lists "A S Ivanov" among its variants, and that
-    variant alone pairs it with a real A. S. Ivanov. The display names
-    settle it — an initial V where the other name says S is two people,
-    whatever a variant claims.
+    "А. В. Иванов" also lists "A S Ivanov" among its variants, which alone
+    would pair it with a real A. S. Ivanov. The display names settle it: an
+    initial V where the other name says S is two people, whatever a variant
+    claims.
 
-    Only initials are judged here. Two names spelled out ("Ivan Petrov",
-    "Igor Petrov") may still be one person under a rule that has better
-    evidence than the name; an initial, by contrast, states one letter and
-    states it plainly. Comparison runs in the folded space, so a Cyrillic
-    "В" meets a Latin "V", and an initial never contradicts the name it
-    abbreviates: "Andrei Ivanov" agrees with "A. V. Ivanov".
+    Only initials are judged; two spelled-out names ("Ivan Petrov", "Igor
+    Petrov") may still be one person under a rule with better evidence.
+    Comparison runs in the folded space (Cyrillic "В" meets Latin "V"), and an
+    initial never contradicts the name it abbreviates.
     """
     first_tokens = _fold(first.name_raw or "").split()
     second_tokens = _fold(second.name_raw or "").split()
@@ -197,10 +192,9 @@ def _initials_conflict(first: Person, second: Person) -> bool:
     )
 
 
-# An author record listing far more institutions than it has works is not a
-# person: OpenAlex pools authors it cannot tell apart under one common name,
-# and one such record here carries 1752 institutions across two works. It can
-# be merged with nothing, since it already stands for a crowd.
+# An author record listing far more institutions than works is not a person:
+# OpenAlex pools authors it cannot tell apart under one common name. It can be
+# merged with nothing, since it already stands for a crowd.
 JUNK_AFFILIATION_RATIO = 30
 
 
@@ -215,9 +209,8 @@ def _paired_persons(people: list[Person], in_scope: set[str] | None,
 
     Blocking keeps this quadratic only within small buckets: name-based
     pairs must share a name token, ORCID and staff-record pairs are grouped
-    exactly. Staff records need a bucket of their own because the spellings
-    they reconcile ("Aleksei Dukhanov", "Alexey Duhanov") often share no
-    token at all — which is the whole reason the catalog can see them.
+    exactly. Staff records need their own bucket because the spellings they
+    reconcile ("Aleksei Dukhanov", "Alexey Duhanov") often share no token.
     """
     by_orcid: dict[str, list[Person]] = {}
     by_token: dict[str, list[Person]] = {}
@@ -229,9 +222,8 @@ def _paired_persons(people: list[Person], in_scope: set[str] | None,
         if staff_id:
             by_staff.setdefault(staff_id, []).append(person)
         for name in (person.name_raw, *person.name_variants):
-            for token in _norm_name(name).replace(",", " ").split():
-                if len(token) > 2:
-                    by_token.setdefault(token, []).append(person)
+            for token in _name_tokens(name):
+                by_token.setdefault(token, []).append(person)
 
     emitted: set[tuple[str, str]] = set()
     for bucket in (*by_orcid.values(), *by_token.values(), *by_staff.values()):
@@ -257,36 +249,50 @@ def _is_initials_name(name: str) -> bool:
     return bool(INITIALS_NAME.match(name.strip()))
 
 
+def merge_rank(authored: int, orcid: str | None, node_id: str) -> tuple:
+    """Sort key deciding which record for one person survives a fold.
+
+    The one that carries the most work, then the one with an ORCID, then
+    the lower id so runs agree. Shared with the panel so both fold a pair
+    the same way round.
+    """
+    return (-authored, orcid is None, node_id)
+
+
 def plan_person_merges(
     people: list[Person],
     trusted_orcid: dict[str, str | None],
     in_scope: set[str] | None = None,
     fields_of: dict[str, set[str]] | None = None,
     staff_ids: dict[str, str] | None = None,
+    decisions: dict[frozenset[str], str] | None = None,
 ) -> tuple[list[tuple[Person, list[Person]]], list[dict]]:
     """Decide which persons are one author and which pairs need human eyes.
 
-    Shared by the per-group dedup stage and the graph-wide pass (pauk
-    dedup graph): both feed Person rows in, only the storage they apply the
-    result to differs.
+    Shared by the per-group dedup stage and the graph-wide pass; only the
+    storage they apply the result to differs.
 
     Args:
         staff_ids: Staff-record identity per person id, for the people the
             official catalog resolves unambiguously (see staff_identities).
             Absent entries simply leave rule 4 out of that person's pairs.
+        decisions: Answers people gave about pairs the rules could not
+            settle (see pauk.storage.review). An answer outranks the rules:
+            "different" keeps a pair apart and out of the report, "same"
+            merges it. It does not outrank a self-contradicting group (see
+            _group_conflict).
 
     Returns:
-        (groups, report): groups as (canonical, duplicates) tuples — the
-        canonical person is the one with the most authored works (ties:
-        having an ORCID, then the smallest id) — and review-journal rows.
-        Every heuristic decision lands in the journal: applied merges carry
-        status "merged" plus the rule(s) that justified them (so they can
-        be audited and rolled back via merged_ids), pairs and groups held
-        back carry status "held" plus the reasons.
+        (groups, report): groups as (canonical, duplicates) tuples, where the
+        canonical person has the most authored works (ties: having an ORCID,
+        then the smallest id), and review-journal rows. Applied merges carry
+        status "merged" plus their rule(s); held-back pairs and groups carry
+        status "held" plus the reasons.
     """
     by_id = {person.id: person for person in people}
     fields_of = fields_of or {}
     staff_ids = staff_ids or {}
+    decisions = decisions or {}
 
     pub_authors: dict[str, set[str]] = {}
     for person in people:
@@ -316,9 +322,9 @@ def plan_person_merges(
         """Coauthors the two share outside the works they wrote together.
 
         A pair listed on one work shares that work's whole author list by
-        construction — the two "Yong Li" of W7166343300 come out with four
-        coauthors in common and no evidence between them. Only coauthors
-        each of them also met elsewhere say anything about identity.
+        construction (the two "Yong Li" of W7166343300 share four coauthors
+        with no evidence between them). Only coauthors each met elsewhere
+        say anything about identity.
         """
         together = frozenset(
             {authorship.publication_id for authorship in first.authored}
@@ -339,13 +345,33 @@ def plan_person_merges(
     report: list[dict] = []
 
     def plan_pair(first: Person, second: Person, rule: str) -> None:
+        """Put a pair up for merging, unless somebody said they are two people.
+
+        A refusal is not final: the pair may have gained a shared coauthor
+        since. That is shown for review rather than acted on, because the
+        person who answered knew something the rules do not.
+        """
+        if decisions.get(frozenset((first.id, second.id))) == DIFFERENT:
+            report.append({
+                "status": "disputed",
+                "person_a": first.id, "name_a": first.name_raw,
+                "person_b": second.id, "name_b": second.name_raw,
+                "rule": rule,
+            })
+            return
         merge_pairs.append((first.id, second.id))
         pair_rules[frozenset((first.id, second.id))] = rule
 
     for first, second in _paired_persons(people, in_scope, staff_ids):
         # A pooled record stands for everyone OpenAlex could not tell apart,
-        # so it is nobody in particular and merges with nothing.
+        # so it is nobody in particular and merges with nothing. Ahead of the
+        # answers below: such a pair never reaches the queue to be asked about.
         if _is_pooled_record(first) or _is_pooled_record(second):
+            continue
+        # A confirmed merge skips the rules; a refusal does not, because the
+        # evidence may have moved since. See plan_pair.
+        if decisions.get(frozenset((first.id, second.id))) == SAME:
+            plan_pair(first, second, "manual")
             continue
         # Two names that disagree on a part both spell out are two people,
         # however well a name variant of one fits the other.
@@ -361,8 +387,8 @@ def plan_person_merges(
         # that two persons are one, and full evidence that they are not.
         if (first_orcid or first.orcid) and (second_orcid or second.orcid) \
                 and (first_orcid or first.orcid) != (second_orcid or second.orcid):
-            # Different ORCIDs are explicit evidence of two distinct
-            # people — never merge and not worth reporting either.
+            # Different ORCIDs are explicit evidence of two distinct people:
+            # never merge and not worth reporting.
             continue
         first_staff, second_staff = staff_ids.get(first.id), staff_ids.get(second.id)
         # Two official staff records are two employees, however alike the
@@ -388,7 +414,7 @@ def plan_person_merges(
         shared = corroborating_coauthors(first, second)
         shared_departments = set(first.department_ids) & set(second.department_ids)
         shared_fields = research_fields(first) & research_fields(second)
-        # A name on its own is never enough — see the merge policy above.
+        # A name on its own is never enough; see the merge policy above.
         corroboration = bool(shared or shared_departments or shared_fields)
         initials_only = _is_initials_name(first.name_raw or "")
 
@@ -398,7 +424,9 @@ def plan_person_merges(
             plan_pair(first, second, "name_variant")
         elif same_name and both_itmo and multi_token and not initials_only and corroboration:
             plan_pair(first, second, "same_name")
-        elif first.is_itmo or second.is_itmo:
+        elif (first.is_itmo or second.is_itmo) and frozenset(
+                (first.id, second.id)) not in decisions:
+            # Already asked and answered; re-asking every run would flood the queue.
             reasons = []
             if not both_itmo:
                 reasons.append("only one person is ITMO-affiliated")
@@ -420,6 +448,21 @@ def plan_person_merges(
                 "held_because": reasons,
             })
 
+    # A merge somebody asked for, on a pair the blocking never offered.
+    # _paired_persons only yields people who share a name token, an ORCID or
+    # a staff record; without this, a renamed person would lose the answer.
+    for members, verdict in decisions.items():
+        if verdict != SAME or len(members) != 2:
+            continue
+        first_id, second_id = sorted(members)
+        if first_id not in by_id or second_id not in by_id:
+            continue
+        if frozenset((first_id, second_id)) in pair_rules:
+            continue
+        if in_scope is not None and first_id not in in_scope and second_id not in in_scope:
+            continue
+        plan_pair(by_id[first_id], by_id[second_id], "manual")
+
     groups: list[tuple[Person, list[Person]]] = []
     for members in _grouped(merge_pairs):
         # Pairwise checks can't see transitive contradictions: A and B may
@@ -430,7 +473,7 @@ def plan_person_merges(
         if conflict:
             field, values = conflict
             logger.warning(
-                "dedup: refusing to merge group %s — it spans %d distinct %s values",
+                "dedup: refusing to merge group %s: it spans %d distinct %s values",
                 sorted(members), len(values), field)
             report.append({
                 "status": "held",
@@ -441,7 +484,7 @@ def plan_person_merges(
             continue
         ranked = sorted(
             (by_id[member] for member in members),
-            key=lambda p: (-len(p.authored), p.orcid is None, p.id),
+            key=lambda p: merge_rank(len(p.authored), p.orcid, p.id),
         )
         canonical, duplicates = ranked[0], ranked[1:]
         groups.append((canonical, duplicates))
@@ -503,17 +546,65 @@ def _grouped(pairs: Iterable[tuple[str, str]]) -> Iterator[list[str]]:
             yield members
 
 
+def folded_ids(people: Iterable[Person]) -> dict[str, str]:
+    """Ids folded away, pointing at the person who survived.
+
+    An answer given about somebody who has since been merged is stored under
+    an id nothing carries any more. Every reader of those answers needs this,
+    which is why it lives here rather than on one stage.
+    """
+    return {folded: person.id for person in people for folded in person.merged_ids}
+
+
 def staff_identities(catalog: RussianNamesCatalog | None,
-                     people: Iterable[Person]) -> dict[str, str]:
+                     people: Iterable[Person],
+                     chosen: dict[str, str] | None = None) -> dict[str, str]:
     """Staff-record identity per person id, for the ones the catalog knows.
 
-    An empty mapping — no catalog on this deployment, or nobody matched —
-    simply leaves rule 4 out of the merge decision.
+    An empty mapping (no catalog, or nobody matched) leaves rule 4 out.
+
+    Args:
+        chosen: Records people picked for the names the catalog cannot tell
+            apart (see `RussianNamesCatalog.namesakes`).
     """
     if catalog is None:
         return {}
-    return {person.id: staff_id for person in people
-            if (staff_id := catalog.staff_id(person))}
+    chosen = chosen or {}
+    found = {}
+    for person in people:
+        staff_id = catalog.staff_id(person) or chosen.get(person.id)
+        if staff_id:
+            found[person.id] = staff_id
+    return found
+
+
+def staff_questions(catalog: RussianNamesCatalog | None, people: Iterable[Person],
+                    chosen: dict[str, str] | None = None) -> list[dict]:
+    """People whose name the catalog holds twice, for somebody to sort out.
+
+    Only asked where it would change something: a person the catalog
+    already places needs no question, and neither does one already answered.
+    """
+    if catalog is None:
+        return []
+    chosen = chosen or {}
+    questions = []
+    for person in people:
+        if catalog.staff_id(person) or person.id in chosen:
+            continue
+        rows = catalog.namesakes(person)
+        if not rows:
+            continue
+        questions.append({
+            "status": "held",
+            "person": person.id,
+            "name_raw": person.name_raw,
+            "records": [_record_id(row) for row in rows],
+            "record_names": [row.get("name_ru") or _record_id(row) for row in rows],
+            "record_degrees": [row.get("degree") for row in rows],
+            "held_because": ["the catalog holds several people under this name"],
+        })
+    return questions
 
 
 def _union(*lists: Iterable[str]) -> list[str]:
@@ -530,16 +621,14 @@ def _version_of(publication: Publication,
         publication_date=publication.publication_date,
         year=publication.year,
         openalex_url=publication.openalex_url,
-        pdf_url=publication.pdf_url,
+        pdf_urls=publication.pdf_urls,
         abstract=publication.abstract,
         authors=list(authors),
     )
 
 
 def _merge_versions(*sources: Iterable[PublicationVersion]) -> list[PublicationVersion]:
-    """One entry per record. The first source naming a record wins; later
-    sources only fill fields it left empty — which is how ledger entries
-    written before authors and abstracts were tracked gain them."""
+    """One entry per record: the first source naming it wins, later ones fill empty fields."""
     merged: dict[str, PublicationVersion] = {}
     for versions in sources:
         for version in versions:
@@ -547,11 +636,12 @@ def _merge_versions(*sources: Iterable[PublicationVersion]) -> list[PublicationV
             if existing is version:
                 continue
             for field in ("title", "doi", "journal", "publication_date",
-                          "year", "openalex_url", "pdf_url", "abstract"):
+                          "year", "openalex_url", "abstract"):
                 if getattr(existing, field) is None:
                     setattr(existing, field, getattr(version, field))
             if not existing.authors:
                 existing.authors = version.authors
+            existing.pdf_urls = _union(existing.pdf_urls, version.pdf_urls)
     return list(merged.values())
 
 
@@ -565,6 +655,7 @@ def _merge_publication(base: Publication, extra: Publication,
     an abstract or a PDF link present on only one record is never lost.
     """
     base.has_code = base.has_code or extra.has_code
+    base.pdf_urls = _union(base.pdf_urls, extra.pdf_urls)
     base.versions = _merge_versions(base.versions, extra.versions,
                                     [_version_of(extra, extra_authors)])
     base.merged_ids = _union(base.merged_ids, extra.merged_ids)
@@ -576,7 +667,7 @@ def _merge_publication(base: Publication, extra: Publication,
         if grant not in base.funding:
             base.funding.append(grant)
     for field in ("type", "code_url", "doi", "journal", "publication_date", "year",
-                  "openalex_url", "pdf_url", "abstract"):
+                  "openalex_url", "abstract"):
         if getattr(base, field) is None:
             setattr(base, field, getattr(extra, field))
     for stage, state in extra.processing.items():
@@ -634,7 +725,6 @@ class DedupStage(EnrichmentStage):
             "dedup_candidates": candidates,
         }
 
-    # --- publications ---------------------------------------------------------
 
     def _refresh_version_ledger(self, publications: list[Publication],
                                 version_authors: dict[str, list[VersionAuthor]],
@@ -642,12 +732,10 @@ class DedupStage(EnrichmentStage):
         """Rebuild ledger entries from the raw payload of each record.
 
         Raw is the only per-record source that stays correct: a ledger entry
-        written after a merge would otherwise describe the merged state (the
-        union of every record's authors), and entries written before author
-        lists were versioned hold nothing at all. Only authors that exist as
-        persons here are kept, which leaves out organizations sitting in
-        author slots, coauthors dropped by the consortium cap, and ids that
-        person dedup has since folded away.
+        written after a merge would describe the merged state (the union of
+        every record's authors). Only authors that exist as persons here are
+        kept, which leaves out organizations in author slots, coauthors
+        dropped by the consortium cap, and ids person dedup folded away.
         """
         if not any(publication.versions for publication in publications):
             return 0
@@ -664,8 +752,7 @@ class DedupStage(EnrichmentStage):
             for version in publication.versions:
                 work = raw_works.get(version.openalex_id)
                 if work is None:
-                    # No raw payload (an older group, another machine): keep
-                    # whatever the entry already carries.
+                    # No raw payload: keep whatever the entry already carries.
                     if not version.authors and version.openalex_id == publication.id:
                         version.authors = list(version_authors.get(publication.id, ()))
                         refreshed += bool(version.authors)
@@ -794,7 +881,6 @@ class DedupStage(EnrichmentStage):
             existing.links.extend(link for link in row.links if link.url not in known)
         self.prepared.write_models("repo_links", merged_links.values())
 
-    # --- repositories ---------------------------------------------------------
 
     def _dedup_repositories(self) -> dict[str, str]:
         """Fold repository rows that GitHub considers one repository."""
@@ -806,8 +892,8 @@ class DedupStage(EnrichmentStage):
 
         pairs = self._pairs_by_key(repositories, in_scope, (
             lambda repository: str(repository.github_id) if repository.github_id else None,
-            # Safety net for rows written before repositories were re-keyed
-            # to their canonical identity: one stored URL, one repository.
+            # Safety net for rows stored before re-keying to the canonical
+            # identity: one stored URL, one repository.
             lambda repository: normalize_repo_url(repository.url),
         ))
         # A URL cited on two rows means the repository was renamed between
@@ -854,18 +940,49 @@ class DedupStage(EnrichmentStage):
         self.prepared.write_models("persons", people)
         return id_map
 
-    # --- persons ---------------------------------------------------------------
 
     def _dedup_persons(self) -> tuple[int, int]:
         people = list(self.prepared.read_models("persons", Person))
-        groups, report = plan_person_merges(
-            people, self._trusted_orcids(people), self._person_scope(people),
-            fields_of={
-                publication.id: set(publication.fields)
-                for publication in self.prepared.read_models("publications", Publication)
-                if publication.fields
-            },
-            staff_ids=self._staff_ids(people))
+        fields_of = {
+            publication.id: set(publication.fields)
+            for publication in self.prepared.read_models("publications", Publication)
+            if publication.fields
+        }
+        trusted_orcids = self._trusted_orcids(people)
+        staff_ids = self._staff_ids(people)
+        answers = review.decisions(self.prepared.db, folded_ids(people))
+        if self.config.person_resolution_enabled:
+            from pauk.graph.person_resolution import MODEL_FEATURES, ResolverPolicy
+            from pauk.graph.person_resolution_model import load_logistic_model
+            from pauk.pipeline.person_resolution import OpenRouterResolutionModels
+            from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
+
+            groups, report = plan_person_merges_resolved(
+                people,
+                trusted_orcids,
+                in_scope=self._person_scope(people),
+                fields_of=fields_of,
+                staff_ids=staff_ids,
+                decisions=answers,
+                models=OpenRouterResolutionModels(self.config, self.prepared.db, self.prepared.group),
+                policy=ResolverPolicy(
+                    separate_below=self.config.person_resolution_separate_below,
+                    merge_from=self.config.person_resolution_merge_from,
+                ),
+                logreg_model=load_logistic_model(
+                    self.config.person_resolution_logreg_model_path,
+                    MODEL_FEATURES,
+                ),
+            )
+        else:
+            groups, report = plan_person_merges(
+                people,
+                trusted_orcids,
+                self._person_scope(people),
+                fields_of=fields_of,
+                staff_ids=staff_ids,
+                decisions=answers,
+            )
 
         removed: set[str] = set()
         for canonical, duplicates in groups:
@@ -881,40 +998,51 @@ class DedupStage(EnrichmentStage):
         if removed:
             people = [person for person in people if person.id not in removed]
             self.prepared.write_models("persons", people)
+        # Which answers this fold carried out. Read off the rows rather than
+        # off the plan: the same pair can be folded through a third person,
+        # and the rows are what the next run will believe anyway.
+        review.mark_applied_merges(self.prepared.db, folded_ids(people))
 
         held = sum(1 for row in report if row["status"] == "held")
+        # The queue the panel reads; the journal file below holds the whole run,
+        # merges included, for reading by eye.
+        review.record_held(self.prepared.db, report, source=review.STAGE)
+        review.record_disputed(self.prepared.db, report)
         report_path = self.config.audit_dir / self.prepared.group / CANDIDATES_FILENAME
         with AtomicWriter(report_path) as fh:
             for row in report:
                 fh.write(json.dumps(row, ensure_ascii=False) + "\n")
         if report:
-            logger.info("dedup: review journal in %s — %d merge(s) applied, %d pair(s) held",
+            logger.info("dedup: review journal in %s: %d merge(s) applied, %d pair(s) held",
                         report_path, len(removed), held)
         return len(removed), held
 
     def _staff_ids(self, people: list[Person]) -> dict[str, str]:
         """Staff-record identity per person, empty without a staff catalog.
 
-        The naming stage refuses to run without the catalog; this one only
-        loses rule 4 and says so, because a group can legitimately be
-        deduplicated on a machine that does not carry the personal data.
+        Unlike the naming stage, this one runs without the catalog and only
+        loses rule 4, because the personal data may not be on this machine.
         """
         path = catalog_path(self.config)
         catalog = RussianNamesCatalog.load_if_present(path)
         if catalog is None:
-            logger.info("dedup: no staff catalog at %s — merging on names and profiles alone", path)
-        return staff_identities(catalog, people)
+            logger.info("dedup: no staff catalog at %s, merging on names and profiles alone", path)
+            return {}
+        chosen = review.staff_choices(self.prepared.db, folded_ids(people))
+        # Asked here rather than in the naming stage: this is the rule the answer
+        # unblocks, and spotting the ambiguity needs no model call.
+        review.record_held(self.prepared.db, staff_questions(catalog, people, chosen),
+                           source=review.STAGE)
+        return staff_identities(catalog, people, chosen)
 
     def _trusted_orcids(self, people: list[Person]) -> dict[str, str | None]:
         """ORCID per person id, preferring the raw OpenAlex author record.
 
         The prepared orcid field is not authoritative: the crossref backfill
-        in the persons stage assigns an ORCID by surname match alone, which
-        can stamp a namesake's ORCID onto the wrong person (common names
-        like "Li Li"). The author's own OpenAlex record is the trusted
-        source; where a raw record was fetched it overrides the prepared
-        value — including overriding it with None when OpenAlex knows no
-        ORCID for that author.
+        in the persons stage matches by surname alone and can stamp a
+        namesake's ORCID onto the wrong person (e.g. "Li Li"). Where a raw
+        OpenAlex author record was fetched it overrides the prepared value,
+        including with None when OpenAlex knows no ORCID.
         """
         raw_orcids: dict[str, str | None] = {}
         for envelope in self.raw.read("openalex_authors"):
@@ -937,7 +1065,6 @@ class DedupStage(EnrichmentStage):
             }
         return set()
 
-    # --- shared helpers ---------------------------------------------------------
 
     def _scope(self, entity: str, all_ids: set[str]) -> set[str] | None:
         """Ids of `entity` the selection allows to participate in merging."""

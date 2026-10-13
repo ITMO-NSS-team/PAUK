@@ -16,7 +16,7 @@ class PersonsResumeTest(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.config = Settings(data_dir=Path(tmp.name), openreview_username="", openreview_password="")
+        self.config = Settings(data_dir=Path(tmp.name))
         db = mongomock.MongoClient()["pauk_test"]
         self.prepared = PreparedStore(db, "sample")
         self.raw = RawStore(db, "sample")
@@ -39,28 +39,34 @@ class PersonsResumeTest(unittest.TestCase):
         self.assertEqual(rows["P1"].processing["openalex_author"].status, ProcessingStatus.COMPLETED)
         self.assertNotIn("openalex_author", rows["P2"].processing)
 
-    @patch("pauk.pipeline.stages.persons.OpenReviewClient")
     @patch("pauk.pipeline.stages.persons.OrcidClient")
     @patch("pauk.pipeline.stages.persons.CrossrefClient")
     @patch("pauk.pipeline.stages.persons.OpenAlexClient")
-    def test_openreview_email_batch_completes_person(self, openalex, _crossref, _orcid, openreview):
-        config = Settings(
-            data_dir=self.config.data_dir, openreview_username="user", openreview_password="password",
-        )
-        self.prepared.write_models("persons", [
-            Person(id="P1", is_itmo=True, name_raw="Ada Lovelace", email="ada@itmo.ru"),
-        ])
-        openreview.return_value.search_emails.return_value = {
-            "profiles": [{"id": "~Ada_Lovelace1", "email": "ada@itmo.ru", "content": {"github": "ada"}}],
-        }
-        PersonsStage(self.prepared, self.raw, config).run()
+    def test_legacy_openreview_state_does_not_block_orcid_or_resume(self, openalex, _crossref, orcid):
+        self.prepared.write_rows("persons", [{
+            "id": "P1", "is_itmo": True, "orcid": "0000-0001-2345-6789",
+            "openreview": "~Ada_Lovelace1",
+            "_processing": {"openreview": {"status": "failed", "phase": "email"}},
+        }])
+        orcid.return_value.get_record.return_value = {"person": {"researcher-urls": {
+            "researcher-url": [
+                {"url": {"value": "https://github.com/ada"}},
+                {"url": {"value": "https://scholar.google.com/citations?user=ada"}},
+            ],
+        }}}
 
+        stage = PersonsStage(self.prepared, self.raw, self.config)
+        result = stage.run()
         person = next(self.prepared.read_models("persons", Person))
-        state = person.processing["openreview"]
-        self.assertEqual(state.status, ProcessingStatus.COMPLETED)
-        self.assertEqual(state.phase, "email")
         self.assertEqual(person.github, "ada")
-        self.assertEqual(openreview.return_value.search_emails.call_count, 1)
+        self.assertEqual(person.google_scholar, "https://scholar.google.com/citations?user=ada")
+        self.assertEqual(person.processing["orcid"].status, ProcessingStatus.COMPLETED)
+        self.assertNotIn("openreview", person.model_dump())
+        self.assertEqual(set(result), {"persons", "crossref"})
+
+        self.assertEqual(stage.run(), {"persons": 0, "crossref": 0})
+        orcid.return_value.get_record.assert_called_once_with("0000-0001-2345-6789")
+        openalex.return_value.get_author.assert_not_called()
 
 
 if __name__ == "__main__":

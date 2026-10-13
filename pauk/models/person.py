@@ -12,7 +12,7 @@ class Affiliation(BaseModel):
     Self-deposited records (Zenodo, SSRN) routinely omit the affiliation of
     some coauthors, leaving the authorship with nothing to place them by.
     The author's own OpenAlex record and their ORCID employments know it,
-    so both are collected here — `source` keeps the two apart, and `years`
+    so both are collected here: `source` keeps the two apart, and `years`
     is what lets an authorship pick the affiliation of its own year.
     """
 
@@ -42,7 +42,6 @@ class Person(BaseModel):
     emails: list[str] = Field(default_factory=list)
     github: str | None = None
     google_scholar: str | None = None
-    openreview: str | None = None
     thesis: str | None = None
     department_ids: list[str] = Field(default_factory=list)
     affiliations: list[Affiliation] = Field(default_factory=list)
@@ -51,7 +50,7 @@ class Person(BaseModel):
     contributed_to: list[Contribution] = Field(default_factory=list)
     processing: dict[str, ProcessingState] = Field(default_factory=dict, alias="_processing")
 
-    # Stub fields, source not wired up yet - #152.
+    # Stubs: no source populates these yet.
     scopus_id: str | None = None
     researcher_id: str | None = None
     dblp_id: str | None = None

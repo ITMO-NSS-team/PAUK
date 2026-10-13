@@ -7,6 +7,9 @@ from pauk.graph.load import _drop_tombstoned
 from pauk.graph.mutations import MutationError, UnknownEntity
 from pauk.graph.overrides import (
     COLLECTION,
+    CREATE,
+    DELETE,
+    SET,
     active_overrides,
     apply_overrides,
     deactivate_override,
@@ -194,10 +197,9 @@ class TombstoneFilterTest(unittest.TestCase):
 class CandidateTombstoneTest(unittest.TestCase):
     """A LinkCandidate is invented by the loader, not read from a file.
 
-    _drop_tombstoned filters prepared rows by id, and repo_links.jsonl rows
-    are keyed by publication. So the candidate slipped past it: every
-    publish recreated the node and apply_overrides deleted it again, one
-    false creation and one false deletion per run.
+    _drop_tombstoned filters prepared rows by id, but repo_links.jsonl rows
+    are keyed by publication, so the candidate needs its own check. Without
+    it every publish recreates the node and apply_overrides deletes it again.
     """
 
     URL = "https://github.com/org/repo"
@@ -236,8 +238,8 @@ class CandidateTombstoneTest(unittest.TestCase):
         self.assertIn(("LinkCandidate", other), self.graph.nodes)
 
     def test_a_publish_leaves_the_graph_alone(self):
-        # The point of the fix: nothing to undo afterwards, so the feed
-        # gets no creation and no deletion nobody asked for.
+        # Nothing to undo afterwards, so the feed gets no creation and no
+        # deletion nobody asked for.
         record_override(self.db, "LinkCandidate", self.URL, "delete")
         self.publish()
         before = dict(self.graph.nodes)
@@ -245,8 +247,8 @@ class CandidateTombstoneTest(unittest.TestCase):
         self.assertEqual(self.graph.nodes, before)
 
     def test_a_tombstone_on_a_candidate_does_not_block_its_repository(self):
-        # The url is now a known Repository, so the edge goes there
-        # instead. That node has its own id and its own tombstone.
+        # The url is a known Repository, so the edge goes there instead. That
+        # node has its own id and its own tombstone.
         record_override(self.db, "LinkCandidate", self.URL, "delete")
         self.graph.add("Repository", "R1", url=self.URL)
         self.rows["repositories.jsonl"] = [{"id": "R1", "url": self.URL}]
@@ -337,7 +339,7 @@ class RelationshipOverrideTest(unittest.TestCase):
         self.assertEqual(result["overrides_missing"], 1)
 
     def test_an_edge_whose_target_is_matched_by_url_is_skipped_too(self):
-        # MENTIONS_LINK finds its Repository by url, not by id — the
+        # MENTIONS_LINK finds its Repository by url, not by id - the
         # tombstone has to be keyed the same way the loader looks it up.
         self.graph.add("Publication", "W2", title="paper with code")
         self.graph.nodes[("Repository", "github_org_repo")] = {
@@ -355,23 +357,22 @@ class RelationshipOverrideTest(unittest.TestCase):
         self.assertEqual([k for k in self.graph.relationships if k[1] == "MENTIONS_LINK"], [])
 
     def test_every_entity_the_publish_loads_can_be_tombstoned(self):
-        # A new prepared entity (organizations, when department matching
-        # landed) must not lose its tombstones because a second list was
-        # never updated: deleting such a node by hand would then be undone
-        # by the very next publish.
+        # A new prepared entity (e.g. organizations) must not lose its tombstones
+        # because a second list was never updated: deleting such a node by hand
+        # would be undone by the very next publish.
         from pauk.graph.load import ENTITY_FILES, FILE_LABELS
         node_files = {name for name in ENTITY_FILES.values() if name != "repo_links.jsonl"}
         self.assertEqual(node_files - set(FILE_LABELS), set())
 
 
 class ConcurrentEditTest(unittest.TestCase):
-    """Two administrators, one node, different fields — neither edit is lost."""
+    """Two administrators, one node, different fields - neither edit is lost."""
 
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
 
     def test_a_second_editor_does_not_overwrite_the_first(self):
-        # Both read the document before either writes — the situation a
+        # Both read the document before either writes - the situation a
         # read-then-replace loses.
         record_override(self.db, "Person", "A1", "set", {"name_ru": "Иванов"},
                         actor="user:petrov")
@@ -407,7 +408,7 @@ class ConcurrentEditTest(unittest.TestCase):
 
 
 class VanishingTargetTest(unittest.TestCase):
-    """apply_overrides reads a node, then writes it — the gap is real."""
+    """apply_overrides reads a node, then writes it - the gap is real."""
 
     def test_a_node_removed_between_the_read_and_the_write_is_skipped(self):
         db = mongomock.MongoClient()["pauk_test"]
@@ -430,9 +431,8 @@ class WithdrawingADeletionKeepsTheEditTest(unittest.TestCase):
     """One document holds both decisions about a node.
 
     Correcting a field and later deleting the record leaves `fields` and a
-    `delete` on the same document. Switching the whole thing off to undo
-    the deletion dropped the correction too — the record came back with the
-    right value, and the next publish quietly overwrote it.
+    `delete` on the same document. Switching the whole thing off to undo the
+    deletion must not drop the correction too.
     """
 
     def setUp(self):
@@ -476,7 +476,69 @@ class WithdrawingADeletionKeepsTheEditTest(unittest.TestCase):
         self.assertTrue(deactivate_override(db, "Person", "A2", only_op="delete"))
         self.assertFalse(db[COLLECTION].find_one({"_id": "node:Person:A2"})["active"])
 
+    def test_an_edit_after_that_is_an_edit_and_not_the_deletion_again(self):
+        # Switched off whole, the document still says "delete". An edit
+        # switches it back on, and it must not come back on as a tombstone
+        # that removes the record at the next publish.
+        db = mongomock.MongoClient()["pauk_other"]
+        record_override(db, "Person", "A2", DELETE, actor="user:roman",
+                        snapshot={"name_ru": "Петров"})
+        deactivate_override(db, "Person", "A2", only_op=DELETE)
+        record_override(db, "Person", "A2", SET, {"name_ru": "Петров П."}, actor="user:roman")
+        self.assertEqual(tombstoned_ids(db, "Person"), set())
+        self.assertEqual(db[COLLECTION].find_one({"_id": "node:Person:A2"})["op"], SET)
+
     def test_withdrawing_the_edit_itself_switches_it_off(self):
         deactivate_override(self.db, "Person", "A1", only_op="delete")
         self.assertTrue(deactivate_override(self.db, "Person", "A1"))
         self.assertFalse(self.document()["active"])
+
+
+class HandMadeRecordStaysClaimedTest(unittest.TestCase):
+    """A record a person added stays claimed whatever is done to it next.
+
+    The claim keeps a prune from removing a record no prepared row explains.
+    An edit, an undo, a delete and a restore must all preserve it.
+    """
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        record_override(self.db, "Department", "D9", CREATE, {"name_ru": "Новая лаборатория"},
+                        actor="user:roman")
+
+    def document(self, node_id="D9"):
+        return self.db[COLLECTION].find_one({"_id": f"node:Department:{node_id}"})
+
+    def test_an_edit_keeps_it_a_claim(self):
+        record_override(self.db, "Department", "D9", SET, {"name_en": "New lab"},
+                        actor="user:roman", auto_value={"name_en": None})
+        row = self.document()
+        self.assertEqual(row["op"], CREATE)
+        self.assertEqual(row["fields"], {"name_ru": "Новая лаборатория", "name_en": "New lab"})
+
+    def test_so_an_undo_aimed_at_the_edit_finds_nothing_to_switch_off(self):
+        record_override(self.db, "Department", "D9", SET, {"name_en": "New lab"},
+                        actor="user:roman")
+        self.assertFalse(deactivate_override(self.db, "Department", "D9", only_op=SET))
+        self.assertTrue(self.document()["active"])
+
+    def test_a_restore_after_a_delete_brings_the_claim_back(self):
+        record_override(self.db, "Department", "D9", DELETE, actor="user:roman",
+                        snapshot={"name_ru": "Новая лаборатория"})
+        self.assertTrue(deactivate_override(self.db, "Department", "D9", only_op=DELETE))
+        row = self.document()
+        self.assertTrue(row["active"])
+        self.assertEqual(row["op"], CREATE)
+
+    def test_even_for_a_record_created_with_no_fields(self):
+        # Without fields the restore took the other branch and switched the
+        # whole decision off.
+        record_override(self.db, "Department", "D8", CREATE, {}, actor="user:roman")
+        record_override(self.db, "Department", "D8", DELETE, actor="user:roman")
+        deactivate_override(self.db, "Department", "D8", only_op=DELETE)
+        self.assertTrue(self.document("D8")["active"])
+
+    def test_a_record_the_pipeline_made_is_still_only_edited(self):
+        record_override(self.db, "Department", "D1", SET, {"name_ru": "Кафедра"},
+                        actor="user:roman")
+        self.assertEqual(self.document("D1")["op"], SET)

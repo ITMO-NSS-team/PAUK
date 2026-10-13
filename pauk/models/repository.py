@@ -1,8 +1,9 @@
 from datetime import date
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .processing import ProcessingState
+from .processing import ClassificationStatus, ProcessingState
 
 
 class GitHubProfile(BaseModel):
@@ -11,7 +12,7 @@ class GitHubProfile(BaseModel):
     The fields below the profile's own are what an author can be matched
     against: an email identifies a person outright, a name is evidence, and
     company or location corroborate. Emails and commit names come from the
-    git identity recorded in commits — the profile page itself usually
+    git identity recorded in commits; the profile page itself usually
     hides the address.
     """
 
@@ -26,11 +27,9 @@ class GitHubProfile(BaseModel):
     emails: list[str] = Field(default_factory=list)
     commit_names: list[str] = Field(default_factory=list)
     repos: list[str] = Field(default_factory=list)
-    # Whether GET /users/{login} has actually answered for this account. The
-    # repositories stage writes a stub profile from the nested owner object,
-    # which carries a login, a URL and a type and nothing else; without a
-    # marker of its own that stub is indistinguishable from a fetched profile
-    # whose optional fields GitHub happens to leave empty.
+    # Whether GET /users/{login} has answered for this account. The repositories
+    # stage writes a stub from the nested owner object (login, URL, type only);
+    # without this marker it looks like a fetched profile with empty optional fields.
     profile_fetched: bool = False
 
 
@@ -43,15 +42,40 @@ class LinkCandidate(BaseModel):
 class LinkOccurrence(BaseModel):
     context: str | None = None
     page_number: int | None = None
+    raw_url: str | None = None
+    raw_fragments: list[str] = Field(default_factory=list)
+    # Alternatives belong to this occurrence, not to every mention of the URL.
+    candidate_urls: list[str] = Field(default_factory=list)
+    continuous: bool = False
 
 
 class CodeLink(BaseModel):
     url: str
     host: str | None = None
     occurrences: list[LinkOccurrence] = Field(default_factory=list)
+    classification_status: ClassificationStatus = ClassificationStatus.PENDING
     is_relevant: bool | None = None
     llm_confidence: float | None = None
     llm_reason: str | None = None
+    availability: Literal["unchecked", "available", "not_found", "failed"] = "unchecked"
+    availability_error: str | None = None
+
+    @property
+    def url_ambiguous(self) -> bool:
+        return bool(self.occurrences) and all(
+            len(occurrence.candidate_urls) > 1 for occurrence in self.occurrences
+        )
+
+    @model_validator(mode="before")
+    @classmethod
+    def infer_legacy_classification_status(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or data.get("classification_status") is not None:
+            return data
+        values = dict(data)
+        verdict_fields = ("is_relevant", "llm_confidence", "llm_reason")
+        if any(values.get(field) is not None for field in verdict_fields):
+            values["classification_status"] = ClassificationStatus.CLASSIFIED
+        return values
 
 
 class Repository(BaseModel):
@@ -60,12 +84,11 @@ class Repository(BaseModel):
     id: str
     name: str
     url: str
-    # GitHub's own numeric id: stable across renames and owner transfers,
-    # which is what lets the dedup stage recognise rows created before a
-    # rename as the same repository.
+    # GitHub's numeric id: stable across renames and owner transfers, so dedup
+    # can recognise rows created before a rename as the same repository.
     github_id: int | None = None
     # URLs this repo was cited by before canonicalization (renames, case
-    # variants) — lets the graph loader resolve old links to this node.
+    # variants); lets the graph loader resolve old links to this node.
     cited_urls: list[str] = Field(default_factory=list)
     merged_ids: list[str] = Field(default_factory=list)
     description: str | None = None
@@ -75,7 +98,7 @@ class Repository(BaseModel):
     last_updated: date | None = None
     license: str | None = None
     # Everything below arrives in the same GET /repos/{owner}/{name} body as
-    # the fields above — no extra request, no extra rate limit.
+    # the fields above, so it costs no extra request.
     topics: list[str] = Field(default_factory=list)
     language: str | None = None
     forks_num: int | None = None
@@ -84,6 +107,8 @@ class Repository(BaseModel):
     contributors: list[str] = Field(default_factory=list)
     owner_login: str | None = None
     department_ids: list[str] = Field(default_factory=list)
+    # Publications whose authors produced this repository. Plain citations
+    # stay in RepoLink and become MENTIONS_LINK relationships instead.
     publication_ids: list[str] = Field(default_factory=list)
     processing: dict[str, ProcessingState] = Field(default_factory=dict, alias="_processing")
 

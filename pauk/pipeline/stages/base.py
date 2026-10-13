@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
+from time import monotonic
 from typing import TypeVar
 
 from tqdm import tqdm
@@ -12,6 +13,10 @@ from pauk.settings import Settings, settings
 from pauk.storage import PreparedStore, RawStore
 
 T = TypeVar("T")
+
+#: Receives (label, done, total). The worker's reporter raises when a stop is
+#: requested, so this is also where a stage can be cancelled.
+OnProgress = Callable[[str, int, int], None]
 
 
 @dataclass(frozen=True)
@@ -24,15 +29,21 @@ class EnrichmentStage(ABC):
     name: str
     progress_label: str | None = None
 
+    #: Minimum seconds between hook calls; each call costs two Mongo round trips,
+    #: so it is throttled by the clock rather than by row count.
+    REPORT_SECONDS = 1.0
+
     def __init__(self, prepared: PreparedStore, raw: RawStore,
                  config: Settings | None = None,
                  selection: PreparedSelection | None = None,
-                 force: bool = False) -> None:
+                 force: bool = False,
+                 on_progress: OnProgress | None = None) -> None:
         self.prepared = prepared
         self.raw = raw
         self.config = config or settings
         self.selection = selection
         self.force = force
+        self.on_progress = on_progress
 
     def selected(self, entity: str, identifier: str) -> bool:
         return self.selection is None or (
@@ -44,7 +55,7 @@ class EnrichmentStage(ABC):
         that does not name this one.
 
         Unlike `selected`, a selection aimed at another entity does not filter
-        here — a stage that reaches its rows through several entities decides
+        here: a stage that reaches its rows through several entities decides
         for itself what a publication-scoped run means for each of them.
         """
         return (self.selection is None
@@ -64,12 +75,23 @@ class EnrichmentStage(ABC):
 
     def progress(self, items: Iterable[T], *, total: int,
                  label: str | None = None, unit: str = "item") -> Iterator[T]:
-        """Iterate with a throttled progress bar when stderr is interactive."""
-        with tqdm(total=total, desc=label or self.progress_label or self.name, unit=unit,
+        """Iterate with a throttled progress bar when stderr is interactive.
+
+        Also reports progress to the worker and checks for a stop request,
+        which is safe between two items.
+        """
+        said = 0.0
+        described = label or self.progress_label or self.name
+        with tqdm(total=total, desc=described, unit=unit,
                   dynamic_ncols=True, disable=None) as bar:
-            for item in items:
+            for done, item in enumerate(items, start=1):
                 yield item
                 bar.update()
+                if self.on_progress is None:
+                    continue
+                if (moment := monotonic()) - said >= self.REPORT_SECONDS:
+                    said = moment
+                    self.on_progress(described, done, total)
 
     def progress_bar(self, *, total: int | None, label: str | None = None,
                      unit: str = "item") -> tqdm:

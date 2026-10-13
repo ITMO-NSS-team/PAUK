@@ -3,7 +3,7 @@
 Loading is strictly nodes-first, relationships-second: if a relationship
 targets a node that hasn't been loaded, Cypher's MATCH simply won't find it
 and the relationship doesn't get created (see client.py, which logs a
-warning with the exact count instead of silently dropping it — missing
+warning with the exact count instead of silently dropping it; missing
 target nodes are never auto-created as stubs).
 """
 
@@ -11,16 +11,34 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from collections.abc import Callable
 
 from pauk.urls import normalize_repo_url
 
 from .audit import AuditedNeo4jClient
 from .client import Neo4jClient, chunked
-from .extract import NODE_REGISTRY, extract_node, extract_relationships
+from .extract import NODE_REGISTRY, extract_node, extract_relationships, person_spec
 
 __all__ = ["extract_repo_links", "load_prepared_rows", "normalize_repo_url"]
 
 logger = logging.getLogger(__name__)
+
+#: Told which part of the load is under way and how far it has got. The
+#: worker passes its own reporter, which raises when somebody has asked the
+#: run to stop; see pauk/jobs/worker.py.
+Progress = Callable[[str, int, int], None]
+
+
+def _tick(report: Progress | None, step: str, done: int, total: int) -> None:
+    """Say how far the load has got, and let a cancel through.
+
+    Also the only seam where a publish can be given up: between two chunks,
+    with everything before them already written. What is left behind is a
+    group loaded in part, which the next publish finishes: every write here
+    is a MERGE, so repeating it costs time and changes nothing else.
+    """
+    if report is not None:
+        report(step, done, total)
 
 
 FILE_SPECS: dict[str, str] = {
@@ -38,10 +56,17 @@ def _stage_failed(row: dict, stage: str) -> bool:
     return state.get("status") == "failed"
 
 
+def _stage_succeeded(row: dict, stage: str) -> bool:
+    state = (row.get("_processing") or {}).get(stage) or {}
+    return state.get("status") in {"completed", "completed_empty"}
+
+
 def extract_repo_links(
     pub_links_row: dict,
     known_repository_urls: dict[str, str],
+    *,
     dropped_candidates: frozenset[str] | set[str] = frozenset(),
+    synchronize_relevance: bool | None = None,
 ) -> tuple[
     list[tuple[str, dict]],
     list[tuple[str, str, dict]],
@@ -50,14 +75,13 @@ def extract_repo_links(
 ]:
     """Extract MENTIONS_LINK edges from one repo_links.jsonl row.
 
-    A row here (PubLinks) is not a node — it's a flat list of candidate code
+    A row here (PubLinks) is not a node: it is a flat list of candidate code
     links for one publication, and unlike Publication.mentions_links it
-    carries no target_kind discriminator. The rule (matching the old
-    graph_loader.py): if a link's url matches an already-known Repository.url
+    carries no target_kind discriminator. The rule: if a link's url matches an already-known Repository.url
     (compared via normalize_repo_url), create a MENTIONS_LINK edge to that
     Repository, matched by the repository's *stored* url; otherwise create a
-    LinkCandidate node on the fly, using the url itself as its id —
-    repo_links.jsonl carries no other stable id for a candidate.
+    LinkCandidate node on the fly, using the url itself as its id
+    (repo_links.jsonl carries no other stable id for a candidate).
 
     Args:
         pub_links_row: One decoded repo_links.jsonl line
@@ -66,10 +90,14 @@ def extract_repo_links(
             URL as stored on the Repository node, built while loading
             repositories.jsonl in this run.
         dropped_candidates: Candidate urls deleted by hand. A LinkCandidate
-            has no prepared row of its own — it is made up here from a
-            link — so the tombstone filter the loader runs over the files
+            has no prepared row of its own; it is made up here from a
+            link, so the tombstone filter the loader runs over the files
             never sees it, and without this every publish would recreate
             the node for apply_overrides to delete again.
+        synchronize_relevance: True makes the incoming verdict authoritative
+            (including nulls that remove old Neo4j properties); False keeps
+            the graph's previous verdict after a failed classification; None
+            preserves the legacy non-null-only upsert behaviour.
 
     Returns:
         A (link_candidate_nodes, repository_edges, candidate_edges,
@@ -90,12 +118,36 @@ def extract_repo_links(
         url = link.get("url")
         if not url:
             continue
-        props = {
-            k: link[k]
-            for k in ("is_relevant", "llm_confidence", "llm_reason")
-            if link.get(k) is not None
-        }
+        relevance_fields = (
+            "classification_status",
+            "is_relevant",
+            "llm_confidence",
+            "llm_reason",
+        )
+        if synchronize_relevance is True:
+            # Scalar nulls in a SET += map remove old Neo4j properties. This is
+            # required for a successful true -> uncertain reclassification;
+            # failed stages omit nulls and preserve the last complete verdict.
+            props = {key: link.get(key) for key in relevance_fields}
+        elif synchronize_relevance is False:
+            props = {}
+        else:
+            props = {key: link[key] for key in relevance_fields if link.get(key) is not None}
+            if props.get("classification_status") == "pending":
+                props.pop("classification_status")
         occurrences = link.get("occurrences") or []
+        ambiguous = bool(occurrences) and all(
+            len(occurrence.get("candidate_urls") or []) > 1 for occurrence in occurrences
+        )
+        if any(occurrence.get("raw_url") for occurrence in occurrences):
+            props["url_ambiguous"] = ambiguous
+            props["candidate_urls"] = sorted({
+                candidate for occurrence in occurrences
+                for candidate in occurrence.get("candidate_urls") or []
+            })
+            props["availability"] = link.get("availability", "unchecked")
+        if ambiguous:
+            props["is_relevant"] = None
         if occurrences:
             props["context"] = [o.get("context") or "" for o in occurrences]
             props["page_number"] = [o.get("page_number") or 0 for o in occurrences]
@@ -110,18 +162,50 @@ def extract_repo_links(
     return candidate_nodes, repo_edges, candidate_edges, candidate_promotions
 
 
+def _keep_graph_merges(client, label: str, nodes: list[tuple[str, dict]]) -> int:
+    """Add back the folded-away ids the graph knows and the rows do not.
+
+    A fold made on the graph (the graph-wide dedup pass, or a pair
+    confirmed in the review queue) writes `merged_ids` onto the surviving
+    node and nowhere else. Publishing that node from its row would replace
+    the list with the row's own, `fetch_merged_id_map` would stop resolving
+    the folded id, and the duplicate below would be recreated with all of
+    its relationships. The fold would be silently undone by a republish.
+
+    Returns:
+        How many nodes kept an id their row does not carry.
+    """
+    if not nodes:
+        return 0
+    held: dict[str, list[str]] = defaultdict(list)
+    for alias, canonical in client.fetch_merged_id_map(label).items():
+        if alias != canonical:
+            held[canonical].append(alias)
+    kept = 0
+    for node_id, props in nodes:
+        known = props.get("merged_ids") or []
+        extra = [alias for alias in held.get(node_id, ()) if alias not in known]
+        if extra:
+            props["merged_ids"] = [*known, *extra]
+            kept += 1
+    if kept:
+        logger.info("nodes (:%s): %d node(s) kept a fold their row does not carry", label, kept)
+    return kept
+
+
 def load_prepared_rows(
     client: Neo4jClient | AuditedNeo4jClient,
     rows_by_file: dict[str, list[dict]],
     dropped_relationships: set[tuple[str, str, str, str, str]] | None = None,
     dropped_candidates: set[str] | None = None,
+    report: Progress | None = None,
 ) -> None:
     """Load prepared entity rows into Neo4j, however they were sourced.
 
     Reads every entity's rows first, accumulating nodes and relationships in
     memory (the dataset is thousands of rows, not millions, so this is
     simpler than interleaving reads with uploads), then uploads all nodes,
-    then all relationships — both in chunks of client.CHUNK_SIZE.
+    then all relationships, both in chunks of client.CHUNK_SIZE.
 
     Args:
         client: An open Neo4jClient, AuditedNeo4jClient, or a compatible
@@ -129,7 +213,7 @@ def load_prepared_rows(
         rows_by_file: Rows for each of the six prepared entities, keyed by
             the same filenames as the on-disk group layout (departments.jsonl,
             publications.jsonl, repositories.jsonl, github_profiles.jsonl,
-            persons.jsonl, repo_links.jsonl) — a missing key is the same as
+            persons.jsonl, repo_links.jsonl). A missing key is the same as
             an empty list, i.e. "this group has none of this entity".
         dropped_relationships: Edges unlinked by hand, as
             (src_label, rel_type, tgt_label, src_id, tgt_id). They are
@@ -145,6 +229,19 @@ def load_prepared_rows(
     known_repository_urls: dict[str, str] = {}
     candidate_promotions: dict[str, str] = {}
     node_merges: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    implements_scope = {
+        row["id"]
+        for row in rows_by_file.get("publications.jsonl") or []
+        if _stage_succeeded(row, "link_relevance")
+    }
+    failed_relevance_scope = {
+        row["id"]
+        for row in rows_by_file.get("publications.jsonl") or []
+        if _stage_failed(row, "link_relevance")
+    }
+    desired_implements: dict[str, set[str]] = {
+        publication_id: set() for publication_id in implements_scope
+    }
 
     for filename, spec_key in FILE_SPECS.items():
         rows = rows_by_file.get(filename)
@@ -154,19 +251,34 @@ def load_prepared_rows(
         spec = NODE_REGISTRY[spec_key]
         skipped_failed = 0
         for row in rows:
+            if spec_key == "repository":
+                for publication_id in row.get("publication_ids") or []:
+                    if publication_id in implements_scope:
+                        desired_implements[publication_id].add(row["id"])
             if spec_key == "repository" and _stage_failed(row, "repositories"):
-                # Never enriched successfully — a name/url stub would pollute
+                # Never enriched successfully: a name/url stub would pollute
                 # the graph; it gets loaded once a retry succeeds.
                 skipped_failed += 1
                 continue
             labels, node = extract_node(row, spec)
+            if spec_key == "publication":
+                if row["id"] in implements_scope:
+                    # extract_node normally omits None so partial rows cannot
+                    # erase graph properties. A completed relevance pass is
+                    # authoritative, though: code_url=None must remove an older
+                    # JSON URL list.
+                    node[1]["code_url"] = row.get("code_url")
+                elif row["id"] in failed_relevance_scope:
+                    # Keep the graph's last complete publication-level verdict.
+                    node[1].pop("has_code", None)
+                    node[1].pop("code_url", None)
             node_batches[labels].append(node)
             for merged_id in row.get("merged_ids") or []:
                 node_merges[spec_key].append((merged_id, row["id"]))
             if spec_key == "repository":
                 # url is required on Repository, not Optional. cited_urls are
                 # the URLs the repo was referenced by before canonicalization
-                # (renames, case variants) — map them to the stored url too.
+                # (renames, case variants), so map them to the stored url too.
                 known_repository_urls[normalize_repo_url(row["url"])] = row["url"]
                 for cited in row.get("cited_urls") or []:
                     known_repository_urls.setdefault(normalize_repo_url(cited), row["url"])
@@ -176,14 +288,12 @@ def load_prepared_rows(
             logger.info("%s: skipped %d failed (never enriched) row(s)", filename, skipped_failed)
 
     # Persons share a single file but is_itmo picks which relationship
-    # whitelist applies (external persons never get BELONGS_TO/CONTRIBUTED_TO
-    # - see extract.py's itmo_person/external_person specs). The node itself
-    # always carries the single :Person label; is_itmo travels as a sticky
-    # property (see upsert_person_nodes_batch).
+    # whitelist applies (person_spec). The node itself always carries the
+    # single :Person label; is_itmo travels as a sticky property (see
+    # upsert_person_nodes_batch).
     person_merges: list[tuple[str, str]] = []
     for row in rows_by_file.get("persons.jsonl") or ():
-        is_itmo = bool(row.get("is_itmo"))
-        spec = NODE_REGISTRY["itmo_person" if is_itmo else "external_person"]
+        spec = person_spec(row)
         _labels, node = extract_node(row, spec)
         person_nodes.append(node)
         for merged_id in row.get("merged_ids") or []:
@@ -196,8 +306,18 @@ def load_prepared_rows(
         mentions_key = ("Publication", "LinkCandidate", "MENTIONS_LINK", "id")
         mentions_repo_key = ("Publication", "Repository", "MENTIONS_LINK", "url")
         for row in repo_links_rows:
+            publication_id = row["publication_id"]
+            relevance_sync = (
+                True
+                if publication_id in implements_scope
+                else (False if publication_id in failed_relevance_scope else None)
+            )
             candidate_nodes, repo_edges, candidate_edges, promotions = extract_repo_links(
-                row, known_repository_urls, dropped_candidates or frozenset())
+                row,
+                known_repository_urls,
+                dropped_candidates=dropped_candidates or frozenset(),
+                synchronize_relevance=relevance_sync,
+            )
             node_batches["LinkCandidate"].extend(candidate_nodes)
             rel_batches[mentions_repo_key].extend(repo_edges)
             rel_batches[mentions_key].extend(candidate_edges)
@@ -205,13 +325,25 @@ def load_prepared_rows(
     else:
         logger.info("repo_links.jsonl: no rows, skipping")
 
+    # Before anything is written: the three labels that can be folded carry
+    # merges the prepared rows have never seen.
+    _keep_graph_merges(client, "Person", person_nodes)
+    for label in ("Publication", "Repository"):
+        _keep_graph_merges(client, label, node_batches.get(label) or [])
+
+    node_total = len(person_nodes) + sum(len(nodes) for nodes in node_batches.values())
+    written = 0
     for labels, nodes in node_batches.items():
         for chunk in chunked(nodes):
             client.upsert_nodes_batch(labels, chunk)
+            written += len(chunk)
+            _tick(report, "выкладка узлов", written, node_total)
         logger.info("nodes (:%s): loaded %d", labels, len(nodes))
 
     for chunk in chunked(person_nodes):
         client.upsert_person_nodes_batch(chunk)
+        written += len(chunk)
+        _tick(report, "выкладка узлов", written, node_total)
     itmo_count = sum(1 for _, props in person_nodes if props.get("is_itmo"))
     logger.info(
         "nodes (:Person): loaded %d (itmo=%d, external=%d)",
@@ -225,7 +357,7 @@ def load_prepared_rows(
         client.promote_link_candidates_batch(chunk)
 
     # A previous publish may still hold nodes that the dedup stage has since
-    # folded into a canonical row — migrate their relationships and remove
+    # folded into a canonical row, so migrate their relationships and remove
     # them before the canonical relationships are loaded.
     for chunk in chunked(person_merges):
         client.merge_person_nodes_batch(chunk)
@@ -234,6 +366,8 @@ def load_prepared_rows(
     for chunk in chunked(node_merges["repository"]):
         client.merge_repository_nodes_batch(chunk)
 
+    rel_total = sum(len(rels) for rels in rel_batches.values())
+    linked = 0
     for (src_label, tgt_label, rel_type, tgt_match_prop), rels in rel_batches.items():
         if dropped_relationships:
             kept = [(src_id, tgt_id, props) for src_id, tgt_id, props in rels
@@ -241,24 +375,56 @@ def load_prepared_rows(
             if len(kept) != len(rels):
                 logger.info("relationships (:%s)-[:%s]->(:%s): %d skipped as unlinked by hand",
                             src_label, rel_type, tgt_label, len(rels) - len(kept))
+                # Counted as done, or the progress would stop short of its
+                # total by however many edges somebody had unlinked.
+                linked += len(rels) - len(kept)
             rels = kept
         for chunk in chunked(rels):
             client.upsert_relationships_batch(src_label, tgt_label, rel_type, chunk, tgt_match_prop)
+            linked += len(chunk)
+            _tick(report, "выкладка связей", linked, rel_total)
         logger.info("relationships (:%s)-[:%s]->(:%s): requested %d", src_label, rel_type, tgt_label, len(rels))
 
     # A group published before a graph-wide dedup still carries rows for
-    # ids that were since folded into another group's canonical node — the
+    # ids that were since folded into another group's canonical node: the
     # upserts above just resurrected them, relationships included. Fold
     # them right back using the merged_ids maps stored on canonical nodes.
+    merged_id_maps: dict[str, dict[str, str]] = {}
     for label, fold in (
         ("Person", client.merge_person_nodes_batch),
         ("Publication", client.merge_publication_nodes_batch),
         ("Repository", client.merge_repository_nodes_batch),
     ):
+        merged_id_map = client.fetch_merged_id_map(label)
+        merged_id_maps[label] = merged_id_map
         alias_pairs = [
             (merged_id, canonical_id)
-            for merged_id, canonical_id in client.fetch_merged_id_map(label).items()
+            for merged_id, canonical_id in merged_id_map.items()
             if merged_id != canonical_id
         ]
         for chunk in chunked(alias_pairs):
             fold(chunk)
+
+    publication_aliases = merged_id_maps["Publication"]
+    repository_aliases = merged_id_maps["Repository"]
+    resolved_implements: dict[str, set[str]] = defaultdict(set)
+    for publication_id, repository_ids in desired_implements.items():
+        canonical_publication_id = publication_aliases.get(publication_id, publication_id)
+        resolved_implements[canonical_publication_id].update(
+            repository_aliases.get(repository_id, repository_id)
+            for repository_id in repository_ids
+        )
+    implements_rows = [
+        (publication_id, sorted(repository_ids))
+        for publication_id, repository_ids in sorted(resolved_implements.items())
+    ]
+    removed_implements = 0
+    for chunk in chunked(implements_rows):
+        removed_implements += client.sync_implements_relationships_batch(chunk)
+    if implements_rows:
+        logger.info(
+            "relationships (:Repository)-[:IMPLEMENTS]->(:Publication): "
+            "synchronized %d publication(s), removed %d stale edge(s)",
+            len(implements_rows),
+            removed_implements,
+        )
