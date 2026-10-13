@@ -101,7 +101,10 @@ class PersonIdentityFactsTest(unittest.TestCase):
                     test.assertEqual(context.as_judge_payload()["identity_facts"], self.first[context.pair_id])
                 return {context.pair_id: ModelVerdict(False, 0.8) for context in contexts}
 
-        self.assertEqual(plan_person_merges_resolved(people, {}, models=Capture()), ([], []))
+        groups, report = plan_person_merges_resolved(people, {}, models=Capture())
+        self.assertEqual(groups, [])
+        self.assertEqual(report[0]["status"], "separate")
+        self.assertEqual(report[0]["route"], "qwen_second_separate")
 
     def test_blind_payload_and_cache_ignore_previous_verdict_score_and_impact(self):
         context = SecondStageContext(

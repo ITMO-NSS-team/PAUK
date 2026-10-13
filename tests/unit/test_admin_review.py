@@ -50,18 +50,19 @@ class ReviewPageTest(unittest.TestCase):
         body = self.client.get("/review").text
         # The pair worth asking about and the refused group, not the
         # "only one is ITMO" pair.
-        self.assertIn("A1", body)
-        self.assertNotIn("A4", body)
+        # Bare IDs can occur by chance inside the random CSRF token.
+        self.assertIn('href="/nodes/Person/A1"', body)
+        self.assertNotIn('href="/nodes/Person/A4"', body)
 
     def test_every_question_is_reachable(self):
         # Nothing the page filters is hidden from it.
         self.sign_in()
-        self.assertIn("A4", self.client.get("/review", params={"tab": "open"}).text)
+        self.assertIn('href="/nodes/Person/A4"', self.client.get("/review", params={"tab": "open"}).text)
 
     def test_a_viewer_sees_the_queue_without_the_buttons(self):
         self.sign_in(login="guest")
         body = self.client.get("/review").text
-        self.assertIn("A1", body)
+        self.assertIn('href="/nodes/Person/A1"', body)
         self.assertNotIn("/review/answer", body)
 
     def test_a_viewer_cannot_answer(self):
@@ -74,6 +75,39 @@ class ReviewPageTest(unittest.TestCase):
             "verdict": "different"})
         self.assertEqual(response.status_code, 403)
         self.assertEqual(review.count(self.db, answered=True), 0)
+
+    def test_both_model_answers_are_visible_and_escaped(self):
+        row = held_pair("A1", "A2")
+        row.update(input_route="surname_mismatch", model_verdicts={
+            "first": {"duplicate": True, "confidence": .91, "reason": "<script>bad()</script>",
+                      "support": ["shared_work"], "risk": []},
+            "second": {"duplicate": False, "confidence": .83, "reason": "different surnames",
+                       "support": [], "risk": ["name_conflict"]},
+        })
+        review.record_held(self.db, [row])
+        self.sign_in()
+        response = self.client.get("/review?tab=open")
+        self.assertEqual(response.status_code, 200)
+        for value in ("Ответы Qwen", "surname_mismatch", "дубль", "разные", "91%", "83%",
+                      "shared_work", "name_conflict", "different surnames", "&lt;script&gt;"):
+            self.assertIn(value, response.text)
+        self.assertNotIn("<script>bad()</script>", response.text)
+
+    def test_missing_second_model_answer_is_not_shown_as_negative(self):
+        row = held_pair("A1", "A2")
+        row.update(input_route="qwen_first", model_verdicts={
+            "first": {"duplicate": True, "confidence": .9, "reason": "same researcher",
+                      "support": [], "risk": []},
+            "second": None,
+        })
+        review.record_held(self.db, [row])
+        self.sign_in()
+        response = self.client.get("/review?tab=open")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("same researcher", response.text)
+        second = response.text.split("Второй запрос:</b>")[1].split("</div>")[0]
+        self.assertIn("ответ отсутствует", second)
+        self.assertNotIn("разные", second)
 
     def test_answering_records_the_verdict_and_who_gave_it(self):
         self.sign_in()

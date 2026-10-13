@@ -17,6 +17,7 @@ from enum import StrEnum
 from typing import Any
 
 from pauk.graph.person_resolution_model import LogisticModel, load_logistic_model
+from pauk.person_resolution_defaults import MERGE_FROM, SEPARATE_BELOW
 
 MODEL_NAME = "qwen/qwen3-next-80b-a3b-instruct"
 
@@ -107,8 +108,8 @@ class Decision(StrEnum):
 class ResolverPolicy:
     """Confidence zones selected for one reproducible evaluation profile."""
 
-    separate_below: float = 0.13
-    merge_from: float = 0.94
+    separate_below: float = SEPARATE_BELOW
+    merge_from: float = MERGE_FROM
 
     def __post_init__(self) -> None:
         if not 0 <= self.separate_below < self.merge_from <= 1:
@@ -657,7 +658,7 @@ def _hard_veto(evidence: PairEvidence) -> str | None:
 
 
 def _incompatible_surnames(evidence: PairEvidence) -> bool:
-    """Reject unsupported full-name conflicts before an automatic merge.
+    """Defer full-name conflicts even when the records share collaborators.
 
     The comparison is order-independent because ITMO names appear both as
     ``First Surname`` and ``Surname, First``. A matching long token is not
@@ -672,7 +673,7 @@ def _incompatible_surnames(evidence: PairEvidence) -> bool:
 
     name_features = _long_token_features(first, second)
     incompatible = not name_features["long_token_compatible"] or bool(name_features["remaining_long_token_conflict"])
-    return incompatible and not evidence.shared_publications and not evidence.shared_coauthors
+    return incompatible
 
 
 def is_multi_person_name(name: str) -> bool:

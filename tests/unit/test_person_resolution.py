@@ -237,7 +237,7 @@ class PersonResolutionTest(unittest.TestCase):
         self.assertEqual(result.decision, Decision.MERGE)
         self.assertEqual(result.route, "logreg_high")
 
-    def test_a_joint_work_allows_a_merge_despite_a_name_conflict(self):
+    def test_a_joint_work_does_not_override_a_name_conflict(self):
         result = resolve_pair(
             evidence(
                 name_a="A. V. Shashkin",
@@ -248,8 +248,8 @@ class PersonResolutionTest(unittest.TestCase):
             ResolverPolicy(separate_below=0.0, merge_from=0.02),
         )
 
-        self.assertEqual(result.decision, Decision.MERGE)
-        self.assertEqual(result.route, "logreg_high")
+        self.assertEqual(result.decision, Decision.FIRST_MODEL)
+        self.assertEqual(result.route, "surname_mismatch")
 
     def test_uncertain_pair_requires_two_positive_model_verdicts(self):
         initial = resolve_pair(

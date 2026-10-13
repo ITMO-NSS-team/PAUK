@@ -69,7 +69,7 @@ def _surname_forms(
     # prefix (Ivanov / Ivanovich) is not a compound boundary.
     if any("-" in token for token in tokens):
         result.update(
-            NameForm(part, given, True, contextual) for token in tokens for part in token.split("-") if len(part) > 2
+            NameForm(part, given, explicit, contextual) for token in tokens for part in token.split("-") if len(part) > 2
         )
     if len(tokens) > 1 and all(token in _PARTICLES for token in tokens[:-1]):
         result.add(NameForm(tokens[-1], given, True, contextual))
@@ -162,9 +162,29 @@ def person_name_forms(people: list[Person]) -> dict[str, set[NameForm]]:
             for given in given_fields or ("",):
                 raw.update(_surname_forms(name_tokens(surname), name_tokens(given), True))
         forms = set(raw)
-        for name in (*person.name_variants, *person.other_names):
-            for variant in parse_name(name, surnames):
-                if not raw or any(_compatible_given(base.given, variant.given) for base in raw):
+        aliases = [parsed for name in (*person.name_variants, *person.other_names)
+                   if (parsed := parse_name(name, surnames))]
+        if not raw:
+            # A sole complete alias remains useful; several aliases must
+            # agree on an identity instead of creating unrelated blocks.
+            forms = {
+                form for variants in aliases for form in variants
+                if form.given and all(
+                    any((form.surname == other.surname or _close_surnames(form.surname, other.surname))
+                        and _compatible_given(form.given, other.given) for other in options)
+                    for options in aliases
+                )
+            }
+        for variants in aliases if raw else ():
+            for variant in variants:
+                # Missing given names cannot validate an unrelated alias.
+                if any(
+                    _compatible_given(base.given, variant.given)
+                    and (bool(base.given and variant.given)
+                         or base.surname == variant.surname
+                         or _close_surnames(base.surname, variant.surname))
+                    for base in raw
+                ):
                     forms.add(variant)
         # Resolve roles from this record's own unambiguous spellings, not
         # merely because a common given name is somebody else's surname.
@@ -184,12 +204,14 @@ def person_name_forms(people: list[Person]) -> dict[str, set[NameForm]]:
                     if long:
                         terminals.add(long[-1].replace("-", ""))
         terminal_counts.update(terminals & {form.surname for form in forms})
-    return {
-        identifier: {
+    filtered = {}
+    for identifier, forms in forms_by_person.items():
+        supported_forms = {
             form for form in forms if form.explicit or terminal_counts[form.surname] * 2 >= token_counts[form.surname]
         }
-        for identifier, forms in forms_by_person.items()
-    }
+        # Corpus frequency disambiguates roles; it must not erase a record.
+        filtered[identifier] = supported_forms or {form for form in forms if form.contextual}
+    return filtered
 
 
 def _fuzzy_keys(surname: str) -> set[str]:

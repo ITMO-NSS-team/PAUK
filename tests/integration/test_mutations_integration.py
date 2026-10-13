@@ -226,6 +226,30 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
             rows = session.run("MATCH (p:Person)-[r:AUTHORED]->() RETURN p.id AS id, r.is_corresponding AS flag").data()
         self.assertEqual(rows, [{"id": "C", "flag": True}])
 
+    def test_authored_scalar_priority_follows_chain_not_input_order(self):
+        for label, order, existing in product(
+            ("Person", "Publication"), permutations([("A", "B"), ("B", "C")]), (False, True)
+        ):
+            with self.subTest(label=label, order=order, existing=existing):
+                self.setUp()
+                _client.upsert_nodes_batch(label, [(identifier, {}) for identifier in ("A", "B", "C")])
+                other = "Publication" if label == "Person" else "Person"
+                _client.upsert_nodes_batch(other, [("X", {})])
+                edges = []
+                for identifier, position in [("A", 7), ("B", 3)] + ([("C", 1)] if existing else []):
+                    src, tgt = (identifier, "X") if label == "Person" else ("X", identifier)
+                    edges.append((src, tgt, {"position": position, "affiliation": identifier,
+                                             "is_corresponding": identifier == "A"}))
+                _client.upsert_relationships_batch("Person", "Publication", "AUTHORED", edges)
+                fold = _client.merge_person_nodes_batch if label == "Person" else _client.merge_publication_nodes_batch
+                fold(list(order))
+                with _client.driver.session() as session:
+                    props = session.run("MATCH ()-[r:AUTHORED]->() RETURN properties(r)").value()
+                self.assertEqual(len(props), 1)
+                self.assertEqual(props[0]["position"], 1 if existing else 3)
+                self.assertEqual(props[0]["affiliation"], "C" if existing else "B")
+                self.assertTrue(props[0]["is_corresponding"])
+
     def test_loader_resolves_a_chain_spanning_multiple_write_chunks(self):
         count = 2002
         rows = [{"id": f"A{i}", "merged_ids": [f"A{i - 1}"] if i else []} for i in range(count + 1)]

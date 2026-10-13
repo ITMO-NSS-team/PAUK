@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from dataclasses import replace
+from dataclasses import asdict, replace
 
 from pauk.graph.person_resolution import (
     DEFAULT_POLICY,
@@ -97,6 +97,15 @@ def plan_person_merges_resolved(
     pair_rules: dict[frozenset[str], str] = {}
     report: list[dict] = []
     pending_first: list[tuple[int, PairEvidence]] = []
+    input_routes: dict[int, str] = {}
+
+    def separate(first: Person, second: Person, resolution, **details) -> None:
+        report.append({
+            "status": "separate", "person_a": first.id, "name_a": first.name_raw,
+            "person_b": second.id, "name_b": second.name_raw,
+            "route": resolution.route, "reason": resolution.reason,
+            "logreg_probability": round(resolution.probability, 6), **details,
+        })
 
     def plan_merge(first: Person, second: Person, route: str) -> None:
         pair = tuple(sorted((first.id, second.id)))
@@ -123,6 +132,10 @@ def plan_person_merges_resolved(
         route: str,
         reason: str,
         confidence: float | None = None,
+        *,
+        input_route: str | None = None,
+        first_verdict: ModelVerdict | None = None,
+        second_verdict: ModelVerdict | None = None,
     ) -> None:
         if frozenset((first.id, second.id)) in decisions:
             return
@@ -145,6 +158,12 @@ def plan_person_merges_resolved(
         }
         if confidence is not None:
             row["model_confidence"] = confidence
+        if input_route is not None:
+            row["input_route"] = input_route
+            row["model_verdicts"] = {
+                "first": asdict(first_verdict) if first_verdict is not None else None,
+                "second": asdict(second_verdict) if second_verdict is not None else None,
+            }
         report.append(row)
 
     candidates = list(_paired_persons(people, in_scope, staff_ids))
@@ -205,7 +224,10 @@ def plan_person_merges_resolved(
         resolution = resolve_pair(evidence, policy, logreg_model)
         if resolution.decision is Decision.MERGE:
             plan_merge(first, second, resolution.route)
+        elif resolution.decision is Decision.SEPARATE:
+            separate(first, second, resolution)
         elif resolution.decision is Decision.FIRST_MODEL:
+            input_routes[pair_id] = resolution.route
             evidence = replace(evidence, name_facts=name_comparison_facts(first, second))
             pair_data[pair_id] = (first, second, evidence, shared_coauthors, shared_fields)
             pending_first.append((pair_id, evidence))
@@ -277,6 +299,7 @@ def plan_person_merges_resolved(
                 shared_fields,
                 "qwen_first",
                 "first model unavailable",
+                input_route=input_routes[pair_id],
             )
             continue
         first_verdicts[pair_id] = verdict
@@ -334,6 +357,8 @@ def plan_person_merges_resolved(
                 shared_fields,
                 "qwen_second",
                 "second model unavailable",
+                input_route=input_routes[pair_id],
+                first_verdict=first_verdicts[pair_id],
             )
             continue
         resolution = apply_second_verdict(
@@ -342,8 +367,16 @@ def plan_person_merges_resolved(
         )
         if resolution.decision is Decision.MERGE:
             plan_merge(first, second, resolution.route)
+        elif resolution.decision is Decision.SEPARATE:
+            separate(
+                first, second, resolution, input_route=input_routes[pair_id],
+                model_verdicts={"first": asdict(first_verdicts[pair_id]), "second": asdict(verdict)},
+            )
         elif resolution.decision is Decision.REVIEW:
-            hold(first, second, evidence, shared_fields, resolution.route, resolution.reason, verdict.confidence)
+            hold(
+                first, second, evidence, shared_fields, resolution.route, resolution.reason, verdict.confidence,
+                input_route=input_routes[pair_id], first_verdict=first_verdicts[pair_id], second_verdict=verdict,
+            )
 
     groups, group_report = _finalize_person_merge_groups(
         merge_pairs,

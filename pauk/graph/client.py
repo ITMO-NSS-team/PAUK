@@ -361,8 +361,8 @@ class Neo4jClient:
             Number of duplicate nodes that were actually removed.
         """
         batch = [
-            {"dup_id": dup_id, "canonical_id": canonical_id}
-            for dup_id, canonical_id in flatten_merges(merges)
+            {"dup_id": dup_id, "canonical_id": canonical_id, "priority": priority}
+            for priority, (dup_id, canonical_id) in enumerate(flatten_merges(merges))
         ]
         if not batch:
             return 0
@@ -391,11 +391,13 @@ class Neo4jClient:
                 UNWIND $batch AS row
                 MATCH (dup:{label} {{id: row.dup_id}})-[old:{rel_type}]->(other:{other_label})
                 MATCH (canonical:{label} {{id: row.canonical_id}})
-                WITH canonical, other, {"collect(DISTINCT old)" if rel_type == "AUTHORED" else "[old]"} AS old_edges
+                WITH canonical, other, old, row.priority AS priority
+                ORDER BY priority, elementId(old)
+                WITH canonical, other, collect(old) AS old_edges
                 MERGE (canonical)-[new:{rel_type}]->(other)
                 ON CREATE SET new.created_at = coalesce(old_edges[0].created_at, datetime())
                 WITH new, old_edges, properties(new) AS keep
-                FOREACH (old IN old_edges | SET new += properties(old))
+                FOREACH (old IN reverse(old_edges) | SET new += properties(old))
                 SET new += keep
                 {corresponding_merge if rel_type == "AUTHORED" else ""}
                 SET new.updated_at = datetime()
@@ -410,11 +412,13 @@ class Neo4jClient:
                 UNWIND $batch AS row
                 MATCH (other:{other_label})-[old:{rel_type}]->(dup:{label} {{id: row.dup_id}})
                 MATCH (canonical:{label} {{id: row.canonical_id}})
-                WITH canonical, other, {"collect(DISTINCT old)" if rel_type == "AUTHORED" else "[old]"} AS old_edges
+                WITH canonical, other, old, row.priority AS priority
+                ORDER BY priority, elementId(old)
+                WITH canonical, other, collect(old) AS old_edges
                 MERGE (other)-[new:{rel_type}]->(canonical)
                 ON CREATE SET new.created_at = coalesce(old_edges[0].created_at, datetime())
                 WITH new, old_edges, properties(new) AS keep
-                FOREACH (old IN old_edges | SET new += properties(old))
+                FOREACH (old IN reverse(old_edges) | SET new += properties(old))
                 SET new += keep
                 {corresponding_merge if rel_type == "AUTHORED" else ""}
                 SET new.updated_at = datetime()
@@ -500,7 +504,10 @@ class Neo4jClient:
             OPTIONAL MATCH (p)-[:AUTHORED]->(w:Publication)
             OPTIONAL MATCH (p)-[:BELONGS_TO]->(d:Department)
             RETURN p.id AS id, p.openalex_id AS openalex_id, p.name_raw AS name_raw,
-                   p.name_variants AS name_variants, p.orcid AS orcid, p.email AS email,
+                   p.name_variants AS name_variants, p.other_names AS other_names,
+                   p.surname_ru AS surname_ru, p.surname_en AS surname_en,
+                   p.first_name_ru AS first_name_ru, p.first_name_en AS first_name_en,
+                   p.orcid AS orcid, p.email AS email,
                    p.github AS github,
                    p.google_scholar AS google_scholar, p.merged_ids AS merged_ids,
                    coalesce(p.is_itmo, false) AS is_itmo,

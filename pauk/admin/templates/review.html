@@ -86,6 +86,24 @@
         {% if row.shared_fields %}
         <div class="muted">{{ row.shared_fields|join(", ") }}</div>
         {% endif %}
+        {% if row.model_verdicts %}
+        <details>
+          <summary>Ответы Qwen</summary>
+          {% if row.input_route %}<div class="muted">Маршрут: {{ row.input_route }}</div>{% endif %}
+          {% for key, label in [("first", "Первый запрос"), ("second", "Второй запрос")] %}
+          {% set answer = row.model_verdicts.get(key) %}
+          <div><b>{{ label }}:</b>
+            {% if answer is not none %}
+              {% if answer.duplicate is sameas true %}дубль{% elif answer.duplicate is sameas false %}разные{% else %}не определено{% endif %}
+              · уверенность {{ "%.0f"|format(answer.confidence * 100) }}%
+              <div>{{ answer.reason }}</div>
+              {% if answer.support %}<div>За: {{ answer.support|join(", ") }}</div>{% endif %}
+              {% if answer.risk %}<div>Риски: {{ answer.risk|join(", ") }}</div>{% endif %}
+            {% else %}<span class="muted">ответ отсутствует</span>{% endif %}
+          </div>
+          {% endfor %}
+        </details>
+        {% endif %}
         {% if row.is_group and not row.verdict %}
         <span class="muted">Отметьте слева тех, кто один человек.</span>
         {% endif %}

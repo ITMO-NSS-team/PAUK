@@ -201,6 +201,11 @@ def dedup_graph_persons(
             is_itmo=bool(row.get("is_itmo")),
             name_raw=row.get("name_raw"),
             name_variants=list(row.get("name_variants") or []),
+            other_names=list(row.get("other_names") or []),
+            surname_ru=row.get("surname_ru"),
+            surname_en=row.get("surname_en"),
+            first_name_ru=row.get("first_name_ru"),
+            first_name_en=row.get("first_name_en"),
             orcid=row.get("orcid"),
             email=row.get("email"),
             github=row.get("github"),
@@ -477,11 +482,12 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         # Only the person rows: publications and repositories are folded on
         # a DOI or a url and never hold anything back, so there is nothing
         # to ask about and no pair of people to key a question on.
-        review.record_held(mongo_db, person_report, source=review.GRAPH)
+        current_aliases = client.fetch_merged_id_map("Person")
+        review.record_held(mongo_db, person_report, source=review.GRAPH, aliases=current_aliases)
         review.record_disputed(mongo_db, person_report)
         # Re-read, not the map from before the pass: what this pass folded
         # is exactly the difference between the two.
-        review.mark_applied_merges(mongo_db, client.fetch_merged_id_map("Person"))
+        review.mark_applied_merges(mongo_db, current_aliases)
         journal_path = config.cache_dir / CANDIDATES_FILENAME
         with AtomicWriter(journal_path) as fh:
             for row in report:

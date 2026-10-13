@@ -231,6 +231,22 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
     _labels, (node_id, duplicate_props) = extract_node(duplicate_row, duplicate_spec)
     duplicate_edges = extract_relationships(duplicate_row, duplicate_spec)
 
+    returning = {duplicate_id, *(duplicate_row.get("merged_ids") or [])}
+    remaining = {canonical_id, *(canonical.get("merged_ids") or [])} - returning
+    sources = []
+    covered: set[str] = set()
+    for person_id in [canonical_id, *sorted(remaining - {canonical_id})]:
+        row = rows.get(person_id)
+        if row is None or person_id in covered:
+            continue
+        coverage = {person_id, *(row.get("merged_ids") or [])}
+        if coverage & returning:
+            raise NothingToRebuild(
+                f"{person_id} already aggregates the returning record in prepared data; "
+                "independent source rows are required before undoing this fold")
+        sources.append(row)
+        covered.update(coverage)
+
     canonical_row = rows.get(canonical_id)
     canonical_props: dict | None = None
     canonical_edges: Edges = {}
@@ -248,12 +264,9 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
 
     # Undoing one member must not retract facts supplied by another member
     # which remains folded. Missing source rows are not evidence of false.
-    returning = {duplicate_id, *(duplicate_row.get("merged_ids") or [])}
-    remaining = {canonical_id, *(canonical.get("merged_ids") or [])} - returning
-    complete = remaining <= rows.keys()
-    for person_id in sorted(remaining - {canonical_id}):
-        row = rows.get(person_id)
-        if row is None:
+    complete = remaining <= covered
+    for row in sources:
+        if row["id"] == canonical_id:
             continue
         spec = person_spec(row)
         _labels, (_id, props) = extract_node(row, spec)

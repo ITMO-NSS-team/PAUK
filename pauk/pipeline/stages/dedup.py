@@ -347,16 +347,29 @@ def plan_person_merges(
         merge_pairs.append((first.id, second.id))
         pair_rules[frozenset((first.id, second.id))] = rule
 
-    for first, second in _paired_persons(people, in_scope, staff_ids):
+    malformed_pairs: set[frozenset[str]] = set()
+
+    def hold_multi_person(first: Person, second: Person) -> bool:
         from pauk.graph.person_resolution import is_multi_person_name
 
-        if is_multi_person_name(first.name_raw or "") or is_multi_person_name(second.name_raw or ""):
-            report.append({
+        if not (is_multi_person_name(first.name_raw or "") or is_multi_person_name(second.name_raw or "")):
+            return False
+        members = frozenset((first.id, second.id))
+        if members not in malformed_pairs:
+            malformed_pairs.add(members)
+            row = {
                 "status": "held", "person_a": first.id, "name_a": first.name_raw,
                 "person_b": second.id, "name_b": second.name_raw,
                 "route": "multiple_people_record", "reason": "record contains multiple people",
                 "held_because": ["record contains multiple people"],
-            })
+            }
+            if decisions.get(members) == SAME:
+                row.update(status="disputed", rule="multiple_people_record")
+            report.append(row)
+        return True
+
+    for first, second in _paired_persons(people, in_scope, staff_ids):
+        if hold_multi_person(first, second):
             continue
         # A pooled record stands for everyone OpenAlex could not tell apart,
         # so it is nobody in particular and merges with nothing. Ahead of the
@@ -460,6 +473,8 @@ def plan_person_merges(
         if frozenset((first_id, second_id)) in pair_rules:
             continue
         if in_scope is not None and first_id not in in_scope and second_id not in in_scope:
+            continue
+        if hold_multi_person(by_id[first_id], by_id[second_id]):
             continue
         plan_pair(by_id[first_id], by_id[second_id], "manual")
 
@@ -732,7 +747,12 @@ def _partition_conflicted_component(
             return [[member] for member in sorted(part)]
 
         result: list[list[str]] = []
-        for bucket in buckets.values():
+        for value, bucket in buckets.items():
+            if value is None:
+                # An edge between two ambiguous records does not identify
+                # which conflicting root either one belongs to.
+                result.extend([member] for member in sorted(bucket))
+                continue
             for connected in connected_parts(bucket):
                 result.extend(split(connected))
         return result
@@ -1264,7 +1284,7 @@ class DedupStage(EnrichmentStage):
         )
         # The queue the panel reads. The file below stays: it is the whole
         # run in one place, merges included, and people read it by eye.
-        review.record_held(self.prepared.db, report, source=review.STAGE)
+        review.record_held(self.prepared.db, report, source=review.STAGE, aliases=folded_ids(people))
         review.record_disputed(self.prepared.db, report)
         report_path = self.config.audit_dir / self.prepared.group / CANDIDATES_FILENAME
         with AtomicWriter(report_path) as fh:

@@ -77,7 +77,11 @@ class PersonResolutionPipelineTest(unittest.TestCase):
         groups, report = plan_person_merges_resolved(self.people, {}, models=models)
 
         self.assertEqual(groups, [])
-        self.assertEqual(report, [])
+        self.assertEqual(len(report), 1)
+        self.assertEqual(report[0]["status"], "separate")
+        self.assertEqual(report[0]["route"], "qwen_second_separate")
+        self.assertFalse(report[0]["model_verdicts"]["first"]["duplicate"])
+        self.assertFalse(report[0]["model_verdicts"]["second"]["duplicate"])
         self.assertEqual(len(models.second_calls), 1)
         self.assertFalse(models.second_calls[0].as_payload()["first_stage"]["same_person"])
 
@@ -92,6 +96,11 @@ class PersonResolutionPipelineTest(unittest.TestCase):
         self.assertEqual(groups, [])
         self.assertEqual(report[0]["status"], "held")
         self.assertEqual(report[0]["route"], "qwen_disagreement")
+        self.assertEqual(report[0]["input_route"], "qwen_first")
+        self.assertEqual(report[0]["model_verdicts"]["first"]["duplicate"], True)
+        self.assertEqual(report[0]["model_verdicts"]["first"]["reason"], "possible duplicate")
+        self.assertEqual(report[0]["model_verdicts"]["second"]["duplicate"], False)
+        self.assertEqual(report[0]["model_verdicts"]["second"]["reason"], "different people")
         self.assertEqual(len(models.second_calls), 1)
 
     def test_negative_then_positive_requires_review(self):
@@ -117,6 +126,8 @@ class PersonResolutionPipelineTest(unittest.TestCase):
 
         self.assertEqual(groups, [])
         self.assertEqual(report[0]["held_because"], ["second model unavailable"])
+        self.assertEqual(report[0]["model_verdicts"]["first"]["reason"], "possible duplicate")
+        self.assertIsNone(report[0]["model_verdicts"]["second"])
 
     def test_a_human_merge_answer_skips_both_models(self):
         models = FakeModels()
@@ -523,16 +534,29 @@ class DedupStageWiringTest(unittest.TestCase):
         self.assertEqual(result["dedup_candidates"], 0)
         self.assertEqual(review.questions(self.db), [])
 
-    @patch("pauk.pipeline.person_resolution.OpenRouterResolutionModels")
-    def test_pipeline_persists_disagreement_for_review(self, model_factory):
-        for first in (False, True):
-            with self.subTest(first=first):
-                model_factory.return_value = FakeModels(
-                    ModelVerdict(first, 0.9), ModelVerdict(not first, 0.9)
-                )
-                result = DedupStage(self.prepared, self.raw, self.config).run()
-                self.assertEqual(result["dedup_merged"], 0)
-                self.assertEqual(len(review.questions(self.db)), 1)
+    def _assert_pipeline_persists_disagreement(self, first):
+        self.assertEqual(review.questions(self.db), [])
+        with patch("pauk.pipeline.person_resolution.OpenRouterResolutionModels") as model_factory:
+            model_factory.return_value = FakeModels(
+                ModelVerdict(first, 0.9, "first reason"), ModelVerdict(not first, 0.8, "second reason")
+            )
+            result = DedupStage(self.prepared, self.raw, self.config).run()
+        self.assertEqual(result["dedup_merged"], 0)
+        (question,) = review.questions(self.db)
+        evidence = question["evidence"]
+        self.assertEqual(evidence["input_route"], "qwen_first")
+        self.assertEqual(evidence["model_verdicts"]["first"]["duplicate"], first)
+        self.assertEqual(evidence["model_verdicts"]["second"]["duplicate"], not first)
+        self.assertEqual(evidence["model_verdicts"]["first"]["reason"], "first reason")
+        self.assertEqual(evidence["model_verdicts"]["second"]["reason"], "second reason")
+        self.assertEqual(evidence["model_verdicts"]["first"]["confidence"], 0.9)
+        self.assertEqual(evidence["model_verdicts"]["second"]["confidence"], 0.8)
+
+    def test_pipeline_persists_negative_then_positive_for_review(self):
+        self._assert_pipeline_persists_disagreement(False)
+
+    def test_pipeline_persists_positive_then_negative_for_review(self):
+        self._assert_pipeline_persists_disagreement(True)
 
     def test_conflicting_orcid_never_reaches_a_model_or_queue(self):
         people = [
@@ -550,7 +574,10 @@ class DedupStageWiringTest(unittest.TestCase):
             models=models,
         )
 
-        self.assertEqual((groups, report), ([], []))
+        self.assertEqual(groups, [])
+        self.assertEqual(len(report), 1)
+        self.assertEqual(report[0]["status"], "separate")
+        self.assertEqual(report[0]["reason"], "conflicting ORCID")
         self.assertEqual(models.first_calls, [])
 
 
