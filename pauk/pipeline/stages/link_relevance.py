@@ -11,7 +11,7 @@ from pauk.storage import LlmLogStore
 from pauk.urls import deduplicate_repo_urls
 
 from .base import EnrichmentStage
-from .code_links import ARCHIVED_DEPOSIT_REASON
+from .code_links import ARCHIVED_DEPOSIT_REASON, CONTEXT_WINDOW
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 # evidence near 12,000 characters while leaving room for all six source
 # types and repeated confirmations without making every LLM call unbounded.
 MODEL_CONTEXT_LIMIT = 12
+CONTEXT_OVERLAP_THRESHOLD = 0.8
 AMBIGUOUS_URL_REASON = "ambiguous_url_extraction"
 
 PROMPT_TEMPLATE = """Ты помогаешь анализировать научные публикации.
@@ -55,7 +56,8 @@ def _source_hint(occurrence: LinkOccurrence) -> str:
     if occurrence.source == "citation":
         return f"место цитирования [{occurrence.reference_label}], страница {occurrence.page_number}"
     if occurrence.source == "reference":
-        return f"список литературы [{occurrence.reference_label}], страница {occurrence.page_number}"
+        label = f" [{occurrence.reference_label}]" if occurrence.reference_label else ""
+        return f"список литературы{label}, страница {occurrence.page_number}"
     if occurrence.source == "pdf_annotation":
         return f"кликабельная область PDF, страница {occurrence.page_number}"
     if occurrence.page_number is None:
@@ -65,10 +67,11 @@ def _source_hint(occurrence: LinkOccurrence) -> str:
 
 def _unique_context_occurrences(occurrences: list[LinkOccurrence]) -> list[LinkOccurrence]:
     unique: list[LinkOccurrence] = []
-    seen: set[tuple[int | None, str, str | None, str | None]] = set()
+    seen: set[tuple] = set()
     for occurrence in occurrences:
         context = " ".join((occurrence.context or "").split()) or "(контекст пустой)"
         key = (
+            occurrence.pdf_id,
             occurrence.page_number,
             context,
             occurrence.source,
@@ -83,7 +86,11 @@ def _unique_context_occurrences(occurrences: list[LinkOccurrence]) -> list[LinkO
 def _model_occurrences(
     occurrences: list[LinkOccurrence], limit: int = MODEL_CONTEXT_LIMIT
 ) -> list[LinkOccurrence]:
-    unique = _unique_context_occurrences(occurrences)
+    unique: list[LinkOccurrence] = []
+    for occurrence in _unique_context_occurrences(occurrences):
+        if any(_contexts_overlap(occurrence, kept) for kept in unique):
+            continue
+        unique.append(occurrence)
     if len(unique) <= limit:
         return unique
 
@@ -98,8 +105,29 @@ def _model_occurrences(
     for index in range(len(unique)):
         if len(selected) >= limit:
             break
+        occurrence = unique[index]
+        if not any(
+            (unique[kept].pdf_id, unique[kept].page_number) == (occurrence.pdf_id, occurrence.page_number)
+            for kept in selected
+        ):
+            selected.add(index)
+    for index in range(len(unique)):
+        if len(selected) >= limit:
+            break
         selected.add(index)
     return [occurrence for index, occurrence in enumerate(unique) if index in selected]
+
+
+def _contexts_overlap(first: LinkOccurrence, second: LinkOccurrence) -> bool:
+    # Split link annotations must not exhaust the budget with nearly identical windows.
+    if (first.pdf_id, first.page_number, first.source, first.reference_label) != (
+        second.pdf_id, second.page_number, second.source, second.reference_label
+    ) or any(value is None for value in (first.text_start, first.text_end, second.text_start, second.text_end)):
+        return False
+    first_start, second_start = max(0, first.text_start - CONTEXT_WINDOW), max(0, second.text_start - CONTEXT_WINDOW)
+    first_end, second_end = first.text_end + CONTEXT_WINDOW, second.text_end + CONTEXT_WINDOW
+    overlap = min(first_end, second_end) - max(first_start, second_start)
+    return overlap >= CONTEXT_OVERLAP_THRESHOLD * min(first_end - first_start, second_end - second_start)
 
 
 def _format_contexts(
@@ -113,14 +141,17 @@ def _format_contexts(
     blocks: list[str] = []
     for occurrence in selected:
         context = " ".join((occurrence.context or "").split()) or "(контекст пустой)"
+        source_hint = _source_hint(occurrence)
+        if occurrence.pdf_id:
+            source_hint += f", PDF {occurrence.pdf_id}"
         blocks.append(
-            f"[{len(blocks) + 1}] Источник: {_source_hint(occurrence)}\n"
+            f"[{len(blocks) + 1}] Источник: {source_hint}\n"
             f'\"\"\"\n{context}\n\"\"\"'
         )
     if len(selected) < len(unique):
         blocks.append(
             f"Ещё {len(unique) - len(selected)} контекст(ов) сохранено, "
-            "но не передано из-за лимита размера запроса."
+            "но не передано из-за лимита размера запроса или перекрытия окон."
         )
     return "\n\n".join(blocks)
 

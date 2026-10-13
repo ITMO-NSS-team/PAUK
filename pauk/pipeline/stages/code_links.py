@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
+from bisect import bisect_right
 from collections import defaultdict
 from datetime import UTC, datetime
 from typing import cast
@@ -15,6 +16,7 @@ from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.redaction import redact_text
 from pauk.sources.base import HttpClient
 from pauk.storage import PdfStore
+from pauk.urls import normalize_repo_url
 
 from .base import EnrichmentStage
 
@@ -51,9 +53,11 @@ _POST_REFERENCE_HEADING = re.compile(
     r"supporting[ \t]+information|приложени[ея](?:[ \t]+[A-ZА-Я])?|"
     r"дополнительные[ \t]+материалы)"
     r"(?:[ \t]*[:.\u2013\u2014-][ \t]*[^\n]+)?[ \t]*$"
+    r"|^[ \t]*(?-i:[A-Z](?:\.\d+)*(?:[ \t]+|[ \t]*\n[ \t]*)[A-Z][A-Za-z -]{2,80})[ \t]*$"
 )
 _REFERENCE_ENTRY = re.compile(
-    r"(?m)^[ \t]*(?:\[(?P<bracket>\d{1,4})\][.):]?|(?P<plain>\d{1,4})[.)])[ \t]+"
+    r"(?m)^[ \t]*(?:\[(?P<bracket>\d{1,4})\][.):]?|(?P<plain>\d{1,4})[.)])"
+    r"(?:[ \t]+|[ \t]*\n[ \t]*)"
 )
 _CITATION = re.compile(r"\[(?P<labels>\d[\d,; \t\u2013\u2014-]{0,80})\]")
 
@@ -96,7 +100,7 @@ def _clean_match(raw: str) -> str:
     """Drop any embedded line-wrap the match itself spans, strip trailing
     punctuation and a glued-on sentence/footnote tail, add a scheme if the
     match was bare, then canonicalize."""
-    url = _EMBEDDED_WRAP.sub("", raw).rstrip(URL_TRAILING_PUNCT)
+    url = _EMBEDDED_WRAP.sub("", raw.strip()).rstrip(URL_TRAILING_PUNCT)
     url = _GLUED_TAIL.sub("", url)
     if not url.lower().startswith(("http://", "https://")):
         url = "https://" + url
@@ -160,7 +164,8 @@ def _annotation_context(
         return None, None, None
     if not visible:
         return None, None, None
-    matches = list(re.finditer(re.escape(visible), page_text))
+    # Match MuPDF's ASCII case folding so geometry and text offsets stay aligned.
+    matches = list(re.finditer(re.escape(visible), page_text, re.IGNORECASE | re.ASCII))
     if not matches:
         return " ".join(visible.split()) or None, None, None
     match = matches[0]
@@ -191,6 +196,7 @@ def _pdf_page_occurrences(
     links reachable only through a clickable annotation whose visible label
     doesn't spell out the URL (e.g. a hyperlinked "here")."""
     found = _occurrences_in_text(text, page_number)
+    word_offsets = None
     for link in page.get_links() or []:
         uri = link.get("uri")
         if not uri or link.get("kind") != fitz.LINK_URI:
@@ -203,10 +209,33 @@ def _pdf_page_occurrences(
         ):
             continue
         context, start, end = _annotation_context(page, text, link.get("from"))
+        if start is None and link.get("from") is not None:
+            if word_offsets is None:
+                word_offsets = []
+                cursor = 0
+                try:
+                    words = page.get_text("words")
+                except Exception:
+                    words = []
+                for word in words:
+                    visible = _normalize_ligatures(word[4])
+                    offset = text.find(visible, cursor)
+                    if offset >= 0:
+                        cursor = offset + len(visible)
+                        word_offsets.append((fitz.Rect(word[:4]), offset, cursor))
+            target = fitz.Rect(link["from"])
+            overlapping = [
+                (offset, stop) for bounds, offset, stop in word_offsets
+                if bounds.get_area() and (bounds & target).get_area() >= bounds.get_area() / 2
+            ]
+            if overlapping:
+                start = min(offset for offset, _ in overlapping)
+                end = max(stop for _, stop in overlapping)
+                context = _slice_context(text, start, end)
         found.setdefault(url, []).append(LinkOccurrence(
             context=context, page_number=page_number, source="pdf_annotation",
             text_start=start, text_end=end, raw_url=uri, raw_fragments=[uri],
-            candidate_urls=[url], continuous=True,
+            candidate_urls=[url],
         ))
     return found
 
@@ -233,19 +262,23 @@ def _link_reference_contexts(
     pages: list[str], page_occurrences: list[dict[str, list[LinkOccurrence]]]
 ) -> None:
     """Attach body citations to repository URLs found in numbered references."""
-    reference_urls: dict[str, set[str]] = defaultdict(set)
-    reference_candidates: dict[str, dict[str, set[str]]] = defaultdict(
+    if not any(page_occurrences):
+        return
+    reference_urls: dict[tuple[int | None, str], set[str]] = defaultdict(set)
+    reference_candidates: dict[tuple[int | None, str], dict[str, set[str]]] = defaultdict(
         lambda: defaultdict(set)
     )
     excluded_ranges: list[list[tuple[int, int]]] = [[] for _ in pages]
     in_references = False
     references_finished = False
+    sections = []
 
-    def record_reference(label: str, url: str, occurrence: LinkOccurrence) -> None:
+    def record_reference(label: str | None, url: str, occurrence: LinkOccurrence, scope: int | None = None) -> None:
         occurrence.source = "reference"
         occurrence.reference_label = label
-        reference_urls[label].add(url)
-        reference_candidates[label][url].update(occurrence.candidate_urls or [url])
+        if label is not None:
+            reference_urls[scope, label].add(url)
+            reference_candidates[scope, label][url].update(occurrence.candidate_urls or [url])
 
     for page_index, text in enumerate(pages):
         if references_finished:
@@ -263,19 +296,39 @@ def _link_reference_contexts(
         next_section = _POST_REFERENCE_HEADING.search(text, section_start)
         section_end = next_section.start() if next_section else len(text)
         excluded_ranges[page_index].append((reference_start, section_end))
-
-        entries = list(_REFERENCE_ENTRY.finditer(text, section_start, section_end))
-        for index, entry in enumerate(entries):
-            label = str(int(entry.group("bracket") or entry.group("plain")))
-            entry_end = entries[index + 1].start() if index + 1 < len(entries) else section_end
-            for url, occurrences in page_occurrences[page_index].items():
-                for occurrence in occurrences:
-                    if occurrence.text_start is None or not entry.start() <= occurrence.text_start < entry_end:
-                        continue
-                    record_reference(label, url, occurrence)
+        sections.append((page_index, section_start, section_end))
         if next_section:
             in_references = False
             references_finished = True
+
+    # A PDF can put the number on its own line or split an entry across pages.
+    reference_text = "\n".join(pages[index][start:end] for index, start, end in sections)
+    cited_labels = {
+        label for text in pages for citation in _CITATION.finditer(text)
+        for label in _citation_labels(citation.group("labels"))
+    }
+    entries = list(_REFERENCE_ENTRY.finditer(reference_text))
+    numbers = [int(entry.group("bracket") or entry.group("plain")) for entry in entries]
+    entries = [
+        entry for index, entry in enumerate(entries)
+        if entry.group("bracket") or str(numbers[index]) in cited_labels
+        or (numbers[index] < 1000 and (
+            (index > 0 and numbers[index - 1] + 1 == numbers[index])
+            or (index + 1 < len(numbers) and numbers[index] + 1 == numbers[index + 1])
+        ))
+    ]
+    entry_starts = [entry.start() for entry in entries]
+    section_offset = 0
+    for page_index, start, end in sections:
+        for url, occurrences in page_occurrences[page_index].items():
+            for occurrence in occurrences:
+                if occurrence.text_start is None or not start <= occurrence.text_start < end:
+                    continue
+                entry_index = bisect_right(entry_starts, section_offset + occurrence.text_start - start) - 1
+                entry = entries[entry_index] if entry_index >= 0 else None
+                label = str(int(entry.group("bracket") or entry.group("plain"))) if entry else None
+                record_reference(label, url, occurrence)
+        section_offset += end - start + 1
 
     # Numbered footnotes often have no heading. Link one only when the same
     # marker occurs earlier on that page, which keeps ordinary numbered lists
@@ -299,7 +352,7 @@ def _link_reference_contexts(
                 for occurrence in occurrences:
                     if occurrence.text_start is None or not entry.start() <= occurrence.text_start < entry_end:
                         continue
-                    record_reference(label, url, occurrence)
+                    record_reference(label, url, occurrence, page_index)
                     linked = True
             if linked:
                 excluded_ranges[page_index].append((entry.start(), entry_end))
@@ -313,7 +366,8 @@ def _link_reference_contexts(
                    for start, end in excluded_ranges[page_index]):
                 continue
             for label in _citation_labels(citation.group("labels")):
-                urls = sorted(reference_urls.get(label, ()))
+                key = (page_index, label) if (page_index, label) in reference_urls else (None, label)
+                urls = sorted(reference_urls.get(key, ()))
                 for url in urls:
                     page_occurrences[page_index].setdefault(url, []).append(LinkOccurrence(
                         context=_slice_context(text, citation.start(), citation.end()),
@@ -322,7 +376,7 @@ def _link_reference_contexts(
                         reference_label=label,
                         text_start=citation.start(),
                         text_end=citation.end(),
-                        candidate_urls=sorted(reference_candidates[label][url]),
+                        candidate_urls=sorted(reference_candidates[key][url]),
                     ))
 
 
@@ -356,9 +410,9 @@ def _collect_occurrences(
         occurrences[url].extend(found)
     # Only uninterrupted visible text in this PDF can settle a wrapped spelling.
     confirmed = {
-        urlparse(url).path.casefold() for page_found in pdf_page_occurrences
+        (occurrence.pdf_id, urlparse(url).path.casefold()) for page_found in pdf_page_occurrences
         for url, found in page_found.items() for occurrence in found
-        if occurrence.source == "pdf_text" and occurrence.continuous
+        if occurrence.source in {"pdf_text", "reference"} and occurrence.continuous
     }
     for page_found in pdf_page_occurrences:
         for url, found in page_found.items():
@@ -369,30 +423,43 @@ def _collect_occurrences(
                     remaining = []
                     for group in groups:
                         supported = [candidate for candidate in group
-                                     if urlparse(candidate).path.casefold() in confirmed]
+                                     if (occ.pdf_id, urlparse(candidate).path.casefold()) in confirmed]
                         choices = supported or group
                         if identity in {urlparse(candidate).path.casefold() for candidate in choices}:
                             remaining.append(choices)
                     if not remaining:
                         continue
-                    resolved = identity in confirmed or any(len(group) == 1 for group in remaining)
+                    resolved = (occ.pdf_id, identity) in confirmed or any(len(group) == 1 for group in remaining)
                     choices = [url] if resolved else list(dict.fromkeys(
                         candidate for group in remaining for candidate in group
                     ))
                     occ = occ.model_copy(update={"candidate_urls": choices})
                 occurrences[url].append(occ)
-    return dict(occurrences)
+    return _merge_url_spellings(occurrences)
+
+
+def _merge_url_spellings(occurrences: dict[str, list[LinkOccurrence]]) -> dict[str, list[LinkOccurrence]]:
+    merged: dict[str, list[LinkOccurrence]] = {}
+    spellings: dict[str, str] = {}
+    for url, found in occurrences.items():
+        spelling = spellings.setdefault(normalize_repo_url(url), url.strip())
+        merged.setdefault(spelling, []).extend(found)
+    return merged
 
 
 def _preserve_pdf_occurrences(
     occurrences_by_url: dict[str, list[LinkOccurrence]],
     previous: RepoLink | None,
+    failed_pdf_ids: set[str] | None = None,
 ) -> dict[str, list[LinkOccurrence]]:
     """Keep evidence from the last readable PDF when a retry cannot read it."""
     if previous is None:
         return occurrences_by_url
     for link in previous.links:
-        preserved = [occ for occ in link.occurrences if occ.page_number is not None]
+        preserved = [
+            occ for occ in link.occurrences if occ.page_number is not None
+            and (failed_pdf_ids is None or occ.pdf_id is None or occ.pdf_id in failed_pdf_ids)
+        ]
         if not preserved:
             continue
         current = occurrences_by_url.setdefault(link.url, [])
@@ -445,12 +512,16 @@ class CodeLinksStage(EnrichmentStage):
         for pub in self.progress(candidates, total=len(candidates)):
             state = pub.processing.get(self.name)
             archived = _archived_repository_url(pub)
-            needs_pdf = bool(pub.pdf_urls) or (self.crawler_available and bool(pub.doi))
-            if needs_pdf:
-                pdf_pages, pdf_page_occurrences, pdf_error = self._pdf_pages(pub)
-            else:
-                pdf_pages, pdf_page_occurrences, pdf_error = [], [], None
-            if pdf_pages:
+            pdf_pages, pdf_page_occurrences, pdf_error = self._pdf_pages(pub)
+            previous = links_by_publication.get(pub.id)
+            missing_pdf_ids = {
+                occ.pdf_id for link in previous.links for occ in link.occurrences
+                if occ.pdf_id and occ.pdf_id not in self.parsed_pdf_ids
+            } if previous else set()
+            self.failed_pdf_ids.update(missing_pdf_ids)
+            if missing_pdf_ids:
+                pdf_error = "; ".join(filter(None, (pdf_error, f"PDF evidence unavailable: {', '.join(sorted(missing_pdf_ids))}")))
+            if pdf_pages and (not pdf_error or not pub.full_text):
                 # A transient failure on a later retry must not erase text a
                 # previous successful run already extracted.
                 pub.full_text = "\n\n".join(pdf_pages)
@@ -459,7 +530,7 @@ class CodeLinksStage(EnrichmentStage):
             )
             if pdf_error:
                 occurrences_by_url = _preserve_pdf_occurrences(
-                    occurrences_by_url, links_by_publication.get(pub.id)
+                    occurrences_by_url, previous, self.failed_pdf_ids,
                 )
             if archived and archived not in occurrences_by_url:
                 # The deposit's own archived repo takes priority - it's what
@@ -468,6 +539,8 @@ class CodeLinksStage(EnrichmentStage):
                     archived: [LinkOccurrence(page_number=None, source="deposit_title")],
                     **occurrences_by_url,
                 }
+            occurrences_by_url = _merge_url_spellings(occurrences_by_url)
+            archived_identity = normalize_repo_url(archived) if archived else None
             urls = list(occurrences_by_url)
             # Replacing the evidence invalidates any verdict made from the
             # previous contexts; the next link_relevance pass must judge the
@@ -496,7 +569,7 @@ class CodeLinksStage(EnrichmentStage):
                                 "llm_confidence": 1.0,
                                 "llm_reason": ARCHIVED_DEPOSIT_REASON,
                             }
-                            if url == archived
+                            if normalize_repo_url(url) == archived_identity
                             else {}
                         ),
                     )
@@ -524,6 +597,55 @@ class CodeLinksStage(EnrichmentStage):
             return False
 
     def _pdf_pages(
+        self,
+        pub: Publication,
+    ) -> tuple[list[str], list[dict[str, list[LinkOccurrence]]], str | None]:
+        version_ids = dict.fromkeys([*pub.merged_ids, *(version.openalex_id for version in pub.versions)])
+        cached_versions = [pdf_id for pdf_id in version_ids if pdf_id != pub.id and self.pdf_store.exists(pdf_id)]
+        # An already cached version makes a new download of a missing survivor unnecessary.
+        if cached_versions and not self.pdf_store.exists(pub.id):
+            pages, occurrences, error = [], [], None
+        else:
+            pages, occurrences, error = self._primary_pdf_pages(pub)
+        self.parsed_pdf_ids = {pub.id} if pages else set()
+        self.failed_pdf_ids = {pub.id} if error else set()
+        for page_found in occurrences:
+            for found in page_found.values():
+                for occurrence in found:
+                    occurrence.pdf_id = pub.id
+        # Merged records can retain a more complete cached PDF than the survivor.
+        errors = [error] if error else []
+        for pdf_id in cached_versions:
+            try:
+                version_pages, version_occurrences = _extract_pdf(self.pdf_store.read(pdf_id))
+            except Exception as exc:
+                self.failed_pdf_ids.add(pdf_id)
+                errors.append(f"{pdf_id}: {redact_text(exc)}")
+                continue
+            self.parsed_pdf_ids.add(pdf_id)
+            for page_found in version_occurrences:
+                for found in page_found.values():
+                    for occurrence in found:
+                        occurrence.pdf_id = pdf_id
+            pages.extend(version_pages)
+            occurrences.extend(version_occurrences)
+        if cached_versions and not pages and not self.pdf_store.exists(pub.id):
+            # Broken version caches must not prevent recovery from the primary sources.
+            primary_pages, primary_occurrences, primary_error = self._primary_pdf_pages(pub)
+            if primary_error:
+                self.failed_pdf_ids.add(pub.id)
+                errors.append(primary_error)
+            if primary_pages:
+                self.parsed_pdf_ids.add(pub.id)
+                for page_found in primary_occurrences:
+                    for found in page_found.values():
+                        for occurrence in found:
+                            occurrence.pdf_id = pub.id
+                pages.extend(primary_pages)
+                occurrences.extend(primary_occurrences)
+        return pages, occurrences, "; ".join(errors) or None
+
+    def _primary_pdf_pages(
         self,
         pub: Publication,
     ) -> tuple[list[str], list[dict[str, list[LinkOccurrence]]], str | None]:

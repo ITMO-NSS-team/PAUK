@@ -686,6 +686,7 @@ def _occurrence_key(occurrence: LinkOccurrence) -> tuple:
     return (
         occurrence.context,
         occurrence.page_number,
+        occurrence.pdf_id,
         occurrence.source,
         occurrence.reference_label,
         occurrence.text_start,

@@ -152,6 +152,7 @@ def extract_repo_links(
         if occurrences:
             props["context"] = [o.get("context") or "" for o in occurrences]
             props["page_number"] = [o.get("page_number") or 0 for o in occurrences]
+            props["pdf_id"] = [o.get("pdf_id") or "" for o in occurrences]
             if any(o.get("source") for o in occurrences):
                 props["context_source"] = [o.get("source") or "" for o in occurrences]
             if any(o.get("reference_label") for o in occurrences):

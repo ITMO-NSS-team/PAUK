@@ -26,6 +26,14 @@ class NormalizeRepoUrlTest(unittest.TestCase):
 
 
 class ExtractRepoLinksTest(unittest.TestCase):
+    def test_pdf_version_ids_are_parallel_arrays_without_nulls(self):
+        row = {"publication_id": "W1", "links": [{"url": "https://github.com/org/repo", "occurrences": [
+            {"context": "abstract"}, {"context": "version", "page_number": 2, "pdf_id": "W2"},
+        ]}]}
+        _, _, edges, _ = extract_repo_links(row, {})
+        self.assertEqual(edges[0][2]["pdf_id"], ["", "W2"])
+        self.assertEqual(edges[0][2]["page_number"], [0, 2])
+
     def test_known_repository_matched_case_insensitively_by_stored_url(self):
         known = {normalize_repo_url("https://github.com/Org/Repo"): "https://github.com/Org/Repo"}
         row = {"publication_id": "W1", "links": [{
@@ -51,6 +59,7 @@ class ExtractRepoLinksTest(unittest.TestCase):
             {
                 "context": ["code", "again"],
                 "page_number": [0, 3],
+                "pdf_id": ["", ""],
                 "context_source": ["abstract", "citation"],
                 "reference_label": ["", "9"],
             },

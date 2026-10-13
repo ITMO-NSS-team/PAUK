@@ -44,6 +44,7 @@ class LinkCandidate(BaseModel):
 class LinkOccurrence(BaseModel):
     context: str | None = None
     page_number: int | None = None
+    pdf_id: str | None = None
     source: Literal[
         "abstract", "pdf_text", "pdf_annotation", "reference", "citation", "deposit_title"
     ] | None = None

@@ -79,6 +79,10 @@ Pydantic-модели того, что лежит в `data/prepared/<group>/*.js
 
 ## `repository.py`
 
+- **`LinkOccurrence`** — одно вхождение ссылки; `pdf_id` указывает исходный
+  PDF основной или объединённой версии, `page_number` и текстовые смещения
+  относятся к нему. У абстракта и старых данных `pdf_id` может отсутствовать.
+
 - **`Repository`** — id = `github_{owner}_{name}` в нижнем регистре после
   канонизации (см. [pipeline/dedup.md](pipeline/dedup.md)). `github_id` —
   числовой id GitHub, переживает переименования/передачу владения, ключ
