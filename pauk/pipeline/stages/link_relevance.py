@@ -22,54 +22,54 @@ MODEL_CONTEXT_LIMIT = 12
 CONTEXT_OVERLAP_THRESHOLD = 0.8
 AMBIGUOUS_URL_REASON = "ambiguous_url_extraction"
 
-PROMPT_TEMPLATE = """Ты помогаешь анализировать научные публикации.
+PROMPT_TEMPLATE = """You help analyze scientific publications.
 
-Публикация:
-  Название: {title}
+Publication:
+  Title: {title}
 
-В её материалах найдена ссылка:
+A link was found in its materials:
   URL: {url}
 
-Контексты этой ссылки, отобранные для анализа:
+Contexts of this link selected for analysis:
 {contexts}
 
-Вопрос: это репозиторий/модель/датасет, который ВЫЛОЖИЛИ САМИ АВТОРЫ этой
-статьи как сопроводительный материал - или это упоминание чужого инструмента?
+Question: is this a repository/model/dataset RELEASED BY THE AUTHORS of this
+paper as accompanying material, or is it a mention of someone else's tool?
 
-Признаки авторского: "our code is available at", "we release", "наш код
-доступен"; имя пользователя/организации в URL похоже на автора или его
-аффилиацию.
-Признаки чужого: ссылка в списке литературы; известная чужая библиотека
-(PyTorch, BERT, Llama); формулировки "we use", "based on", "following [N]".
+Signs of an authors' artifact: "our code is available at", "we release",
+"our code is available"; the username/organization in the URL resembles an
+author's name or affiliation.
+Signs of an external tool: a link in the reference list; a well-known external
+library (PyTorch, BERT, Llama); phrases such as "we use", "based on", "following [N]".
 
-Учитывай все переданные контексты вместе. Если данных недостаточно или контексты
-противоречат друг другу, верни null в поле is_authors_artifact.
+Consider all provided contexts together. If the evidence is insufficient or the
+contexts contradict each other, return null in the is_authors_artifact field.
 
-Ответь СТРОГО валидным JSON без markdown:
-{{"is_authors_artifact": null, "confidence": 0.0, "reason": "одно короткое предложение"}}
+Return STRICTLY valid JSON without markdown:
+{{"is_authors_artifact": null, "confidence": 0.0, "reason": "one short sentence"}}
 """
 
 
 def _source_hint(occurrence: LinkOccurrence) -> str:
     if occurrence.source == "deposit_title":
-        return "название архивного депозита"
+        return "archived deposit title"
     if occurrence.source == "citation":
-        return f"место цитирования [{occurrence.reference_label}], страница {occurrence.page_number}"
+        return f"in-text citation [{occurrence.reference_label}], page {occurrence.page_number}"
     if occurrence.source == "reference":
         label = f" [{occurrence.reference_label}]" if occurrence.reference_label else ""
-        return f"список литературы{label}, страница {occurrence.page_number}"
+        return f"reference list{label}, page {occurrence.page_number}"
     if occurrence.source == "pdf_annotation":
-        return f"кликабельная область PDF, страница {occurrence.page_number}"
+        return f"PDF clickable region, page {occurrence.page_number}"
     if occurrence.page_number is None:
-        return "абстракт OpenAlex (контекст ограничен)"
-    return f"видимый текст PDF, страница {occurrence.page_number}"
+        return "OpenAlex abstract (limited context)"
+    return f"PDF visible text, page {occurrence.page_number}"
 
 
 def _unique_context_occurrences(occurrences: list[LinkOccurrence]) -> list[LinkOccurrence]:
     unique: list[LinkOccurrence] = []
     seen: set[tuple] = set()
     for occurrence in occurrences:
-        context = " ".join((occurrence.context or "").split()) or "(контекст пустой)"
+        context = " ".join((occurrence.context or "").split()) or "(empty context)"
         key = (
             occurrence.pdf_id,
             occurrence.page_number,
@@ -134,31 +134,31 @@ def _format_contexts(
     occurrences: list[LinkOccurrence], limit: int | None = MODEL_CONTEXT_LIMIT
 ) -> str:
     if not occurrences:
-        return "[1] Источник неизвестен\n\"\"\"\n(контекст пустой)\n\"\"\""
+        return "[1] Unknown source\n\"\"\"\n(empty context)\n\"\"\""
 
     unique = _unique_context_occurrences(occurrences)
     selected = unique if limit is None else _model_occurrences(unique, limit)
     blocks: list[str] = []
     for occurrence in selected:
-        context = " ".join((occurrence.context or "").split()) or "(контекст пустой)"
+        context = " ".join((occurrence.context or "").split()) or "(empty context)"
         source_hint = _source_hint(occurrence)
         if occurrence.pdf_id:
             source_hint += f", PDF {occurrence.pdf_id}"
         blocks.append(
-            f"[{len(blocks) + 1}] Источник: {source_hint}\n"
+            f"[{len(blocks) + 1}] Source: {source_hint}\n"
             f'\"\"\"\n{context}\n\"\"\"'
         )
     if len(selected) < len(unique):
         blocks.append(
-            f"Ещё {len(unique) - len(selected)} контекст(ов) сохранено, "
-            "но не передано из-за лимита размера запроса или перекрытия окон."
+            f"Another {len(unique) - len(selected)} context(s) were saved "
+            "but omitted due to the request size limit or overlapping windows."
         )
     return "\n\n".join(blocks)
 
 
 def _build_prompt(title: str | None, url: str, occurrences: list[LinkOccurrence]) -> str:
     return PROMPT_TEMPLATE.format(
-        title=title or "(без названия)",
+        title=title or "(untitled)",
         url=url,
         contexts=_format_contexts(occurrences),
     )

@@ -422,8 +422,8 @@ class StagesTest(unittest.TestCase):
         prompt = call.args[0]
         self.assertIn("We use this library as a dependency.", prompt)
         self.assertIn("Our complete implementation is available here.", prompt)
-        self.assertIn("абстракт OpenAlex", prompt)
-        self.assertIn("место цитирования [9], страница 7", prompt)
+        self.assertIn("OpenAlex abstract", prompt)
+        self.assertIn("in-text citation [9], page 7", prompt)
 
     def test_link_relevance_bounds_prompt_without_dropping_stored_contexts(self):
         occurrences = [
@@ -442,7 +442,7 @@ class StagesTest(unittest.TestCase):
         self.assertIn("Body context 1", formatted)
         self.assertNotIn(f"Body context {MODEL_CONTEXT_LIMIT + 2}", formatted)
         self.assertIn("Reference entry", formatted)
-        self.assertIn("не передано из-за лимита", formatted)
+        self.assertIn("omitted due to the request size limit", formatted)
         self.assertEqual(len(occurrences), MODEL_CONTEXT_LIMIT + 3)
 
     def test_link_relevance_keeps_distinct_sources_with_identical_text(self):
@@ -452,8 +452,8 @@ class StagesTest(unittest.TestCase):
         ])
 
         self.assertEqual(formatted.count("same"), 2)
-        self.assertIn("видимый текст PDF", formatted)
-        self.assertIn("кликабельная область PDF", formatted)
+        self.assertIn("PDF visible text", formatted)
+        self.assertIn("PDF clickable region", formatted)
 
     @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
     def test_link_relevance_keeps_an_explicit_uncertain_verdict(self, openrouter_client):
