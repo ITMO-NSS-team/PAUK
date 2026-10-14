@@ -476,6 +476,13 @@ def load_prepared_rows(
             repository_aliases.get(repository_id, repository_id)
             for repository_id in repository_ids
         )
+    # Manual claims are independent provenance, not stale model verdicts.
+    for src_label, rel_type, tgt_label, src_id, tgt_id in claimed_relationships or ():
+        if (src_label, rel_type, tgt_label) != ("Repository", "IMPLEMENTS", "Publication"):
+            continue
+        canonical_publication_id = publication_aliases.get(tgt_id, tgt_id)
+        if canonical_publication_id in resolved_implements:
+            resolved_implements[canonical_publication_id].add(repository_aliases.get(src_id, src_id))
     implements_rows = [
         (publication_id, sorted(repository_ids))
         for publication_id, repository_ids in sorted(resolved_implements.items())

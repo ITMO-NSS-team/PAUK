@@ -292,6 +292,51 @@ class ImplementsSynchronizationTest(unittest.TestCase):
             client.edges,
         )
 
+    def test_manual_claim_survives_completed_empty_without_changing_properties(self):
+        client = RecordingNeo4jClient()
+        load_prepared_rows(client, self._rows(["W1"]))
+        edge = ("Repository", "IMPLEMENTS", "Publication", "github_org_repo", "W1")
+        client.edges[edge] = {"note": "manually confirmed"}
+
+        for status in ("completed", "completed_empty"):
+            with self.subTest(status=status):
+                load_prepared_rows(client, self._rows([], status), claimed_relationships={edge})
+                self.assertEqual(client.edges[edge], {"note": "manually confirmed"})
+
+    def test_manual_claim_resolves_repository_and_publication_aliases(self):
+        client = RecordingNeo4jClient()
+        load_prepared_rows(client, self._rows(["W1"]))
+        client.nodes["Repository"]["github_org_repo"]["merged_ids"] = ["R0"]
+        client.nodes["Publication"]["W1"]["merged_ids"] = ["W0"]
+        claim = ("Repository", "IMPLEMENTS", "Publication", "R0", "W0")
+
+        load_prepared_rows(client, self._rows([]), claimed_relationships={claim})
+
+        self.assertIn(("Repository", "IMPLEMENTS", "Publication", "github_org_repo", "W1"), client.edges)
+
+    def test_manual_claim_does_not_expand_the_cleanup_scope(self):
+        client = RecordingNeo4jClient()
+        rows = self._rows(["W1", "W2"])
+        rows["publications.jsonl"].append({"id": "W2"})
+        load_prepared_rows(client, rows)
+        claim = ("Repository", "IMPLEMENTS", "Publication", "github_org_repo", "W2")
+        client.upsert_nodes_batch("Repository", [("R2", {"url": "https://github.com/org/other"})])
+        client.upsert_relationships_batch("Repository", "Publication", "IMPLEMENTS", [("R2", "W2", {})])
+
+        load_prepared_rows(client, self._rows([]), claimed_relationships={claim})
+
+        self.assertIn(claim, client.edges)
+        self.assertIn(("Repository", "IMPLEMENTS", "Publication", "R2", "W2"), client.edges)
+        self.assertNotIn(("Repository", "IMPLEMENTS", "Publication", "github_org_repo", "W1"), client.edges)
+
+    def test_a_claim_does_not_recreate_an_absent_relationship(self):
+        client = RecordingNeo4jClient()
+        claim = ("Repository", "IMPLEMENTS", "Publication", "github_org_repo", "W1")
+
+        load_prepared_rows(client, self._rows([]), claimed_relationships={claim})
+
+        self.assertNotIn(claim, client.edges)
+
 
 class RelevancePropertySynchronizationTest(unittest.TestCase):
     @staticmethod

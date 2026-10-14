@@ -28,6 +28,7 @@ from pauk.models import (
     Repository,
 )
 from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.models.relations import Contribution
 from pauk.pipeline.stages.author_names import RussianNamesCatalog
 from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage, _paired_persons
 from pauk.settings import Settings
@@ -720,6 +721,54 @@ class RepositoryDedupTest(unittest.TestCase):
         ])
         self.assertEqual(result["dedup_repositories_merged"], 1)
         self.assertEqual(set(repositories), {"github_org_alpha-renamed"})
+
+    def test_renamed_repository_republish_resolves_old_citations_and_contributions(self):
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        cited_url = "https://github.com/previous-owner/old-name"
+        older = repository("github_org_old-name", "old-name", "https://github.com/org/old-name",
+                           github_id=42, cited=[cited_url], day="2026-01-01")
+        older.merged_ids = ["github_previous-owner_old-name"]
+        older.contributors = ["contributor"]
+        older.processing["repo_people"] = ProcessingState(
+            status=ProcessingStatus.COMPLETED, attempts=1, result_count=1)
+        newer = repository("github_org_new-name", "new-name", "https://github.com/org/new-name",
+                           github_id=42, cited=[cited_url], publications=["W1"], day="2026-06-01")
+        author = person("A1", "Author One", ["W1"])
+        author.contributed_to = [Contribution(repository_id=older.id, role="contributor")]
+        prepared.write_models("persons", [author])
+        prepared.write_models("publications", [publication("W1", "One work")])
+        prepared.write_models("repositories", [older, newer])
+        links = RepoLink(publication_id="W1", links=[CodeLink(
+            url=cited_url, is_relevant=True,
+            occurrences=[LinkOccurrence(context="Our implementation", source="abstract")],
+        )])
+        prepared.write_models("repo_links", [links])
+        client = RecordingNeo4jClient()
+        load_group(client, prepared)
+        self.assertEqual(client.edge_pairs("MENTIONS_LINK"), {("W1", older.url)})
+
+        stage = DedupStage(prepared, raw, self.config)
+        self.assertEqual(stage._dedup_repositories(), {older.id: newer.id})
+        survivor, = prepared.read_models("repositories", Repository)
+        self.assertEqual(set(survivor.cited_urls), {cited_url, older.url})
+        self.assertEqual(set(survivor.merged_ids), {older.id, *older.merged_ids})
+        self.assertEqual(survivor.contributors, older.contributors)
+        self.assertEqual(survivor.processing["repo_people"], older.processing["repo_people"])
+        saved_author, = prepared.read_models("persons", Person)
+        self.assertEqual(saved_author.contributed_to[0].repository_id, newer.id)
+        self.assertEqual(list(prepared.read_models("repo_links", RepoLink)), [links])
+
+        for _ in range(2):
+            self.assertEqual(stage._dedup_repositories(), {})
+            load_group(client, prepared)
+            self.assertEqual(set(client.nodes["Repository"]), {newer.id})
+            self.assertEqual(client.edge_pairs("MENTIONS_LINK"), {("W1", newer.url)})
+            self.assertEqual(client.edge_pairs("IMPLEMENTS"), {(newer.id, "W1")})
+            self.assertEqual(client.edge_pairs("CONTRIBUTED_TO"), {("A1", newer.id)})
+            mention = client.edges["Publication", "MENTIONS_LINK", "Repository", "W1", newer.url]
+            self.assertEqual(mention["context"], ["Our implementation"])
+        self.assertEqual(client.unresolved, [])
 
     def test_distinct_repositories_are_left_alone(self):
         result, repositories = self.run_stage([
