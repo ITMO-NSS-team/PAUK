@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from .readme import clean_readme, load_readme
-from .retrieve import MODES, Rag
+from .retrieve import MODES, Hit, Rag
 
 K = 10
 KINDS = ("persons", "publications", "repositories")
@@ -78,14 +78,19 @@ def targets(meta: dict[str, str]) -> tuple[str, ...]:
 
 
 def parse_variant(text: str) -> dict[str, Any]:
-    """`profile:mode[:options]`, options joined by `+`: `rrf` (fusion), `en` (BM25 on the translated question)."""
+    """`profile[@model]:mode[:options]`, options joined by `+`: `rrf` (fusion), `en` (BM25 on the translation).
+
+    Without `@model` the variant uses the default model, so the variants
+    of runs judged before models were selectable keep their meaning.
+    """
     parts = text.split(":")
     if len(parts) not in (2, 3) or parts[1] not in MODES:
-        raise ValueError(f"variant {text!r}: profile:mode[:rrf+en], mode one of {MODES}")
+        raise ValueError(f"variant {text!r}: profile[@model]:mode[:rrf+en], mode one of {MODES}")
+    profile, _, model = parts[0].partition("@")
     options = set(parts[2].split("+")) if len(parts) == 3 else set()
     if options - {"rrf", "en"}:
         raise ValueError(f"variant {text!r}: unknown options {sorted(options - {'rrf', 'en'})}")
-    return {"profile": parts[0], "mode": parts[1], "fusion": "rrf" if "rrf" in options else "minmax",
+    return {"profile": profile, "model": model or None, "mode": parts[1], "fusion": "rrf" if "rrf" in options else "minmax",
             "translate": "en" in options}
 
 
@@ -104,16 +109,24 @@ def _snippet(text: str | None) -> str:
 def build_pool(run_dir: Path, rag: Rag, questions_path: Path, variants: list[str], k: int = K) -> dict[str, Any]:
     specs = {name: parse_variant(name) for name in variants}
     questions = read_questions(questions_path)
+    # Variants of one model run back to back, so each model is loaded once.
+    retrieved: dict[tuple[str, str], dict[str, list[Hit]]] = {}
+    for name in sorted(specs, key=lambda n: specs[n]["model"] or rag.model):
+        spec = specs[name]
+        for meta in questions:
+            question = meta["question"]
+            bm25_query = rag.translate(question) if spec["translate"] and spec["mode"] != "dense" else None
+            # Deeper than k: the people are aggregated from these items.
+            retrieved[name, question] = rag.retrieve(question, profile=spec["profile"], model=spec["model"],
+                                                     mode=spec["mode"], fusion=spec["fusion"],
+                                                     bm25_query=bm25_query, k=max(50, k))
     entries = []
     for meta in questions:
         question = meta["question"]
         rankings: dict[str, dict[str, list[str]]] = {}
         persons: dict[str, dict[str, Any]] = {}
-        for name, spec in specs.items():
-            # Deeper than k: the people are aggregated from these items.
-            bm25_query = rag.translate(question) if spec["translate"] and spec["mode"] != "dense" else None
-            hits = rag.retrieve(question, profile=spec["profile"], mode=spec["mode"], fusion=spec["fusion"],
-                                bm25_query=bm25_query, k=max(50, k))
+        for name in specs:
+            hits = retrieved[name, question]
             people = rag.experts(hits, top_n=k)
             rankings[name] = {
                 "persons": [p["id"] for p in people],

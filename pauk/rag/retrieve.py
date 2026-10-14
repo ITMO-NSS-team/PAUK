@@ -28,6 +28,7 @@ from pauk.sources.llm import OpenRouterClient
 from .embedder import Embedder
 from .graph import Graph, escape_lucene
 from .index import load_manifest
+from .models import get as get_model
 from .profiles import LABELS, PRESETS, Profile
 
 Mode = Literal["dense", "bm25", "hybrid"]
@@ -132,10 +133,15 @@ def fuse(dense: list[tuple[str, float]], bm25: list[tuple[str, float]], fusion: 
 
 class Rag:
     def __init__(self, config: Settings, *, graph: Graph | None = None, embedder: Embedder | None = None,
-                 llm: OpenRouterClient | None = None) -> None:
+                 llm: OpenRouterClient | None = None, model: str | None = None) -> None:
         self.config = config
         self.graph = graph or Graph(config)
-        self.embedder = embedder or Embedder(config.rag_embedding_model)
+        # The model used when a call names none (alias or name; default: the setting).
+        self.model = get_model(model or config.rag_embedding_model).alias
+        # One embedder per model, loaded on first use: a pool comparing
+        # models needs several, a single answer needs one.
+        self._embedder = embedder
+        self._embedders: dict[str, Embedder] = {}
         self._llm = llm
 
     def close(self) -> None:
@@ -148,14 +154,27 @@ class Rag:
                                          self.config.llm_model, self.config.openrouter_proxy_url)
         return self._llm
 
-    def profile(self, name: str) -> Profile:
-        manifest = load_manifest(self.config, name)
+    def embedder(self, model: str) -> Embedder:
+        if self._embedder is not None:
+            return self._embedder
+        if model not in self._embedders:
+            # One model in memory at a time; callers comparing models run
+            # each model's work together (see evaluation.build_pool).
+            for other in self._embedders.values():
+                other.unload()
+            self._embedders = {model: Embedder(get_model(model))}
+        return self._embedders[model]
+
+    def profile(self, name: str, model: str | None = None) -> Profile:
+        """A profile built with the model; the question must be embedded by the same one."""
+        model = get_model(model or self.model).alias
+        manifest = load_manifest(self.config, name, model)
         if manifest is None:
-            raise ValueError(f"profile {name!r} is not built; run `pauk rag index --profile {name}`")
-        if manifest["embedding_model"] != self.config.rag_embedding_model:
-            # Question and documents must be embedded by the same model.
-            raise ValueError(f"profile {name!r} was built with {manifest['embedding_model']}, "
-                             f"not {self.config.rag_embedding_model}")
+            raise ValueError(f"profile {name!r} is not built with {model}; "
+                             f"run `pauk rag index --profile {name} --model {model}`")
+        if manifest["embedding_model"] != get_model(model).name:
+            # The alias now names another model: these vectors answer with noise.
+            raise ValueError(f"profile {name!r}@{model} was built with {manifest['embedding_model']}; rebuild it")
         spec = manifest["profile"]
         return PRESETS.get(name) if PRESETS.get(name) and PRESETS[name].to_dict() == spec else Profile(
             spec["name"], tuple(spec["publication"]), tuple(spec["repository"]), spec["skip_non_research"])
@@ -184,7 +203,8 @@ class Rag:
             tmp.replace(path)
         return cache[key]
 
-    def retrieve(self, question: str, *, profile: str = "full", mode: Mode = "hybrid", k: int = 50,
+    def retrieve(self, question: str, *, profile: str = "full", model: str | None = None, mode: Mode = "hybrid",
+                 k: int = 50,
                  fusion: str = "minmax", bm25_query: str | None = None,
                  labels: tuple[str, ...] = LABELS) -> dict[str, list[Hit]]:
         """Top `k` publications and repositories for the question, best first.
@@ -195,8 +215,10 @@ class Rag:
         """
         if mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}")
-        spec = self.profile(profile)
-        vector = self.embedder.encode([question])[0].tolist() if mode != "bm25" else None
+        model = get_model(model or self.model).alias
+        spec = self.profile(profile, model)
+        vector = (self.embedder(model).encode([question], query=True)[0].tolist()
+                  if mode != "bm25" else None)
         terms = escape_lucene(bm25_query or question)
         out: dict[str, list[Hit]] = {}
         for label in labels:
@@ -205,7 +227,7 @@ class Rag:
             # Each side looks deeper than k, so that fusion can lift an item
             # one side ranked just below the cut.
             depth = k * 2 if mode == "hybrid" else k
-            dense = self.graph.vector_search(label, spec.vector_index(label), vector, depth) if vector else []
+            dense = self.graph.vector_search(label, spec.vector_index(label, model), vector, depth) if vector else []
             bm25 = self.graph.text_search(spec.text_index(label), terms, depth) if mode != "dense" else []
             if mode == "dense":
                 scores = dict(dense)
@@ -259,9 +281,9 @@ class Rag:
                 break
         return people
 
-    def describe(self, hits: dict[str, list[Hit]], profile: str) -> None:
+    def describe(self, hits: dict[str, list[Hit]], profile: str, model: str | None = None) -> None:
         """Titles, years, authors and the indexed text, for the answer and for judges."""
-        spec = self.profile(profile)
+        spec = self.profile(profile, model)
         for label, items in hits.items():
             if not items:
                 continue
@@ -312,7 +334,8 @@ class Rag:
                 "sources": [{"n": n, "id": h.id, "label": h.label, "title": h.details.get("title"),
                              "url": h.details.get("url")} for n, h in enumerate(numbered, 1)]}
 
-    def ask(self, question: str, *, profile: str = "full", mode: Mode = "hybrid", k: int = 50,
+    def ask(self, question: str, *, profile: str = "full", model: str | None = None, mode: Mode = "hybrid",
+            k: int = 50,
             top_n: int = 10, fusion: str = "minmax", translate: bool = True, only_itmo: bool = True,
             with_answer: bool = True) -> dict:
         """One answer; `translate` defaults on, since hybrid:en won the 2026-10-07 validation.
@@ -330,12 +353,14 @@ class Rag:
             except Exception as exc:  # the answer is still worth giving without it
                 notes.append(f"Перевод вопроса для BM25 не получен ({exc}); поиск по словам вопроса как есть.")
                 translate = False
-        hits = self.retrieve(question, profile=profile, mode=mode, k=k, fusion=fusion, bm25_query=bm25_query)
+        model = get_model(model or self.model).alias
+        hits = self.retrieve(question, profile=profile, model=model, mode=mode, k=k, fusion=fusion,
+                             bm25_query=bm25_query)
         timings["retrieve"] = round(time.perf_counter() - start, 3)
         people = self.experts(hits, top_n=top_n, only_itmo=only_itmo)
         timings["experts"] = round(time.perf_counter() - start - timings["retrieve"], 3)
         shown = {label: items[:top_n] for label, items in hits.items()}
-        self.describe(shown, profile)
+        self.describe(shown, profile, model)
         answer = None
         if with_answer:
             mark = time.perf_counter()
@@ -343,7 +368,7 @@ class Rag:
             timings["answer"] = round(time.perf_counter() - mark, 3)
         return {
             "question": question,
-            "options": {"profile": profile, "mode": mode, "k": k, "top_n": top_n, "fusion": fusion,
+            "options": {"profile": profile, "model": model, "mode": mode, "k": k, "top_n": top_n, "fusion": fusion,
                         "translate": translate, "only_itmo": only_itmo},
             "persons": people,
             "publications": [asdict(h) for h in shown.get("Publication", [])],

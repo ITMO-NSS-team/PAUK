@@ -95,21 +95,21 @@ class Profile:
         return tuple(label for label in LABELS if self.fields_for(label))
 
     # Neo4j names. Property and index names carry the profile, so profiles
-    # live side by side and dropping one leaves the others untouched.
+    # live side by side and dropping one leaves the others untouched. The
+    # text and its full-text index are the profile's alone - BM25 does not
+    # depend on the model; vectors and their hashes carry the model alias.
     @property
     def text_property(self) -> str:
         return f"rag_text_{self.name}"
 
-    @property
-    def vector_property(self) -> str:
-        return f"rag_vec_{self.name}"
+    def vector_property(self, model: str) -> str:
+        return f"rag_vec_{self.name}_{model}"
 
-    @property
-    def hash_property(self) -> str:
-        return f"rag_hash_{self.name}"
+    def hash_property(self, model: str) -> str:
+        return f"rag_hash_{self.name}_{model}"
 
-    def vector_index(self, label: str) -> str:
-        return f"rag_vec_{self.name}_{label.lower()}"
+    def vector_index(self, label: str, model: str) -> str:
+        return f"rag_vec_{self.name}_{model}_{label.lower()}"
 
     def text_index(self, label: str) -> str:
         return f"rag_text_{self.name}_{label.lower()}"

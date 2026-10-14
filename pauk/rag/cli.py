@@ -8,6 +8,7 @@ from pathlib import Path
 
 from pauk.settings import Settings
 
+from .models import MODELS
 from .profiles import FIELDS, PRESETS, resolve
 from .retrieve import MODES
 
@@ -31,6 +32,8 @@ def add_parser(subparsers) -> None:
     p = sub.add_parser("profiles", help="presets, fields, and what is built in Neo4j")
 
     p = sub.add_parser("index", help="build (or update) one index profile in Neo4j")
+    p.add_argument("--model", choices=list(MODELS), default=None,
+                   help="embedding model alias (default: PAUK_RAG_EMBEDDING_MODEL)")
     p.add_argument("--profile", required=True, help=f"a preset ({', '.join(PRESETS)}) or a new name with fields")
     p.add_argument("--publication-fields", help=f"comma-separated: {', '.join(FIELDS['Publication'])}")
     p.add_argument("--repository-fields", help=f"comma-separated: {', '.join(FIELDS['Repository'])}")
@@ -39,9 +42,13 @@ def add_parser(subparsers) -> None:
 
     p = sub.add_parser("drop", help="remove a profile's properties and indexes from Neo4j")
     p.add_argument("--profile", required=True)
+    p.add_argument("--model", choices=list(MODELS), default=None,
+                   help="drop only this model's vectors; without it the whole profile goes")
 
     p = sub.add_parser("ask", help="answer one question, print JSON")
     p.add_argument("question")
+    p.add_argument("--model", choices=list(MODELS), default=None,
+                   help="embedding model alias (default: PAUK_RAG_EMBEDDING_MODEL)")
     p.add_argument("--profile", default="full")
     p.add_argument("--mode", choices=MODES, default="hybrid")
     p.add_argument("--fusion", choices=["minmax", "rrf"], default="minmax")
@@ -57,7 +64,7 @@ def add_parser(subparsers) -> None:
     # No default list: rerunning `pool` on a judged run must not silently
     # shrink it to a few variants and drop the others from the metrics.
     p.add_argument("--variants", default=None,
-                   help="comma-separated profile:mode[:rrf+en]; default: the run's current variants, "
+                   help="comma-separated profile[@model]:mode[:rrf+en]; default: the run's current variants, "
                         f"or {DEFAULT_VARIANTS} for a new run")
     p.add_argument("--k", type=int, default=10)
     p.add_argument("--seed-judgments", action="append", default=[],
@@ -89,18 +96,21 @@ def run(args, config: Settings) -> None:
                          indent=2))
     elif command == "profiles":
         from .graph import Graph
-        from .index import load_manifest
 
         graph = Graph(config)
         try:
             indexes = graph.rag_indexes()
         finally:
             graph.close()
-        built = sorted({row["name"].split("_", 2)[2].rsplit("_", 1)[0] for row in indexes})
+        # Manifests are named profile@model, one per build.
+        manifests = sorted((config.data_dir / "rag" / "profiles").glob("*@*.json"))
+        built = {path.stem: json.loads(path.read_text(encoding="utf-8")) for path in manifests}
         print(json.dumps({
             "presets": {name: p.to_dict() for name, p in PRESETS.items()},
             "fields": {label: sorted(names) for label, names in FIELDS.items()},
-            "built": {name: (load_manifest(config, name) or {}).get("labels") for name in built},
+            "models": {alias: model.name for alias, model in MODELS.items()},
+            "built": {key: {"embedding_model": m.get("embedding_model"), "built_at": m.get("built_at"),
+                            "labels": m.get("labels")} for key, m in built.items()},
             "indexes": indexes,
         }, ensure_ascii=False, indent=2, default=str))
     elif command == "index":
@@ -117,7 +127,7 @@ def run(args, config: Settings) -> None:
             finally:
                 graph.close()
             logger.info("READMEs: %s", fetch(config, repos))
-        print(json.dumps(build(config, profile, force=args.force), ensure_ascii=False, indent=2))
+        print(json.dumps(build(config, profile, force=args.force, model=args.model), ensure_ascii=False, indent=2))
     elif command == "drop":
         from .graph import Graph
         from .index import manifest_path
@@ -126,15 +136,16 @@ def run(args, config: Settings) -> None:
         graph = Graph(config)
         try:
             # Any name: dropping needs only the naming scheme, not the fields.
-            removed = graph.drop(Profile(args.profile, publication=("title",)), LABELS)
+            removed = graph.drop(Profile(args.profile, publication=("title",)), LABELS, args.model)
         finally:
             graph.close()
-        manifest_path(config, args.profile).unlink(missing_ok=True)
-        print(json.dumps({"profile": args.profile, "cleared_nodes": removed}, indent=2))
+        for model in [args.model] if args.model else MODELS:
+            manifest_path(config, args.profile, model).unlink(missing_ok=True)
+        print(json.dumps({"profile": args.profile, "model": args.model, "cleared_nodes": removed}, indent=2))
     elif command == "ask":
         from .retrieve import Rag
 
-        rag = Rag(config)
+        rag = Rag(config, model=args.model)
         try:
             result = rag.ask(args.question, profile=args.profile, mode=args.mode, fusion=args.fusion,
                              translate=not args.no_translate, top_n=args.top, only_itmo=not args.all_people,

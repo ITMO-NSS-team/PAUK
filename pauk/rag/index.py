@@ -24,6 +24,8 @@ from pauk.settings import Settings
 from . import readme
 from .embedder import Embedder
 from .graph import Graph
+from .models import Model
+from .models import get as get_model
 from .profiles import Profile
 
 logger = logging.getLogger(__name__)
@@ -82,26 +84,30 @@ class VectorCache:
         tmp.replace(self.path)
 
 
-def manifest_path(config: Settings, name: str) -> Path:
-    return config.data_dir / "rag" / "profiles" / f"{name}.json"
+def manifest_path(config: Settings, name: str, model: str) -> Path:
+    """One manifest per profile and model: `full@qwen3.json`."""
+    return config.data_dir / "rag" / "profiles" / f"{name}@{model}.json"
 
 
-def load_manifest(config: Settings, name: str) -> dict[str, Any] | None:
-    path = manifest_path(config, name)
+def load_manifest(config: Settings, name: str, model: str) -> dict[str, Any] | None:
+    path = manifest_path(config, name, model)
     return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
 
 
 def build(config: Settings, profile: Profile, *, force: bool = False, embedder: Embedder | None = None,
-          graph: Graph | None = None) -> dict[str, Any]:
-    model = config.rag_embedding_model
-    embedder = embedder or Embedder(model)
+          graph: Graph | None = None, model: str | None = None) -> dict[str, Any]:
+    """Embed the profile with one model (alias or name; default: the setting)."""
+    spec = get_model(model or config.rag_embedding_model)
+    embedder = embedder or Embedder(spec)
     own_graph = graph is None
     graph = graph or Graph(config)
     stats: dict[str, Any] = {}
-    cache = VectorCache(config, model)
+    # The cache and the text hash key on the model name; the document
+    # prefix is fixed per model, so the name already pins the vector.
+    cache = VectorCache(config, spec.name)
     try:
         for label in profile.labels():
-            stats[label] = _build_label(config, graph, embedder, cache, profile, label, model, force)
+            stats[label] = _build_label(config, graph, embedder, cache, profile, label, spec, force)
         graph.await_indexes()
     finally:
         cache.save()
@@ -109,20 +115,21 @@ def build(config: Settings, profile: Profile, *, force: bool = False, embedder: 
             graph.close()
     manifest = {
         "profile": profile.to_dict(),
-        "embedding_model": model,
+        "model": spec.alias,
+        "embedding_model": spec.name,
         "analyzer": ANALYZER,
         "built_at": datetime.now(UTC).isoformat(),
         "labels": stats,
     }
-    path = manifest_path(config, profile.name)
+    path = manifest_path(config, profile.name, spec.alias)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
     return manifest
 
 
 def _build_label(config: Settings, graph: Graph, embedder: Embedder, cache: VectorCache, profile: Profile,
-                 label: str, model: str, force: bool) -> dict[str, int]:
-    rows = graph.nodes(label, profile)
+                 label: str, model: Model, force: bool) -> dict[str, int]:
+    rows = graph.nodes(label, profile, model.alias)
     if label == "Repository":
         for row in rows:
             row["readme"] = readme.load_readme(config, row["id"])
@@ -138,13 +145,13 @@ def _build_label(config: Settings, graph: Graph, embedder: Embedder, cache: Vect
             if row.get("hash"):
                 cleared.append(row["id"])
             continue
-        digest = text_hash(model, text)
+        digest = text_hash(model.name, text)
         if digest == row.get("hash") and not force:
             unchanged += 1
             continue
         todo.append({"id": row["id"], "text": text, "hash": digest})
-    logger.info("%s / %s: %d to write, %d unchanged, %d cleared, %d not research",
-                profile.name, label, len(todo), unchanged, len(cleared), skipped)
+    logger.info("%s@%s / %s: %d to write, %d unchanged, %d cleared, %d not research",
+                profile.name, model.alias, label, len(todo), unchanged, len(cleared), skipped)
     
     missing = [row for row in todo if force or cache.get(row["hash"]) is None]
 
@@ -158,12 +165,12 @@ def _build_label(config: Settings, graph: Graph, embedder: Embedder, cache: Vect
 
     if todo:
         for start in range(0, len(todo), WRITE_BATCH):
-            graph.store(label, profile, todo[start:start + WRITE_BATCH])
+            graph.store(label, profile, model.alias, todo[start:start + WRITE_BATCH])
     
     if cleared:
         graph.clear(label, profile, cleared)
     
-    graph.ensure_indexes(label, profile, embedder.dimensions, ANALYZER)
+    graph.ensure_indexes(label, profile, model.alias, embedder.dimensions, ANALYZER)
     return {"nodes": len(rows), "written": len(todo), "embedded": len(missing), "unchanged": unchanged,
             "cleared": len(cleared),
             "not_research": skipped, "indexed": len(todo) + unchanged}
