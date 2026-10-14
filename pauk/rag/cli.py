@@ -71,8 +71,10 @@ def add_parser(subparsers) -> None:
                    help="judgments JSON of an earlier run to copy matching grades from")
     p.add_argument("--judge", help="seed into judgments_<judge>.json instead of judgments.json")
 
-    p = sub.add_parser("metrics", help="P@k, nDCG@k, MRR per variant; sign test against a baseline")
+    p = sub.add_parser("metrics", help="P@k, R@k, nDCG@k, MRR per variant; sign test against a baseline")
     p.add_argument("--run", default="validation")
+    p.add_argument("--k", help="comma-separated cutoffs, e.g. 3,5,10 (default: 5 and the pool's k; "
+                               "none above the pool's k); the sign test uses nDCG at the largest")
     p.add_argument("--judge", help="use judgments_<judge>.json and report agreement with judgments.json")
     p.add_argument("--baseline", help="variant the others are compared with, e.g. full:hybrid")
 
@@ -178,7 +180,8 @@ def run(args, config: Settings) -> None:
         from .evaluation import agreement, compute_metrics
 
         run_dir = runs_dir(config) / args.run
-        rows = compute_metrics(run_dir, args.judge, args.baseline)
+        cutoffs = tuple(int(k) for k in _csv(args.k)) if args.k else None
+        rows = compute_metrics(run_dir, args.judge, args.baseline, cutoffs)
         columns = list(dict.fromkeys(key for row in rows for key in row))
         print("\t".join(columns))
         for row in rows:

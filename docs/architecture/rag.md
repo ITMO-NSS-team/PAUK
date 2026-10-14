@@ -92,7 +92,11 @@ Abstract» близка к любому расплывчатому вопрос�
 Вариант — `профиль:режим[:fusion]`. Все варианты отвечают на все вопросы;
 топ-k людей, публикаций и репозиториев объединяются в пул (TREC-пулинг),
 размечается только пул (0/1/2). Вопрос без единого релевантного элемента
-некоторого типа в метрики этого типа не входит. `compute_metrics` даёт P@5,
+некоторого типа в метрики этого типа не входит. Cutoff'ы задаются `--k`
+(по умолчанию 5 и k пула) и не могут превышать k, с которым собран пул: глубже
+нет ни выдачи, ни оценок. Recall@k — пуловый: в знаменателе релевантные
+элементы, найденные хоть одним вариантом, а не все релевантные в графе, поэтому
+он завышен и годится для сравнения вариантов, а не для оценки полноты. `compute_metrics` даёт P@5,
 P@k, nDCG@k, MRR, judged@k по типу и варианту, а с `--baseline` — знаковый
 тест по вопросам (wins, losses, двусторонний p). Оценки прототипа
 (`data/search/*/judgments*.json`) переносятся через `--seed-judgments`:
@@ -110,6 +114,7 @@ uv run pauk rag ask "кто занимается федеративным обу
 uv run pauk rag pool --run validation --variants full:hybrid:en,full:dense,no_readme:hybrid:en
 uv run pauk rag pool --run validation                    # без --variants: те же варианты, что уже в пуле
 uv run pauk rag metrics --run validation --judge claude --baseline full:hybrid:en
+uv run pauk rag metrics --run validation --judge claude --k 3,5,10   # свои cutoff'ы, не больше k пула
 uv run pauk rag drop --profile no_readme
 ```
 

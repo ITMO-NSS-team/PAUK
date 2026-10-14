@@ -7,7 +7,11 @@ variants are merged into one pool per question, and only the pool is
 judged: 0 - not relevant, 1 - partly, 2 - relevant (TREC-style pooling;
 nobody can judge 13 thousand papers per question). What no variant
 returned counts as not relevant, so P@k, nDCG@k and MRR are comparable
-across variants; recall is not measured.
+across variants. Recall@k is pooled recall: its denominator is the relevant
+items any variant found, not every relevant item in the graph, so it
+overstates true recall - it compares variants, it does not measure coverage.
+Cutoffs are chosen at `compute_metrics` and cannot exceed the pool's `k`:
+beyond it there are neither rankings nor judgments.
 
 An ablation is then `compare`: the per-question nDCG of each variant
 against a baseline, with a two-sided sign test for whether the difference
@@ -273,30 +277,48 @@ def _dcg(gains: list[int]) -> float:
     return sum((2 ** g - 1) / math.log2(rank + 2) for rank, g in enumerate(gains))
 
 
-def score_ranking(ranked: list[str], grades: dict[str, int], k: int) -> dict[str, float]:
-    """P@5, P@k, nDCG@k and MRR of one ranked list; unjudged items count as not relevant."""
-    top = ranked[:k]
-    gains = [grades.get(item, 0) for item in top]
-    relevant = [g >= 1 for g in gains]
-    ideal = _dcg(sorted(grades.values(), reverse=True)[:k])
-    first = next((rank for rank, hit in enumerate(relevant, 1) if hit), None)
-    return {
-        "P@5": sum(relevant[:5]) / 5,
-        f"P@{k}": sum(relevant) / k,
-        f"nDCG@{k}": _dcg(gains) / ideal if ideal else 0.0,
-        "MRR": 1 / first if first else 0.0,
-        f"judged@{k}": sum(item in grades for item in top) / k,
-    }
+def score_ranking(ranked: list[str], grades: dict[str, int], cutoffs: tuple[int, ...]) -> dict[str, float]:
+    """P@k, R@k and nDCG@k for each cutoff, MRR and judged@k at the largest one.
+
+    Unjudged items count as not relevant. Recall is over the judged relevant
+    items of the question (pooled recall), the only total that is known.
+    """
+    total = sum(g >= 1 for g in grades.values())
+    ideal_order = sorted(grades.values(), reverse=True)
+    out: dict[str, float] = {}
+    for k in cutoffs:
+        gains = [grades.get(item, 0) for item in ranked[:k]]
+        hits = sum(g >= 1 for g in gains)
+        ideal = _dcg(ideal_order[:k])
+        out[f"P@{k}"] = hits / k
+        out[f"R@{k}"] = hits / total if total else 0.0
+        out[f"nDCG@{k}"] = _dcg(gains) / ideal if ideal else 0.0
+    k = max(cutoffs)
+    first = next((rank for rank, item in enumerate(ranked[:k], 1) if grades.get(item, 0) >= 1), None)
+    out["MRR"] = 1 / first if first else 0.0
+    out[f"judged@{k}"] = sum(item in grades for item in ranked[:k]) / k
+    return out
 
 
-def per_question(pool: dict[str, Any], judgments: dict[str, dict[str, int]]) -> dict[tuple[str, str], dict[str, dict]]:
+def cutoffs_for(pool: dict[str, Any], cutoffs: tuple[int, ...] | None) -> tuple[int, ...]:
+    """The requested cutoffs, sorted; default (5, pool k). None may exceed the pool's k."""
+    k = pool["k"]
+    chosen = tuple(sorted(set(cutoffs or (min(5, k), k))))
+    if not chosen or chosen[0] < 1 or chosen[-1] > k:
+        raise ValueError(f"cutoffs {chosen} must lie in 1..{k}: the pool holds each variant's top {k}; "
+                         f"rebuild it with `pauk rag pool --k N` (and judge the new items) for deeper cutoffs")
+    return chosen
+
+
+def per_question(pool: dict[str, Any], judgments: dict[str, dict[str, int]],
+                 cutoffs: tuple[int, ...] | None = None) -> dict[tuple[str, str], dict[str, dict]]:
     """{(kind, variant): {question: metrics}} over questions that have a relevant item of that kind.
 
     A question whose pool holds no relevant repository says nothing about
     repository search - every variant would score 0 - so it is left out of
     that kind instead of dragging all variants down alike.
     """
-    k = pool["k"]
+    cutoffs = cutoffs_for(pool, cutoffs)
     out: dict[tuple[str, str], dict[str, dict]] = {}
     for entry in pool["questions"]:
         for kind in pool["kinds"]:
@@ -305,15 +327,17 @@ def per_question(pool: dict[str, Any], judgments: dict[str, dict[str, int]]) -> 
             if not any(g >= 1 for g in grades.values()):
                 continue
             for variant, ranking in entry["rankings"].items():
-                out.setdefault((kind, variant), {})[entry["question"]] = score_ranking(ranking[kind], grades, k)
+                out.setdefault((kind, variant), {})[entry["question"]] = score_ranking(ranking[kind], grades, cutoffs)
     return out
 
 
-def compute_metrics(run_dir: Path, judge: str | None = None, baseline: str | None = None) -> list[dict[str, Any]]:
+def compute_metrics(run_dir: Path, judge: str | None = None, baseline: str | None = None,
+                    cutoffs: tuple[int, ...] | None = None) -> list[dict[str, Any]]:
+    """Mean metrics per kind and variant; the sign test runs on nDCG at the largest cutoff."""
     pool = load_pool(run_dir)
-    scores = per_question(pool, load_judgments(run_dir, judge))
-    k = pool["k"]
-    main = f"nDCG@{k}"
+    cutoffs = cutoffs_for(pool, cutoffs)
+    scores = per_question(pool, load_judgments(run_dir, judge), cutoffs)
+    main = f"nDCG@{max(cutoffs)}"
     rows = []
     for (kind, variant), by_question in sorted(scores.items()):
         values = list(by_question.values())

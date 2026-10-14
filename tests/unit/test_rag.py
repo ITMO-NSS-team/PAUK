@@ -339,6 +339,22 @@ class MetricsTest(unittest.TestCase):
         # No relevant repository judged in any question: that kind is left out, not scored 0.
         self.assertEqual({row["kind"] for row in rows.values()}, {"persons"})
 
+    def test_cutoffs_are_chosen_and_recall_is_over_judged_relevant_items(self):
+        grades = {"a": 2, "b": 0, "c": 1, "d": 1}  # three relevant; "d" never retrieved
+        scores = evaluation.score_ranking(["b", "a", "c"], grades, (1, 3))
+        self.assertEqual((scores["P@1"], scores["R@1"]), (0.0, 0.0))
+        self.assertAlmostEqual(scores["P@3"], 2 / 3)
+        self.assertAlmostEqual(scores["R@3"], 2 / 3)
+        self.assertEqual(scores["MRR"], 0.5)
+        self.assertIn("nDCG@3", scores)
+        self._pool()
+        evaluation.save_judgment(self.run, "q0", "persons", "x", 2)
+        rows = evaluation.compute_metrics(self.run, cutoffs=(1, 2))
+        self.assertIn("R@2", rows[0])
+        self.assertNotIn("P@10", rows[0])
+        with self.assertRaises(ValueError):  # the pool holds each variant's top 10 only
+            evaluation.compute_metrics(self.run, cutoffs=(20,))
+
     def test_grades_are_checked_and_seeded_without_overwriting(self):
         self._pool()
         with self.assertRaises(KeyError):
