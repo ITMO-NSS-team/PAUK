@@ -64,7 +64,7 @@ class DeleteAgainstRealGraphTest(unittest.TestCase):
 
     def test_a_connected_node_survives_without_detach(self):
         # The guard that stops a careless delete from tearing edges out of
-        # the graph — enforced by the query, not by Python.
+        # the graph, enforced by the query and not by Python.
         _client.upsert_nodes_batch("Person", [("A1", {})])
         _client.upsert_nodes_batch("Publication", [("W1", {})])
         _client.upsert_relationships_batch("Person", "Publication", "AUTHORED", [("A1", "W1", {})])

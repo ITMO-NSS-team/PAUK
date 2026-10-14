@@ -194,8 +194,7 @@ def _update_publication_code(publication: Publication, links: list[CodeLink]) ->
     if not urls:
         publication.code_url = None
         return
-    # code_url predates the graph model and remains JSON text for compatibility
-    # with the GUI, which displays every author-produced artifact of a paper.
+    # JSON text, kept for the GUI, which displays every author-produced artifact of a paper.
     publication.code_url = json.dumps(urls, ensure_ascii=False)
 
 

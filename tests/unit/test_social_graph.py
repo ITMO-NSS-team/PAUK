@@ -81,9 +81,9 @@ class ItmoOrganizationStatusTest(unittest.TestCase):
         self.assertEqual(self.judge("lab", company="ИТМО"), ("confirmed", "profile"))
 
     def test_an_employee_committing_there_does_not_make_it_ours(self):
-        # The rule this replaces followed any organization a confirmed
-        # account had committed to, which on real data meant google,
-        # microsoft, JetBrains and llvm-mirror.
+        # Following any organization a confirmed account had committed to is
+        # wrong: on real data that meant google, microsoft, JetBrains and
+        # llvm-mirror.
         self.assertEqual(self.judge("google", name="Google",
                                     location="United States of America"), ("not_confirmed", ""))
 

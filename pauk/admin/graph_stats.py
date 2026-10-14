@@ -1,5 +1,5 @@
 """Statistics and health checks over the Neo4j graph, for the admin
-panel's "Здоровье БД" page (`health.py`, `health_routes.py`).
+panel's health page (`health.py`, `health_routes.py`).
 
   * `collect()` - node/relationship counts, every check in `checks.py`, a few
     summaries; the worker runs it and `health.py` keeps the answer in Mongo;
@@ -43,14 +43,11 @@ def _jsonable(v):
     return str(v)
 
 
-# --- node / relationship inventory --------------------------------------
-
-# is_itmo:Itmo/External label migration - #150.
 NODE_COUNTS = [
     ("Публикации", "Publications", "MATCH (p:Publication) RETURN count(p)"),
     ("Персоны всего", "People total", "MATCH (p:Person) RETURN count(p)"),
     # Not a label: the loader writes one :Person and carries ITMO membership
-    # as a sticky property — see the note in checks.py.
+    # as a sticky property (see checks.py).
     ("— сотрудники ИТМО", "— ITMO staff",
      "MATCH (p:Person) WHERE p.is_itmo RETURN count(p)"),
     ("— внешние соавторы", "— external co-authors",
@@ -105,8 +102,7 @@ def status_for(n, denom, warn, fail):
     return "ok"
 
 
-#: Publications with at least one ITMO author: the note under the
-#: publication count, and the only ones that reach the map.
+#: Publications with at least one ITMO author: the only ones that reach the map.
 ON_MAP = ("MATCH (p:Publication) WHERE EXISTS { (p)<-[:AUTHORED]-(a:Person) WHERE a.is_itmo } "
           "RETURN count(p)")
 
@@ -117,9 +113,7 @@ TOP_DEPTS = """MATCH (d:Department)<-[:BELONGS_TO]-(p:Person) WHERE p.is_itmo
                WITH d, count(p) AS n ORDER BY n DESC LIMIT 8
                RETURN coalesce(d.name_ru, d.name_en) AS name, d.name_en AS name_en, n"""
 
-#: Everything this module asks the graph besides the checks themselves. A
-#: list, so a test can walk it the way it walks CHECKS: the labels here had
-#: drifted from the schema too, and showed zeros without a word.
+#: Every query besides the checks, as a list so a test can walk it like CHECKS.
 QUERIES = [cypher for _label, _label_en, cypher in NODE_COUNTS] + [ON_MAP, YEARS, TOP_DEPTS]
 
 
@@ -151,16 +145,12 @@ def collect(drv):
 
     checks = []
     for c in CHECKS:
-        # Per-check isolation: a query that fails against the current graph
-        # (a property typed differently than the check assumes, say) must not
-        # take the whole snapshot down with it — the tab would show nothing
-        # at all instead of the 30-odd checks that did run.
+        # A failing query must not take the whole snapshot down with it.
         try:
             n = scalar(drv, c.count)
             denom = scalar(drv, c.of) if c.of else None
         except Exception as exc:
-            logger.warning("проверка %s не выполнилась: %s", c.id, exc)
-            # Exception text is already Python/English, so hint and hint_en match.
+            logger.warning("check %s failed: %s", c.id, exc)
             error_hint = f"{type(exc).__name__}: {exc}"
             checks.append(
                 {
@@ -214,7 +204,7 @@ def collect(drv):
 
 
 def collect_examples(drv, check_id, limit=EXAMPLES_LIMIT_DEFAULT):
-    """Rows behind one check. Returns columns + rows, ready for a table or CSV."""
+    """Rows behind one check, as columns plus rows ready for a table or CSV."""
     c = BY_ID.get(check_id)
     if c is None:
         raise KeyError(check_id)

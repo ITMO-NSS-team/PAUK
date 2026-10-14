@@ -1,16 +1,9 @@
 """Manual decisions in force, and where they disagree with the source.
 
-Every hand edit is kept as a decision in `graph_overrides`, reapplied
-after each publish and each dedup. This module reads that collection for
-the panel: what is in force, and which of it the pipeline has since
-contradicted.
-
-A conflict is not "the graph differs from the override" — the override is
-reapplied, so the graph always agrees with it. It is the *source* that
-moves: `auto_value` records what the field held before a person changed
-it, and when a later run writes something different from that, the
-pipeline is saying the value has changed for a reason of its own. Nobody
-sees that unless it is looked for, which is what this does.
+Every hand edit is kept as a decision in `graph_overrides` and reapplied after
+each publish and dedup. A conflict is not "the graph differs from the override"
+(it never does) but a later pipeline write that differs from `auto_value`, the
+value the field held before a person changed it.
 """
 
 from __future__ import annotations
@@ -27,11 +20,10 @@ PANEL = "admin-ui"
 
 
 def _moment(value) -> str:
-    """A time as text, in the same shape the feed uses.
+    """A time as text in isoformat, the shape the feed uses.
 
-    The feed stores isoformat strings; `updated_at` is a datetime, and its
-    str() puts a space where isoformat puts "T". Sorting the two together
-    as text orders them wrongly, so everything is brought to isoformat.
+    `str(datetime)` puts a space where isoformat puts "T", and the two would
+    sort wrongly together as text.
     """
     if value is None:
         return ""
@@ -58,10 +50,7 @@ def _title(row: dict) -> str:
 
 def in_force(db: Database, limit: int = PAGE, skip: int = 0) -> list[dict]:
     """Decisions currently applied, newest first.
-
-    Paged in the database rather than in Python: the list grows with every
-    hand edit that is never withdrawn, and a panel that loads all of them
-    to show fifty would get slower for as long as the project runs.
+    Paged in the database so the panel does not load every decision ever kept.
 
     Returns:
         Rows as stored, with `title` for display and `what` describing the
@@ -72,7 +61,7 @@ def in_force(db: Database, limit: int = PAGE, skip: int = 0) -> list[dict]:
     for row in rows:
         row["title"] = _title(row)
         row["what"] = WORDS.get((row.get("kind") == "rel", row.get("op")), "решение")
-        # A claim is not an instruction: it is taken back by removing the thing.
+        # A claim is taken back by removing the thing, not by undoing.
         row["undoable"] = row.get("op") not in (CREATE, LINK)
         row["pairs"] = sorted(
             (name, (row.get("auto_value") or {}).get(name), value)
@@ -83,22 +72,18 @@ def in_force(db: Database, limit: int = PAGE, skip: int = 0) -> list[dict]:
 def conflicts(db: Database, limit: int | None = PAGE, skip: int = 0) -> list[dict]:
     """Fields where the source now says something other than it used to.
 
-    For every hand-edited field, the feed is searched for a later write
-    made by anything but the panel. If that write set a value different
-    from `auto_value`, the pipeline has changed its mind about the field
-    and the person's edit is now hiding a fact rather than a mistake.
+    For every hand-edited field, looks for a later non-panel write in the feed
+    whose value differs from `auto_value`.
 
     Args:
         db: Mongo database.
-        limit: Rows to return; None for all of them, which is how the page
-            gets its own count without walking every decision a second
-            time.
+        limit: Rows to return; None for all, which gives the page its total
+            without a second pass.
         skip: Rows to skip, for paging.
 
     Returns:
-        One row per field in disagreement: the decision it belongs to,
-        what a person set, what the source used to say, what it says now,
-        and who wrote that.
+        One row per field in disagreement: the decision, what a person set,
+        what the source used to say, what it says now, and who wrote that.
     """
     edits = [row for row in active_overrides(db)
              if row.get("kind") != "rel" and row.get("op") == SET]
@@ -126,7 +111,6 @@ def conflicts(db: Database, limit: int | None = PAGE, skip: int = 0) -> list[dic
                 "actor": actor, "when": when, "note": row.get("note", ""),
             })
 
-    # One representation: a space sorts before "T", and str(datetime) uses one.
     found.sort(key=lambda row: row["when"], reverse=True)
     if limit is None:
         return found[skip:]
@@ -135,12 +119,6 @@ def conflicts(db: Database, limit: int | None = PAGE, skip: int = 0) -> list[dic
 
 def _source_writes(db: Database, edits: list[dict]) -> dict[tuple[str, str, str], tuple]:
     """The latest non-panel write to each hand-edited field, in one query.
-
-    Asked one decision at a time this was a round trip per field, so a page
-    listing fifty decisions cost hundreds of them and grew with every edit
-    anybody ever made. The entities are known up front, so they are fetched
-    together and the newest write per field is picked while walking the
-    result.
 
     Returns:
         (label, node_id, field) -> (value now, who wrote it, when).
@@ -177,10 +155,8 @@ def _source_writes(db: Database, edits: list[dict]) -> dict[tuple[str, str, str]
 def count_conflicts(db: Database) -> int:
     """How many disagreements there are in total.
 
-    There is no cheaper way than looking: a conflict is a comparison
-    between a decision and what the source said afterwards, not a flag on a
-    document. So a page that needs both the number and a slice should call
-    `conflicts(db, limit=None)` once and use its length, rather than this.
+    A page that needs both the count and a slice should call
+    `conflicts(db, limit=None)` once instead.
     """
     return len(conflicts(db, limit=None))
 
@@ -192,14 +168,9 @@ def count_in_force(db: Database) -> int:
 def deleted_fields(db: Database, label: str, node_id: str) -> dict:
     """What a deleted record held, for putting it back.
 
-    Read from the decision itself: both the panel and `pauk admin node
-    delete` take a snapshot before removing the node. The feed is only a
-    fallback, for records deleted before snapshots existed — it stores
-    history rather than state, and a bulk operation lands there as a
-    summary with no fields at all.
-
-    Call it before withdrawing the deletion, not after: withdrawing drops
-    the snapshot along with the decision it belongs to.
+    Read from the snapshot in the decision, with the feed as a fallback for
+    records deleted before snapshots existed. Call it before withdrawing the
+    deletion, which drops the snapshot.
     """
     row = db[COLLECTION].find_one({"_id": f"node:{label}:{node_id}", "op": "delete"})
     if row and row.get("snapshot"):
@@ -210,14 +181,9 @@ def deleted_fields(db: Database, label: str, node_id: str) -> dict:
 def source_of_truth(db: Database, label: str, node_id: str) -> dict:
     """What the pipeline says a hand-edited record's fields should hold.
 
-    Used when an edit is withdrawn: the field has to go back to the
-    source's value there and then, rather than wait for a publish to
-    overwrite it — a record the pipeline no longer covers would keep the
-    hand-written value indefinitely.
-
-    Prefers `source_value`, written by `apply_overrides` at the moment it
-    covered the value up, and falls back to `auto_value`, recorded when
-    the edit was first made.
+    Used when an edit is withdrawn, so the field goes back to the source's
+    value at once. Prefers `source_value` (written by `apply_overrides`), then
+    `auto_value`.
     """
     row = db[COLLECTION].find_one({"_id": f"node:{label}:{node_id}"})
     if row is None:

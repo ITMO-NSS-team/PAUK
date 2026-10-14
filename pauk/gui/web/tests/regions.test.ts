@@ -21,7 +21,7 @@ function cluster(cx: number, cy: number, count: number, dept: number, step = 2):
 }
 
 describe("buildRegions", () => {
-  it("два далёких скопления разных департаментов дают по региону на каждый, и каждый накрывает свои узлы", () => {
+  it("two distant clusters of different departments give one region each, and each covers its own nodes", () => {
     const a = cluster(0, 0, 16, 1);
     const b = cluster(200, 0, 16, 2);
 
@@ -33,7 +33,7 @@ describe("buildRegions", () => {
     expect(regionDeptAt(regions, { x: 100, y: 0 })).toBeNull(); // the gap between clusters stays empty
   });
 
-  it("соседние департаменты не перекрываются: точка не лежит сразу в двух регионах", () => {
+  it("neighbouring departments do not overlap: a point does not lie in two regions at once", () => {
     const regions = buildRegions([...cluster(0, 0, 25, 1), ...cluster(12, 0, 25, 2)], 10);
 
     let checked = 0;
@@ -48,7 +48,7 @@ describe("buildRegions", () => {
     expect(regions.map((r) => r.dept)).toEqual([1, 2]);
   });
 
-  it("остров меньше minNodes отбрасывается, а крупный остров того же департамента остаётся", () => {
+  it("an island smaller than minNodes is dropped, while a large island of the same department stays", () => {
     const big = cluster(0, 0, 20, 1);
     const small = cluster(300, 0, 4, 1);
 
@@ -59,7 +59,7 @@ describe("buildRegions", () => {
     expect(regionDeptAt(regions, small[0] ?? { x: 0, y: 0 })).toBeNull();
   });
 
-  it("несколько крупных островов одного департамента рисуются все, а не только самый большой", () => {
+  it("several large islands of one department are all drawn, not only the biggest one", () => {
     const regions = buildRegions([...cluster(0, 0, 20, 1), ...cluster(300, 0, 12, 1)], 10);
 
     expect(regions).toHaveLength(1);
@@ -68,7 +68,7 @@ describe("buildRegions", () => {
     expect(regions[0]?.rings.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("точка названия — центр узлов самого крупного острова, а не всех узлов департамента", () => {
+  it("the label point is the centre of the nodes of the largest island, not of all department nodes", () => {
     const big = cluster(0, 0, 20, 1); // 4 rows of 5: x 0..8, y 0..6 -> center (4, 3)
     const regions = buildRegions([...big, ...cluster(300, 0, 12, 1)], 10);
 
@@ -76,7 +76,7 @@ describe("buildRegions", () => {
     expect(regions[0]?.label.y).toBeCloseTo(3);
   });
 
-  it("департамент, у которого узлов меньше minNodes вообще, в результат не попадает; пустой вход — пустой результат", () => {
+  it("a department with fewer than minNodes nodes overall is not in the result; empty input gives an empty result", () => {
     expect(buildRegions(cluster(0, 0, 5, 1), 10)).toEqual([]);
     expect(buildRegions([], 10)).toEqual([]);
   });
@@ -208,27 +208,27 @@ function fakeRenderer(ratio: { value: number }) {
 describe("wrapLabel", () => {
   const measure = (line: string) => line.length * 10;
 
-  it("переносит по словам, не превышая ширину строки", () => {
+  it("wraps by words without exceeding the line width", () => {
     expect(wrapLabel("Институт прикладных компьютерных наук", measure, 200, 3)).toEqual([
       "Институт прикладных",
       "компьютерных наук",
     ]);
   });
 
-  it("строк не больше maxLines, последняя обрезается многоточием и тоже влезает в ширину", () => {
+  it("no more than maxLines lines, the last one is truncated with an ellipsis and also fits the width", () => {
     const lines = wrapLabel("один два три четыре пять шесть семь", measure, 80, 2);
     expect(lines).toHaveLength(2);
     expect(lines[1]?.endsWith("…")).toBe(true);
     expect(measure(lines[1] ?? "")).toBeLessThanOrEqual(80);
   });
 
-  it("слово длиннее ширины остаётся целым", () => {
+  it("a word longer than the width stays whole", () => {
     expect(wrapLabel("Сверхдлинноеслово", measure, 50, 3)).toEqual(["Сверхдлинноеслово"]);
   });
 });
 
 describe("mountRegions", () => {
-  it("кладёт свой canvas под рёбра и рисует регионы, пока камера дальше порога", () => {
+  it("puts its own canvas under the edges and draws regions while the camera is farther than the threshold", () => {
     const ratio = { value: 1 };
     const { renderer, context, render } = fakeRenderer(ratio);
     mountRegions(renderer, new Store<AppState>(initialState()), sampleData());
@@ -253,7 +253,7 @@ describe("mountRegions", () => {
     expect(context.fillText).not.toHaveBeenCalled();
   });
 
-  it("не рисует на вкладке, где регионы выключены, и пересчитывается при смене фильтров", () => {
+  it("does not draw on a tab where regions are off, and recomputes when filters change", () => {
     const { renderer, context, render } = fakeRenderer({ value: 1 });
     const store = new Store<AppState>(
       initialState({ showRegions: { 1: false, 2: false, 3: true } }),
@@ -274,7 +274,7 @@ describe("mountRegions", () => {
     expect(context.fill).not.toHaveBeenCalled();
   });
 
-  it("deptAtViewport находит департамент под точкой, только пока регионы видны", () => {
+  it("deptAtViewport finds the department under a point only while regions are visible", () => {
     const ratio = { value: 1 };
     const { renderer } = fakeRenderer(ratio);
     const regions = mountRegions(renderer, new Store<AppState>(initialState()), sampleData());
@@ -286,7 +286,7 @@ describe("mountRegions", () => {
     expect(regions.deptAtViewport({ x: 2, y: 2 })).toBeNull();
   });
 
-  it("при выборе узла чужие регионы притухают", () => {
+  it("when a node is selected, other regions fade", () => {
     const { renderer, context, render } = fakeRenderer({ value: 1 });
     const data = sampleData();
     data.authors.push(...cluster(100, 100, 16, 1).map((p, i) => authorNode(`B${i}`, p)));
@@ -306,7 +306,7 @@ describe("mountRegions", () => {
     expect(alphas["#00ff00"]).toBeLessThan(alphas["#ff0000"] ?? 0);
   });
 
-  it("перекрывающиеся названия не рисуются: остаётся название более крупного региона", () => {
+  it("overlapping labels are not drawn: the label of the larger region stays", () => {
     const { renderer, context, render } = fakeRenderer({ value: 1 });
     const data = sampleData();
     // A larger second department right next to the first: their labels overlap on screen.
@@ -320,7 +320,7 @@ describe("mountRegions", () => {
     expect(drawn).toEqual(["Лаборатория"]);
   });
 
-  it("при выбранном департаменте рисуется только его название", () => {
+  it("when a department is selected only its label is drawn", () => {
     const { renderer, context, render } = fakeRenderer({ value: 1 });
     const data = sampleData();
     data.authors.push(...cluster(500, 500, 16, 1).map((p, i) => authorNode(`B${i}`, p)));
@@ -337,7 +337,7 @@ describe("mountRegions", () => {
     expect(context.fillText.mock.calls.map(([text]) => text)).toEqual(["Лаборатория"]);
   });
 
-  it("наведение в режиме регионов подсвечивает регион и ставит курсор-руку, ближе порога — не реагирует", () => {
+  it("hovering in region mode highlights the region and sets a hand cursor, closer than the threshold it does not react", () => {
     const ratio = { value: 1 };
     const { renderer, context, container, moveMouse } = fakeRenderer(ratio);
     mountRegions(renderer, new Store<AppState>(initialState()), sampleData());
@@ -357,7 +357,7 @@ describe("mountRegions", () => {
     expect(container.style.cursor).toBe("");
   });
 
-  it("при выбранном узле или ребре названия регионов не рисуются даже в режиме регионов", () => {
+  it("when a node or edge is selected region labels are not drawn even in region mode", () => {
     const { renderer, context, render } = fakeRenderer({ value: 1 });
     const store = new Store<AppState>({
       ...initialState(),
@@ -375,7 +375,7 @@ describe("mountRegions", () => {
     expect(context.fillText).not.toHaveBeenCalled();
   });
 
-  it("выбранный регион держит заливку и название при приближении, остальные остаются только обводкой", () => {
+  it("the selected region keeps its fill and label when zooming in, the others stay outline-only", () => {
     const ratio = { value: 1 };
     const { renderer, context, render } = fakeRenderer(ratio);
     const data = sampleData();

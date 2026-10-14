@@ -14,9 +14,8 @@ from pauk.settings import Settings
 class WorkerTest(unittest.TestCase):
     """One process taking jobs off the queue, one at a time.
 
-    Every step is replaced here. A worker test that reached a real Neo4j
-    would publish a group as a side effect of running the suite — which is
-    exactly what happened once while checking this by hand.
+    Every step is replaced here: a worker test that reached a real Neo4j
+    would publish a group as a side effect of running the suite.
     """
 
     def setUp(self):
@@ -112,7 +111,7 @@ class WorkerTest(unittest.TestCase):
         """The only way a claimed job arrives already cancelled.
 
         Asked to stop while it was running, then handed back because the
-        resource was busy — `requeue` keeps the request, so the next worker
+        resource was busy - `requeue` keeps the request, so the next worker
         to pick it up has to honour it rather than start the run.
         """
         job = self.queue()
@@ -152,7 +151,7 @@ class DispatchTest(unittest.TestCase):
 
     def test_every_kind_has_a_step(self):
         # A kind added without a step would be claimed, started and then
-        # raise KeyError — a job that fails for a reason nobody can read.
+        # raise KeyError - a job that fails for a reason nobody can read.
         self.assertEqual(set(worker.STEPS), set(JobKind))
 
     def test_every_kind_has_a_payload_model(self):
@@ -298,7 +297,7 @@ class StopTest(unittest.TestCase):
 
 
 class PipelineJobTest(unittest.TestCase):
-    """Collect, publish, rebuild the map — one job, three phases.
+    """Collect, publish, rebuild the map - one job, three phases.
 
     Not three queued jobs: publishing names a group, and when the queue is
     filled that group has no rows for the check to accept.
@@ -382,10 +381,8 @@ class PipelineJobTest(unittest.TestCase):
 class AbandonedJobTest(unittest.TestCase):
     """A job whose worker is gone must not sit in "under way" for ever.
 
-    Nothing else ever moved a job out of that state: the only process that
-    could was the one that died holding it. Stopping the worker while a run
-    was going left the row there, and pressing cancel only added a line
-    saying somebody had asked it to stop.
+    Nothing else moves a job out of that state: the only process that could
+    is the one that died holding it.
     """
 
     def setUp(self):
@@ -474,8 +471,8 @@ class SeveralRunsAtOnceTest(unittest.TestCase):
         return step
 
     def test_one_blip_does_not_end_the_beating(self):
-        # An unhandled error killed the thread outright, and the run then
-        # went on in silence until the lease it held expired under it.
+        # An unhandled error would kill the thread outright, and the run would
+        # go on in silence until the lease it held expired under it.
         job = store.enqueue(self.db, JobKind.PUBLISH, {"group": "g"})
         store.claim(self.db, "worker-1")
         store.start(self.db, job.id)
@@ -548,8 +545,8 @@ class SeveralRunsAtOnceTest(unittest.TestCase):
 class ProgressTest(unittest.TestCase):
     """Where inside a run it is, not only that it is alive.
 
-    A collection run takes hours across ten enrichment stages. Until now the
-    only thing it said about itself was a heartbeat.
+    A collection run takes hours across ten enrichment stages, so a
+    heartbeat alone says too little.
     """
 
     def setUp(self):
@@ -615,9 +612,9 @@ class ProgressTest(unittest.TestCase):
 class CancelBetweenStepsTest(unittest.TestCase):
     """A cancel is heard between the parts a run is made of.
 
-    The pipeline used to look at it only between its three phases, so a run
-    stopped during collection kept going through ten enrichment stages —
-    hours after somebody pressed the button.
+    Looking only between the three phases would let a run stopped during
+    collection go through ten enrichment stages, hours after the button was
+    pressed.
     """
 
     def setUp(self):

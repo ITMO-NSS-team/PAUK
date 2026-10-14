@@ -4,91 +4,22 @@ Deterministic (no randomness) and self-describing: every tricky case the
 pipeline must survive is a named constant here, and `build_universe()`
 returns the raw payloads exactly as the external APIs would serve them.
 
-Tricky cases covered
---------------------
+What is covered, by id:
+* A01-A16: identity merge, sticky is_itmo, ambiguous and hyphenated
+  surnames, ORCID via Crossref, a failing authors endpoint.
+* A51-A59 (works W101..W110): authors split by OpenAlex, which the dedup
+  stage folds, plus one pair with different ORCIDs that must not merge.
+* W001-W020: GitHub URL variants, a renamed and a deleted repository,
+  missing abstract, title, DOI or authors, failing Crossref lookups.
+* W111-W120: duplicate publication records for the dedup stage.
+* W121-W124: records OpenAlex has not finished processing.
 
-Authors (A5000000001..A5000000059, 38 ITMO / 21 external before dedup):
-* A01-A05  ITMO affiliation missing on odd-numbered works (identity merge,
-           sticky is_itmo)
-* A06/A07  same family name ("Ivanov") on the same work -> the Crossref
-           ORCID match is ambiguous there and must NOT be assigned
-* A08      hyphenated surname, Crossref match works via split()[-1]
-* A09      multi-word surname ("van der Berg") — known limitation: the
-           family-name heuristic can't match it (stays without ORCID)
-* A10      display_name missing entirely (recovered by the authors API)
-* A11      Unicode name with diacritics + Cyrillic name variant
-* A12      listed twice in the same work's authorship list (real OpenAlex
-           data quirk, W018)
-* A13      ORCID already present in the OpenAlex author payload
-* A14      ORCID arrives only via Crossref (plus an email via ORCID record)
-* A16      OpenAlex authors endpoint fails -> persons stage FAILED
-
-Split-author duplicates for the dedup stage (works W101..W110):
-* A51/A52  same person split by OpenAlex: "Dmitry Kovalev" (ITMO) and
-           "D. A. Kovalev" (external, affiliation missed) share one ORCID
-           in their author records -> merged into A51, is_itmo survives
-* A53/A54/A55  one person, three spellings: "Ekaterina Smirnova" lists
-           "E. Smirnova" and "Екатерина Смирнова" among her name variants;
-           each duplicate shares coauthor A17 -> the whole group folds
-           transitively into A53 (most works)
-* A56/A57  identical ITMO display names ("Ivan Volkov") with nothing
-           explicit telling them apart -> merged by default into A56
-* A58/A59  "Olga Fedorova" lists "O. Fedorova" as a variant and they share
-           a coauthor, but their author records carry different ORCIDs ->
-           an explicit difference: NOT merged and not even a candidate
-
-Works (W7000000001..W7000000100):
-* W001     GitHub URL with a sentence-ending period
-* W002     GitHub URL with a ".git" suffix
-* W003     GitHub URL with a trailing slash
-* W004/5   the same repo cited in different letter case in two works
-* W006/7   a renamed repo: W006 cites the old URL (the API serves the
-           canonical payload, like GitHub's 301), W007 cites the new URL —
-           must end up as ONE repository
-* W008     URL of a deleted repo (404 -> stage FAILED -> LinkCandidate)
-* W009     www.github.com citation
-* W010     two different repos plus a duplicated URL in one abstract
-* W011     gitlab.com URL — ignored by the GitHub regex
-* W012     no abstract at all
-* W013     no title (-> "Untitled"), no publication_date, no DOI
-* W014     no DOI (crossref stage NOT_APPLICABLE)
-* W015     DOI unknown to Crossref (crossref stage FAILED)
-* W016     zero authorships
-* W017     12 co-authors (incl. both Ivanovs -> Crossref ambiguity)
-* W018     A12 appears twice in the authorship list
-* W019     awards/funders present (funding stored as JSON text on the node) + 404 repo
-* W020     pdf_url present + 404 repo (typo of a real name)
-
-Duplicate publication records for the dedup stage (works W111..W120):
-* W111/W112  one DOI re-indexed into two OpenAlex records; W112 carries no
-             authors at all -> the documented record survives
-* W113/W114  preprint and version of record: same title, different DOI,
-             journal and date -> the later record survives and keeps both
-             venues in `versions`
-* W115-W117  one deposit re-released three times -> the newest survives
-             holding three versions
-* W118       untitled like W013: the "Untitled" placeholder must never
-             merge two works
-* W119/W120  one title differing only in letter case and spacing -> merged
-
-Records OpenAlex has not finished processing:
-* W121      every author.id is null — one author is keyed by ORCID, one by
-            name, and the one with neither is the only authorship dropped
-* W122      title deposited with publisher markup (<sub>, MathML, <i>)
-* W123      a GitHub release archived on Zenodo: the repository is named
-            only in the title, and the deposit says nothing about where its
-            author works — the author's own OpenAlex record does
-* W124      a consortium paper whose author list the works endpoint
-            truncates: the ITMO participant is beyond the cut and only the
-            single-work record names them, and the consortium itself sits in
-            an author slot without being a person
-
-Repositories: 80 canonical repos across 16 owners (5 each); all 80 are
-cited at least once. 3 phantom URLs are cited but never existed (404), one
-alias URL redirects to a canonical repo, and some owner payloads miss
-`name`/`type`. A row written before a repository was renamed (STALE_REPO_ID)
-is seeded between the two enrichment runs: only GitHub's numeric id ties it
-to the row the new name produced.
+Repositories: 80 canonical repos across 16 owners (5 each), all cited at
+least once. 3 phantom URLs are cited but never existed (404), one alias URL
+redirects to a canonical repo, and some owner payloads miss `name`/`type`.
+A row written before a repository was renamed (STALE_REPO_ID) is seeded
+between the two enrichment runs: only GitHub's numeric id ties it to the
+row the new name produced.
 """
 
 from __future__ import annotations
@@ -100,7 +31,7 @@ WORK_IDS = [f"W70000000{i:02d}" for i in range(1, 125)]
 # is_authors_truncated flag stands in for the 100-entry cap, which would be
 # unwieldy to synthesize) and the ITMO participant is beyond the cut, so the
 # collector must fetch the single-work record to find them. The full list
-# also carries the consortium itself in an author slot — an organization,
+# also carries the consortium itself in an author slot - an organization,
 # not a person.
 CONSORTIUM_WORK = "W70000000124"
 CONSORTIUM_ITMO_INDEX = 22  # existing ITMO author A5000000022
@@ -109,7 +40,7 @@ CONSORTIUM_FILLERS = [f"A59000001{i:02d}" for i in range(3)]
 
 # W123: a GitHub release archived on Zenodo. OpenAlex indexes it as a work of
 # its own, and the deposit names neither the repository as a link nor the
-# author's affiliation — both have to come from elsewhere.
+# author's affiliation - both have to come from elsewhere.
 ARCHIVE_WORK = "W70000000123"
 ARCHIVE_REPO_OWNER, ARCHIVE_REPO_NAME = "BenchOrg8", "AlphaTool"
 ARCHIVE_TITLE = f"{ARCHIVE_REPO_OWNER}/{ARCHIVE_REPO_NAME}: Release v1.2.3"
@@ -119,7 +50,7 @@ ARCHIVE_AUTHOR_INDEX = 41
 ARCHIVE_AUTHOR_ID = f"A50000000{ARCHIVE_AUTHOR_INDEX}"
 ARCHIVE_AUTHOR_AFFILIATION = f"External University {ARCHIVE_AUTHOR_INDEX}"
 
-# W121: a record OpenAlex has not disambiguated yet — the authors are listed
+# W121: a record OpenAlex has not disambiguated yet - the authors are listed
 # but every author.id is null, so they can only be keyed by what they carry.
 UNIDENTIFIED_WORK = "W70000000121"
 UNIDENTIFIED_ORCID = "0000-0009-0000-0121"
@@ -309,8 +240,8 @@ DEPARTMENTS_CATALOG = [
         "aliases": ["QC Lab"],
     },
 ]
-# Only the units (the organisation is a separate root, never an affiliation slot),
-# so the modulo assignment in _affiliation stays exactly as before the org was added.
+# Only the units: the organisation is a separate root, never an
+# affiliation slot.
 DEPT_NAMES = [d["name_en"] for d in DEPARTMENTS_CATALOG if d.get("kind") != "organization"]
 
 REPO_OWNERS = [f"BenchOrg{i}" for i in range(1, 17)]
@@ -513,7 +444,7 @@ def build_universe() -> dict:
             ]
         elif n == 121:
             # Every author.id is null: one author carries an ORCID, one only a
-            # name, one neither — the last cannot be keyed at all.
+            # name, one neither - the last cannot be keyed at all.
             work["authorships"] = [
                 {
                     "author": {

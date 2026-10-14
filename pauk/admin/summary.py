@@ -1,13 +1,7 @@
-"""What the overview says about the state of the work.
+"""What the overview page says about the state of the work.
 
-Four pages answer four questions a person opens the panel with: is anything
-running, is anyone running it, how much is waiting for an answer, and is the
-graph healthy. Reading all four means four page loads, so they are collected
-here and shown on the first one.
-
-Mongo only: the counts come from the queue, the review store and the last
-saved health snapshot, so the overview keeps working while the graph is
-down.
+Mongo only (queue, review store, last health snapshot), so the overview keeps
+working while the graph is down.
 """
 
 from __future__ import annotations
@@ -35,9 +29,7 @@ def _last_run(db: Database) -> dict | None:
 def collect(db: Database) -> dict:
     """The overview's summary, or an empty one when Mongo is silent.
 
-    Empty rather than an error: the page it sits on is readable without it,
-    and a panel that refuses to open because a count failed is worse than
-    one that opens without the count.
+    Empty rather than an error so the page still opens without the counts.
     """
     try:
         running = [job for job in store.running(db)]

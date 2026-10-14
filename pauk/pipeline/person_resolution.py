@@ -68,7 +68,7 @@ def cache_payload(stage: str, payload: Mapping[str, Any]) -> dict[str, Any]:
     A pair's number is where the answer comes back, not evidence about
     anybody: it is handed out by counting pairs, so one merge upstream
     renumbers the rest and every stored verdict stops matching. The person
-    ids inside each side stay - those do say who is being compared.
+    ids inside each side stay: they do say who is being compared.
     """
     if stage == FIRST_STAGE:
         pairs = payload.get("pairs")

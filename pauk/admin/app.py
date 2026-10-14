@@ -1,16 +1,14 @@
 """The panel itself: a FastAPI service, separate from the public map.
 
-The map is a static site (`pauk/gui/web`, see `scripts/deploy.sh`) served
-read-only on its own port. This service is the only one with routes that write, and it runs
-next to the database rather than on the public interface — Neo4j is not
-exposed, so there is no other way in and nothing to guard on the map side.
+The map is a static site (`pauk/gui/web`) served read-only on its own port.
+This service holds the only routes that write and runs next to the database,
+not on the public interface.
 
 Start it with:
 
     uv run uvicorn pauk.admin.app:build --factory --port 8600
 
-Accounts come from `pauk admin user add`; there is no default login and no
-way to create one from the browser.
+Accounts come from `pauk admin user add`; there is no default login.
 """
 
 from __future__ import annotations
@@ -73,9 +71,7 @@ COUNT_TIMEOUT = 2.0
 class _LazyGraph:
     """The shared driver, opened on first use and kept afterwards.
 
-    Not opened at startup: an unreachable graph must not stop the panel
-    from starting, and a service that cannot sign anyone in is worse than
-    one whose node screens say the database is quiet.
+    Not opened at startup so an unreachable graph cannot stop sign-in.
     """
 
     def __init__(self, config: Settings, db) -> None:
@@ -99,13 +95,7 @@ class _LazyGraph:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Hand the driver back when the service stops.
-
-    One driver serves the whole panel and no caller closes it — that is the
-    point of sharing it. Which leaves exactly one place where it has to be
-    closed, and this is it: without this the pool outlives the application
-    object, and a reload leaves the previous one holding its connections.
-    """
+    """Close the shared driver when the service stops."""
     yield
     app.state.graph.close()
 
@@ -113,14 +103,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 def _node_counts(graph: _LazyGraph) -> dict[str, int] | None:
     """How many nodes of each label there are, or None if the graph is silent.
 
-    The count is a nicety on an overview page, so the driver is told to
-    connect quickly and not to retry: retries suit a batch job, while a
-    person waiting for a page should be told at once that the graph is not
-    answering. Without this the page blocks for as long as the database
-    stays unreachable — the driver backs off for tens of seconds.
+    The driver is told to connect quickly and not retry, so a person waiting
+    for the page is not blocked while the database backs off.
     """
     try:
-        # The shared driver: the overview used to open a second pool of its own.
+        # The shared driver, so the overview does not open a pool of its own.
         return count_nodes(graph.audited(actor="panel", source="admin-ui"))
     except Exception as error:  # the overview works without a graph
         logger.info("overview without counts: %s", error)
@@ -149,10 +136,8 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
     async def unauthorized(request: Request, exc: HTTPException):
         """Send a browser to the login page instead of showing it raw JSON.
 
-        A 401 is the right answer for a fetch or a script; a person who
-        typed the address wants the form. The two are told apart by what
-        the request says it accepts, and the page they wanted is carried
-        along so the login can return them to it.
+        Browsers are told apart by their Accept header; the wanted page is
+        carried along so the login can return to it.
         """
         if "text/html" in request.headers.get("accept", ""):
             target = request.url.path
@@ -225,13 +210,7 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
 
     @app.post("/logout")
     def logout(request: Request, db: Db, _: CsrfChecked):
-        """End the session.
-
-        Checked like every other form. Logging somebody out from another
-        site is a nuisance rather than a loss, but the template has always
-        sent the token and the route quietly ignored it — a guard that
-        looks present and is not is worse than none.
-        """
+        """End the session; the CSRF token is checked like on every other form."""
         close_session(db, request.cookies.get(COOKIE))
         response = RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
         response.delete_cookie(COOKIE, path="/")
@@ -256,8 +235,7 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
 
     templates.env.globals["stylesheet"] = stylesheet
 
-    # The logo and the fonts live in the panel's own static/: the map is a
-    # separately built TypeScript site now with no vendor/ folder to borrow from.
+    # The logo and fonts live in the panel's own static/ folder.
     static = Path(__file__).parent / "static"
     for name in ("fonts", "icons"):
         source = static / name
@@ -266,15 +244,11 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
 
     @app.get("/favicon.ico", include_in_schema=False)
     def favicon():
-        """The map's own tab icon, served as a file.
+        """The map's tab icon, served as a file.
 
-        The same image the <link> tag points at, and that matters: a browser
-        asks for /favicon.ico on its own for the site root, and answering
-        with a different picture there than on every other page is exactly
-        how the icon ends up showing on /nodes/... but not on /.
-
-        Served as a file rather than a redirect — a 301 gets cached hard
-        enough to outlive the fix.
+        Browsers request /favicon.ico on their own, so it must be the same
+        image the <link> tag points at. A file rather than a redirect, since a
+        301 is cached too hard.
         """
         path = static / "icons" / "pauk-frame.png"
         if not path.is_file():

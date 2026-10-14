@@ -1,21 +1,16 @@
 """One-off generator of a draft official ITMO department catalogue.
 
-Scrapes the FULL scientific-structure tree from ITMO's Russian structure page
-(the "Основные образовательные и научные подразделения" section): faculties ->
-institutes -> centres -> laboratories. Hierarchy is reconstructed from <ul>
-nesting depth (a linear scan over the balanced tags, robust to the page's
-unclosed <li> that make DOM parsers misattribute ancestors). Non-research units
-(administrative / production / outreach) are filtered out. English names are
-taken from the EN structure page by the shared numeric id -- official for the
-faculty / centre tier.
+Scrapes the full scientific-structure tree from ITMO's Russian structure page
+(the "Основные образовательные и научные подразделения" section): faculties,
+institutes, centres, laboratories. Hierarchy is reconstructed from <ul> nesting
+depth with a linear scan over the balanced tags, because the page's unclosed
+<li> make DOM parsers misattribute ancestors. Non-research units are filtered
+out. English names come from the EN structure page by the shared numeric id,
+which exists only for the faculty/centre tier.
 
-Units without an official EN name (leaf laboratories -- no id, no EN page) are
-left with an EMPTY name_en: they are filled separately (LLM RU->EN + manual
-review), and author spellings are added to aliases from the affiliation corpus.
-Those are one-off finishing steps -- automation is not required here.
-
-The result is a DRAFT: review it by hand and complete it before promoting to
-data/static/departments_catalog.json (the source of truth read by
+Units without an official EN name (leaf laboratories) are left with an empty
+name_en, to be filled separately. The result is a draft: review it by hand
+before promoting to data/static/departments_catalog.json (read by
 pauk.storage.static.StaticStore).
 
 Run from the project root:
@@ -139,13 +134,11 @@ def _kind(name: str) -> str:
 
 
 def build_catalog() -> list[dict]:
-    """Assemble the draft in the schema StaticStore reads: name_en/name_ru/kind/
-    parent/aliases/context_aliases, plus one root organisation entry.
+    """Assemble the draft in the schema StaticStore reads, plus one root organisation entry.
 
     `parent` references a unit by its English name (that is how StaticStore derives
     parent_id). Top-level units point at the ROOT_EN organisation; sub-units point
-    at their megafaculty's EN name. A megafaculty with no official EN yet leaves an
-    unresolved parent for its children until the EN name is filled in by hand.
+    at their megafaculty's EN name, which is unresolved until that name is filled in.
     """
     http = HttpClient(TIMEOUT, {"User-Agent": USER_AGENT})
     ru_units = parse_ru_tree(http.get_text(STRUCTURE_URL_RU))

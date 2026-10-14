@@ -1,8 +1,8 @@
 /**
  * Replaces all children of `container`.
  *
- * ponytail: a full rebuild resets the scroll position on every render; switch
- * to a keyed diff if that becomes noticeable.
+ * TODO: a full rebuild resets the scroll position on every render; switch to
+ * a keyed diff if that becomes noticeable.
  */
 export function renderList<T>(container: HTMLElement, items: T[], renderItem: (item: T) => HTMLElement): void {
   container.replaceChildren(...items.map(renderItem));

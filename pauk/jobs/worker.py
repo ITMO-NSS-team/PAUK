@@ -28,7 +28,7 @@ from pauk.settings import Settings
 
 logger = logging.getLogger(__name__)
 
-# Poll on an empty queue, and the beat — well inside locks.LEASE_MINUTES.
+# Poll on an empty queue, and the beat, well inside locks.LEASE_MINUTES.
 POLL_SECONDS = 5.0
 BEAT_SECONDS = 60.0
 
@@ -126,7 +126,7 @@ def _pipeline(config: Settings, db: Database, payload, stop: Stop,
 
     Not three queued jobs: publishing names a group, and when the queue is
     filled that group has no rows for the check to accept. As one job the
-    order is also guaranteed — nothing else slips in between the collection
+    order is also guaranteed: nothing else slips in between the collection
     and its publish.
 
     Each phase takes and releases its own lock, so nothing is held across
@@ -135,7 +135,7 @@ def _pipeline(config: Settings, db: Database, payload, stop: Stop,
 
     Raises:
         Cancelled: Somebody pressed cancel. Checked between the phases and,
-            through `report`, at every step inside them — never in the
+            through `report`, at every step inside them, never in the
             middle of one.
     """
     def during(phase: int) -> Report:

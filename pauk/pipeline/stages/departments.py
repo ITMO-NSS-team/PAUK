@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 _PART_SPLIT = re.compile(r"[\n;,]")
 # A part carrying this marker is trusted ITMO context. A generic context_alias is
 # accepted only when such a marker sits in its own or an adjacent part (i.e. the
-# organisation right beside the department), never merely elsewhere in the blob —
-# that is what keeps a co-affiliated "Department of Physics, SPbU" from matching.
+# organisation right beside the department), never merely elsewhere in the blob;
+# that keeps a co-affiliated "Department of Physics, SPbU" from matching.
 _ITMO_MARKER = re.compile(r"\bitmo\b|\bifmo\b|итмо|information technolog\w*,?\s*mechanics", re.IGNORECASE)
 # The catalogue quotes and hyphenates a name ("Energy-Efficient"), authors often
 # do neither; folding both to spaces on each side lets containment survive that.
@@ -31,11 +31,9 @@ def _normalize(text: str) -> str:
 def _match_names(department: Department) -> list[str]:
     """Normalized names to look for in affiliation text: English, Russian, variants.
 
-    Matching stays plain substring containment; adding name_ru lets Cyrillic
-    affiliations match, which name_en-only matching missed. Word-boundary matching
-    was tried but measured net-negative on real affiliations — it dropped
-    numbered ("2School of ...") and plural ("... Sciences" vs "Science") forms
-    while removing no genuine false positives.
+    Matching is plain substring containment, not word-boundary: word boundaries
+    drop numbered ("2School of ...") and plural ("Sciences" vs "Science") forms
+    without removing genuine false positives.
     """
     names = [department.name_en, department.name_ru, *department.name_variants]
     return [_normalize(name) for name in names if name]

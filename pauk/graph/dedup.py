@@ -3,7 +3,7 @@
 The per-group dedup stage only sees one prepared group, but the graph
 accumulates every published group: the same researcher (or work, or
 repository) collected in two periods becomes two nodes that no group-level
-pass will ever compare — each group's JSONL holds only one of the ids.
+pass will ever compare, since each group's JSONL holds only one of the ids.
 This module applies the same merge rules (pauk/pipeline/stages/dedup.py)
 to all nodes of each kind at once and folds duplicates directly in Neo4j.
 
@@ -413,9 +413,10 @@ def dedup_graph_repositories(client) -> tuple[int, list[dict]]:
 
 
 def run_graph_dedup(config: Settings, mongo_db: Database) -> dict[str, int]:
-    """CLI entry point for `pauk dedup graph`: persons, publications and
-    repositories deduplicated across every published group, with one
-    combined review journal in the cache directory.
+    """Deduplicate persons, publications and repositories across every published group.
+
+    Entry point for `pauk dedup graph`. Writes one combined review journal
+    to the cache directory.
 
     Holds the graph for the whole run, like a publish does: folding
     duplicates while another run is writing the same nodes would move
@@ -435,7 +436,7 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
         catalog = RussianNamesCatalog.load_if_present(catalog_path(config))
         if catalog is None:
             logger.info(
-                "graph dedup: no staff catalog at %s — merging on names and profiles alone", catalog_path(config)
+                "graph dedup: no staff catalog at %s, merging on names and profiles alone", catalog_path(config)
             )
         folded = client.fetch_merged_id_map("Person")
         answers = review.decisions(mongo_db, folded)
@@ -483,7 +484,7 @@ def _dedup_locked(config: Settings, mongo_db: Database) -> dict[str, int]:
                 fh.write(json.dumps(row, ensure_ascii=False) + "\n")
         if report:
             logger.info(
-                "graph dedup: review journal in %s — %d merge(s) applied, %d pair(s) held",
+                "graph dedup: review journal in %s: %d merge(s) applied, %d pair(s) held",
                 journal_path,
                 persons_removed + publications_removed + repositories_removed,
                 held,

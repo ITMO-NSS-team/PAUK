@@ -39,16 +39,11 @@ router = APIRouter()
 @router.get("/overrides", response_class=HTMLResponse)
 def in_force(request: Request, user: CurrentUser, session: Session, db: Db,
              tab: str = "list", page: int = 1):
-    """Decisions kept so a publish cannot undo them, and their conflicts.
-
-    One page with two tabs rather than two pages: both read the same
-    documents, and the question "what did we decide" and "what does the
-    source now disagree with" are asked one after the other.
-    """
+    """Decisions kept so a publish cannot undo them, and their conflicts."""
     page = max(page, 1)
     skip = (page - 1) * decisions.PAGE
     total = decisions.count_in_force(db)
-    # Walked once: both tabs need the count, and the pass is not cheap.
+    # Both tabs need the count and the pass is not cheap.
     disputed_rows = decisions.conflicts(db, limit=None)
     disputed = len(disputed_rows)
     shown = disputed if tab == "conflicts" else total
@@ -65,9 +60,8 @@ async def undo(request: Request, user: Editor, db: Db, graph: Graph,
                _: CsrfChecked, __: StoresReady):
     """Stop applying one decision, keeping the record that it was made.
 
-    The graph is not put back by hand: the decision is switched off and
-    the rest are reapplied, so the field returns to whatever the pipeline
-    last wrote — which is the point of undoing rather than editing back.
+    The decision is switched off and the rest reapplied, so the field returns
+    to what the pipeline last wrote.
     """
     form = await request.form()
     kind = str(form.get("kind", "node"))

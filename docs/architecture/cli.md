@@ -1,41 +1,40 @@
-# `pauk/cli.py` — команды
+# `pauk/cli.py`: commands
 
-**Что здесь:** справочник команд `pauk ...` — что каждая делает и с какими
-флагами.
+**What it covers:** reference for the `pauk ...` commands: what each does
+and which flags it takes.
 
-**Какие файлы задействует:** `pauk/cli.py`.
+**Files:** `pauk/cli.py`, `pauk/admin/cli.py` (the `admin` subcommands).
 
-Один argparse-парсер, без typer/click. Точка входа — `pauk` (см.
-`pyproject.toml`, `[project.scripts]`) или `uv run python -m pauk.cli`.
+A single argparse parser, no typer or click. The entry point is `pauk` (see
+`[project.scripts]` in `pyproject.toml`) or `uv run python -m pauk.cli`.
 
 ```
 pauk [--verbose] <command> ...
 ```
 
-`--verbose` включает DEBUG для модулей `pauk` и безопасную трассировку HTTP-запросов
-`urllib3.connectionpool`. В URL значения чувствительных query-параметров (`api_key`,
-`token`, `password`, подписи URL) заменяются на `[REDACTED]`. Логгер Neo4j остаётся
-на WARNING, чтобы параметры Cypher-запросов не попадали в вывод. Из остальных
-диагностических сообщений также удаляются известные секреты.
+`--verbose` turns on DEBUG for `pauk` modules and a redacted trace of HTTP
+requests from `urllib3.connectionpool`: values of sensitive query parameters
+(`api_key`, `token`, `password`, URL signatures) are replaced with
+`[REDACTED]`. The Neo4j logger stays at WARNING so Cypher parameters never
+reach the output. Known secrets are also stripped from other diagnostic
+messages.
 
 ## `run` / `collect`
 
 ```
-pauk run     --work <id> | --works-file <файл> | --from <дата> --to <дата>  [--name <имя>]
-pauk collect --work <id> | --works-file <файл> | --from <дата> --to <дата>  [--name <имя>]
+pauk run     --work <id> | --works-file <file> | --from <date> --to <date>  [--name <name>]
+pauk collect --work <id> | --works-file <file> | --from <date> --to <date>  [--name <name>]
 ```
 
-`run` = `collect` → `normalize` → `enrich` (все стейджи) одним вызовом,
-**но не включает `publish graph`** — загрузка в общую Neo4j остаётся
-отдельным ручным шагом (`PipelineRunner.run()`). `--work`/`--works-file`/
-`--from`+`--to` взаимоисключающие способы задать выборку работ; `--name`
-переопределяет автоматическое имя группы.
+`run` is `collect`, `normalize` and `enrich` (all stages) in one call. It
+does **not** include `publish graph`: loading into the shared Neo4j stays a
+separate manual step (`PipelineRunner.run()`). `--work`, `--works-file` and
+`--from` + `--to` are alternative ways to select works; `--name` overrides
+the generated group name.
 
-`collect` дополнительно перед сбором новых работ чинит уже сохранённые
-записи, чей список авторов был обрезан лимитом list-эндпоинта OpenAlex
-(`Collector.refetch_truncated()` — вызывается автоматически внутри каждого
-`collect`, доступен и отдельно для починки уже собранной группы без
-повторного обхода всего периода).
+Before collecting new works, `collect` repairs stored records whose author
+list was cut off by the OpenAlex list endpoint limit
+(`Collector.refetch_truncated()`, called inside every `collect`).
 
 ## `normalize`
 
@@ -43,34 +42,44 @@ pauk collect --work <id> | --works-file <файл> | --from <дата> --to <д�
 pauk normalize --group <group>
 ```
 
-Разбирает raw-коллекцию MongoDB (`openalex_works`, отфильтровано по
-`group`) в prepared-коллекции `publications`/`persons`. Повторный запуск
-на той же группе безопасен — сохраняет уже собранные enrichment-данные и
-`_processing` существующих строк, мержит их с обновлённым содержимым
-сырых данных (`OpenAlexNormalizer.run()`). Сущности в MongoDB глобальные:
-если тот же work id уже встречался в другой группе, нормализация видит
-его текущее состояние по id (`PreparedStore.get_models`), а не только то,
-что уже накопила именно эта группа — см. [storage.md](storage.md).
+Parses the raw MongoDB collection (`raw`, filtered by `group`) into the
+prepared collections. Re-running on the same group is safe: it keeps
+enrichment data and `_processing` already on existing rows and merges them
+with the refreshed raw content (`OpenAlexNormalizer.run()`). Entities in
+MongoDB are global: if the same work id already appeared in another group,
+normalization sees its current state by id (`PreparedStore.get_models`), not
+only what this group has accumulated. See [storage.md](storage.md).
 
 ## `enrich`
 
 ```
-pauk enrich [stage] --group <group> [--input <файл-с-id> --entity <сущность>] [--force]
+pauk enrich [stage] --group <group> [--input <id-file> --entity <entity>] [--force]
 ```
 
-`stage` — имя одного этапа (`persons`, `departments`, `code_links`,
-`link_relevance`, `emails`, `repositories`, `dedup`, `github_match`,
-`author_names`; опционально — `social_graph`) или `all` (по умолчанию,
-все основные этапы по порядку — порядок задан `ALL_STAGES` в
-`pipeline/stages/__init__.py`). `--group` обязателен
-всегда. `--input` (вместе с `--entity`) сужает прогон до конкретных id —
-файл, по одному id на строке (тот же формат, что у `--works-file` для
-`collect`); `--entity` — имя одной из шести prepared-сущностей
-(`PreparedStore.COLLECTIONS`), к которой относятся эти id. `--force`
-заставляет перепрогнать строки, чей стейдж уже
-`COMPLETED`/`COMPLETED_EMPTY`/`NOT_APPLICABLE` — нужен, когда логику
-стейджа поменяли и старые (уже отмеченные завершёнными) строки нужно
-пересчитать заново.
+`stage` is the name of one stage (`persons`, `departments`, `code_links`,
+`link_relevance`, `emails`, `repositories`, `repo_people`, `dedup`,
+`github_match`, `author_names`; optionally `social_graph`) or `all` (the
+default: the main stages in the order of `ALL_STAGES` in
+`pipeline/stages/__init__.py`). `social_graph` is in `OPTIONAL_STAGES` and
+runs only when named. `--group` is always required.
+
+`--input` and `--entity` go together. `--input` narrows the run to specific
+ids: a file with one id per line (the same format as `--works-file` for
+`collect`). `--entity` names the prepared entity those ids belong to, one of
+the keys of `PreparedStore.COLLECTIONS` (`publications`, `persons`,
+`departments`, `organizations`, `repositories`, `github_profiles`,
+`repo_links`).
+
+`--force` reruns rows whose stage is already `COMPLETED`, `COMPLETED_EMPTY`
+or `NOT_APPLICABLE`. Use it when the stage logic changed and rows already
+marked complete must be recomputed.
+
+### `--input` selection
+
+`_selection_from_input(path, entity)` reads the file line by line (blank
+lines skipped) and builds `PreparedSelection(entity, ids)`;
+`EnrichmentStage.selected()` skips everything outside that set. The file can
+live anywhere and come from anywhere (hand-written, exported by a query).
 
 ## `publish graph`
 
@@ -78,11 +87,11 @@ pauk enrich [stage] --group <group> [--input <файл-с-id> --entity <сущн
 pauk publish graph --group <group>
 ```
 
-Грузит prepared-коллекции группы из MongoDB в Neo4j: создаёт констрейнты,
-затем все узлы, затем все связи. См. [neo4j-graph.md](neo4j-graph.md).
-Отдельный `python -m pauk.graph.load --dir <папка>` — самостоятельный
-инструмент для загрузки внешнего CSV-экспорта, не завязан на MongoDB и
-на пайплайн вообще.
+Loads the group's prepared collections from MongoDB into Neo4j: constraints
+first, then all nodes, then all relationships. See
+[neo4j-graph.md](neo4j-graph.md). `python -m pauk.graph.load --dir <folder>`
+is a separate tool for loading an external CSV export; it needs neither
+MongoDB nor the pipeline.
 
 ## `dedup graph`
 
@@ -90,132 +99,147 @@ pauk publish graph --group <group>
 pauk dedup graph
 ```
 
-Дедуп персон/публикаций/репозиториев **по всему графу**, не по одной
-группе — единственный способ поймать дубли, чьи записи попали в Neo4j из
-разных прогонов и никогда не лежали рядом в одном JSONL. Не часть `run`,
-запускается вручную, когда накопилось несколько групп. См.
+Deduplicates persons, publications and repositories **across the whole
+graph**, not one group. It is the only way to catch duplicates that reached
+Neo4j from different runs and never sat side by side in one group. It is not
+part of `run`; run it by hand once several groups have accumulated. See
 [pipeline/dedup.md](pipeline/dedup.md).
 
-## `admin` — ручная правка графа
+## `admin`: manual graph edits
 
 ```
+pauk admin [--actor <name>] <command> ...
+
 pauk admin schema
 pauk admin node show   <Label> <id>
-pauk admin node create <Label> <id> --set поле=значение [--set ...]
-pauk admin node set    <Label> <id> --set поле=значение [--expect-updated-at <метка>]
-pauk admin node delete <Label> <id> [--cascade]
-pauk admin rel add     <SrcLabel> <REL_TYPE> <TgtLabel> <src_id> <tgt_id> [--set ...]
-pauk admin rel delete  <SrcLabel> <REL_TYPE> <TgtLabel> <src_id> <tgt_id>
-pauk admin merge       <Label> <дубль> <канонический> [--yes]
+pauk admin node create <Label> <id> [--set field=value ...] [--note <text>] [--once]
+pauk admin node set    <Label> <id> --set field=value [--set ...] [--expect-updated-at <stamp>] [--note <text>] [--once]
+pauk admin node delete <Label> <id> [--cascade] [--note <text>] [--once]
+pauk admin rel add     <SrcLabel> <REL_TYPE> <TgtLabel> <src_id> <tgt_id> [--set ...] [--note <text>] [--once]
+pauk admin rel delete  <SrcLabel> <REL_TYPE> <TgtLabel> <src_id> <tgt_id> [--note <text>] [--once]
+pauk admin merge       <Label> <duplicate_id> <canonical_id> [--yes]
 ```
 
-Правки идут через `pauk/graph/mutations.py` — метки, типы связей и поля
-проверяются по белому списку, выведенному из `NODE_REGISTRY`
-(см. [neo4j-graph.md](neo4j-graph.md)). `pauk admin schema` печатает этот
-список целиком и единственная из команд не требует ни Mongo, ни Neo4j.
+Edits go through `pauk/graph/mutations.py`: labels, relationship types and
+fields are checked against a whitelist derived from `NODE_REGISTRY` (see
+[neo4j-graph.md](neo4j-graph.md)). `pauk admin schema` prints that whitelist
+and is the only command that needs neither Mongo nor Neo4j.
 
-Значения `--set` читаются как JSON, если это возможно: `stars_num=10` даёт
-число, `has_readme=true` — булево, `name_ru=Иванов И. И.` — строку.
+`--set` values are parsed as JSON when possible: `stars_num=10` gives a
+number, `has_readme=true` a boolean, `first_name_en=Ivan` a string.
 
-Каждая правка попадает в аудит с актором `user:<логин ОС>` (или тем, что
-задан `--actor`) и источником `admin-cli`.
+Every edit is audited with actor `user:<OS login>` (or the one given with
+`--actor`) and source `admin-cli`.
 
-`node set` и `node delete` не просто пишут в граф, а записывают решение в
-`graph_overrides` и применяют его — иначе правка жила бы до следующего
-`publish graph`. `--once` пропускает запись решения (разовая правка,
-которую публикация затрёт), `--note` сохраняет причину.
+`node set` and `node delete` do not just write to the graph: they record the
+decision in `graph_overrides` and apply it, otherwise the edit would last
+only until the next `publish graph`. `--once` skips recording the decision
+(a one-off edit that the next publish will overwrite); `--note` stores the
+reason.
 
-`rel delete` запоминается как указание — иначе `MERGE` пересоздаст ребро
-из той же строки при следующей публикации. `rel add` и `node create`
-запоминаются как **заявка**: переприменять нечего, запись и связь и так
-переживают публикацию, но без заявки `prune` не отличит их от того, что
-пайплайн когда-то создал и перестал заявлять. `--once` у обеих команд
-пишет в граф, не заявляя.
+`rel delete` is recorded as an instruction, because otherwise `MERGE` would
+recreate the edge from the same prepared row on the next publish. `rel add`
+and `node create` are recorded as a **claim**: there is nothing to reapply
+(the record or link survives publishing anyway), but without a claim
+`prune` cannot tell them from something the pipeline once created and
+stopped asserting. With `--once`, both write to the graph without claiming.
 
 ```
-pauk admin overrides list           # какие ручные решения в силе
-pauk admin overrides apply          # переприменить их к графу
-pauk admin overrides undo <Label> <id>   # перестать применять, запись о решении сохранится
-pauk admin overrides undo-rel <Src> <REL> <Tgt> <src_id> <tgt_id>   # вернуть связь
+pauk admin overrides list                                          # decisions in force
+pauk admin overrides apply                                         # reapply them to the graph
+pauk admin overrides undo <Label> <id>                             # stop applying; the decision record is kept
+pauk admin overrides undo-rel <Src> <REL> <Tgt> <src_id> <tgt_id>  # restore a link
 ```
 
-`overrides undo` снимает и заявку: запись, заведённую вручную, после этого
-`admin prune` сочтёт остатком. Панель заявки не снимает — там их убирают
-удалением самой записи или связи.
+`overrides undo` also drops the claim: after it, `admin prune` treats a
+hand-made record as a leftover. The panel does not drop claims; there they
+disappear when the record or link itself is deleted.
 
-`--expect-updated-at` — защита от одновременного редактирования: передайте
-`updated_at`, который вернул `node show`, и запись отклонится, если узел с
-тех пор изменился.
+`--expect-updated-at` guards against concurrent edits: pass the `updated_at`
+that `node show` returned, and the edit is rejected if the node changed
+since.
 
-`merge` удаляет дубль вместе со связями, и отменить это нечем. Кнопка
-«разделить обратно» в панели (`pauk/graph/unmerge.py`) собирает `Person`
-заново из prepared-строки, но только для пары, слитой ответом в очереди
-«Спорные случаи»: слияние этой командой в очередь не попадает. Команда
-спрашивает подтверждение, `--yes` его пропускает.
+`merge` deletes the duplicate together with its relationships and cannot be
+undone. The panel's "split back" button ("разделить обратно", in
+`pauk/graph/unmerge.py`) rebuilds a `Person` from its prepared row, but only
+for a pair merged through an answer in the "Спорные случаи" (disputed cases)
+queue; a merge done with this command never enters that queue. The command
+asks for confirmation; `--yes` skips it.
 
-## `admin prune` — свести граф к источнику
+### `admin prune`: reconcile the graph with its source
 
 ```
 pauk admin prune [--apply] [--limit N]
 ```
 
-`publish graph` умеет только добавлять: строка, удалённая из Mongo, и
-связь, которую строка перестала заявлять, остаются в графе навсегда.
-Эта команда находит такое и, с `--apply`, убирает. Без `--apply` печатает
-список и не трогает ничего.
+`publish graph` only adds. A row deleted from Mongo, or a link a row stopped
+asserting, stays in the graph forever. This command finds such leftovers
+and, with `--apply`, removes them. Without `--apply` it prints the list and
+changes nothing; `--limit` (default 20) caps how many of each kind are
+printed.
 
-Что «должно быть» не вычисляется заново: загрузчик прогоняется против
-подставного клиента, который ничего не пишет и запоминает, что его просили
-записать, — ответ по построению совпадает с тем, что сделала бы публикация.
-Не трогает три вещи: заявленное вручную (см. выше), то, что ближайшая
-публикация свернёт в другую запись, и записи, чьи строки в Mongo есть, но
-загрузчик их в этот раз пропустил.
+The expected state is not recomputed separately: the loader runs against a
+stand-in client that writes nothing and records what it was asked to write,
+so the answer matches what a publish would do by construction. Three things
+are left alone: anything claimed by hand (see above), anything the next
+publish will fold into another record, and records whose Mongo rows exist
+but which the loader skipped this time.
 
-Держит блокировку графа на всё время — и сравнение, и удаление: план по
-движущемуся графу ничего не стоит. Та же задача есть в панели, кнопкой
-«Сверка с источником».
+The command holds the graph lock for the whole run, comparison and deletion
+both: a plan against a moving graph is worthless. The panel offers the same
+task as the "Сверка с источником" (reconcile with source) button.
 
-## `admin trim` — укоротить две растущие истории
+### `admin trim`: shorten the two growing histories
 
 ```
 pauk admin trim [--keep-days N] [--apply]
 ```
 
-Журнал правок (`audit`) и архив заменённых prepared-строк (`revisions`)
-растут и сами не подрезаются. Команда убирает из обеих то, что старше
-`--keep-days` (по умолчанию 180). Без `--apply` только считает.
+The change feed (`audit`) and the archive of replaced prepared rows
+(`revisions`) only grow. The command removes entries older than `--keep-days`
+(default 180) from both. Without `--apply` it only counts.
 
-На восстановление удалённой записи это не влияет: снимок её полей лежит в
-самом решении, а решения не подрезаются.
+Restoring a deleted record is unaffected: a snapshot of its fields lives in
+the decision itself, and decisions are not trimmed.
 
-## `cache export`
+### `admin worker` and `admin user`
 
 ```
-pauk cache export [--output <путь>] [--only <группа>[,<группа>...]]
+pauk admin worker [--once] [--poll <seconds>] [--name <name>]
+pauk admin user add <login> [--role <role>]
+pauk admin user list
+pauk admin user enable <login>
+pauk admin user disable <login>
 ```
 
-Снимает снепшот текущего состояния графа в
-`data/cache/graph_snapshot_<дата>.json` (или указанный путь) — готовит вход для
-`pauk gui build`. `--only repos` (и `persons`, `publications`,
-`departments`, `organizations`) перечитывает из Neo4j только таблицы этой
-сущности, остальное берёт из самого свежего снепшота. См. [cache.md](cache.md).
+`worker` performs the runs scheduled from the panel, one at a time; `--once`
+takes at most one job and exits. `user` manages panel accounts (default
+role `editor`). `user` needs MongoDB only. See [../admin-panel.md](../admin-panel.md).
+
+## `cache export` and `cache inspect`
+
+```
+pauk cache export  [--output <path>] [--only <group>[,<group>...]]
+pauk cache inspect [path_to_snapshot] [--table <table>] [--sample N]
+```
+
+`export` snapshots the current graph into
+`data/cache/graph_snapshot_<dd-mm-yyyy>.json` (or the given path), the input
+for `pauk gui build`. `--only` takes any of `persons`, `publications`,
+`repos`, `departments`, `organizations` and re-reads only those entities'
+tables from Neo4j, taking the rest from the newest snapshot.
+
+`inspect` prints table sizes, per-field stats for `--table`, or `--sample N`
+rows from it. The snapshot defaults to the newest in `cache_dir`. See
+[cache.md](cache.md).
 
 ## `gui build`
 
 ```
-pauk gui build [--cache <снепшот>] [--out-dir <папка>] [--seed 42]
+pauk gui build [--cache <snapshot>] [--out-dir <folder>] [--seed 42]
 ```
 
-Снепшот → раскладка → JSON для сайта `pauk/gui/web`
-(`pauk/gui/graph_builder/builder.py::write_site_data`). По умолчанию берёт
-самый свежий снепшот из `cache_dir` и пишет в `gui_dir`
-(`data/gui/{public,private}`). См. [gui.md](gui.md).
-
-## `--input`: точечный выбор строк у `enrich`
-
-`_selection_from_input(path, entity)` читает `path` построчно (один id на
-строку, пустые строки пропускаются) и строит `PreparedSelection(entity,
-ids)` — `EnrichmentStage.selected()` пропускает всё, что не входит в этот
-набор. Не привязан к MongoDB и не требует, чтобы файл лежал где-то
-конкретно — это просто список id, источник которого может быть каким
-угодно (вручную составленный, выгруженный запросом и т.д.).
+Snapshot to layout to JSON for the `pauk/gui/web` site
+(`pauk/gui/graph_builder/builder.py::write_site_data`). By default it takes
+the newest snapshot from `cache_dir` and writes to `gui_dir`
+(`data/gui/{public,private}`). See [gui.md](gui.md).

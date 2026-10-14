@@ -102,7 +102,7 @@ class AuditPageTest(unittest.TestCase):
         self.assertIn("Пётр", body)
 
     def test_a_viewer_can_read_the_feed(self):
-        # Reading who changed what is not a privilege — it is how a wrong
+        # Reading who changed what is not a privilege - it is how a wrong
         # value gets explained.
         self.sign_in(login="guest")
         self.assertEqual(self.client.get("/audit").status_code, 200)
@@ -112,8 +112,8 @@ class AuditPageTest(unittest.TestCase):
         # dropdown, so searching the whole page proves nothing.
         self.sign_in()
         body = self.client.get("/audit", params={"actor": "pipeline"}).text
-        # Открывающий тег ищется без атрибутов: у таблицы есть класс, и с ним
-        # появится ещё, а проверка тут не про оформление.
+        # The opening tag is matched without attributes: the table has a
+        # class, will gain more, and this check is not about styling.
         table = body.split("<table")[1].split("</table>")[0]
         self.assertIn("pipeline", table)
         self.assertNotIn("user:roman", table)
@@ -141,8 +141,8 @@ class AuditPageTest(unittest.TestCase):
         self.assertIn("section on", header)
 
     def test_the_filters_are_laid_out_as_wide_as_the_field_beside_them(self):
-        # They used to shrink to their own text and looked smaller than the
-        # id input next to them.
+        # They must not shrink to their own text, or they look smaller than
+        # the id input next to them.
         self.sign_in()
         self.assertIn('class="filters"', self.client.get("/audit").text)
 
@@ -288,9 +288,8 @@ class RestoreTest(unittest.TestCase):
 class RestoreWithoutTheFeedTest(unittest.TestCase):
     """The feed is history; the snapshot to restore from is the decision.
 
-    The deleted-record page used to appear only when the feed held an
-    entry for the id, so wiping the audit collection put a 404 in front of
-    a record whose snapshot was sitting in graph_overrides, untouched.
+    The deleted-record page must not depend on the feed holding an entry for the id: wiping the audit
+    collection must not put a 404 in front of a record whose snapshot is still in graph_overrides.
     """
 
     def setUp(self):
@@ -311,8 +310,8 @@ class RestoreWithoutTheFeedTest(unittest.TestCase):
         self.assertIn("Восстановить", page.text)
 
     def test_the_record_comes_back_whole(self):
-        # Through the page, not straight at the route: the route always
-        # worked, it was the button that could not be reached.
+        # Through the page, not straight at the route: the button itself
+        # has to be reachable.
         page = self.client.get("/nodes/Person/A1").text
         action = re.search(r'action="([^"]*restore[^"]*)"', page).group(1)
         self.client.post(action, data={"csrf": self.csrf})
@@ -332,9 +331,8 @@ class RestoreWithoutTheFeedTest(unittest.TestCase):
 class PagerKeepsTheFilterTest(unittest.TestCase):
     """Paging must not quietly change what is being filtered on.
 
-    The pager built its query string by concatenation, so an entity_id that
-    is an address — every LinkCandidate — split at its own "?" and "&", and
-    the next page showed a different filter than the first.
+    An entity_id that is an address (every LinkCandidate) contains "?" and "&", so the pager has to encode
+    its query string or the next page would filter on something different from the first.
     """
 
     URL = "https://github.com/org/repo?ref=main&tab=readme"
@@ -448,10 +446,8 @@ class ChangeLookTest(unittest.TestCase):
 class FoldedOnArrivalTest(unittest.TestCase):
     """A long value comes down already folded.
 
-    The script used to measure every value after the page had been painted,
-    so a screenful of article text appeared in full and collapsed under the
-    reader a moment later. The server knows the length; the browser should
-    not have to find out.
+    The server knows the length, so the browser should not have to measure every value after the page is
+    painted; otherwise a screenful of article text shows in full and collapses a moment later.
     """
 
     LONG = "1 УДК 005.94 Роль больших языковых моделей в управлении знаниями. " * 6
@@ -519,8 +515,8 @@ class FeedFiltersTest(unittest.TestCase):
         self.assertEqual(self.ids(oldest_first=True), ["A1", "A2", "A3", "A4"])
 
     def test_the_total_counts_what_the_page_shows(self):
-        # The two used to translate the filter names separately, and a page
-        # and a total that disagree send somebody looking for missing rows.
+        # The page and the total must translate the filter names the same
+        # way, or they disagree and send somebody looking for missing rows.
         for filters in ({"kind": "updated"}, {"since": "2026-08-22"},
                         {"actor": "user:roman", "until": "2026-08-20"}):
             with self.subTest(**filters):

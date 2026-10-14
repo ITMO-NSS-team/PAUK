@@ -1,7 +1,7 @@
 """End-to-end pipeline run over the synthetic universe (no network, no DB).
 
-The full conveyor — collect -> normalize -> enrich (all stages) -> graph
-load — runs once per test module against mocked external services and an
+The full conveyor - collect -> normalize -> enrich (all stages) -> graph
+load - runs once per test module against mocked external services and an
 in-memory Neo4j double; the tests below assert the invariants each tricky
 case from tests/bench/universe.py is supposed to produce.
 """
@@ -164,7 +164,6 @@ def bench(tmp_path_factory) -> SimpleNamespace:
     )
 
 
-# --- collect / normalize -------------------------------------------------------
 
 
 def test_collect_is_idempotent(bench):
@@ -206,7 +205,6 @@ def test_untitled_and_dateless_work(bench):
     assert w13.year is None and w13.publication_date is None
 
 
-# --- code_links -----------------------------------------------------------------
 
 
 def test_url_junk_is_stripped(bench):
@@ -238,7 +236,6 @@ def test_work_without_abstract_is_completed_empty(bench):
     assert w12.has_code is False
 
 
-# --- repositories -----------------------------------------------------------------
 
 
 def test_exactly_80_repositories_enriched(bench):
@@ -291,7 +288,6 @@ def test_github_profiles_one_per_owner(bench):
     assert {p.login for p in bench.profiles.values()} == set(REPO_OWNERS)
 
 
-# --- persons enrichment --------------------------------------------------------------
 
 
 def test_crossref_orcid_matching(bench):
@@ -320,7 +316,6 @@ def test_crossref_states(bench):
     assert bench.publications["W7000000015"].processing["crossref"].status == "failed"
 
 
-# --- dedup ------------------------------------------------------------------------------
 
 
 def test_orcid_split_author_is_merged(bench):
@@ -362,7 +357,6 @@ def test_conflicting_orcids_stay_separate_and_unreported(bench):
     assert frozenset(("A5000000058", "A5000000059")) not in pairs
 
 
-# --- publication dedup -------------------------------------------------------------------
 
 
 def test_one_doi_re_indexed_twice_is_one_publication(bench):
@@ -428,7 +422,6 @@ def test_versions_are_json_text(bench):
     assert {a["person_id"] for a in versions["W70000000113"]["authors"]} == {"A5000000024", "A5000000025"}
 
 
-# --- records OpenAlex has not finished processing ------------------------------------------
 
 
 def test_authors_without_an_openalex_id_still_reach_the_graph(bench):
@@ -491,7 +484,6 @@ def test_an_affiliation_the_deposit_omits_comes_from_the_author_record(bench):
     assert bench.snapshot_first == bench.snapshot_second
 
 
-# --- repository dedup --------------------------------------------------------------------
 
 
 def test_row_written_before_a_rename_folds_into_the_canonical_repository(bench):
@@ -504,7 +496,6 @@ def test_row_written_before_a_rename_folds_into_the_canonical_repository(bench):
     assert STALE_REPO_PUBLICATION in survivor.publication_ids
 
 
-# --- russian names -----------------------------------------------------------------------
 
 def test_russian_name_from_staff_catalog(bench):
     oleg = bench.persons["A5000000006"]
@@ -526,7 +517,6 @@ def test_russian_name_transliteration_fallback(bench):
     assert pavel.second_name_ru is None
 
 
-# --- departments -----------------------------------------------------------------------
 
 
 def test_department_matching_including_aliases(bench):
@@ -537,7 +527,6 @@ def test_department_matching_including_aliases(bench):
     assert bench.persons["A5000000031"].department_ids == []
 
 
-# --- graph load --------------------------------------------------------------------------
 
 
 def test_graph_node_counts(bench):
@@ -580,8 +569,7 @@ def test_graph_edge_counts(bench):
 def test_organization_reaches_the_graph(bench):
     # Guards the ENTITY_FILES wiring in graph/load.py: the departments stage writes
     # an Organization row that must be loaded as a node, otherwise the
-    # Department-[:PART_OF]->Organization edge silently never resolves and
-    # organizations vanish from Neo4j (git flags no conflict in that file).
+    # Department-[:PART_OF]->Organization edge silently never resolves.
     org = bench.graph.nodes["Organization"].get(ORG_UID)
     assert org is not None, "organization row never reached the graph"
     assert org["name_en"] == ORG_NAME

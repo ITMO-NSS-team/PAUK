@@ -13,20 +13,20 @@ class Check:
     """One graph integrity check.
 
     Attributes:
-        id: Stable identifier, used by the frontend in /api/check.
+        id: Stable identifier, used in the page address (/health/{id}).
         group: UI group heading (Russian).
         title: Check heading (Russian).
         title_en: Check heading (English).
         count: Cypher returning a single number.
         warn: Threshold above which the check is "warn".
         fail: Threshold above which the check is "fail".
-        of: Cypher for the denominator, or None – then warn/fail compare
+        of: Cypher for the denominator, or None, in which case warn/fail compare
             against the raw count instead of a share.
         hint: User-facing explanation (Russian), or None.
         hint_en: User-facing explanation (English), or None.
         examples: Cypher returning example rows, taking a $lim parameter,
             or None if this check has no drill-down. Column aliases stay
-            Russian – the examples table/CSV isn't translated yet.
+            Russian.
     """
 
     id: str
@@ -53,11 +53,8 @@ GROUP_EN = {
 CYR, LAT = r"\\p{IsCyrillic}", r"\\p{IsLatin}"
 RU_NAME_FIELDS = "[p.surname_ru, p.first_name_ru, p.second_name_ru]"
 
-# Staff used to be told from external authors by a label (:Person:Itmo
-# against :Person:External). The labels are gone: the loader writes a single
-# :Person and carries ITMO membership as the sticky is_itmo property – see
-# itmo_person and external_person in pauk/graph/extract.py. Checks left on
-# the labels counted zero out of zero and reported "ok" (#150).
+# Staff are told from external authors by the sticky is_itmo property, not by a
+# label (see itmo_person and external_person in pauk/graph/extract.py).
 _ITMO_TOTAL = "MATCH (p:Person) WHERE p.is_itmo RETURN count(p)"
 _PUB_TOTAL = "MATCH (p:Publication) RETURN count(p)"
 _DEPT_TOTAL = "MATCH (d:Department) RETURN count(d)"
@@ -66,16 +63,13 @@ _PARTS = (
     "trim(coalesce(p.surname_ru,'') + ' ' + coalesce(p.first_name_ru,'') "
     "+ ' ' + coalesce(p.second_name_ru,''))"
 )
-# The Russian name for the examples table. The one the pipeline assembled
-# whole comes first, the parts glued together second: the parts can be empty
-# for everybody at once, and a column built from them alone is a column of
-# dashes.
+# The assembled name comes first and the parts second: the parts can be empty
+# for everybody at once, and a column built from them alone is all dashes.
 _FIO = f"coalesce(p.name_ru, CASE WHEN {_PARTS} <> '' THEN {_PARTS} ELSE null END, '–')"
 
 _PUB_YEAR = "toInteger(left(toString(p.publication_date), 4))"
 
 CHECKS = [
-    # ---------------- gaps ----------------
     Check(
         id="itmo_no_dept",
         group="Пропуски",
@@ -263,7 +257,6 @@ CHECKS = [
                    people AS `Сотрудников`
             ORDER BY people DESC LIMIT $lim""",
     ),
-    # ---------------- names ----------------
     Check(
         id="name_mixed_script",
         group="Имена",
@@ -362,7 +355,6 @@ CHECKS = [
                    p.first_name_ru AS `Имя`, p.name_raw AS `Как подписан`
             ORDER BY p.surname_ru LIMIT $lim""",
     ),
-    # ---------------- duplicates ----------------
     Check(
         id="full_namesakes",
         group="Дубликаты",
@@ -547,7 +539,6 @@ CHECKS = [
                    pub.title AS `Публикация`, pub.id AS `id публикации`, c AS `Связей`
             ORDER BY c DESC LIMIT $lim""",
     ),
-    # ---------------- contradictions ----------------
     Check(
         id="implements_no_has_code",
         group="Противоречия",

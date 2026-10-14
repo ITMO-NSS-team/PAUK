@@ -1,31 +1,19 @@
 """Domain layer for editing the graph by hand.
 
 Everything that changes the graph outside the pipeline goes through here:
-the `pauk admin` commands today, the admin panel's HTTP routes later. The
-callers above only parse their arguments and set `actor_context`; what a
-valid change *is* lives in this module and nowhere else.
+the `pauk admin` commands and the admin panel's HTTP routes. Callers only
+parse their arguments and set `actor_context`; what a valid change *is*
+lives in this module.
 
-Why a layer at all, rather than calling Neo4jClient from a request handler:
+Labels and relationship types are interpolated into Cypher (the driver
+cannot bind identifiers as parameters), so every entry point validates
+against a closed set built from `extract.py::NODE_REGISTRY`. `update_node`
+takes the `updated_at` the editor saw and refuses the write if the node has
+moved on since, so concurrent editors do not overwrite each other.
 
-- **Labels and relationship types are interpolated into Cypher.** They are
-  identifiers, so the driver cannot bind them as parameters —
-  `client.py` builds `f"MERGE (n:{label} ...)"` by hand. While the only
-  source of those strings is our own literals, that is safe. The moment the
-  source is an HTTP request, a missing whitelist is an injection. Every
-  entry point here validates against a closed set built from
-  `extract.py::NODE_REGISTRY`, and the client is never called with anything
-  else.
-- **The same rules must hold for every caller.** A CLI and a web form that
-  each validate on their own will drift.
-- **Concurrent editors.** Two people opening the same person and saving
-  would silently overwrite each other, and the audit log would show two
-  legitimate edits. `update_node` takes the `updated_at` the editor saw and
-  refuses the write if the node has moved on since.
-
-The whitelists are derived from NODE_REGISTRY rather than written out
-again, so a field added to the loader is editable here without a second
-edit — and a field that is not published to the graph cannot be set by
-hand either.
+The whitelists are derived from NODE_REGISTRY, so a field added to the
+loader is editable here without a second edit, and a field that is not
+published to the graph cannot be set by hand.
 """
 
 from __future__ import annotations
@@ -59,11 +47,7 @@ def _build_relationships() -> dict[tuple[str, str, str], str]:
     """(source label, type, target label) -> the property the target is matched by.
 
     Not every target is found by `id`: a Repository is matched by `url`, a
-    GitHubProfile by `login`.
-
-    The source is the base label, taken off `labels`. Reading it from
-    `rel_src_label` gave the same answer for every spec and tied this to a
-    field the registry does not have to keep.
+    GitHubProfile by `login`. The source is the base label, taken off `labels`.
     """
     relationships: dict[tuple[str, str, str], str] = {}
     for spec in NODE_REGISTRY.values():
@@ -109,7 +93,7 @@ def _check_search_fields() -> None:
     """Fail at import if a listed field is not a real field of its label.
 
     A rename in `extract.py` would otherwise leave the search box quietly
-    matching nothing — Cypher returns null for a property that does not
+    matching nothing: Cypher returns null for a property that does not
     exist rather than raising. The same holds for a column the listing
     shows and for the property it sorts on: both are interpolated into
     Cypher, and a stale name sorts everything into one silent blob.
@@ -221,8 +205,8 @@ def folded_into(client: Neo4jClient, label: str, node_id: str) -> str | None:
     """The record this id was folded into, for an id with no node of its own.
 
     A fold leaves the swallowed id in the survivor's `merged_ids` and
-    nowhere else, while everything written before the fold — a question in
-    the review queue, a line in the change feed, somebody's bookmark — goes
+    nowhere else, while everything written before the fold (a question in
+    the review queue, a line in the change feed, somebody's bookmark) goes
     on naming it. Reading that is the only way to answer "where did it go".
 
     Returns:
@@ -238,7 +222,7 @@ def search_nodes(client: Neo4jClient, label: str, query: str, limit: int = 50,
                  skip: int = 0) -> list[dict]:
     """Find nodes of one label by id or by a piece of their name.
 
-    Reading, not writing — but it goes through this layer for the same
+    Reading, not writing, but it goes through this layer for the same
     reason the writes do: the label and the searched field names are
     interpolated into Cypher, so both have to come from a whitelist. The
     fields are `SEARCH_FIELDS`, not whatever the caller asks for.
@@ -249,9 +233,8 @@ def search_nodes(client: Neo4jClient, label: str, query: str, limit: int = 50,
         query: Text typed into the search box.
         limit: Rows to return, capped so a wide query cannot pull the
             whole graph into a page.
-        skip: Rows to pass over first. What makes the page after the first
-            one reachable: without it the list ended at the cap and there
-            was no way to see what came next.
+        skip: Rows to pass over first. Makes pages after the first reachable
+            past the cap.
 
     Raises:
         UnknownEntity: Unknown label.
@@ -273,13 +256,12 @@ def node_relationships(client: Neo4jClient, label: str, node_id: str) -> list[di
     Each row carries `match_value`: what addresses the other end for *this*
     relationship. Usually its id, but a Repository is matched by `url` and
     a GitHubProfile by `login`, and an edge cannot be removed without the
-    right one — the id simply finds nothing.
+    right one; the id simply finds nothing.
 
     `match_prop` belongs to the *target* of the triple, so it only applies
     to the other end when the edge leaves this node. On an incoming edge
     the other end is the source, and a source is always addressed by its
-    id — reading the target's property off it gave None, and the panel sent
-    the string "None" back as the id to unlink.
+    id; reading the target's property off it would give None.
     """
     validate_label(label)
     rows = client.fetch_node_relationships(label, node_id)
@@ -305,12 +287,12 @@ def create_node(client: Neo4jClient, label: str, node_id: str, props: dict) -> d
 
     Raises:
         UnknownEntity: Unknown label or field.
-        MutationError: A node with this id already exists — creating it
+        MutationError: A node with this id already exists; creating it
             again would silently turn into an update.
     """
     validate_fields(label, props)
     if client.fetch_node_properties(label, node_id) is not None:
-        raise MutationError(f"{label} {node_id} already exists — edit it instead of creating it")
+        raise MutationError(f"{label} {node_id} already exists; edit it instead of creating it")
     client.upsert_nodes_batch(label, [(node_id, as_stored(props))])
     logger.info("created %s %s with %d field(s)", label, node_id, len(props))
     return read_node(client, label, node_id)
@@ -321,7 +303,7 @@ def update_node(client: Neo4jClient, label: str, node_id: str, patch: dict,
     """Change fields on an existing node.
 
     Args:
-        client: Graph client — pass the audited wrapper so the change is
+        client: Graph client; pass the audited wrapper so the change is
             recorded.
         label: Node label, from the whitelist.
         node_id: Which node.
@@ -354,7 +336,7 @@ def delete_node(client: Neo4jClient, label: str, node_id: str, cascade: bool = F
 
     Args:
         cascade: False refuses to delete a node that still has
-            relationships — deleting it would silently take edges with it.
+            relationships; deleting it would silently take edges with it.
             True deletes the node and its relationships.
 
     Returns:
@@ -426,7 +408,7 @@ def merge_nodes(client: Neo4jClient, label: str, duplicate_id: str, canonical_id
     Nothing in the graph records which edge came from where afterwards,
     so this is not undone from the graph. A Person can still be taken back
     apart, because the prepared row it was published from describes its
-    node and all of its edges — see `pauk.graph.unmerge`. For the other two
+    node and all of its edges; see `pauk.graph.unmerge`. For the other two
     labels there is no such reverse, and callers facing a human should say
     so before folding.
 
@@ -456,7 +438,7 @@ def count_nodes(client: Neo4jClient) -> dict[str, int]:
     """How many nodes of each editable label the graph holds.
 
     For the panel's overview, where the number beside a label is expected
-    to mean "how many of these are there" — the count people navigate by.
+    to mean "how many of these are there", the count people navigate by.
     """
     counts = {}
     for label in NODE_FIELDS:

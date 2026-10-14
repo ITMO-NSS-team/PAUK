@@ -33,10 +33,7 @@ SNAPSHOT_GROUPS: dict[str, tuple[str, ...]] = {
     "departments": ("departments", "person_depts", "pub_depts", "repo_depts"),
     "organizations": ("organizations",),
 }
-"""`pauk cache export --only <group>`: each entity with every table that
-references it, so deleting a node and its relationships is fully picked up
-(a person removed from `persons` but left in `authorship` would be a dangling
-edge)."""
+"""Tables per `--only` group: an entity plus every table referencing it, so no edge dangles."""
 
 CYPHER_RETRY_BACKOFF_STEP_SECONDS = 5
 """Linear backoff step between retries (5, 10, 15, ... seconds)."""
@@ -110,13 +107,10 @@ def load_db(driver, tables: Collection[str] | None = None) -> dict[str, list]:
         tables: Only these tables (names as in the result); `None` - all of them.
 
     Returns:
-        A flat dict of thirteen keys: `persons`/`publications`/
-        `repositories`/`departments`/`organizations`/`authorship`/
-        `person_depts`/`pub_depts`/`repo_pubs`/`mentions_repos`/
-        `mentions_candidates`/`repo_persons`/`repo_depts`. The first ten
-        are what `pauk/gui/graph_builder/builder.py::GraphDataBuilder` expects on
-        input; `organizations`/`mentions_repos`/`mentions_candidates` are
-        three newer tables with no consumer in existing code yet.
+        A flat dict of thirteen tables. The first ten are what
+        `pauk/gui/graph_builder/builder.py::GraphDataBuilder` expects;
+        `organizations`, `mentions_repos` and `mentions_candidates` have no
+        consumer yet.
     """
     # Deferred so `tables` can pick a subset without running the rest.
     queries: dict[str, Callable[[], list[dict]]] = {}
@@ -149,26 +143,6 @@ def load_db(driver, tables: Collection[str] | None = None) -> dict[str, list]:
         "p.google_scholar AS google_scholar, "
         "p.email AS email, "
         "p.affiliations AS affiliations, "
-        # stubs
-        # "p.emails AS emails, " # STUB
-        # "p.thesis AS thesis, "  # STUB
-        # "p.scopus_id AS scopus_id, "  # STUB
-        # "p.researcher_id AS researcher_id, "  # STUB
-        # "p.dblp_id AS dblp_id, "  # STUB
-        # "p.biography AS biography, "  # STUB
-        # "p.country AS country, "  # STUB
-        # "p.homepage AS homepage, "  # STUB
-        # "p.gitlab_username AS gitlab_username, "  # STUB
-        # "p.linkedin AS linkedin, "  # STUB
-        # "p.twitter AS twitter, "  # STUB
-        # "p.wikipedia AS wikipedia, "  # STUB
-        # "p.works_count AS works_count, "  # STUB
-        # "p.cited_by_count AS cited_by_count, "  # STUB
-        # "p.h_index AS h_index, "  # STUB
-        # "p.i10_index AS i10_index, "  # STUB
-        # "p.counts_by_year AS counts_by_year, "  # STUB
-        # "p.status AS status, "  # STUB
-        # "p.enriched_at AS enriched_at, "  # STUB
         # service
         "toString(p.created_at) AS created_at, "
         "toString(p.updated_at) AS updated_at",
@@ -406,8 +380,7 @@ class GraphSnapshotExporter:
                 raise ValueError(f"{base_path} has no {sorted(missing)} - run a full 'pauk cache export'")
             logger.info("cache export --only %s: re-reading %s, the rest from %s", ",".join(only), sorted(tables), base_path)
 
-        # .resolve() so a relative --output doesn't silently depend on the
-        # working directory the command happened to run from.
+        # Resolved so a relative --output does not depend on the working directory.
         target = (path or dated_snapshot_path(self.config.cache_dir)).resolve()
         driver = GraphDatabase.driver(
             self.config.neo4j_uri,

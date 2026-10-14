@@ -1,7 +1,6 @@
-"""Which enrichment stage a run is on.
+"""Reports which enrichment stage a run is on.
 
-Ten stages, hours end to end. Without this the only thing a run says about
-itself is a heartbeat, and "жива" answers a different question from "где".
+A run takes hours across ten stages; without this the only sign of life is a heartbeat.
 """
 
 import unittest

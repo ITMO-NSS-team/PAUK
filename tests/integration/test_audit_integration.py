@@ -1,19 +1,16 @@
 """Integration tests for AuditedNeo4jClient against a real Neo4j instance.
 
-tests/unit/test_audit.py proves the diffing logic in isolation by mocking `_fetch_node_props`/`_fetch_rel_props` —
-that's the right tool for the diff math itself, but it can't catch bugs in the Cypher those methods actually run
-(the composite-label snapshot bug this file's test_label_growth_on_a_constrained_id_fails_atomically_no_audit_entry
-regression-tests was exactly that kind of bug: invisible to a mock, only visible against a real database). These
-tests spin up a disposable Neo4j container instead and exercise AuditedNeo4jClient's write path end to end.
+tests/unit/test_audit.py mocks `_fetch_node_props`/`_fetch_rel_props`, which cannot catch bugs in the
+Cypher those methods run. These tests exercise the write path end to end against a disposable Neo4j
+container.
 
-Neither Docker nor `testcontainers` is a project dependency (see AGENTS.md — pytest itself isn't either, `uv sync`
-stays minimal). Run explicitly, with Docker running:
+Neither Docker nor `testcontainers` is a project dependency (see AGENTS.md). Run explicitly, with Docker
+running:
 
     uv run --with pytest --with 'testcontainers[neo4j]' python -m pytest tests/integration -q
 
-If `testcontainers` isn't installed or Docker isn't reachable, the whole module is skipped via `setUpModule`
-rather than erroring at collection — so the CI command `uv run --with pytest pytest tests/ -q` still passes
-untouched, it just shows this module's tests as skipped instead of running them.
+If `testcontainers` is missing or Docker is unreachable, the whole module is skipped via `setUpModule`
+instead of erroring at collection.
 """
 
 from __future__ import annotations
@@ -111,16 +108,16 @@ class UpsertNodesIntegrationTest(Neo4jIntegrationTestCase):
         created, updated = sink.entries
         self.assertEqual(created.change_kind, "created")
         # "id" rides along in the diff too: properties(n) returns it like any other stored property, and
-        # TECHNICAL_DIFF_FIELDS only excludes created_at/updated_at — a real-database finding the unit tests'
-        # FakeNeo4jClient can't produce, since its mocked _fetch_node_props never puts "id" in the props dict.
+        # TECHNICAL_DIFF_FIELDS only excludes created_at/updated_at. FakeNeo4jClient never puts "id" in
+        # its props dict, so only a real database shows it.
         self.assertEqual(created.diff, {"id": (None, "d1"), "name": (None, "CS")})
         self.assertEqual(updated.change_kind, "updated")
         self.assertEqual(updated.diff, {"name": ("CS", "Computer Science")})
         self.assertEqual(self._node_props("d1")["name"], "Computer Science")
 
     def test_technical_fields_never_leak_into_the_diff(self):
-        """created_at/updated_at are real neo4j.time.DateTime values on the node — the exclusion in
-        _diff_props is deliberate scoping of what counts as a change, not an accident of the fields being unset."""
+        """created_at/updated_at are real neo4j.time.DateTime values on the node; the exclusion in
+        _diff_props is deliberate scoping of what counts as a change, not an accident of unset fields."""
         audited, sink = self._audited()
         with actor_context("integration-test"):
             audited.upsert_nodes_batch("Department", [("d1", {"name": "CS"})])
@@ -133,7 +130,7 @@ class UpsertNodesIntegrationTest(Neo4jIntegrationTestCase):
         self.assertIsNotNone(props["updated_at"])
 
     def test_composite_label_steady_state_diffs_correctly(self):
-        """A node created and always addressed with the same label pair — the OR-match in _fetch_node_props
+        """A node created and always addressed with the same label pair: the OR-match in _fetch_node_props
         must still find exactly the right row and not confuse it with an unrelated single-labeled Person."""
         _raw_client.upsert_nodes_batch("Person", [("other", {"email": "other@x.com"})])  # unrelated, no :Itmo
 
@@ -150,16 +147,14 @@ class UpsertNodesIntegrationTest(Neo4jIntegrationTestCase):
         self.assertEqual(self._node_props("other")["email"], "other@x.com")
 
     def test_label_growth_on_a_constrained_id_fails_atomically_no_audit_entry(self):
-        """Regression test for the reviewer's bug report, verified against real Neo4j rather than a mock.
+        """A failed label-growth write leaves no audit entry.
 
-        Every label used in this schema carries an `id` uniqueness constraint (schema.py::CONSTRAINTS), so
-        `MERGE (n:Person:Itmo {id: X})` against an id that already exists as plain `:Person` does not find
-        that node — Cypher only matches on the *exact* label set — and tries to CREATE a second node with the
-        same id, which the constraint rejects. So the label-growth scenario the _fetch_node_props fix guards
-        against never actually reaches the diffing code today: it dies inside Neo4jClient.upsert_nodes_batch's
-        own MERGE, before the "after" snapshot is even taken. What this test confirms is the other half of the
-        contract that matters here: that failure still produces zero audit entries (never a bogus "created"
-        record for a write that didn't happen), against a real driver exception rather than a fake RuntimeError.
+        Every label carries an `id` uniqueness constraint, so `MERGE (n:Person:Itmo {id: X})` against an id
+        that exists as plain `:Person` does not match it (Cypher matches the exact label set) and tries to
+        CREATE a second node, which the constraint rejects. That happens inside
+        Neo4jClient.upsert_nodes_batch's own MERGE, before the "after" snapshot, so the diffing code is
+        never reached. The failure must produce zero audit entries (never a bogus "created" record), here
+        against a real driver exception rather than a fake RuntimeError.
         """
         _raw_client.upsert_nodes_batch("Person", [("p1", {"email": "a@x.com"})])
         audited, sink = self._audited()

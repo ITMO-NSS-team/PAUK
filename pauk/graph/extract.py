@@ -1,15 +1,12 @@
 """Declarative mapping from prepared JSONL rows (plain dicts) to Neo4j
 nodes/relationships.
 
-Works on plain dicts, not pydantic instances — extract_node uses an explicit
-property whitelist (NodeSpec.prop_fields), so fields like `_processing`
-(a dict of ProcessingState, not a Neo4j-safe primitive) or any other field
-not listed are simply never copied into node properties. Nothing needs to
-special-case them.
+Works on plain dicts, not pydantic instances. extract_node copies only the
+whitelisted NodeSpec.prop_fields, so fields like `_processing` (not a
+Neo4j-safe primitive) are never copied into node properties.
 
-This module assumes today's flat, per-entity prepared JSONL layout
-(persons.jsonl, departments.jsonl, publications.jsonl, ...). It does not
-handle a nested/aggregate prepared-JSONL format.
+Assumes the flat, per-entity prepared layout (persons, departments,
+publications, ...); a nested/aggregate format is not handled.
 """
 
 from __future__ import annotations
@@ -32,12 +29,11 @@ class RelSpec:
         rel_type: Cypher relationship type to create, e.g. "BELONGS_TO".
         tgt_label: Label of the relationship's target node.
         tgt_id_field: Key inside each list item holding the target id.
-            None means the list items are the id themselves (e.g. a plain
-            id-reference list like department_ids).
+            None means the list items are the id themselves (e.g. department_ids).
         prop_fields: Keys copied from each item onto the relationship as
             properties.
         tgt_match_field: Property used to look up the target node. Not
-            always "id" — e.g. Repository is matched by "url".
+            always "id": e.g. Repository is matched by "url".
         scalar: True if `field` holds a single value (str | None) instead
             of a list, e.g. Repository.owner_login.
         guard: Optional per-item filter, used to split a single field into
@@ -357,7 +353,7 @@ def extract_relationships(
         includes tgt_match_field because the same rel_type (e.g.
         MENTIONS_LINK) can match its target by different properties
         depending on the RelSpec (url for Repository, id for
-        LinkCandidate) — those can't share one batch.
+        LinkCandidate), so those can't share one batch.
     """
     src_id = row[spec.id_field]
     src_label = spec.labels

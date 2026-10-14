@@ -3,7 +3,7 @@
 Loading is strictly nodes-first, relationships-second: if a relationship
 targets a node that hasn't been loaded, Cypher's MATCH simply won't find it
 and the relationship doesn't get created (see client.py, which logs a
-warning with the exact count instead of silently dropping it — missing
+warning with the exact count instead of silently dropping it; missing
 target nodes are never auto-created as stubs).
 """
 
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 #: Told which part of the load is under way and how far it has got. The
 #: worker passes its own reporter, which raises when somebody has asked the
-#: run to stop — see pauk/jobs/worker.py.
+#: run to stop; see pauk/jobs/worker.py.
 Progress = Callable[[str, int, int], None]
 
 
@@ -34,7 +34,7 @@ def _tick(report: Progress | None, step: str, done: int, total: int) -> None:
 
     Also the only seam where a publish can be given up: between two chunks,
     with everything before them already written. What is left behind is a
-    group loaded in part, which the next publish finishes — upserts and
+    group loaded in part, which the next publish finishes: upserts and
     synchronization are idempotent, so repeating them is safe.
     """
     if report is not None:
@@ -75,14 +75,13 @@ def extract_repo_links(
 ]:
     """Extract MENTIONS_LINK edges from one repo_links.jsonl row.
 
-    A row here (PubLinks) is not a node — it's a flat list of candidate code
+    A row here (PubLinks) is not a node: it is a flat list of candidate code
     links for one publication, and unlike Publication.mentions_links it
-    carries no target_kind discriminator. The rule (matching the old
-    graph_loader.py): if a link's url matches an already-known Repository.url
+    carries no target_kind discriminator. The rule: if a link's url matches an already-known Repository.url
     (compared via normalize_repo_url), create a MENTIONS_LINK edge to that
     Repository, matched by the repository's *stored* url; otherwise create a
-    LinkCandidate node on the fly, using the url itself as its id —
-    repo_links.jsonl carries no other stable id for a candidate.
+    LinkCandidate node on the fly, using the url itself as its id
+    (repo_links.jsonl carries no other stable id for a candidate).
 
     Args:
         pub_links_row: One decoded repo_links.jsonl line
@@ -91,8 +90,8 @@ def extract_repo_links(
             URL as stored on the Repository node, built while loading
             repositories.jsonl in this run.
         dropped_candidates: Candidate urls deleted by hand. A LinkCandidate
-            has no prepared row of its own — it is made up here from a
-            link — so the tombstone filter the loader runs over the files
+            has no prepared row of its own; it is made up here from a
+            link, so the tombstone filter the loader runs over the files
             never sees it, and without this every publish would recreate
             the node for apply_overrides to delete again.
         synchronize_relevance: True makes the incoming verdict authoritative
@@ -171,8 +170,8 @@ def extract_repo_links(
 def _keep_graph_merges(client, label: str, nodes: list[tuple[str, dict]]) -> int:
     """Add back the folded-away ids the graph knows and the rows do not.
 
-    A fold made on the graph — the graph-wide dedup pass, or a pair
-    confirmed in the review queue — writes `merged_ids` onto the surviving
+    A fold made on the graph (the graph-wide dedup pass, or a pair
+    confirmed in the review queue) writes `merged_ids` onto the surviving
     node and nowhere else. Publishing that node from its row would replace
     the list with the row's own, `fetch_merged_id_map` would stop resolving
     the folded id, and the duplicate below would be recreated with all of
@@ -212,7 +211,7 @@ def load_prepared_rows(
     Reads every entity's rows first, accumulating nodes and relationships in
     memory (the dataset is thousands of rows, not millions, so this is
     simpler than interleaving reads with uploads), then uploads all nodes,
-    then all relationships — both in chunks of client.CHUNK_SIZE.
+    then all relationships, both in chunks of client.CHUNK_SIZE.
 
     Args:
         client: An open Neo4jClient, AuditedNeo4jClient, or a compatible
@@ -220,7 +219,7 @@ def load_prepared_rows(
         rows_by_file: Rows for each of the six prepared entities, keyed by
             the same filenames as the on-disk group layout (departments.jsonl,
             publications.jsonl, repositories.jsonl, github_profiles.jsonl,
-            persons.jsonl, repo_links.jsonl) — a missing key is the same as
+            persons.jsonl, repo_links.jsonl). A missing key is the same as
             an empty list, i.e. "this group has none of this entity".
         dropped_relationships: Edges unlinked by hand, as
             (src_label, rel_type, tgt_label, src_id, tgt_id). They are
@@ -273,7 +272,7 @@ def load_prepared_rows(
                     if publication_id in implements_scope:
                         desired_implements[publication_id].add(row["id"])
             if spec_key == "repository" and _stage_failed(row, "repositories"):
-                # Never enriched successfully — a name/url stub would pollute
+                # Never enriched successfully: a name/url stub would pollute
                 # the graph; it gets loaded once a retry succeeds.
                 skipped_failed += 1
                 continue
@@ -295,7 +294,7 @@ def load_prepared_rows(
             if spec_key == "repository":
                 # url is required on Repository, not Optional. cited_urls are
                 # the URLs the repo was referenced by before canonicalization
-                # (renames, case variants) — map them to the stored url too.
+                # (renames, case variants), so map them to the stored url too.
                 known_repository_urls[normalize_repo_url(row["url"])] = row["url"]
                 for cited in row.get("cited_urls") or []:
                     known_repository_urls.setdefault(normalize_repo_url(cited), row["url"])
@@ -405,7 +404,7 @@ def load_prepared_rows(
         client.merge_repository_nodes_batch(chunk)
 
     # A group published before a graph-wide dedup still carries rows for
-    # ids that were since folded into another group's canonical node — the
+    # ids that were since folded into another group's canonical node: the
     # upserts above just resurrected them, relationships included. Fold
     # them right back using the merged_ids maps stored on canonical nodes.
     merged_id_maps: dict[str, dict[str, str]] = {}

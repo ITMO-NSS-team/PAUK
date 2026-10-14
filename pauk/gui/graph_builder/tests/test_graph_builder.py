@@ -1,9 +1,8 @@
-"""Unit test for builder.py - an end-to-end check of
-`GraphDataBuilder` on a small synthetic db in `pauk.cache`'s shape. Stage
-logic (authorship indexing, department assignment, layout, node/edge
-building) is tested separately in `test_authorship.py`/
-`test_departments.py`/`test_layout.py`/`test_nodes.py` - this only checks
-the shape (summary/detail split), not specific layout numbers.
+"""Unit test for builder.py: an end-to-end check of `GraphDataBuilder` on a small synthetic db.
+
+Stage logic is tested in `test_authorship.py`/`test_departments.py`/
+`test_layout.py`/`test_nodes.py`; this only checks the shape (summary/detail
+split), not specific layout numbers.
 """
 
 from __future__ import annotations
@@ -36,9 +35,8 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
                  "openalex_url": "https://openalex.org/W1", "abstract": "Абстракт"},
             ],
             "repositories": [
-                # "owner" is deliberately absent here: pauk/cache/export.py
-                # no longer returns it (see RepoNodeBuilder) - the fixture
-                # should reflect the real snapshot shape, not the old one.
+                # "owner" is deliberately absent: pauk/cache/export.py does not
+                # return it, and the fixture should match the real snapshot shape.
                 {"id": "R1", "name": "repo", "url": "https://x", "description": "Описание", "stars_num": 5,
                  "has_readme": True, "license": "MIT", "contributors": ["ivanov"], "owner_type": "user"},
             ],
@@ -105,26 +103,18 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
         self.assertEqual({a["key"] for a in detail["authors"]}, {"A1", "E1"})
 
     def test_summary_label_is_the_full_form_not_the_truncated_public_one(self):
-        # graph-data.json is one shared file across build variants (see
-        # builder.py on public/private being decided by file location,
-        # not content) - the map label currently uses author_label(...,
-        # public=False): full surname ("Иванов", not the old "Ива..") and,
-        # with no patronymic in this fixture, the full first name too (see
-        # author_label()'s own force_initial=public branch, nodes.py) -
-        # readability won out for now over the public-safe truncated form
-        # (see nodes.py::AuthorNodeBuilder.build()).
+        # graph-data.json is shared across build variants (public/private is
+        # decided by file location, see builder.py), and the map label uses
+        # author_label(..., public=False): the full surname ("Иванов") and, with
+        # no patronymic in this fixture, the full first name too.
         summary, _detail = GraphDataBuilder(self._sample_db(), seed=1).build()
         self.assertEqual(summary["authors"][0]["label"], "Иванов Иван")
 
     def test_summary_label_en_falls_back_to_name_en_when_split_en_name_parts_are_missing(self):
-        # The real snapshot has surname_en/first_name_en/second_name_en as
-        # None for every single person (no pipeline stage ever populates
-        # them) - author_label() then always returns "", and without a
-        # name_en fallback label_en silently became identical to label_ru
-        # for 100% of authors regardless of the selected UI language (the
-        # actual bug report: choosing English didn't make names English
-        # anywhere except the panel card, which reads AuthorDetail.name_en
-        # separately once it has merged in).
+        # The real snapshot has surname_en/first_name_en/second_name_en as None
+        # for every person, so author_label() returns ""; without a name_en
+        # fallback label_en would equal label_ru for all authors regardless of
+        # the UI language.
         db = self._sample_db()
         db["persons"][0]["surname_en"] = None
         db["persons"][0]["first_name_en"] = None
@@ -155,9 +145,7 @@ class BuildGraphDataIntegrationTest(unittest.TestCase):
         self.assertEqual(summary["repo_author_edges"], [{"s": "R1", "t": "A1", "role": "maintainer"}])
 
     def test_repo_detail_no_longer_has_an_owner_field(self):
-        """Regression test for a bug from the OOP-restructure slice:
-        RepoNodeBuilder used to read row["owner"], which export.py no longer
-        returns - raised KeyError on the first real run."""
+        """RepoNodeBuilder must not read row["owner"], which export.py does not return."""
         _summary, detail = GraphDataBuilder(self._sample_db(), seed=1).build()
         repo_detail = detail["repos"][0]
         self.assertEqual(

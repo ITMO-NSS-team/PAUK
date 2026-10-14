@@ -1,12 +1,8 @@
-"""`pauk admin ...` — editing the graph from the shell.
+"""`pauk admin ...`: editing the graph from the shell.
 
-The first consumer of `pauk.graph.mutations`, and a complete one: every
-operation the panel will offer is reachable here. Whatever the panel adds
-on top is a form and a login, not different rules.
-
-This module does three things and no more — parse arguments, name the
-actor, print the result. Validation and the writes themselves belong to
-the mutation layer.
+Every operation the panel offers is reachable here. This module only parses
+arguments, names the actor and prints the result; validation and writes belong
+to `pauk.graph.mutations`.
 """
 
 from __future__ import annotations
@@ -54,10 +50,9 @@ logger = logging.getLogger("pauk.admin")
 
 
 def _parse_value(raw: str):
-    """`--set stars_num=10` should store a number, not the text "10".
+    """Parse a `--set` value as JSON, falling back to a plain string.
 
-    JSON covers numbers, booleans, null and lists in one rule; anything it
-    rejects is taken as a plain string, which is what a name or a URL is.
+    So `stars_num=10` stores a number while a name or URL stays text.
     """
     try:
         return json.loads(raw)
@@ -234,7 +229,7 @@ def run(args, config: Settings, db: Database | None) -> None:
         _run_user(args, db)
         return
 
-    # Same: both histories are Mongo collections, and the graph is untouched.
+    # Both histories are Mongo collections; the graph is untouched.
     if args.admin_command == "trim":
         _run_trim(args, db)
         return
@@ -261,9 +256,8 @@ def run(args, config: Settings, db: Database | None) -> None:
 def _run_worker(args, config: Settings, db: Database) -> None:
     """Perform scheduled runs until asked to stop.
 
-    A second process next to the panel, not a thread inside it: a
-    collection run takes hours, and restarting the web service must not cut
-    one in half.
+    A separate process from the panel, so restarting the web service does not
+    cut a collection run in half.
     """
     worker = Worker(config=config, db=db, name=args.name or "",
                     poll_seconds=args.poll)
@@ -277,12 +271,8 @@ def _run_worker(args, config: Settings, db: Database) -> None:
 def _run_prune(args, client, db: Database) -> None:
     """Bring the graph back to what the prepared rows describe.
 
-    Listing by default. The graph is what the map and the panel read, and
-    a deletion nobody looked at first is the wrong way round for a step
-    that exists because the two copies had drifted apart unnoticed.
-
-    The comparison and the removal are one turn under the graph lock, so
-    this cannot run while a publish is writing — see `prune.run`.
+    Lists by default; deleting needs `--apply`. The comparison and removal
+    happen under the graph lock (see `prune.run`).
     """
     try:
         plan = prune.run(client, db, args.apply)
@@ -315,15 +305,9 @@ def _run_prune(args, client, db: Database) -> None:
 
 
 def _run_trim(args, db: Database) -> None:
-    """Keep the two growing histories from growing for ever.
+    """Keep the two growing histories (change feed, revision archive) bounded.
 
-    Both at once because they grow for the same reason and are shortened on
-    the same schedule: the change feed records what happened to the graph,
-    the revision archive what a prepared row said before a run replaced it.
-
-    Counting by default. A cut of either is not something to discover
-    afterwards, so the size of it is printed first and made only when asked
-    for.
+    Counts by default; cutting needs `--apply`.
     """
     cutoff = feed.older_than(args.keep_days)
     entries = feed.trim(db, cutoff, apply=args.apply)
@@ -342,8 +326,8 @@ def _run_trim(args, db: Database) -> None:
 def _run_user(args, db: Database) -> None:
     """Manage the accounts that can log into the panel.
 
-    The password is read from a prompt, never from an argument: anything
-    passed on the command line lands in the shell history and in `ps`.
+    The password is read from a prompt, never an argument, which would land in
+    the shell history and `ps`.
     """
     if args.user_command == "add":
         password = getpass.getpass(f"password for {args.login}: ")
@@ -404,12 +388,9 @@ def _run_node(args, client, db, actor: str) -> None:
 def _set_fields(args, client, db, actor: str) -> dict:
     """Change fields, and remember the decision so a publish cannot undo it.
 
-    Writing straight to the graph would hold until the next
-    `pauk publish graph` and then be overwritten by whatever the source
-    says. So the edit is also kept as an override, with the automatic value
-    it replaces, so the conflict screen can later say what the source now
-    claims. The graph is written first and the decision recorded second —
-    see the comment below for why that order matters.
+    The edit is also kept as an override with the automatic value it replaces,
+    so the conflict screen can show what the source now claims. The graph is
+    written first because it is the step that can be refused.
     """
     fields = _parse_assignments(args.assignments)
     before = read_node(client, args.label, args.id)
@@ -427,7 +408,7 @@ def _set_fields(args, client, db, actor: str) -> dict:
 
 def _delete(args, client, db, actor: str) -> None:
     """Remove a node, and tombstone it so publishing does not bring it back."""
-    # Snapshot first, as in the panel: afterwards there is nothing left to read.
+    # Snapshot first: afterwards there is nothing left to read.
     snapshot = read_node(client, args.label, args.id)
     removed = delete_node(client, args.label, args.id, cascade=args.cascade)
     if db is not None and not args.once:
@@ -497,7 +478,7 @@ def _run_relationship(args, client, db, actor: str) -> None:
 
 
 def _run_merge(args, client) -> None:
-    # Only a pair answered in the review queue can be split back apart.
+    # Not reversible: only a pair answered in the review queue can be split back apart.
     if not args.yes:
         answer = input(
             f"Merge {args.label} {args.duplicate_id} into {args.canonical_id}?\n"

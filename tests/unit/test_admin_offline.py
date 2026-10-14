@@ -1,9 +1,9 @@
 """What the panel says when Mongo is not there.
 
 Accounts, sessions, decisions and the queue all live in Mongo, so an
-unreachable Mongo is the whole panel being down. It used to answer every
-request with a stack trace after waiting half a minute for a database that
-was never coming.
+unreachable Mongo is the whole panel being down. Every request has to
+answer at once instead of waiting half a minute for a database that is
+never coming and ending in a stack trace.
 """
 
 import unittest
@@ -89,10 +89,9 @@ if __name__ == "__main__":
 class LockedOutTest(unittest.TestCase):
     """A locked account has to say so, not pretend the password was wrong.
 
-    auth.py counts failures for logins that do not exist too, so the wait
-    gives an attacker nothing — and somebody who mistyped needs to know
-    whether to wait or to go and ask for help. The form used to replace
-    every message with "wrong login or password", including this one.
+    auth.py counts failures for logins that do not exist too, so the wait gives an attacker nothing,
+    and somebody who mistyped needs to know whether to wait or to go and ask for help. The form must
+    not replace every message with "wrong login or password", including this one.
     """
 
     def setUp(self):

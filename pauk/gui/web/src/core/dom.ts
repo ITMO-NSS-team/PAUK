@@ -1,7 +1,7 @@
 /** @throws Error when the element is missing from index.html. */
 export function requireElement(id: string): HTMLElement {
   const element = document.getElementById(id);
-  if (!element) throw new Error(`не найден элемент #${id} в index.html`);
+  if (!element) throw new Error(`element #${id} not found in index.html`);
   return element;
 }
 
