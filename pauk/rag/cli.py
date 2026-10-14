@@ -52,8 +52,11 @@ def add_parser(subparsers) -> None:
     p.add_argument("--profile", default="full")
     p.add_argument("--mode", choices=MODES, default="hybrid")
     p.add_argument("--fusion", choices=["minmax", "rrf"], default="minmax")
-    p.add_argument("--no-translate", action="store_true",
-                   help="BM25 on the question as written, not on its English keywords (saves one LLM call)")
+    p.add_argument("--no-keywords", action="store_true",
+                   help="search by the question as written, without LLM keyword extraction (saves one LLM call)")
+    p.add_argument("--no-dense-keywords", action="store_true",
+                   help="give the encoder the question as written instead of the extracted keywords "
+                        "(BM25 still gets them)")
     p.add_argument("--top", type=int, default=10)
     p.add_argument("--all-people", action="store_true", help="keep co-authors from outside ITMO")
     p.add_argument("--no-answer", action="store_true", help="retrieval only, no LLM call")
@@ -150,7 +153,8 @@ def run(args, config: Settings) -> None:
         rag = Rag(config, model=args.model)
         try:
             result = rag.ask(args.question, profile=args.profile, mode=args.mode, fusion=args.fusion,
-                             translate=not args.no_translate, top_n=args.top, only_itmo=not args.all_people,
+                             keywords=not args.no_keywords, dense_keywords=not (args.no_keywords or args.no_dense_keywords),
+                             top_n=args.top, only_itmo=not args.all_people,
                              with_answer=not args.no_answer)
         finally:
             rag.close()

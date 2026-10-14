@@ -57,9 +57,9 @@ class Settings:
     neo4j_user: str = os.getenv("NEO4J_USER", "neo4j")
     neo4j_password: str = os.getenv("NEO4J_PASSWORD", "")
     # The default of `pauk rag --model`: an alias or name from pauk/rag/models.py
-    # (bge, arctic, qwen3). Multilingual, so a Russian question meets
-    # English abstracts without translation; each model keeps its own vectors.
-    rag_embedding_model: str = os.getenv("PAUK_RAG_EMBEDDING_MODEL", "BAAI/bge-m3")
+    # (bge, arctic, qwen3); each model keeps its own vectors. Qwen3 with the
+    # extracted keywords won the 2026-10-15 validation on all three kinds.
+    rag_embedding_model: str = os.getenv("PAUK_RAG_EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B")
     mongo_uri: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
     mongo_db: str = os.getenv("MONGO_DB", "pauk")
     request_timeout: int = int(os.getenv("PAUK_REQUEST_TIMEOUT", "30"))

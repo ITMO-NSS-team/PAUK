@@ -263,7 +263,7 @@ class _AskGraph(_ExpertsGraph):
 
 
 class AskTest(unittest.TestCase):
-    def test_translation_is_on_by_default_and_degrades_with_a_note(self):
+    def test_keywords_are_on_by_default_and_degrade_with_a_note(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         config = _Config(Path(tmp.name))
@@ -274,7 +274,7 @@ class AskTest(unittest.TestCase):
         rag = Rag(config, graph=graph, embedder=_Embedder(), llm=_FailingLlm())
         result = rag.ask("Кто занимается RT-DETR?", with_answer=False)
         self.assertEqual(len(result["notes"]), 1)
-        self.assertFalse(result["options"]["translate"])
+        self.assertFalse(result["options"]["keywords"])
         self.assertEqual(graph.terms, r"Кто занимается RT\-DETR\?")
 
     def test_a_model_without_its_own_build_is_refused(self):
@@ -289,7 +289,7 @@ class AskTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             rag.profile("full", "qwen3")  # its vectors are not in Neo4j: never query bge vectors with qwen3
 
-    def test_translation_reaches_bm25_with_one_llm_call(self):
+    def test_keywords_reach_bm25_with_one_llm_call(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         config = _Config(Path(tmp.name))
@@ -303,6 +303,19 @@ class AskTest(unittest.TestCase):
         self.assertEqual(llm.calls, 1)
         self.assertEqual(result["notes"], [])
         self.assertEqual(graph.terms, r"RT\-DETR object detection")
+
+    def test_dense_keywords_replace_the_question_for_the_encoder(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        config = _Config(Path(tmp.name))
+        manifest = index.manifest_path(config, "full", "bge")
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(json.dumps({"profile": PRESETS["full"].to_dict(), "embedding_model": "BAAI/bge-m3"}))
+        embedder, llm = _Embedder(), _CountingLlm()
+        rag = Rag(config, graph=_AskGraph(), embedder=embedder, llm=llm)
+        rag.ask("Кто занимается RT-DETR?", with_answer=False)  # on by default
+        self.assertEqual(embedder.calls, [["RT-DETR object detection"]])
+        self.assertEqual(llm.calls, 1)  # one extraction serves both sides
 
 
 class MetricsTest(unittest.TestCase):
@@ -388,8 +401,10 @@ class MetricsTest(unittest.TestCase):
 
     def test_variant_syntax(self):
         self.assertEqual(evaluation.parse_variant("full:hybrid:rrf+en"),
-                         {"profile": "full", "model": None, "mode": "hybrid", "fusion": "rrf", "translate": True})
-        self.assertFalse(evaluation.parse_variant("full:bm25")["translate"])
+                         {"profile": "full", "model": "bge", "mode": "hybrid", "fusion": "rrf", "bm25_keywords": True,
+                          "dense_keywords": False})
+        self.assertTrue(evaluation.parse_variant("full:dense:kw")["dense_keywords"])
+        self.assertFalse(evaluation.parse_variant("full:bm25")["bm25_keywords"])
         self.assertEqual(evaluation.parse_variant("full@qwen3:dense")["model"], "qwen3")
         for bad in ("full:sparse", "full:bm25:ru"):
             with self.assertRaises(ValueError):

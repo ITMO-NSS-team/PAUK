@@ -110,7 +110,7 @@ uv run pauk rag index --profile full                     # построить / 
 uv run pauk rag index --profile no_readme
 uv run pauk rag index --profile full --model qwen3       # тот же профиль, векторы другой модели рядом
 uv run pauk rag profiles                                 # пресеты, поля, что построено
-uv run pauk rag ask "кто занимается федеративным обучением" --no-answer   # hybrid:en; --no-translate без LLM
+uv run pauk rag ask "кто занимается федеративным обучением" --no-answer   # qwen3, ключевые слова в BM25 и в эмбеддер; --no-dense-keywords, --no-keywords
 uv run pauk rag pool --run validation --variants full:hybrid:en,full:dense,no_readme:hybrid:en
 uv run pauk rag pool --run validation                    # без --variants: те же варианты, что уже в пуле
 uv run pauk rag metrics --run validation --judge claude --baseline full:hybrid:en
@@ -121,8 +121,9 @@ uv run pauk rag drop --profile no_readme
 ## Модели эмбеддингов (`models.py`)
 
 `--model` у `index`, `ask` и `drop`; по умолчанию — `PAUK_RAG_EMBEDDING_MODEL`
-(`BAAI/bge-m3`). В валидации модель — часть варианта: `full@qwen3:dense`; вариант
-без `@` — модель по умолчанию. `Rag.profile` не даёт искать векторами модели,
+(`Qwen/Qwen3-Embedding-0.6B`, с 2026-10-15). В валидации модель — часть
+варианта: `full@qwen3:dense`; вариант без `@` — всегда bge-m3, а не модель по
+умолчанию, чтобы размеченные варианты не меняли смысл при смене умолчания. `Rag.profile` не даёт искать векторами модели,
 которой профиль не собран: вопрос и документы должны быть встроены одной
 моделью, иначе поиск молча вернёт шум.
 

@@ -1,7 +1,7 @@
 """Validation: pooled relevance judgments, metrics and ablation comparisons.
 
 A *variant* is an index profile and a retrieval mode, written `full:hybrid`,
-optionally with `:rrf` (fusion), `:en` (BM25 on the translated question) or both, `:rrf+en`. Every variant answers every
+optionally with `:rrf` (fusion), `:en` (BM25 on the extracted English keywords) or both, `:rrf+en`. Every variant answers every
 question; the top `k` people, publications and repositories of all
 variants are merged into one pool per question, and only the pool is
 judged: 0 - not relevant, 1 - partly, 2 - relevant (TREC-style pooling;
@@ -34,6 +34,8 @@ from .readme import clean_readme, load_readme
 from .retrieve import MODES, Hit, Rag
 
 K = 10
+# The model of a variant written without `@model`; see parse_variant.
+VARIANT_DEFAULT_MODEL = "bge"
 KINDS = ("persons", "publications", "repositories")
 GRADES = (0, 1, 2)
 SNIPPET_CHARS = 700
@@ -82,20 +84,22 @@ def targets(meta: dict[str, str]) -> tuple[str, ...]:
 
 
 def parse_variant(text: str) -> dict[str, Any]:
-    """`profile[@model]:mode[:options]`, options joined by `+`: `rrf` (fusion), `en` (BM25 on the translation).
+    """`profile[@model]:mode[:options]`, options joined by `+`: `rrf` (fusion), `en` (BM25 on the
+    keywords), `kw` (the encoder too gets the keywords instead of the question).
 
-    Without `@model` the variant uses the default model, so the variants
-    of runs judged before models were selectable keep their meaning.
+    Without `@model` the variant means bge-m3 - not the configured default -
+    so variants judged before models were selectable keep their meaning when
+    the default changes.
     """
     parts = text.split(":")
     if len(parts) not in (2, 3) or parts[1] not in MODES:
-        raise ValueError(f"variant {text!r}: profile[@model]:mode[:rrf+en], mode one of {MODES}")
+        raise ValueError(f"variant {text!r}: profile[@model]:mode[:rrf+en+kw], mode one of {MODES}")
     profile, _, model = parts[0].partition("@")
     options = set(parts[2].split("+")) if len(parts) == 3 else set()
-    if options - {"rrf", "en"}:
-        raise ValueError(f"variant {text!r}: unknown options {sorted(options - {'rrf', 'en'})}")
-    return {"profile": profile, "model": model or None, "mode": parts[1], "fusion": "rrf" if "rrf" in options else "minmax",
-            "translate": "en" in options}
+    if options - {"rrf", "en", "kw"}:
+        raise ValueError(f"variant {text!r}: unknown options {sorted(options - {'rrf', 'en', 'kw'})}")
+    return {"profile": profile, "model": model or VARIANT_DEFAULT_MODEL, "mode": parts[1], "fusion": "rrf" if "rrf" in options else "minmax",
+            "bm25_keywords": "en" in options, "dense_keywords": "kw" in options}
 
 
 def _shuffled(question: str, ids: list[str]) -> list[str]:
@@ -119,11 +123,13 @@ def build_pool(run_dir: Path, rag: Rag, questions_path: Path, variants: list[str
         spec = specs[name]
         for meta in questions:
             question = meta["question"]
-            bm25_query = rag.translate(question) if spec["translate"] and spec["mode"] != "dense" else None
+            bm25_query = rag.extract_keywords(question) if spec["bm25_keywords"] and spec["mode"] != "dense" else None
+            dense_query = rag.extract_keywords(question) if spec["dense_keywords"] and spec["mode"] != "bm25" else None
             # Deeper than k: the people are aggregated from these items.
             retrieved[name, question] = rag.retrieve(question, profile=spec["profile"], model=spec["model"],
                                                      mode=spec["mode"], fusion=spec["fusion"],
-                                                     bm25_query=bm25_query, k=max(50, k))
+                                                     bm25_query=bm25_query, dense_query=dense_query,
+                                                     k=max(50, k))
     entries = []
     for meta in questions:
         question = meta["question"]
