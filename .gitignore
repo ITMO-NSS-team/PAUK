@@ -54,3 +54,5 @@ data/reports/
 docs/reports/
 
 *.log
+
+test_questions.csv

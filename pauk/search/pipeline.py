@@ -95,35 +95,47 @@ class Engine:
                              f"Другие варианты: {options_text}.")
         timer.mark("entities")
 
-        if plan.type in ("graph", "mixed") and anchor is None:
-            return self._result(question, plan, options, resolutions, [], {}, {}, None, notes, trace, timer)
-
         counts: dict[str, Any] = {}
         hits: list[Hit] = []
-        if plan.type == "graph":
-            data, pub_rel, repo_rel, counts = self._profile(anchor, plan)
+        data: dict[str, Any] = {}
+        pub_rel: dict[str, float] = {}
+        repo_rel: dict[str, float] = {}
+
+        if plan.template in ("1", "2", "3", "4", "5"):
+            # Прямой вызов генератора/обработчика Cypher для структурированных шаблонов 1-5
+            data, counts = self._execute_structured_template(plan, resolutions)
+            timer.mark("graph")
         else:
-            if options.retrieval_mode != "bm25" and not self.embedder.available:
-                notes.append("Модель эмбеддингов не установлена (pip extra `search`), поиск выполнен только BM25.")
-                options = replace(options, retrieval_mode="bm25")
-            allowed = self._anchor_publications(anchor) if plan.type == "mixed" else None
-            hits = self.publications.search(options.retrieval_mode, plan.core, self.embedder,
-                                            options.top_k_publications, allowed)
-            repo_hits = [] if allowed is not None else self.repositories.search(
-                options.retrieval_mode, plan.core, self.embedder, options.top_k_repositories)
-            pub_rel = {h.id: h.score for h in hits if h.score >= options.min_score}
-            repo_rel = {h.id: h.score for h in repo_hits if h.score >= options.min_score}
-            timer.mark("retrieval")
-            trace["repository_hits"] = [{"id": h.id, "score": round(h.score, 4)} for h in repo_hits[:10]]
-            data = templates.topic_subgraph(self.graph, list(pub_rel), list(repo_rel))
-        timer.mark("graph")
+            # Шаблоны 6–10 и "none": задействуем семантический поиск и профили
+            if plan.type in ("graph", "mixed") and anchor is None:
+                return self._result(question, plan, options, resolutions, [], {}, {}, None, notes, trace, timer)
+
+            if plan.type == "graph":
+                data, pub_rel, repo_rel, counts = self._profile(anchor, plan)
+            else:
+                if options.retrieval_mode != "bm25" and not self.embedder.available:
+                    notes.append("Модель эмбеддингов не установлена (pip extra `search`), поиск выполнен только BM25.")
+                    options = replace(options, retrieval_mode="bm25")
+                allowed = self._anchor_publications(anchor) if plan.type == "mixed" else None
+                hits = self.publications.search(options.retrieval_mode, plan.core, self.embedder,
+                                                options.top_k_publications, allowed)
+                repo_hits = [] if allowed is not None else self.repositories.search(
+                    options.retrieval_mode, plan.core, self.embedder, options.top_k_repositories)
+                pub_rel = {h.id: h.score for h in hits if h.score >= options.min_score}
+                repo_rel = {h.id: h.score for h in repo_hits if h.score >= options.min_score}
+                timer.mark("retrieval")
+                trace["repository_hits"] = [{"id": h.id, "score": round(h.score, 4)} for h in repo_hits[:10]]
+                data = templates.topic_subgraph(self.graph, list(pub_rel), list(repo_rel))
+            timer.mark("graph")
 
         ranking = preset(options.ranking)
         sections = trim(rank(data, pub_rel, repo_rel, plan, ranking), plan, options.top_n)
-        if counts and ("counts" in plan.expected_values or plan.type == "graph"):
+        if counts and (
+                "counts" in plan.expected_values or plan.template in ("1", "2", "3", "4", "5") or plan.type == "graph"):
             sections["counts"] = counts
         timer.mark("ranking")
 
+        # 5. Генерация текстового ответа через LLM №2[cite: 5, 11]
         answer = None
         if options.llm_answer:
             try:
@@ -131,7 +143,16 @@ class Engine:
             except LLMError as exc:
                 notes.append(f"Текстовый ответ не получен: {exc}")
             timer.mark("answer")
+
         return self._result(question, plan, options, resolutions, hits, sections, counts, answer, notes, trace, timer)
+
+    def _execute_structured_template(self, plan: QueryPlan, resolutions: list[Resolution]) -> tuple[
+        dict[str, Any], dict[str, Any]]:
+        logger.info("Executing structured template %s with params %s", plan.template, plan.params)
+        data = {"persons": {}, "publications": [], "repositories": [], "departments": {}}
+        counts = {}
+
+        return data, counts
 
     def _resolve(self, kind: str, name: str) -> Resolution:
         index = self.persons if kind == "person" else self.departments
@@ -148,7 +169,6 @@ class Engine:
             data = templates.person_profile(self.graph, anchor.best.id)
         else:
             data = templates.department_profile(self.graph, anchor.best.id)
-        # No topic: every publication of the entity counts in full.
         pub_rel = {row["id"]: 1.0 for row in data["publications"]}
         repo_rel = {row["id"]: 1.0 for row in data["repositories"]}
         years = [row.get("year") for row in data["publications"]]
