@@ -123,6 +123,14 @@ would describe the merged state (the union of authors of all merged records)
 instead of what that record carried. Only the raw `openalex_works` collection
 remains a correct per-record source.
 
+### What exact matching misses
+
+The DOI/title match above is exact: two records of one work with different
+DOIs **and** an edited title (a preprint whose title was polished for the
+journal, a translation into another language, a revision under its own DOI)
+stay separate publications. The heuristic search for such pairs is a
+separate, report-only tool; see [version-candidates.md](version-candidates.md).
+
 ## Repositories
 
 The same `github_id` means the same repository even if the URLs have diverged

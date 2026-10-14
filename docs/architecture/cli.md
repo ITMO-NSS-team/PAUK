@@ -105,6 +105,20 @@ Neo4j from different runs and never sat side by side in one group. It is not
 part of `run`; run it by hand once several groups have accumulated. See
 [pipeline/dedup.md](pipeline/dedup.md).
 
+## `versions report`
+
+```
+pauk versions report [--output <path>]
+```
+
+Finds publication pairs that look like versions of one work but that `dedup`
+missed because their DOIs differ and the title was edited (preprint →
+publication, original → translation, a revision under its own DOI). Only
+reads the graph; MongoDB is not needed. Writes a journal (by default
+`data/cache/version_candidates.jsonl`) and merges nothing: every pair has
+`status: "held"`, and a person confirms it. See
+[pipeline/version-candidates.md](pipeline/version-candidates.md).
+
 ## `admin`: manual graph edits
 
 ```

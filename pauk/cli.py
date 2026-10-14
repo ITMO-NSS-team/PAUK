@@ -168,6 +168,14 @@ def _add_gui_parsers(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--seed", type=int, default=42, help="ForceAtlas2 layout seed")
 
 
+def _add_versions_parsers(sub: argparse._SubParsersAction) -> None:
+    """Register `versions report`: candidate version pairs, report only."""
+    p = sub.add_parser("versions")
+    versions_sub = p.add_subparsers(dest="versions_command", required=True)
+    p = versions_sub.add_parser("report", help="report candidate version pairs the dedup stage did not catch")
+    p.add_argument("--output", type=Path, help="default: cache_dir/version_candidates.jsonl")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="pauk")
     parser.add_argument("--verbose", action="store_true")
@@ -175,6 +183,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_pipeline_parsers(sub)
     _add_cache_parsers(sub)
     _add_gui_parsers(sub)
+    _add_versions_parsers(sub)
     admin_cli.add_parser(sub)
     return parser
 
@@ -279,6 +288,14 @@ def _cmd_gui(args, parser: argparse.ArgumentParser) -> None:
     write_site_data(path, args.out_dir or settings.gui_dir, args.seed)
 
 
+def _cmd_versions(args) -> None:
+    # Read-only against Neo4j: no Mongo connection, no lock. The journal path
+    # is logged by run_version_report itself.
+    from pauk.graph.version_candidates import run_version_report
+
+    run_version_report(settings, args.output)
+
+
 def _cmd_admin(args) -> None:
     # `schema` only prints the whitelists; it reaches neither database,
     # so it stays usable without one running.
@@ -334,6 +351,8 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> None:
         _cmd_cache(args, parser)
     elif args.command == "gui":
         _cmd_gui(args, parser)
+    elif args.command == "versions":
+        _cmd_versions(args)
     elif args.command == "admin":
         _cmd_admin(args)
     else:
