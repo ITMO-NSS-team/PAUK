@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from urllib.parse import urlparse, urlunparse
 
+GITHUB_HOSTS = ("github.com", "www.github.com")
 
 def normalize_repo_url(url: str) -> str:
     """Comparison key for repository URLs.
@@ -16,12 +17,9 @@ def normalize_repo_url(url: str) -> str:
     """
     normalized = url.strip().rstrip("/").lower().removesuffix(".git")
     parsed = urlparse(normalized)
-    if parsed.netloc == "www.github.com":
-        normalized = urlunparse(parsed._replace(netloc="github.com"))
+    if parsed.netloc == GITHUB_HOSTS[1]:
+        normalized = urlunparse(parsed._replace(netloc=GITHUB_HOSTS[0]))
     return normalized
-
-
-GITHUB_HOSTS = {"github.com", "www.github.com"}
 
 
 def github_owner_name(url: str | None) -> tuple[str, str] | None:

@@ -56,6 +56,9 @@ class Settings:
     neo4j_uri: str = os.getenv("NEO4J_URI", "bolt://localhost:7687")
     neo4j_user: str = os.getenv("NEO4J_USER", "neo4j")
     neo4j_password: str = os.getenv("NEO4J_PASSWORD", "")
+    # `pauk rag`: multilingual, so a Russian question meets English abstracts
+    # without translation. Changing it means rebuilding every index profile.
+    rag_embedding_model: str = os.getenv("PAUK_RAG_EMBEDDING_MODEL", "BAAI/bge-m3")
     mongo_uri: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
     mongo_db: str = os.getenv("MONGO_DB", "pauk")
     request_timeout: int = int(os.getenv("PAUK_REQUEST_TIMEOUT", "30"))

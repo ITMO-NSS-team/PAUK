@@ -67,6 +67,7 @@ pauk/gui/web/graph-data.js, graph-search.js  статика для карты
 | `pauk/gui/` | снепшот → раскладка → статический сайт | [gui.md](gui.md) |
 | `pauk/cache/` | снепшот графа на диск, дальше gui его читает | [cache.md](cache.md) |
 | `pauk/search/` | вопрос к графу на естественном языке, только чтение | [search.md](search.md) |
+| `pauk/rag/` | RAG по графу: профили индексов в Neo4j, поиск, валидация | [rag.md](rag.md) |
 | `pauk/cli.py` | команды `pauk ...` | [cli.md](cli.md) |
 | — | деплой на лабораторный сервер | [deploy.md](deploy.md) |
 
