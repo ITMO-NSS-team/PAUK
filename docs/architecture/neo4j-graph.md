@@ -54,8 +54,13 @@ the main fields, at no extra request
 `is_corresponding`; `CONTRIBUTED_TO` carries `role`; `MENTIONS_LINK` carries
 `context` (a list), `page_number` (a list; `0` means the abstract, because
 Neo4j cannot store `null` inside an array property, so the sentinel is not
-`None`; see [pipeline/code-links.md](pipeline/code-links.md)),
-`is_relevant`, `classification_status`, `llm_confidence` and `llm_reason`.
+`None`; see [pipeline/code-links.md](pipeline/code-links.md)), the parallel
+arrays `pdf_id`, `context_source` and `reference_label` (an empty string means
+no value), `is_relevant`, `classification_status`, `llm_confidence` and
+`llm_reason`. `pdf_id` distinguishes PDFs of merged versions: page numbers
+are local to that file. The array is always sent alongside the contexts,
+including empty strings for unknown sources, so republishing cannot leave old
+PDF ids attached to new evidence.
 
 For links extracted with line-break alternatives, `MENTIONS_LINK` also
 stores `url_ambiguous`, `candidate_urls` (a flat list of strings) and
@@ -129,31 +134,46 @@ created; that is deliberate.
 
 `repo_links` is not a node and is handled separately
 (`extract_repo_links()`): each link's URL is compared with known
-`Repository.url` values (through `normalize_repo_url`: case-insensitive,
-ignoring `www.`, trailing slash and `.git`). A match gives `MENTIONS_LINK` to
-the `Repository`; otherwise a `LinkCandidate` is created on the fly and the
-link points to it. This is the **actual** path links take into the graph;
-`Publication.mentions_links` is not read at all, even though a recipe for it
-exists in `NODE_REGISTRY`.
+`Repository.url` and `cited_urls` values (through `normalize_repo_url`:
+case-insensitive, ignoring `www.`, trailing slash and `.git`, and treating
+HTTP and HTTPS as the same URL). A match gives `MENTIONS_LINK` to the
+`Repository`; otherwise a `LinkCandidate` is created on the fly and the
+link points to it. This is the **actual** path links take into the graph.
+`Publication.mentions_links` remains a legacy fallback, but is not used when
+a complete result from successful `code_links` is available.
 
 A `repositories` row whose `repositories` stage ended as `failed` is skipped:
 the `name`/`url` stub from an unsuccessful GitHub API request is not loaded
 until a retry succeeds, and the link to it stays a `LinkCandidate`.
 
-At the end of every load, `promote_link_candidates_batch` handles the case
-where an earlier publish created a `LinkCandidate` while GitHub was
-unavailable and the repository has since resolved: the old relationships move
-to the `Repository` with their properties, and a candidate left with no other
-links is deleted. `fetch_merged_id_map` runs for each label: if this publish
-brought an id that graph dedup had already folded into another node, it is
-folded again immediately, without waiting for the next `pauk dedup graph`.
+During each load, `promote_link_candidates_batch` handles the case where an
+earlier publish created a `LinkCandidate` while GitHub was unavailable and
+the repository has since resolved: the old relationships move to the
+`Repository` with their properties, and a candidate left with no other links
+is deleted. `fetch_merged_id_map` runs for each label: if this publish brought
+an id that graph dedup had already folded into another node, it is folded
+again immediately, without waiting for the next `pauk dedup graph`.
+Folding runs after relationship upserts: deleting an alias earlier would
+prevent `MATCH` from creating a relationship from the current batch.
+
+`sync_mentions_links_batch` removes stale `MENTIONS_LINK` edges to
+`Repository` and `LinkCandidate` that are absent from the current `RepoLink`.
+Cleanup is limited to publications with `code_links=completed/completed_empty`
+and an explicitly provided `RepoLink.links` list (an empty list is a result).
+An absent row, incomplete result or error does not mean deletion. Alias
+results are combined; an incomplete alias blocks cleanup of the folded
+publication. Manual claims (`graph_overrides.op=link`) are preserved; cleanup
+does not delete nodes. Deletions are audited.
 
 After loading and alias folding, `sync_implements_relationships_batch`
 reconciles existing `IMPLEMENTS` edges with the publication's full set of
 confirmed repositories. Stale edges are removed only for publications whose
 `link_relevance` ended as `completed` or `completed_empty`. A `failed` status
 removes nothing: a transient model error must not destroy the last confirmed
-state of the graph.
+state of the graph. Manual `IMPLEMENTS` claims (`graph_overrides.op=link`)
+are protected from cleanup, including after publication or repository ids
+are folded. A claim neither recreates an absent edge nor expands the cleanup
+scope.
 
 ## `client.py`: talking to Neo4j
 
@@ -185,7 +205,7 @@ fail on the uniqueness constraint.
 
 `AuditedNeo4jClient` is a transparent wrapper around `Neo4jClient`. It
 intercepts only mutating methods (`upsert_*_batch`, `merge_*_batch`,
-`delete_*_batch`, `sync_implements_relationships_batch`,
+`delete_*_batch`, `sync_mentions_links_batch`, `sync_implements_relationships_batch`,
 `promote_link_candidates_batch`); everything else (`fetch_*`, `close`, access
 to `driver`) goes to the wrapped client through `__getattr__`. For each
 intercepted call it takes a snapshot of the affected nodes and relationships
@@ -271,10 +291,12 @@ A field corrected by hand and also written by the pipeline is overwritten on
 the next publish, and a node deleted by hand comes back because `MERGE`
 creates it again.
 
-Publishing has no reverse side: it only adds and updates, and deleting is not
-its job. Mongo cleans itself (a row no group claims is deleted), so the
-display copy diverges from the source in one direction. `pauk admin prune`
-([cli.md](cli.md)) reconciles them, as a separate on-demand step.
+Publishing normally adds and updates records. Exceptions are the
+`MENTIONS_LINK`/`IMPLEMENTS` synchronization after successful stages,
+duplicate folding and reapplication of manual deletions. Mongo cleans itself
+(a row no group claims is deleted), so `pauk admin prune` ([cli.md](cli.md))
+reconciles the rest of the display copy with the source as a separate,
+on-demand step.
 
 So a manual edit is stored as a **decision**, not only as a value in the
 graph: one document per target in the `graph_overrides` collection, and the
@@ -306,13 +328,14 @@ of `publish graph`, at the end of `dedup graph`, and manually with
 
 **Claims.** `op: "create"` on a node and `op: "link"` on an edge are not
 instructions but claims: the record or link was added by a person. There is
-nothing to reapply (the loader never deletes what it does not know about),
-but without a claim `pauk admin prune` cannot tell a hand-made record from
-something the pipeline once created and stopped asserting. `apply_overrides`
-skips claims on links; for a claim on a node it reapplies the fields, which
-are values a person chose. Editing a field of a hand-made record keeps it a
-claim (`op` is not overwritten with `set`); otherwise undoing the edit would
-drop the claim and the next reconciliation would delete the record.
+nothing to reapply for a link, but its claim protects manual `MENTIONS_LINK`
+and `IMPLEMENTS` edges from synchronization. Without a claim, `pauk admin
+prune` cannot tell a hand-made record from something the pipeline once
+created and stopped asserting. `apply_overrides` skips claims on links; for
+a claim on a node it reapplies the fields, which are values a person chose.
+Editing a field of a hand-made record keeps it a claim (`op` is not
+overwritten with `set`); otherwise undoing the edit would drop the claim and
+the next reconciliation would delete the record.
 
 **Relationships.** Deleting an edge is recorded as an instruction (`kind:
 "rel"`, `op: "delete"`): a deleted edge would be recreated by `MERGE` from the
@@ -355,6 +378,6 @@ and close the connection in `finally`.
 
 The one function outside `graph/`, `storage/` and `pipeline/` used by both
 the pipeline and the graph layer: `normalize_repo_url()`, the comparison key
-for repository URLs (case, `www.`, trailing slash and `.git` are cosmetic;
+for repository URLs (HTTP/HTTPS, case, `www.`, trailing slash and `.git` are cosmetic;
 without normalization the same repository would split into a `Repository` and
 a `LinkCandidate`).

@@ -78,15 +78,20 @@ GITHUB_URL = re.compile(
 and for `_\n` the address with and without the continuation. Several breaks
 produce combinations; beyond 32 variants PDF extraction fails with an error
 instead of truncating silently. `LinkOccurrence.raw_url` holds the original
-fragment, `raw_fragments` also keeps repeated spellings on the same page,
-`candidate_urls` holds the alternatives of one finding, and `continuous` marks
-an unbroken spelling in the visible text.
+fragment, `raw_fragments` holds fragments of that occurrence, `candidate_urls`
+holds its alternatives, and `continuous` marks an unbroken spelling in the
+visible text. Repeated spellings of one URL on the same page remain separate
+`LinkOccurrence` entries; `text_start`/`text_end` retain their page-text offsets.
+`pdf_id` identifies the source PDF, and `page_number` stays local to that file,
+including PDFs of merged versions.
 
 `_collect_occurrences` checks all pages of the same PDF. Only a full
 `owner/repo` with no line breaks (compared case-insensitively) counts as
-confirmation. The abstract, an annotation URI and a different way of joining
-breaks do not resolve the ambiguity. If one variant appears continuously, it
-stays; if both do, both stay; if neither, the alternatives are kept.
+confirmation, including in the bibliography: a `reference` source still
+represents visible text. Confirmation is scoped to one `pdf_id`. The abstract,
+an annotation URI and a different way of joining breaks do not resolve the
+ambiguity. If one variant appears continuously, it stays; if both do, both
+stay; if neither, the alternatives are kept.
 
 `repositories` requests each address once per run regardless of the number of
 publications. The result is stored in `CodeLink.availability`: `available`,
@@ -95,24 +100,66 @@ check; the reason goes to `availability_error`. Availability does not prove a
 reconstruction is right, so by itself it does not remove alternatives. Errors
 keep being retried according to the usual repository statuses.
 
-If an address has only ambiguous occurrences, `url_ambiguous=true`: it does not
-enter `Publication.code_url` or `Repository.publication_ids`, even with a
-positive relevance verdict. In the graph the alternatives are marked with the
-properties `MENTIONS_LINK.url_ambiguous`, `candidate_urls` and `availability`;
-the edge's `is_relevant` stays undefined.
+If an address has only ambiguous occurrences, `url_ambiguous=true`: it does
+not enter `Publication.code_url` or `Repository.publication_ids`.
+`link_relevance` skips the model call and stores a deterministic undetermined
+result (`classified`, `is_relevant=null`, reason `"ambiguous_url_extraction"`).
+In the graph the alternatives are marked with `MENTIONS_LINK.url_ambiguous`,
+`candidate_urls` and `availability`; the edge's `is_relevant` stays undefined.
 
 ## Text sources on one PDF page
 
-`_pdf_page_occurrences()` combines two sources; text wins on a conflict:
+`_pdf_page_occurrences()` combines two sources:
 
 1. The plain regex over `page.get_text()`.
 2. **Real PDF hyperlinks** (`page.get_links()`, `kind == fitz.LINK_URI`): links
    whose visible text does not show the URL (for example the word "here"
-   pointing to a repository). The context for such a link is the visible text
-   of the clickable area itself (`_annotation_context`), not the surrounding
-   page text. If the same URL was already found through plain text on that
-   page, the annotation is ignored: the text context is more informative than
-   a "here" label.
+   pointing to a repository). `_annotation_context` locates the clickable
+   label and includes the surrounding page-text window. If the label occurs
+   several times, the match nearest the annotation rectangle is selected.
+   Like `Page.search_for()`, matching ignores ASCII case so hit positions stay
+   aligned. If label matching fails, words at least half covered by the
+   annotation rectangle recover the location; words are extracted at most
+   once per page. If neither method works, only the label is saved rather
+   than a potentially wrong window. An annotation remains a separate
+   occurrence even when the same URL is visible in the text: deduplicating
+   one source must not erase the other.
+
+## Numbered footnotes and bibliography
+
+After all pages are extracted, `_link_reference_contexts()` finds
+`References`/`Bibliography`/`Литература`/`Список литературы`, parses entries
+labeled `[9]`, `9.` or `9)`, and connects an entry's GitHub URL with each
+in-text use of `[9]`. Ranges and lists (`[8-10]`, `[8, 9; 10]`) are expanded.
+Both pieces of evidence survive: the entry with `source=reference` and the
+in-text window with `source=citation`; `reference_label` stores the number.
+`Appendix`, `Supplementary`, `Supporting Information` and their Russian
+equivalents end the bibliography, so later text is treated as body text again.
+Lettered headings such as `A Comment Extraction` are recognized too, even
+when the letter and title are extracted on separate lines. An entry's number
+may occupy its own line and an entry may continue onto the next page. Bare
+numbers require confirmation by an in-text citation or sequential numbering
+so years and page numbers do not become reference labels. An unnumbered
+bibliography retains `reference` without `reference_label`, with no attempt
+to connect it to numeric citations.
+
+A numbered footnote with no heading is recognized conservatively: the same
+marker must already appear higher on the same page. This avoids treating an
+ordinary numbered list with a URL as footnotes. Footnote labels are scoped
+to their page so equal numbers from different pages do not mix.
+
+Superscript markers (`¹` or an ordinary digit raised by the PDF font) are
+recognized by `_pdf_footnotes()` using position, size and font flags, not by
+searching for a bare digit in flattened text. A marker after a word is linked
+to the same number in a smaller font lower on the page; text-block boundaries
+and the next footnote bound the entry. Exponents after single variables and
+italic mathematical fragments are excluded. On the first page, numbers before
+`Abstract`/`Аннотация` are not linked because they are often author
+affiliations. Superscript `¹` and bibliographic `[1]` use separate label
+namespaces. The normalized source text and offsets do not change; ambiguous
+URL alternatives survive in added citation contexts too. Font analysis only
+runs on pages with repository links. This is conservative: cross-page
+footnotes and scans without a text layer are not recovered.
 
 ## Fallback through PDF-Crawler-Service
 
@@ -127,13 +174,26 @@ configuration: [../deploy.md](../deploy.md).
 ## Download and cache
 
 `data/pdf/<publication_id>.pdf` (`PdfStore`, with a `{fetched_at}` pointer in
-the `pdfs` collection). The write is atomic (temporary file plus
-`os.replace`) and happens only after the PDF parsed successfully, so HTML error
-pages never reach the cache. If an old cached file cannot be read, direct links
-and the crawler are tried, and a successful PDF replaces the corrupt file. A
-valid cache is not downloaded again. The raw text of each page (without
-ligature normalization, which is applied separately and only for matching) is
-joined into `Publication.full_text` with `"\n\n"`.
+the `pdfs` collection). The write is atomic (temporary file plus `os.replace`)
+and happens only after the PDF parsed successfully, so HTML error pages never
+reach the cache. If an old cached file cannot be read, direct links and the
+crawler are tried, and a successful PDF replaces the corrupt file. A valid
+cache is not downloaded again. Normalized page texts are joined into
+`Publication.full_text` with `"\n\n"`.
+
+After the primary PDF, the stage reads already-cached files from `merged_ids`
+and `versions[].openalex_id`, once per id. Versions cause no extra network
+downloads. If the primary PDF is absent but a version cache is readable, it is
+used without trying to download another primary PDF. If all version caches
+are corrupt, the normal primary sources are still tried; the version error
+remains explicit and its earlier occurrences are not lost.
+
+Texts are combined in `full_text`, and every occurrence keeps its own `pdf_id`
+and local page number. Caches are read even without `pdf_urls`. Failure or
+disappearance of a previously used version PDF preserves its old occurrences
+and sets `failed`; evidence from a successfully reread PDF is replaced rather
+than mixed with stale evidence. URL spellings differing only by HTTP/HTTPS,
+case or cosmetic suffixes are combined into one `CodeLink` with all occurrences.
 
 ## Statuses
 
@@ -153,9 +213,21 @@ joined into `Publication.full_text` with `"\n\n"`.
 ## `is_relevant`, `llm_confidence`, `llm_reason`
 
 `code_links` leaves ordinary found links with classification status `pending`
-and no verdict. The next stage, `link_relevance`, sends the model **all** saved
-occurrences of one link in a single request: the abstract and each PDF context
-are labeled with their source. The response is validated strictly:
+and no verdict. The next stage, `link_relevance`, sends up to 12 unique contexts
+of one link per request. At the limit, at least one context of each available
+source type is kept first, then different PDFs/pages are prioritized, then
+remaining slots are filled in discovery order. Windows of the same source,
+reference label, PDF and page overlapping by at least 80% of the smaller
+window are not repeated in the request; they remain in prepared data. The
+overlap threshold is a heuristic against many partial annotations of one link.
+
+The limit is heuristic, not imposed by the model: each occurrence contains up
+to 500 characters on either side, so 12 contexts keep the evidence near 12,000
+characters while leaving room for all six source types and repeated
+confirmations. All occurrences remain in prepared data and the full exported
+context. The abstract and each PDF context are labeled with their source.
+The prompt and source labels are English; original evidence is not translated.
+The response is validated strictly:
 
 - `is_relevant=true`: the repository was published by the authors of the
   publication;
@@ -170,14 +242,19 @@ failed call. An explicit undetermined decision stores `llm_confidence` and
 `llm_reason`; an error clears the earlier verdict, sets `failed` and leaves the
 stage in `FAILED`, so the next run repeats the request. The stage's
 `result_count` counts all links with status `classified`, undetermined ones
-included. The Zenodo archived repository is the one deterministic exception:
-`classified`, `true`, confidence `1.0`, reason
-`"repository_archived_by_this_deposit"`, with no model call.
+included. Two cases are deterministic and need no model call:
 
-After classification, `has_code=true` only if at least one
-`CodeLink.is_relevant=true` exists. `code_url` holds a JSON list of the URLs of
-all such links in discovery order; it is a string field to preserve the
-prepared/Neo4j contract, and the GUI generator decodes it into a plain list.
-Third-party and undetermined links are not in the list. If at least one model request failed, the
-publication-level `has_code` and `code_url` keep the last fully classified
-state until a successful retry.
+- the Zenodo archived repository: `classified`, `true`, confidence `1.0`,
+  reason `"repository_archived_by_this_deposit"`;
+- a URL with only ambiguous occurrences: `classified`, `null`, no confidence,
+  reason `"ambiguous_url_extraction"`.
+
+After classification, `has_code=true` only if at least one unambiguous
+`CodeLink.is_relevant=true` exists. `code_url` holds a JSON list of those URLs
+in discovery order. HTTP/HTTPS, case, `www.`, trailing slash and `.git` do not
+create duplicates; the first spelling is retained. It is a string field to
+preserve the prepared/Neo4j contract, and the GUI generator decodes it into a
+plain list while still accepting the legacy single-string form. Third-party
+and undetermined links are not in the list. If at least one model request
+failed, publication-level `has_code` and `code_url` keep the last fully
+classified state until a successful retry.

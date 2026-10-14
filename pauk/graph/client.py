@@ -870,6 +870,39 @@ class Neo4jClient:
         with self.driver.session() as session:
             return session.execute_write(lambda tx: tx.run(query, batch=batch).single()["removed"])
 
+    def sync_mentions_links_batch(
+        self, publications: list[tuple[str, list[str], list[str]]]
+    ) -> int:
+        """Keep only the current Repository keys (id or URL) and candidate ids.
+
+        The caller supplies complete, successfully extracted publications only.
+        Keys include manual claims and resolve graph folds before deletion.
+        """
+        if not publications:
+            return 0
+        batch = [
+            {"publication_id": publication_id, "repository_keys": repositories,
+             "candidate_ids": candidates}
+            for publication_id, repositories, candidates in publications
+        ]
+        query = cast(
+            LiteralString,
+            """
+            UNWIND $batch AS row
+            MATCH (publication:Publication {id: row.publication_id})
+            MATCH (publication)-[relationship:MENTIONS_LINK]->(target)
+            WHERE (target:Repository AND NOT coalesce(
+                target.id IN row.repository_keys OR target.url IN row.repository_keys, false
+            )) OR (target:LinkCandidate AND NOT (target.id IN row.candidate_ids))
+            DELETE relationship
+            RETURN count(*) AS removed
+            """,
+        )
+        with self.driver.session() as session:
+            return session.execute_write(
+                lambda tx: tx.run(query, batch=batch).single()["removed"]
+            )
+
     def sync_implements_relationships_batch(
         self, publications: list[tuple[str, list[str]]]
     ) -> int:

@@ -114,10 +114,16 @@ the relation-like models.
 - **`LinkCandidate`**: a code link found in a paper but not yet matched to a
   known `Repository` (`id` is the URL itself).
 - **`LinkOccurrence`**: one occurrence of a link: `context` (surrounding
-  text) and `page_number` (`None` means the abstract; PDF pages start at 1),
-  plus `raw_url`, `raw_fragments`, `candidate_urls` (alternative readings of
-  a URL broken across lines) and `continuous`. A link seen in the abstract
-  and on several pages has several occurrences.
+  text), `pdf_id` (the primary or merged version's source PDF), and
+  `page_number` (`None` means the abstract; PDF pages start at 1). Page
+  numbers and `text_start`/`text_end` offsets are local to that PDF; old
+  data and abstract occurrences may have no `pdf_id`.
+  `source` is `abstract`, `pdf_text`, `pdf_annotation`, `reference`,
+  `citation` or `deposit_title`; `reference_label` connects a footnote or
+  bibliography entry with its in-text use. `raw_url`, `raw_fragments`,
+  `candidate_urls` and `continuous` preserve the original and alternative
+  readings of a URL broken across lines. Repeats on the same page are separate
+  occurrences too. The extra fields are optional for legacy prepared rows.
 - **`CodeLink`**: `url`, `host`, `occurrences: list[LinkOccurrence]`,
   `classification_status` (`pending`, `classified`, `failed`),
   `is_relevant`/`llm_confidence`/`llm_reason` (filled by `link_relevance.py`,

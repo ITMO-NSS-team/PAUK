@@ -18,12 +18,17 @@ from pauk.graph.load import ENTITY_FILES
 from pauk.graph.person_resolution import ModelVerdict
 from pauk.models import (
     Affiliation,
+    ClassificationStatus,
+    CodeLink,
+    LinkOccurrence,
     Person,
     Publication,
     PublicationVersion,
     RepoLink,
     Repository,
 )
+from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.models.relations import Contribution
 from pauk.pipeline.stages.author_names import RussianNamesCatalog
 from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage, _paired_persons
 from pauk.settings import Settings
@@ -578,6 +583,90 @@ class PublicationDedupTest(unittest.TestCase):
         self.assertEqual({link.url for link in links.links},
                          {"https://github.com/org/repo", "https://github.com/org/other"})
 
+    def test_same_repository_keeps_occurrences_from_every_publication_version(self):
+        older = publication("W1", "One work", doi="10.1/x", day="2026-01-01")
+        older.has_code = True
+        older.code_url = '["https://github.com/Org/Repo/"]'
+        newer = publication("W2", "One work", doi="10.1/x", day="2026-02-01")
+        newer.has_code = True
+        newer.code_url = (
+            '["https://github.com/org/repo", "https://github.com/org/other"]'
+        )
+
+        _, publications = self.run_stage(
+            [older, newer],
+            repo_links=[
+                RepoLink(publication_id="W1", links=[CodeLink(
+                    url="https://github.com/Org/Repo",
+                    classification_status=ClassificationStatus.CLASSIFIED,
+                    is_relevant=True,
+                    occurrences=[LinkOccurrence(context="Preprint context", page_number=2)],
+                )]),
+                RepoLink(publication_id="W2", links=[CodeLink(
+                    url="https://github.com/org/repo",
+                    classification_status=ClassificationStatus.CLASSIFIED,
+                    is_relevant=True,
+                    occurrences=[LinkOccurrence(context="Journal context", page_number=5)],
+                )]),
+            ],
+        )
+
+        (links,) = self.prepared.read_models("repo_links", RepoLink)
+        self.assertEqual(len(links.links), 1)
+        self.assertEqual(
+            [occurrence.context for occurrence in links.links[0].occurrences],
+            ["Preprint context", "Journal context"],
+        )
+        self.assertEqual(json.loads(publications["W2"].code_url), [
+            "https://github.com/org/repo",
+            "https://github.com/org/other",
+        ])
+
+    def test_conflicting_version_verdicts_are_retried_without_losing_last_claim(self):
+        older = publication("W1", "One work", doi="10.1/x", day="2026-01-01")
+        older.has_code = True
+        older.code_url = '["https://github.com/org/repo"]'
+        newer = publication("W2", "One work", doi="10.1/x", day="2026-02-01")
+        for row in (older, newer):
+            row.processing["link_relevance"] = ProcessingState(
+                status=ProcessingStatus.COMPLETED,
+            )
+
+        self.run_stage(
+            [older, newer],
+            repositories=[Repository(
+                id="github_org_repo",
+                name="repo",
+                url="https://github.com/org/repo",
+                cited_urls=["https://github.com/org/repo"],
+                publication_ids=["W1"],
+            )],
+            repo_links=[
+                RepoLink(publication_id="W1", links=[CodeLink(
+                    url="https://github.com/org/repo",
+                    classification_status=ClassificationStatus.CLASSIFIED,
+                    is_relevant=True,
+                    occurrences=[LinkOccurrence(context="Our implementation")],
+                )]),
+                RepoLink(publication_id="W2", links=[CodeLink(
+                    url="https://github.com/org/repo",
+                    classification_status=ClassificationStatus.CLASSIFIED,
+                    is_relevant=False,
+                    occurrences=[LinkOccurrence(context="We use this library")],
+                )]),
+            ],
+        )
+
+        [publication_row] = self.prepared.read_models("publications", Publication)
+        [links] = self.prepared.read_models("repo_links", RepoLink)
+        [repository_row] = self.prepared.read_models("repositories", Repository)
+        self.assertNotIn("link_relevance", publication_row.processing)
+        self.assertTrue(publication_row.has_code)
+        self.assertEqual(json.loads(publication_row.code_url), ["https://github.com/org/repo"])
+        self.assertEqual(links.links[0].classification_status, ClassificationStatus.PENDING)
+        self.assertEqual(len(links.links[0].occurrences), 2)
+        self.assertEqual(repository_row.publication_ids, ["W2"])
+
     def test_second_run_is_a_no_op(self):
         self.run_stage([
             publication("W1", "One work", doi="10.1/x", day="2026-01-01"),
@@ -631,6 +720,54 @@ class RepositoryDedupTest(unittest.TestCase):
         ])
         self.assertEqual(result["dedup_repositories_merged"], 1)
         self.assertEqual(set(repositories), {"github_org_alpha-renamed"})
+
+    def test_renamed_repository_republish_resolves_old_citations_and_contributions(self):
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        cited_url = "https://github.com/previous-owner/old-name"
+        older = repository("github_org_old-name", "old-name", "https://github.com/org/old-name",
+                           github_id=42, cited=[cited_url], day="2026-01-01")
+        older.merged_ids = ["github_previous-owner_old-name"]
+        older.contributors = ["contributor"]
+        older.processing["repo_people"] = ProcessingState(
+            status=ProcessingStatus.COMPLETED, attempts=1, result_count=1)
+        newer = repository("github_org_new-name", "new-name", "https://github.com/org/new-name",
+                           github_id=42, cited=[cited_url], publications=["W1"], day="2026-06-01")
+        author = person("A1", "Author One", ["W1"])
+        author.contributed_to = [Contribution(repository_id=older.id, role="contributor")]
+        prepared.write_models("persons", [author])
+        prepared.write_models("publications", [publication("W1", "One work")])
+        prepared.write_models("repositories", [older, newer])
+        links = RepoLink(publication_id="W1", links=[CodeLink(
+            url=cited_url, is_relevant=True,
+            occurrences=[LinkOccurrence(context="Our implementation", source="abstract")],
+        )])
+        prepared.write_models("repo_links", [links])
+        client = RecordingNeo4jClient()
+        load_group(client, prepared)
+        self.assertEqual(client.edge_pairs("MENTIONS_LINK"), {("W1", older.url)})
+
+        stage = DedupStage(prepared, raw, self.config)
+        self.assertEqual(stage._dedup_repositories(), {older.id: newer.id})
+        survivor, = prepared.read_models("repositories", Repository)
+        self.assertEqual(set(survivor.cited_urls), {cited_url, older.url})
+        self.assertEqual(set(survivor.merged_ids), {older.id, *older.merged_ids})
+        self.assertEqual(survivor.contributors, older.contributors)
+        self.assertEqual(survivor.processing["repo_people"], older.processing["repo_people"])
+        saved_author, = prepared.read_models("persons", Person)
+        self.assertEqual(saved_author.contributed_to[0].repository_id, newer.id)
+        self.assertEqual(list(prepared.read_models("repo_links", RepoLink)), [links])
+
+        for _ in range(2):
+            self.assertEqual(stage._dedup_repositories(), {})
+            load_group(client, prepared)
+            self.assertEqual(set(client.nodes["Repository"]), {newer.id})
+            self.assertEqual(client.edge_pairs("MENTIONS_LINK"), {("W1", newer.url)})
+            self.assertEqual(client.edge_pairs("IMPLEMENTS"), {(newer.id, "W1")})
+            self.assertEqual(client.edge_pairs("CONTRIBUTED_TO"), {("A1", newer.id)})
+            mention = client.edges["Publication", "MENTIONS_LINK", "Repository", "W1", newer.url]
+            self.assertEqual(mention["context"], ["Our implementation"])
+        self.assertEqual(client.unresolved, [])
 
     def test_distinct_repositories_are_left_alone(self):
         result, repositories = self.run_stage([

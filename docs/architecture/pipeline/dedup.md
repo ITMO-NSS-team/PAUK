@@ -123,6 +123,17 @@ would describe the merged state (the union of authors of all merged records)
 instead of what that record carried. Only the raw `openalex_works` collection
 remains a correct per-record source.
 
+When publications merge, `Publication.code_url` is combined alongside
+`versions` and `pdf_urls`. `RepoLink` rows are repointed to the survivor;
+equal normalized URLs become one `CodeLink` whose occurrences are the
+deduplicated union of all versions' `LinkOccurrence` entries. A preprint's
+context therefore survives even when the journal record is canonical.
+Matching classifications are retained; contradictory verdicts reset the
+combined `CodeLink` to `pending` and clear the publication's `link_relevance`
+processing state so the next run judges all contexts together. The last fully
+calculated `code_url` and `Repository.publication_ids` are kept until the
+retry succeeds, as they are on a transient LLM failure.
+
 ## Repositories
 
 The same `github_id` means the same repository even if the URLs have diverged

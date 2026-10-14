@@ -245,6 +245,14 @@ def deactivate_relationship_override(db: Database, src_label: str, rel_type: str
     return result.modified_count > 0
 
 
+def claimed_relationships(db: Database) -> set[tuple[str, str, str, str, str]]:
+    """Relationships added by hand that automatic synchronization must preserve."""
+    return {
+        (row["src_label"], row["rel_type"], row["tgt_label"], row["src_id"], row["target_id"])
+        for row in db[COLLECTION].find({"active": True, "kind": "rel", "op": LINK})
+    }
+
+
 def tombstoned_relationships(db: Database) -> set[tuple[str, str, str, str, str]]:
     """Edges the loader must not recreate, as (src_label, rel_type, tgt_label, src_id, tgt_id).
 

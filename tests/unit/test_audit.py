@@ -45,6 +45,10 @@ class FakeNeo4jClient:
         self.calls.append(("sync_implements_relationships_batch", (publications,)))
         return self.relationships_removed
 
+    def sync_mentions_links_batch(self, publications):
+        self.calls.append(("sync_mentions_links_batch", (publications,)))
+        return self.relationships_removed
+
     def merge_person_nodes_batch(self, merges):
         self.calls.append(("merge_person_nodes_batch", (merges,)))
         return self.nodes_removed
@@ -224,6 +228,24 @@ class LinkWithoutPropertiesTest(unittest.TestCase):
             self.client.upsert_relationships_batch(
                 "Person", "Department", "BELONGS_TO", [("A1", "D9", {})])
         self.assertEqual(self.sink.entries, [])
+
+
+class SyncMentionsAuditTest(unittest.TestCase):
+    def test_cleanup_is_audited_only_when_edges_are_removed(self):
+        client, fake, sink = audited_client()
+        batch = [("W1", [], [])]
+        self.assertEqual(client.sync_mentions_links_batch(batch), 0)
+        self.assertEqual(sink.entries, [])
+        fake.relationships_removed = 2
+        self.assertEqual(client.sync_mentions_links_batch(batch), 2)
+        [entry] = sink.entries
+        self.assertEqual(entry.operation, "sync_mentions_links")
+        self.assertEqual(entry.entity_type, "(Publication)-[:MENTIONS_LINK]->()")
+
+    def test_empty_batch_does_not_call_the_client(self):
+        client, fake, sink = audited_client()
+        self.assertEqual(client.sync_mentions_links_batch([]), 0)
+        self.assertEqual(fake.calls, [])
 
 
 class SyncImplementsAuditTest(unittest.TestCase):

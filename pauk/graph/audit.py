@@ -437,6 +437,18 @@ class AuditedNeo4jClient:
         self._emit_diffs("upsert_relationships", entity_type, before, after)
         return matched
 
+    def sync_mentions_links_batch(
+        self, publications: list[tuple[str, list[str], list[str]]]
+    ) -> int:
+        if not publications:
+            return 0
+        removed = self._client.sync_mentions_links_batch(publications)
+        if removed:
+            self._emit_bulk_summary(
+                "sync_mentions_links", "(Publication)-[:MENTIONS_LINK]->()", removed,
+            )
+        return removed
+
     def sync_implements_relationships_batch(
         self, publications: list[tuple[str, list[str]]]
     ) -> int:

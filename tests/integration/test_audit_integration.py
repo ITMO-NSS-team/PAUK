@@ -259,6 +259,29 @@ class PromoteLinkCandidatesIntegrationTest(Neo4jIntegrationTestCase):
         self.assertEqual(record["props"]["context"], ["intro"])  # properties preserved across the move
 
 
+class SyncMentionsIntegrationTest(Neo4jIntegrationTestCase):
+    def test_cleanup_keeps_current_targets_and_other_publications(self):
+        _raw_client.upsert_nodes_batch("Publication", [("pub1", {}), ("pub2", {})])
+        _raw_client.upsert_nodes_batch("Repository", [("keep", {"url": "https://github.com/org/keep"}),
+                                                       ("old", {})])
+        _raw_client.upsert_nodes_batch("LinkCandidate", [("keep-candidate", {}), ("old-candidate", {})])
+        for label, targets in (("Repository", ["keep", "old"]),
+                               ("LinkCandidate", ["keep-candidate", "old-candidate"])):
+            _raw_client.upsert_relationships_batch("Publication", label, "MENTIONS_LINK", [
+                (publication, target, {}) for publication in ("pub1", "pub2") for target in targets
+            ])
+        audited, sink = self._audited()
+        self.assertEqual(audited.sync_mentions_links_batch([
+            ("pub1", ["https://github.com/org/keep"], ["keep-candidate"]),
+        ]), 2)
+        self.assertEqual(audited.sync_mentions_links_batch([("pub1", ["keep"], ["keep-candidate"])]), 0)
+        self.assertEqual(audited.sync_mentions_links_batch([("pub1", [], [])]), 2)
+        with _raw_client.driver.session() as session:
+            self.assertEqual(session.run("MATCH (:Publication {id: 'pub2'})-[r:MENTIONS_LINK]->() "
+                                         "RETURN count(r) AS count").single()["count"], 4)
+        self.assertEqual([entry.operation for entry in sink.entries], ["sync_mentions_links"] * 2)
+
+
 class SyncImplementsIntegrationTest(Neo4jIntegrationTestCase):
     def test_only_relationships_outside_the_confirmed_set_are_deleted(self):
         _raw_client.upsert_nodes_batch("Publication", [("pub1", {})])
