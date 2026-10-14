@@ -11,15 +11,17 @@ def normalize_repo_url(url: str) -> str:
 
     GitHub treats owner/name case-insensitively and the canonical html_url
     returned by its API may differ in case from the URL found in an abstract;
-    a "www." host prefix, a trailing slash or a ".git" suffix are also
+    HTTP/HTTPS, a "www." host prefix, a trailing slash or a ".git" suffix are also
     cosmetic. Without this normalization the same repository would split
     into a Repository node and a LinkCandidate node.
     """
     normalized = url.strip().rstrip("/").lower().removesuffix(".git")
     parsed = urlparse(normalized)
+    if parsed.scheme in {"http", "https"}:
+        parsed = parsed._replace(scheme="https")
     if parsed.netloc == "www.github.com":
-        normalized = urlunparse(parsed._replace(netloc="github.com"))
-    return normalized
+        parsed = parsed._replace(netloc="github.com")
+    return urlunparse(parsed)
 
 
 def deduplicate_repo_urls(urls: Iterable[str]) -> list[str]:

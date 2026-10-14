@@ -12,6 +12,7 @@ from pauk.graph.overrides import (
     SET,
     active_overrides,
     apply_overrides,
+    claimed_relationships,
     deactivate_override,
     deactivate_relationship_override,
     record_override,
@@ -25,6 +26,18 @@ from tests.unit.test_mutations import FakeGraph
 class RecordTest(unittest.TestCase):
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
+
+    def test_only_active_manual_links_are_claimed(self):
+        record_relationship_override(self.db, "Publication", "MENTIONS_LINK", "Repository",
+                                     "W1", "https://github.com/org/repo", op="link")
+        record_relationship_override(self.db, "Publication", "MENTIONS_LINK", "LinkCandidate",
+                                     "W1", "https://github.com/org/gone", op="delete")
+        self.assertEqual(claimed_relationships(self.db), {
+            ("Publication", "MENTIONS_LINK", "Repository", "W1", "https://github.com/org/repo"),
+        })
+        deactivate_relationship_override(self.db, "Publication", "MENTIONS_LINK", "Repository",
+                                         "W1", "https://github.com/org/repo")
+        self.assertEqual(claimed_relationships(self.db), set())
 
     def test_an_edit_is_stored_under_a_key_of_its_own(self):
         stored = record_override(self.db, "Person", "A1", "set",

@@ -16,7 +16,7 @@ from .client import Neo4jClient
 from .csv_loader import load_csv_dir
 from .extract import NODE_REGISTRY
 from .jsonl_loader import FILE_SPECS, Progress, load_prepared_rows
-from .overrides import apply_overrides, tombstoned_ids, tombstoned_relationships
+from .overrides import apply_overrides, claimed_relationships, tombstoned_ids, tombstoned_relationships
 from .schema import create_constraints
 
 logger = logging.getLogger(__name__)
@@ -119,7 +119,8 @@ def _load_locked(config: Settings, mongo_db: Database, group: str,
             # own — it is made up from repo_links rows — so _drop_tombstoned
             # cannot filter it and the loader is told separately.
             load_prepared_rows(client, rows_by_file, tombstoned_relationships(mongo_db),
-                               tombstoned_ids(mongo_db, "LinkCandidate"), report=report)
+                               tombstoned_ids(mongo_db, "LinkCandidate"), report=report,
+                               claimed_relationships=claimed_relationships(mongo_db))
             # Last step, after candidate promotion and every fold: publishing
             # overwrites hand-corrected fields with whatever the source says,
             # so the manual decisions are put back on top.

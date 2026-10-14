@@ -60,6 +60,9 @@ _REFERENCE_ENTRY = re.compile(
     r"(?:[ \t]+|[ \t]*\n[ \t]*)"
 )
 _CITATION = re.compile(r"\[(?P<labels>\d[\d,; \t\u2013\u2014-]{0,80})\]")
+_SUPERSCRIPT_NUMBER = re.compile(r"[⁰¹²³⁴⁵⁶⁷⁸⁹]{1,3}")
+_FOOTNOTE_NUMBER = re.compile(r"^[ \t]*(\d{1,3})(?!\d)[.)]?")
+_BODY_HEADING = re.compile(r"(?im)^[ \t]*(?:abstract|аннотация)(?=[\s:.\u2013\u2014-])")
 
 CONTEXT_WINDOW = 500
 CRAWLER_DOWNLOAD_TIMEOUT = 180
@@ -258,8 +261,67 @@ def _citation_labels(raw: str) -> set[str]:
     return labels
 
 
+def _pdf_footnotes(page: fitz.Page, text: str) -> tuple[list[tuple[int, int, str]], list[tuple[int, int, str]]]:
+    """Find raised body markers and smaller numbered notes without changing text offsets."""
+    markers = []
+    definitions = []
+    cursor = 0
+    heading = _BODY_HEADING.search(text) if page.number == 0 else None
+    body_start = heading.end() if heading else 0
+    for block in page.get_text("dict", flags=fitz.TEXTFLAGS_TEXT)["blocks"]:
+        lines = []
+        for line in block.get("lines", []):
+            spans = []
+            for span in line["spans"]:
+                normalized = _normalize_ligatures(span["text"])
+                start = text.find(normalized, cursor)
+                if start < 0 or not normalized:
+                    continue
+                cursor = start + len(normalized)
+                spans.append((span, start, cursor))
+                numbers = list(_SUPERSCRIPT_NUMBER.finditer(span["text"]))
+                if span["flags"] & fitz.TEXT_FONT_SUPERSCRIPT and re.fullmatch(r"\d{1,3}", normalized.strip()):
+                    numbers = list(re.finditer(r"\d{1,3}", span["text"]))
+                for number in numbers:
+                    marker_start = start + len(_normalize_ligatures(span["text"][:number.start()]))
+                    marker_end = marker_start + len(_normalize_ligatures(number.group()))
+                    if marker_start < body_start:
+                        continue
+                    # Exponents after a single variable or an italic math span
+                    # must not become footnotes just because the label matches.
+                    if not re.search(r"[^\W\d_]{2,}\d*[.!?)]?\s*$", text[max(0, marker_start - 80):marker_start]):
+                        continue
+                    previous = spans[-2][0] if len(spans) > 1 else span
+                    if previous["flags"] & fitz.TEXT_FONT_ITALIC:
+                        continue
+                    markers.append((marker_start, marker_end, str(int(_normalize_ligatures(number.group()))),
+                                    span["origin"][1], previous["size"]))
+            if spans:
+                lines.append(spans)
+        for index, spans in enumerate(lines):
+            first, start, _ = spans[0]
+            line_end = spans[-1][2]
+            number = _FOOTNOTE_NUMBER.match(text[start:line_end])
+            if number is None or not text[start + number.end():line_end].strip():
+                continue
+            label = str(int(number.group(1)))
+            # Several notes may share a block; a note never owns the next one.
+            end = next((following[0][1] for following in lines[index + 1:]
+                        if _FOOTNOTE_NUMBER.match(text[following[0][1]:following[-1][2]])),
+                       lines[-1][-1][2])
+            definitions.append((start, end, label, first["origin"][1], first["size"]))
+    # The margin keeps body lists out despite small font-size rounding differences.
+    notes = [
+        (start, end, label) for start, end, label, y, size in definitions
+        if any(marker_label == label and marker_y < y and size < body_size * 0.95
+               for _, _, marker_label, marker_y, body_size in markers)
+    ]
+    return [(start, end, label) for start, end, label, _, _ in markers], notes
+
+
 def _link_reference_contexts(
-    pages: list[str], page_occurrences: list[dict[str, list[LinkOccurrence]]]
+    pages: list[str], page_occurrences: list[dict[str, list[LinkOccurrence]]],
+    footnotes: dict[int, tuple[list[tuple[int, int, str]], list[tuple[int, int, str]]]] | None = None,
 ) -> None:
     """Attach body citations to repository URLs found in numbered references."""
     if not any(page_occurrences):
@@ -273,12 +335,14 @@ def _link_reference_contexts(
     references_finished = False
     sections = []
 
-    def record_reference(label: str | None, url: str, occurrence: LinkOccurrence, scope: int | None = None) -> None:
+    def record_reference(label: str | None, url: str, occurrence: LinkOccurrence,
+                         scope: int | None = None, superscript: bool = False) -> None:
         occurrence.source = "reference"
         occurrence.reference_label = label
         if label is not None:
-            reference_urls[scope, label].add(url)
-            reference_candidates[scope, label][url].update(occurrence.candidate_urls or [url])
+            key = (scope, "^" + label if superscript else label)
+            reference_urls[key].add(url)
+            reference_candidates[key][url].update(occurrence.candidate_urls or [url])
 
     for page_index, text in enumerate(pages):
         if references_finished:
@@ -334,6 +398,18 @@ def _link_reference_contexts(
     # marker occurs earlier on that page, which keeps ordinary numbered lists
     # from being treated as references merely because they contain a URL.
     for page_index, text in enumerate(pages):
+        _, notes = (footnotes or {}).get(page_index, ([], []))
+        for start, end, label in notes:
+            if any(left <= start < right for left, right in excluded_ranges[page_index]):
+                continue
+            linked = False
+            for url, occurrences in page_occurrences[page_index].items():
+                for occurrence in occurrences:
+                    if occurrence.text_start is not None and start <= occurrence.text_start < end:
+                        record_reference(label, url, occurrence, page_index, superscript=True)
+                        linked = True
+            if linked:
+                excluded_ranges[page_index].append((start, end))
         entries = list(_REFERENCE_ENTRY.finditer(text))
         for index, entry in enumerate(entries):
             if any(start <= entry.start() < end
@@ -361,21 +437,28 @@ def _link_reference_contexts(
         return
 
     for page_index, text in enumerate(pages):
-        for citation in _CITATION.finditer(text):
-            if any(start <= citation.start() < end
+        citations = [
+            (citation.start(), citation.end(), _citation_labels(citation.group("labels")), False)
+            for citation in _CITATION.finditer(text)
+        ]
+        markers, _ = (footnotes or {}).get(page_index, ([], []))
+        citations.extend((start, end, {label}, True) for start, end, label in markers)
+        for citation_start, citation_end, labels, page_scoped in sorted(citations):
+            if any(start <= citation_start < end
                    for start, end in excluded_ranges[page_index]):
                 continue
-            for label in _citation_labels(citation.group("labels")):
-                key = (page_index, label) if (page_index, label) in reference_urls else (None, label)
+            for label in sorted(labels):
+                key = ((page_index, "^" + label) if page_scoped else
+                       ((page_index, label) if (page_index, label) in reference_urls else (None, label)))
                 urls = sorted(reference_urls.get(key, ()))
                 for url in urls:
                     page_occurrences[page_index].setdefault(url, []).append(LinkOccurrence(
-                        context=_slice_context(text, citation.start(), citation.end()),
+                        context=_slice_context(text, citation_start, citation_end),
                         page_number=page_index + 1,
                         source="citation",
                         reference_label=label,
-                        text_start=citation.start(),
-                        text_end=citation.end(),
+                        text_start=citation_start,
+                        text_end=citation_end,
                         candidate_urls=sorted(reference_candidates[key][url]),
                     ))
 
@@ -387,11 +470,14 @@ def _extract_pdf(data: bytes) -> tuple[list[str], list[dict[str, list[LinkOccurr
             raise ValueError("Response is not a non-empty PDF document")
         pages: list[str] = []
         page_occurrences: list[dict[str, list[LinkOccurrence]]] = []
+        footnotes = {}
         for page in doc:
             text = _normalize_ligatures(cast(str, page.get_text()))
             pages.append(text)
             page_occurrences.append(_pdf_page_occurrences(page, text, len(pages)))
-        _link_reference_contexts(pages, page_occurrences)
+            if page_occurrences[-1]:
+                footnotes[len(pages) - 1] = _pdf_footnotes(page, text)
+        _link_reference_contexts(pages, page_occurrences, footnotes)
     return pages, page_occurrences
 
 

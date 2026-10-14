@@ -141,6 +141,7 @@ class UrlAlternativesTest(unittest.TestCase):
         links = [
             CodeLink(url="https://github.com/Org/Repo", is_relevant=True),
             CodeLink(url="https://github.com/org/repo/", is_relevant=True),
+            CodeLink(url="http://github.com/ORG/Repo.git", is_relevant=True),
         ]
 
         _update_publication_code(publication, links)

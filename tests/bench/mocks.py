@@ -305,6 +305,26 @@ class RecordingNeo4jClient:
                 self.unresolved.append((src_label, rel_type, tgt_label, src_id, tgt_id))
         return matched
 
+    def sync_mentions_links_batch(self, publications) -> int:
+        removed = 0
+        for publication_id, repository_keys, candidate_ids in publications:
+            for key in list(self.edges):
+                src_label, rel_type, tgt_label, src_id, tgt_id = key
+                if src_label != "Publication" or rel_type != "MENTIONS_LINK" or src_id != publication_id:
+                    continue
+                if tgt_label == "Repository":
+                    repository_id = next((node_id for node_id, props in self.nodes[tgt_label].items()
+                                          if props.get("url") == tgt_id), tgt_id)
+                    keep = repository_id in repository_keys or tgt_id in repository_keys
+                elif tgt_label == "LinkCandidate":
+                    keep = tgt_id in candidate_ids
+                else:
+                    continue
+                if not keep:
+                    del self.edges[key]
+                    removed += 1
+        return removed
+
     def sync_implements_relationships_batch(self, publications) -> int:
         removed = 0
         for publication_id, repository_ids in publications:
@@ -356,12 +376,16 @@ class RecordingNeo4jClient:
                 continue
             if canonical_id not in self.nodes.get(label, {}):
                 continue
+            duplicate_url = self.nodes[label][dup_id].get("url") if label == "Repository" else None
+            canonical_url = self.nodes[label][canonical_id].get("url") if label == "Repository" else None
             for key, props in list(self.edges.items()):
                 src_primary, rel_type, tgt_primary, src_id, tgt_id = key
                 if src_primary == label and src_id == dup_id:
                     moved_key = (src_primary, rel_type, tgt_primary, canonical_id, tgt_id)
                 elif tgt_primary == label and tgt_id == dup_id:
                     moved_key = (src_primary, rel_type, tgt_primary, src_id, canonical_id)
+                elif tgt_primary == label and duplicate_url is not None and tgt_id == duplicate_url:
+                    moved_key = (src_primary, rel_type, tgt_primary, src_id, canonical_url)
                 else:
                     continue
                 del self.edges[key]

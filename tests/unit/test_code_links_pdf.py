@@ -37,7 +37,105 @@ def _make_pdf_with_duplicate_link_labels(uri: str, mixed_case: bool = False) -> 
         doc.close()
 
 
+def _make_pdf_with_footnotes(body="Our source code is available", unicode_marker=False,
+                             fontname="helv", urls=("https://github.com/org/repo",),
+                             numbered_list=False, front_matter=False):
+    with fitz.open() as doc:
+        for url in urls:
+            page = doc.new_page()
+            if front_matter:
+                page.insert_text((72, 40), "First Author", fontsize=12)
+                x = 72 + fitz.get_text_length("First Author", fontsize=12)
+                page.insert_text((x, 36), "1", fontsize=8)
+                page.insert_text((72, 75), "Abstract", fontsize=12)
+            page.insert_text((72, 100), body + ("¹" if unicode_marker else ""), fontsize=12, fontname=fontname)
+            if not unicode_marker:
+                x = 72 + fitz.get_text_length(body, fontsize=12, fontname=fontname)
+                page.insert_text((x, 96), "1", fontsize=8)
+            page.insert_text((72, 150), "Unrelated experimental details.\n" * 30, fontsize=10)
+            if numbered_list:
+                page.insert_text((72, 620), "1) An unrelated numbered list.\n2) Another item.", fontsize=12)
+            page.insert_text((72, 700), "1 " + url, fontsize=9)
+        return doc.tobytes()
+
+
 class ExtractPdfTest(unittest.TestCase):
+    def test_raised_footnote_adds_body_context_without_changing_offsets(self):
+        for unicode_marker in (False, True):
+            with self.subTest(unicode_marker=unicode_marker):
+                pages, found = _extract_pdf(_make_pdf_with_footnotes(unicode_marker=unicode_marker))
+                occurrences = found[0]["https://github.com/org/repo"]
+                citation = next(o for o in occurrences if o.source == "citation")
+                self.assertEqual(citation.reference_label, "1")
+                self.assertEqual(pages[0][citation.text_start:citation.text_end], "1")
+                self.assertIn("Our source code is available", citation.context)
+                self.assertTrue(any(o.source == "reference" for o in occurrences))
+
+    def test_raised_footnotes_do_not_cross_pages(self):
+        urls = ("https://github.com/org/first", "https://github.com/org/second")
+        _, found = _extract_pdf(_make_pdf_with_footnotes(urls=urls))
+        for number, (url, occurrences) in enumerate(zip(urls, found, strict=True), 1):
+            self.assertEqual(list(occurrences), [url])
+            self.assertEqual([o.page_number for o in occurrences[url] if o.source == "citation"], [number])
+
+    def test_math_exponents_are_not_footnote_citations(self):
+        for body, font in (("x", "helv"), ("vector", "heit")):
+            with self.subTest(body=body):
+                _, found = _extract_pdf(_make_pdf_with_footnotes(body=body, fontname=font))
+                self.assertFalse(any(o.source == "citation" for o in found[0]["https://github.com/org/repo"]))
+
+    def test_plain_digits_do_not_become_footnote_markers(self):
+        _, found = _extract_pdf(_make_pdf_bytes("Our code is available1.\n1 https://github.com/org/repo"))
+        self.assertFalse(any(o.source == "citation" for o in found[0]["https://github.com/org/repo"]))
+
+    def test_superscript_notes_do_not_capture_bracketed_bibliography_citations(self):
+        pages, found = _extract_pdf(_make_pdf_with_footnotes(body="Earlier work [1]. Our code is here"))
+        citations = [o for o in found[0]["https://github.com/org/repo"] if o.source == "citation"]
+        self.assertEqual(len(citations), 1)
+        self.assertEqual(pages[0][citations[0].text_start:citations[0].text_end], "1")
+
+    def test_footnote_after_a_name_ending_in_a_digit(self):
+        _, found = _extract_pdf(_make_pdf_with_footnotes(body="We use Catch2"))
+        self.assertEqual([o.reference_label for o in found[0]["https://github.com/org/repo"]
+                          if o.source == "citation"], ["1"])
+
+    def test_author_affiliations_are_not_repository_footnotes(self):
+        pages, found = _extract_pdf(_make_pdf_with_footnotes(front_matter=True))
+        citations = [o for o in found[0]["https://github.com/org/repo"] if o.source == "citation"]
+        self.assertEqual(len(citations), 1)
+        self.assertGreater(citations[0].text_start, pages[0].index("Abstract"))
+
+    def test_superscript_citation_preserves_wrapped_url_ambiguity(self):
+        _, found = _extract_pdf(_make_pdf_with_footnotes(urls=("https://github.com/org/my-\nrepo",)))
+        links = [CodeLink(url=url, occurrences=occurrences)
+                 for url, occurrences in _collect_occurrences("", found).items()]
+        self.assertEqual(len(links), 2)
+        self.assertTrue(all(link.url_ambiguous for link in links))
+        self.assertTrue(all(any(o.source == "citation" for o in link.occurrences) for link in links))
+
+    def test_neighbouring_notes_keep_their_own_body_contexts(self):
+        with fitz.open() as doc:
+            page = doc.new_page()
+            urls = ("https://github.com/org/first", "https://github.com/org/second")
+            for number, (body, url) in enumerate(zip(("Our source code", "External tool"), urls, strict=True), 1):
+                y = 80 + number * 80
+                page.insert_text((72, y), body, fontsize=12)
+                x = 72 + fitz.get_text_length(body, fontsize=12)
+                page.insert_text((x, y - 4), str(number), fontsize=8)
+                page.insert_text((72, 680 + number * 12), f"{number} {url}", fontsize=9)
+            _, found = _extract_pdf(doc.tobytes())
+        for number, url in enumerate(urls, 1):
+            self.assertEqual([o.reference_label for o in found[0][url] if o.source == "citation"], [str(number)])
+
+    def test_numbered_list_after_the_anchor_does_not_capture_the_notes(self):
+        _, found = _extract_pdf(_make_pdf_with_footnotes(body="Our source code", numbered_list=True))
+        self.assertEqual([o.reference_label for o in found[0]["https://github.com/org/repo"]], ["1", "1"])
+
+    def test_no_layout_scan_on_pages_without_repository_links(self):
+        with patch("pauk.pipeline.stages.code_links._pdf_footnotes") as scan:
+            _extract_pdf(_make_pdf_bytes("An article without code URLs."))
+        scan.assert_not_called()
+
     def test_pages_without_repository_links_skip_reference_scanning(self):
         with patch("pauk.pipeline.stages.code_links._REFERENCE_HEADING") as heading:
             _link_reference_contexts(["References\n1. Other work"], [{}])
@@ -128,6 +226,12 @@ class ExtractPdfTest(unittest.TestCase):
         found = self.collect_pages(["github.com/org/Repo and github.com/ORG/repo"])
         self.assertEqual(len(found), 1)
         self.assertEqual(len(next(iter(found.values()))), 2)
+
+    def test_http_and_https_merge_without_losing_original_evidence(self):
+        found = self.collect_pages(["http://github.com/org/Repo and https://github.com/ORG/repo"])
+        self.assertEqual(list(found), ["http://github.com/org/Repo"])
+        self.assertEqual([o.raw_url for o in next(iter(found.values()))],
+                         ["http://github.com/org/Repo", "https://github.com/ORG/repo"])
 
     def test_other_pdf_cannot_confirm_a_wrapped_spelling(self):
         wrapped = _occurrences_in_text("github.com/org/my-\nrepo", 1)
