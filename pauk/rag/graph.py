@@ -14,6 +14,7 @@ from neo4j import READ_ACCESS, WRITE_ACCESS, GraphDatabase
 
 from pauk.settings import Settings
 
+from .models import MODELS
 from .profiles import Profile
 
 _LUCENE_SPECIAL = re.compile(r'([+\-&|!(){}\[\]^"~*?:\\/])')
@@ -57,37 +58,39 @@ class Graph:
 
     # --- indexing -----------------------------------------------------------------
 
-    def nodes(self, label: str, profile: Profile) -> list[dict[str, Any]]:
+    def nodes(self, label: str, profile: Profile, model: str) -> list[dict[str, Any]]:
         query = PUBLICATIONS if label == "Publication" else REPOSITORIES
-        return self.read(query, hash=profile.hash_property)
+        return self.read(query, hash=profile.hash_property(model))
 
-    def store(self, label: str, profile: Profile, rows: list[dict[str, Any]]) -> None:
+    def store(self, label: str, profile: Profile, model: str, rows: list[dict[str, Any]]) -> None:
         """Text, vector and hash per node. `setNodeVectorProperty` keeps the vector as float32."""
         self.write(f"""
             UNWIND $rows AS row
             MATCH (n:{label} {{id: row.id}})
-            SET n.`{profile.text_property}` = row.text, n.`{profile.hash_property}` = row.hash
+            SET n.`{profile.text_property}` = row.text, n.`{profile.hash_property(model)}` = row.hash
             WITH n, row
-            CALL db.create.setNodeVectorProperty(n, $vector, row.vector) 
-        """, rows=rows, vector=profile.vector_property)
+            CALL db.create.setNodeVectorProperty(n, $vector, row.vector)
+        """, rows=rows, vector=profile.vector_property(model))
 
     def clear(self, label: str, profile: Profile, ids: list[str]) -> None:
-        """Nodes that left the profile (now empty text, or filtered out) lose their old entries."""
+        """Nodes that left the profile (now empty text, or filtered out) lose their entries for every model."""
+        props = [profile.text_property] + [p for m in MODELS for p in (profile.vector_property(m),
+                                                                        profile.hash_property(m))]
         self.write(f"""
             UNWIND $ids AS id
             MATCH (n:{label} {{id: id}})
-            REMOVE n.`{profile.text_property}`, n.`{profile.vector_property}`, n.`{profile.hash_property}`
+            REMOVE {", ".join(f"n.`{p}`" for p in props)}
         """, ids=ids)
 
-    def ensure_indexes(self, label: str, profile: Profile, dimensions: int, analyzer: str) -> None:
+    def ensure_indexes(self, label: str, profile: Profile, model: str, dimensions: int, analyzer: str) -> None:
         # IF NOT EXISTS keeps an index built with another analyzer; drop it first.
         for row in self.read("SHOW FULLTEXT INDEXES YIELD name, options WHERE name = $name RETURN options",
                              name=profile.text_index(label)):
             if row["options"]["indexConfig"].get("fulltext.analyzer") != analyzer:
                 self.schema(f"DROP INDEX `{profile.text_index(label)}`")
         self.schema(f"""
-            CREATE VECTOR INDEX `{profile.vector_index(label)}` IF NOT EXISTS
-            FOR (n:{label}) ON n.`{profile.vector_property}`
+            CREATE VECTOR INDEX `{profile.vector_index(label, model)}` IF NOT EXISTS
+            FOR (n:{label}) ON n.`{profile.vector_property(model)}`
             OPTIONS {{indexConfig: {{`vector.dimensions`: {int(dimensions)},
                                      `vector.similarity_function`: 'cosine'}}}}
         """)
@@ -97,16 +100,23 @@ class Graph:
             OPTIONS {{indexConfig: {{`fulltext.analyzer`: '{analyzer}'}}}}
         """)
 
-    def drop(self, profile: Profile, labels: tuple[str, ...]) -> dict[str, int]:
+    def drop(self, profile: Profile, labels: tuple[str, ...], model: str | None = None) -> dict[str, int]:
+        """One model's vectors of the profile, or - without `model` - the whole profile."""
+        models = [model] if model else list(MODELS)
         removed = {}
         for label in labels:
-            for index in (profile.vector_index(label), profile.text_index(label)):
+            indexes = [profile.vector_index(label, m) for m in models]
+            props = [p for m in models for p in (profile.vector_property(m), profile.hash_property(m))]
+            if not model:
+                indexes.append(profile.text_index(label))
+                props.append(profile.text_property)
+            for index in indexes:
                 self.schema(f"DROP INDEX `{index}` IF EXISTS")
             rows = self.write(f"""
-                MATCH (n:{label}) WHERE n.`{profile.hash_property}` IS NOT NULL
-                REMOVE n.`{profile.text_property}`, n.`{profile.vector_property}`, n.`{profile.hash_property}`
+                MATCH (n:{label}) WHERE any(key IN keys(n) WHERE key IN $props)
+                REMOVE {", ".join(f"n.`{p}`" for p in props)}
                 RETURN count(n) AS n
-            """)
+            """, props=props)
             removed[label] = rows[0]["n"]
         return removed
 

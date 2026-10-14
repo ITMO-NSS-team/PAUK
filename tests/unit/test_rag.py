@@ -9,7 +9,9 @@ from pathlib import Path
 import numpy as np
 
 from pauk.rag import evaluation, index
+from pauk.rag.embedder import Embedder
 from pauk.rag.graph import escape_lucene
+from pauk.rag.models import MODELS
 from pauk.rag.profiles import PRESETS, Profile, resolve
 from pauk.rag.readme import clean_readme
 from pauk.rag.retrieve import Hit, Rag, fuse, min_max
@@ -18,7 +20,7 @@ from pauk.rag.retrieve import Hit, Rag, fuse, min_max
 class _Config:
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = data_dir
-        self.rag_embedding_model = "fake-model"
+        self.rag_embedding_model = "BAAI/bge-m3"
 
 
 class _Embedder:
@@ -27,7 +29,7 @@ class _Embedder:
     def __init__(self) -> None:
         self.calls: list[list[str]] = []
 
-    def encode(self, texts, progress=False):
+    def encode(self, texts, progress=False, query=False):
         self.calls.append(list(texts))
         return np.array([[1.0, 0.0, 0.0]] * len(texts), dtype=np.float32)
 
@@ -41,17 +43,17 @@ class _IndexGraph:
         self.cleared: dict[str, list[str]] = {}
         self.indexes: list[tuple[str, str]] = []
 
-    def nodes(self, label, profile):
+    def nodes(self, label, profile, model):
         return [dict(row) for row in self.nodes_by_label.get(label, [])]
 
-    def store(self, label, profile, rows):
+    def store(self, label, profile, model, rows):
         self.stored.setdefault(label, []).extend(rows)
 
     def clear(self, label, profile, ids):
         self.cleared.setdefault(label, []).extend(ids)
 
-    def ensure_indexes(self, label, profile, dimensions, analyzer):
-        self.indexes.append((profile.vector_index(label), profile.text_index(label)))
+    def ensure_indexes(self, label, profile, model, dimensions, analyzer):
+        self.indexes.append((profile.vector_index(label, model), profile.text_index(label)))
 
     def await_indexes(self):
         pass
@@ -79,12 +81,35 @@ class ProfileTest(unittest.TestCase):
 
     def test_neo4j_names_carry_the_profile(self):
         profile = PRESETS["no_readme"]
-        self.assertEqual(profile.vector_index("Repository"), "rag_vec_no_readme_repository")
+        self.assertEqual(profile.vector_index("Repository", "qwen3"), "rag_vec_no_readme_qwen3_repository")
+        self.assertEqual(profile.vector_property("bge"), "rag_vec_no_readme_bge")
+        # The text and its BM25 index do not depend on the model.
         self.assertEqual(profile.text_property, "rag_text_no_readme")
+        self.assertEqual(profile.text_index("Repository"), "rag_text_no_readme_repository")
 
     def test_short_readme_contributes_nothing(self):
         row = {"name": "osgud", "readme": "# Osgud\n![badge](http://x/y.svg)"}
         self.assertEqual(PRESETS["full"].compose("Repository", row), "osgud")
+
+
+class _SentenceModel:
+    def __init__(self):
+        self.texts: list[str] = []
+
+    def encode(self, texts, **kwargs):
+        self.texts.extend(texts)
+        return np.ones((len(texts), 3), dtype=np.float32)
+
+
+class EmbedderTest(unittest.TestCase):
+    def test_instruction_goes_before_the_question_only(self):
+        embedder = Embedder(MODELS["qwen3"])
+        embedder._model = model = _SentenceModel()
+        embedder.encode(["Кто занимается льдом?"], query=True)
+        embedder.encode(["Sea ice. Forecasting"])
+        self.assertTrue(model.texts[0].startswith("Instruct: "))
+        self.assertTrue(model.texts[0].endswith("Query:Кто занимается льдом?"))
+        self.assertEqual(model.texts[1], "Sea ice. Forecasting")
 
 
 class ReadmeCleaningTest(unittest.TestCase):
@@ -132,7 +157,7 @@ class IndexBuildTest(unittest.TestCase):
 
     def test_embeds_changed_texts_only_and_clears_dropped_nodes(self):
         profile = Profile("p", ("title", "abstract"), ())
-        unchanged = index.text_hash("fake-model", "Kept. Same")
+        unchanged = index.text_hash("BAAI/bge-m3", "Kept. Same")
         graph = _IndexGraph({"Publication": [
             {"id": "W1", "title": "Kept", "abstract": "Same", "type": "article", "hash": unchanged},
             {"id": "W2", "title": "New", "abstract": "Text", "type": "article", "hash": None},
@@ -146,8 +171,8 @@ class IndexBuildTest(unittest.TestCase):
         self.assertEqual(graph.cleared["Publication"], ["W3"])  # was indexed before, now filtered out
         self.assertEqual(manifest["labels"]["Publication"]["indexed"], 2)
         self.assertEqual(manifest["labels"]["Publication"]["not_research"], 2)
-        self.assertTrue(index.manifest_path(self.config, "p").is_file())
-        self.assertEqual(graph.indexes, [("rag_vec_p_publication", "rag_text_p_publication")])
+        self.assertTrue(index.manifest_path(self.config, "p", "bge").is_file())
+        self.assertEqual(graph.indexes, [("rag_vec_p_bge_publication", "rag_text_p_publication")])
 
     def test_a_second_profile_reuses_vectors_of_identical_texts(self):
         rows = {"Publication": [{"id": "W1", "title": "Same", "abstract": "Text", "type": "article", "hash": None}]}
@@ -242,9 +267,9 @@ class AskTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         config = _Config(Path(tmp.name))
-        manifest = index.manifest_path(config, "full")
+        manifest = index.manifest_path(config, "full", "bge")
         manifest.parent.mkdir(parents=True)
-        manifest.write_text(json.dumps({"profile": PRESETS["full"].to_dict(), "embedding_model": "fake-model"}))
+        manifest.write_text(json.dumps({"profile": PRESETS["full"].to_dict(), "embedding_model": "BAAI/bge-m3"}))
         graph = _AskGraph()
         rag = Rag(config, graph=graph, embedder=_Embedder(), llm=_FailingLlm())
         result = rag.ask("Кто занимается RT-DETR?", with_answer=False)
@@ -252,13 +277,25 @@ class AskTest(unittest.TestCase):
         self.assertFalse(result["options"]["translate"])
         self.assertEqual(graph.terms, r"Кто занимается RT\-DETR\?")
 
+    def test_a_model_without_its_own_build_is_refused(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        config = _Config(Path(tmp.name))
+        manifest = index.manifest_path(config, "full", "bge")
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(json.dumps({"profile": PRESETS["full"].to_dict(), "embedding_model": "BAAI/bge-m3"}))
+        rag = Rag(config, graph=_AskGraph(), embedder=_Embedder(), llm=_FailingLlm())
+        self.assertEqual(rag.profile("full").name, "full")
+        with self.assertRaises(ValueError):
+            rag.profile("full", "qwen3")  # its vectors are not in Neo4j: never query bge vectors with qwen3
+
     def test_translation_reaches_bm25_with_one_llm_call(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         config = _Config(Path(tmp.name))
-        manifest = index.manifest_path(config, "full")
+        manifest = index.manifest_path(config, "full", "bge")
         manifest.parent.mkdir(parents=True)
-        manifest.write_text(json.dumps({"profile": PRESETS["full"].to_dict(), "embedding_model": "fake-model"}))
+        manifest.write_text(json.dumps({"profile": PRESETS["full"].to_dict(), "embedding_model": "BAAI/bge-m3"}))
         graph = _AskGraph()
         llm = _CountingLlm()
         rag = Rag(config, graph=graph, embedder=_Embedder(), llm=llm)
@@ -335,8 +372,9 @@ class MetricsTest(unittest.TestCase):
 
     def test_variant_syntax(self):
         self.assertEqual(evaluation.parse_variant("full:hybrid:rrf+en"),
-                         {"profile": "full", "mode": "hybrid", "fusion": "rrf", "translate": True})
+                         {"profile": "full", "model": None, "mode": "hybrid", "fusion": "rrf", "translate": True})
         self.assertFalse(evaluation.parse_variant("full:bm25")["translate"])
+        self.assertEqual(evaluation.parse_variant("full@qwen3:dense")["model"], "qwen3")
         for bad in ("full:sparse", "full:bm25:ru"):
             with self.assertRaises(ValueError):
                 evaluation.parse_variant(bad)
