@@ -10,7 +10,7 @@ from pauk.models import Department, Organization, Person, Publication
 from pauk.models.processing import ProcessingStatus
 from pauk.models.relations import Authorship
 from pauk.pipeline.stages.base import PreparedSelection
-from pauk.pipeline.stages.departments import DepartmentsStage
+from pauk.pipeline.stages.departments import DepartmentsStage, _contains, _normalize
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, RawStore
 from pauk.storage.static import StaticStore
@@ -69,8 +69,7 @@ class DepartmentsStageTest(unittest.TestCase):
 
     def test_matches_numbered_affiliation_prefix(self):
         # Multi-affiliation papers glue an index to the name ("2School of ...").
-        # Substring matching keeps these; word-boundary matching would drop them
-        # because the digit is a word character.
+        # A digit before the name does not count as a word start.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             person = Person(
@@ -140,6 +139,107 @@ class DepartmentsStageTest(unittest.TestCase):
             persons, _ = _run(
                 root,
                 [Department(id="d1", name_en="Faculty of Secure Information Technologies", name_variants=["FBIT"])],
+                [person],
+                [Publication(id="W1", title="t")],
+            )
+            self.assertEqual(persons["P1"].department_ids, ["d1"])
+
+    def test_one_word_name_not_matched_inside_longer_word(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            people = [
+                Person(
+                    id=f"P{n}",
+                    is_itmo=True,
+                    authored=[Authorship(publication_id="W1", affiliation=affiliation)],
+                )
+                for n, affiliation in enumerate(["JSC MorFBITs, Saint Petersburg", "ITMO University; FBITs Group"])
+            ]
+            persons, _ = _run(
+                Path(tmp),
+                [Department(id="d1", name_en="Faculty of Secure Information Technologies", name_variants=["FBIT"])],
+                people,
+                [Publication(id="W1", title="t")],
+            )
+            self.assertEqual([persons[f"P{n}"].department_ids for n in (0, 1)], [[], []])
+
+    def test_name_ending_in_short_word_not_matched_inside_longer_acronym(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            person = Person(
+                id="P1",
+                is_itmo=True,
+                authored=[Authorship(publication_id="W1", affiliation="Институт ИИТ, Университет ИТМО")],
+            )
+            persons, _ = _run(
+                Path(tmp),
+                [Department(id="d1", name_en="Institute for Artificial Intelligence", name_variants=["Институт ИИ"])],
+                [person],
+                [Publication(id="W1", title="t")],
+            )
+            self.assertEqual(persons["P1"].department_ids, [])
+
+    def test_one_word_name_matches_next_to_digits_and_brackets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            people = [
+                Person(
+                    id="P1",
+                    is_itmo=True,
+                    authored=[Authorship(publication_id="W1", affiliation="2SCAMT Institute, ITMO University")],
+                ),
+                Person(
+                    id="P2",
+                    is_itmo=True,
+                    authored=[Authorship(publication_id="W1", affiliation="Robotics (BE2R) Lab, ITMO University")],
+                ),
+            ]
+            persons, _ = _run(
+                Path(tmp),
+                [
+                    Department(id="d1", name_en="SCAMT Institute ITMO", name_variants=["SCAMT"]),
+                    Department(id="d2", name_en="Laboratory of Biomechatronics", name_variants=["BE2R"]),
+                ],
+                people,
+                [Publication(id="W1", title="t")],
+            )
+            self.assertEqual(persons["P1"].department_ids, ["d1"])
+            self.assertEqual(persons["P2"].department_ids, ["d2"])
+
+    def test_name_not_matched_at_end_of_longer_word(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            person = Person(
+                id="P1",
+                is_itmo=True,
+                authored=[Authorship(publication_id="W1", affiliation="Megafaculty of Photonics, ITMO University")],
+            )
+            persons, _ = _run(
+                Path(tmp),
+                [
+                    Department(id="d1", name_en="Center for Photonics", name_variants=["Faculty of Photonics"]),
+                    Department(
+                        id="d2",
+                        name_en="School of Physics and Engineering",
+                        name_variants=["Megafaculty of Photonics"],
+                    ),
+                ],
+                [person],
+                [Publication(id="W1", title="t")],
+            )
+            self.assertEqual(persons["P1"].department_ids, ["d2"])
+
+    def test_html_entities_in_affiliation_are_decoded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            person = Person(
+                id="P1",
+                is_itmo=True,
+                authored=[
+                    Authorship(
+                        publication_id="W1",
+                        affiliation="Educational Center &#x201C;Energy Efficient Engineering Systems&#x201D;, ITMO",
+                    )
+                ],
+            )
+            persons, _ = _run(
+                Path(tmp),
+                [Department(id="d1", name_en='Educational Center "Energy-Efficient Engineering Systems"')],
                 [person],
                 [Publication(id="W1", title="t")],
             )
@@ -382,6 +482,22 @@ class DepartmentContextAliasTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(self._match(Path(tmp), "Department of Physics, University of Oxford, UK"), [])
 
+    def test_generic_official_name_listed_as_context_alias_matches_only_next_to_itmo(self):
+        department = Department(
+            id="d1", name_en="Institute of Mathematics", context_aliases=["Institute of Mathematics"]
+        )
+        people = [
+            self._person("Steklov Institute of Mathematics, Saint Petersburg"),
+            Person(
+                id="P2",
+                is_itmo=True,
+                authored=[Authorship(publication_id="W1", affiliation="Institute of Mathematics, ITMO University")],
+            ),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            persons, _ = _run(Path(tmp), [department], people, [Publication(id="W1", title="t")])
+        self.assertEqual([persons["P1"].department_ids, persons["P2"].department_ids], [[], ["d1"]])
+
     def test_context_alias_not_matched_across_segment_boundary(self):
         # An ITMO marker in a different segment does not license the generic name.
         with tempfile.TemporaryDirectory() as tmp:
@@ -465,7 +581,7 @@ class DepartmentContextAliasTest(unittest.TestCase):
 
 
 class CoverageLogTest(unittest.TestCase):
-    """The "matched N of M" line may only appear when the pass looked at every author."""
+    """Coverage lines may only appear when the pass looked at every author."""
 
     LOGGER = "pauk.pipeline.stages.departments"
 
@@ -492,6 +608,7 @@ class CoverageLogTest(unittest.TestCase):
             with self.assertLogs(self.LOGGER, level="INFO") as logs:
                 stage.run()
             self.assertTrue(any("Matched 1 of 1 catalogue departments" in line for line in logs.output))
+            self.assertTrue(any("Matched 2 of 2 ITMO authors to a department" in line for line in logs.output))
 
     def test_scoped_pass_stays_quiet(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -508,6 +625,64 @@ class CoverageLogTest(unittest.TestCase):
             _, resumed = self._stage(root, prepared=prepared)
             with self.assertNoLogs(self.LOGGER, level="INFO"):
                 resumed.run()
+
+
+class CatalogueVariantsTest(unittest.TestCase):
+    """Invariants of the committed catalogue."""
+
+    CATALOGUE = Path(__file__).resolve().parents[2] / "data" / "static" / "departments_catalog.json"
+
+    def setUp(self):
+        self.entries = json.loads(self.CATALOGUE.read_text(encoding="utf-8-sig"))
+
+    def test_no_variant_shorter_than_three_characters(self):
+        short = [
+            (e["uid"], v)
+            for e in self.entries
+            for v in [*e.get("aliases", []), *e.get("context_aliases", [])]
+            if len(_normalize(v)) < 3
+        ]
+        self.assertEqual(short, [])
+
+    def test_no_name_shared_by_two_units(self):
+        owners: dict[str, set[str]] = {}
+        for e in self.entries:
+            for v in [e.get("name_en"), e.get("name_ru"), *e.get("aliases", []), *e.get("context_aliases", [])]:
+                if v:
+                    owners.setdefault(_normalize(v), set()).add(e["uid"])
+        self.assertEqual({v: u for v, u in owners.items() if len(u) > 1}, {})
+
+    def test_no_name_inside_an_unrelated_unit_name(self):
+        parent = {e["uid"]: e.get("parent") for e in self.entries}
+
+        def lineage(uid):
+            while uid:
+                yield uid
+                uid = parent.get(uid)
+
+        names = {
+            e["uid"]: {_normalize(v) for v in [e.get("name_en"), e.get("name_ru"), *e.get("aliases", [])] if v}
+            for e in self.entries
+            if e.get("kind") != "organization"
+        }
+        clashes = [
+            (outer, inner, name)
+            for outer, outer_names in names.items()
+            for inner, inner_names in names.items()
+            if inner not in lineage(outer) and outer not in lineage(inner)
+            for name in inner_names
+            if any(_contains(name, other) for other in outer_names)
+        ]
+        self.assertEqual(clashes, [])
+
+    def test_context_alias_has_no_part_separator(self):
+        broken = [
+            (e["uid"], v)
+            for e in self.entries
+            for v in e.get("context_aliases", [])
+            if any(sep in v for sep in ",;\n")
+        ]
+        self.assertEqual(broken, [])
 
 
 if __name__ == "__main__":

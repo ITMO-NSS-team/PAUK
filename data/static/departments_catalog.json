@@ -8,7 +8,10 @@
     "aliases": [
       "Faculty of Technology Management and Innovation",
       "Faculty of Technology and Innovation Management",
-      "Faculty of Technological Management and Innovation"
+      "Faculty of Technological Management and Innovation",
+      "ФТМИ",
+      "FTMI ITMO",
+      "Department of Technology Management and Innovation"
     ]
   },
   {
@@ -18,7 +21,10 @@
     "kind": "school",
     "parent": "itmo-university",
     "aliases": [
-      "Институт Высшая инженерная школа"
+      "Институт Высшая инженерная школа",
+      "ВИТШ",
+      "Высшая инженерно-техническая школа",
+      "Higher Engineering and Technical School"
     ],
     "context_aliases": [
       "Higher Engineering School",
@@ -31,6 +37,18 @@
     "name_ru": "Институт международного развития и партнёрства",
     "kind": "institute",
     "parent": "itmo-university",
+    "aliases": [
+      "Институт международного развития и партнерства",
+      "ИМРиП",
+      "International Development and Partnership Institute"
+    ]
+  },
+  {
+    "uid": "center-for-science-communication",
+    "name_en": "Center for Science Communication",
+    "name_ru": "Центр научной коммуникации",
+    "kind": "center",
+    "parent": "institute-of-international-development-and-partnership",
     "aliases": []
   },
   {
@@ -41,7 +59,8 @@
     "parent": "itmo-university",
     "aliases": [
       "PISH",
-      "ПИШ"
+      "ПИШ",
+      "Advanced Engineering School of Interdisciplinary Engineering"
     ],
     "context_aliases": [
       "Advanced Engineering School"
@@ -53,7 +72,14 @@
     "name_ru": "Центр социальных и гуманитарных наук",
     "kind": "center",
     "parent": "itmo-university",
-    "aliases": []
+    "aliases": [
+      "ЦСиГН"
+    ],
+    "context_aliases": [
+      "Кафедра социальных и гуманитарных дисциплин",
+      "Center of Social Sciences and Humanities",
+      "Social and Humanities Center"
+    ]
   },
   {
     "uid": "center-for-project-activities-and-commercialization",
@@ -61,7 +87,9 @@
     "name_ru": "Центр проектной деятельности и коммерциализации",
     "kind": "center",
     "parent": "educational-center-energy-efficient-engineering-systems",
-    "aliases": []
+    "aliases": [
+      "Center for Project Management and Commercialization"
+    ]
   },
   {
     "uid": "educational-center-energy-efficient-engineering-systems",
@@ -73,7 +101,11 @@
       "Educational Center for Energy Efficient Engineering Systems",
       "Educational Center Energy Efficient Engineering Systems",
       "Educational Center Energy-Efficient Engineering Systems",
-      "Educational Center Energy-Efficient Engineering System"
+      "Educational Center Energy-Efficient Engineering System",
+      "Energy Efficient Engineering Systems",
+      "ОЦ ЭИС",
+      "Energy Efficient Engineering Systems Educational Centre",
+      "Educational Centre Energy Efficient Engineering Systems"
     ]
   },
   {
@@ -82,7 +114,9 @@
     "name_ru": "Межфакультетская лаборатория \"Трансляционные технологии в образовании\"",
     "kind": "lab",
     "parent": "educational-center-energy-efficient-engineering-systems",
-    "aliases": []
+    "aliases": [
+      "Translational Technologies in Education"
+    ]
   },
   {
     "uid": "center-for-development-of-the-institute-of-intellectual-property",
@@ -91,7 +125,8 @@
     "kind": "center",
     "parent": "higher-school-of-engineering-and-technology",
     "aliases": [
-      "Center for the Development of the Institute of Intellectual Property"
+      "Center for the Development of the Institute of Intellectual Property",
+      "ЦРИИС"
     ]
   },
   {
@@ -108,7 +143,9 @@
     "name_ru": "Лаборатория записи волоконных брэгговских решеток",
     "kind": "lab",
     "parent": "higher-school-of-engineering-and-technology",
-    "aliases": []
+    "aliases": [
+      "Лаборатория записи волоконных брэгговских решёток"
+    ]
   },
   {
     "uid": "laboratory-of-modeling-and-programming",
@@ -116,7 +153,10 @@
     "name_ru": "Лаборатория моделирования и программирования",
     "kind": "lab",
     "parent": "higher-school-of-engineering-and-technology",
-    "aliases": []
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Modelling and Programming"
+    ]
   },
   {
     "uid": "laboratory-of-programmable-electronics",
@@ -140,7 +180,10 @@
     "name_ru": "Лаборатория световодной фотоники",
     "kind": "lab",
     "parent": "higher-school-of-engineering-and-technology",
-    "aliases": []
+    "aliases": [],
+    "context_aliases": [
+      "Laboratory of Light-Guided Photonics"
+    ]
   },
   {
     "uid": "scientific-and-production-center-precision-electromechanics",
@@ -150,7 +193,9 @@
     "parent": "higher-school-of-engineering-and-technology",
     "aliases": [
       "Research and Production Center for Precision Electromechanics",
-      "Research and Production Center Precision Electromechanics"
+      "Research and Production Center Precision Electromechanics",
+      "Research and Development Center Precision Electromechanics",
+      "НПЦ Прецизионная электромеханика"
     ]
   },
   {
@@ -162,7 +207,23 @@
     "aliases": [
       "Research Center for Waveguide Photonics",
       "Department of Light-Guided Photonics",
-      "Research Institute of Light-Guided Photonics"
+      "Research Institute of Light-Guided Photonics",
+      "НИЦ световодной фотоники",
+      "НИЦ СФ",
+      "NRC Light Guided Photonics",
+      "Waveguide Photonics Research Center"
+    ]
+  },
+  {
+    "uid": "center-of-applied-optics",
+    "name_en": "Center of Applied Optics",
+    "name_ru": "Центр прикладной оптики",
+    "kind": "center",
+    "parent": "higher-school-of-engineering-and-technology",
+    "aliases": [
+      "Applied Optics Center",
+      "Centre of Applied Optics",
+      "Applied Optic Centre"
     ]
   },
   {
@@ -171,7 +232,9 @@
     "name_ru": "Инновационный индустриальный центр ПАО \"Газпром нефть\" - Университет ИТМО",
     "kind": "center",
     "parent": "itmo-university",
-    "aliases": []
+    "aliases": [
+      "ИЦ ГПН-ИТМО"
+    ]
   },
   {
     "uid": "research-and-educational-center-gazprom-neft-itmo",
@@ -179,7 +242,11 @@
     "name_ru": "Научно-образовательный центр \"Газпром нефть-ИТМО\"",
     "kind": "center",
     "parent": "innovative-industrial-center-of-gazprom-neft-itmo-university",
-    "aliases": []
+    "aliases": [
+      "Gazprom Neft-ITMO Research and Education Center",
+      "НОЦ ГПН-ИТМО",
+      "НОЦ Газпромнефть"
+    ]
   },
   {
     "uid": "laboratory-of-composite-artificial-intelligence",
@@ -187,7 +254,11 @@
     "name_ru": "Лаборатория композитного искусственного интеллекта",
     "kind": "lab",
     "parent": "national-center-for-cognitive-research",
-    "aliases": []
+    "aliases": [
+      "Laboratory for Composite AI",
+      "Composite AI Lab",
+      "Лаборатория композитного ИИ"
+    ]
   },
   {
     "uid": "national-center-for-cognitive-research",
@@ -201,8 +272,21 @@
       "National Center of Cognitive Research",
       "National Centre for Cognitive Research",
       "National Center for Cognitive Studies",
-      "National Centre for Cognitive Technologies"
+      "National Centre for Cognitive Technologies",
+      "НЦКР",
+      "National Center for Cognitive Reaserch"
+    ],
+    "context_aliases": [
+      "Center for Cognitive Technologies"
     ]
+  },
+  {
+    "uid": "industrial-ai-research-lab",
+    "name_en": "Industrial AI Research Lab",
+    "name_ru": "Лаборатория промышленного ИИ",
+    "kind": "lab",
+    "parent": "national-center-for-cognitive-research",
+    "aliases": []
   },
   {
     "uid": "center-for-collective-use-of-prototyping-and-industrial-design",
@@ -210,7 +294,13 @@
     "name_ru": "Центр коллективного пользования \"Прототипирования и промышленного дизайна\"",
     "kind": "center",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "Common-Use Center of Prototyping and Industrial Design",
+      "ЦКП Прототипирования и промышленного дизайна"
+    ],
+    "context_aliases": [
+      "Prototyping and Industrial Design"
+    ]
   },
   {
     "uid": "center-for-educational-and-scientific-technological-infrastructure",
@@ -227,7 +317,10 @@
     "kind": "center",
     "parent": "school-of-computer-technologies-and-control",
     "aliases": [
-      "Center of Usability and Mixed Reality"
+      "Center of Usability and Mixed Reality",
+      "Центр дизайна и мультимедиа",
+      "Design and Multimedia Center",
+      "Usability and Mixed Reality"
     ]
   },
   {
@@ -251,11 +344,26 @@
       "Department of Control Systems & Robotics",
       "Faculty od Control Systems and Robotics",
       "Department of Control System and Robotics",
-      "Faculty Control Systems and Robotics"
+      "Faculty Control Systems and Robotics",
+      "ФСУиР",
+      "Факультет СУиР",
+      "Control Systems and Robotics Department",
+      "Control Systems and Robotics Faculty",
+      "Control Systems and Robotics Dept",
+      "Faculty of Control Systems and Robotic",
+      "Faculty of Control System and Robotic",
+      "Faculty of Control Systems and Robototechnics",
+      "Falculty of Control Systems and Robotics",
+      "Faculty of Control Engineering and Robotics"
     ],
     "context_aliases": [
       "Department of Control Systems and Informatics",
-      "Department of Control Systems and Industrial Robotics"
+      "Department of Control Systems and Industrial Robotics",
+      "Control Systems and Robotics",
+      "Department of Control Engineering and Robotics",
+      "Faculty of Control Systems",
+      "Кафедра систем управления и информатики",
+      "Dept. of Mechatronics"
     ]
   },
   {
@@ -274,10 +382,22 @@
       "Faculty of Information Security and Computer Technologies",
       "Secure Information Technologies Department",
       "Faculty of Information Technology and Security",
-      "Faculty of Secure IT"
+      "Faculty of Secure IT",
+      "Факультет информационной безопасности и компьютерных технологий",
+      "Факультет БИТ",
+      "Secure Information Technologies",
+      "Security of Information Technologies",
+      "IT Security Faculty",
+      "Faculty of Security of Information Technologies",
+      "Dept. of Safety Information Technologies"
     ],
     "context_aliases": [
-      "Information Security Department"
+      "Information Security Department",
+      "Faculty of Information Security",
+      "Кафедра безопасных информационных технологий",
+      "SIT Department",
+      "Department of Technologies of Information Security",
+      "Department of Information Security Technologies"
     ]
   },
   {
@@ -297,7 +417,14 @@
       "Department of Software Engineering and Computer Technologies",
       "Faculty of Software Engineering and Computer System",
       "Faculty of Software and Computer Engineering",
-      "Software Engineering and Computers Systems Faculty"
+      "Software Engineering and Computers Systems Faculty",
+      "ФПИиКТ",
+      "Факультет ПИиКТ"
+    ],
+    "context_aliases": [
+      "Software Engineering and Computer Systems",
+      "Кафедра вычислительной техники",
+      "Department of Computation Technologies"
     ]
   },
   {
@@ -309,7 +436,13 @@
     "aliases": [
       "Institute of Advansed Data Transfer Systems",
       "Institute of Advanced Data Transfer System",
-      "Institute of Advanced Data Transfer"
+      "Institute of Advanced Data Transfer",
+      "ADTS Institute",
+      "Institute of ADTS",
+      "Advanced Data Transfer Systems",
+      "Институт ПСПД",
+      "ИПСПД",
+      "Institute of Advanced Data Transmission Systems"
     ]
   },
   {
@@ -320,6 +453,10 @@
     "parent": "school-of-computer-technologies-and-control",
     "aliases": [
       "Department of Information and Navigation Systems"
+    ],
+    "context_aliases": [
+      "Кафедра информационно-навигационных систем",
+      "Information and Navigation Systems"
     ]
   },
   {
@@ -336,7 +473,11 @@
     "name_ru": "Межотраслевой научно-образовательный центр \"Безопасность и надежность критических цифровых технологий\"",
     "kind": "center",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "Security and Safety for Critical Digital Technologies",
+      "Безопасность и надежность критических цифровых технологий",
+      "Безопасность и надёжность критических цифровых технологий"
+    ]
   },
   {
     "uid": "international-educational-scientific-center-autodesk",
@@ -344,7 +485,9 @@
     "name_ru": "Международный образовательный научный центр \"Autodesk\"",
     "kind": "center",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "AUTODESK ИТМО"
+    ]
   },
   {
     "uid": "international-laboratory-of-architecture-and-design-methods-for-embedded-systems-and-systems-on-chip",
@@ -352,7 +495,10 @@
     "name_ru": "Международная лаборатория \"Архитектура и методы проектирования встраиваемых систем и систем на кристалле\"",
     "kind": "lab",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "Laboratory of Architecture and Design Techniques for Embedded Systems and Systems on Chip",
+      "Design Techniques for Embedded Systems"
+    ]
   },
   {
     "uid": "international-laboratory-of-biomechatronics-and-energy-efficient-robotics",
@@ -360,7 +506,11 @@
     "name_ru": "Международная лаборатория \"Биомехатроники и энергоэффективной робототехники\"",
     "kind": "lab",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "Biomechatronics and Energy Efficient Robotics",
+      "BE2R",
+      "Bio Mechatronics and Energy Efficient Robotics"
+    ]
   },
   {
     "uid": "international-laboratory-of-geometric-methods-of-control-and-applications",
@@ -368,7 +518,10 @@
     "name_ru": "Международная лаборатория \"Геометрические методы управления и приложения\"",
     "kind": "lab",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "Geometrical Methods in Control",
+      "International Laboratory of Geometric Methods and Applications"
+    ]
   },
   {
     "uid": "international-laboratory-of-integrated-orientation-and-navigation-systems",
@@ -377,7 +530,8 @@
     "kind": "lab",
     "parent": "school-of-computer-technologies-and-control",
     "aliases": [
-      "International Laboratory Integrated Navigation and Attitude Reference Systems"
+      "International Laboratory Integrated Navigation and Attitude Reference Systems",
+      "Integrated Navigation and Attitude Reference Systems"
     ]
   },
   {
@@ -386,7 +540,12 @@
     "name_ru": "Международная лаборатория \"Управление многоагентными, распределенными и сетевыми системами\"",
     "kind": "lab",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "Multi-Agent, Distributed and Networked Control Systems"
+    ],
+    "context_aliases": [
+      "Distributed and Networked Control Systems"
+    ]
   },
   {
     "uid": "international-laboratory-of-power-electronics-and-automated-electric-drive",
@@ -395,7 +554,9 @@
     "kind": "lab",
     "parent": "school-of-computer-technologies-and-control",
     "aliases": [
-      "Laboratory of Power Electronics and Automated Electric Drive"
+      "Laboratory of Power Electronics and Automated Electric Drive",
+      "Power Electronics and Automated Electric Drive",
+      "Силовой электроники и автоматизированного электропривода"
     ]
   },
   {
@@ -404,7 +565,11 @@
     "name_ru": "Международный научный центр \"Нелинейные и адаптивные системы управления\"",
     "kind": "center",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "Adaptive and Nonlinear Control Systems",
+      "Нелинейные и адаптивные системы управления",
+      "Adaptive and Nonlinear Control Systems Laboratory"
+    ]
   },
   {
     "uid": "laboratory-of-cloud-solutions-and-modeling",
@@ -412,7 +577,10 @@
     "name_ru": "Лаборатория облачных решений и моделирования",
     "kind": "lab",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "COSM Lab",
+      "Cloud Solutions and Modeling"
+    ]
   },
   {
     "uid": "laboratory-of-computer-engineering",
@@ -422,7 +590,8 @@
     "parent": "school-of-computer-technologies-and-control",
     "aliases": [],
     "context_aliases": [
-      "Computer Engineering Laboratory"
+      "Computer Engineering Laboratory",
+      "Computer Engineering Lab"
     ]
   },
   {
@@ -441,7 +610,14 @@
     "name_ru": "Лаборатория киберфизических систем",
     "kind": "lab",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "Laboratory of Cyberphysical Systems",
+      "Лаборатория КФС"
+    ],
+    "context_aliases": [
+      "Cyber-Physical Systems Laboratory",
+      "CPS Lab"
+    ]
   },
   {
     "uid": "laboratory-of-data-transmission-system-assembly-technologies",
@@ -449,7 +625,9 @@
     "name_ru": "Лаборатория технологий сборки систем передачи данных",
     "kind": "lab",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "Laboratory of Design Methods for Data Transfer Systems"
+    ]
   },
   {
     "uid": "laboratory-of-laser-systems",
@@ -489,7 +667,10 @@
     "name_ru": "Лаборатория молодежной робототехники",
     "kind": "lab",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "Youth Robotics Laboratory",
+      "Лаборатория молодёжной робототехники"
+    ]
   },
   {
     "uid": "research-center-for-advanced-functional-materials-and-laser-communication-systems",
@@ -499,7 +680,10 @@
     "parent": "school-of-computer-technologies-and-control",
     "aliases": [
       "Research Center of Advanced Functional Materials and Laser Communication Systems",
-      "Research centre of advanced functional materials and laser communication systems"
+      "Research centre of advanced functional materials and laser communication systems",
+      "RC AFMLCS",
+      "International Research Center of Functional Materials and Devices of Optoelectronics",
+      "Международный научный центр функциональных материалов и устройств оптоэлектроники и электроники"
     ]
   },
   {
@@ -509,7 +693,8 @@
     "kind": "center",
     "parent": "school-of-computer-technologies-and-control",
     "aliases": [
-      "Research Center for Quality Control Technologies in Rocket and Space Technology"
+      "Research Center for Quality Control Technologies in Rocket and Space Technology",
+      "НИЦ ТТК РКТ"
     ]
   },
   {
@@ -518,7 +703,10 @@
     "name_ru": "Научно-исследовательский центр радиофотонных систем передачи данных",
     "kind": "center",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "Research Center of Microwave Photonics Data Transfer Systems",
+      "Microwave Photonics Data Transfer Systems"
+    ]
   },
   {
     "uid": "research-laboratory-of-spectroscopy-of-biological-objects",
@@ -542,7 +730,9 @@
     "name_ru": "Исследовательская научно-производственная лаборатория \"Оптические и лазерные технологии\"",
     "kind": "lab",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "Academic, Scientific and Technological Center Optics and Lasers"
+    ]
   },
   {
     "uid": "school-of-computer-technologies-and-control",
@@ -550,7 +740,16 @@
     "name_ru": "Мегафакультет компьютерных технологий и управления",
     "kind": "megafaculty",
     "parent": "itmo-university",
-    "aliases": []
+    "aliases": [
+      "МФКТиУ",
+      "МФ КТиУ",
+      "Мегафакультет КТиУ",
+      "Megafaculty of Computer Technologies and Control",
+      "Mega Faculty of Computer Technologies and Management"
+    ],
+    "context_aliases": [
+      "Computer Technologies and Control"
+    ]
   },
   {
     "uid": "scientific-and-technological-laboratory-of-digital-production-technology",
@@ -558,7 +757,9 @@
     "name_ru": "Научно-технологическая лаборатория технологии цифрового производства",
     "kind": "lab",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "Laboratory of Digital Production Technologies"
+    ]
   },
   {
     "uid": "transnational-scientific-educational-laboratory-of-advanced-material-research-methods-unifel",
@@ -566,7 +767,30 @@
     "name_ru": "Транснациональная научно-образовательная лаборатория перспективных методов исследования материалов UniFEL",
     "kind": "lab",
     "parent": "school-of-computer-technologies-and-control",
-    "aliases": []
+    "aliases": [
+      "Transnational Scientific and Education UNIFEL Center for Advanced Methods of Materials Research",
+      "UniFEL"
+    ]
+  },
+  {
+    "uid": "institute-of-mathematics",
+    "name_en": "ITMO Institute of Mathematics",
+    "name_ru": "Институт математики ИТМО",
+    "kind": "institute",
+    "parent": "school-of-computer-technologies-and-control",
+    "aliases": [
+      "Research and Educational Center for Mathematics",
+      "Educational Center of Mathematics",
+      "Education Center of Mathematics",
+      "Научно-образовательный центр математики",
+      "Кафедра высшей математики"
+    ],
+    "context_aliases": [
+      "Mathematics Research Center",
+      "Center of Mathematics",
+      "Mathematical Center",
+      "Department of Higher Mathematics"
+    ]
   },
   {
     "uid": "center-for-artificial-intelligence-in-agrobiotechnology",
@@ -586,7 +810,29 @@
       "Chemical Engineering Center",
       "Center of Chemical Engineering",
       "Chemical Engineerin Center",
-      "Chemical Engineering Centre"
+      "Chemical Engineering Centre",
+      "ЦХИ ИТМО",
+      "Chemistry Engineering Centre",
+      "Centre for Chemical Engineering",
+      "Chemical Engeeniring",
+      "Chemical Engineering Centrum",
+      "Center of Chemical Engeeniring"
+    ],
+    "context_aliases": [
+      "Chemical Engineering Department"
+    ]
+  },
+  {
+    "uid": "laboratory-of-artificial-sensory-systems",
+    "name_en": "Laboratory of Artificial Sensory Systems",
+    "name_ru": "Лаборатория искусственных сенсорных систем",
+    "kind": "lab",
+    "parent": "center-for-chemical-engineering",
+    "aliases": [
+      "Artificial Sensory Systems",
+      "Laboratory of Artificial Sensor System",
+      "Laboratory of Artificial Sensors Systems",
+      "Lab. Artificial Sensors Syst."
     ]
   },
   {
@@ -595,7 +841,10 @@
     "name_ru": "Центр инженерных разработок",
     "kind": "center",
     "parent": "school-of-life-sciences",
-    "aliases": []
+    "aliases": [
+      "Инженерная инфохимия",
+      "Центр инженерных разработок Инженерная инфохимия"
+    ]
   },
   {
     "uid": "center-for-molecular-and-biological-technologies",
@@ -603,7 +852,23 @@
     "name_ru": "Центр молекулярных и биологических технологий",
     "kind": "center",
     "parent": "school-of-life-sciences",
-    "aliases": []
+    "aliases": [
+      "ЦМБТ",
+      "Center of Molecular and Biological Technologies",
+      "Centre of Molecular and Biological Technologies",
+      "Center for Molecular and Biological Sciences"
+    ]
+  },
+  {
+    "uid": "laboratory-of-dna-nanosensor-diagnostics",
+    "name_en": "DNA-Nanosensoric Diagnostics Laboratory",
+    "name_ru": "Лаборатория «ДНК-наносенсорная диагностика»",
+    "kind": "lab",
+    "parent": "center-for-molecular-and-biological-technologies",
+    "aliases": [
+      "DNA Nanosensor",
+      "DNA-Nanosensoric Diagnostic"
+    ]
   },
   {
     "uid": "center-for-educational-neuroscience",
@@ -613,7 +878,8 @@
     "parent": "school-of-life-sciences",
     "aliases": [
       "Center for Neuroscience in Education",
-      "Center for Educational Neuroscience (CEdNe)"
+      "Center for Educational Neuroscience (CEdNe)",
+      "CEdNe"
     ]
   },
   {
@@ -631,14 +897,19 @@
     "kind": "faculty",
     "parent": "school-of-life-sciences",
     "aliases": [
-      "Faculty of Biotechnology",
       "Факультет пищевых биотехнологий и инженерии",
       "Faculty of Food Biotechnologies and Engineering",
       "Faculty of Food Biotechnology and Engineering",
-      "Department of Food Biotechnology and Engineering"
+      "Department of Food Biotechnology and Engineering",
+      "Биотех ИТМО",
+      "Biotechnologies (BioTech)",
+      "Department of Food Biotechnology for Plant Origin Products"
     ],
     "context_aliases": [
-      "Department of Biotechnology"
+      "Department of Biotechnology",
+      "Faculty of BioTech",
+      "Department of Food Biotechnology",
+      "Faculty of Biotechnology"
     ]
   },
   {
@@ -647,7 +918,10 @@
     "name_ru": "Факультет химбиоинженерии",
     "kind": "faculty",
     "parent": "school-of-life-sciences",
-    "aliases": []
+    "aliases": [
+      "Faculty of Chemical & Biological Engineering",
+      "Faculty of Chemical and Biological Engineering"
+    ]
   },
   {
     "uid": "faculty-of-ecotechnologies",
@@ -659,7 +933,14 @@
       "Faculty of Ecotechnology",
       "Faculty of Ecotechnologies (Green Tech)",
       "Faculty of Energy and Ecotechnology",
-      "Department of Ecotechnologies"
+      "Department of Ecotechnologies",
+      "Факультет энергетики и экотехнологий",
+      "Energy and Ecotechnology Faculty",
+      "Energy and Ecotechnologies Faculty"
+    ],
+    "context_aliases": [
+      "Greentech",
+      "Faculty of Environmental Technologies"
     ]
   },
   {
@@ -677,7 +958,11 @@
     "kind": "unit",
     "parent": "school-of-life-sciences",
     "aliases": [
-      "International Scientific and Research Institute of Bioengineering"
+      "International Scientific and Research Institute of Bioengineering",
+      "Institute Bioengineering"
+    ],
+    "context_aliases": [
+      "Bioengineering Institute"
     ]
   },
   {
@@ -690,7 +975,9 @@
       "International Scientific Center for Biotechnology of the Third Millennium",
       "International Research Centre Biotechnologies of the Third Millennium",
       "International Research Center 'Biotechnologies of the Third Millennium'",
-      "Biotechnologies of the Third Millennium"
+      "Biotechnologies of the Third Millennium",
+      "Biotechnologies of the Third Millenium",
+      "Биотехнологии третьего тысячелетия"
     ]
   },
   {
@@ -699,7 +986,9 @@
     "name_ru": "Лаборатория интеллектуальных технологий в инфохимии",
     "kind": "lab",
     "parent": "school-of-life-sciences",
-    "aliases": []
+    "aliases": [
+      "Laboratory for Intelligent Technologies in Infochemistry"
+    ]
   },
   {
     "uid": "laboratory-of-laser-nonlinear-crystals",
@@ -707,7 +996,10 @@
     "name_ru": "Лаборатория лазерных нелинейных кристаллов",
     "kind": "lab",
     "parent": "school-of-life-sciences",
-    "aliases": []
+    "aliases": [
+      "Nonlinear Optical Molecular Crystals and Microlasers",
+      "нелинейно-оптических молекулярных кристаллов и микролазеров"
+    ]
   },
   {
     "uid": "infochemistry-scientific-center",
@@ -718,7 +1010,16 @@
     "aliases": [
       "Research and Educational Center for InfoChemistry",
       "Infochemistry Research Center",
-      "Infochemistry Scientific Centre"
+      "Infochemistry Scientific Centre",
+      "НОЦ Инфохимии",
+      "НОЦ Инфохимия",
+      "Центр Инфохимии",
+      "Scientific and Educational Center of Infochemistry",
+      "Infochemisry Scientific Center",
+      "Infochemistry Center",
+      "Infochemistry Centre",
+      "Center of Infochemistry",
+      "Department of Info-Chemistry"
     ]
   },
   {
@@ -730,6 +1031,9 @@
     "aliases": [
       "Center for Bioengineering",
       "Research Center of Bioengineering"
+    ],
+    "context_aliases": [
+      "Bioengineering Research Center"
     ]
   },
   {
@@ -738,7 +1042,16 @@
     "name_ru": "Мегафакультет наук о жизни",
     "kind": "megafaculty",
     "parent": "itmo-university",
-    "aliases": []
+    "aliases": [
+      "Megafaculty of Life Science",
+      "Мегафакультет биотехнологий и низкотемпературных систем",
+      "МФ БТиНС",
+      "School of Biotechnology and Cryogenic Systems",
+      "Biotechnology and Cryogenic Systems"
+    ],
+    "context_aliases": [
+      "Life Sciences"
+    ]
   },
   {
     "uid": "scientific-laboratory-of-safe-technologies-for-processing-polymer-materials",
@@ -747,7 +1060,8 @@
     "kind": "lab",
     "parent": "school-of-life-sciences",
     "aliases": [
-      "Scientific Laboratory of Safe Technologies for Polymer Materials Processing"
+      "Scientific Laboratory of Safe Technologies for Polymer Materials Processing",
+      "Laboratory of Safe Technologies for Processing Polymer Materials"
     ]
   },
   {
@@ -756,7 +1070,10 @@
     "name_ru": "Центр коллективного пользования \"Нанотехнологии\"",
     "kind": "center",
     "parent": "school-of-physics-and-engineering",
-    "aliases": []
+    "aliases": [
+      "ЦКП Нанотехнологии",
+      "ЦКП-НТ"
+    ]
   },
   {
     "uid": "center-for-information-optical-technologies",
@@ -772,7 +1089,10 @@
       "Information Optical Technologies Centre",
       "Centre of Information and Optical Technologies",
       "Centre of Optical Information Technologies",
-      "Centre for Optical Information Technologies"
+      "Centre for Optical Information Technologies",
+      "Центр информационных оптических технологий",
+      "Information Optical Technologies",
+      "Information Optical Technology"
     ]
   },
   {
@@ -781,7 +1101,9 @@
     "name_ru": "Инжиниринговый центр фотоники и оптоэлектроники",
     "kind": "center",
     "parent": "school-of-physics-and-engineering",
-    "aliases": []
+    "aliases": [
+      "Инжиниринговый центр Университета ИТМО"
+    ]
   },
   {
     "uid": "faculty-of-physics",
@@ -791,7 +1113,8 @@
     "parent": "school-of-physics-and-engineering",
     "aliases": [],
     "context_aliases": [
-      "Department of Physics"
+      "Department of Physics",
+      "Dept. of Physics"
     ]
   },
   {
@@ -801,7 +1124,10 @@
     "kind": "institute",
     "parent": "school-of-physics-and-engineering",
     "aliases": [
-      "Institute of Laser Technology"
+      "Institute of Laser Technology",
+      "ИЛТ ИТМО",
+      "Department of Laser Technologies and Biomedical Optics",
+      "Laser Technologies and Bio Medicine Optics"
     ]
   },
   {
@@ -811,7 +1137,8 @@
     "kind": "unit",
     "parent": "school-of-physics-and-engineering",
     "aliases": [
-      "Institute of Photonics and Optical Information Technologies"
+      "Institute of Photonics and Optical Information Technologies",
+      "International Institute Photonics and Optical Information Technology"
     ]
   },
   {
@@ -831,7 +1158,10 @@
     "name_ru": "Международная лаборатория светового дизайна городской среды",
     "kind": "lab",
     "parent": "school-of-physics-and-engineering",
-    "aliases": []
+    "aliases": [
+      "Световой дизайн городской среды",
+      "Lighting Design for an Urban Environment"
+    ]
   },
   {
     "uid": "international-laboratory-of-mathematical-methods-for-research-of-complex-physical-systems",
@@ -839,7 +1169,9 @@
     "name_ru": "Международная лаборатория математических методов исследования сложных физических систем",
     "kind": "lab",
     "parent": "school-of-physics-and-engineering",
-    "aliases": []
+    "aliases": [
+      "Mathematical Research Methods of Complex Physical Systems"
+    ]
   },
   {
     "uid": "international-laboratory-of-network-technologies-in-distributed-computer-systems",
@@ -847,7 +1179,9 @@
     "name_ru": "Международная лаборатория сетевых технологий в распределенных компьютерных системах",
     "kind": "lab",
     "parent": "school-of-physics-and-engineering",
-    "aliases": []
+    "aliases": [
+      "Networking Technologies in Distributed Computer Systems"
+    ]
   },
   {
     "uid": "international-laboratory-of-technosphere-safety",
@@ -855,7 +1189,9 @@
     "name_ru": "Международная лаборатория техносферной безопасности",
     "kind": "lab",
     "parent": "school-of-physics-and-engineering",
-    "aliases": []
+    "aliases": [
+      "International Laboratory Technosphere Safety"
+    ]
   },
   {
     "uid": "international-research-and-educational-center-for-physics-of-nanostructures",
@@ -869,7 +1205,16 @@
       "International Research and Education Center for Physics of Nanostructures",
       "PhysNano Department",
       "International Research and Educational Centre for Physics of Nanostructures",
-      "International and Educational Center for Physics of Nanostructures"
+      "International and Educational Center for Physics of Nanostructures",
+      "PhysNano",
+      "International Research and Educational Center for Nanostructure Physics",
+      "Research and Education Centre for Physics of Nanostructures",
+      "International Research and Educational Center for Physics and Technology of Nanostructures",
+      "МНОЦ физики наноструктур",
+      "Международный центр физики наноструктур"
+    ],
+    "context_aliases": [
+      "Centre for Physics of Nanostructures"
     ]
   },
   {
@@ -890,7 +1235,11 @@
       "International Joint Research Center for Nanophotonics and Metamaterials",
       "Department of Nanophotonics and Metamaterials",
       "Department of Nano-Photonics and Metamaterials",
-      "Department of Nanophotonics and Metamatarials"
+      "Department of Nanophotonics and Metamatarials",
+      "Nanophotonics and Metamaterials Department",
+      "Department of Nanophotonics and Metamaterial",
+      "Nanophotonics and Metamaterials International Center",
+      "Кафедра нанофотоники и метаматериалов"
     ]
   },
   {
@@ -908,7 +1257,10 @@
     "kind": "lab",
     "parent": "school-of-physics-and-engineering",
     "aliases": [
-      "International Scientific Laboratory of Laser Micro- and Nanotechnology"
+      "International Scientific Laboratory of Laser Micro- and Nanotechnology",
+      "Laboratory of Laser Micro- and Nanotechnologies",
+      "Лаборатория лазерных микро- и нанотехнологий",
+      "ЛМНТ"
     ]
   },
   {
@@ -917,7 +1269,9 @@
     "name_ru": "Международная научная лаборатория современных фотонных материалов и технологий",
     "kind": "lab",
     "parent": "school-of-physics-and-engineering",
-    "aliases": []
+    "aliases": [
+      "Modern Photonic Materials and Technologies"
+    ]
   },
   {
     "uid": "international-scientific-laboratory-of-photoprocesses-in-mesoscopic-systems",
@@ -925,7 +1279,10 @@
     "name_ru": "Международная научная лаборатория фотопроцессов в мезоскопических системах",
     "kind": "lab",
     "parent": "school-of-physics-and-engineering",
-    "aliases": []
+    "aliases": [
+      "Photoprocesses in Mesoscopic Systems",
+      "Фотопроцессы в мезоскопических системах"
+    ]
   },
   {
     "uid": "laboratory-of-anisotropic-and-optically-active-nanostructures",
@@ -933,7 +1290,10 @@
     "name_ru": "Лаборатория \"Анизотропные и оптически активные наноструктуры\"",
     "kind": "lab",
     "parent": "school-of-physics-and-engineering",
-    "aliases": []
+    "aliases": [
+      "Anisotropic and Optically Active Nanostructures",
+      "Анизотропные и оптически активные наноструктуры"
+    ]
   },
   {
     "uid": "laboratory-of-biomedical-laser-technologies",
@@ -951,7 +1311,8 @@
     "parent": "school-of-physics-and-engineering",
     "aliases": [],
     "context_aliases": [
-      "Cultural Heritage Research Laboratory"
+      "Cultural Heritage Research Laboratory",
+      "Heritage Science Lab"
     ]
   },
   {
@@ -961,7 +1322,10 @@
     "kind": "lab",
     "parent": "school-of-physics-and-engineering",
     "aliases": [
-      "Laboratory of Digital and Visual Holography"
+      "Laboratory of Digital and Visual Holography",
+      "Digital and Display Holography",
+      "Digital and Display Holography Laboratory",
+      "Digital and Display Laboratory"
     ]
   },
   {
@@ -972,7 +1336,9 @@
     "parent": "school-of-physics-and-engineering",
     "aliases": [
       "International Laboratory of Femtosecond Optics and Femtotechnologies",
-      "Laboratory of Femtosecond and Femtotechnologies"
+      "Laboratory of Femtosecond and Femtotechnologies",
+      "Femtosecond Optics and Femtotechnologies",
+      "Femtosecond Optics and Femtotechnology"
     ]
   },
   {
@@ -981,7 +1347,10 @@
     "name_ru": "Лаборатория \"Светоизлучающие углеродные квантовые наноструктуры\"",
     "kind": "lab",
     "parent": "school-of-physics-and-engineering",
-    "aliases": []
+    "aliases": [
+      "Luminescent Carbon Quantum Nanostructures",
+      "Светоизлучающие углеродные квантовые наноматериалы"
+    ]
   },
   {
     "uid": "laboratory-of-magnetic-resonance-in-medicine",
@@ -997,7 +1366,11 @@
     "name_ru": "Лаборатория \"Нелинейная оптика конденсированных сред\"",
     "kind": "lab",
     "parent": "school-of-physics-and-engineering",
-    "aliases": []
+    "aliases": [
+      "Nonlinear Optics of Condensed Media",
+      "Nonlinear Optics of Condensed Matter",
+      "Нелинейная оптика конденсированных сред"
+    ]
   },
   {
     "uid": "laboratory-of-optics-of-quantum-nanostructures",
@@ -1005,7 +1378,10 @@
     "name_ru": "Лаборатория \"Оптика квантовых наноструктур\"",
     "kind": "lab",
     "parent": "school-of-physics-and-engineering",
-    "aliases": []
+    "aliases": [
+      "Optics of Quantum Nanostructures",
+      "Оптика квантовых наноструктур"
+    ]
   },
   {
     "uid": "laboratory-of-photonics-of-functional-nanomaterials",
@@ -1013,7 +1389,10 @@
     "name_ru": "Лаборатория фотоники функциональных наноматериалов",
     "kind": "lab",
     "parent": "school-of-physics-and-engineering",
-    "aliases": []
+    "aliases": [
+      "Laboratory of Functional Photonic Nanomaterials",
+      "Laboratory for Functional Nano-materials Photonics"
+    ]
   },
   {
     "uid": "laboratory-of-production-laser-technologies",
@@ -1021,7 +1400,9 @@
     "name_ru": "Лаборатория производственных лазерных технологий",
     "kind": "lab",
     "parent": "school-of-physics-and-engineering",
-    "aliases": []
+    "aliases": [
+      "Лаборатория промышленных лазерных технологий"
+    ]
   },
   {
     "uid": "laboratory-of-quantum-informatics",
@@ -1029,7 +1410,10 @@
     "name_ru": "Лаборатория квантовой информатики",
     "kind": "lab",
     "parent": "school-of-physics-and-engineering",
-    "aliases": []
+    "aliases": [],
+    "context_aliases": [
+      "Quantum Information Laboratory"
+    ]
   },
   {
     "uid": "laboratory-of-quantum-processes-and-measurements",
@@ -1037,7 +1421,9 @@
     "name_ru": "Лаборатория квантовых процессов и измерений",
     "kind": "lab",
     "parent": "school-of-physics-and-engineering",
-    "aliases": []
+    "aliases": [
+      "Laboratory of Quantum Process and Measurements"
+    ]
   },
   {
     "uid": "laboratory-of-surface-photophysics",
@@ -1045,7 +1431,10 @@
     "name_ru": "Лаборатория \"Фотофизика поверхности\"",
     "kind": "lab",
     "parent": "school-of-physics-and-engineering",
-    "aliases": []
+    "aliases": [
+      "Photophysics of Surface",
+      "Фотофизика поверхности"
+    ]
   },
   {
     "uid": "laboratory-of-wireless-devices-for-mri",
@@ -1066,7 +1455,35 @@
       "Research and Educational Center for Photonics and Optoinformatics",
       "Research and Education Center of Photonics and Optical IT",
       "Research and Education Center for Photonics and Optoinformatics",
+      "НОЦ ФиОИ",
+      "НОЦ фотоники и оптоинформатики",
+      "Факультет фотоники и оптоинформатики",
+      "Center of Photonics and Optoinformatics",
+      "Centre of Photonics and Optoinformatics",
+      "Center for Photonics and Optoinformatics",
+      "Center for Photonics and Optical Informatics",
+      "Center of Photonics and Optical Information Technology",
+      "Center of Photonics and Optical IT",
+      "Department of Photonics and Optoinformatics",
+      "Photonics and Optoinformatics Faculty",
+      "Photonics and Optoinformatics Department",
+      "Department of Photonics and Optical Information",
+      "Department of Photonics and Optoinformation",
+      "Scientific and Educational Center of Photonics and Optical Information Technology",
       "Faculty of Photonics"
+    ],
+    "context_aliases": [
+      "Photonics Faculty"
+    ]
+  },
+  {
+    "uid": "terahertz-biomedicine-laboratory",
+    "name_en": "Terahertz Biomedicine Laboratory",
+    "name_ru": "Лаборатория терагерцовой биомедицины",
+    "kind": "lab",
+    "parent": "research-and-educational-center-for-photonics-and-optical-it",
+    "aliases": [
+      "THz Biomedicine Laboratory"
     ]
   },
   {
@@ -1076,7 +1493,11 @@
     "kind": "center",
     "parent": "school-of-physics-and-engineering",
     "aliases": [
-      "Research Center for Optical Material Engineering"
+      "Research Center for Optical Material Engineering",
+      "НИЦ оптического материаловедения",
+      "Research Institute for Optical Materials Science",
+      "Research Centre for Optical Materials Engineering",
+      "Research Center of Optical Materials Science"
     ]
   },
   {
@@ -1087,12 +1508,25 @@
     "parent": "itmo-university",
     "aliases": [
       "School of Physcis and Engineering",
-      "School of Photonics"
+      "School of Photonics",
+      "Мегафакультет фотоники",
+      "Megafakul'tet fotoniki",
+      "ФТ МФ",
+      "Physical Technical Megafaculty",
+      "Schools of Physics and Engineering",
+      "Megafaculty of Photonics"
     ],
     "context_aliases": [
       "Department of Physics and Engineering",
       "Department of Physics & Engineering",
-      "Department of Physics and Technology"
+      "Department of Physics and Technology",
+      "Faculty of Physics and Engineering",
+      "Physics and Engineering Department",
+      "Depertment of Physics and Engineering",
+      "Faculty of Physics and Technology",
+      "School of Physics and Technology",
+      "Department of Photonics",
+      "Physics and Technology Faculty"
     ]
   },
   {
@@ -1105,7 +1539,10 @@
       "Faculty of Digital Transformations",
       "Faculty of AI Technologies",
       "Факультет цифровых трансформаций",
-      "Faculty of Digital Transformation"
+      "Faculty of Digital Transformation",
+      "ФТИИ",
+      "Faculty of Artificial Intelligence Technologies",
+      "Fuculty of Digital Transformations"
     ]
   },
   {
@@ -1116,7 +1553,10 @@
     "parent": "school-of-translational-information-technologies",
     "aliases": [
       "Centre for e-Government Technologies",
-      "eGovernance Center"
+      "eGovernance Center",
+      "eGovernment Center",
+      "Center of e-Governance",
+      "ЦТЭП"
     ]
   },
   {
@@ -1129,7 +1569,13 @@
       "Faculty of Infocommunication Technologies",
       "Факультет инфокоммуникационных технологий",
       "Department of Infocommunication Technologies",
-      "Faculty of Appliend Informatics"
+      "Faculty of Appliend Informatics",
+      "ФПИн",
+      "ФИКТ",
+      "Faculty of Infocommunicational Technologies"
+    ],
+    "context_aliases": [
+      "Infocommunication Technologies"
     ]
   },
   {
@@ -1138,7 +1584,9 @@
     "name_ru": "Высшая школа цифровой культуры",
     "kind": "school",
     "parent": "school-of-translational-information-technologies",
-    "aliases": []
+    "aliases": [
+      "ВШЦК"
+    ]
   },
   {
     "uid": "information-technologies-and-programming-faculty",
@@ -1150,12 +1598,45 @@
       "Faculty of Information Technologies and Programming",
       "Information Technology and Programming Faculty",
       "Faculty of Information Technology and Programming",
-      "Кафедра компьютерных технологий"
+      "Кафедра компьютерных технологий",
+      "ФИТиП",
+      "FITP",
+      "Information Technology and Programming",
+      "Information Technologies and Programming",
+      "Faculty of IT and Programming"
     ],
     "context_aliases": [
       "Department of Computer Technologies",
       "Computer Technologies Department",
+      "Department of IT and Programming",
+      "Department of Information Technologies and Programming"
+    ]
+  },
+  {
+    "uid": "international-laboratory-computer-technologies",
+    "name_en": "International Laboratory \"Computer Technologies\"",
+    "name_ru": "Международная научная лаборатория «Компьютерные технологии»",
+    "kind": "lab",
+    "parent": "information-technologies-and-programming-faculty",
+    "aliases": [
+      "Computer Technologies Laboratory",
+      "Computer Tehcnologies Laboratory",
+      "International Laboratory of Computer Technologies",
+      "International Research Laboratory of Computer Technologies"
+    ],
+    "context_aliases": [
       "Center for Computer Technologies"
+    ]
+  },
+  {
+    "uid": "machine-learning-lab",
+    "name_en": "Machine Learning Lab",
+    "name_ru": "Лаборатория машинного обучения",
+    "kind": "lab",
+    "parent": "information-technologies-and-programming-faculty",
+    "aliases": [],
+    "context_aliases": [
+      "Machine Learning Laboratory"
     ]
   },
   {
@@ -1166,7 +1647,22 @@
     "parent": "school-of-translational-information-technologies",
     "aliases": [
       "AI Institute",
-      "Institute of Artificial Intelligence"
+      "Institute of Artificial Intelligence",
+      "Институт ИИ"
+    ],
+    "context_aliases": [
+      "AI Research Institute"
+    ]
+  },
+  {
+    "uid": "nss-lab",
+    "name_en": "Nature Systems Simulation Lab",
+    "name_ru": "Лаборатория моделирования природных систем",
+    "kind": "lab",
+    "parent": "institute-for-artificial-intelligence",
+    "aliases": [
+      "Natural Systems Simulation Lab",
+      "NSS Lab"
     ]
   },
   {
@@ -1175,7 +1671,15 @@
     "name_ru": "Институт прикладных компьютерных наук",
     "kind": "institute",
     "parent": "school-of-translational-information-technologies",
-    "aliases": []
+    "aliases": [
+      "ИПКН",
+      "Institute of Applied Computer Sciences",
+      "IPKN Department"
+    ],
+    "context_aliases": [
+      "Department of Applied Computer Science",
+      "Faculty of Applied Computer Science"
+    ]
   },
   {
     "uid": "institute-of-design-urban-studies",
@@ -1185,7 +1689,11 @@
     "parent": "school-of-translational-information-technologies",
     "aliases": [
       "Institute of Design and Urban Studies",
-      "Institute for Design and Urban Studies"
+      "Institute for Design and Urban Studies",
+      "Institute of Design and Urbanism",
+      "Design and Urban Studies",
+      "ИДУ ИТМО",
+      "Institute of the Design and Urban Studies"
     ]
   },
   {
@@ -1195,7 +1703,9 @@
     "kind": "school",
     "parent": "school-of-translational-information-technologies",
     "aliases": [
-      "School of Game Development"
+      "School of Game Development",
+      "Video Game Development School",
+      "ШРВ ИТМО"
     ]
   },
   {
@@ -1204,7 +1714,12 @@
     "name_ru": "Мегафакультет трансляционных информационных технологий",
     "kind": "megafaculty",
     "parent": "itmo-university",
-    "aliases": []
+    "aliases": [
+      "Translational Information Technologies",
+      "Megafaculty of Translational Information Technologies",
+      "Megafaculty of Translational and Information Technologies",
+      "МФ ТИнТ"
+    ]
   },
   {
     "uid": "solution-chemistry-of-advanced-materials-and-technologies-scamt-institute",
@@ -1222,8 +1737,37 @@
       "International Research Center SCAMT",
       "Растворная химия передовых материалов и технологий",
       "Международный научный центр SCAMT",
-      "SCAMT"
+      "SCAMT",
+      "Solution Chemistry of Advanced Materials",
+      "Solution Chemistry and Advanced Materials",
+      "Растворной химии передовых материалов и технологий",
+      "Solution Chemistry of Advanced Materials and Technology"
     ]
+  },
+  {
+    "uid": "nucleic-acid-nanotechnology-laboratory",
+    "name_en": "Nucleic Acid Nanotechnology Laboratory",
+    "name_ru": "Лаборатория нанотехнологий нуклеиновых кислот",
+    "kind": "lab",
+    "parent": "solution-chemistry-of-advanced-materials-and-technologies-scamt-institute",
+    "aliases": [
+      "Laboratory of Nucleic Acid Nanotechnology"
+    ]
+  },
+  {
+    "uid": "bionanotech-laboratory",
+    "name_en": "BioNanoTech Laboratory",
+    "kind": "lab",
+    "parent": "solution-chemistry-of-advanced-materials-and-technologies-scamt-institute",
+    "aliases": []
+  },
+  {
+    "uid": "laboratory-for-bioactive-materials-in-tissue-engineering",
+    "name_en": "Laboratory for Bioactive Materials in Tissue Engineering",
+    "name_ru": "Лаборатория «Биоактивные материалы для тканевой инженерии»",
+    "kind": "lab",
+    "parent": "solution-chemistry-of-advanced-materials-and-technologies-scamt-institute",
+    "aliases": []
   },
   {
     "uid": "faculty-of-cryogenic-engineering",
@@ -1234,7 +1778,13 @@
     "aliases": [
       "Cryogenic Engineering Department",
       "Факультет холодильной, криогенной техники и кондиционирования",
-      "ФНТЭ"
+      "ФНТЭ",
+      "Low Temperature Energy",
+      "Faculty of Low Temperature Power Engineering",
+      "Cryogenic Engineering Faculty",
+      "Faculty of Low Temperature Energy",
+      "Department of Low Temperature Energy",
+      "Low Temperature Energy Faculty"
     ]
   },
   {
@@ -1244,7 +1794,11 @@
     "kind": "center",
     "parent": "school-of-translational-information-technologies",
     "aliases": [
-      "Research Center Strong Artificial Intelligence in Industry"
+      "Research Center Strong Artificial Intelligence in Industry",
+      "Strong Artificial Intelligence in Industry",
+      "Сильный ИИ в промышленности",
+      "Сильный искусственный интеллект в промышленности",
+      "ИЦ СИИП"
     ]
   },
   {
@@ -1254,7 +1808,14 @@
     "kind": "faculty",
     "parent": "school-of-physics-and-engineering",
     "aliases": [
-      "Faculty of Lazer Photonics and Optoelectronics"
+      "Faculty of Lazer Photonics and Optoelectronics",
+      "Laser Photonics and Optoelectronics",
+      "ФЛФО",
+      "Department of Laser Photonics and Optoelectronics"
+    ],
+    "context_aliases": [
+      "Faculty of Nanoelectronics",
+      "Факультет наноэлектроники"
     ]
   },
   {
@@ -1265,7 +1826,27 @@
     "parent": "school-of-physics-and-engineering",
     "aliases": [
       "Department of Applied Optics",
-      "Faculty of Applied Optic"
+      "Faculty of Applied Optic",
+      "Факультет лазерной и световой инженерии",
+      "Engineering Research Faculty",
+      "Department of Applied and Computer Optics"
+    ],
+    "context_aliases": [
+      "Faculty of Engineering Research",
+      "Faculty of Engineering and Research"
+    ]
+  },
+  {
+    "uid": "scientific-and-educational-laboratory-technical-vision",
+    "name_en": "Scientific and Educational Laboratory \"Technical Vision\"",
+    "name_ru": "Научно-образовательная лаборатория «Техническое зрение»",
+    "kind": "lab",
+    "parent": "school-of-physics-and-engineering",
+    "aliases": [
+      "Техническое зрение"
+    ],
+    "context_aliases": [
+      "Technical Vision"
     ]
   },
   {
@@ -1275,7 +1856,19 @@
     "kind": "center",
     "parent": "itmo-university",
     "aliases": [
-      "National Center of Quantum Internet"
+      "National Center of Quantum Internet",
+      "НЦКИ",
+      "Leading Research Center for Quantum Internet"
+    ]
+  },
+  {
+    "uid": "laboratory-of-quantum-communications",
+    "name_en": "Laboratory for Quantum Communications",
+    "name_ru": "Лаборатория квантовых коммуникаций",
+    "kind": "lab",
+    "parent": "national-center-for-quantum-internet",
+    "aliases": [
+      "Laboratory of Quantum Communications"
     ]
   },
   {
@@ -1285,8 +1878,39 @@
     "kind": "center",
     "parent": "school-of-life-sciences",
     "aliases": [
-      "Center for AI in Chemistry"
+      "Center for AI in Chemistry",
+      "Центр ИИ в химии"
     ]
+  },
+  {
+    "uid": "chembio-cluster",
+    "name_en": "ChemBio Cluster",
+    "name_ru": "Химико-биологический кластер",
+    "kind": "unit",
+    "parent": "school-of-life-sciences",
+    "aliases": [
+      "Chem-Bio Cluster",
+      "ChemBioCluster"
+    ]
+  },
+  {
+    "uid": "energy-lab",
+    "name_en": "Energy Lab",
+    "name_ru": "Energy Lab",
+    "kind": "lab",
+    "parent": "school-of-life-sciences",
+    "aliases": [],
+    "context_aliases": [
+      "Energy Lab"
+    ]
+  },
+  {
+    "uid": "faculty-of-life-infosciences",
+    "name_en": "Faculty of Life Infosciences",
+    "name_ru": "Факультет инфонаук о жизни",
+    "kind": "faculty",
+    "parent": "school-of-life-sciences",
+    "aliases": []
   },
   {
     "uid": "itmo-university",
@@ -1297,5 +1921,28 @@
     "ror_id": "https://ror.org/04txgxn49",
     "country": "Russia",
     "type": "university"
+  },
+  {
+    "uid": "laboratory-for-digital-public-health-technologies",
+    "name_en": "Laboratory for Digital Public Health Technologies",
+    "name_ru": "Лаборатория цифровых технологий общественного здоровья",
+    "kind": "lab",
+    "parent": "itmo-university",
+    "aliases": [
+      "Digital Public Health Technologies"
+    ],
+    "context_aliases": [
+      "Public Health Sciences Department"
+    ]
+  },
+  {
+    "uid": "art-and-science-center",
+    "name_en": "Art & Science Center",
+    "name_ru": "Центр «Искусство и наука»",
+    "kind": "center",
+    "parent": "institute-of-international-development-and-partnership",
+    "aliases": [
+      "Art&Science Center"
+    ]
   }
 ]

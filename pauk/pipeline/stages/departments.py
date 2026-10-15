@@ -1,6 +1,8 @@
+import html
 import logging
 import re
 from datetime import UTC, datetime
+from functools import cache
 
 from pauk.models import Department, Person, Publication
 from pauk.models.processing import ProcessingState, ProcessingStatus
@@ -28,17 +30,6 @@ def _normalize(text: str) -> str:
     return " ".join(_PUNCT.sub(" ", text.casefold()).split())
 
 
-def _match_names(department: Department) -> list[str]:
-    """Normalized names to look for in affiliation text: English, Russian, variants.
-
-    Matching is plain substring containment, not word-boundary: word boundaries
-    drop numbered ("2School of ...") and plural ("Sciences" vs "Science") forms
-    without removing genuine false positives.
-    """
-    names = [department.name_en, department.name_ru, *department.name_variants]
-    return [_normalize(name) for name in names if name]
-
-
 def _context_names(department: Department) -> list[str]:
     """Normalized generic aliases matched only next to an ITMO marker.
 
@@ -48,6 +39,32 @@ def _context_names(department: Department) -> list[str]:
     that cost.
     """
     return [_normalize(name) for name in department.context_aliases if name]
+
+
+def _match_names(department: Department) -> list[str]:
+    """Normalized names to look for in affiliation text: English, Russian, variants.
+
+    A name also listed among the context aliases is left to them, so a unit with a
+    generic official name ("Institute of Mathematics") matches only next to ITMO.
+    """
+    context = set(_context_names(department))
+    names = [department.name_en, department.name_ru, *department.name_variants]
+    return [normalized for name in names if name and (normalized := _normalize(name)) not in context]
+
+
+@cache
+def _name_pattern(name: str) -> re.Pattern[str]:
+    tail = r"(?![^\W\d_])" if len(name.rsplit(" ", 1)[-1]) <= 2 or " " not in name else ""
+    return re.compile(rf"(?<![^\W\d_]){re.escape(name)}{tail}")
+
+
+def _contains(name: str, text: str) -> bool:
+    """Whether name starts a word in text; a one-word name, or one ending in a short word, must also end one.
+
+    "Megafaculty" does not hold "Faculty", "MorFBITs" does not hold FBIT, "Институт ИИТ" does not hold
+    "Институт ИИ"; "2School of" still matches.
+    """
+    return bool(name) and name in text and _name_pattern(name).search(text) is not None
 
 
 class DepartmentsStage(EnrichmentStage):
@@ -75,9 +92,9 @@ class DepartmentsStage(EnrichmentStage):
         seen: set[str] = set()
         for person in self.progress(candidates, total=len(candidates)):
             state = person.processing.get(self.name)
-            affiliations = [a.affiliation or "" for a in person.authored]
+            affiliations = [html.unescape(a.affiliation or "") for a in person.authored]
             text = _normalize(" ".join(affiliations))
-            matched = [dept_id for dept_id, names in matchers if any(name in text for name in names)]
+            matched = [dept_id for dept_id, names in matchers if any(_contains(name, text) for name in names)]
             # ITMO-context pass: generic aliases match only in a part adjacent to an
             # ITMO marker, so a co-affiliated foreign department cannot pull them in.
             if ctx_matchers:
@@ -89,7 +106,9 @@ class DepartmentsStage(EnrichmentStage):
                         continue
                     itmo_parts += [_normalize(part) for i, part in enumerate(parts) if marked & {i - 1, i, i + 1}]
                 for part in itmo_parts:
-                    hits = [(dept_id, name) for dept_id, names in ctx_matchers for name in names if name in part]
+                    hits = [
+                        (dept_id, name) for dept_id, names in ctx_matchers for name in names if _contains(name, part)
+                    ]
                     # Keep the most specific alias per part: drop one that is merely a
                     # substring of a longer co-matching alias ("Department of Physics"
                     # inside "Department of Physics and Engineering").
@@ -117,6 +136,10 @@ class DepartmentsStage(EnrichmentStage):
         # though coverage had collapsed.
         if len(candidates) == len(people):
             logger.info("Matched %d of %d catalogue departments", len(seen), len(departments))
+            itmo = [p for p in people if p.is_itmo]
+            logger.info(
+                "Matched %d of %d ITMO authors to a department", sum(1 for p in itmo if p.department_ids), len(itmo)
+            )
         self.prepared.write_models("persons", people)
         self.prepared.write_models("departments", departments)
         self.prepared.write_models("organizations", organizations)
