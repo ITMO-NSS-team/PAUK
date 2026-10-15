@@ -2,8 +2,8 @@
 
 Publishing only ever adds. Every node and every edge goes in through
 `MERGE`, and nothing has ever taken one out because a prepared row stopped
-asking for it. MongoDB does the opposite — a row no group claims any more
-is deleted — so the two drift apart, silently and in one direction: the
+asking for it. MongoDB does the opposite (a row no group claims any more
+is deleted), so the two drift apart, silently and in one direction: the
 graph keeps everything it was ever told, including claims a later repair
 withdrew.
 
@@ -16,8 +16,8 @@ first time either changed.
 Three things are kept that the rows do not explain, and each for its own
 reason:
 
-- what a person added by hand, which is claimed in `graph_overrides` —
-  that claim exists for this and nothing else;
+- what a person added by hand, which is claimed in `graph_overrides`, a claim that exists
+  for this and nothing else;
 - what the next publish will fold rather than delete, because its row was
   merged into another one and its edges have to move, not disappear;
 - any record whose row still exists but which the loader skipped this time
@@ -45,8 +45,7 @@ from .overrides import DELETE, LINK, tombstoned_ids, tombstoned_relationships
 
 logger = logging.getLogger(__name__)
 
-#: A relationship as both sides of the comparison name it: the triple, and
-#: the pairs of (source id, whatever addresses the far end).
+#: A relationship as both sides of the comparison name it.
 Triple = tuple[str, str, str]
 
 
@@ -80,16 +79,14 @@ class _WouldWrite:
     """A client that remembers what a publish would write, and writes nothing.
 
     Reads pass through to the real client, because the loader asks it real
-    questions on the way — which ids are already folded, above all.
+    questions on the way, above all which ids are already folded.
     """
 
     def __init__(self, client) -> None:
         self._client = client
         self.nodes: dict[str, set[str]] = defaultdict(set)
         self.edges: dict[Triple, set[tuple[str, str]]] = defaultdict(set)
-        #: Ids a publish would fold into another record. Not expected to
-        #: exist afterwards, and not stale either: deleting one would take
-        #: its edges with it instead of moving them.
+        #: Ids a publish would fold: not stale, and not there afterwards.
         self.folding: set[str] = set()
 
     def __getattr__(self, name: str):
@@ -122,8 +119,7 @@ class _WouldWrite:
         return self._fold(merges)
 
     def promote_link_candidates_batch(self, candidates) -> None:
-        # A candidate that turned into a repository is removed by the
-        # publish itself, which is not this one's business either.
+        # A promoted candidate is removed by the publish itself.
         self.folding.update(candidate for candidate, _url in candidates)
 
 
@@ -146,7 +142,7 @@ def _rows_by_label(rows_by_file: dict[str, list[dict]]) -> dict[str, set[str]]:
     """Ids the source still holds, per node label.
 
     The floor under the whole comparison. A record whose row exists is
-    never stale, even when this publish would not write it — a repository
+    never stale, even when this publish would not write it: a repository
     whose enrichment failed is skipped by the loader and would otherwise
     look like a leftover.
     """
@@ -166,9 +162,7 @@ def _claimed(mongo_db: Database) -> tuple[dict[str, set[str]], set[tuple[str, st
                 edges.add((row["src_label"], row["rel_type"], row["tgt_label"],
                            row["src_id"], row["target_id"]))
         elif row.get("op") != DELETE:
-            # Any decision about a record is a reason to keep it, not only
-            # a "create": somebody editing a field of a record no row
-            # explains is saying the same thing about it.
+            # Any decision about a record is a reason to keep it, not only "create".
             nodes[row["label"]].add(row["target_id"])
     return nodes, edges
 
@@ -184,7 +178,7 @@ def _through_folds(edges: set[tuple[str, str]], source_map: dict[str, str],
     Args:
         target_map: Empty unless the far end is addressed by its id. An
             alias map is keyed by id, and a Repository is matched on its
-            url — translating one with the other would find nothing and
+            url, so translating one with the other would find nothing and
             quietly drop the edge from what is expected.
     """
     return edges | {(source_map.get(src, src), target_map.get(tgt, tgt)) for src, tgt in edges}
@@ -194,7 +188,7 @@ def plan(client, mongo_db: Database) -> Plan:
     """What the graph holds that the source no longer asks for.
 
     Args:
-        client: Graph client. Reads only — planning changes nothing.
+        client: Graph client. Reads only; planning changes nothing.
         mongo_db: Mongo database holding the prepared rows and the manual
             decisions.
 
@@ -209,16 +203,12 @@ def plan(client, mongo_db: Database) -> Plan:
                        tombstoned_ids(mongo_db, "LinkCandidate"))
     known = _rows_by_label(rows_by_file)
     claimed_nodes, claimed_edges = _claimed(mongo_db)
-    # A fold moves edges onto the survivor and the rows know nothing about
-    # it: after A2 is folded into A1, the edge to A2's work hangs off A1,
-    # and only A2's row asks for it. Read as it stands, that edge has no
-    # row behind it, and a prune would undo every fold the graph has made.
+    # A fold moves edges onto the survivor, and no row asks for them there.
     aliases = {label: client.fetch_merged_id_map(label)
                for label in ("Person", "Publication", "Repository")}
 
     result = Plan(folding=len(would.folding))
-    # LinkCandidate has no prepared file of its own — it is invented from
-    # repo_links rows — so the replay is the only thing that knows it.
+    # LinkCandidate has no file of its own: only the replay knows it.
     for label in sorted({*FILE_LABELS.values(), "LinkCandidate"}):
         live = client.fetch_node_ids(label)
         stale = live - known.get(label, set()) - would.nodes.get(label, set()) - would.folding

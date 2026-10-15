@@ -20,14 +20,13 @@ class VersionAuthor(BaseModel):
 
 
 class PublicationVersion(BaseModel):
-    """One place a work appeared: a preprint, a dataset deposit, a journal
-    version of record, or a duplicate OpenAlex record of any of those.
+    """One place a work appeared: a preprint, dataset deposit, journal version or duplicate record.
 
     The dedup stage folds such records into a single Publication and keeps
-    one entry here per record — including the surviving one — so that no
+    one entry here per record, including the surviving one, so that no
     venue, DOI, abstract or author list is lost by merging. This is a
     ledger, not the graph: nodes and AUTHORED edges are always drawn from
-    the merged, current state of the surviving publication.
+    the merged state of the surviving publication.
     """
 
     openalex_id: str
@@ -48,8 +47,8 @@ class Publication(BaseModel):
     id: str
     title: str
     # OpenAlex work type: "article", "preprint", "software", "dataset", ...
-    # Not every work is a paper — a software release archived on Zenodo is a
-    # work too, and the code_links stage treats those differently.
+    # Not every work is a paper (e.g. a software release archived on Zenodo),
+    # and the code_links stage treats those differently.
     type: str | None = None
     # OpenAlex topic fields ("Computer Science", "Chemistry"): what the work
     # is about, coarse enough to be stable. Dedup uses an overlap between
@@ -60,8 +59,8 @@ class Publication(BaseModel):
     publication_date: date | None = None
     year: int | None = None
     has_code: bool = False
-    # JSON text containing every author-produced repository URL. It remains a
-    # string because the GUI and existing Neo4j data use this legacy contract.
+    # JSON text with every author-produced repository URL. Kept as a string
+    # because the GUI and existing Neo4j data rely on that format.
     code_url: str | None = None
     funding: list[Funding] = Field(default_factory=list)
     openalex_url: str | None = None

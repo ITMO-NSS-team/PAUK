@@ -1,15 +1,10 @@
 """Network safety net shared by every test module under tests/bench/.
 
-The bench replaces every external API client the pipeline touches with an
-in-repo double (see mocks.py) so the suite runs offline in a few seconds
-instead of minutes of real, sometimes paid, calls. That protection relies on
-each stage's client import being patched by name in the `bench` fixture in
-test_pipeline_bench.py - a new stage, or a new client call inside an
-existing one, is an easy thing to forget to patch (this is exactly what
-happened in #155: an unpatched GitHubClient in repo_people sent the bench to
-the real api.github.com for 80 repositories and hung CI for over an hour).
-This conftest is the backstop: whatever forgets to get mocked, no bench test
-can complete a real network call.
+The bench patches every external API client by name in the `bench`
+fixture of test_pipeline_bench.py. A client nobody patched (a new stage,
+or a new call inside an existing one) would reach the real network, so
+this conftest is the backstop: whatever is forgotten, no bench test can
+complete a real network call.
 """
 
 from __future__ import annotations

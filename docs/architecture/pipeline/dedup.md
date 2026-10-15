@@ -1,184 +1,191 @@
-# Дедупликация
+# `dedup` stage (and `pauk dedup graph`)
 
-Дедуп объединяет записи персон, публикаций и репозиториев. В стандартном
-пайплайне выполняется после `repo_people`, перед `github_match` и `author_names`.
+**What this covers:** the rules for merging duplicate persons, publications and
+repositories, and how dedup within a group differs from dedup across the whole
+graph.
 
-| Режим | Источник | Результат |
+**Files involved:** `pauk/pipeline/stages/dedup.py`, `pauk/graph/dedup.py`.
+
+Collapses prepared-layer records that describe the same real entity: a person,
+a publication or a repository. It runs after every stage that loads anything,
+since it works on their output. Only the stages that need already-folded
+records come after it in `ALL_STAGES`: `github_match` and `author_names`.
+
+Two levels share the logic but differ in where rows come from:
+
+| | `pipeline/stages/dedup.py` | `graph/dedup.py` |
 |---|---|---|
-| Стадия `dedup` в `pauk enrich` / `pauk run` | Prepared-данные группы в MongoDB | Обновлённые записи и журнал группы |
-| `pauk dedup graph` — отдельная команда | Весь Neo4j | Обновлённый граф и журнал в `data/cache/` |
+| Command | part of `pauk enrich` / `pauk run` | `pauk dedup graph`, separate |
+| Sees | one group | the whole Neo4j graph, all published groups |
+| Row source | MongoDB (prepared, own group) | Cypher queries on the graph |
+| Writes to | MongoDB + journal in `data/audit/<group>/` | Neo4j + journal in `data/cache/` |
+| Why separate | catches duplicates within one collection run | catches duplicates whose records came from **different** runs and never met in one group |
 
-Для персон оба режима используют `plan_person_merges_resolved`. При
-`PAUK_PERSON_RESOLUTION_ENABLED=false` включается прежний `plan_person_merges`:
-эвристики по идентификаторам, вариантам имени и подтверждающим связям, без Qwen.
+The merge rules (`plan_person_merges`, the ranking of publications and
+repositories) are shared: `graph/dedup.py` imports them from
+`pipeline/stages/dedup.py` rather than duplicating them.
 
-## Персоны: кандидаты → LogReg → Qwen
+## Persons
 
-Блокировка предлагает пары для сравнения; решение о слиянии принимает resolver.
-Перед применением слияний проверяются конфликты внутри компонент.
+The rule-based planner (`plan_person_merges`, the fallback when the resolver
+below is disabled) uses four sources of evidence for a match:
+
+1. **ORCID**: two persons with the same ORCID are one person. Different ORCIDs
+   are explicit evidence to the contrary: the pair is never merged and does not
+   even enter the journal (there is nothing to report).
+2. **Name variant**: one person's display name is among the other's
+   `name_variants`, both are ITMO, and they share at least one coauthor.
+3. **Identical full name plus corroboration**: both are ITMO, the name has
+   several tokens, it is not given as initials, and at least one of these
+   holds: a shared coauthor, a shared department, a shared research field
+   (`Publication.fields`).
+4. **Staff record**: both are ITMO and their names resolve to the same row of
+   the official ITMO staff catalog. One row is one employee, so this bridges
+   spellings the other rules cannot.
+
+**A name is evidence, not proof.** Transliteration collapses distinct Russian
+names into one Latin string, and common surnames (Smirnov, Novikov, Ivanov)
+collide inside one university's author pool. An audit of name-only merging
+found a real case: "I. V. Smirnov", a reviewer on medical anthropology, merged
+with "I. V. Smirnov" the chemist. An explicitly different identity field
+(ORCID, email, GitHub login, Google Scholar id, staff record) keeps a pair
+apart for good, even if everything else matches. Pairs with weak evidence (a
+variant without a shared coauthor, a namesake outside ITMO, a single-token
+name, an identical name with no corroboration) are never merged automatically.
+They go into the journal with a reason and stay separate until someone confirms
+them by hand.
+
+**Candidate generation.** Surname-aware blocking handles token order,
+transliteration and compound names. Given names and initials alone are not
+blocking keys. Matching ORCID and staff IDs are independent channels.
+Ambiguous name matches require additional context; bucket size is not silently
+truncated.
+
+**Group conflict.** Identity-compatible subgroups may merge, but ambiguous
+bridges remain in review. Explicit operator separations and conflicting identity
+fields cannot be bypassed through a third person.
+
+### Confidence-based resolver
+
+Both the prepared-data stage and graph dedup use the same resolver by default:
+
+`pipeline/person_role_features.py` defines the fitted features;
+`graph/person_resolution_single.py` defines the single-judge contract.
+`pipeline/person_resolution_planner.py` builds the plan, while
+`pipeline/person_resolution.py` handles model calls and caching.
 
 ```mermaid
 flowchart LR
-    A[Кандидат без ручного ответа] --> B[Проверки записи и идентификаторов]
-    B -->|совпавший идентификатор без запретов| M[Кандидат на слияние]
-    B -->|запрет| S[Разделение]
-    B -->|нужен разбор записи| R[Ручное ревью]
-    B -->|нет прямого решения| L[LogReg: 49 признаков]
-    L -->|p меньше 0.13| S
-    L -->|p от 0.94 и защиты пройдены| M
-    L -->|средняя зона или защита| Q[Два Qwen]
-    Q -->|оба дубль| M
-    Q -->|оба разные| S
-    Q -->|расхождение или ошибка| R
-    M --> C[Проверка конфликтов компоненты]
+    A[56 role-aware features] --> B[LogReg]
+    B -->|p below 0.13| C[Separate]
+    B -->|p at least 0.94| D[Merge safety checks]
+    B -->|otherwise| E[One full-context Qwen request]
+    E -->|merge| D
+    E -->|separate| C
+    E -->|review or unavailable| F[Admin review]
+    D -->|supported| G[Merge plan]
+    D -->|ambiguous| F
 ```
 
-### Генерация кандидатов
+`graph/artifacts/person_resolution_logreg.pkl` contains the fitted scaler,
+coefficients and frozen surname frequencies for the `roles_v2_raw56` contract.
+The feature schema is validated before inference. Training used 388 annotated
+pairs and 360 synthetic training examples. Replace the trusted data-only pickle
+through `PAUK_PERSON_RESOLUTION_LOGREG_MODEL_PATH`; code and feature contract
+must match the artifact.
 
-`pipeline/person_name_blocking.py` использует фамильные формы и начало имени,
-близкие написания, обратный порядок и составные фамилии. Нормализуются
-транслитерация, диакритика, смешанные алфавиты, апострофы и дефисы.
-ORCID, staff ID и одинаковое многотокенное полное имя — отдельные каналы.
-Совпадение ключа только допускает сравнение.
+The features combine role-aligned surname/given-name compatibility, token and
+transliteration similarity, identifiers, catalog status, publications,
+collaborators and institutional context. The single Qwen request includes
+both researcher contexts and computed name facts, without the LogReg score or
+a previous model verdict. It returns `merge`, `separate` or `review`.
 
-Части дефисного токена наследуют достоверность исходной фамильной формы.
-Разбор неявных форм зависит от корпуса; если фильтр исключил все формы,
-сохраняется контекстная фамильная форма. При пустом основном имени
-сохраняется единственный полный алиас либо согласованные между собой алиасы;
-противоречащие варианты не создают независимые корзины. Для записи только с фамилией
-принимаются алиасы с совместимой фамилией.
-Лимита корзины в 64 персоны нет. Для неразличимых тёзок число пар может
-расти квадратично. Резервный канал по совместным работам и соавторам
-использует коллективы до 50 авторов в доступном наборе.
+Matching identifiers with incompatible primary names require review. Initials-only
+matches without independent small-team collaborators also require review unless
+a matching trusted identifier supports them. These checks apply to both local
+and Qwen merge proposals. Missing evidence alone is not a separation rule.
 
-Графовая проекция передаёт `name_variants`, `other_names`, `surname_ru/en`
-и `first_name_ru/en` тем же правилам блокировки, что и prepared-слой.
+Settings: `PAUK_PERSON_RESOLUTION_ENABLED`,
+`PAUK_PERSON_RESOLUTION_MODEL`, `PAUK_PERSON_RESOLUTION_LOGREG_MODEL_PATH`,
+`PAUK_PERSON_RESOLUTION_CONCURRENCY`, `PAUK_PERSON_RESOLUTION_SEPARATE_BELOW`
+and `PAUK_PERSON_RESOLUTION_MERGE_FROM`. Defaults are defined in
+`pauk/person_resolution_defaults.py`. Qwen confidence is descriptive; it is
+not an additional merge threshold. Missing/invalid responses go to review.
+Cache keys include the model, prompt and evidence, but not the transient pair
+number. Retries are reserved for failed or invalid responses.
 
-### Решение по паре
+Held pairs are stored in `review_pairs` with their input route and model verdict
+for the admin panel. Automatically separated pairs retire obsolete unanswered
+questions. Existing operator decisions remain authoritative.
 
-Resolver сначала направляет карточки с несколькими людьми в ревью, затем
-проверяет сравнимость имени, конфликты ORCID/staff ID/профилей/инициалов и
-анонимные записи. Совпавшие ORCID или staff ID разрешают слияние после
-этих проверок. Конфликт инициалов с совпавшим идентификатором даёт ревью.
+## Publications
 
-| Условие после проверок | Решение |
-|---|---|
-| `p < 0.13` | Авторазделение |
-| `0.13 <= p < 0.94` | Два запроса Qwen |
-| `p >= 0.94` | Автослияние либо Qwen при срабатывании защиты |
-| Два «дубль» | Слияние |
-| Два «разные» | Разделение |
-| Расхождение, недоступный или невалидный ответ | Ручное ревью |
+One work reaches OpenAlex by several routes: a preprint and a version of
+record, a dataset or software deposit, a re-indexed duplicate of one DOI. Rows
+sharing a DOI or a title are one publication. The merge is lossless: each
+record is folded into `versions` (`PublicationVersion`: the title, DOI,
+journal, date, abstract and authors of that particular record), so every place
+the work appeared stays available on the surviving row.
 
-Защиты перед автослиянием:
+The representative of the surviving row: `article` > other types (including a
+missing type) > `preprint`; on a tie, the newer date, then more authors, then
+the id as the last tiebreaker.
 
-- `large_team_support`: высокий score без поддержки массового соавторства
-  перестаёт быть высоким — пара передаётся Qwen.
-- `surname_mismatch`: несовместимые полные токены имени передаются Qwen,
-  в том числе при общих публикациях и соавторах.
+**The version ledger (`versions`) is rebuilt from raw data, not from the
+previous state** (`_refresh_version_ledger`). An entry written after a merge
+would describe the merged state (the union of authors of all merged records)
+instead of what that record carried. Only the raw `openalex_works` collection
+remains a correct per-record source.
 
-Оба Qwen получают общий блок `identity_facts`. Первый запрос компактный,
-второй содержит расширенный контекст, но не получает первый вердикт,
-score LogReg и прогноз прироста связей (`as_judge_payload`). Это два запроса
-одной модели с разным контекстом. Промпт и payload входят в ключ кэша.
+When publications merge, `Publication.code_url` is combined alongside
+`versions` and `pdf_urls`. `RepoLink` rows are repointed to the survivor;
+equal normalized URLs become one `CodeLink` whose occurrences are the
+deduplicated union of all versions' `LinkOccurrence` entries. A preprint's
+context therefore survives even when the journal record is canonical.
+Matching classifications are retained; contradictory verdicts reset the
+combined `CodeLink` to `pending` and clear the publication's `link_relevance`
+processing state so the next run judges all contexts together. The last fully
+calculated `code_url` and `Repository.publication_ids` are kept until the
+retry succeeds, as they are on a transient LLM failure.
 
-### Модель и настройки
+## Repositories
 
-LogReg содержит 49 признаков и хранится в
-`pauk/graph/artifacts/person_resolution_logreg.pkl`. Обучение: 388 реальных
-размеченных пар (279 дублей, 109 разных людей) и 360 синтетических
-отрицательных примеров. Нормализация признаков LogReg и разбор имён при
-блокировке разделены; изменение признаков требует переобучения.
+The same `github_id` means the same repository even if the URLs have diverged
+(rename or ownership transfer). For rows whose `github_id` is not known yet
+(the `repositories` stage did not finish or failed), the fallback is a match on
+the normalized `url`. Also, a URL cited by two different rows signals a rename
+between runs: the old row holds the citation under the old name, and the new
+one was created under the URL already canonicalized by the server. Every URL
+under which a repository was ever cited accumulates in `cited_urls`.
 
-| Настройка | По умолчанию |
-|---|---|
-| `PAUK_PERSON_RESOLUTION_ENABLED` | `true` |
-| `PAUK_PERSON_RESOLUTION_MODEL` | `qwen/qwen3-next-80b-a3b-instruct` |
-| `PAUK_PERSON_RESOLUTION_CONCURRENCY` | `8` |
-| `PAUK_PERSON_RESOLUTION_SEPARATE_BELOW` | `0.13` |
-| `PAUK_PERSON_RESOLUTION_MERGE_FROM` | `0.94` |
-| `PAUK_PERSON_RESOLUTION_LOGREG_MODEL_PATH` | Путь к указанному pickle |
+## The journal: nothing is lost, nothing is trusted blindly
 
-Порядок и состав признаков артефакта проверяются при загрузке.
-Дефолты `Settings` и `ResolverPolicy` берутся из `person_resolution_defaults.py`. Без ключа OpenRouter
-локальные решения сохраняются, а пары, требующие Qwen, переходят в `held`.
+`dedup_candidates.jsonl` (in `data/audit/<group>/`) and
+`dedup_candidates_graph.jsonl` (in `data/cache/`) record every decision. Applied
+merges have status `merged` and the rule that justified them (for audit and a
+possible rollback through `merged_ids`); deferred pairs and groups have status
+`held` and their reasons. No heuristic stays invisible.
 
-### Результат проверки
+Held items also go to Mongo, into the question queue (`pauk/storage/review.py`,
+collection `review_pairs`), where a person answers them in the admin panel.
+Answers are read **before** the rules, by both call sites of
+`plan_person_merges`: "same person" merges the pair with the rule `manual`,
+"different" keeps it apart. The rules are still evaluated in full: if a pair
+answered "different" would now pass by a rule, it is not merged but written as a
+`disputed` row for a person to look at. An answer does not override the group
+contradiction check: a group with two ORCIDs is rejected even if someone said
+"same person". An answer is stored under ids that dedup may have already
+folded, so answers are read through the `merged_ids` map (`folded_ids` for
+rows, `fetch_merged_id_map` for the graph). `merge_rank` decides which of a
+pair survives, one rule for dedup and for the panel.
 
-В проверке от 12 октября 2026 года на 139 размеченных парах два Qwen
-допустили 6 ложных слияний — **4,3% от всех проверенных пар**.
+## Graph dedup does not break published links
 
-Профиль `0.13/0.94`, проверка 13 октября на 388 размеченных парах:
-
-| Проверка | Автослияния / ошибочные | Авторазделения / ошибочные | На Qwen |
-|---|---|---|---|
-| Текущий resolver, повтор обучающей выборки | 146 / 0 | 57 / 3 | 185 |
-| Сохранённые групповые OOF-score LogReg | 140 / 4 | 48 / 3 | 200 |
-
-Это проверка на данных разработки; OOF использовался при подборе модели.
-Числа до Qwen, не качество финального графа.
-
-### Компоненты и ручное ревью
-
-Компоненты с конфликтующими идентификаторами разделяются. Запись без
-идентификатора присоединяется к единственному ближайшему корню по
-положительным связям. Равноудалённые записи остаются раздельными на ревью,
-даже если между ними есть положительные связи. Противоречащие ручные ответы
-блокируют компоненту.
-
-`held` поступает в MongoDB `review_pairs` и отображается на панели.
-Ручное «один человек» предлагает слияние, «разные» запрещает его;
-проверка конфликтов компонент сохраняется. Ответы сопоставляются через
-`merged_ids`. В обоих планировщиках ручное слияние карточки с несколькими
-людьми становится `disputed`, включая пары вне текущей блокировки.
-
-Журналы `dedup_candidates.jsonl` и `dedup_candidates_graph.jsonl` содержат
-слияния, авторазделения (`separate`), отложенные и спорные случаи. Для расхождения
-Qwen сохраняются оба вердикта, confidence, причины, support/risk и исходный
-маршрут в `input_route`; эти данные передаются в очередь ревью и доступны
-в раскрываемом блоке «Ответы Qwen» на панели.
-При сбое второго запроса сохраняется первый ответ. Авторазделение снимает
-старый неотвеченный вопрос с очереди, включая вопросы под прежними ID;
-ручной ответ не меняется. Повторный `held` возвращает вопрос в очередь.
-
-## Публикации и репозитории
-
-Публикации сопоставляются по DOI или нормализованному заголовку. Основная
-запись выбирается по типу (`article` выше прочих, `preprint` ниже), затем
-дате, числу авторов и ID. `versions` перестраивается из сырых
-`openalex_works`, сохраняя сведения отдельных версий.
-
-Репозитории сопоставляются по `github_id`, при его отсутствии — по
-нормализованному URL. Исходные адреса сохраняются в `cited_urls`.
-
-## Сохранение данных
-
-Prepared-дедуп объединяет списки и заполняет пустые скалярные поля основной
-карточки. Графовый дедуп записывает из проекции только `is_itmo`,
-`name_variants`, `merged_ids`; остальные свойства объединяются из полных
-узлов. Входящие и исходящие связи переносятся до удаления дублей.
-
-`AUTHORED.is_corresponding` объединяется через OR: положительное значение
-сохраняется. Для остальных свойств связи приоритет у канонического ребра;
-если значения нет, приоритет у ближайшего к каноническому узлу участника
-цепочки. При одинаковой глубине используется порядок переданных слияний,
-для параллельных рёбер одного источника — `elementId`.
-`merged_ids` защищает от повторного создания дубля при публикации старой группы.
-
-Отмена слияния использует prepared-строки. Пересчёт оставшихся связей требует
-покрытия всех оставшихся участников: агрегированная prepared-строка покрывает
-также свои `merged_ids`. При нехватке источников агрегированные данные
-сохраняются. Без строки выделяемого дубля либо если оставшаяся prepared-строка
-уже включает выделяемого участника возвращается `NothingToRebuild` до записи.
-Подробнее — [схема и операции графа](../neo4j-graph.md).
-
-## Файлы реализации
-
-| Файл в `pauk/` | Назначение |
-|---|---|
-| `pipeline/person_name_blocking.py` | Кандидатные пары |
-| `graph/person_resolution.py` | Признаки, правила и промпты |
-| `pipeline/person_resolution.py` | Вызовы Qwen и кэш |
-| `pipeline/person_resolution_planner.py` | План слияний и ревью |
-| `pipeline/stages/dedup.py` | Стадия, legacy-правила, проверка компонент |
-| `graph/dedup.py` | Применение дедупа к Neo4j |
+`Neo4jClient._fold_nodes_batch` moves all incoming and outgoing relationships
+from the duplicate to the canonical node (an existing relationship of the
+canonical node wins on conflict; the duplicate's properties only fill gaps) and
+deletes the duplicate only after the move. `merged_ids` stays on the canonical
+node. If a later `publish graph` from an **older** group tries to resurrect an
+id already folded by graph dedup, `jsonl_loader.py` re-folds it at the end of
+the load (`fetch_merged_id_map`) without waiting for the next
+`pauk dedup graph`.

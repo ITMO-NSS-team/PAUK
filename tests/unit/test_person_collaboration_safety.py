@@ -20,11 +20,15 @@ from tests.unit.test_person_resolution_pipeline import FakeModels
 
 
 class CoauthorModel:
+    surname_counts = {}
+
     def probability(self, features):
-        return 0.98 if features["shared_coauthors"] > math.log1p(5) else 0.05
+        return 0.98 if features["roles_v2__shared_coauthors"] > math.log1p(5) else 0.05
 
 
 class ConstantModel:
+    surname_counts = {}
+
     def __init__(self, probability):
         self.value = probability
 

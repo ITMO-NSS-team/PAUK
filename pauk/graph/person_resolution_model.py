@@ -5,9 +5,10 @@ from __future__ import annotations
 import math
 import pickle
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, BinaryIO
 
 MODEL_FORMAT_VERSION = 1
@@ -32,6 +33,7 @@ class LogisticModel:
     scales: tuple[float, ...]
     coefficients: tuple[float, ...]
     intercept: float
+    surname_counts: Mapping[str, int] = field(default_factory=dict)
 
     def probability(self, features: Mapping[str, float]) -> float:
         if len(features) != len(self.feature_names) or set(features) != set(self.feature_names):
@@ -110,7 +112,16 @@ def _load_model_cached(
         raise ModelArtifactError("model intercept must be a number") from exc
     if not math.isfinite(intercept):
         raise ModelArtifactError("model intercept must be finite")
-    return LogisticModel(feature_names, means, scales, coefficients, intercept)
+    if any(name.startswith("roles_v2__") for name in feature_names) and (
+        payload.get("feature_contract") != "roles_v2_raw56" or "surname_counts" not in payload
+    ):
+        raise ModelArtifactError("role-aware artifact requires its feature contract and surname frequencies")
+    counts = payload.get("surname_counts", {})
+    if not isinstance(counts, Mapping) or any(
+        not isinstance(name, str) or type(count) is not int or count < 0 for name, count in counts.items()
+    ):
+        raise ModelArtifactError("surname_counts must map strings to non-negative integers")
+    return LogisticModel(feature_names, means, scales, coefficients, intercept, MappingProxyType(dict(counts)))
 
 
 def load_logistic_model(

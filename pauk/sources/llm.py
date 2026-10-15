@@ -19,9 +19,11 @@ logger = logging.getLogger(__name__)
 
 
 def _strip_code_fence(content: str) -> str:
-    """response_format=json_object is meant to guarantee a bare JSON body,
-    but not every provider honors it - seen in the wild: claude-haiku-4.5
-    via the Bedrock route wraps its answer in a ```json ... ``` block."""
+    """Strip a markdown code fence from a reply.
+
+    response_format=json_object should guarantee a bare JSON body, but some
+    providers ignore it (e.g. claude-haiku-4.5 via Bedrock fences its answer).
+    """
     match = _CODE_FENCE.match(content.strip())
     return match.group(1) if match else content
 

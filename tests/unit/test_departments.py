@@ -69,8 +69,8 @@ class DepartmentsStageTest(unittest.TestCase):
 
     def test_matches_numbered_affiliation_prefix(self):
         # Multi-affiliation papers glue an index to the name ("2School of ...").
-        # Substring matching keeps these; word-boundary matching (tried, reverted)
-        # dropped them because the digit is a word character.
+        # Substring matching keeps these; word-boundary matching would drop them
+        # because the digit is a word character.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             person = Person(
@@ -166,7 +166,7 @@ class DepartmentsStageTest(unittest.TestCase):
 
     def test_catalog_alias_becomes_name_variant_and_matches(self):
         # aliases in the catalogue are loaded as name_variants (static.py) and then
-        # drive matching — exercise the two together, not just a hand-built model.
+        # drive matching - exercise the two together, not just a hand-built model.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             catalog = [
@@ -276,7 +276,7 @@ class DepartmentHierarchyTest(unittest.TestCase):
             self.assertEqual(d["Department of Z"].parent_id, d["Faculty of Y"].id)
 
     def test_unknown_parent_uid_raises(self):
-        # A parent uid that names no entry is a catalogue typo — fail loudly rather
+        # A parent uid that names no entry is a catalogue typo - fail loudly rather
         # than silently orphan the unit (its PART_OF edge would just drop at load).
         with tempfile.TemporaryDirectory() as tmp:
             static = Path(tmp) / "static"
@@ -396,13 +396,13 @@ class DepartmentContextAliasTest(unittest.TestCase):
             self.assertEqual(self._match(Path(tmp), "ITMO University, Department of Physics"), ["d1"])
 
     def test_context_alias_matches_in_same_part_as_marker(self):
-        # No comma between the name and the org — both sit in one part.
+        # No comma between the name and the org - both sit in one part.
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(self._match(Path(tmp), "Department of Physics ITMO University, Saint Petersburg"), ["d1"])
 
     def test_context_alias_isolated_across_affiliations(self):
         # A generic alias in one authorship must not borrow an ITMO marker from a
-        # different authorship — parts are collected per affiliation.
+        # different authorship - parts are collected per affiliation.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             person = Person(
@@ -423,7 +423,7 @@ class DepartmentContextAliasTest(unittest.TestCase):
 
     def test_context_alias_prefers_longest_match_in_part(self):
         # "Department of Physics" must not fire inside "Department of Physics and
-        # Engineering" — only the more specific unit is credited for that part.
+        # Engineering" - only the more specific unit is credited for that part.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             person = self._person("Department of Physics and Engineering, ITMO University")
@@ -465,8 +465,7 @@ class DepartmentContextAliasTest(unittest.TestCase):
 
 
 class CoverageLogTest(unittest.TestCase):
-    """The "matched N of M" line is about the catalogue, so it may only appear
-    when the pass actually looked at every author."""
+    """The "matched N of M" line may only appear when the pass looked at every author."""
 
     LOGGER = "pauk.pipeline.stages.departments"
 

@@ -28,9 +28,7 @@ logger = logging.getLogger(__name__)
 
 COLLECTION = "job_locks"
 
-# Long enough that a publish never loses its own lock mid-run, short enough
-# that a machine killed halfway does not wedge the queue until somebody
-# notices.
+# Long enough for a publish to keep its lock, short enough not to wedge the queue.
 LEASE_MINUTES = 15
 
 

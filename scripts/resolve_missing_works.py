@@ -1,30 +1,27 @@
 """Resolve curated titles that the graph has never heard of to OpenAlex IDs.
 
-`import_curated_repos.py` refuses to invent a Publication from a title alone,
-so a curated row whose paper is absent lands in its report and nothing more
-happens. This script closes that gap from the other end: it asks OpenAlex
-which work the title names, and writes the ids out in the one format the
-pipeline already accepts — `pauk collect --works-file`, one id per line.
+`import_curated_repos.py` refuses to invent a Publication from a title alone, so
+a curated row whose paper is absent lands in its report. This script asks
+OpenAlex which work the title names and writes the ids out in the format the
+pipeline already accepts: `pauk collect --works-file`, one id per line.
 
-Nothing here writes to a database. The output is a list to be read by a human
-and then fed to the ordinary pipeline, which is what actually creates the
-publication, its authors and its departments.
+Nothing here writes to a database. The output is a list for a human to read and
+then feed to the ordinary pipeline, which creates the publication, its authors
+and its departments.
 
-Matching a title to a work is the whole risk, so a candidate is accepted only
-on three-part evidence: the normalized titles agree almost exactly, *and*
-either an author surname from the curated note appears among the authorships
-or the publication year matches the note. A single strong signal is not
-enough — "Fast gene set enrichment analysis" and "An algorithm for fast
-preranked gene set enrichment analysis" are different papers by the same
-people in the same year.
+Matching a title to a work is the whole risk, so a candidate is accepted only on
+three-part evidence: the normalized titles agree almost exactly, *and* either an
+author surname from the curated note appears among the authorships or the
+publication year matches the note. A single strong signal is not enough: "Fast
+gene set enrichment analysis" and "An algorithm for fast preranked gene set
+enrichment analysis" are different papers by the same people in the same year.
 
-The ITMO affiliation is recorded but never required. Its absence is the
-answer to "why is this paper missing", not a reason to skip: the pipeline
-collects by `authorships.institutions.ror`, so a work OpenAlex does not
-attribute to ITMO was never in scope. Such a work can still be collected by
-explicit id — but every one of its authors will normalize to
-`Person:External` and it will attach to no department, so it is worth
-deciding about separately. `--include` does that filtering.
+The ITMO affiliation is recorded but never required. Its absence answers "why is
+this paper missing": the pipeline collects by `authorships.institutions.ror`, so
+a work OpenAlex does not attribute to ITMO was never in scope. Such a work can
+still be collected by explicit id, but all its authors will be external and it
+will attach to no department, so it is worth deciding about separately.
+`--include` does that filtering.
 """
 
 from __future__ import annotations
@@ -92,9 +89,8 @@ def _is_itmo(work: dict) -> bool:
 def _candidates(client: OpenAlexClient, title: str) -> list[dict]:
     """Works OpenAlex offers for this title, precise filter first.
 
-    `title.search` matches the title field alone and is the right question to
-    ask; the general `search` also reads abstract and fulltext, which is why
-    it is only a fallback — it answers for almost anything.
+    `title.search` matches the title field alone; the general `search` also reads
+    abstract and fulltext and answers for almost anything, so it is only a fallback.
     """
     query = FILTER_PUNCT.sub(" ", title).strip()
     params = {"per_page": 5}

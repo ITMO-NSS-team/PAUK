@@ -58,8 +58,8 @@ NOT_A_HOMEPAGE = (
 def _github_login(url: str) -> str | None:
     """The account name inside a GitHub URL.
 
-    Authors paste the address bar as it stands, tab and all —
-    "github.com/coralr-1?tab=repositories" — and a link to a repository
+    Authors paste the address bar as it stands, tab and all
+    ("github.com/coralr-1?tab=repositories"), and a link to a repository
     rather than a profile names no account at all.
     """
     match = re.match(r"https?://(?:www\.)?github\.com/([A-Za-z0-9-]+)/?$",

@@ -1,9 +1,4 @@
-"""Pure inference for the experimental duplicate-person resolver.
-
-Candidate generation, component conflict checks and graph writes stay in
-``pauk.graph.dedup``. This module only turns evidence about one pair into a
-decision, so it can be benchmarked before it is connected to Neo4j.
-"""
+"""Pairwise person inference, independent of graph writes and component planning."""
 
 from __future__ import annotations
 
@@ -194,7 +189,7 @@ class ModelVerdict:
 
 @dataclass(frozen=True)
 class ResearcherContext:
-    """Graph context supplied only to the independent second-stage judge."""
+    """Researcher context for a full-evidence model request."""
 
     person_id: str
     name: str
@@ -222,7 +217,7 @@ class ResearcherContext:
 
 @dataclass(frozen=True)
 class SecondStageContext:
-    """Exact evidence contract used for the graph preview's second judge."""
+    """Full evidence shared by the single judge and legacy replay adapters."""
 
     pair_id: int
     researcher_a: ResearcherContext
@@ -233,7 +228,7 @@ class SecondStageContext:
     shared_coauthors: tuple[Mapping[str, Any], ...] = ()
     shared_fields: tuple[str, ...] = ()
     logreg_probability: float = 0.0
-    first_verdict: ModelVerdict = ModelVerdict(True, 0.5)
+    first_verdict: ModelVerdict | None = None
     impact_not_identity_evidence: Mapping[str, int] | None = None
     collaboration_evidence: Mapping[str, int] | None = None
     identity_facts: Mapping[str, Any] | None = None
@@ -258,12 +253,13 @@ class SecondStageContext:
             "shared_coauthors": [dict(value) for value in self.shared_coauthors],
             "shared_fields": list(self.shared_fields),
             "logreg_probability": round(self.logreg_probability, 6),
-            "first_stage": {
+        }
+        if self.first_verdict is not None:
+            payload["first_stage"] = {
                 "same_person": self.first_verdict.duplicate,
                 "confidence": self.first_verdict.confidence,
                 "reason": self.first_verdict.reason,
-            },
-        }
+            }
         if self.impact_not_identity_evidence is not None:
             payload["impact_not_identity_evidence"] = dict(self.impact_not_identity_evidence)
         if self.collaboration_evidence is not None:
@@ -327,7 +323,7 @@ def _model_verdict(payload: Mapping[str, Any], *, verdict_field: str) -> ModelVe
     )
 
 
-MODEL_FEATURES = (
+BASE_FEATURES = (
     "name_similarity",
     "token_jaccard",
     "exact_name",
@@ -468,7 +464,7 @@ def _long_token_features(first: list[str], second: list[str]) -> dict[str, float
     }
 
 
-def feature_vector(evidence: PairEvidence) -> dict[str, float]:
+def _base_feature_vector(evidence: PairEvidence) -> dict[str, float]:
     """Build the exact 49-feature vector used by the fitted model."""
     first = _tokens(evidence.name_a)
     second = _tokens(evidence.name_b)
@@ -573,7 +569,7 @@ def feature_vector(evidence: PairEvidence) -> dict[str, float]:
     values["name_x_joint_v2"] = values["compatible_name"] * min(values["joint_works"], 1)
     values["name_x_coauthors_v2"] = values["compatible_name"] * min(values["shared_coauthors"], 2)
     values.update(_long_token_features(first, second))
-    return {name: float(values[name]) for name in MODEL_FEATURES}
+    return {name: float(values[name]) for name in BASE_FEATURES}
 
 
 def shared_identity_facts(evidence: PairEvidence) -> dict[str, Any]:
@@ -598,7 +594,7 @@ def shared_identity_facts(evidence: PairEvidence) -> dict[str, Any]:
 
 def first_stage_payload(pair_id: int, evidence: PairEvidence) -> dict[str, Any]:
     """Build the compact evidence object used by the first Qwen pass."""
-    features = feature_vector(evidence)
+    features = {name.removeprefix("roles_v2__"): value for name, value in feature_vector(evidence).items()}
     orcid_a = _normalize_orcid(evidence.orcid_a)
     orcid_b = _normalize_orcid(evidence.orcid_b)
     return {
@@ -633,10 +629,29 @@ def first_stage_payload(pair_id: int, evidence: PairEvidence) -> dict[str, Any]:
     }
 
 
+ROLE_FEATURES = (
+    "surname_similarity",
+    "given_full_conflicts",
+    "given_initial_conflicts",
+    "given_coverage",
+    "roles_explicit",
+    "roles_inferred",
+    "roles_missing",
+)
+MODEL_FEATURES = tuple("roles_v2__" + name for name in (*BASE_FEATURES, *ROLE_FEATURES))
+
+
+def feature_vector(evidence: PairEvidence, surname_counts: Mapping[str, int] | None = None) -> dict[str, float]:
+    from pauk.pipeline.person_role_features import role_features
+
+    if surname_counts is None:
+        surname_counts = load_logistic_model(expected_features=MODEL_FEATURES).surname_counts
+    return role_features(evidence, _base_feature_vector(evidence), surname_counts)
+
+
 def logistic_probability(evidence: PairEvidence, model: LogisticModel | None = None) -> float:
-    features = feature_vector(evidence)
     fitted = model or load_logistic_model(expected_features=MODEL_FEATURES)
-    return fitted.probability(features)
+    return fitted.probability(feature_vector(evidence, fitted.surname_counts))
 
 
 def _hard_veto(evidence: PairEvidence) -> str | None:
@@ -684,7 +699,7 @@ def is_multi_person_name(name: str) -> bool:
     )
 
 
-def resolve_pair(
+def _resolve_pair(
     evidence: PairEvidence,
     policy: ResolverPolicy = DEFAULT_POLICY,
     model: LogisticModel | None = None,
@@ -741,6 +756,32 @@ def resolve_pair(
     return Resolution(Decision.FIRST_MODEL, "qwen_first", probability)
 
 
+def merge_review_reason(evidence: PairEvidence) -> str | None:
+    """Withhold a merge when identifiers conflict with names or initials lack support."""
+    first, second = _normalize_orcid(evidence.orcid_a), _normalize_orcid(evidence.orcid_b)
+    same_identifier = (bool(first) and first == second) or (
+        bool(evidence.staff_id_a) and evidence.staff_id_a == evidence.staff_id_b
+    )
+    if same_identifier:
+        if not _long_token_features(_tokens(evidence.name_a), _tokens(evidence.name_b))["long_token_compatible"]:
+            return "matching_identifier_incompatible_primary_names"
+        return None
+    if _base_feature_vector(evidence)["initials_only_pair"] and evidence.small_team_shared_coauthors == 0:
+        return "initials_without_independent_small_team_support"
+    return None
+
+
+def resolve_pair(
+    evidence: PairEvidence,
+    policy: ResolverPolicy = DEFAULT_POLICY,
+    model: LogisticModel | None = None,
+) -> Resolution:
+    resolution = _resolve_pair(evidence, policy, model)
+    if resolution.decision is Decision.MERGE and (reason := merge_review_reason(evidence)):
+        return replace(resolution, decision=Decision.REVIEW, route="merge_safety_review", reason=reason)
+    return resolution
+
+
 def apply_first_verdict(resolution: Resolution, verdict: ModelVerdict) -> Resolution:
     """Require a second verdict for either first-stage decision."""
     if resolution.decision is not Decision.FIRST_MODEL:
@@ -769,7 +810,7 @@ def resolve_cascade(
     first_verdict: ModelVerdict | None = None,
     second_verdict: ModelVerdict | None = None,
 ) -> Resolution:
-    """Advance one pair through the same state machine used for the preview graph."""
+    """Replay the legacy two-judge contract for stored evaluations."""
     resolution = resolve_pair(evidence, policy, model)
     if resolution.decision is not Decision.FIRST_MODEL:
         if first_verdict is not None or second_verdict is not None:

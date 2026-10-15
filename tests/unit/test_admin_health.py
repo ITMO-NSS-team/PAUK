@@ -1,6 +1,6 @@
 """The graph's health as a page in the panel.
 
-The checks are the map's, and so is the code that runs them. What is tested
+The checks and the code that runs them are `pauk.admin.checks`/`graph_stats`. What is tested
 here is the part that is the panel's: keeping the last answer, showing the
 worst of it first, and going to the graph only for the rows behind one
 check.
@@ -139,6 +139,10 @@ class PageTest(unittest.TestCase):
         body = self.client.get("/health").text
         self.assertIn("Сотрудники без департамента", body)
         self.assertIn("117", body)
+        # In words, as on the overview: a snapshot taken a minute ago was
+        # shown as 2026-10-02T19:14:04, which is read by subtracting.
+        self.assertIn("Посчитаны только что", body)
+        self.assertNotIn("T19", body)
 
     def test_only_a_check_with_rows_is_a_link(self):
         self.fill()

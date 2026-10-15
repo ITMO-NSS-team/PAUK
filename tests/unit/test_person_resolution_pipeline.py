@@ -6,8 +6,17 @@ from unittest.mock import patch
 
 import mongomock
 
-from pauk.graph.person_resolution import ModelVerdict
+from pauk.graph.person_resolution import (
+    ModelVerdict,
+    PairEvidence,
+    first_stage_payload,
+)
 from pauk.models import Person
+from pauk.pipeline.person_resolution import (
+    OpenRouterResolutionModels,
+    _Request,
+    _Result,
+)
 from pauk.pipeline.person_resolution_planner import (
     DIFFERENT,
     SAME,
@@ -110,9 +119,7 @@ class PersonResolutionPipelineTest(unittest.TestCase):
         self.assertEqual(report[0]["route"], "qwen_disagreement")
 
     def test_model_failure_is_safe_and_reviewable(self):
-        groups, report = plan_person_merges_resolved(
-            self.people, {}, models=FakeModels()
-        )
+        groups, report = plan_person_merges_resolved(self.people, {}, models=FakeModels())
 
         self.assertEqual(groups, [])
         self.assertEqual(report[0]["held_because"], ["first model unavailable"])
@@ -223,24 +230,15 @@ class PersonResolutionPipelineTest(unittest.TestCase):
             models=FakeModels(),
         )
 
-        folded = [
-            {group[0].id, *(duplicate.id for duplicate in group[1])}
-            for group in groups
-        ]
+        folded = [{group[0].id, *(duplicate.id for duplicate in group[1])} for group in groups]
         self.assertCountEqual(folded, [{"A1", "A2"}, {"C1", "C2"}])
         self.assertEqual(
-            {
-                row["person_a"]: row["route"]
-                for row in report
-                if row["status"] == "merged"
-            },
+            {row["person_a"]: row["route"] for row in report if row["status"] == "merged"},
             {"A2": "same_orcid", "C2": "same_orcid"},
         )
         conflict = next(row for row in report if row.get("route") == "component_conflict")
         self.assertEqual(conflict["persons"], ["A1", "B", "C1"])
-        self.assertEqual(
-            conflict["held_because"], ["group spans 2 distinct ORCID values"]
-        )
+        self.assertEqual(conflict["held_because"], ["group spans 2 distinct ORCID values"])
 
 
 class ConflictedComponentPartitionTest(unittest.TestCase):
@@ -264,10 +262,7 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
             {value.id: value.orcid for value in people},
         )
 
-        folded = [
-            {group[0].id, *(duplicate.id for duplicate in group[1])}
-            for group in groups
-        ]
+        folded = [{group[0].id, *(duplicate.id for duplicate in group[1])} for group in groups]
         self.assertEqual(folded, [{"A1", "A2"}])
         self.assertFalse([row for row in report if row["status"] == "held"])
 
@@ -295,10 +290,7 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
             {value.id: value.orcid for value in people},
         )
 
-        folded = [
-            {group[0].id, *(duplicate.id for duplicate in group[1])}
-            for group in groups
-        ]
+        folded = [{group[0].id, *(duplicate.id for duplicate in group[1])} for group in groups]
         self.assertCountEqual(
             folded,
             [{"A1", "A2", "X"}, {"Y", "C1", "C2"}],
@@ -342,10 +334,7 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
             {value.id: value.orcid for value in people},
         )
 
-        folded = [
-            {group[0].id, *(duplicate.id for duplicate in group[1])}
-            for group in groups
-        ]
+        folded = [{group[0].id, *(duplicate.id for duplicate in group[1])} for group in groups]
         self.assertEqual(folded, [{"A1", "A2"}])
         conflict = next(row for row in report if row.get("route") == "component_conflict")
         self.assertEqual(conflict["persons"], ["A1", "B"])
@@ -368,16 +357,9 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
             {"A1": "staff-1", "A2": "staff-1", "C1": "staff-2", "C2": "staff-2"},
         )
 
-        folded = [
-            {group[0].id, *(duplicate.id for duplicate in group[1])}
-            for group in groups
-        ]
+        folded = [{group[0].id, *(duplicate.id for duplicate in group[1])} for group in groups]
         self.assertCountEqual(folded, [{"A1", "A2"}, {"C1", "C2"}])
-        merged_routes = {
-            row["person_a"]: row["route"]
-            for row in report
-            if row["status"] == "merged"
-        }
+        merged_routes = {row["person_a"]: row["route"] for row in report if row["status"] == "merged"}
         self.assertEqual(merged_routes, {"A2": "same_staff", "C2": "same_staff"})
         self.assertEqual(report[-1]["persons"], ["A1", "B", "C1"])
         self.assertEqual(report[-1]["route"], "component_conflict")
@@ -418,13 +400,8 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
 
         def normalized(result):
             groups, report = result
-            folded = sorted(
-                sorted([group[0].id, *(duplicate.id for duplicate in group[1])])
-                for group in groups
-            )
-            held = sorted(
-                row["persons"] for row in report if row["status"] == "held"
-            )
+            folded = sorted(sorted([group[0].id, *(duplicate.id for duplicate in group[1])]) for group in groups)
+            held = sorted(row["persons"] for row in report if row["status"] == "held")
             return folded, held
 
         self.assertEqual(normalized(forward), normalized(reverse))
@@ -437,11 +414,7 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
                     person(
                         f"P{index}",
                         f"Person {index}",
-                        orcid=(
-                            f"orcid-{randomizer.randrange(5)}"
-                            if randomizer.random() < 0.65
-                            else None
-                        ),
+                        orcid=(f"orcid-{randomizer.randrange(5)}" if randomizer.random() < 0.65 else None),
                     )
                     for index in range(randomizer.randrange(3, 30))
                 ]
@@ -454,16 +427,11 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
                         value.orcid = "" if randomizer.random() < 0.5 else value.orcid
                 ids = [value.id for value in people]
                 pairs = list(zip(ids, ids[1:], strict=False))
-                pairs.extend(
-                    tuple(randomizer.sample(ids, 2))
-                    for _ in range(randomizer.randrange(len(ids)))
-                )
+                pairs.extend(tuple(randomizer.sample(ids, 2)) for _ in range(randomizer.randrange(len(ids))))
                 by_id = {value.id: value for value in people}
                 orcids = {value.id: value.orcid for value in people}
                 staff_ids = {
-                    value.id: f"staff-{randomizer.randrange(5)}"
-                    for value in people
-                    if randomizer.random() < 0.45
+                    value.id: f"staff-{randomizer.randrange(5)}" for value in people if randomizer.random() < 0.45
                 }
 
                 groups, _report = _finalize_person_merge_groups(
@@ -481,9 +449,7 @@ class ConflictedComponentPartitionTest(unittest.TestCase):
                         *(duplicate.id for duplicate in duplicates),
                     ]
                     with self.subTest(iteration=iteration, members=members):
-                        self.assertIsNone(
-                            _group_conflict(members, by_id, orcids, staff_ids)
-                        )
+                        self.assertIsNone(_group_conflict(members, by_id, orcids, staff_ids))
                         self.assertTrue(emitted.isdisjoint(members))
                     emitted.update(members)
 
@@ -508,12 +474,8 @@ class DedupStageWiringTest(unittest.TestCase):
         )
 
     @patch("pauk.pipeline.person_resolution.OpenRouterResolutionModels")
-    def test_pipeline_uses_the_resolver_and_merges_two_positive_verdicts(
-        self, model_factory
-    ):
-        model_factory.return_value = FakeModels(
-            ModelVerdict(True, 0.9), ModelVerdict(True, 0.9)
-        )
+    def test_pipeline_uses_the_resolver_and_merges_two_positive_verdicts(self, model_factory):
+        model_factory.return_value = FakeModels(ModelVerdict(True, 0.9), ModelVerdict(True, 0.9))
 
         result = DedupStage(self.prepared, self.raw, self.config).run()
 
@@ -521,12 +483,8 @@ class DedupStageWiringTest(unittest.TestCase):
         self.assertEqual(review.questions(self.db), [])
 
     @patch("pauk.pipeline.person_resolution.OpenRouterResolutionModels")
-    def test_pipeline_accepts_a_rejected_pair_without_review(
-        self, model_factory
-    ):
-        model_factory.return_value = FakeModels(
-            ModelVerdict(False, 0.9, "different people"), ModelVerdict(False, 0.9)
-        )
+    def test_pipeline_accepts_a_rejected_pair_without_review(self, model_factory):
+        model_factory.return_value = FakeModels(ModelVerdict(False, 0.9, "different people"), ModelVerdict(False, 0.9))
 
         result = DedupStage(self.prepared, self.raw, self.config).run()
 
@@ -579,6 +537,109 @@ class DedupStageWiringTest(unittest.TestCase):
         self.assertEqual(report[0]["status"], "separate")
         self.assertEqual(report[0]["reason"], "conflicting ORCID")
         self.assertEqual(models.first_calls, [])
+
+
+class ResolverCacheTest(unittest.TestCase):
+    """A stored verdict has to survive renumbering: merges upstream shift
+    every pair number, and the verdict is about the two people, not about
+    the number they were handed this run."""
+
+    def setUp(self):
+        self.config = Settings(openrouter_api_key="test-key")
+        self.db = mongomock.MongoClient()["pauk_test"]
+        self.models = OpenRouterResolutionModels(self.config, self.db, "sample")
+
+    def evidence(self):
+        return PairEvidence(
+            person_a="A1",
+            name_a="Ivan Petrov",
+            person_b="A2",
+            name_b="I. Petrov",
+        )
+
+    def answer(self, pair_id):
+        return {"results": [{"id": pair_id, "duplicate": True, "confidence": 0.9, "reason": "same person"}]}
+
+    def test_a_verdict_stored_under_one_number_answers_another(self):
+        calls = []
+
+        def chat_json(self_client, prompt, **kwargs):
+            calls.append(prompt)
+            return {"results": [{"id": 7, "duplicate": True, "confidence": 0.9, "reason": "same"}]}
+
+        with patch("pauk.sources.OpenRouterClient.chat_json", chat_json, create=True):
+            first = self.models.first_many([(7, self.evidence())])
+            second = self.models.first_many([(4210, self.evidence())])
+
+        self.assertTrue(first[7].duplicate)
+        self.assertTrue(second[4210].duplicate)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(self.db["llm_person_resolution_cache"].count_documents({}), 1)
+
+    def test_the_key_still_separates_different_people(self):
+        other = PairEvidence(person_a="B1", name_a="Anna Volkova", person_b="B2", name_b="A. Volkova")
+        keys = {
+            self.models._fingerprint(request)
+            for request in (
+                _Request(1, "qwen_first", "sys", first_stage_payload(1, self.evidence()), 160, None),
+                _Request(2, "qwen_first", "sys", first_stage_payload(2, other), 160, None),
+            )
+        }
+
+        self.assertEqual(len(keys), 2)
+
+
+class ResolverBatchingTest(unittest.TestCase):
+    """The pool is fed in blocks, so every request must still be answered
+    and counted exactly once across block boundaries."""
+
+    def models(self, workers):
+        config = Settings(openrouter_api_key="test-key", person_resolution_concurrency=workers)
+        db = mongomock.MongoClient()["pauk_test"]
+        return OpenRouterResolutionModels(config, db, "sample")
+
+    def evidence(self, number):
+        return PairEvidence(
+            person_a=f"A{number}",
+            name_a=f"Ivan Petrov{number}",
+            person_b=f"B{number}",
+            name_b=f"I. Petrov{number}",
+        )
+
+    def test_an_interrupt_drops_the_rest_of_the_block(self):
+        # The pool waits for everything it has queued, so without cancelling
+        # the pending futures Ctrl-C still pays for the whole block.
+        models = self.models(workers=1)
+        items = [(number, self.evidence(number)) for number in range(8)]
+        started = []
+
+        def invoke(request):
+            started.append(request.pair_id)
+            raise KeyboardInterrupt
+
+        with (
+            patch.object(OpenRouterResolutionModels, "_invoke", side_effect=invoke, autospec=False),
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            models.first_many(items)
+
+        self.assertLess(len(started), len(items))
+
+    def test_every_pair_is_answered_across_several_blocks(self):
+        models = self.models(workers=2)
+        items = [(number, self.evidence(number)) for number in range(30)]
+        seen = []
+
+        def invoke(request):
+            seen.append(request.pair_id)
+            return _Result(request, ModelVerdict(True, 0.9, "same"), None, None, None, None, False)
+
+        with patch.object(OpenRouterResolutionModels, "_invoke", side_effect=invoke, autospec=False):
+            verdicts = models.first_many(items)
+
+        self.assertEqual(sorted(verdicts), [number for number, _ in items])
+        self.assertEqual(sorted(seen), [number for number, _ in items])
+        self.assertTrue(all(verdict.duplicate for verdict in verdicts.values()))
 
 
 if __name__ == "__main__":

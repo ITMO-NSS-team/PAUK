@@ -51,18 +51,18 @@ class ReviewPageTest(unittest.TestCase):
         # The pair worth asking about and the refused group, not the
         # "only one is ITMO" pair.
         # Bare IDs can occur by chance inside the random CSRF token.
-        self.assertIn('href="/nodes/Person/A1"', body)
-        self.assertNotIn('href="/nodes/Person/A4"', body)
+        self.assertRegex(body, r'href="/nodes/Person/A1(?:\?|")')
+        self.assertNotRegex(body, r'href="/nodes/Person/A4(?:\?|")')
 
     def test_every_question_is_reachable(self):
         # Nothing the page filters is hidden from it.
         self.sign_in()
-        self.assertIn('href="/nodes/Person/A4"', self.client.get("/review", params={"tab": "open"}).text)
+        self.assertRegex(self.client.get("/review", params={"tab": "open"}).text, r'href="/nodes/Person/A4(?:\?|")')
 
     def test_a_viewer_sees_the_queue_without_the_buttons(self):
         self.sign_in(login="guest")
         body = self.client.get("/review").text
-        self.assertIn('href="/nodes/Person/A1"', body)
+        self.assertRegex(body, r'href="/nodes/Person/A1(?:\?|")')
         self.assertNotIn("/review/answer", body)
 
     def test_a_viewer_cannot_answer(self):
@@ -75,6 +75,19 @@ class ReviewPageTest(unittest.TestCase):
             "verdict": "different"})
         self.assertEqual(response.status_code, 403)
         self.assertEqual(review.count(self.db, answered=True), 0)
+
+    def test_single_model_answer_is_visible_without_a_fake_second_vote(self):
+        row = held_pair("A1", "A2")
+        row.update(input_route="qwen_first", model_verdicts={
+            "single": {"decision": "review", "confidence": 0.8, "reason": "<script>ambiguous</script>"},
+        })
+        review.record_held(self.db, [row], source=review.STAGE)
+        self.sign_in()
+        body = self.client.get("/review").text
+        self.assertIn("Решение Qwen", body)
+        self.assertIn("нужно ревью", body)
+        self.assertIn("&lt;script&gt;ambiguous&lt;/script&gt;", body)
+        self.assertNotIn("Второй запрос", body)
 
     def test_both_model_answers_are_visible_and_escaped(self):
         row = held_pair("A1", "A2")
@@ -172,8 +185,8 @@ class ReviewPageTest(unittest.TestCase):
         self.assertLess(body.index("A0", first - 400), body.index("Zinaida Orlova"))
 
     def test_a_two_word_field_is_named_whole(self):
-        # "group spans 2 distinct staff record values" used to come out as
-        # "поля record": the field was read as the word before "values".
+        # The field is the whole phrase "staff record", not the word before
+        # "values" taken alone.
         self.assertEqual(_reason_words("group spans 2 distinct staff record values"),
                          "в группе 2 разных значения поля «запись в каталоге»")
 
@@ -308,6 +321,50 @@ class FoldNowTest(unittest.TestCase):
         self.graph.add("Person", "A2")
         self.answer(verdict="different")
         self.assertEqual(set(self.graph.nodes), {("Person", "A1"), ("Person", "A2")})
+
+
+class FactsInTheRowTest(unittest.TestCase):
+    """What is known about each person, beside their name."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        review.record_held(self.db, [held_pair("A1", "A2")])
+        self.graph = FakePanelGraph()
+        self.graph.add("Person", "A1", name_raw="Ivan Smirnov",
+                       orcid="0000-0002-1825-0097", email="smirnov@itmo.ru")
+        self.graph.add("Person", "A2", name_raw="Ivan Smirnov")
+        self.graph.add("Department", "D1", name_ru="Физико-технический мегафакультет")
+        self.graph.add("Publication", "W1")
+        self.graph.relationships[("Person", "BELONGS_TO", "Department", "A1", "D1")] = {}
+        self.graph.relationships[("Person", "AUTHORED", "Publication", "A1", "W1")] = {}
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_if_up] = lambda: self.graph
+        self.client = TestClient(app, follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def body(self):
+        return self.client.get("/review").text
+
+    def test_the_row_carries_what_tells_two_records_apart(self):
+        body = self.body()
+        self.assertIn("0000-0002-1825-0097", body)
+        self.assertIn("smirnov@itmo.ru", body)
+        self.assertIn("Физико-технический мегафакультет", body)
+        self.assertIn("1 работа", body)
+
+    def test_a_record_with_nothing_known_adds_no_empty_lines(self):
+        # A2 has only a name: the facts block must not appear for it at all.
+        self.assertEqual(self.body().count('class="facts"'), 1)
+
+    def test_with_the_graph_down_the_queue_still_opens(self):
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_if_up] = lambda: None
+        client = TestClient(app, follow_redirects=False)
+        client.post("/login", data={"login": "roman", "password": "hunter2"})
+        page = client.get("/review")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("A1", page.text)
 
 
 class DisputedTabTest(unittest.TestCase):
@@ -475,6 +532,20 @@ class GitHubQuestionTest(unittest.TestCase):
     def csrf(self):
         return self.body().split('name="csrf" value="')[1].split('"')[0]
 
+    def test_the_card_carries_the_way_back_to_the_question(self):
+        # Without it the only way out of a person's page is the search,
+        # which is not where the reader came from.
+        body = self.body()
+        self.assertIn("/nodes/Person/A5140754163?back=", body)
+        self.assertIn("%2Freview%3Ftab%3Dpressing", body)
+
+    def test_and_the_way_back_points_at_the_question_itself(self):
+        # The queue is fifty rows long: landing on its top means finding
+        # the question again by eye.
+        body = self.body()
+        self.assertIn("%23q-github_person-A5140754163-XieN-N", body)
+        self.assertIn('<tr id="q-github_person-A5140754163-XieN-N">', body)
+
     def test_the_account_points_at_github_and_the_person_at_their_card(self):
         # Sending a login to /nodes/Person would open a card for a node that
         # does not exist, and the reviewer needs to look at the profile.
@@ -637,8 +708,8 @@ class ChoiceFormGuardTest(unittest.TestCase):
 class QuestionKindIsVisibleTest(unittest.TestCase):
     """Four different questions sit in one table, one under another.
 
-    Which one a row is used to be readable only off the buttons beside it,
-    and only if you already knew what those meant.
+    Each row has to say which question it is, instead of leaving that to be read off the buttons beside
+    it.
     """
 
     def setUp(self):
@@ -672,10 +743,10 @@ class QuestionKindIsVisibleTest(unittest.TestCase):
 
 
 class ColumnsSayWhoSpeaksTest(unittest.TestCase):
-    """Three different voices used to sit in one cell.
+    """Three different voices sit in one cell and must be told apart.
 
-    What the rules collected, what a person decided, and what the rules say
-    now read as one list, and nothing told them apart.
+    What the rules collected, what a person decided, and what the rules say now must not read as one
+    list.
     """
 
     def setUp(self):
@@ -693,7 +764,8 @@ class ColumnsSayWhoSpeaksTest(unittest.TestCase):
     def cells(self, login="roman"):
         self.client.post("/login", data={"login": login, "password": "hunter2"})
         body = self.client.get("/review", params={"tab": "answered"}).text
-        row = body.split("<tr>")[2]
+        # Split on the question rows: the header row has no anchor.
+        row = re.split(r'<tr id="q-', body)[1]
         return re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
 
     def test_what_the_rules_collected_stands_alone(self):
@@ -714,8 +786,8 @@ class ColumnsSayWhoSpeaksTest(unittest.TestCase):
         self.assertIn("теперь связывают", why)
 
     def test_a_viewer_sees_the_answer_without_the_buttons(self):
-        # The column used to appear only for an editor, so a viewer could
-        # not see what had been decided at all.
+        # The column is shown to a viewer too, who has to see what had
+        # been decided.
         decided = self.cells(login="guest")[3]
         self.assertIn("разные люди", decided)
         self.assertNotIn("/review/withdraw", decided)
@@ -738,11 +810,12 @@ class QuestionWithNoEvidenceTest(unittest.TestCase):
 
     def cells(self):
         body = self.client.get("/review", params={"tab": "answered"}).text
-        return re.findall(r"<td[^>]*>(.*?)</td>", body.split("<tr>")[2], re.S)
+        row = re.split(r'<tr id="q-', body)[1]
+        return re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
 
     def test_the_row_still_says_who_it_is_about(self):
-        # Pairing members with an empty name list used to drop every subject
-        # and leave the row about nobody.
+        # Pairing members with an empty name list must not drop every
+        # subject and leave the row about nobody.
         about = self.cells()[0]
         self.assertIn("A1", about)
         self.assertIn("A2", about)
@@ -754,7 +827,7 @@ class QuestionWithNoEvidenceTest(unittest.TestCase):
             "status": "disputed", "person_a": "A1", "name_a": "A", "person_b": "A2",
             "name_b": "B", "rule": "same_name"}])
         why = self.cells()[2]
-        self.assertIn("—", why)
+        self.assertIn("–", why)
         self.assertIn("теперь связывают", why)
 
 

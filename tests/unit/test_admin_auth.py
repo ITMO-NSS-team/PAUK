@@ -134,8 +134,8 @@ class SessionTest(unittest.TestCase):
 
     def test_a_session_dies_even_if_the_account_was_disabled_behind_our_back(self):
         # set_active deletes the sessions itself; this covers the other
-        # path — the flag flipped straight in Mongo, by hand or by another
-        # tool — where reading the session is the only remaining check.
+        # path - the flag flipped straight in Mongo, by hand or by another
+        # tool - where reading the session is the only remaining check.
         token = open_session(self.db, self.user)
         self.db[USERS].update_one({"_id": "roman"}, {"$set": {"active": False}})
         self.assertIsNone(read_session(self.db, token))
@@ -173,10 +173,8 @@ if __name__ == "__main__":
 class LoginTimingTest(unittest.TestCase):
     """A login that does not exist must not answer at a different speed.
 
-    Deriving a throwaway hash per call cost a second scrypt, so a missing
-    account answered about twice as slowly as a wrong password — which
-    tells an attacker which logins are real just as plainly as an error
-    message would.
+    A missing account that answers faster or slower than a wrong password tells an attacker which logins
+    are real, just as plainly as an error message would.
     """
 
     def setUp(self):
@@ -267,10 +265,11 @@ class LockoutTest(unittest.TestCase):
 
 
 class SessionTokenIsNotStoredTest(unittest.TestCase):
-    """A session token is a bearer credential: whoever holds it is signed
-    in, no password needed. Kept verbatim, one read of the collection — a
-    dump, a backup, a copy made for support — handed over every live
-    session, while the passwords beside them were hashed."""
+    """A session token is a bearer credential, so only its hash is stored.
+
+    Stored verbatim, a dump, a backup or a copy made for support would hand over every live session,
+    while the passwords beside them are hashed.
+    """
 
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]

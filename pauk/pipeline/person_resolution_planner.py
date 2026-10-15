@@ -23,6 +23,7 @@ from pauk.graph.person_resolution import (
     shared_identity_facts,
 )
 from pauk.graph.person_resolution_model import LogisticModel
+from pauk.graph.person_resolution_single import SingleVerdict, apply_verdict
 from pauk.models import Person
 from pauk.pipeline.person_name_blocking import NAME_RESCUE_TEAM_LIMIT
 from pauk.pipeline.person_name_facts import name_comparison_facts
@@ -43,10 +44,9 @@ def plan_person_merges_resolved(
     policy: ResolverPolicy = DEFAULT_POLICY,
     logreg_model: LogisticModel | None = None,
 ) -> tuple[list[tuple[Person, list[Person]]], list[dict]]:
-    """Plan folds with LogReg and two independent model verdicts."""
+    """Plan folds with LogReg, full-context adjudication and component checks."""
     # Imported lazily to avoid a module cycle: DedupStage calls this adapter,
-    # while these helpers remain the shared source of candidate generation and
-    # transitive component safety checks.
+    # and these helpers are the shared candidate generation and component safety checks.
     from pauk.pipeline.stages.dedup import (
         _finalize_person_merge_groups,
         _initials_conflict,
@@ -100,12 +100,19 @@ def plan_person_merges_resolved(
     input_routes: dict[int, str] = {}
 
     def separate(first: Person, second: Person, resolution, **details) -> None:
-        report.append({
-            "status": "separate", "person_a": first.id, "name_a": first.name_raw,
-            "person_b": second.id, "name_b": second.name_raw,
-            "route": resolution.route, "reason": resolution.reason,
-            "logreg_probability": round(resolution.probability, 6), **details,
-        })
+        report.append(
+            {
+                "status": "separate",
+                "person_a": first.id,
+                "name_a": first.name_raw,
+                "person_b": second.id,
+                "name_b": second.name_raw,
+                "route": resolution.route,
+                "reason": resolution.reason,
+                "logreg_probability": round(resolution.probability, 6),
+                **details,
+            }
+        )
 
     def plan_merge(first: Person, second: Person, route: str) -> None:
         pair = tuple(sorted((first.id, second.id)))
@@ -136,6 +143,7 @@ def plan_person_merges_resolved(
         input_route: str | None = None,
         first_verdict: ModelVerdict | None = None,
         second_verdict: ModelVerdict | None = None,
+        single_verdict: SingleVerdict | None = None,
     ) -> None:
         if frozenset((first.id, second.id)) in decisions:
             return
@@ -164,8 +172,11 @@ def plan_person_merges_resolved(
                 "first": asdict(first_verdict) if first_verdict is not None else None,
                 "second": asdict(second_verdict) if second_verdict is not None else None,
             }
+            if single_mode:
+                row["model_verdicts"] = {"single": asdict(single_verdict) if single_verdict is not None else None}
         report.append(row)
 
+    single_mode = models is not None and callable(getattr(type(models), "single_many", None))
     candidates = list(_paired_persons(people, in_scope, staff_ids))
     seen = {frozenset((first.id, second.id)) for first, second in candidates}
     for members, verdict in decisions.items():
@@ -246,7 +257,7 @@ def plan_person_merges_resolved(
             else:
                 hold(first, second, evidence, shared_fields, resolution.route, resolution.reason)
 
-    first_results = models.first_many(pending_first) if models is not None else {}
+    first_results = models.first_many(pending_first) if models is not None and not single_mode else {}
     pending_second: list[SecondStageContext] = []
     first_verdicts: dict[int, ModelVerdict] = {}
 
@@ -271,7 +282,9 @@ def plan_person_merges_resolved(
             aliases=tuple(person.name_variants),
             fallback_record=person.id.startswith(("name_", "orcid_")),
             works=len(publication_ids[person.id]),
-            top_fields=tuple(name for name, _ in field_counts.most_common(8)),
+            top_fields=tuple(
+                name for name, _ in sorted(field_counts.items(), key=lambda item: (-item[1], item[0]))[:8]
+            ),
             departments=tuple({"id": value} for value in person.department_ids[:8]),
             top_coauthors=tuple(
                 {
@@ -291,7 +304,7 @@ def plan_person_merges_resolved(
     for pair_id, _evidence in pending_first:
         first, second, evidence, shared_coauthors, shared_fields = pair_data[pair_id]
         verdict = first_results.get(pair_id)
-        if verdict is None:
+        if verdict is None and not single_mode:
             hold(
                 first,
                 second,
@@ -302,7 +315,8 @@ def plan_person_merges_resolved(
                 input_route=input_routes[pair_id],
             )
             continue
-        first_verdicts[pair_id] = verdict
+        if verdict is not None:
+            first_verdicts[pair_id] = verdict
         coauthors_a = all_coauthors(first.id)
         coauthors_b = all_coauthors(second.id)
         small_team_coauthors = corroborating_coauthors(first.id, second.id, small_team_only=True)
@@ -344,7 +358,10 @@ def plan_person_merges_resolved(
             )
         )
 
-    second_results = models.second_many(pending_second) if models is not None else {}
+    if single_mode:
+        second_results = models.single_many([(context, pair_data[context.pair_id][2]) for context in pending_second])
+    else:
+        second_results = models.second_many(pending_second) if models is not None else {}
     for context in pending_second:
         pair_id = context.pair_id
         first, second, evidence, _shared_coauthors, shared_fields = pair_data[pair_id]
@@ -355,27 +372,44 @@ def plan_person_merges_resolved(
                 second,
                 evidence,
                 shared_fields,
-                "qwen_second",
-                "second model unavailable",
+                "qwen_single" if single_mode else "qwen_second",
+                "model unavailable" if single_mode else "second model unavailable",
                 input_route=input_routes[pair_id],
-                first_verdict=first_verdicts[pair_id],
+                first_verdict=first_verdicts.get(pair_id),
             )
             continue
-        resolution = apply_second_verdict(
-            apply_first_verdict(resolve_pair(evidence, policy, logreg_model), first_verdicts[pair_id]),
-            verdict,
-        )
+        if single_mode:
+            resolution = apply_verdict(resolve_pair(evidence, policy, logreg_model), evidence, verdict)
+        else:
+            resolution = apply_second_verdict(
+                apply_first_verdict(resolve_pair(evidence, policy, logreg_model), first_verdicts[pair_id]),
+                verdict,
+            )
         if resolution.decision is Decision.MERGE:
             plan_merge(first, second, resolution.route)
         elif resolution.decision is Decision.SEPARATE:
             separate(
-                first, second, resolution, input_route=input_routes[pair_id],
-                model_verdicts={"first": asdict(first_verdicts[pair_id]), "second": asdict(verdict)},
+                first,
+                second,
+                resolution,
+                input_route=input_routes[pair_id],
+                model_verdicts={"single": asdict(verdict)}
+                if single_mode
+                else {"first": asdict(first_verdicts[pair_id]), "second": asdict(verdict)},
             )
         elif resolution.decision is Decision.REVIEW:
             hold(
-                first, second, evidence, shared_fields, resolution.route, resolution.reason, verdict.confidence,
-                input_route=input_routes[pair_id], first_verdict=first_verdicts[pair_id], second_verdict=verdict,
+                first,
+                second,
+                evidence,
+                shared_fields,
+                resolution.route,
+                resolution.reason,
+                verdict.confidence,
+                input_route=input_routes[pair_id],
+                first_verdict=first_verdicts.get(pair_id),
+                second_verdict=None if single_mode else verdict,
+                single_verdict=verdict if single_mode else None,
             )
 
     groups, group_report = _finalize_person_merge_groups(

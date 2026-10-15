@@ -1,27 +1,24 @@
 """Export code links (or whole papers) to CSV for manual annotation.
 
 The only harness in this repository that measures how well link extraction
-works, so the numbers it produces are what any claim about extractor quality
-rests on. Two modes, because precision and recall need different inputs and
-only one of them can be measured from the links the pipeline already found:
+works. Two modes, because precision and recall need different inputs:
 
   links  (default)  One row per extracted link, with two independent label
                     columns because the pipeline makes two independent
                     decisions: `url_ok` scores the extractor (PRECISION), and
                     `authors_own` scores the model, which predicts exactly that
-                    one binary. Whether the repository exists at all is a third
-                    decision, already answered by the GitHub lookup and carried
-                    in `resolved_on_github` rather than labelled by hand.
+                    one binary. Whether the repository exists at all is already
+                    answered by the GitHub lookup and carried in
+                    `resolved_on_github`.
 
   papers            One row per sampled publication. The annotator opens the
-                    PDF and lists every repository it actually references.
-                    Answers "what did the extractor miss" - i.e. extraction
-                    RECALL, which is invisible from the extracted set alone.
+                    PDF and lists every repository it actually references,
+                    which measures extraction RECALL.
 
-In papers mode the URLs PAUK found are withheld by default: showing them first
+In papers mode the URLs PAUK found are withheld by default, since showing them
 turns an independent search into a confirmation task and inflates recall. Pass
---show-extracted only when reviewing the extractor, never when producing the
-ground truth it will be scored against.
+--show-extracted only when reviewing the extractor, never when producing ground
+truth.
 
 Usage:
     uv run python scripts/export_link_labels.py --group <group> [--mode links]
@@ -39,6 +36,7 @@ from pathlib import Path
 from pauk.models import Publication, RepoLink, Repository
 from pauk.models.processing import ProcessingStatus
 from pauk.pipeline.stages.code_links import ARCHIVED_DEPOSIT_REASON
+from pauk.pipeline.stages.link_relevance import _format_contexts, _model_occurrences
 from pauk.settings import settings
 from pauk.storage import PreparedStore
 from pauk.storage.mongo import get_mongo_client
@@ -62,11 +60,11 @@ LINK_COLUMNS = [
     "model_verdict",
     "model_confidence",
     "model_reason",
-    # Exactly what went into the prompt: link_relevance sends occurrences[0]
-    # only. Scoring the model against evidence it never saw would be unfair.
+    # Exactly what went into the prompt. Scoring the model against evidence it
+    # never saw would be unfair.
     "model_context",
     "model_page",
-    # The richest occurrence, for the human establishing ground truth.
+    # Every stored occurrence, for the human establishing ground truth.
     "full_context",
     "full_page",
     "occurrences",
@@ -134,10 +132,9 @@ Ignore `model_verdict`, `model_confidence` and `model_reason`. They are the
 prediction being scored, and reading them first will pull your judgement toward
 them.
 
-Use `full_context` to decide. `model_context` is shown separately because
-link_relevance sends only the first recorded occurrence to the model; when the
-two differ, the metrics script can separate "the model was wrong" from "the
-model never saw the sentence that settles it".
+Use `full_context` to decide. `model_context` is the bounded subset sent in
+the model prompt, with source labels, so the model's evidence stays auditable
+without hiding additional stored occurrences from the annotator.
 
 Rows whose `verdict_source` is `deterministic` were decided by code_links
 without any model call (a Zenodo deposit archiving its own repository). Label
@@ -154,24 +151,10 @@ leave the row in, do not delete it. That is a real and useful observation.
 """
 
 
-def _occurrence_cells(occurrence) -> tuple[str, str]:
-    """Context and page of one occurrence, as CSV cells."""
-    if occurrence is None:
-        return "", ""
-    page = "abstract" if occurrence.page_number is None else str(occurrence.page_number)
-    return (occurrence.context or "").strip(), page
-
-
-def _richest_occurrence(link):
-    """The occurrence that best settles the own/third-party call for a human:
-    a PDF page over the abstract, then the longest context. The abstract
-    context is usually one truncated sentence."""
-    if not link.occurrences:
-        return None
-    return max(
-        link.occurrences,
-        key=lambda o: (o.page_number is not None, len(o.context or "")),
-    )
+def _occurrence_pages(occurrences) -> str:
+    pages = ["abstract" if occurrence.page_number is None else str(occurrence.page_number)
+             for occurrence in occurrences]
+    return ", ".join(dict.fromkeys(pages))
 
 
 def _verdict_source(link) -> str:
@@ -181,18 +164,14 @@ def _verdict_source(link) -> str:
 
 
 def _resolution_index(store: PreparedStore) -> dict[str, str]:
-    """Map every URL a repository is known by to whether GitHub resolved it.
-
-    The repositories stage answers "is this a real repository" with an API
-    call, so it is not something a human should be labelling.
-    """
+    """Map every URL a repository is known by to whether GitHub resolved it."""
     index: dict[str, str] = {}
     for repo in store.read_models("repositories", Repository):
         state = repo.processing.get("repositories")
         if state is None or state.status == ProcessingStatus.NOT_STARTED:
             resolved = "not_checked"
         elif state.status == ProcessingStatus.FAILED:
-            resolved = "no"
+            resolved = "failed"
         else:
             resolved = "yes"
         for url in [repo.url, *repo.cited_urls]:
@@ -209,13 +188,15 @@ def export_links(store: PreparedStore, limit: int | None, seed: int) -> list[dic
     for repo_link in store.read_models("repo_links", RepoLink):
         pub = publications.get(repo_link.publication_id)
         for link in repo_link.links:
-            # occurrences[0] is what link_relevance puts in the prompt; the
-            # richest one is what the human gets. Keeping both lets the
-            # metrics separate a wrong model from an under-informed one.
-            model_context, model_page = _occurrence_cells(
-                link.occurrences[0] if link.occurrences else None
-            )
-            full_context, full_page = _occurrence_cells(_richest_occurrence(link))
+            model_context = _format_contexts(link.occurrences)
+            model_page = _occurrence_pages(_model_occurrences(link.occurrences))
+            full_context = _format_contexts(link.occurrences, limit=None)
+            full_page = _occurrence_pages(link.occurrences)
+            resolved = {
+                "available": "yes",
+                "not_found": "no",
+                "failed": "failed",
+            }.get(link.availability)
             rows.append({
                 "authors_own": "",
                 "url_ok": "",
@@ -233,7 +214,9 @@ def export_links(store: PreparedStore, limit: int | None, seed: int) -> list[dic
                 "full_context": full_context,
                 "full_page": full_page,
                 "occurrences": len(link.occurrences),
-                "resolved_on_github": resolution.get(normalize_repo_url(link.url), "not_checked"),
+                "resolved_on_github": resolved or resolution.get(
+                    normalize_repo_url(link.url), "not_checked"
+                ),
             })
 
     return _sample(rows, limit, seed)
@@ -252,7 +235,7 @@ def export_papers(
         # sample over papers with no retrievable full text measures nothing.
         if not (pub.pdf_urls or pub.full_text):
             continue
-        local_pdf = settings.pdf_dir / store.group / f"{pub.id}.pdf"
+        local_pdf = settings.pdf_dir / f"{pub.id}.pdf"
         row = {
             "ground_truth_urls": "",
             "notes": "",
@@ -276,13 +259,11 @@ def _row_key(row: dict) -> str:
 
 
 def _sample(rows: list[dict], limit: int | None, seed: int) -> list[dict]:
-    """Seeded sample so the same --limit/--seed always yields the same sheet -
-    a re-export must not silently reshuffle work already annotated.
+    """Seeded sample so the same --limit/--seed always yields the same sheet.
 
-    Selection is by a hash of the row's own identity, not by its position:
-    read_models() returns whatever order Mongo holds, which shifts as the
-    pipeline updates documents, and a positional sample would also redraw the
-    whole sheet the moment the group gains a single row.
+    Selection is by a hash of the row's own identity, not its position, because
+    Mongo returns rows in a shifting order and a positional sample would redraw
+    the sheet whenever the group gains a row.
     """
     ordered = sorted(rows, key=_row_key)
     if limit is None or limit >= len(ordered):

@@ -48,45 +48,39 @@ class PersonResolutionTest(unittest.TestCase):
         features = feature_vector(evidence())
 
         self.assertEqual(tuple(features), MODEL_FEATURES)
-        self.assertEqual(len(features), 49)
-        self.assertAlmostEqual(features["shared_coauthors"], 1.0986122886681098)
-        self.assertEqual(features["surname_equal"], 1)
-        self.assertEqual(features["compatible_name"], 1)
-        self.assertEqual(features["long_token_compatible"], 1)
-        self.assertEqual(features["remaining_long_token_conflict"], 0)
+        self.assertEqual(len(features), 56)
+        self.assertAlmostEqual(features["roles_v2__shared_coauthors"], 1.0986122886681098)
+        self.assertEqual(features["roles_v2__surname_equal"], 1)
+        self.assertEqual(features["roles_v2__compatible_name"], 1)
+        self.assertEqual(features["roles_v2__long_token_compatible"], 1)
+        self.assertEqual(features["roles_v2__remaining_long_token_conflict"], 0)
 
     def test_long_token_features_ignore_name_order(self):
-        features = feature_vector(
-            evidence(name_a="Valentin Malykh", name_b="Malykh, Valentin")
-        )
+        features = feature_vector(evidence(name_a="Valentin Malykh", name_b="Malykh, Valentin"))
 
-        self.assertEqual(features["surname_equal"], 0)
-        self.assertEqual(features["long_token_compatible"], 1)
-        self.assertEqual(features["remaining_long_token_conflict"], 0)
+        self.assertEqual(features["roles_v2__surname_equal"], 1)
+        self.assertEqual(features["roles_v2__long_token_compatible"], 1)
+        self.assertEqual(features["roles_v2__remaining_long_token_conflict"], 0)
 
     def test_long_token_features_tolerate_transliteration_spelling(self):
-        features = feature_vector(
-            evidence(name_a="E. A. Zernitskaya", name_b="Ekaterina Zernitckaia")
-        )
+        features = feature_vector(evidence(name_a="E. A. Zernitskaya", name_b="Ekaterina Zernitckaia"))
 
-        self.assertGreater(features["long_token_similarity_max"], 0.8)
-        self.assertEqual(features["long_token_compatible"], 1)
+        self.assertGreater(features["roles_v2__long_token_similarity_max"], 0.8)
+        self.assertEqual(features["roles_v2__long_token_compatible"], 1)
 
     def test_remaining_full_names_expose_namesakes(self):
         features = feature_vector(evidence(name_a="Ivan Petrov", name_b="Igor Petrov"))
 
-        self.assertEqual(features["long_token_compatible"], 1)
-        self.assertEqual(features["remaining_long_token_conflict"], 1)
+        self.assertEqual(features["roles_v2__long_token_compatible"], 1)
+        self.assertEqual(features["roles_v2__remaining_long_token_conflict"], 1)
 
     def test_initials_cannot_fake_a_compatible_long_token(self):
-        features = feature_vector(
-            evidence(name_a="A. V. Shashkin", name_b="Alexander Vinogradov")
-        )
+        features = feature_vector(evidence(name_a="A. V. Shashkin", name_b="Alexander Vinogradov"))
 
-        self.assertEqual(features["long_token_compatible"], 0)
+        self.assertEqual(features["roles_v2__long_token_compatible"], 0)
 
     def test_probability_is_stable_for_a_known_feature_vector(self):
-        self.assertAlmostEqual(logistic_probability(evidence()), 0.9951826138, places=9)
+        self.assertAlmostEqual(logistic_probability(evidence()), 0.9906734529380233, places=12)
 
     def test_conflicting_identifier_is_a_hard_veto(self):
         result = resolve_pair(evidence(orcid_a="0000-0001", orcid_b="0000-0002"))
@@ -99,8 +93,8 @@ class PersonResolutionTest(unittest.TestCase):
         for name_a, name_b in (("李明", "李明"), ("李明", "王芳"), ("", "")):
             with self.subTest(name_a=name_a, name_b=name_b):
                 features = feature_vector(evidence(name_a=name_a, name_b=name_b))
-                self.assertEqual(features["exact_name"], 0)
-                self.assertEqual(features["same_tokens"], 0)
+                self.assertEqual(features["roles_v2__exact_name"], 0)
+                self.assertEqual(features["roles_v2__same_tokens"], 0)
 
                 result = resolve_pair(evidence(name_a=name_a, name_b=name_b))
                 self.assertEqual(result.decision, Decision.SEPARATE)
@@ -110,8 +104,8 @@ class PersonResolutionTest(unittest.TestCase):
     def test_matching_trusted_identifier_overrides_probability_zone(self):
         result = resolve_pair(
             evidence(
-                name_a="X",
-                name_b="Y",
+                name_a="A. Petrov",
+                name_b="Alexander Petrov",
                 shared_coauthors=0,
                 shared_departments=0,
                 shared_fields=0,
@@ -128,8 +122,8 @@ class PersonResolutionTest(unittest.TestCase):
     def test_orcid_url_and_bare_value_are_the_same_identifier(self):
         result = resolve_pair(
             evidence(
-                name_a="X",
-                name_b="Y",
+                name_a="A. Petrov",
+                name_b="Alexander Petrov",
                 orcid_a="https://orcid.org/0000-0001",
                 orcid_b="0000-0001",
             )

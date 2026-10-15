@@ -132,8 +132,12 @@ class PayloadTest(unittest.TestCase):
     def test_a_dedup_takes_nothing(self):
         self.assertIsNotNone(parse_payload(JobKind.DEDUP, {}))
 
-    def test_a_map_run_defaults_to_private(self):
-        self.assertFalse(parse_payload(JobKind.MAP, {}).public)
+    def test_a_map_run_keeps_the_seed_steady_by_default(self):
+        self.assertEqual(parse_payload(JobKind.MAP, {}).seed, 42)
+
+    def test_a_stored_map_job_from_before_both_builds_still_parses(self):
+        # Jobs queued when a rebuild wrote one build at a time carry "public".
+        self.assertEqual(parse_payload(JobKind.MAP, {"public": True, "seed": 7}).seed, 7)
 
     def test_a_collection_run_holds_only_its_group(self):
         payload = parse_payload(JobKind.COLLECT, {"group": "2024", "work_id": "W1"})
@@ -184,10 +188,10 @@ class QueueTest(unittest.TestCase):
         self.assertEqual(store.claim(self.db, "worker-2").id, second.id)
 
     def test_claiming_is_a_single_command(self):
-        """Two workers racing cannot be shown here: mongomock never leaves
-        the window open, with the atomic version or a broken one. What can
-        be shown is that there is no window — selecting the job and marking
-        it claimed are one command, which is what makes it atomic.
+        """Two workers racing cannot be shown here: mongomock never leaves the window open.
+
+        What can be shown is that selecting the job and marking it claimed are
+        one command, which is what makes it atomic.
         """
         calls = []
 
@@ -307,7 +311,7 @@ class QueueTest(unittest.TestCase):
         self.assertEqual([row.id for row in store.recent(self.db)], [second.id, first.id])
 
     def test_jobs_queued_in_the_same_millisecond_keep_a_stable_order(self):
-        # Not a meaningful order — there is none — but the page must not
+        # Not a meaningful order - there is none - but the page must not
         # shuffle rows between two refreshes.
         for _ in range(5):
             self.queue()
@@ -332,10 +336,8 @@ class QueueTest(unittest.TestCase):
 class GraphIsHeldWhilePublishingTest(unittest.TestCase):
     """The lock lives with the pipeline functions, not with the worker.
 
-    The likeliest collision is not two workers — there is one — but somebody
-    running `pauk publish graph` in a terminal while the panel schedules the
-    same thing. Neither goes through the other's code, and both go through
-    these.
+    The likeliest collision is `pauk publish graph` run in a terminal while
+    the panel schedules the same thing; neither goes through the other's code.
     """
 
     def setUp(self):
