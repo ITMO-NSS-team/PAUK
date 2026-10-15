@@ -226,10 +226,17 @@ class MergeNodesIntegrationTest(Neo4jIntegrationTestCase):
         by_id = {e.entity_id: e for e in sink.entries}
         self.assertEqual(by_id["dup"].change_kind, "deleted")
         self.assertEqual(by_id["canon"].change_kind, "updated")
-        self.assertEqual(by_id["canon"].diff, {"orcid": (None, "0000-1")})
+        self.assertEqual(
+            by_id["canon"].diff,
+            {
+                "orcid": (None, "0000-1"),
+                "emails": (None, ["canon@x.com", "dup@x.com"]),
+            },
+        )
         self.assertIsNone(self._node_props("dup"))  # duplicate is actually gone from the graph
         self.assertEqual(self._node_props("canon")["orcid"], "0000-1")
         self.assertEqual(self._node_props("canon")["email"], "canon@x.com")  # canonical's own value wins
+        self.assertEqual(self._node_props("canon")["emails"], ["canon@x.com", "dup@x.com"])
 
 
 class PromoteLinkCandidatesIntegrationTest(Neo4jIntegrationTestCase):
