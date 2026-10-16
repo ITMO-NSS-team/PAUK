@@ -161,7 +161,8 @@ since.
 
 `merge` deletes the duplicate together with its relationships and cannot be
 undone. The panel's "split back" button ("разделить обратно", in
-`pauk/graph/unmerge.py`) rebuilds a `Person` from its prepared row, but only
+`pauk/graph/unmerge.py`) rebuilds a `Person` from its prepared row or durable
+pre-merge snapshot, but only
 for a pair merged through an answer in the "Спорные случаи" (disputed cases)
 queue; a merge done with this command never enters that queue. The command
 asks for confirmation; `--yes` skips it.

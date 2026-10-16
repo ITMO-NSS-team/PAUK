@@ -73,6 +73,7 @@ def ensure_indexes(db: Database) -> None:
     """
     ensure_compression(db)
     db.revisions.create_index([("entity_type", 1), ("entity_id", 1), ("version", 1)])
+    db.person_merge_sources.create_index([("person_id", 1), ("saved_at", -1)])
     db.raw.create_index([("source", 1), ("group", 1), ("fetched_at", 1)])
     db.raw.create_index([("source", 1), ("fetched_at", 1)])
     # The panel's change feed reads the audit two ways: the history of one

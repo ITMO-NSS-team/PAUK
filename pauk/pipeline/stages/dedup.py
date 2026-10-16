@@ -57,9 +57,10 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from collections.abc import Callable, Iterable, Iterator
 from datetime import UTC, date, datetime
+from itertools import combinations
 
 from pauk.models import (
     ClassificationStatus,
@@ -82,12 +83,12 @@ from pauk.pipeline.normalize import (
 )
 from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
+from pauk.storage.person_merge_sources import preserve as preserve_person_sources
 from pauk.storage.review import DIFFERENT, SAME
 from pauk.urls import deduplicate_repo_urls, normalize_repo_url
 
 from .author_names import (
     RussianNamesCatalog,
-    _fold,
     _record_id,
     _unmix_alphabets,
     catalog_path,
@@ -141,23 +142,6 @@ def _norm_doi(doi: str | None) -> str | None:
     return value.rstrip("/") or None
 
 
-_NAME_PUNCT = re.compile(r"[^\w]", re.UNICODE)
-
-
-def _name_tokens(name: str | None) -> list[str]:
-    """Name tokens worth blocking on: initials carry no identity of their own.
-
-    Punctuation goes before the length check, so "A.A." collapses to a
-    two-letter token and drops out.
-    """
-    tokens = []
-    for token in _norm_name(name).split():
-        stripped = _NAME_PUNCT.sub("", token)
-        if len(stripped) > 2:
-            tokens.append(stripped)
-    return tokens
-
-
 def _variant_set(person: Person) -> set[str]:
     return {_norm_name(variant) for variant in person.name_variants if _norm_name(variant)}
 
@@ -189,17 +173,9 @@ def _initials_conflict(first: Person, second: Person) -> bool:
     Comparison runs in the folded space (Cyrillic "В" meets Latin "V"), and an
     initial never contradicts the name it abbreviates.
     """
-    first_tokens = _fold(first.name_raw or "").split()
-    second_tokens = _fold(second.name_raw or "").split()
-    if len(first_tokens) < 2 or len(second_tokens) < 2 or first_tokens[-1] != second_tokens[-1]:
-        return False
-    # Names of unequal length are compared over the parts they both have:
-    # "A. Ivanov" states nothing about the middle name of "A. V. Ivanov".
-    return any(
-        (len(one) == 1 or len(other) == 1)
-        and not (one.startswith(other) or other.startswith(one))
-        for one, other in zip(first_tokens[:-1], second_tokens[:-1], strict=False)
-    )
+    from pauk.pipeline.person_name_blocking import conflicting_initials
+
+    return conflicting_initials(first, second)
 
 
 # An author record listing far more institutions than works is not a person:
@@ -215,39 +191,10 @@ def _is_pooled_record(person: Person) -> bool:
 
 def _paired_persons(people: list[Person], in_scope: set[str] | None,
                     staff_ids: dict[str, str] | None = None):
-    """Yield person pairs worth comparing.
+    """Shared candidate generation for the legacy and confidence resolvers."""
+    from pauk.pipeline.person_name_blocking import candidate_person_pairs
 
-    Blocking keeps this quadratic only within small buckets: name-based
-    pairs must share a name token, ORCID and staff-record pairs are grouped
-    exactly. Staff records need their own bucket because the spellings they
-    reconcile ("Aleksei Dukhanov", "Alexey Duhanov") often share no token.
-    """
-    by_orcid: dict[str, list[Person]] = {}
-    by_token: dict[str, list[Person]] = {}
-    by_staff: dict[str, list[Person]] = {}
-    for person in people:
-        if person.orcid:
-            by_orcid.setdefault(person.orcid, []).append(person)
-        staff_id = (staff_ids or {}).get(person.id)
-        if staff_id:
-            by_staff.setdefault(staff_id, []).append(person)
-        for name in (person.name_raw, *person.name_variants):
-            for token in _name_tokens(name):
-                by_token.setdefault(token, []).append(person)
-
-    emitted: set[tuple[str, str]] = set()
-    for bucket in (*by_orcid.values(), *by_token.values(), *by_staff.values()):
-        unique = list({person.id: person for person in bucket}.values())
-        for i, first in enumerate(unique):
-            for second in unique[i + 1:]:
-                if in_scope is not None and first.id not in in_scope and second.id not in in_scope:
-                    continue
-                lower_id, higher_id = sorted((first.id, second.id))
-                pair = (lower_id, higher_id)
-                if pair in emitted:
-                    continue
-                emitted.add(pair)
-                yield first, second
+    yield from candidate_person_pairs(people, in_scope, staff_ids)
 
 
 # Names given as initials ("I. V. Smirnov") stand for a whole range of first
@@ -372,7 +319,30 @@ def plan_person_merges(
         merge_pairs.append((first.id, second.id))
         pair_rules[frozenset((first.id, second.id))] = rule
 
+    malformed_pairs: set[frozenset[str]] = set()
+
+    def hold_multi_person(first: Person, second: Person) -> bool:
+        from pauk.graph.person_resolution import is_multi_person_name
+
+        if not (is_multi_person_name(first.name_raw or "") or is_multi_person_name(second.name_raw or "")):
+            return False
+        members = frozenset((first.id, second.id))
+        if members not in malformed_pairs:
+            malformed_pairs.add(members)
+            row = {
+                "status": "held", "person_a": first.id, "name_a": first.name_raw,
+                "person_b": second.id, "name_b": second.name_raw,
+                "route": "multiple_people_record", "reason": "record contains multiple people",
+                "held_because": ["record contains multiple people"],
+            }
+            if decisions.get(members) == SAME:
+                row.update(status="disputed", rule="multiple_people_record")
+            report.append(row)
+        return True
+
     for first, second in _paired_persons(people, in_scope, staff_ids):
+        if hold_multi_person(first, second):
+            continue
         # A pooled record stands for everyone OpenAlex could not tell apart,
         # so it is nobody in particular and merges with nothing. Ahead of the
         # answers below: such a pair never reaches the queue to be asked about.
@@ -448,6 +418,7 @@ def plan_person_merges(
                 reasons.append("identical name with nothing corroborating it")
             if variant_evidence and both_itmo and not shared:
                 reasons.append("no shared coauthors")
+            reason = "; ".join(reasons)
             report.append({
                 "status": "held",
                 "person_a": first.id, "name_a": first.name_raw,
@@ -455,12 +426,15 @@ def plan_person_merges(
                 "shared_coauthors": len(shared),
                 "shared_departments": len(shared_departments),
                 "shared_fields": sorted(shared_fields),
+                "route": "heuristic_review",
+                "reason": reason,
                 "held_because": reasons,
             })
 
     # A merge somebody asked for, on a pair the blocking never offered.
-    # _paired_persons only yields people who share a name token, an ORCID or
-    # a staff record; without this, a renamed person would lose the answer.
+    # _paired_persons only yields people with matching surname blocks, ORCID
+    # or staff records; a person who renamed, or whose namesake left the
+    # selection, would silently lose the answer made about them.
     for members, verdict in decisions.items():
         if verdict != SAME or len(members) != 2:
             continue
@@ -471,44 +445,290 @@ def plan_person_merges(
             continue
         if in_scope is not None and first_id not in in_scope and second_id not in in_scope:
             continue
+        if hold_multi_person(by_id[first_id], by_id[second_id]):
+            continue
         plan_pair(by_id[first_id], by_id[second_id], "manual")
 
-    groups: list[tuple[Person, list[Person]]] = []
+    groups, group_report = _finalize_person_merge_groups(
+        merge_pairs,
+        pair_rules,
+        by_id,
+        trusted_orcid,
+        staff_ids,
+        decisions,
+    )
+    report.extend(group_report)
+    return groups, report
+
+
+def _finalize_person_merge_groups(
+    merge_pairs: list[tuple[str, str]],
+    pair_rules: dict[frozenset[str], str],
+    by_id: dict[str, Person],
+    trusted_orcid: dict[str, str | None],
+    staff_ids: dict[str, str] | None = None,
+    decisions: dict[frozenset[str], str] | None = None,
+) -> tuple[list[tuple[Person, list[Person]]], list[dict]]:
+    """Split a conflicted component instead of discarding every valid fold.
+
+    Pair decisions form transitive components. A single inferred bridge can
+    therefore connect two real people and make the old all-or-nothing safety
+    check discard every valid fold elsewhere in the component. Distinct
+    identity values act as fixed roots. Records without that identity are
+    attached to the uniquely nearest root; an equal-distance boundary stays
+    unresolved. The process repeats for every remaining identity conflict,
+    so every emitted group is internally consistent.
+
+    Contradictory manual answers remain all-or-nothing. Choosing an arbitrary
+    half of A=B, B=C, A!=C would silently reinterpret a human decision.
+    """
+    staff_ids = staff_ids or {}
+    decisions = decisions or {}
+    effective_rules = dict(pair_rules)
+    accepted: list[list[str]] = []
+    conflicts: list[tuple[list[str], str, set[str], list[tuple[str, str]]]] = []
+
     for members in _grouped(merge_pairs):
-        # Pairwise checks can't see transitive contradictions: A and B may
-        # each legitimately pair with a bridge person M yet differ from
-        # each other. A group spanning more than one ORCID (or any other
-        # explicit identity value) is refused whole, for manual review.
-        conflict = _group_conflict(members, by_id, trusted_orcid, staff_ids)
-        if conflict:
-            field, values = conflict
-            logger.warning(
-                "dedup: refusing to merge group %s: it spans %d distinct %s values",
-                sorted(members), len(values), field)
-            report.append({
-                "status": "held",
-                "persons": sorted(members),
-                "names": [by_id[member].name_raw for member in sorted(members)],
-                "held_because": [f"group spans {len(values)} distinct {field} values"],
-            })
+        manual_conflicts = [
+            tuple(sorted(pair))
+            for pair in combinations(members, 2)
+            if decisions.get(frozenset(pair)) == DIFFERENT
+        ]
+        if manual_conflicts:
+            conflicts.append((members, "manual decision", set(), manual_conflicts))
             continue
+
+        conflict = _group_conflict(members, by_id, trusted_orcid, staff_ids)
+        if conflict is None:
+            accepted.append(members)
+            continue
+
+        field, values = conflict
+        component_pairs = [
+            pair for pair in merge_pairs if pair[0] in members and pair[1] in members
+        ]
+        accepted.extend(
+            subgroup
+            for subgroup in _partition_conflicted_component(
+                members,
+                component_pairs,
+                by_id,
+                trusted_orcid,
+                staff_ids,
+            )
+            if len(subgroup) > 1
+        )
+        conflicts.append((members, field, values, []))
+
+    groups: list[tuple[Person, list[Person]]] = []
+    representative: dict[str, str] = {}
+    report: list[dict] = []
+    for members in accepted:
+        member_set = set(members)
         ranked = sorted(
             (by_id[member] for member in members),
-            key=lambda p: merge_rank(len(p.authored), p.orcid, p.id),
+            key=lambda person: merge_rank(
+                len(person.authored), person.orcid, person.id
+            ),
         )
         canonical, duplicates = ranked[0], ranked[1:]
         groups.append((canonical, duplicates))
+        for member in members:
+            representative[member] = canonical.id
         for duplicate in duplicates:
-            report.append({
-                "status": "merged",
-                "person_a": duplicate.id, "name_a": duplicate.name_raw,
-                "person_b": canonical.id, "name_b": canonical.name_raw,
-                "merged_into": canonical.id,
-                "rules": sorted({
-                    rule for pair, rule in pair_rules.items() if duplicate.id in pair
-                }),
-            })
+            rule_set = {
+                rule
+                for pair, rule in effective_rules.items()
+                if duplicate.id in pair and pair <= member_set
+            }
+            if (
+                trusted_orcid.get(duplicate.id)
+                and trusted_orcid.get(duplicate.id) == trusted_orcid.get(canonical.id)
+                and not rule_set.intersection({"orcid", "same_orcid"})
+            ):
+                rule_set.add("same_orcid")
+            if (
+                staff_ids.get(duplicate.id)
+                and staff_ids.get(duplicate.id) == staff_ids.get(canonical.id)
+                and not rule_set.intersection({"staff_catalog", "same_staff"})
+            ):
+                rule_set.add("same_staff")
+            rules = sorted(rule_set)
+            if "same_orcid" in rule_set:
+                route = "same_orcid"
+            elif "same_staff" in rule_set:
+                route = "same_staff"
+            else:
+                route = rules[0] if len(rules) == 1 else "transitive_merge"
+            report.append(
+                {
+                    "status": "merged",
+                    "person_a": duplicate.id,
+                    "name_a": duplicate.name_raw,
+                    "person_b": canonical.id,
+                    "name_b": canonical.name_raw,
+                    "merged_into": canonical.id,
+                    "route": route,
+                    "rules": rules,
+                }
+            )
+
+    for members, field, values, manual_conflicts in conflicts:
+        collapsed = sorted({representative.get(member, member) for member in members})
+        if len(collapsed) < 2:
+            continue
+        row = {
+            "status": "held",
+            "persons": collapsed,
+            "names": [by_id[member].name_raw for member in collapsed],
+        }
+        if manual_conflicts:
+            reason = "component contradicts a manual different-people decision"
+            row.update(
+                {
+                    "held_because": [reason],
+                    "reason": reason,
+                    "manual_conflicts": [
+                        list(pair) for pair in sorted(manual_conflicts)
+                    ],
+                    "route": "manual_conflict",
+                }
+            )
+        else:
+            logger.warning(
+                "dedup: keeping the conflicted remainder of group %s for review; "
+                "it spans %d distinct %s values",
+                sorted(members),
+                len(values),
+                field,
+            )
+            reason = f"group spans {len(values)} distinct {field} values"
+            row.update(
+                {
+                    "held_because": [reason],
+                    "reason": reason,
+                    "route": "component_conflict",
+                }
+            )
+        report.append(row)
+
     return groups, report
+
+
+def _partition_conflicted_component(
+    members: list[str],
+    pairs: list[tuple[str, str]],
+    by_id: dict[str, Person],
+    trusted_orcid: dict[str, str | None],
+    staff_ids: dict[str, str],
+) -> list[list[str]]:
+    """Return deterministic, conflict-free pieces of one connected component.
+
+    For the first conflicting identity field, every distinct non-empty value
+    is a fixed root. Identity-less records are assigned by shortest-path
+    distance over positive merge edges. A strict winner is safe to attach;
+    ties form their own unresolved boundary. Resulting induced components are
+    partitioned recursively when another identity field still conflicts.
+
+    The function deliberately does not choose between equally close roots.
+    Such a choice would make an arbitrary edge decide an identity and recreate
+    the false-merge risk this safety check exists to prevent.
+    """
+    member_set = set(members)
+    adjacency: dict[str, set[str]] = {member: set() for member in members}
+    for first, second in pairs:
+        if first in member_set and second in member_set:
+            adjacency[first].add(second)
+            adjacency[second].add(first)
+
+    def connected_parts(nodes: set[str]) -> list[list[str]]:
+        remaining = set(nodes)
+        parts: list[list[str]] = []
+        while remaining:
+            start = min(remaining)
+            queue = [start]
+            remaining.remove(start)
+            part: list[str] = []
+            while queue:
+                current = queue.pop()
+                part.append(current)
+                for neighbor in sorted(adjacency[current] & remaining, reverse=True):
+                    remaining.remove(neighbor)
+                    queue.append(neighbor)
+            parts.append(sorted(part))
+        return parts
+
+    def value_for(member: str, field: str) -> str | None:
+        if field == "ORCID":
+            return trusted_orcid.get(member) or None
+        if field == "staff record":
+            return staff_ids.get(member) or None
+        value = getattr(by_id[member], field)
+        return value if isinstance(value, str) and value else None
+
+    def split(part: list[str]) -> list[list[str]]:
+        conflict = _group_conflict(part, by_id, trusted_orcid, staff_ids)
+        if conflict is None:
+            return [sorted(part)]
+
+        field, values = conflict
+        part_set = set(part)
+        explicit = {member: value_for(member, field) for member in part}
+        distances: dict[str, dict[str, int]] = {}
+        for value in sorted(values):
+            distance = {
+                member: 0 for member in part if explicit[member] == value
+            }
+            queue = deque(sorted(distance))
+            while queue:
+                current = queue.popleft()
+                for neighbor in sorted(adjacency[current] & part_set):
+                    # A different explicit identity is a boundary, not a path
+                    # through which this root may claim records on the far side.
+                    if explicit[neighbor] not in (None, value):
+                        continue
+                    if neighbor not in distance:
+                        distance[neighbor] = distance[current] + 1
+                        queue.append(neighbor)
+            distances[value] = distance
+
+        buckets: dict[str | None, set[str]] = defaultdict(set)
+        for member in part:
+            if explicit[member] is not None:
+                buckets[explicit[member]].add(member)
+                continue
+            candidates = [
+                (distance[member], value)
+                for value, distance in distances.items()
+                if member in distance
+            ]
+            if not candidates:
+                buckets[None].add(member)
+                continue
+            nearest = min(distance for distance, _value in candidates)
+            winners = [
+                value for distance, value in candidates if distance == nearest
+            ]
+            buckets[winners[0] if len(winners) == 1 else None].add(member)
+
+        if any(bucket == part_set for bucket in buckets.values()):
+            # Nothing was separated, so recursing would repeat this step for
+            # ever. Every record goes back alone: the component keeps its
+            # conflict and a human decides, which is what the old refusal did.
+            return [[member] for member in sorted(part)]
+
+        result: list[list[str]] = []
+        for value, bucket in buckets.items():
+            if value is None:
+                # An edge between two ambiguous records does not identify
+                # which conflicting root either one belongs to.
+                result.extend([member] for member in sorted(bucket))
+                continue
+            for connected in connected_parts(bucket):
+                result.extend(split(connected))
+        return result
+
+    return split(sorted(members))
 
 
 def _group_conflict(
@@ -517,14 +737,17 @@ def _group_conflict(
     staff_ids: dict[str, str] | None = None,
 ) -> tuple[str, set[str]] | None:
     """The first identity field whose values split the group, if any."""
-    orcids = {orcid for member in members if (orcid := trusted_orcid.get(member)) is not None}
+    # An empty string is an absent identity, not a second one: counting it
+    # as a value splits a group on nothing, and the partitioner reads the
+    # same field back as absent, so the two disagree about the same record.
+    orcids = {orcid for member in members if (orcid := trusted_orcid.get(member))}
     if len(orcids) > 1:
         return "ORCID", orcids
-    staff = {(staff_ids or {}).get(member) for member in members} - {None}
+    staff = {(staff_ids or {}).get(member) for member in members} - {None, ""}
     if len(staff) > 1:
         return "staff record", staff
     for field in PROFILE_FIELDS:
-        values = {getattr(by_id[member], field) for member in members} - {None}
+        values = {getattr(by_id[member], field) for member in members} - {None, ""}
         if len(values) > 1:
             return field, values
     return None
@@ -807,13 +1030,14 @@ class DedupStage(EnrichmentStage):
                 elif entity == "repositories":
                     repository_merges = result
                 else:
-                    merged_persons, candidates = result
+                    merged_persons, candidates, component_conflicts = result
                 progress.update()
         return {
             "dedup_publications_merged": len(publication_merges),
             "dedup_repositories_merged": len(repository_merges),
             "dedup_merged": merged_persons,
             "dedup_candidates": candidates,
+            "dedup_component_conflicts": component_conflicts,
         }
 
 
@@ -1056,7 +1280,7 @@ class DedupStage(EnrichmentStage):
         return id_map
 
 
-    def _dedup_persons(self) -> tuple[int, int]:
+    def _dedup_persons(self) -> tuple[int, int, int]:
         people = list(self.prepared.read_models("persons", Person))
         fields_of = {
             publication.id: set(publication.fields)
@@ -1099,6 +1323,10 @@ class DedupStage(EnrichmentStage):
                 decisions=answers,
             )
 
+        preserve_person_sources(
+            self.prepared.db,
+            [person.id for canonical, duplicates in groups for person in (canonical, *duplicates)],
+        )
         removed: set[str] = set()
         for canonical, duplicates in groups:
             for duplicate in duplicates:
@@ -1119,9 +1347,12 @@ class DedupStage(EnrichmentStage):
         review.mark_applied_merges(self.prepared.db, folded_ids(people))
 
         held = sum(1 for row in report if row["status"] == "held")
-        # The queue the panel reads; the journal file below holds the whole run,
-        # merges included, for reading by eye.
-        review.record_held(self.prepared.db, report, source=review.STAGE)
+        component_conflicts = sum(
+            row.get("route") == "component_conflict" for row in report
+        )
+        # The queue the panel reads. The file below stays: it is the whole
+        # run in one place, merges included, and people read it by eye.
+        review.record_held(self.prepared.db, report, source=review.STAGE, aliases=folded_ids(people))
         review.record_disputed(self.prepared.db, report)
         report_path = self.config.audit_dir / self.prepared.group / CANDIDATES_FILENAME
         with AtomicWriter(report_path) as fh:
@@ -1130,7 +1361,7 @@ class DedupStage(EnrichmentStage):
         if report:
             logger.info("dedup: review journal in %s: %d merge(s) applied, %d pair(s) held",
                         report_path, len(removed), held)
-        return len(removed), held
+        return len(removed), held, component_conflicts
 
     def _staff_ids(self, people: list[Person]) -> dict[str, str]:
         """Staff-record identity per person, empty without a staff catalog.

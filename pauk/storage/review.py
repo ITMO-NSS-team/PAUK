@@ -151,11 +151,12 @@ def names_of(row: dict, members: list[str]) -> list[str | None]:
     return [by_id.get(member) for member in members]
 
 
-def record_held(db: Database, report: list[dict], source: str = STAGE) -> int:
+def record_held(db: Database, report: list[dict], source: str = STAGE,
+                *, aliases: dict[str, str] | None = None) -> int:
     """Store what a run refused to decide, as questions.
 
-    Only rows held back are kept. A merge the rules made needs no question,
-    and the audit already records it.
+    Only held rows create questions. Automatic separations retire an older
+    unanswered pair, without pretending that a human answered it.
 
     An answer already given is never touched. The evidence and the time it
     was last seen are refreshed, because a pair the rules keep re-examining
@@ -173,7 +174,27 @@ def record_held(db: Database, report: list[dict], source: str = STAGE) -> int:
         How many questions were written or refreshed.
     """
     moment = _now()
-    # One upsert per question: a few hundred rows once per run.
+    # Look up the existing queue once, not once per automatically rejected
+    # candidate. Large runs can contain millions of rejected pairs.
+    pending: dict[str, list[str]] = {}
+    aliases = aliases or {}
+    for question in db[COLLECTION].find(
+        {"kind": PAIR, "verdict": {"$exists": False}}, {"_id": 1, "members": 1}
+    ):
+        members = {aliases.get(member, member) for member in question["members"]}
+        if len(members) == 2:
+            pending.setdefault(question_id(PAIR, list(members)), []).append(question["_id"])
+    for row in report:
+        if row.get("status") != "separate":
+            continue
+        key = question_id(PAIR, members_of(row))
+        for pending_id in pending.get(key, ()):
+            db[COLLECTION].update_one(
+                {"_id": pending_id, "verdict": {"$exists": False}},
+                {"$set": {"auto_resolved_at": moment, "auto_resolution": row,
+                          "seen_at": moment, "source": source}})
+    # One upsert per question, like PreparedStore.upsert_models: a few
+    # hundred rows once per run, so a bulk write would buy nothing.
     written = 0
     for row in report:
         if row.get("status") != "held":
@@ -187,6 +208,7 @@ def record_held(db: Database, report: list[dict], source: str = STAGE) -> int:
         db[COLLECTION].update_one(
             {"_id": question_id(kind, members)},
             {"$set": {"evidence": evidence, "seen_at": moment, "source": source},
+             "$unset": {"auto_resolved_at": "", "auto_resolution": ""},
              "$setOnInsert": {"kind": kind, "members": members}},
             upsert=True)
         written += 1
@@ -255,6 +277,7 @@ def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
                   "decided_at": moment},
          # An answer settles what a skip postponed and what the rules disputed.
          "$unset": {"skipped_at": "", "skipped_by": "",
+                    "auto_resolved_at": "", "auto_resolution": "",
                     "disputed_at": "", "disputed_rule": ""},
          "$setOnInsert": {"kind": kind, "members": sorted(set(members)),
                           # A pair answered before any run held it has no evidence.
@@ -573,6 +596,8 @@ def _query(*, pressing: bool = False, answered: bool | None = None,
                         {"evidence.held_because": {"$in": list(PRESSING_REASONS)}}]
     if answered is not None:
         query["verdict"] = {"$exists": answered}
+    if answered is False:
+        query["auto_resolved_at"] = {"$exists": False}
     if skipped is not None:
         query["skipped_at"] = {"$exists": skipped}
     if disputed is not None:

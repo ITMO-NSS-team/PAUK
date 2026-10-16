@@ -178,6 +178,8 @@ def _shown(row: dict, back: str = "") -> dict:
         "shared_coauthors": evidence.get("shared_coauthors"),
         "shared_departments": evidence.get("shared_departments"),
         "shared_fields": evidence.get("shared_fields") or [],
+        "input_route": evidence.get("input_route"),
+        "model_verdicts": evidence.get("model_verdicts") or {},
         "seen_at": row.get("seen_at"),
         "verdict": row.get("verdict"),
         "actor": row.get("actor"),

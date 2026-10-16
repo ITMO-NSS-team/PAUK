@@ -437,6 +437,21 @@ class AuditedNeo4jClient:
         self._emit_diffs("upsert_relationships", entity_type, before, after)
         return matched
 
+    def set_relationship_properties_batch(
+        self, src_label: str, tgt_label: str, rel_type: str,
+        relationships: list[tuple[str, str, dict]], tgt_match_prop: str = "id",
+    ) -> int:
+        if not relationships:
+            return 0
+        entity_type = f"({src_label})-[:{rel_type}]->({tgt_label})"
+        pairs = [(src, tgt) for src, tgt, _props in relationships]
+        before = self._fetch_rel_props(src_label, tgt_label, rel_type, tgt_match_prop, pairs)
+        matched = self._client.set_relationship_properties_batch(
+            src_label, tgt_label, rel_type, relationships, tgt_match_prop)
+        after = self._fetch_rel_props(src_label, tgt_label, rel_type, tgt_match_prop, pairs)
+        self._emit_diffs("set_relationship_properties", entity_type, before, after)
+        return matched
+
     def sync_mentions_links_batch(
         self, publications: list[tuple[str, list[str], list[str]]]
     ) -> int:

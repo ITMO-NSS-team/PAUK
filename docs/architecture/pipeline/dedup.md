@@ -55,54 +55,84 @@ name, an identical name with no corroboration) are never merged automatically.
 They go into the journal with a reason and stay separate until someone confirms
 them by hand.
 
-**Group conflict.** Merging is transitive (A=B, B=C implies A=C via
-union-find), but pairwise checks do not see transitive contradictions: A and B
-may each legitimately match a bridge person M while differing from each other.
-A group that spans more than one value of an explicit identity field (two
-different ORCIDs in one group, etc.) is rejected as a whole and journalled for
-manual review; it is not merged partially.
+**Candidate generation.** Surname-aware blocking handles token order,
+transliteration and compound names. Given names and initials alone are not
+blocking keys. Matching ORCID and staff IDs are independent channels.
+Ambiguous name matches require additional context; bucket size is not silently
+truncated.
+
+**Group conflict.** Identity-compatible subgroups may merge, but ambiguous
+bridges remain in review. Explicit operator separations and conflicting identity
+fields cannot be bypassed through a third person.
 
 ### Confidence-based resolver
 
-When `PAUK_PERSON_RESOLUTION_ENABLED` is true (the default), both the `dedup`
-stage and `pauk dedup graph` use the resolver below instead of the rule-only
-planner. `graph/person_resolution.py` holds the features, the prompt contracts
-of both Qwen steps, evidence serialization and the decision state machine. The
-trained LogReg parameters are stored separately in
-`graph/artifacts/person_resolution_logreg.pkl` and validated on load. Model
-calls, caching and logging are in `pipeline/person_resolution.py`; feature
-collection and building the merge plan are in
-`pipeline/person_resolution_planner.py`.
+Both the prepared-data stage and graph dedup use the same resolver by default:
+
+`pipeline/person_role_features.py` defines the fitted features;
+`graph/person_resolution_single.py` defines the single-judge contract.
+`pipeline/person_resolution_planner.py` builds the plan, while
+`pipeline/person_resolution.py` handles model calls and caching.
 
 ```mermaid
 flowchart LR
-    A[46 features] --> B[LogReg]
-    B -->|low probability| C[different]
-    B -->|high probability| D[duplicate]
-    B -->|uncertain zone| E[Qwen]
-    E -->|different| C
-    E -->|duplicate| F[independent Qwen judge]
-    F --> C
-    F --> D
+    A[56 role-aware features] --> B[LogReg]
+    B -->|p below 0.13| C[Separate]
+    B -->|p at least 0.94| D[Merge safety checks]
+    B -->|otherwise| E[One full-context Qwen request]
+    E -->|merge| D
+    E -->|separate| C
+    E -->|review or unavailable| F[Admin review]
+    D -->|supported| G[Merge plan]
+    D -->|ambiguous| F
 ```
 
-ORCID, staff id, profile identifiers and an initials conflict are checked
-before the probabilistic decision. The thresholds are not hard-coded:
-`ResolverPolicy` defaults to `separate_below=0.05` and `merge_from=0.99`, and
-another mode is set through the environment.
+`graph/artifacts/person_resolution_logreg.pkl` contains the fitted scaler,
+coefficients and frozen surname frequencies for the `roles_v3_raw56` contract.
+The feature schema is validated before inference. Training used 388 annotated
+pairs and 360 synthetic training examples. Replace the trusted data-only pickle
+through `PAUK_PERSON_RESOLUTION_LOGREG_MODEL_PATH`; code and feature contract
+must match the artifact.
 
-Environment settings: `PAUK_PERSON_RESOLUTION_ENABLED`,
+The features combine role-aligned surname/given-name compatibility, token and
+transliteration similarity, identifiers, catalog status, publications,
+collaborators and institutional context. The single Qwen request includes
+both researcher contexts and computed name facts, without the LogReg score or
+a previous model verdict. It returns `merge`, `separate` or `review`.
+
+Role alignment prefers explicit and primary readings over alphabetical order.
+Unresolved reversed names use the more frequent surname interpretation; missing
+surname frequencies provide no rarity evidence. Identical or reordered full names
+without shared publications or collaborators require Qwen even above the local
+merge threshold, unless a matching trusted identifier establishes identity.
+Shared publications without independent small-team collaborators likewise require
+Qwen instead of a local high-score merge. A shared work, its coauthors and its
+topic labels are not independent confirmations; the prompt requests review when
+compatible names have no support beyond that shared source.
+
+Matching identifiers with incompatible primary names require review. Initials-only
+matches without independent small-team collaborators also require review unless
+a matching trusted identifier supports them. These checks apply to both local
+and Qwen merge proposals. Missing evidence alone is not a separation rule.
+
+Settings: `PAUK_PERSON_RESOLUTION_ENABLED`,
 `PAUK_PERSON_RESOLUTION_MODEL`, `PAUK_PERSON_RESOLUTION_LOGREG_MODEL_PATH`,
 `PAUK_PERSON_RESOLUTION_CONCURRENCY`, `PAUK_PERSON_RESOLUTION_SEPARATE_BELOW`
-and `PAUK_PERSON_RESOLUTION_MERGE_FROM`. If the OpenRouter key is missing or a
-model response is invalid, the pair is not merged and gets the status `held`.
-To replace the LogReg model, put a new trusted pickle with the same schema in
-place and point `PAUK_PERSON_RESOLUTION_LOGREG_MODEL_PATH` at it; the feature
-order and count are checked before the first decision.
+and `PAUK_PERSON_RESOLUTION_MERGE_FROM`. Defaults are defined in
+`pauk/person_resolution_defaults.py`. Qwen confidence is descriptive; it is
+not an additional merge threshold. Missing/invalid responses go to review.
+Cache keys include the model, prompt and evidence, but not the transient pair
+number. Retries are reserved for failed or invalid responses.
 
-Pairs with status `held` are written to the manual review queue automatically,
-and operator answers are applied on the next run. The JSONL journal remains as
-the full audit of the run.
+Held pairs are stored in `review_pairs` with their input route and model verdict
+for the admin panel. Automatically separated pairs retire obsolete unanswered
+questions. Existing operator decisions remain authoritative.
+
+Before prepared-person merges, complete source rows are preserved in
+`person_merge_sources`. Failure to preserve any participant aborts before the
+merge writes. Unmerge uses these durable copies when live rows were removed or
+already aggregate the returning person, and restores prepared rows as well as
+the graph so the next publish keeps the split.
 
 ## Publications
 

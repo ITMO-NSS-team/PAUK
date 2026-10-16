@@ -85,6 +85,20 @@ class FakeGraph:
             matched += 1
         return matched
 
+    def set_relationship_properties_batch(self, src_label, tgt_label, rel_type, relationships,
+                                         tgt_match_prop="id"):
+        matched = 0
+        for src, tgt, props in relationships:
+            edge = self.relationships.get((src_label, rel_type, tgt_label, src, tgt))
+            if edge is not None:
+                for field, value in props.items():
+                    if value is None:
+                        edge.pop(field, None)
+                    else:
+                        edge[field] = value
+                matched += 1
+        return matched
+
     def delete_relationships_batch(self, src_label, tgt_label, rel_type, pairs,
                                    tgt_match_prop="id"):
         self.calls.append("delete_relationships_batch")

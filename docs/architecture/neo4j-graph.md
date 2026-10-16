@@ -62,6 +62,11 @@ are local to that file. The array is always sent alongside the contexts,
 including empty strings for unknown sources, so republishing cannot leave old
 PDF ids attached to new evidence.
 
+Person merges and repeated publication preserve accumulated names, emails and
+affiliations. An aggregated `AUTHORED.is_corresponding` stays true if any source
+record is true. Explicit edits and verified unmerge operations can restore or
+remove values; a partial source record cannot erase another merged record's data.
+
 For links extracted with line-break alternatives, `MENTIONS_LINK` also
 stores `url_ambiguous`, `candidate_urls` (a flat list of strings) and
 `availability`. An ambiguous occurrence does not confirm an authored
