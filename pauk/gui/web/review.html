@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Разбор прогонов</title>
+<style>
+@font-face {
+  font-family: "Inter"; font-style: normal; font-weight: 400 900; font-display: swap;
+  src: url("vendor/fonts/inter-cyrillic.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "Inter"; font-style: normal; font-weight: 400 900; font-display: swap;
+  src: url("vendor/fonts/inter-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+                 U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215;
+}
+:root {
+  /* the map's grayscale tokens, so the page reads as part of the same tool */
+  --g1: #F2F2F2; --g2: #C4C4C4; --g3: #9D9D9D; --g5: #616161; --g7: #191F1D;
+  --bg: #ffffff; --surface: var(--g1); --border: var(--g2); --text: var(--g7);
+  --muted: var(--g5); --faint: var(--g3); --accent: #181e1e; --link: #3555e0;
+  --ok: #1f7a3f; --ok-bg: #e3f4e8; --part: #8a5a00; --part-bg: #fbf0d9; --bad: #b42318; --bad-bg: #fde7e4;
+  --radius: 8px; --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--text); font: 14px/1.45 var(--font); -webkit-font-smoothing: antialiased; }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button, select, textarea, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.layout { display: grid; grid-template-rows: auto 1fr; height: 100%; }
+header {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+}
+header h1 { font-size: 15px; margin: 0; font-weight: 700; }
+header label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+header select { padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); }
+.summary { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; font-size: 12px; }
+.pill { padding: 2px 8px; border-radius: 999px; background: var(--surface); color: var(--muted); white-space: nowrap; }
+.pill.ok { background: var(--ok-bg); color: var(--ok); }
+.pill.part { background: var(--part-bg); color: var(--part); }
+.pill.bad { background: var(--bad-bg); color: var(--bad); }
+
+.body { display: grid; grid-template-columns: 340px 1fr; min-height: 0; }
+nav { border-right: 1px solid var(--border); overflow-y: auto; }
+.q {
+  display: grid; grid-template-columns: 22px 1fr; gap: 2px 8px; width: 100%; text-align: left;
+  padding: 9px 14px; border: 0; border-bottom: 1px solid var(--surface); background: none; cursor: pointer;
+}
+.q:hover { background: var(--surface); }
+.q.active { background: var(--g1); box-shadow: inset 3px 0 0 var(--accent); }
+.q .n { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+.q .text { font-size: 13px; }
+.q .meta { grid-column: 2; display: flex; gap: 6px; align-items: center; font-size: 11px; color: var(--muted); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--g2); display: inline-block; }
+.dot.ok { background: var(--ok); } .dot.part { background: #d39b26; } .dot.bad { background: var(--bad); }
+
+main { overflow-y: auto; padding: 18px 24px 60px; }
+.empty { color: var(--muted); padding: 40px; }
+.title { font-size: 18px; font-weight: 700; margin: 0 0 4px; }
+.sub { font-size: 12px; color: var(--muted); }
+.expected { margin-top: 6px; font-size: 13px; }
+.expected b { color: var(--muted); font-weight: 600; }
+
+.marks {
+  position: sticky; top: -18px; z-index: 2; background: var(--bg); margin: 14px -24px 0; padding: 12px 24px;
+  border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center;
+}
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: var(--bg); padding: 5px 12px; cursor: pointer; border-right: 1px solid var(--border); }
+.seg button:last-child { border-right: 0; }
+.seg button.on[data-v="да"] { background: var(--ok-bg); color: var(--ok); font-weight: 600; }
+.seg button.on[data-v="частично"] { background: var(--part-bg); color: var(--part); font-weight: 600; }
+.seg button.on[data-v="нет"] { background: var(--bad-bg); color: var(--bad); font-weight: 600; }
+.marks select { padding: 5px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); }
+/* the comment gets a full row: a judgement worth keeping is usually a few sentences */
+.marks textarea {
+  order: 10; flex: 1 1 100%; min-height: 110px; max-height: 45vh; padding: 8px 10px; line-height: 1.45;
+  border: 1px solid var(--border); border-radius: 6px; resize: vertical;
+}
+.save-state { font-size: 12px; color: var(--muted); min-width: 80px; }
+.save-state.err { color: var(--bad); }
+
+section { margin-top: 22px; }
+h2 { font-size: 13px; font-weight: 700; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+.answer { background: var(--surface); border-radius: var(--radius); padding: 12px 16px; }
+.answer p { margin: 0 0 8px; } .answer p:last-child { margin: 0; } .answer ul { margin: 0 0 8px; padding-left: 20px; }
+.notes div { background: var(--part-bg); color: var(--part); border-radius: 6px; padding: 6px 10px; margin-bottom: 6px; font-size: 13px; }
+.notes div.err { background: var(--bad-bg); color: var(--bad); }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 13px; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; }
+.chip { display: inline-block; background: var(--surface); border-radius: 4px; padding: 1px 6px; margin: 0 4px 2px 0; font-size: 12px; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 6px 10px; border-bottom: 1px solid var(--surface); text-align: left; vertical-align: top; }
+th { font-size: 11px; color: var(--muted); background: var(--surface); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.small { font-size: 12px; color: var(--muted); }
+.tiles { display: flex; flex-wrap: wrap; gap: 8px; }
+.tile { background: var(--surface); border-radius: var(--radius); padding: 8px 12px; min-width: 110px; }
+.tile b { display: block; font-size: 18px; }
+.tile span { font-size: 11px; color: var(--muted); }
+.bars { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--surface); margin-bottom: 6px; }
+.bars div { height: 100%; }
+details summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+pre { font: 12px/1.4 var(--mono); background: var(--surface); border-radius: 6px; padding: 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+.keys { font-size: 11px; color: var(--faint); }
+
+.pool-hint { margin-top: 12px; font-size: 13px; color: var(--muted); background: var(--surface); border-radius: 6px; padding: 8px 12px; }
+.pool-item { display: grid; grid-template-columns: auto 1fr; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--surface); }
+.pool-item.judged { opacity: .72; }
+.pool-item.judged:hover { opacity: 1; }
+.grade { display: inline-flex; align-self: start; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.grade button { width: 34px; padding: 6px 0; border: 0; border-right: 1px solid var(--border); background: var(--bg); cursor: pointer; font-weight: 600; }
+.grade button:last-child { border-right: 0; }
+.grade button.on[data-g="0"] { background: var(--bad-bg); color: var(--bad); }
+.grade button.on[data-g="1"] { background: var(--part-bg); color: var(--part); }
+.grade button.on[data-g="2"] { background: var(--ok-bg); color: var(--ok); }
+.pool-pubs { margin: 4px 0 0; padding-left: 18px; font-size: 12px; color: var(--muted); }
+.pool-abstract { margin-top: 4px; font-size: 12px; color: var(--muted); }
+
+@media (max-width: 800px) {
+  .body { grid-template-columns: 1fr; grid-template-rows: 40vh 1fr; }
+  nav { border-right: 0; border-bottom: 1px solid var(--border); }
+  main { padding: 14px 16px 40px; }
+  .marks { margin: 14px -16px 0; padding: 10px 16px; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+  <header>
+    <h1>Разбор прогонов</h1>
+    <label>Прогон <select id="run"></select></label>
+    <label>Режим <select id="mode"><option value="answers">ответы</option><option value="pool">оценка пула</option></select></label>
+    <label>Тип <select id="f-type"><option value="">все</option></select></label>
+    <label>Оценка <select id="f-mark">
+      <option value="">все</option><option value="-">не размечено</option>
+      <option value="да">да</option><option value="частично">частично</option><option value="нет">нет</option>
+    </select></label>
+    <div class="summary" id="summary"></div>
+  </header>
+  <div class="body">
+    <nav id="list"></nav>
+    <main id="detail"><div class="empty">Загрузка…</div></main>
+  </div>
+</div>
+<script src="review.js"></script>
+</body>
+</html>
