@@ -99,6 +99,38 @@ def parse_response(payload: Mapping[str, Any], expected_id: int) -> SingleVerdic
     return SingleVerdict(Decision(payload.get("decision")), payload.get("confidence"), payload.get("reason"))
 
 
+BATCH_SYSTEM_PROMPT = (
+    SYSTEM_PROMPT
+    + """
+Batch mode: the input is {"pairs":[...]}, several independent pairs in the format above.
+Judge every pair on its own evidence only; never carry names, evidence or decisions from one pair to another.
+Return exactly JSON {"results":[...]} holding one result object per input pair, in the format above,
+each with its input id.
+"""
+)
+
+
+def batch_payload(payloads: list[dict[str, Any]]) -> dict[str, Any]:
+    return {"pairs": payloads}
+
+
+def split_batch_response(payload: Mapping[str, Any]) -> dict[int, Mapping[str, Any]]:
+    """Per-pair result objects of a batch reply, by id; an id answered twice is left out."""
+    results = payload.get("results")
+    if not isinstance(results, list):
+        return {}
+    found: dict[int, Mapping[str, Any]] = {}
+    repeated: set[int] = set()
+    for result in results:
+        if not isinstance(result, Mapping) or type(result.get("id")) is not int:
+            continue
+        pair_id = result["id"]
+        if pair_id in found:
+            repeated.add(pair_id)
+        found[pair_id] = result
+    return {pair_id: result for pair_id, result in found.items() if pair_id not in repeated}
+
+
 def full_payload(context: SecondStageContext, evidence: PairEvidence) -> dict[str, Any]:
     rich = context.as_judge_payload()
     compact = first_stage_payload(context.pair_id, evidence)["pairs"][0]

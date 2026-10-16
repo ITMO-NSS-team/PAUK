@@ -47,6 +47,45 @@ Set the LLM stage threads in advance: `PAUK_PERSON_RESOLUTION_CONCURRENCY`
 `PAUK_AUTHOR_NAMES_CONCURRENCY` (names; at 16 it takes an hour instead of
 sixteen).
 
+### LLM provider: OpenRouter or a Claude subscription
+
+`link_relevance`, `author_names` and person resolution in dedup can run
+through the `claude` CLI on a Claude subscription instead of OpenRouter.
+Values: `openrouter` (default), `claude` (Haiku) or `claude:<model>`, e.g.
+`claude:sonnet`. `PAUK_LLM_PROVIDER` sets `link_relevance` and
+`author_names`; `PAUK_LINK_RELEVANCE_PROVIDER` and `PAUK_AUTHOR_NAMES_PROVIDER`
+override it for one stage. Person resolution switches only through
+`PAUK_PERSON_RESOLUTION_PROVIDER`.
+
+The CLI must be on `PATH` and logged in to the subscription:
+`claude auth status` shows `"authMethod": "claude.ai"`. On a machine without
+an interactive login, put the token from `claude setup-token` into
+`CLAUDE_CODE_OAUTH_TOKEN` in `.env`. PAUK starts the CLI without
+`ANTHROPIC_API_KEY` and the other variables that would bill the API instead of
+the subscription. A CLI call times out after `PAUK_REQUEST_TIMEOUT`, but not
+sooner than 120 s.
+
+One full run on Haiku:
+
+| Stage | Requests | Share of a 5-hour window | Time |
+|---|---|---|---|
+| `link_relevance` | ~560 | ~2% | 35 min (one thread) |
+| `author_names` | ~14,000 | ~90% | 2 h at 8 threads |
+| person resolution | ~11,500 | ~80% | 1.7 h at 8 threads |
+
+On OpenRouter the same stages cost about $0.65, $28 (Haiku) and $3 (Qwen) per
+run. Sonnet uses about three times as much of the limit, and the limit is
+shared with any other use of the account. `author_names` and person resolution
+do not fit in one 5-hour window together. When the limit runs out, calls fail
+with `subscription limit reached`: `link_relevance` and `author_names` mark the
+record failed and retry it on the next run; person resolution sends the pair
+to review.
+
+Person-resolution answers are cached per model, so switching
+`PAUK_PERSON_RESOLUTION_PROVIDER` asks every pair again, and another model
+makes other merge decisions. Check the merge plan before switching. The
+subscription terms are written for individual use of the account.
+
 `PAUK_PDF_CRAWLER_URL` turns on the PDF-Crawler-Service fallback; an empty
 value turns it off. If the service cannot find PDFs by DOI from your network,
 every publication wastes minutes and gets a 422 - then it is better to turn

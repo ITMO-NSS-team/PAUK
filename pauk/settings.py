@@ -27,6 +27,10 @@ class Settings:
     github_token: str = os.getenv("GITHUB_TOKEN", "")
     openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
     llm_model: str = os.getenv("PAUK_LLM_MODEL", "qwen/qwen-2.5-72b-instruct")
+    llm_provider: str = os.getenv("PAUK_LLM_PROVIDER", "openrouter")
+    link_relevance_provider: str = os.getenv("PAUK_LINK_RELEVANCE_PROVIDER", "")
+    author_names_provider: str = os.getenv("PAUK_AUTHOR_NAMES_PROVIDER", "")
+    person_resolution_provider: str = os.getenv("PAUK_PERSON_RESOLUTION_PROVIDER", "")
     person_resolution_enabled: bool = os.getenv(
         "PAUK_PERSON_RESOLUTION_ENABLED", "true"
     ).lower() in ("1", "true", "yes")
@@ -40,6 +44,7 @@ class Settings:
     person_resolution_concurrency: int = int(
         os.getenv("PAUK_PERSON_RESOLUTION_CONCURRENCY", "8")
     )
+    person_resolution_batch_size: int = int(os.getenv("PAUK_PERSON_RESOLUTION_BATCH_SIZE", "1"))
     author_names_concurrency: int = int(os.getenv("PAUK_AUTHOR_NAMES_CONCURRENCY", "8"))
     person_resolution_separate_below: float = float(
         os.getenv("PAUK_PERSON_RESOLUTION_SEPARATE_BELOW", str(SEPARATE_BELOW))
@@ -62,6 +67,13 @@ class Settings:
     # Official ITMO staff records (personal data, never committed).
     # None means <static_dir>/russian_names.csv.
     russian_names_file: str | None = os.getenv("PAUK_RUSSIAN_NAMES_FILE") or None
+
+    def provider_for(self, stage: str) -> str:
+        """LLM provider for a stage: its own setting, else PAUK_LLM_PROVIDER; dedup only by its own."""
+        own = getattr(self, f"{stage}_provider")
+        if stage == "person_resolution":
+            return own or "openrouter"
+        return own or self.llm_provider
 
     @property
     def static_dir(self) -> Path:

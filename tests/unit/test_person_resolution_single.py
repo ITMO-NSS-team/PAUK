@@ -1,3 +1,4 @@
+import hashlib
 import json
 import math
 import tempfile
@@ -18,9 +19,17 @@ from pauk.graph.person_resolution import (
     merge_review_reason,
     resolve_pair,
 )
-from pauk.graph.person_resolution_single import SingleVerdict, apply_verdict, full_payload, parse_response
+from pauk.graph.person_resolution_single import (
+    BATCH_SYSTEM_PROMPT,
+    SYSTEM_PROMPT,
+    SingleVerdict,
+    apply_verdict,
+    full_payload,
+    parse_response,
+    split_batch_response,
+)
 from pauk.models import Person
-from pauk.pipeline.person_resolution import OpenRouterResolutionModels
+from pauk.pipeline.person_resolution import OpenRouterResolutionModels, _Request
 from pauk.pipeline.person_resolution_planner import plan_person_merges_resolved
 from pauk.pipeline.stages.dedup import DedupStage
 from pauk.settings import Settings
@@ -201,7 +210,11 @@ class SingleResolutionTest(unittest.TestCase):
 
     def test_single_response_is_cached_across_pair_renumbering(self):
         models = OpenRouterResolutionModels(
-            Settings(openrouter_api_key="test-key"), mongomock.MongoClient().db, "test"
+            Settings(
+                openrouter_api_key="test-key", person_resolution_provider="openrouter", person_resolution_batch_size=1
+            ),
+            mongomock.MongoClient().db,
+            "test",
         )
         context = SecondStageContext(
             7, ResearcherContext("A1", "Nikitin"), ResearcherContext("A2", "Nikitin"), "both_missing", "both_missing"
@@ -233,7 +246,11 @@ class SingleResolutionTest(unittest.TestCase):
                     ],
                 )
                 config = Settings(
-                    data_dir=Path(directory), openrouter_api_key="test-key", person_resolution_enabled=True
+                    data_dir=Path(directory),
+                    openrouter_api_key="test-key",
+                    person_resolution_enabled=True,
+                    person_resolution_provider="openrouter",
+                    person_resolution_batch_size=1,
                 )
                 requests = []
 
@@ -251,3 +268,127 @@ class SingleResolutionTest(unittest.TestCase):
                 self.assertEqual(len(questions), int(action == "review"))
                 if questions:
                     self.assertEqual(questions[0]["evidence"]["model_verdicts"]["single"]["decision"], "review")
+
+
+def answer(pair_id, decision="merge"):
+    return {"id": pair_id, "decision": decision, "confidence": 0.9, "reason": "shared coauthors"}
+
+
+class PairPackingTest(unittest.TestCase):
+    def setUp(self):
+        self.db = mongomock.MongoClient().db
+        self.calls = []
+
+    def models(self, batch_size, api_key="test-key"):
+        config = Settings(
+            openrouter_api_key=api_key,
+            person_resolution_provider="openrouter",
+            person_resolution_model="test-model",
+            person_resolution_batch_size=batch_size,
+        )
+        return OpenRouterResolutionModels(config, self.db, "test")
+
+    def items(self, numbers):
+        return [
+            (
+                SecondStageContext(
+                    number,
+                    ResearcherContext(f"A{number}", f"Nikitin{number}"),
+                    ResearcherContext(f"B{number}", f"Nikitin{number}"),
+                    "both_missing",
+                    "both_missing",
+                ),
+                evidence(person_a=f"A{number}", person_b=f"B{number}"),
+            )
+            for number in numbers
+        ]
+
+    def run_models(self, models, numbers, batch_reply=None):
+        def respond(client, prompt, system_prompt=None, **kwargs):
+            body = json.loads(prompt)
+            self.calls.append((system_prompt, body))
+            if system_prompt == SYSTEM_PROMPT:
+                return answer(body["id"])
+            ids = [pair["id"] for pair in body["pairs"]]
+            return batch_reply(ids) if batch_reply else {"results": [answer(pair_id) for pair_id in reversed(ids)]}
+
+        with patch("pauk.sources.OpenRouterClient.chat_json", respond):
+            return models.single_many(self.items(numbers))
+
+    def test_batch_size_one_sends_the_request_unchanged(self):
+        verdicts = self.run_models(self.models(1), [1, 2])
+
+        context, pair_evidence = self.items([1])[0]
+        self.assertEqual(self.calls[0], (SYSTEM_PROMPT, full_payload(context, pair_evidence)))
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual({verdict.decision for verdict in verdicts.values()}, {Decision.MERGE})
+
+    def test_pairs_are_packed_and_matched_back_by_id(self):
+        verdicts = self.run_models(self.models(3), [1, 2, 3, 4, 5])
+
+        self.assertEqual([len(body["pairs"]) for _, body in self.calls], [3, 2])
+        self.assertEqual({system for system, _ in self.calls}, {BATCH_SYSTEM_PROMPT})
+        self.assertEqual(sorted(verdicts), [1, 2, 3, 4, 5])
+        self.assertTrue(all(verdict.decision is Decision.MERGE for verdict in verdicts.values()))
+
+    def test_a_pair_left_out_answered_twice_or_invalid_is_asked_alone(self):
+        def reply(ids):
+            return {"results": [answer(1), answer(1, "separate"), answer(3, "maybe"), answer(4)]}
+
+        verdicts = self.run_models(self.models(4), [1, 2, 3, 4], reply)
+
+        alone = sorted(body["id"] for system, body in self.calls if system == SYSTEM_PROMPT)
+        self.assertEqual(alone, [1, 2, 3])
+        self.assertEqual(sorted(verdicts), [1, 2, 3, 4])
+
+    def test_a_failed_batch_is_tried_twice_and_not_asked_pair_by_pair(self):
+        verdicts = self.run_models(self.models(2), [1, 2], lambda ids: None)
+
+        self.assertEqual([system for system, _ in self.calls], [BATCH_SYSTEM_PROMPT, BATCH_SYSTEM_PROMPT])
+        self.assertEqual(verdicts, {1: None, 2: None})
+
+    def test_without_a_provider_batch_mode_still_reads_cached_batch_answers(self):
+        self.run_models(self.models(2), [1, 2])
+        self.calls.clear()
+
+        verdicts = self.run_models(self.models(2, api_key=""), [1, 2])
+
+        self.assertEqual(self.calls, [])
+        self.assertTrue(all(verdict.decision is Decision.MERGE for verdict in verdicts.values()))
+
+    def test_batch_size_one_keeps_the_cache_key(self):
+        models = self.models(1)
+        context, pair_evidence = self.items([7])[0]
+        payload = full_payload(context, pair_evidence)
+        request = _Request(7, "qwen_single", SYSTEM_PROMPT, payload, 260, parse_response)
+        raw = json.dumps(
+            {"model": "test-model", "stage": "qwen_single", "system": SYSTEM_PROMPT, "payload": {**payload, "id": 0}},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+        self.assertEqual(models._fingerprint(request), hashlib.sha256(raw.encode("utf-8")).hexdigest())
+
+    def test_batch_answers_are_reused_in_batch_mode_only(self):
+        self.run_models(self.models(2), [1, 2])
+        self.calls.clear()
+        self.run_models(self.models(2), [1, 2])
+        self.assertEqual(self.calls, [])
+
+        self.run_models(self.models(1), [1, 2])
+        self.assertEqual(len(self.calls), 2)
+
+    def test_single_answers_are_reused_in_batch_mode(self):
+        self.run_models(self.models(1), [1, 2])
+        self.calls.clear()
+
+        self.run_models(self.models(2), [1, 2, 3])
+
+        self.assertEqual([[pair["id"] for pair in body["pairs"]] for _, body in self.calls], [[3]])
+
+    def test_split_drops_repeated_and_malformed_results(self):
+        reply = {"results": [answer(1), answer(1), answer(2), {"id": "3"}, "x"]}
+
+        self.assertEqual(sorted(split_batch_response(reply)), [2])
+        self.assertEqual(split_batch_response({"results": "none"}), {})
