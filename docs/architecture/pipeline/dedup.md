@@ -88,7 +88,7 @@ flowchart LR
 ```
 
 `graph/artifacts/person_resolution_logreg.pkl` contains the fitted scaler,
-coefficients and frozen surname frequencies for the `roles_v2_raw56` contract.
+coefficients and frozen surname frequencies for the `roles_v3_raw56` contract.
 The feature schema is validated before inference. Training used 388 annotated
 pairs and 360 synthetic training examples. Replace the trusted data-only pickle
 through `PAUK_PERSON_RESOLUTION_LOGREG_MODEL_PATH`; code and feature contract
@@ -99,6 +99,12 @@ transliteration similarity, identifiers, catalog status, publications,
 collaborators and institutional context. The single Qwen request includes
 both researcher contexts and computed name facts, without the LogReg score or
 a previous model verdict. It returns `merge`, `separate` or `review`.
+
+Role alignment prefers explicit and primary readings over alphabetical order.
+Unresolved reversed names use the more frequent surname interpretation; missing
+surname frequencies provide no rarity evidence. Identical or reordered full names
+without shared publications or collaborators require Qwen even above the local
+merge threshold, unless a matching trusted identifier establishes identity.
 
 Matching identifiers with incompatible primary names require review. Initials-only
 matches without independent small-team collaborators also require review unless

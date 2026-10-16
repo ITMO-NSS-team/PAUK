@@ -22,7 +22,7 @@ def artifact(feature_names=MODEL_FEATURES, *, intercept=0.0):
         "scales": (1.0,) * size,
         "coefficients": (0.0,) * size,
         "intercept": intercept,
-        "feature_contract": "roles_v2_raw56",
+        "feature_contract": "roles_v3_raw56",
         "surname_counts": {},
     }
 
@@ -51,7 +51,7 @@ class PersonResolutionModelTest(unittest.TestCase):
             surname_occurrences_b=5,
         )
 
-        self.assertAlmostEqual(logistic_probability(evidence, model), 0.9906734529380233, places=12)
+        self.assertAlmostEqual(logistic_probability(evidence, model), 0.9819791912082376, places=12)
 
     def test_model_can_be_replaced_without_changing_code(self):
         model = load_logistic_model(self.write_artifact(artifact(intercept=0.0)), MODEL_FEATURES)
@@ -101,6 +101,11 @@ class PersonResolutionModelTest(unittest.TestCase):
                 load_logistic_model(
                     self.write_artifact(artifact() | {"surname_counts": {"petrov": value}}), MODEL_FEATURES
                 )
+
+    def test_old_alignment_contract_is_rejected(self):
+        payload = artifact() | {"feature_contract": "roles_v2_raw56"}
+        with self.assertRaisesRegex(ModelArtifactError, "feature contract"):
+            load_logistic_model(self.write_artifact(payload), MODEL_FEATURES)
 
     def test_loaded_frequencies_are_immutable(self):
         model = load_logistic_model(DEFAULT_MODEL_PATH, MODEL_FEATURES)

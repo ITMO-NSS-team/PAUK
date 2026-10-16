@@ -113,7 +113,7 @@ def _load_model_cached(
     if not math.isfinite(intercept):
         raise ModelArtifactError("model intercept must be finite")
     if any(name.startswith("roles_v2__") for name in feature_names) and (
-        payload.get("feature_contract") != "roles_v2_raw56" or "surname_counts" not in payload
+        payload.get("feature_contract") != "roles_v3_raw56" or "surname_counts" not in payload
     ):
         raise ModelArtifactError("role-aware artifact requires its feature contract and surname frequencies")
     counts = payload.get("surname_counts", {})

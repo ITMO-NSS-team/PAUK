@@ -730,6 +730,13 @@ def _resolve_pair(
     if evidence.staff_id_a and evidence.staff_id_a == evidence.staff_id_b:
         return Resolution(Decision.MERGE, "same_staff", probability)
     if probability >= policy.merge_from:
+        if (
+            sorted(_tokens(evidence.name_a)) == sorted(_tokens(evidence.name_b))
+            and not _base_feature_vector(evidence)["initials_only_pair"]
+            and evidence.shared_coauthors == 0
+            and evidence.shared_publications == 0
+        ):
+            return Resolution(Decision.FIRST_MODEL, "namesake_without_collaboration", probability)
         # Keep the fitted feature contract intact. A sensitivity check may
         # defer a merge, but removing consortium evidence must never create
         # an automatic separation under a model not trained on that change.

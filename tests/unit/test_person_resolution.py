@@ -80,7 +80,7 @@ class PersonResolutionTest(unittest.TestCase):
         self.assertEqual(features["roles_v2__long_token_compatible"], 0)
 
     def test_probability_is_stable_for_a_known_feature_vector(self):
-        self.assertAlmostEqual(logistic_probability(evidence()), 0.9906734529380233, places=12)
+        self.assertAlmostEqual(logistic_probability(evidence()), 0.9819791912082376, places=12)
 
     def test_conflicting_identifier_is_a_hard_veto(self):
         result = resolve_pair(evidence(orcid_a="0000-0001", orcid_b="0000-0002"))

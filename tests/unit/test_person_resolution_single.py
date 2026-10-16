@@ -164,6 +164,21 @@ class SingleResolutionTest(unittest.TestCase):
         self.assertEqual(report[0]["model_verdicts"], {"single": None})
         self.assertEqual(report[0]["status"], "held")
 
+    def test_high_probability_namesake_uses_judge_and_waits_if_unavailable(self):
+        people = [
+            Person(id="A1", name_raw="Sergey Makarov", is_itmo=True),
+            Person(id="A2", name_raw="Sergey Makarov", is_itmo=True),
+        ]
+        models = SingleModels(None)
+        with patch("pauk.graph.person_resolution.logistic_probability", return_value=0.999):
+            groups, report = plan_person_merges_resolved(people, {}, models=models)
+        self.assertEqual(len(models.calls), 1)
+        self.assertEqual(groups, [])
+        self.assertEqual(report[0]["status"], "held")
+        db = mongomock.MongoClient().db
+        review.record_held(db, report, source=review.STAGE)
+        self.assertEqual(len(review.questions(db)), 1)
+
     def test_single_response_is_cached_across_pair_renumbering(self):
         models = OpenRouterResolutionModels(
             Settings(openrouter_api_key="test-key"), mongomock.MongoClient().db, "test"
