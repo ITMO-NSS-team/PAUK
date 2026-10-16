@@ -90,6 +90,13 @@ MATCH (p:Person)-[:BELONGS_TO]->(d:Department) WHERE d.id IN $units
 RETURN DISTINCT p.id AS id
 """
 
+DEPARTMENT_UNITS = """
+MATCH (d:Department {id: $department_id})
+OPTIONAL MATCH (child:Department)-[:PART_OF*1..6]->(d)
+WITH d, collect(DISTINCT child.id) AS children
+RETURN [d.id] + children AS units
+"""
+
 T1_BY_DEPT = """
 MATCH (p:Person)-[:BELONGS_TO]->(d:Department {id: $dept_id})
 WHERE coalesce(p.is_itmo, false) = true
