@@ -1,262 +1,213 @@
-# `pauk/storage/` — raw/prepared хранилище в MongoDB
+# `pauk/storage/`: raw and prepared storage in MongoDB
 
-**Что здесь:** промежуточный слой пайплайна между `collect` и `publish
-graph` — чтение и запись сырых ответов внешних API и подготовленных
-(prepared) сущностей, в MongoDB. `data/static/` остаётся файловым —
-это версионируемый справочник, не промежуточные данные пайплайна.
+**What it covers:** the pipeline's intermediate layer between `collect` and
+`publish graph`: raw responses from external APIs and prepared entities,
+stored in MongoDB. `data/static/` stays file-based: it is a versioned
+reference catalog, not intermediate pipeline data.
 
-**Какие файлы задействует:** `pauk/storage/raw.py`, `prepared.py`,
-`mongo.py`, `review.py`, `atomic.py`, `naming.py`, `static.py`, `llm_log.py`,
-`pdf.py`.
-PDF-байты лежат на диске (`Settings.pdf_dir`), Mongo хранит только
-указатель (`pdfs`, когда скачали) — читает/пишет
-`pauk/pipeline/stages/code_links.py` через `pdf.py::PdfStore`.
+**Files:** `pauk/storage/raw.py`, `prepared.py`, `mongo.py`, `review.py`,
+`atomic.py`, `naming.py`, `static.py`, `llm_log.py`, `pdf.py`.
 
-Схема этого слоя крупным планом (коллекции, оба способа чтения, три
-шага записи) — [`../diagrams/mongodb-storage.md`](../diagrams/mongodb-storage.md).
+PDF bytes live on disk (`Settings.pdf_dir`); Mongo holds only a pointer (the
+`pdfs` collection). `pauk/pipeline/stages/code_links.py` reads and writes
+them through `pdf.py::PdfStore`.
 
-## Сущности — глобальные, не по группе
+A close-up of this layer (collections, both read paths, the three write
+steps) is in [`../diagrams/mongodb-storage.md`](../diagrams/mongodb-storage.md).
 
-До этого `data/prepared/<group>/publications.jsonl` был снэпшотом
-группы: одна и та же публикация, попавшая в две пересекающиеся выборки,
-жила как две независимые строки в двух папках и обогащалась дважды с
-нуля. Сейчас документ в Mongo один на сущность (`_id` = тот же
-стабильный id, что и раньше — OpenAlex work id, детерминированный
-person id и т.д.), с полем `groups: [...]` — список имён групп,
-которые его касались. Стадия обогащения новой группы видит уже
-обогащённый документ от предыдущей группы (тот же `processing`-статус,
-`pdf_urls` и т.д.) и не переделывает работу заново.
+## Entities are global, not per group
 
-Чтение по-прежнему **скоуплено на группу**: `read_rows`/`read_models`
-фильтруют по `{"groups": self.group}` — стадия видит и пишет только
-документы, причастные к её группе. Отдельно есть `get_rows`/
-`get_models(entity, ids, model)` — точечный лукап по id **без**
-фильтра по группе, нужен там, где стадия обязана видеть глобальное
-состояние сущности, даже если её собственная группа его ещё не
-касалась (см. `pauk/pipeline/normalize.py::OpenAlexNormalizer._seed` —
-единственный сейчас потребитель).
+There is one Mongo document per entity. Its `_id` is the entity's stable id
+(OpenAlex work id, a deterministic person id, and so on), and a `groups:
+[...]` field lists the names of the groups that touched it. If two
+overlapping selections hit the same publication, it is enriched once: the
+enrichment stage of a new group sees the document already enriched by the
+previous group (same `processing` status, `pdf_urls`, and so on).
 
-Что это **не** решает: одна и та же сущность с **разными** id (разные
-OpenAlex author id у одного человека, ORCID-fallback id и т.п.) —
-проблема dedup-стадий (`enrich:dedup`, `pauk dedup graph`), они не
-меняются.
+**Reads are scoped to the group.** `read_rows` and `read_models` filter by
+`{"groups": self.group}`: a stage sees and writes only documents its group
+touched. A stage is therefore blind to rows that only another group wrote.
+Do not assume that a row visible in Mongo is visible to a stage. A separate
+pair, `get_rows` and `get_models(entity, ids, model)`, is a point lookup by id
+**without** the group filter, for code that must see an entity's global state
+even if its own group has not touched it yet (consumers:
+`pauk/pipeline/normalize.py::OpenAlexNormalizer._seed` and
+`pauk/graph/unmerge.py`).
+
+What this does not solve: the same real-world entity under **different** ids
+(several OpenAlex author ids for one person, an ORCID-fallback id, and so on)
+is the job of the dedup stages (`enrich dedup`, `pauk dedup graph`).
 
 ## `raw.py::RawStore`
 
-Append-only, коллекция `raw` в общей базе, документ `{source, group,
-fetched_at, request, payload}` — то же самое, что раньше писалось в
-JSONL-строку, плюс явное поле `group` (группа больше не кодируется
-именем папки). `append(source, payload, request)` — `insert_one`, без
-upsert: история фетчей не трётся, как и раньше. `read(source)` —
-`find({"source": source, "group": self.group})`, отсортировано по
-`fetched_at`.
+Append-only, collection `raw`, document `{source, group, fetched_at, request,
+payload}`. `append(source, payload, request)` is an `insert_one` with no
+upsert, so fetch history is never overwritten. `read(source)` is
+`find({"source": source, "group": self.group})` sorted by `fetched_at`.
 
-`ensure_indexes()` создаёт два составных индекса на `raw`:
-`{source, group, fetched_at}` для этого обычного чтения и
-`{source, fetched_at}` для кросс-группового скана, который тоже сортирует
-ответы по времени.
-
-Кросс-групповые сканы (например `pauk/graph/dedup.py::collect_raw_orcids`
-— "какой ORCID у автора A1 по всем группам, последний фетч побеждает")
-— обычный `find({"source": ...})` без фильтра по группе, вместо обхода
-`data/raw/*/openalex_authors.jsonl` по файловой системе.
+`ensure_indexes()` creates two compound indexes on `raw`: `{source, group,
+fetched_at}` for the normal read, and `{source, fetched_at}` for cross-group
+scans that also sort responses by time. Cross-group scans (for example
+`pauk/graph/dedup.py::collect_raw_orcids`, "which ORCID does author A1 have
+across all groups, latest fetch wins") are a plain `find({"source": ...})`
+without a group filter.
 
 ## `prepared.py::PreparedStore`
 
-Шесть коллекций, `COLLECTIONS = {"publications": "publications", ...}`
-— имя коллекции совпадает с именем сущности. `_id` — значение поля-ключа
-сущности (`KEY_FIELDS`): для всех сущностей это `id`, кроме
-`repo_links` — там `RepoLink` не имеет своего `id`, ключ —
-`publication_id`.
+Seven collections, `COLLECTIONS = {"publications": "publications", ...}`;
+the collection name equals the entity name: `publications`, `persons`,
+`departments`, `organizations`, `repositories`, `github_profiles`,
+`repo_links`. `_id` is the value of the entity's key field (`KEY_FIELDS`):
+`id` for all entities except `repo_links`, whose `RepoLink` has no `id` and is
+keyed by `publication_id`.
 
-- **`read_rows`/`read_models`** — `find({"groups": self.group})`,
-  голые dict / провалидированные pydantic-модели.
-- **`get_rows`/`get_models`** — то же самое, но по конкретным id
-  (`$in`), без фильтра по группе — глобальный лукап.
-- **`write_rows`/`write_models`** — задаёт **полное** состояние группы
-  для сущности, тем же контрактом, что раньше был у перезаписи файла
-  целиком: каждая переданная строка — `update_one(upsert=True)` с
-  `$set` всех полей и `$addToSet: {groups: self.group}`; после этого
-  строка, которую эта группа раньше держала, но не переподтвердила
-  сейчас (свёрнута dedup-стадией, переименована при ренормализации) —
-  теряет отметку группы (`$pull`), а документ, оставшийся без единой
-  группы — удаляется, чтобы не висеть недостижимым мусором. Побочный
-  плюс: точечный `$set` по документу, а не перезапись всего файла —
-  строка, которую стадия случайно не включила в `write_models`, раньше
-  тихо пропадала из файла; сейчас трогаются только переданные строки.
+- **`read_rows`/`read_models`**: `find({"groups": self.group})`, as plain
+  dicts or validated pydantic models.
+- **`get_rows`/`get_models`**: the same by specific ids (`$in`), with no group
+  filter.
+- **`write_rows`/`write_models`**: set the **complete** state of the group for
+  an entity. Each given row is an `update_one(upsert=True)` with `$set` of all
+  fields and `$addToSet: {groups: self.group}`. Then any row the group held
+  before but did not reconfirm (folded by dedup, renamed on re-normalization)
+  loses the group mark (`$pull`), and a document left with no group is
+  deleted so it does not linger unreachable. Only the rows passed in are
+  touched.
+- **`upsert_models`**: persists changed rows without redefining the group's
+  full membership; it never removes the group mark from untouched rows.
+  Enrichment stages use it after an external request completes. Passing a
+  subset to `write_models` would retract the group's claim on everything not
+  in the subset, which is why `upsert_models` exists.
 
-### Версионирование — `_version` + `revisions`
+### Versioning: `_version` and `revisions`
 
-Перед записью `write_rows` сравнивает новое содержимое строки с тем,
-что уже лежит в документе (без служебных `_id`/`groups`/`_version`).
-**Если контент не изменился — не меняется ничего**: ни `_version`, ни
-запись в историю, только `$addToSet` группы (провенанс). Это осознанно,
-не побочный эффект — каждая стадия перечитывает и переписывает весь
-свой рабочий набор на каждом прогоне, и без этой проверки версия росла
-бы на каждый no-op прогон, а не на реальные события.
+Before writing, the store compares the new row content with what the document
+already holds (ignoring `_id`/`groups`/`_version`). **If the content is
+unchanged, nothing changes**: no `_version` bump, no history entry, only the
+`$addToSet` of the group (provenance). This is deliberate: every stage rereads
+and rewrites its whole working set on every run, and without the check the
+version would grow on every no-op run instead of on real events.
 
-Если контент отличается — старая версия документа целиком уходит в
-общую коллекцию `revisions` (одна на все сущности, как и `raw` —
-не шесть по числу prepared-коллекций), `_version` растёт на 1:
+If the content differs, the entire old document goes into the shared
+`revisions` collection (one for all entities, like `raw`), and `_version`
+grows by 1:
 
 ```python
 {
-    "entity_type": "publications",  # имя prepared-коллекции
+    "entity_type": "publications",  # prepared collection name
     "entity_id": "W123",
-    "version": 1,                   # номер версии, которую эта запись archived
-    "snapshot": {...},              # полный документ, как он был ДО замены
+    "version": 1,                   # the version number being archived
+    "snapshot": {...},              # the full document as it was BEFORE replacement
     "replaced_by_group": "period-2024",
     "replaced_at": "2026-08-12T...",
 }
 ```
 
-Живой документ = текущая (последняя) версия; `revisions` — архив всех
-предыдущих. Индекс `{entity_type, entity_id, version}` создаёт
-`ensure_indexes` (см. `mongo.py` ниже). Реальные версии появляются там,
-где действительно меняются факты — дедуп смёржил два id, LLM
-переклассифицировал ссылку (`--force`), поле заполнилось на другом
-прогоне — а не на каждый холостой повтор стадии.
+The live document is the current version; `revisions` archives all earlier
+ones. The index `{entity_type, entity_id, version}` is created by
+`ensure_indexes`. Real versions appear where facts really change: dedup
+merged two ids, the LLM reclassified a link (`--force`), a field was filled
+in a later run.
 
-Читается архив с карточки записи в панели, блоком «Что говорил источник»
-(`pauk/admin/source.py`): показываются не версии, а переходы между ними —
-что именно изменил каждый прогон. Самый свежий переход считается против
-живой строки, иначе последнее изменение было бы единственным ненаблюдаемым.
-Если живой строки уже нет (её удалил дедуп, свернув в другую), самый свежий
-переход не показывается: чем заменили последнюю версию, неизвестно, а
-сравнение с пустым документом выглядело бы как прогон, стёрший все поля.
-Растёт архив без ограничения и подрезается по возрасту командой
-`pauk admin trim` ([cli.md](cli.md)).
+The admin panel reads the archive on a record card, in the "Что говорил
+источник" (what the source said) block (`pauk/admin/source.py`). It shows
+transitions between versions, that is, what each run changed. The most recent
+transition is computed against the live row; if the live row no longer
+exists (dedup folded it into another), the most recent transition is not
+shown, because comparing with an empty document would look like a run that
+erased every field. The archive grows without bound and is trimmed by age
+with `pauk admin trim` ([cli.md](cli.md)).
 
-**Осознанное упрощение**: чтение "что было" и запись — два отдельных
-запроса к Mongo, не одна атомарная операция (`find_one` + `update_one`,
-не `find_one_and_update`). При настоящей конкурентной записи в один и
-тот же документ из двух групп одновременно возможна гонка — тот же
-класс риска, что и при удалении `GroupLock` (см. ниже). На практике
-прогоны запускаются не одновременно.
+**Known simplification:** reading the previous state and writing it are two
+separate Mongo requests (`find_one` + `update_one`, not an atomic
+`find_one_and_update`). Truly concurrent writes to the same document from two
+groups can race. In practice runs are started by hand and do not overlap. A
+pipeline run holds its group (`PipelineRunner.run`) and publishing holds the
+graph, but nothing guards a single document across groups.
 
 ## `mongo.py`
 
-`get_mongo_client(config, timeout_ms=None) -> MongoClient` — тонкая
-фабрика, как нет отдельного модуля под клиента Neo4j
-(`Neo4jClient(uri, user, password)` в `pauk/graph/client.py`): один клиент
-на процесс, открывается в точке входа команды (`pauk/cli.py`), закрывается
-в `try/finally`. `timeout_ms` — сколько ждать сервер: у драйвера по
-умолчанию тридцать секунд, это годится команде, но не веб-запросу. Панель
-передаёт две.
+`get_mongo_client(config, timeout_ms=None) -> MongoClient` is a thin factory.
+There is one client per process, opened at the command's entry point
+(`pauk/cli.py`) and closed in `try/finally`. `timeout_ms` is how long to wait
+for a server; the driver default is thirty seconds, which suits a command but
+not a web request, so the admin panel passes a short one.
 
-`ensure_indexes(db)` — индексы на `revisions` (см. выше), `raw`, `jobs`,
-`review_pairs` и остальных. Идемпотентна, зовётся при старте каждой
-команды в `cli.py` рядом с `get_mongo_client`, тем же местом, где Neo4j
-зовёт `create_constraints`.
+`ensure_indexes(db)` creates indexes on `revisions`, `raw`, `audit`,
+`graph_overrides`, `jobs`, `job_workers` (TTL), `review_pairs` and others. It
+is idempotent and called when each command starts, next to
+`get_mongo_client`, the same place where Neo4j gets `create_constraints`.
 
-`ensure_compression(db)` — зовётся из `ensure_indexes` и создаёт `raw` и
-`revisions` сжатыми zstd, если их ещё нет. Это две самые тяжёлые
-коллекции: дословные ответы API и полные снимки строк. Существующей
-коллекции компрессор так не сменить, WiredTiger берёт его при создании;
-команда для живой базы — в [admin-panel.md](../admin-panel.md). Сервер или
-двойник, не принимающий опцию, просто оставляет компрессор по умолчанию.
+`ensure_compression(db)` is called from `ensure_indexes` and creates `raw` and
+`revisions` with zstd compression if they do not exist yet. They are the two
+heaviest collections: verbatim API responses and full row snapshots. An
+existing collection cannot change its compressor this way (WiredTiger takes
+it at creation); the command for a live database is in
+[admin-panel.md](../admin-panel.md). A server or test double that does not
+accept the option keeps the default compressor.
 
-## `review.py` — вопросы, на которые отвечает человек
+## `review.py`: questions a person answers
 
-Коллекция `review_pairs`: то, что пайплайн не смог решить сам, и ответы
-людей. Лежит здесь, а не в `pauk/graph/`, в отличие от `graph_overrides`:
-вопросы пишет этап сбора задолго до публикации, а `pauk/pipeline/` из
-графового слоя не импортирует ничего.
+Collection `review_pairs`: what the pipeline could not decide by itself, and
+people's answers. It lives here rather than in `pauk/graph/` (unlike
+`graph_overrides`) because the collection stage writes the questions long
+before publishing, and `pauk/pipeline/` imports nothing from the graph layer.
 
-Документ на вопрос, ключ детерминированный — повторный отказ той же пары
-обновляет документ, а не заводит второй:
+One document per question, with a deterministic key: refusing the same pair
+again updates the document instead of creating a second one.
 
-| поле | что значит |
+| Field | Meaning |
 |---|---|
-| `_id` | `<kind>:<id>:<id>...`, участники отсортированы, поэтому (a, b) и (b, a) — один вопрос |
-| `kind` | `person_pair`, `person_group`, `github_person` или `staff_record` |
-| `members` | о ком вопрос: записи людей, логин аккаунта, записи каталога |
-| `evidence` | что собрали правила: имена, общие соавторы, подразделения, причины отказа (`held_because`). Обновляется при каждом повторном отказе, чтобы было с чем сравнивать |
-| `seen_at`, `source` | когда вопрос в последний раз задали и кто: этап сбора (`stage`) или проход по графу (`graph`) |
-| `verdict`, `actor`, `note`, `decided_at` | ответ: `same` или `different`, кто, почему, когда |
-| `applied_at` | когда ответ «один человек» реально слил записи; пусто, пока ждёт прогона |
-| `chosen` | для вопроса про каталог — какую запись выбрали |
-| `skipped_at`, `disputed_at`, `disputed_rule` | вопрос отложили; правила передумали после ответа «разные» |
+| `_id` | `<kind>:<id>:<id>...` with members sorted, so (a, b) and (b, a) are one question |
+| `kind` | `person_pair`, `person_group`, `github_person` or `staff_record` |
+| `members` | who the question is about: person records, an account login, catalog records |
+| `evidence` | what the rules gathered: names, shared coauthors, departments, refusal reasons (`held_because`); refreshed on every repeated refusal so there is something to compare against |
+| `seen_at`, `source` | when the question was last asked and by whom: the collection stage (`stage`) or a graph pass (`graph`) |
+| `verdict`, `actor`, `note`, `decided_at` | the answer: `same` or `different`, by whom, why, when |
+| `applied_at` | when a "same" answer actually merged the records; empty while it waits for a run |
+| `chosen` | for a catalog question, which record was picked |
+| `skipped_at`, `skipped_by`, `disputed_at`, `disputed_rule` | the question was postponed; the rules changed their mind after a "different" answer |
 
-Ответ и его применение — разные вещи и живут в разных полях. Применение
-меняет граф один раз, ответ держит согласными с человеком все следующие
-прогоны. Ответ «разные» применять вообще нечего: он нужен ровно для того,
-чтобы правила не слили пару завтра, когда у неё появится общий соавтор.
+An answer and its application are different things and live in different
+fields. Applying changes the graph once; the answer keeps all later runs in
+agreement with the person. A "different" answer has nothing to apply: it
+exists so the rules do not merge the pair tomorrow when it gains a shared
+coauthor.
 
-`applied_at` ставит тот, кто слил: панель (`mark_applied`) или прогон
-(`mark_applied_merges` — сверяет ответы с картой «что во что свернули»).
-Слитый ответ не снимается (`withdraw` отказывает), его разбирают обратно —
-`record_undo` после `pauk.graph.unmerge.split_person`.
+`applied_at` is set by whoever merged: the panel (`mark_applied`) or a run
+(`mark_applied_merges`, which matches answers against the map of what was
+folded into what). A merged answer cannot be withdrawn (`withdraw` refuses);
+it is taken apart with `record_undo` after `pauk.graph.unmerge.split_person`.
 
-Индексы: `{verdict, seen_at}` — очередь открывают на неотвеченных, самые
-давние сверху; `{members}` — все вопросы про одного человека.
+Indexes include `{verdict, seen_at}` (the queue opens on unanswered, oldest
+first) and `{members}` (all questions about one person).
 
-## PDF — на диске, Mongo только указатель (`pdf.py::PdfStore`)
+## PDFs: on disk, Mongo holds only a pointer (`pdf.py::PdfStore`)
 
-`pauk/pipeline/stages/code_links.py::CodeLinksStage._pdf_pages` читает и
-пишет PDF через `PdfStore(db, pdf_dir)`. Байты — обычный файл
-`<pdf_dir>/<publication_id>.pdf` (`Settings.pdf_dir`, по умолчанию
-`data/pdf/`), плоско, без папки по группе — как и сама Publication,
-PDF привязан к глобальному id, не к группе. Mongo хранит только
-указатель: коллекция `pdfs`, один документ на id, `{fetched_at}` — когда
-скачали, не сами байты. Путь в документе не хранится, он детерминированно
-выводится из id.
+`pauk/pipeline/stages/code_links.py` reads and writes PDFs through
+`PdfStore(db, pdf_dir)`. The bytes are a plain file
+`<pdf_dir>/<publication_id>.pdf` (`Settings.pdf_dir`, default `data/pdf/`),
+flat with no per-group folder: like the publication itself, a PDF is tied to
+the global id. Mongo stores only a pointer: collection `pdfs`, one document
+per id, `{fetched_at}`. The path is not stored; it is derived from the id.
 
-Ни `group`, ни чек-суммы в указателе намеренно нет — оба поля
-рассматривались и были отклонены, потому что ни один код их не читает
-обратно: `save()` вызывается ровно один раз за всю жизнь файла (см. ниже
-про кэш), так что `group` хранил бы только "кто первым скачал" — факт,
-ни на что не влияющий, а хэш без места, где его сверяют (ни один вызов
-не читает его назад), просто занимает место без пользы. Не то же самое,
-что `groups` у `PreparedStore` — там список реально читается в
-`read_rows`/`write_rows`. Если появится конкретная задача проверки
-целостности файлов на диске — оба поля дёшево вернуть, вместе с тем, что
-их будет реально использовать.
+The cache is checked on disk, not in Mongo: `PdfStore.exists(id)` is
+`path.exists()`, with no database query. If the file is missing it is
+downloaded and written atomically (`atomic_write_bytes`), and only after the
+write succeeds is the pointer upserted. The order matters: if the process dies
+in between, a file may exist without a pointer, but a pointer never promises a
+file that is not there.
 
-Ранее (до этого раунда правок) PDF-байты жили в GridFS-бакете `pdfs` той
-же базы — решение отменили: GridFS требовал похода в Mongo даже на самый
-частый путь ("уже скачано"), хотя байты никогда не меняются, и не
-дружил с `mongomock` в тестах (см. ниже). Файловый вариант чуть ближе к
-тому, что было в проекте до самой первой миграции на Mongo
-(`data/pdf/<group>/<publication_id>.pdf`), кроме того что теперь без
-папки по группе.
+`PdfStore.read()` is a single `path.read_bytes()` call, so no file handle
+outlives it (important on Windows, where an open file cannot be deleted).
+`_extract_pdf()` takes `bytes`, not a path.
 
-**Кэш** проверяется по диску, не по Mongo: `PdfStore.exists(id)` —
-`path.exists()`, без единого запроса к базе. Если файла нет — качаем,
-пишем атомарно (`atomic_write_bytes`: временный файл рядом + `os.replace`,
-как `AtomicWriter`, но для байт, а не текста — сам `AtomicWriter`
-захардкожен в текстовый режим, дублировать под него типизацию оказалось
-дороже, чем написать отдельную маленькую функцию), и только после
-успешной записи на диск — апсерт указателя в Mongo. Порядок важен: если
-процесс упадёт между записью файла и апсертом, следующий прогон просто
-не найдёт файл и перескачает (дёшево) — не бывает указателя, обещающего
-файл, которого нет.
+## LLM logs: `llm_log.py::LlmLogStore`
 
-**Именно то же самое место, что чинили #45** (`PR #45`: `fetch_papers.py`
-держал файл открытым во время удаления — `WinError 32` на Windows).
-`PdfStore.read()` — один вызов `path.read_bytes()`, открывает, читает,
-закрывает одной операцией, ни один хендл не переживает сам вызов.
-`_extract_pdf()` по-прежнему принимает `bytes`, а не путь — так и
-осталось с прошлой миграции, менять не стали, чтобы не открывать файл
-дольше, чем нужно для одного чтения.
-
-**В юнит-тестах** больше не нужен рукописный дублёр: `PdfStore` пишет в
-обычную временную директорию (`tempfile.TemporaryDirectory`), а
-Mongo-часть (`pdfs` — плоская коллекция, не GridFS) прекрасно работает
-через `mongomock`. Известная нестыковка `mongomock`+`gridfs`
-(`isinstance(db, pymongo.database.Database)` отклоняет
-`mongomock.database.Database`) была ровно тем, из-за чего раньше
-понадобился `FakeGridFsBucket` — с уходом от GridFS она перестала быть
-проблемой сама по себе, а не была починена отдельно.
-
-## LLM-логи — `llm_log.py::LlmLogStore`
-
-Полный запрос/ответ каждого вызова LLM — отдельная коллекция **на
-каждое применение**, не одна общая с полем-тегом:
-`llm_logs_link_relevance` для классификации ссылок и
-`llm_logs_author_names` для разделения имён. По тому же паттерну будущие
-точки вызова получают собственные коллекции (`llm_logs_dedup`,
-`llm_logs_departments`, ...).
+The full request and response of every LLM call goes into a separate
+collection **per use case**, not one shared collection with a tag:
+`llm_logs_link_relevance` for link classification and `llm_logs_author_names`
+for name splitting. New call sites should get their own collections the same
+way.
 
 ```python
 llm_log = LlmLogStore(self.prepared.db, "llm_logs_link_relevance")
@@ -266,65 +217,45 @@ llm_log.record(
 )
 ```
 
-Логируется каждый вызов целиком, без диф-фильтрации, в отличие от
-prepared-версионирования — каждый LLM-вызов уже сам по себе отдельное
-реальное событие. `author_names` пишет отдельный документ и для
-корректирующего семантического повтора; номер находится в
-`context.response_attempt`.
-
-`OpenRouterClient.last_response` (`pauk/sources/llm.py`) — сырое тело
-ответа OpenRouter с последнего `chat_json()`, тем же паттерном, что уже
-существующий `last_usage`.
+Every call is logged in full, with no diff filter (unlike prepared
+versioning): each LLM call is a real event on its own. `author_names` writes a
+separate document for the corrective semantic retry too; its number is in
+`context.response_attempt`. `OpenRouterClient.last_response`
+(`pauk/sources/llm.py`) is the raw OpenRouter body of the latest
+`chat_json()`, alongside `last_usage`.
 
 ## `atomic.py`
 
-- **`AtomicWriter`** — пишет во временный файл рядом с целевым,
-  заменяет через `os.replace()` только после успешного закрытия.
-  Промежуточные raw/prepared данные больше не через него — остался для
-  локального аудит-журнала dedup-стадии
-  (`pauk/pipeline/stages/dedup.py`, `data/audit/<group>/dedup_candidates.jsonl`,
-  путь — `Settings.audit_dir`), который вне периметра этой миграции.
-  Захардкожен в текстовый режим (`mode="w", encoding="utf-8"`) — для
-  бинарных данных не годится.
-- **`atomic_write_bytes(target, data)`** — тот же приём (временный файл +
-  `os.replace()`), но для байт, уже целиком лежащих в памяти (PDF из
-  `PdfStore.save`, см. выше) — без стримингового `with`-интерфейса
-  `AtomicWriter`, он тут не нужен: данные уже есть, писать нечего кроме
-  одного `write()`.
-- **`GroupLock`** убран: атомарность теперь на уровне документа
-  (`update_one` в Mongo), а не всего файла — коарс-грейн лок,
-  нужный только для паттерна "прочитать весь файл → переписать весь
-  файл", больше не нужен. Конкурентная запись в один и тот же id из
-  двух групп одновременно разрешается на уровне отдельных `$set`-полей
-  (last-write-wins по полю, не по документу целиком) — сознательное
-  упрощение: реальные прогоны запускаются вручную и не пересекаются по
-  времени. Поле `_version` теперь реально существует (см. раздел
-  "Версионирование" выше) — но заведено ради истории изменений, не ради
-  конкурентности; апгрейд-путь на retry-в-`update_one`-при-конфликте всё
-  ещё не реализован, хотя `_version` для него уже есть даром.
+- **`AtomicWriter`**: writes to a temporary file next to the target and
+  replaces it via `os.replace()` only after a successful close. Used for
+  snapshots (`pauk/cache/graph_snapshot.py`), the site data
+  (`pauk/gui/graph_builder/builder.py`) and local journals such as the dedup
+  candidates (`data/audit/<group>/dedup_candidates.jsonl`, path from
+  `Settings.audit_dir`). Text mode only (`mode="w", encoding="utf-8"`); it
+  does not suit binary data.
+- **`atomic_write_bytes(target, data)`**: the same trick for bytes already in
+  memory (PDFs from `PdfStore.save`).
 
 ## `naming.py`
 
-Без изменений:
-
-- **`group_name(work_id=..., date_from=..., date_to=..., name=...)`** —
-  генерирует имя группы; явный `name` побеждает, иначе `<сегодня>__<work_id>`
-  или `<сегодня>__from_<start>__to_<end>`.
-- **`validate_group(group)`** — регекс `^[A-Za-z0-9][A-Za-z0-9_.-]*$`.
-  Раньше защищал от path traversal через имя группы (группа была частью
-  пути на диске); сейчас группа — обычное значение поля `groups` в
-  Mongo, но валидация та же — это по-прежнему разумный формат имени.
+- **`group_name(work_id=..., date_from=..., date_to=..., name=...)`**
+  generates the group name: an explicit `name` wins, otherwise
+  `<today>__<work_id>` or `<today>__from_<start>__to_<end>`.
+- **`validate_group(group)`**: the regex `^[A-Za-z0-9][A-Za-z0-9_.-]*$`. A
+  group is just a value of the `groups` field in Mongo, but the format stays
+  restricted to something sensible.
 
 ## `static.py::StaticStore`
 
-Без изменений, остаётся файловым — версионируемый справочник, не
-промежуточные данные пайплайна. Каталог департаментов: сначала пробует
-`data/static/departments.jsonl`, если файла нет — падает на
-`data/static/departments_catalog.json`. id — детерминированный
-`sha256(name_en.casefold())[:12]` с префиксом `dept_`.
+File-based: a versioned reference, not intermediate pipeline data. The
+department catalog is read first from `data/static/departments.jsonl` if it
+exists, otherwise from `data/static/departments_catalog.json`. A department's
+id is the `uid` of its catalog entry; `parent` references another entry's
+`uid` (an unknown parent raises `ValueError`), and entries with `kind:
+organization` become `Organization` rows.
 
-## Конфигурация
+## Configuration
 
-`MONGO_URI` (default `mongodb://localhost:27017`), `MONGO_DB` (default
-`pauk`) — в `.env`, тем же паттерном, что `NEO4J_URI`/`NEO4J_USER`/
-`NEO4J_PASSWORD` в `pauk/settings.py`.
+`MONGO_URI` (default `mongodb://localhost:27017`) and `MONGO_DB` (default
+`pauk`) in `.env`, the same pattern as `NEO4J_URI`/`NEO4J_USER`/
+`NEO4J_PASSWORD` in `pauk/settings.py`.

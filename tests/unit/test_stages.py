@@ -26,7 +26,12 @@ from pauk.pipeline.stages.code_links import (
     _normalize_ligatures,
     _occurrences_in_text,
 )
-from pauk.pipeline.stages.link_relevance import LinkRelevanceStage
+from pauk.pipeline.stages.link_relevance import (
+    AMBIGUOUS_URL_REASON,
+    MODEL_CONTEXT_LIMIT,
+    LinkRelevanceStage,
+    _format_contexts,
+)
 from pauk.pipeline.stages.repo_people import RepoPeopleStage, _is_person
 from pauk.pipeline.stages.repositories import RepositoriesStage
 from pauk.settings import Settings
@@ -127,7 +132,7 @@ class StagesTest(unittest.TestCase):
             "html_url": "https://github.com/org/repo", "name": "repo", "owner": {"login": "org"},
         }
         # Without this the stage stores the MagicMock itself in Repository.has_readme,
-        # which is typed bool — the row still round-trips, but as a mock repr.
+        # which is typed bool - the row still round-trips, but as a mock repr.
         github_client.return_value.has_readme.return_value = True
         prepared = PreparedStore(self.db, "sample")
         raw = RawStore(self.db, "sample")
@@ -401,7 +406,12 @@ class StagesTest(unittest.TestCase):
                 url="https://github.com/org/repo",
                 occurrences=[
                     LinkOccurrence(context="We use this library as a dependency."),
-                    LinkOccurrence(context="Our complete implementation is available here.", page_number=7),
+                    LinkOccurrence(
+                        context="Our complete implementation is available here.",
+                        page_number=7,
+                        source="citation",
+                        reference_label="9",
+                    ),
                 ],
             )]),
         ])
@@ -412,8 +422,38 @@ class StagesTest(unittest.TestCase):
         prompt = call.args[0]
         self.assertIn("We use this library as a dependency.", prompt)
         self.assertIn("Our complete implementation is available here.", prompt)
-        self.assertIn("абстракт OpenAlex", prompt)
-        self.assertIn("страница 7", prompt)
+        self.assertIn("OpenAlex abstract", prompt)
+        self.assertIn("in-text citation [9], page 7", prompt)
+
+    def test_link_relevance_bounds_prompt_without_dropping_stored_contexts(self):
+        occurrences = [
+            LinkOccurrence(context=f"Body context {index}", page_number=index, source="pdf_text")
+            for index in range(1, MODEL_CONTEXT_LIMIT + 3)
+        ]
+        occurrences.append(LinkOccurrence(
+            context="Reference entry",
+            page_number=99,
+            source="reference",
+            reference_label="9",
+        ))
+
+        formatted = _format_contexts(occurrences)
+
+        self.assertIn("Body context 1", formatted)
+        self.assertNotIn(f"Body context {MODEL_CONTEXT_LIMIT + 2}", formatted)
+        self.assertIn("Reference entry", formatted)
+        self.assertIn("omitted due to the request size limit", formatted)
+        self.assertEqual(len(occurrences), MODEL_CONTEXT_LIMIT + 3)
+
+    def test_link_relevance_keeps_distinct_sources_with_identical_text(self):
+        formatted = _format_contexts([
+            LinkOccurrence(context="same", page_number=2, source="pdf_text"),
+            LinkOccurrence(context="same", page_number=2, source="pdf_annotation"),
+        ])
+
+        self.assertEqual(formatted.count("same"), 2)
+        self.assertIn("PDF visible text", formatted)
+        self.assertIn("PDF clickable region", formatted)
 
     @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
     def test_link_relevance_keeps_an_explicit_uncertain_verdict(self, openrouter_client):
@@ -529,6 +569,66 @@ class StagesTest(unittest.TestCase):
         self.assertEqual(links["https://github.com/asl/BandageNG"].llm_reason,
                           "repository_archived_by_this_deposit")
         self.assertEqual(links["https://github.com/org/repo"].llm_reason, "re-judged")
+
+    @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
+    def test_link_relevance_skips_ambiguous_url_and_rejudges_confirmed_url(self, openrouter_client):
+        openrouter_client.return_value.chat_json.return_value = {
+            "is_authors_artifact": True, "confidence": 0.9, "reason": "authors say so",
+        }
+        openrouter_client.return_value.last_response = {"choices": []}
+        openrouter_client.return_value.last_usage = None
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        short_url = "https://github.com/KseniiaCheloshkina/cancer_"
+        full_url = short_url + "breakpoints_hotspots_prediction_wide"
+        prepared.write_models("publications", [Publication(
+            id="W1",
+            title="paper",
+            has_code=True,
+            code_url=json.dumps([short_url]),
+        )])
+        prepared.write_models("repo_links", [RepoLink(publication_id="W1", links=[
+            CodeLink(
+                url=short_url,
+                occurrences=[LinkOccurrence(
+                    source="pdf_text",
+                    candidate_urls=[short_url, full_url],
+                )],
+                is_relevant=True,
+                llm_confidence=0.85,
+                llm_reason="old false positive",
+            ),
+            CodeLink(
+                url=full_url,
+                occurrences=[LinkOccurrence(
+                    source="pdf_annotation",
+                    candidate_urls=[full_url],
+                    continuous=True,
+                )],
+                is_relevant=True,
+                llm_confidence=0.95,
+                llm_reason="old verdict",
+            ),
+        ])])
+
+        LinkRelevanceStage(prepared, raw, force=True).run()
+
+        openrouter_client.return_value.chat_json.assert_called_once()
+        prompt = openrouter_client.return_value.chat_json.call_args.args[0]
+        self.assertIn(f"URL: {full_url}", prompt)
+        self.assertNotIn(f"URL: {short_url}\n", prompt)
+        links = {link.url: link for link in next(
+            prepared.read_models("repo_links", RepoLink)
+        ).links}
+        ambiguous = links[short_url]
+        self.assertEqual(ambiguous.classification_status, ClassificationStatus.CLASSIFIED)
+        self.assertIsNone(ambiguous.is_relevant)
+        self.assertIsNone(ambiguous.llm_confidence)
+        self.assertEqual(ambiguous.llm_reason, AMBIGUOUS_URL_REASON)
+        self.assertEqual(links[full_url].llm_reason, "authors say so")
+        publication = next(prepared.read_models("publications", Publication))
+        self.assertEqual(json.loads(publication.code_url), [full_url])
+        self.assertEqual(self.db["llm_logs_link_relevance"].count_documents({}), 1)
 
     @patch("pauk.pipeline.stages.link_relevance.OpenRouterClient")
     def test_link_relevance_marks_failed_when_the_llm_call_fails(self, openrouter_client):
@@ -663,7 +763,7 @@ class StagesTest(unittest.TestCase):
         http_client.return_value.get_bytes.assert_not_called()
 
     @patch("pauk.pipeline.stages.code_links.HttpClient")
-    def test_code_links_dedupes_per_page_and_orders_abstract_first(self, http_client):
+    def test_code_links_keeps_same_page_mentions_and_orders_abstract_first(self, http_client):
         http_client.return_value.get_bytes.return_value = _make_pdf_bytes([
             "See https://github.com/org/repo and again https://github.com/org/repo here.",
             "Also https://github.com/org/repo on page two.",
@@ -677,9 +777,7 @@ class StagesTest(unittest.TestCase):
         ])
         CodeLinksStage(prepared, raw, config=config).run()
         [link] = [link for row in prepared.read_models("repo_links", RepoLink) for link in row.links]
-        # abstract (None) first, then one occurrence per PDF page despite two
-        # mentions on page 1 - repeats within the same page add no new info.
-        self.assertEqual([o.page_number for o in link.occurrences], [None, 1, 2])
+        self.assertEqual([o.page_number for o in link.occurrences], [None, 1, 1, 2])
 
     @patch("pauk.pipeline.stages.code_links.HttpClient")
     def test_code_links_finds_github_url_only_reachable_via_hyperlink(self, http_client):
@@ -715,11 +813,15 @@ class StagesTest(unittest.TestCase):
         ])
         CodeLinksStage(prepared, raw, config=config).run()
         [link] = [link for row in prepared.read_models("repo_links", RepoLink) for link in row.links]
-        # One occurrence, not two - the annotation points at the same URL
-        # already found in the visible text, so the richer text context wins.
-        self.assertEqual(len(link.occurrences), 1)
-        assert link.occurrences[0].context is not None
-        self.assertIn("Full implementation", link.occurrences[0].context)
+        self.assertEqual(len(link.occurrences), 2)
+        self.assertEqual(
+            {occurrence.source for occurrence in link.occurrences},
+            {"pdf_text", "pdf_annotation"},
+        )
+        self.assertTrue(any(
+            "Full implementation" in (occurrence.context or "")
+            for occurrence in link.occurrences
+        ))
 
     @patch("pauk.pipeline.stages.code_links.HttpClient")
     def test_code_links_falls_back_to_abstract_when_pdf_download_fails(self, http_client):
@@ -946,10 +1048,10 @@ class HarvestAccountsTest(unittest.TestCase):
                                          "https://github.com/alice/second"])
 
     def test_a_failing_contributor_call_keeps_the_repository(self):
-        # GitHub answers 403 on repositories it has not analysed. Since the
-        # split that is a failure of repo_people alone: the metadata the
-        # repositories stage already fetched keeps its completed status, and
-        # the two halves record their state separately.
+        # GitHub answers 403 on repositories it has not analysed. That fails
+        # repo_people alone: the metadata the repositories stage already fetched
+        # keeps its completed status, and the two halves record their state
+        # separately.
         with patch("pauk.pipeline.stages.repositories.GitHubClient") as client, \
                 patch("pauk.pipeline.stages.repo_people.GitHubClient", client):
             client.return_value.contributors.side_effect = RuntimeError("403")
@@ -969,11 +1071,10 @@ class HarvestAccountsTest(unittest.TestCase):
 class AccountTypeSpellingTest(unittest.TestCase):
     """The account type reaches _is_person in two spellings.
 
-    The stage passes what GitHub answered ("User", "Organization"); anything
-    reading a stored GitHubProfile passes what the store keeps, which is
-    lowercased. Comparing exactly made scripts/harvest_orphan_repos.py drop
-    every owner whose profile was already in the database — silently, since
-    a missing owner looks exactly like a repository nobody owns.
+    The stage passes what GitHub answered ("User", "Organization"); a stored
+    GitHubProfile keeps it lowercased. Comparing exactly would make
+    scripts/harvest_orphan_repos.py drop every owner whose profile is already
+    in the database.
     """
 
     def test_both_spellings_of_a_user_are_a_person(self):
@@ -1057,7 +1158,7 @@ class OrganizationOwnerProfileTest(unittest.TestCase):
     def test_a_personal_owner_is_left_to_the_harvest(self, github_client):
         # Only organizations are fetched here. A user owning the repository is
         # a contributor candidate, and RepoPeopleStage fetches them with
-        # everyone else — this stage does not call get_user for them at all.
+        # everyone else - this stage does not call get_user for them at all.
         client, _ = self.run_stage(github_client, "User")
         self.assertEqual([call.args for call in client.get_user.call_args_list], [])
 
@@ -1066,10 +1167,9 @@ class OwnerProfileIsFetchedTest(unittest.TestCase):
     """The owner stub must not pass for a fetched profile.
 
     `repositories` writes a GitHubProfile for the owner out of the nested
-    owner object, which carries a login, a URL and a type. `repo_people` then
-    decides whether GET /users/{login} is still worth a call. Deciding that on
-    `html_url` meant the stub answered for the real profile, and no repository
-    owner was ever fetched — the one person most likely to be an ITMO author.
+    owner object, which carries a login, a URL and a type. `repo_people`
+    then decides whether GET /users/{login} is still worth a call, and that
+    decision must not rest on `html_url`, which the stub also has.
     """
 
     PAYLOAD = {"html_url": "https://github.com/alice/tool", "name": "tool", "id": 1,
@@ -1297,11 +1397,18 @@ class ImplementsFromRelevanceTest(unittest.TestCase):
 
 
 class CollectOccurrencesTest(unittest.TestCase):
-    def test_dedupes_within_one_text_keeps_first_context(self):
-        text = "first https://github.com/org/repo then https://github.com/org/repo again"
+    def test_keeps_distinct_occurrences_within_one_text(self):
+        text = (
+            "first https://github.com/org/repo "
+            + "x" * 1200
+            + " second https://github.com/org/repo again"
+        )
         found = _occurrences_in_text(text, page_number=5)
         self.assertEqual(list(found), ["https://github.com/org/repo"])
-        self.assertEqual(found["https://github.com/org/repo"].page_number, 5)
+        occurrences = found["https://github.com/org/repo"]
+        self.assertEqual(len(occurrences), 2)
+        self.assertEqual([occurrence.page_number for occurrence in occurrences], [5, 5])
+        self.assertLess(occurrences[0].text_start, occurrences[1].text_start)
 
     def test_collect_merges_abstract_and_pages_in_order(self):
         # pdf_page_occurrences is a list of per-page dicts (what _extract_pdf
@@ -1369,8 +1476,8 @@ class GithubUrlRegexTest(unittest.TestCase):
         self.assertEqual(list(found), ["https://github.com/org/repo"])
 
     def test_keeps_a_bare_trailing_digit_with_no_period(self):
-        # Unsolvable ambiguity, same as the old script: a GitHub repo name can
-        # genuinely end in a digit (detectron2), so this is left alone.
+        # Unsolvable ambiguity: a GitHub repo name can genuinely end in a digit
+        # (detectron2), so this is left alone.
         found = _occurrences_in_text("Our tool https://github.com/org/repo1 does the job.", None)
         self.assertEqual(list(found), ["https://github.com/org/repo1"])
 
@@ -1386,9 +1493,9 @@ class NormalizeLigaturesTest(unittest.TestCase):
         self.assertEqual(_normalize_ligatures("eﬃcient"), "efficient")
 
     def test_two_ligature_variants_of_the_same_repo_collapse_to_one_url(self):
-        # Real bug, found on an actual paper (SSD, arXiv:1512.02325): PDF fonts
-        # render "ff" as one glyph (U+FB00), which \w matches as a letter, so
-        # "caﬀe" and "caffe" used to become two different repos.
+        # PDF fonts render "ff" as one glyph (U+FB00), which \w matches as a
+        # letter, so "caﬀe" and "caffe" must resolve to one repo (seen in a real
+        # paper, arXiv:1512.02325).
         text = "See https://github.com/weiliu89/caﬀe and also https://github.com/weiliu89/caffe."
         found = _occurrences_in_text(_normalize_ligatures(text), None)
         self.assertEqual(list(found), ["https://github.com/weiliu89/caffe"])
@@ -1417,7 +1524,7 @@ class UnlinkedRepositoriesTest(unittest.TestCase):
         github_client.return_value.has_readme.return_value = True
         github_client.return_value.contributors.return_value = []
         github_client.return_value.commits.return_value = []
-        # The owner in PAYLOAD is an organization, which the stage now fetches.
+        # The owner in PAYLOAD is an organization, which the stage fetches.
         github_client.return_value.get_user.return_value = {}
         return github_client
 
@@ -1477,9 +1584,8 @@ class UnlinkedRepositoriesTest(unittest.TestCase):
     def test_a_row_whose_url_was_rewritten_is_not_fetched_twice(self, github_client):
         """A rename redirects the fetch, and the row keeps the canonical URL.
 
-        The failure comes later, so the row still needs an attempt — and the
-        second pass, keyed by `repo.url`, must recognise it as one already
-        made instead of spending another call on the same repository.
+        The failure comes later, so the row still needs an attempt, and the
+        second pass, keyed by `repo.url`, must recognise it as one already made.
         """
         self._client(github_client)
         github_client.return_value.get_repository.return_value = {
@@ -1499,11 +1605,11 @@ class UnlinkedRepositoriesTest(unittest.TestCase):
 
     @patch("pauk.pipeline.stages.repositories.GitHubClient")
     def test_two_rows_for_one_url_are_folded_rather_than_dropped(self, github_client):
-        """Same repository under two ids — a curated import and a link pass.
+        """Same repository under two ids: a curated import and a link pass.
 
         Keying the second pass by URL collapses them onto one key. The loser
-        must not simply vanish from the work list: rows are read in a stable
-        order, so it would lose on every run and never be enriched at all.
+        must not vanish from the work list: rows are read in a stable order, so
+        it would lose on every run and never be enriched.
         """
         self._client(github_client)
         self.prepared.write_models("repositories", [
@@ -1561,7 +1667,7 @@ class UnlinkedRepositoriesTest(unittest.TestCase):
     @patch("pauk.pipeline.stages.repositories.GitHubClient")
     def test_the_attempt_history_survives_the_fold(self, github_client):
         """With no payload on either row, the one that has already been tried
-        wins — folding it away would reset the attempt counter."""
+        wins - folding it away would reset the attempt counter."""
         self._client(github_client)
         github_client.return_value.get_repository.side_effect = RuntimeError("404")
         tried = Repository(id="zzz_last_by_id", name="curated",
@@ -1644,7 +1750,7 @@ class RepoPeopleStageTest(unittest.TestCase):
         self.assertEqual(repo.processing["repositories"].status, ProcessingStatus.COMPLETED)
         self.assertEqual(repo.processing["repo_people"].status, ProcessingStatus.COMPLETED)
         # The owner's type round-tripped through the stored profile, which
-        # lowercased it — he still counts as a person.
+        # lowercased it - he still counts as a person.
         self.assertEqual(repo.contributors, ["alice", "bob"])
 
     @patch("pauk.pipeline.stages.repo_people.GitHubClient")
@@ -1706,9 +1812,8 @@ class RepoPeopleStageTest(unittest.TestCase):
         """`--input pubs.txt --entity publications` means those publications.
 
         `in_scope` alone answers True for every repository when the selection
-        names publications, so without a scope of its own this stage would
-        walk the whole group and spend the GitHub quota on repositories
-        nobody asked about.
+        names publications, so without a scope of its own this stage would walk
+        the whole group and spend GitHub quota on repositories nobody asked about.
         """
         users = {"bob": {"html_url": "https://github.com/bob", "name": "Bob"}}
         self._client(repos_client, users=users)
@@ -1733,7 +1838,7 @@ class RepoPeopleStageTest(unittest.TestCase):
     @patch("pauk.pipeline.stages.repo_people.GitHubClient")
     @patch("pauk.pipeline.stages.repositories.GitHubClient")
     def test_an_id_scoped_run_still_filters_by_repository(self, repos_client, people_client):
-        """A selection aimed at repositories keeps working as it did."""
+        """A selection aimed at repositories still selects them."""
         self._client(repos_client, users={})
         self._client(people_client, users={})
         repos_client.return_value.get_repository.side_effect = lambda owner, name: {
@@ -1775,9 +1880,8 @@ class CountingStage(EnrichmentStage):
 class StageProgressTest(unittest.TestCase):
     """A run has to say where it is and stop when it is asked to.
 
-    Before, the only seam was between stages: a cancel pressed inside a
-    stage that takes an hour was honoured an hour later, and the page said
-    nothing in the meantime.
+    The seam has to exist inside a stage, not only between stages: one stage
+    can take an hour.
     """
 
     def setUp(self):

@@ -10,7 +10,9 @@ from .atomic import atomic_write_bytes
 
 class PdfStore:
     """PDF bytes on local disk (`pdf_dir`), keyed by publication id.
-    Mongo holds only a pointer per id: `{fetched_at}`, not the bytes."""
+
+    Mongo holds only a `{fetched_at}` pointer per id, not the bytes.
+    """
 
     def __init__(self, db: Database, pdf_dir: Path) -> None:
         self.pointers = db.pdfs
@@ -29,10 +31,9 @@ class PdfStore:
     def save(self, publication_id: str, data: bytes) -> None:
         """Write the PDF atomically, then record the pointer.
 
-        Written in this order deliberately: if the process dies between the
-        two, the next run just sees a file with no pointer yet and re-saves
-        it (cheap - the file write is what mattered) rather than a pointer
-        promising a file that was never actually written.
+        The order matters: if the process dies between the two steps, the next
+        run sees a file without a pointer and re-saves it, instead of a pointer
+        promising a file that was never written.
         """
         atomic_write_bytes(self._path(publication_id), data)
         self.pointers.update_one(

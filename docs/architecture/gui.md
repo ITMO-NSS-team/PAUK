@@ -1,208 +1,156 @@
-# `pauk/gui/` — карта и вкладка "Здоровье БД"
+# `pauk/gui/`: the map
 
-**Что здесь:** как снепшот графа превращается в раскладку и статический
-сайт, плюс серверная часть (раздача + пересчёт статистики).
+**What it covers:** how a graph snapshot becomes a layout and JSON for the
+site, and how the site itself is organized.
 
-**Какие файлы задействует:** `pauk/gui/generate_data.py`, `layout.py`,
-`config.py`, `checks.py`, `generate_stats.py`, `serve.py`, `web/*.js`.
+**Files:** the `pauk/gui/graph_builder/` package (`builder.py`,
+`authorship.py`, `departments.py`, `layout.py`, `nodes.py`, `edges.py`,
+`grants.py`, `config.py`, tests in `tests/`) and the site in
+`pauk/gui/web/`.
 
-Neo4j напрямую трогает только `pauk/cache/export.py` — `pauk/gui/`
-читает готовый снепшот с диска, не базу (см. [cache.md](cache.md)).
-Единственное исключение — динамический маршрут `/api/stats`, который
-пересчитывает статистику прямо из Neo4j по кнопке (см. `serve.py` ниже).
+Of the `pauk/gui` chain, only `pauk/cache/export.py` touches Neo4j;
+`pauk/gui/` reads a finished snapshot from disk, not the database (see
+[cache.md](cache.md)).
 
-## `generate_data.py` — снепшот → раскладка → статика
+## `builder.py`: snapshot to layout to JSON
 
-Читает `data/cache/graph_snapshot.json`, строит раскладку и пишет два
-файла, после чего сайт полностью статичен:
+```bash
+pauk gui build [--cache data/cache/graph_snapshot_<dd-mm-yyyy>.json] [--out-dir ...] [--seed 42]
+```
 
-- `web/graph-data.js` (~5 МБ) → `window.GRAPH`
-- `web/graph-search.js` (~3 МБ) → детали публикаций для четвёртой вкладки,
-  подгружаются отдельным `<script>` после карты
+By default it takes the newest snapshot from `data/cache/` and writes to
+`data/gui/` (`pauk.settings.Settings.gui_dir`), into two subfolders. Every
+file is written atomically through `AtomicWriter` (`pauk.storage`).
 
-Запуск: `uv run python -m pauk.gui.generate_data [--out-dir web] [--seed
-42] [--cache путь]`.
+- `graph-data.json`: the summary for the map: the department table, nodes
+  (`key`, `kind`, `dept`, `label`, `rank`, `gx`, `gy` plus one summary
+  number) and all edges;
+- `authors-detail.json`, `repos-detail.json`, `pubs-detail.json`: extended
+  fields that the site loads lazily after the map.
 
-**Раскладка департаментов:**
-- публикация — большинство голосов среди её ИТМО-авторов (полный список
-  в `depts`, один основной в `dept` для цвета);
-- автор — департамент его самой свежей публикации;
-- репозиторий — большинство по департаментам публикаций, которые он
-  реализует; если публикаций нет, то `DEVELOPED_BY`, а последним доводом —
-  департаменты его ИТМО-участников (слабее: коммитить можно и далеко за
-  пределами своего департамента). Даже так департамент известен меньше чем
-  у половины: 191 репозиторий из 409.
+Privacy is decided by folder, not by content. `authors-detail.json`
+(personal fields) is written only to `data/gui/private/`; the other three
+files go to both `public/` and `private/`, because Vite serves static files
+from a single folder (`vite.config.ts::publicDir`, which points at
+`data/gui/private/`). The build runs in stages, one module each:
+`authorship.py` (who wrote what), `departments.py`, `layout.py`, `nodes.py`,
+`edges.py`.
 
-**Группы на вкладке репозиториев (`repo_cluster_keys`).** Раскрашивать эту
-вкладку по департаменту значит оставить больше половины карты серой,
-поэтому территория здесь — не обязательно департамент. Три яруса, сильнейшее
-основание первым: департамент → организация-владелец на GitHub → область
-публикаций, которые репозиторий реализует. Репозиторий берёт первый ярус,
-который ответил; ярус, который его не взял, передаёт дальше.
+**External authors.** The export takes every `Person` (with `is_itmo`) and
+every `AUTHORED`. A publication reaches the map if it has at least one ITMO
+author, along with all its authors. External coauthors follow the same
+department rule and get the same statistics, with `is_itmo: false` on the
+node; the site uses it to hide them behind the "Show external authors"
+filter (off by default). Only ITMO authors go into ForceAtlas2: there are
+roughly three times as many external ones, and laying them out together
+smeared the department clusters. An external author is placed at the
+centroid of their ITMO coauthors (weighted by shared papers) with some
+jitter (`layout.py::place_external_authors`), so the filter does not move the
+ITMO map. Publication layout and department-to-department links also use ITMO
+authors only. An external author with no ITMO publication is left out of the
+graph. For a collaboration paper with more than `hyperauthor_pub_size`
+authors (`config.py`), coauthor edges are built only from ITMO authors
+rather than every pair, which would otherwise produce millions of pairs. A
+snapshot without `is_itmo` is read as "everyone is ITMO".
 
-Личный аккаунт группой не становится никогда — он говорит, кто запушил код,
-а не чему тот принадлежит, и таких аккаунтов 173. Организация и область
-становятся группой только от `REPO_CLUSTER_MIN` участников: 85 из 96
-организаций владеют ровно одним репозиторием, и без порога карта получила
-бы 85 уникальных цветов по одной точке каждый. Департамент от порога
-освобождён — он существует вне этой карты, и выбросить его значило бы
-разойтись в цвете с двумя другими вкладками.
+**Department assignment (`departments.py`):**
+- a publication gets the majority vote of its authors (only ITMO authors
+  vote, since only they have `BELONGS_TO`); the full list is in `depts` and
+  one primary department in `dept` for colour;
+- an author gets the department of their most recent publication;
+- a repository gets the majority of the departments of the publications it
+  implements, else `DEVELOPED_BY`, else the majority of its ITMO
+  contributors' departments.
 
-Итог на данных за август 2026: в группе 266 репозиториев из 409 (65 %)
-против 191 (47 %) по одному департаменту, 42 группы, 17 территорий.
-Цвет департамента совпадает с его цветом на других вкладках; org и field
-продолжают тот же обход по золотому сечению за концом таблицы департаментов,
-чтобы не столкнуться с ними по тону.
+Ties are broken by id, deliberately not by global popularity: otherwise big
+departments would pull in everything contested and grow on their own.
 
-Ничьи разрешаются по id, намеренно не по глобальной популярности — иначе
-крупные департаменты подтягивали бы к себе всё спорное и росли бы сами от
-себя (rich-get-richer).
+**Repository groups (`departments.py::repo_groups`).** A department is known
+for fewer than half of the repositories, so the repositories tab is coloured
+by group: the department, else the owning GitHub organization, else the
+`fields` of the publications it implements. An org or field group smaller
+than `REPO_EDGES.group_min` does not count, and a personal account never
+forms a group. A department group uses the department's own id; org and
+field groups get ids after the department table
+(`graph-data.json["repo_groups"]`), so department selection, regions and URLs
+on the site handle them without a separate branch
+(`core/data.ts::groupIdOf` and `groupsById`).
 
-**Рёбра репозиториев — четыре сигнала, не один.** Одно правило («оба
-реализуют одну публикацию») давало 26 рёбер на 409 узлов: 373 репозитория
-без единой связи, крупнейшая компонента из четырёх. Сейчас складываются
-четыре группировки, каждая со своим весом в `config.py`
-(`REPO_W_PUB`/`REPO_W_PERSON`/`REPO_W_COAUTHOR`/`REPO_W_OWNER`): общая
-публикация, общий ИТМО-участник (`CONTRIBUTED_TO`), общий соавтор
-реализованных статей, общий владелец на GitHub.
+**Grants (`grants.py`).** Authors write the grant numbers in
+`Publication.funding` inconsistently (`Project 075-15-2019-1896`,
+`075-15-2019-1896?`, different dashes), and some are cut short (`18-19-`,
+`075-15`). `add_grant_keys` adds a normalized `grant_key` to every `funding`
+entry in `pubs-detail.json`. A truncated number that is a prefix of exactly
+one other number merges with it; a prefix shared by several numbers (`075-15`
+is a common prefix of Ministry of Science contracts) gets `null`. Programs
+(`Priority 2030`, `Horizon 2020`) currently count as grants. The site builds
+a grant-to-publications index from `pubs-detail.json`
+(`core/data.ts::grantIndex`): a number on a publication card opens a grant
+card listing its publications, with CSV export.
 
-Каждая группа из `k` репозиториев — это клика из `k*(k-1)/2` пар, поэтому
-`co_membership_weights` делит вес по Ньюману (`weight/(k-1)`): 29
-репозиториев `ITMO-NSS-team` иначе дали бы 406 рёбер — четверть графа из
-одного аккаунта. Сверху `REPO_GROUP_CAP` выбрасывает группы, где общее
-уже не свидетельство (бот в двухстах репозиториях), и `top_k_edges`
-оставляет каждому узлу `REPO_EDGE_TOP_K` сильнейших связей — объединением,
-не глобальным отсечением, иначе узел с единственным слабым ребром снова
-остался бы один. На ребре в `graph-data.js` едет `via` — список
-сработавших сигналов, его показывает карточка ребра. Заголовок карточки при
-этом нейтральный ("репозитории — связаны"): ребро может быть собрано одним
-только `owner`, без единого общего контрибьютора, а какие сигналы
-сработали, говорит строка `via` в теле.
+**FA2 layout (`layout.py::fa2_blended_layout`).** Three separate
+ForceAtlas2 runs, one each for authors, publications and repositories, each
+with its own proximity measure: authors use shared publications, shared
+repositories and sparse "same department" edges; publications use shared
+authors, with the top-K strongest links per publication; repositories use
+four signals (below). All three go through `fa2_blended_layout` and
+`spread_min_distance`.
 
-**FA2-раскладка (`fa2_blended_layout` в `layout.py`)**: три отдельных
-прогона ForceAtlas2 (networkx) — по одному на авторов/публикации/репозитории,
-каждый со своей мерой близости (авторы: совместные публикации + репозитории
-+ разреженные "тот же департамент"-рёбра; публикации: общие авторы, top-K
-сильнейших связей на публикацию — полный граф w≥1 даёт ~310к рёбер;
-репозитории: четыре сигнала выше + те же разреженные "тот же
-департамент"-рёбра). FA2 считается только на гигантской связной
-компоненте — несвязанные компоненты при полном графе только отталкиваются
-друг от друга без предела и после масштабирования всё содержимое схлопывается
-в точку в центре. Всё остальное (маленькие компоненты, синглтоны) домешивается
-после отдельным проходом с джиттером на грубой occupancy-сетке, чтобы не
-собираться кольцом вокруг несуществующего узла-хаба. Финальный проход
-`spread_min_distance` (через `scipy.spatial.cKDTree`) разводит узлы ближе
-минимальной дистанции — без него сошедшиеся кластеры рисуются сплошной
-заливкой вместо читаемого облака точек. Раскладку стоит проверять
-визуально — метрики вроде перцентилей расстояний и счётчиков рёбер не
-отражают качество итогового расположения, автоматических проверок под
-это нет.
+FA2 runs only on the giant connected component. Disconnected components
+just repel each other without bound, and after scaling the real content
+collapses to a point in the middle. Everything else (small components,
+singletons) is blended in afterwards, with jitter on a coarse occupancy
+grid. A final `spread_min_distance` pass (using `scipy.spatial.cKDTree`)
+pushes nodes apart where they are closer than a minimum distance. Check the
+layout visually: the metrics do not reflect how the result looks.
 
-Число итераций FA2/пороги рёбер — в `config.py`, только то, что реально
-варьируется между author/pub/repo call-сайтами; константы, нужные ровно
-одной функции без вариации (`COORD_MIN`/`COORD_MAX`, `STRANDED_JITTER`/
-`STRANDED_MIN_SEP`) — локальные, прямо в `layout.py` рядом с этой функцией.
+ForceAtlas2 comes from `fa2_modified` with the Barnes-Hut approximation
+(`layout.py::fa2_layout`), not `networkx.forceatlas2_layout`, which builds a
+dense n x n distance matrix on every iteration (O(n^2) time and memory) and
+does not scale to the author graph. The layout is deterministic: start
+positions come from `seed` and the algorithm has no other randomness.
 
-## `layout.py`
+**Repository edges (`config.py::RepoEdges`).** A single shared publication
+left most repositories with no edges, so there are four signals, each with a
+weight: a shared publication (3), a shared ITMO contributor (2), a shared
+ITMO coauthor of their publications (1), a shared GitHub owner (1). A group
+of `k` repositories gives each pair `weight / (k - 1)`
+(`co_membership_weights`); groups larger than `group_cap` are dropped, and
+each repository keeps its `top_k` strongest edges. The signals that linked a
+pair are recorded in `repo_edges[].via`, and the site shows them on the edge
+card.
 
-Чистая математика — не знает, что такое «автор» или «публикация», только
-id узлов и веса рёбер. `golden_color` (шаг по золотому сечению для цвета
-департамента), `dense_rank`, `fit_coords` (масштабирование в координатное
-пространство фронтенда 0..1000), `spread_min_distance`,
-`co_membership_weights` (проекция «общая группа → взвешенные пары»),
-`top_k_edges`, `sparse_dept_edges`, `fa2_blended_layout`, `majority_vote`.
+FA2 iteration counts and edge thresholds live in `config.py`; constants used
+by exactly one function (`COORD_MIN`/`COORD_MAX`, `STRANDED_JITTER`/
+`STRANDED_MIN_SEP`) live directly in `layout.py`.
 
-## `checks.py` + `generate_stats.py` — вкладка "Здоровье БД"
+## `pauk/gui/web/`: the site
 
-`checks.py` — список из 32 дешёвых проверок целостности графа (`Check`
-датаклассы): счётчики, `IS NULL`/пустая строка, дубликаты по группировке,
-несколько регулярок на кириллицу/латиницу вперемешку в ФИО. Никакого LLM,
-никакой морфологии, никаких графовых алгоритмов — полный проход занимает
-секунды. Каждая проверка — Cypher на число (`count`), опциональный
-знаменатель (`of`, тогда сравнение идёт по доле, не по абсолютному числу),
-пороги `warn`/`fail`, и опционально Cypher на примеры строк (`examples`,
-параметризован `$lim`) для drill-down на фронте.
+TypeScript + Vite; the map uses Sigma.js (graphology).
+`vite.config.ts::publicDir` points at `data/gui/private/`, so the data is
+picked up both by `npm run dev` and by the build.
 
-`generate_stats.py` — `snapshot()` гоняет все проверки + инвентарь
-узлов/связей + публикации по годам + топ-8 департаментов, `write_js()`
-пишет `data/private/graph-stats.js` (`window.STATS`) для статической загрузки
-страницы, `examples(check_id, limit)` — строки за одной конкретной
-проверкой, для попапа с деталями и CSV-экспорта.
+```bash
+cd pauk/gui/web
+npm install
+npm run dev        # local
+npm run build      # dist/: static files together with the data
+npm test && npm run typecheck && npm run lint
+```
 
-Те же проверки показывает вкладка «Здоровье БД» в админ-панели
-(`pauk/admin/health.py`). Там они считаются задачей воркера, а результат
-лежит в Mongo, в коллекции `health`, одним документом: страница читает
-его и к графу не ходит. К графу идут только строки за одной проверкой —
-запрос с лимитом, сразу при открытии.
+Layers in `src/` (import order is enforced by eslint-boundaries: a layer may
+import only from itself and the layers below): `contracts` (JSON shapes,
+mirroring the generator) then `core` (the `Store` state, config, i18n, data
+loading) then `map` (graph population, department regions) then `features`
+(tabs, panel, filters, search, selection) then `app` (entry point).
 
-Сотрудник ИТМО в запросах — это `p.is_itmo`, а не метка: загрузчик ставит
-одну `:Person` (см. [neo4j-graph.md](neo4j-graph.md)). Проверки, написанные
-на метках `:Itmo`/`:External`, молча считали ноль из нуля; тест
-`tests/unit/test_checks.py` сверяет каждую метку и тип связи в запросах со
-схемой.
+There are three tabs (Authors, Publications, Repositories) plus a global
+search across all kinds. There is no database health tab on the site: the
+graph checks (`pauk/admin/checks.py`, run and statistics in
+`pauk/admin/graph_stats.py`) are shown by the "Здоровье БД" (database
+health) page of the admin panel (`pauk/admin/health.py`); see
+[../admin-panel.md](../admin-panel.md). In those queries an ITMO employee is
+`p.is_itmo`, not a label; `tests/unit/test_checks.py` checks every label and
+relationship type in the queries against the schema.
 
-## `serve.py` — единственный динамический маршрут
-
-`ThreadingHTTPServer` с гзипом на лету (`threaded` — важно: скачивание
-`graph-data.js` одним клиентом не должно блокировать остальных). Отдаёт
-`web/` статикой с ETag-валидацией (`If-None-Match` → `304`).
-
-`POST /api/stats` — пересчитывает статистику прямо из Neo4j
-(`generate_stats.snapshot()`), перезаписывает `data/private/graph-stats.js`, чтобы
-простой reload страницы показывал те же цифры, и возвращает JSON — это
-то, что дёргает кнопка «Пересчитать». Намеренно только `POST`, не `GET`:
-пересчёт занимает несколько секунд и переписывает файл на диске, а `GET`
-обязан оставаться безопасным для повтора — браузерный prefetch, краулеры
-и прокси шлют их непрошено.
-
-`GET /api/check?id=...&limit=...` — примеры по одной проверке, для попапа
-и его CSV-экспорта.
-
-`_warn_missing_generated_files()` — если `graph-data.js`/`graph-search.js`/
-`graph-stats.js` не сгенерированы (свежий клон, забыли прогнать генератор),
-сервер стартует всё равно, но пишет в лог, какую команду запустить.
-
-## `pauk/gui/web/` — фронтенд
-
-Статический сайт без сборки и бандлера: голые скрипты подключаются
-тегами по порядку, вендорные библиотеки (maplibre-gl, d3) лежат в
-репозитории.
-
-| Файл | Роль |
-|---|---|
-| `core.js` | проекция координат, индексы `nodeByKey`/связей, приглушение цветов |
-| `build.js` | построение GeoJSON: территории, рёбра, узлы |
-| `main.js` | инициализация карты, вкладки, фильтры, роутинг, экспорт PNG |
-| `overlay.js` | подписи поверх карты на отдельном canvas |
-| `panels.js` | боковые карточки, график по годам |
-| `selection.js` | выделение узла и его окружения |
-| `tab-*.js` | карточки авторов/публикаций/репозиториев, вкладка "Здоровье БД" |
-| `search.js` | поиск и полноэкранные профили четвёртой вкладки |
-
-Пять вкладок: Персоналии, Публикации, Репозитории, Поиск, Здоровье БД.
-Территории департаментов рисуются на всех трёх картовых вкладках; порог
-`MIN_HULL_NODES` на вкладке репозиториев ниже (`MIN_HULL_NODES_REPOS`) —
-409 репозиториев против ~9 тысяч авторов, и департамент, который на карте
-людей занимает область, здесь состоит из горстки точек. Хребет между
-департаментами (`dept-edges`) на вкладке репозиториев не рисуется: он
-построен на соавторстве между департаментами и о связи двух репозиториев
-не говорит ничего.
-
-**Решения, которые не очевидны из кода:**
-- Подписи — свой canvas поверх карты (`overlay.js`), не слой MapLibre.
-  Полный контроль над тем, что показывать при каком зуме, ценой ручной
-  синхронизации с камерой на каждом кадре (`map.on("render",
-  drawOverlay)`).
-- Цвета приглушаются на фронте (`core.js`, насыщенность ×0.55), не в
-  генераторе — одна точка перехвата, изменение расходится на точки,
-  территории и легенды разом.
-- Тёмная тема по умолчанию, без запоминания выбора — сознательный редизайн,
-  контекст в [`journal/2026-07-22-grayscale-redesign.md`](../journal/2026-07-22-grayscale-redesign.md).
-- Стартовый экран — инлайновый `<script>` прямо в `index.html`, не
-  вынесенный файл: `graph-data.js` — блокирующий `<script defer>` на
-  несколько мегабайт, и всё, что после него по порядку документа, не
-  выполнится, пока он не скачается.
-- `graph-search.js` подключён последним; если профиль по глубокой ссылке
-  отрисовался раньше него, `core.js._onDetailReady` перерисовывает текущий
-  вид четвёртой вкладки — иначе расшаренная ссылка навсегда показывала бы
-  пустые названия статей.
+Deployment to the lab server is described in [deploy.md](deploy.md).

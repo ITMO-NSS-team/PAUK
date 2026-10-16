@@ -1,3 +1,4 @@
+import struct
 import threading
 import unittest
 from unittest.mock import patch
@@ -106,15 +107,12 @@ class PanelTest(unittest.TestCase):
         self.assertEqual(self.client.get("/").status_code, 200)
         self.assertIn("viewer", body)
 
-    def test_the_look_comes_from_the_map_own_files(self):
-        # Logo and fonts are served from pauk/gui/web rather than copied,
-        # so the panel and the map cannot drift apart visually.
+    def test_the_logo_and_fonts_are_served(self):
         self.assertEqual(self.client.get("/static/panel.css").status_code, 200)
         self.assertEqual(
             self.client.get("/assets/fonts/golos-text-cyrillic.woff2").status_code, 200)
-        # The icons the map itself uses, from vendor/icons where it keeps them.
-        for icon in ("pauk-frame.png", "pauk-frame-8x.png", "pauk-web-4x.png"):
-            self.assertEqual(self.client.get(f"/assets/icons/{icon}").status_code, 200, icon)
+        self.assertEqual(self.client.get("/assets/icons/pauk-frame.png").status_code, 200)
+        self.assertEqual(self.client.get("/favicon.ico").status_code, 200)
 
     def test_the_admin_port_serves_nothing_else_from_the_map(self):
         # Only the two asset paths are mounted. Mounting the whole web
@@ -148,11 +146,53 @@ class PanelTest(unittest.TestCase):
     def test_the_icon_is_the_spider_and_not_the_web(self):
         # pauk-web.png is, despite the name, a cobweb; the spider is
         # pauk-frame.png. Putting the wrong one in the tab is easy and
-        # invisible from the code alone.
+        # invisible from the code alone. The page itself draws the web as
+        # decoration, so only the head is checked.
+        self.sign_in()
+        head = self.client.get("/").text.split("</head>")[0]
+        self.assertIn("pauk-frame", head)
+        self.assertNotIn("pauk-web", head)
+
+    def test_the_overview_says_how_the_work_is_going(self):
+        # Four pages answer four questions; the first page answers them at
+        # once, or nobody looks until something has already gone wrong.
+        from pauk.jobs import store
+        from pauk.jobs.models import JobKind
+        from pauk.storage import review
+        review.record_held(self.db, [{
+            "status": "held", "person_a": "A1", "name_a": "A", "person_b": "A2",
+            "name_b": "B", "shared_coauthors": 0, "shared_departments": 0,
+            "shared_fields": [],
+            "held_because": ["identical name with nothing corroborating it"]}])
+        store.mark_present(self.db, "worker-1")
+        # The health snapshot keeps its time as text, unlike a job's, and a
+        # page that ran it through the date filter crashed on the real data.
+        from pauk.admin import health
+        health.save(self.db, {"checks": [{"status": "fail"}, {"status": "ok"}]})
+        job = store.enqueue(self.db, JobKind.MAP, {"public": True})
+        store.claim(self.db, "worker-1")
+        store.start(self.db, job.id)
         self.sign_in()
         body = self.client.get("/").text
-        self.assertIn("pauk-frame", body)
-        self.assertNotIn("pauk-web", body)
+        # By what the cards are made of, not by their wording: the words are
+        # edited often and a test reading them breaks on every rewrite.
+        self.assertIn('class="summary"', body)
+        self.assertIn('class="pulse"', body)
+        self.assertIn("пересборка карты", body)
+        self.assertIn("вопрос ждёт ответа", body)
+        self.assertIn('class="tally bad"', body)
+        self.assertNotIn("воркер не работает", body)
+
+    def test_and_says_when_nobody_is_running_anything(self):
+        self.sign_in()
+        body = self.client.get("/").text
+        self.assertIn('class="summary"', body)
+        # No pulse: that mark belongs to a run under way.
+        self.assertNotIn('class="pulse"', body)
+        self.assertIn("воркер не работает", body)
+        # Zero is not a count to agree with: "0 вопросов ждут" is a page
+        # talking about nothing, and the card says so instead.
+        self.assertIn("вопросов не осталось", body)
 
     def test_the_panel_is_light_only(self):
         css = self.client.get("/static/panel.css").text
@@ -166,6 +206,16 @@ class PanelTest(unittest.TestCase):
             self.assertEqual(
                 self.client.get(f"/assets/fonts/golos-text-{part}.woff2").status_code, 200, part)
         self.assertEqual(self.client.get("/static/panel.css").text.count("@font-face"), 3)
+
+    def test_and_each_of_them_is_a_font_a_browser_will_take(self):
+        # Served is not the same as usable: a mangled woff2 answers 200 and
+        # every browser refuses it silently.
+        for part in ("latin", "cyrillic", "cyrillic-ext"):
+            body = self.client.get(f"/assets/fonts/golos-text-{part}.woff2").content
+            signature, _flavor, length, tables = struct.unpack(">4sIIH", body[:14])
+            self.assertEqual(signature, b"wOF2", part)
+            self.assertEqual(length, len(body), part)
+            self.assertLess(tables, 100, part)
 
     def test_the_panel_offers_no_way_to_create_an_account(self):
         # Accounts come from `pauk admin user add` only; a registration
@@ -228,8 +278,8 @@ class OverviewTest(unittest.TestCase):
             self.assertIn(f'href="/nodes/{label}"', body)
 
     def test_both_numbers_are_labelled_so_neither_is_guessed_at(self):
-        # A bare "Person 34" read as thirty-four people; it was the field
-        # count. Both numbers are now spelled out.
+        # A bare "Person 34" would read as thirty-four people when it is the
+        # field count, so both numbers are spelled out.
         from unittest import mock
 
         from pauk.admin.deps import plural
@@ -258,8 +308,6 @@ class OverviewTest(unittest.TestCase):
     def test_the_overview_asks_the_driver_not_to_wait_or_retry(self):
         # Retries suit a batch job: the driver backs off for tens of seconds
         # on an unreachable host, and a page rendered for a person cannot.
-        # Driver options now belong to the shared graph, opened once for
-        # the service rather than per page.
         from pauk.admin.app import COUNT_TIMEOUT
         self.assertLessEqual(COUNT_TIMEOUT, 5)
 
@@ -299,7 +347,7 @@ class ActorContextTest(unittest.TestCase):
     def test_a_request_through_the_graph_leaves_no_error_behind(self):
         # A generator dependency is entered and resumed in different
         # contexts, so resetting a contextvar token across that boundary
-        # raises "created in a different Context" — after the response has
+        # raises "created in a different Context" - after the response has
         # already been sent, which is why it only ever showed in the log.
         from unittest import mock
         with mock.patch.object(self.client.app.state.graph, "audited",
@@ -319,8 +367,8 @@ class ActorContextTest(unittest.TestCase):
 
     def test_the_client_is_told_who_is_editing(self):
         # The name has to reach the client itself. A contextvar set in the
-        # dependency is invisible in the route — it runs in another
-        # context — and every entry came out as "unknown".
+        # dependency is invisible in the route - it runs in another
+        # context - and every entry came out as "unknown".
         from unittest import mock
         with mock.patch.object(self.client.app.state.graph, "audited",
                                return_value=self.graph) as opened:
@@ -350,7 +398,7 @@ class StylesheetVersionTest(unittest.TestCase):
 
     def test_the_link_carries_a_version(self):
         # Browsers hold CSS in cache firmly enough that a layout fix could
-        # miss an open tab entirely — the header and the filters stayed in
+        # miss an open tab entirely - the header and the filters stayed in
         # their old arrangement while the file already differed.
         body = self.client.get("/").text
         self.assertRegex(body, r'href="/static/panel\.css\?v=\d+"')
@@ -378,11 +426,9 @@ class StylesheetVersionTest(unittest.TestCase):
 class SharedDriverTest(unittest.TestCase):
     """One driver for the service, opened once and closed once.
 
-    Routes are sync, so FastAPI runs them in a threadpool and the first
-    requests really do arrive together: without a lock each of them built
-    its own driver and every loser's connection pool stayed open with
-    nothing holding it. And nothing closed the survivor either — the
-    wrappers deliberately do not, which leaves exactly one place that must.
+    Routes are sync and run in a threadpool, so the first requests arrive together: without a lock each
+    builds its own driver and the losers' connection pools stay open. The wrappers deliberately do not
+    close the driver, so exactly one place must.
     """
 
     def setUp(self):
@@ -434,7 +480,7 @@ class SharedDriverTest(unittest.TestCase):
 
 
 class LogoutIsAFormLikeAnyOtherTest(unittest.TestCase):
-    """The template has always sent a token; the route used to ignore it.
+    """Logout checks the CSRF token the template sends.
 
     Logging somebody out from another site is a nuisance rather than a
     loss, but a guard that looks present and is not is worse than none.

@@ -1,24 +1,25 @@
 """The health checks, against the schema they are supposed to be about.
 
-Nothing tested these before, and it showed: twelve of them went on asking
-about `:Person:Itmo` long after the loader stopped writing that label, and
-answered "0 of 0 — fine" for a year. A check that quietly stops checking is
-worse than no check, because it is read as good news.
+A check that quietly stops checking is worse than no check, because it is
+read as good news: one still asking about `:Person:Itmo` after the loader
+stopped writing that label answers "0 of 0 - fine".
 
-The queries cannot be run here — that needs a live Neo4j — so what is
-guarded is the part that rotted: the names they are written against.
+The queries cannot be run here (that needs a live Neo4j), so what is
+guarded is the part that rots: the names they are written against.
 """
 
 import re
 import unittest
+from pathlib import Path
 
+from pauk.admin.checks import BY_ID, CHECKS, GROUP_EN
+from pauk.admin.graph_stats import QUERIES
+from pauk.cache import export
 from pauk.graph.mutations import NODE_FIELDS, RELATIONSHIPS
-from pauk.gui.checks import BY_ID, CHECKS, GROUP_EN
-from pauk.gui.generate_stats import QUERIES
 
 #: Labels and relationship types as Cypher writes them: after a colon,
 #: inside a node pattern `(a:Label)` or a relationship one `[r:TYPE]`.
-#: Chained labels — `(p:Person:Itmo)` — are why the names are pulled out of
+#: Chained labels - `(p:Person:Itmo)` - are why the names are pulled out of
 #: the whole bracketed chunk rather than matched one at a time.
 INSIDE = re.compile(r"\(([^()]*)\)|\[([^\[\]]*)\]")
 NAME = re.compile(r":([A-Z][A-Za-z_]*)")
@@ -30,6 +31,28 @@ def names_in(cypher: str) -> set[str]:
     for match in INSIDE.finditer(cypher or ""):
         found.update(NAME.findall(match.group(1) or match.group(2) or ""))
     return found
+
+
+class ExportQueriesTest(unittest.TestCase):
+    """The snapshot export reads the same graph and rots the same way.
+
+    Its queries must not keep asking for a retired label such as `:Person:Itmo`, or a full run writes a
+    map with no authors, no authorship and no departments on it.
+    """
+
+    def setUp(self):
+        self.known = set(NODE_FIELDS) | {rel_type for _src, rel_type, _tgt in RELATIONSHIPS}
+        self.source = Path(export.__file__).read_text(encoding="utf-8")
+
+    def queries(self) -> list[str]:
+        return [found for found in re.findall(r'"([^"]*MATCH[^"]*)"', self.source)]
+
+    def test_every_export_query_asks_about_something_real(self):
+        found = self.queries()
+        self.assertGreater(len(found), 5, "the export queries stopped being found")
+        for cypher in found:
+            with self.subTest(query=cypher[:40]):
+                self.assertEqual(names_in(cypher) - self.known, set())
 
 
 class NamesExistTest(unittest.TestCase):
@@ -47,18 +70,16 @@ class NamesExistTest(unittest.TestCase):
                     self.assertEqual(unknown, set())
 
     def test_the_counts_beside_the_checks_ask_about_something_real_too(self):
-        # The same rot reached the tiles on the map's tab: "ITMO staff: 0"
-        # sat there for as long as the checks did, and the top-departments
-        # list was simply empty.
+        # The same rot would show on the map's tab as "ITMO staff: 0" and
+        # an empty top-departments list.
         for cypher in QUERIES:
             with self.subTest(query=cypher[:40]):
                 self.assertEqual(names_in(cypher) - self.known, set())
 
     def test_the_guard_would_have_caught_the_label_that_went_away(self):
-        # The bug this test exists for: `Itmo` was a label until the loader
-        # moved the distinction onto a property, and the checks kept asking
-        # for it. Without this line the test above could pass by matching
-        # nothing at all.
+        # The bug this test exists for: `Itmo` is a property now, not a
+        # label, and a check still asking for it matches nothing. Without
+        # this line the test above could pass by matching nothing at all.
         self.assertEqual(names_in("MATCH (p:Person:Itmo) RETURN count(p)") - self.known,
                          {"Itmo"})
 
@@ -75,12 +96,12 @@ class NamesExistTest(unittest.TestCase):
 
 
 class PrecedenceTest(unittest.TestCase):
-    """`AND` binds tighter than `OR`, and that has already bitten once.
+    """`AND` binds tighter than `OR`, which breaks scoped checks.
 
     Every check about staff is scoped with `p.is_itmo AND ...`. Where the
     condition it scopes contains an `OR`, the scope applies to the first
-    half alone — `(is_itmo AND missing) OR empty` counts external authors
-    too — and the check goes on looking right while answering a different
+    half alone - `(is_itmo AND missing) OR empty` counts external authors
+    too - and the check goes on looking right while answering a different
     question.
     """
 

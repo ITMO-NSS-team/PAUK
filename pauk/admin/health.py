@@ -1,20 +1,8 @@
-"""The graph's own health, as the panel keeps and reads it.
+"""Keeps and reads the last health run.
 
-The checks themselves live in `pauk.gui.checks` and are run by
-`pauk.gui.generate_stats` — one set of definitions for the map's tab and
-for this page, because two would answer differently about the same graph
-within a month.
-
-What is here is the part the panel needs and the map does not: somewhere to
-keep the last answer. Thirty-two checks are thirty-two counts plus their
-denominators, several of them regex scans over every person, and a page
-that ran them on every open would be a page nobody opens twice. So a run
-writes the answer down and the page reads it, with the time it was taken
-shown next to it — a number without its date is worse than no number.
-
-The rows behind a check are not kept: they are a `LIMIT`-ed query, cheap
-enough to run while somebody looks at them, and stale examples of a problem
-that has since been fixed would be the wrong kind of wrong.
+The checks live in `pauk.admin.checks` and are run by `pauk.admin.graph_stats`.
+They are too heavy to run on every page open, so a run saves its answer and the
+page reads it. The rows behind a check are not saved: they are queried fresh.
 """
 
 from __future__ import annotations
@@ -25,18 +13,15 @@ from typing import Any
 
 from pymongo.database import Database
 
-from pauk.gui.generate_stats import collect_examples
+from pauk.admin.graph_stats import collect_examples
 
 logger = logging.getLogger("pauk.admin")
 
 COLLECTION = "health"
 #: One document: the panel shows the last answer, not a history of answers.
-#: What changed over time is a different question, and the journal of runs
-#: already records when each was taken.
 LATEST = "latest"
 
-#: Worst first. Somebody opening the page is looking for what is wrong, and
-#: a list that opens on thirty green lines hides the three red ones.
+#: Worst first: the page is opened to find what is wrong.
 ORDER = {"error": 0, "fail": 1, "warn": 2, "ok": 3}
 
 WORDS = {
@@ -50,11 +35,9 @@ WORDS = {
 def rows_behind(client, check_id: str, limit: int) -> dict:
     """The records behind one check, asked of the graph now.
 
-    Reaches for the raw driver, which routes otherwise never do. The reason
-    is that these queries are not the panel's: they are written in
-    `pauk.gui.checks` as Cypher, against the whole graph, and the client's
-    whitelist of labels and fields has nothing to offer them. Kept in one
-    place so the reach is visible and explained rather than repeated.
+    Reaches for the raw driver because the queries are Cypher written in
+    `pauk.admin.checks`, which the client's label/field whitelist cannot
+    express. Kept in one place so the exception stays visible.
 
     Raises:
         KeyError: No such check.
@@ -87,9 +70,7 @@ def verdict(checks: list[dict]) -> dict[str, int]:
 def grouped(checks: list[dict]) -> list[dict]:
     """The checks as the page lays them out: by group, worst first.
 
-    Inside a group the share decides, then the raw count — a check failing
-    on a tenth of the graph matters more than one failing on three rows,
-    and neither is worth reading before the one that failed outright.
+    Inside a group the share decides, then the raw count.
     """
     order: list[str] = []
     by_group: dict[str, list[dict]] = {}
@@ -115,10 +96,6 @@ def _worst_first(check: dict) -> tuple[Any, ...]:
 
 
 def openable(check: dict) -> bool:
-    """Whether there is anything to show behind this check.
-
-    A check with no rows has nothing to open, and one that did not run has
-    nothing to show either — the link would lead to the same error twice.
-    """
+    """Whether there is anything to show behind this check."""
     return bool(check.get("has_examples")) and bool(check.get("n")) \
         and check.get("status") != "error"

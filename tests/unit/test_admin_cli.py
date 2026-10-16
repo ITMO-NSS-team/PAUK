@@ -1,5 +1,6 @@
 import argparse
 import unittest
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import mongomock
@@ -163,7 +164,7 @@ class RunTest(unittest.TestCase):
 
     def test_a_refused_edit_leaves_no_decision_behind(self):
         # Recording the decision before the write would apply it on the next
-        # publish — quietly making the change the person was just told was
+        # publish - quietly making the change the person was just told was
         # rejected.
         db = mongomock.MongoClient()["pauk_test"]
         stale = self.graph.nodes[("Person", "A1")]["updated_at"]
@@ -217,7 +218,7 @@ class RelationshipOverrideCliTest(unittest.TestCase):
                          {("Person", "AUTHORED", "Publication", "A1", "W1")})
 
     def test_linking_claims_the_link(self):
-        # Nothing reapplies it — the loader only creates edges, so the link
+        # Nothing reapplies it - the loader only creates edges, so the link
         # survives publishing on its own. It is written down because a
         # prune has no other way of telling it from an edge the pipeline
         # has stopped making.
@@ -249,7 +250,7 @@ class RelationshipOverrideCliTest(unittest.TestCase):
 
 
 class PrintingCommandsTest(unittest.TestCase):
-    """Commands that mostly print — still worth a run, they touch the graph."""
+    """Commands that mostly print - still worth a run, they touch the graph."""
 
     def setUp(self):
         self.graph = FakeGraph()
@@ -310,10 +311,9 @@ class PrintingCommandsTest(unittest.TestCase):
 class DeleteSnapshotTest(unittest.TestCase):
     """`pauk admin node delete` has to record what it removed.
 
-    The panel took a snapshot and the command did not, so a record deleted
-    from the terminal could only be restored from the feed — which keeps
-    history rather than state, and summarises a bulk operation without
-    listing a single field.
+    The panel takes a snapshot, so the command must too: otherwise a record deleted from the terminal can
+    only be restored from the feed, which keeps history rather than state and summarises a bulk
+    operation without listing a single field.
     """
 
     def setUp(self):
@@ -349,18 +349,22 @@ class TrimCommandTest(unittest.TestCase):
     """`pauk admin trim`, the only thing that shortens either history."""
 
     def setUp(self):
+        """Stamps relative to today: a fixed date drifts past the cutoff and
+        fails the test on a day nobody changed anything."""
         self.db = mongomock.MongoClient()["pauk_test"]
+        old = (datetime.now(UTC) - timedelta(days=400)).isoformat()
+        recent = (datetime.now(UTC) - timedelta(days=1)).isoformat()
         self.db[REVISIONS].insert_many([
             {"entity_type": "persons", "entity_id": "OLD", "version": 1,
-             "snapshot": {}, "replaced_at": "2024-01-01T10:00:00"},
+             "snapshot": {}, "replaced_at": old},
             {"entity_type": "persons", "entity_id": "RECENT", "version": 1,
-             "snapshot": {}, "replaced_at": "2026-09-01T10:00:00"},
+             "snapshot": {}, "replaced_at": recent},
         ])
         self.db[feed.COLLECTION].insert_many([
-            {"timestamp": "2024-01-01T10:00:00", "actor": "pipeline", "source": "publish",
+            {"timestamp": old, "actor": "pipeline", "source": "publish",
              "operation": "upsert_nodes", "entity_type": "Person", "entity_id": "OLD",
              "change_kind": "updated", "diff": {}},
-            {"timestamp": "2026-09-01T10:00:00", "actor": "user:roman", "source": "admin-ui",
+            {"timestamp": recent, "actor": "user:roman", "source": "admin-ui",
              "operation": "upsert_nodes", "entity_type": "Person", "entity_id": "RECENT",
              "change_kind": "updated", "diff": {}},
         ])

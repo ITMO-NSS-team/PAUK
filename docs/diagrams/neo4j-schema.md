@@ -1,4 +1,4 @@
-# Схема графа Neo4j
+# Neo4j graph schema
 
 ```mermaid
 classDiagram
@@ -7,9 +7,11 @@ classDiagram
         +is_itmo : bool
         +openalex_id
         +orcid
+        +name_raw
         +name_en
         +name_variants
         +email
+        +emails
         +first_name_ru
         +second_name_ru
         +surname_ru
@@ -22,8 +24,8 @@ classDiagram
         +linkedin
         +affiliations : JSON
         +merged_ids
-        ~ остальные экспериментальные поля
-        ~ не заполняются, см. models.md
+        ~ remaining properties are listed
+        ~ in neo4j-schema-desc.md
     }
 
     class Organization {
@@ -40,9 +42,10 @@ classDiagram
         +name_en
         +name_ru
         +name_variants
+        +context_aliases
         +kind : megafaculty|faculty|institute|center|department|lab
-        +parent_id : uid родителя-Department
-        +organization_id : uid Organization (верхний уровень)
+        +parent_id : uid of the parent Department
+        +organization_id : uid of the Organization (top level)
     }
 
     class Publication {
@@ -77,6 +80,11 @@ classDiagram
         +stars_num
         +last_updated
         +license
+        +topics
+        +language
+        +forks_num
+        +archived
+        +is_fork
         +contributors
         +merged_ids
     }
@@ -93,7 +101,7 @@ classDiagram
     }
 
     class LinkCandidate {
-        +id : сам URL
+        +id : the URL itself
         +url
         +host
     }
@@ -111,19 +119,21 @@ classDiagram
     Department --> Organization : PART_OF
 ```
 
-`AUTHORED` несёт `position`/`affiliation`/`affiliation_source`/
-`is_corresponding`; `CONTRIBUTED_TO` — `role` (`owner` или `contributor`),
-её строит стадия `github_match`; `MENTIONS_LINK` — `context`
-(список), `page_number` (список, `0` = абстракт), `is_relevant`,
-`classification_status`, `llm_confidence`, `llm_reason`. Подробности и уникальные ключи — в
-[`../architecture/neo4j-graph.md`](../architecture/neo4j-graph.md).
+`AUTHORED` carries `position`, `affiliation`, `affiliation_source` and
+`is_corresponding`. `CONTRIBUTED_TO` carries `role` (`owner` or `contributor`)
+and is built by the `github_match` stage. `MENTIONS_LINK` carries `context`
+(list), `page_number` (list, `0` = abstract), `is_relevant`,
+`classification_status`, `llm_confidence`, `llm_reason`, and, for links with
+line-wrap alternatives, `url_ambiguous`, `candidate_urls` and `availability`.
+Details and unique keys: [`../architecture/neo4j-graph.md`](../architecture/neo4j-graph.md).
 
-Иерархия подразделений рекурсивна: подразделение `PART_OF` своего родителя —
-либо другого `Department` (`parent_id`), либо корневой `Organization`
-(`organization_id`); задано ровно одно из двух. Несколько организаций (ИТМО и
-со-аффилиации) сосуществуют в одном графе как разные корни.
+The department hierarchy is recursive: a unit is `PART_OF` its parent, either
+another `Department` (`parent_id`) or a root `Organization`
+(`organization_id`); exactly one of the two is set. Several organizations (ITMO
+and co-affiliations) coexist in one graph as separate roots.
 
-Почты и имена из коммитов, которые собирает матчер (`GitHubProfile.emails`,
-`commit_names`, `repos`, `Person.emails`), в граф не публикуются: это
-доказательства, на которых он строит решение, а не факты об аккаунте —
-и это адреса живых людей. Они остаются в prepared JSONL.
+Commit-derived data collected by the matcher (`GitHubProfile.emails`,
+`commit_names`, `repos`) is not published to the graph: it is evidence for the
+matcher's decisions, not a fact about the account, and it consists of real
+people's addresses. It stays in the prepared Mongo collections. `Person.emails`
+is published, as the set of addresses the author or their pages state.

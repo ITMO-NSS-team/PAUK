@@ -1,10 +1,9 @@
 """Drop GitHub profiles harvested only from repositories nobody implements.
 
-The harvest collects everyone credited with a commit on every repository a
-paper links to, and papers link to the tools they used. Once IMPLEMENTS is
-repaired, the repositories left with no claim at all are exactly those someone
-else wrote, and the accounts reachable only through them are contributors to
-third-party libraries who have no connection to the institute.
+The harvest collects everyone credited with a commit on every repository a paper
+links to, and papers link to the tools they used. Once IMPLEMENTS is repaired,
+the repositories left with no claim at all are those someone else wrote, and
+the accounts reachable only through them have no connection to the institute.
 
 A profile is kept when any of these holds, so that nothing the graph relies on
 loses its target:
@@ -13,9 +12,8 @@ loses its target:
 * it owns a repository (the OWNED_BY edge points at it);
 * any repository it appears on still has a publication claiming it.
 
-`Repository.contributors` is left alone: who committed to a repository is a
-fact about the repository, and it is a node property rather than an edge, so
-it does not dangle when a profile goes.
+`Repository.contributors` is left alone: it is a node property rather than an
+edge, so it does not dangle when a profile goes.
 
 Dry run by default.
 """
@@ -81,7 +79,7 @@ def main() -> int:
             print(f"\ndeleted {len(ids)}; collection now holds "
                   f"{db[PreparedStore.COLLECTIONS['github_profiles']].count_documents({})}")
         else:
-            print("\ndry run — nothing deleted; pass --apply")
+            print("\ndry run: nothing deleted; pass --apply")
     finally:
         client.close()
 

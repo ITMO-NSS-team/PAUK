@@ -80,12 +80,8 @@ class AuthorNamesStageTest(unittest.TestCase):
                 AuthorNamesStage(prepared, RawStore(db, "sample"), config).run()
 
     def test_a_crash_partway_through_does_not_lose_already_processed_people(self):
-        # Each person is upserted right after it's processed
-        # (PreparedStore.upsert_models), not batched into one write_models()
-        # call after the whole loop - so an unexpected error on person #2
-        # (a malformed LLM reply, or anything else the loop doesn't guard
-        # against) must not roll back the LLM work already spent and saved
-        # for person #1.
+        # Each person is upserted as it is processed, not batched after the
+        # loop, so an error on person #2 keeps the work spent on person #1.
         with self.assertRaises(RuntimeError):
             self.run_stage(
                 [person("A1", "Nikolay Nikitin"), person("A2", "Ivan Petrov")], [],
@@ -413,13 +409,8 @@ class AuthorNamesStageTest(unittest.TestCase):
         self.assertEqual(people["A1"].second_name_en, "Vladimirovich")
 
     def test_a_candidate_backed_patronymic_survives_even_without_matched_candidate_set(self):
-        # The model is supposed to set matched_candidate whenever it copies
-        # a directory row (rule 1), but it doesn't always do both at once -
-        # the same rule-breaking _guard_invented_second_name's docstring
-        # already documents for rule 3. A patronymic that matches a
-        # candidate row must not be treated as invented just because
-        # matched_candidate came back null and name_variants never spelled
-        # it out.
+        # matched_candidate is not always set when a directory row is copied,
+        # so a matching patronymic must not count as invented.
         result, people = self.run_stage(
             [person("A1", "M.V. Dorogov")],
             ["Дорогов Максим Владимирович,Дорогов,Максим,Владимирович,"],
@@ -676,7 +667,7 @@ class StaffIdentityTest(unittest.TestCase):
 
     def test_a_disagreeing_middle_initial_withdraws_the_claim(self):
         # OpenAlex knows this author as "Alexey Dmitriev" too, which fits the
-        # record — but A.D. is not A.A., and one of them is somebody else.
+        # record - but A.D. is not A.A., and one of them is somebody else.
         catalog = self.catalog(
             ("Дмитриев Алексей Андреевич", "Дмитриев", "Алексей", "Андреевич", ""))
         self.assertIsNone(catalog.staff_id(person(
@@ -686,7 +677,7 @@ class StaffIdentityTest(unittest.TestCase):
 
     def test_an_initial_that_folds_to_two_letters_still_agrees(self):
         # "Yu." is one initial, but folding writes it with two letters
-        # ("iu") — it must still read as Юрьевич and veto nothing.
+        # ("iu") - it must still read as Юрьевич and veto nothing.
         catalog = self.catalog(
             ("Кохановский Алексей Юрьевич", "Кохановский", "Алексей", "Юрьевич", ""))
         self.assertIsNotNone(catalog.staff_id(person(

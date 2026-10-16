@@ -1,28 +1,19 @@
 """Collect author emails from the full text of a paper.
 
-A paper prints the addresses of its authors, usually next to the
-affiliations on the first page. OpenAlex does not carry them, and ORCID
-holds one for about five percent of the people here, so the text is the
-richest source available — and it costs nothing, since code_links already
-stores the text it downloaded.
+Papers print author addresses, usually next to the affiliations. OpenAlex
+does not carry them and ORCID has one for few people, so the text that
+code_links already stores is the richest source.
 
-An address on a page belongs to one of the authors, but the page does not
-say which. The local part does: people write `dukhanov@itmo.ru`, and the
-surname inside it names its owner. An address whose local part fits two
-authors of the same paper is dropped rather than guessed at — two
-Petrovs on one paper is exactly the case this must not get wrong.
-
-Papers also compress the addresses of several authors into one line:
-
-    {lvkarakchieva, pvtrifonov}@itmo.ru
-
-which is read as the two addresses it stands for.
+An address is attributed to the author whose surname appears in its local
+part (`dukhanov@itmo.ru`). An address that fits two authors of the same paper
+is dropped rather than guessed at. Compressed forms such as
+`{lvkarakchieva, pvtrifonov}@itmo.ru` are expanded.
 
 The other source is the page the author linked from their ORCID record.
-Addresses there are usually written to defeat scrapers — "name [at]
-itmo.ru", "name&#64;itmo.ru" — so the text is un-obfuscated before it is
-read. Only the page of the person being resolved is fetched, and only when
-the surname in the address confirms it is theirs.
+Addresses there are often obfuscated ("name [at] itmo.ru",
+"name&#64;itmo.ru") and are un-obfuscated before reading. Only the page of the
+person being resolved is fetched, and only addresses carrying their surname
+are kept.
 """
 
 from __future__ import annotations
@@ -46,7 +37,7 @@ logger = logging.getLogger(__name__)
 TLD = (r"(?:ru|com|org|net|edu|gov|io|info|biz|name|eu|de|fr|uk|us|cn|jp|kr"
        r"|in|it|es|nl|se|fi|no|ch|at|cz|pl|by|kz|ua)")
 EMAIL_RE = re.compile(rf"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+?\.{TLD}(?![A-Za-z])", re.I)
-# "{first, second}@domain" — several authors sharing one institutional host.
+# "{first, second}@domain": several authors sharing one institutional host.
 BRACE_RE = re.compile(rf"\{{([^{{}}@]+)\}}@([A-Za-z0-9.\-]+?\.{TLD})(?![A-Za-z])", re.I)
 
 # A surname shorter than this inside a local part matches by accident.
@@ -99,9 +90,8 @@ def _letters(value: str | None) -> str:
 def author_surnames(person: Person) -> set[str]:
     """Every surname this author is published under.
 
-    The last word of a romanized name, taken from the display name and
-    from each spelling OpenAlex knows — an author writing as "Dukhanov"
-    in one paper and "Duhanov" in another is one person with two.
+    The last word of a romanized name, from the display name and every
+    spelling OpenAlex knows (e.g. "Dukhanov" and "Duhanov").
     """
     surnames = set()
     for name in (person.name_raw, *person.name_variants, *person.other_names):
@@ -157,7 +147,7 @@ class EmailsStage(EnrichmentStage):
         """Addresses on the author's own page that carry their surname.
 
         A lab page lists the whole group, so an address is only taken when
-        the surname inside it is this person's — the same test the papers
+        the surname inside it is this person's, the same test the papers
         get. Any failure to fetch is silent: a page is a courtesy source,
         and a dead link must not fail the run.
         """

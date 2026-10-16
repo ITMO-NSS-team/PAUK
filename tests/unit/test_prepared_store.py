@@ -134,9 +134,8 @@ class PreparedStoreTest(unittest.TestCase):
 class TrimRevisionsTest(unittest.TestCase):
     """The archive of replaced rows is the other history that only grows.
 
-    Every real change files the whole previous document, and nothing has
-    ever removed one: in a working database it can outweigh the rows it is
-    the history of.
+    Every real change files the whole previous document, so in a working
+    database it can outweigh the rows it is the history of.
     """
 
     def setUp(self):

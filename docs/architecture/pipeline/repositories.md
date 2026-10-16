@@ -1,132 +1,123 @@
-# `repositories` — стейдж
+# `repositories` stage
 
-**Что здесь:** как найденная ссылка на код превращается в обогащённый
-`Repository` через GitHub API.
+**What this covers:** how a found code link becomes an enriched `Repository`
+through the GitHub API.
 
-**Какие файлы задействует:** `pauk/pipeline/stages/repositories.py`.
+**Files involved:** `pauk/pipeline/stages/repositories.py`.
 
-Читает `repo_links.jsonl` (весь список ссылок, найденных `code_links`),
-для каждой ссылки на `github.com/owner/repo` вида ровно двух сегментов
-пути — запрос к GitHub API.
+Reads the `repo_links` collection (every link found by `code_links`). For each
+link of the form `github.com/owner/repo` (exactly two path segments) it queries
+the GitHub API.
 
-## Один запрос на репозиторий за прогон, даже при многих упоминаниях
+## One request per repository per run
 
-Один и тот же репозиторий может упоминаться многими публикациями. Все
-`cited_urls` собираются со всех упоминаний, и метаданные GitHub запрашиваются
-для любой найденной ссылки независимо от её релевантности. Но
-`Repository.publication_ids` содержит только публикации, для которых
-`CodeLink.is_relevant=true` и URL не остаётся неоднозначной альтернативой
-переноса: именно из этого поля граф строит `IMPLEMENTS`.
-Стороннее упоминание остаётся в `repo_links` и позже становится только
+Many publications can mention the same repository. All `cited_urls` are
+collected across mentions, and GitHub metadata is fetched for every found link
+regardless of relevance. But `Repository.publication_ids` holds only
+publications whose `CodeLink.is_relevant=true` and whose URL is not an
+unresolved line-wrap alternative; the graph builds `IMPLEMENTS` from that
+field. A third-party mention stays in `repo_links` and later becomes only
 `MENTIONS_LINK`.
 
-Перед проходом стейдж удаляет из `publication_ids` обрабатываемые публикации
-и добавляет обратно только подтверждённые пары. Поэтому переклассификация
-`true → false/null` убирает старую авторскую привязку, не затрагивая
-публикации из других групп. Сам запрос к GitHub API (`attempted_repo_ids`)
-идёт максимум один раз за прогон на репозиторий — иначе `--force` на большой
-группе повторял бы один и тот же запрос столько раз, сколько публикаций на
-него ссылаются.
+Before the pass, the stage removes the publications being processed from
+`publication_ids` and adds back only the confirmed pairs. So a reclassification
+`true -> false/null` drops the old authorship link without touching
+publications from other groups. The GitHub request itself happens at most once
+per repository per run (`attempted_repo_ids`); otherwise `--force` on a large
+group would repeat it once per citing publication.
 
-Альтернативы переносов проходят тот же запрос метаданных. Его результат
-записывается в `CodeLink.availability` (`available`, `not_found`, `failed`),
-причина ошибки — в `availability_error`. Только 404 самого запроса
-репозитория означает `not_found`; 403, 502 и сетевые ошибки — `failed`.
-Ошибка более позднего запроса README не отменяет факт доступности
-репозитория. Эти статусы не выбирают автоматически правильное написание
-ссылки; исходные альтернативы остаются доступны для проверки.
+Line-wrap alternatives go through the same metadata request. The result is
+written to `CodeLink.availability` (`available`, `not_found`, `failed`) and the
+failure reason to `availability_error`. Only a 404 on the repository request
+itself means `not_found`; 403, 502 and network errors mean `failed`. A later
+README failure does not undo the fact that the repository is available. These
+statuses do not pick the correct spelling of a link automatically; the original
+alternatives stay available for review.
 
-## Что заполняется успешным запросом
+## What a successful request fills in
 
-`GET /repos/{owner}/{name}` даёt `html_url` (канонический URL — может
-отличаться от URL, под которым репозиторий цитировали, если его
-переименовали), `name`, `description`, `stars_num`, владельца
-(`owner_login` → заводит/обновляет `GitHubProfile`). Отдельный запрос
-`has_readme(owner, name)` — `GET .../readme`, `404` → `False`, иначе
-`True`; основной payload репозитория наличие README не сообщает вообще,
-поэтому это второй вызов, не поле основного ответа.
+`GET /repos/{owner}/{name}` gives `html_url` (the canonical URL, which can
+differ from the cited one after a rename), `name`, `description`, `stars_num`
+and the owner (`owner_login`, which creates or updates a `GitHubProfile`).
+`has_readme(owner, name)` is a second call, `GET .../readme`: `404` gives
+`False`, anything else `True`. The main payload does not report a README at
+all.
 
-Из того же тела ответа берутся `topics`, `language`, `forks_count`,
-`archived`, `fork` и `license.spdx_id` — дополнительных запросов они не
-стоят, платить за них отдельно нечем. `last_updated` — это `pushed_at`, а
-не `updated_at`: второй сдвигается от звезды или правки описания и ничего
-не говорит о том, жив ли код.
+`topics`, `language`, `forks_count`, `archived`, `fork` and `license.spdx_id`
+come from the same response body at no extra cost. `last_updated` is
+`pushed_at`, not `updated_at`: the latter also moves on a star or a description
+edit and says nothing about whether the code is alive.
 
-`repo.github_id` — числовой id GitHub, сохраняется отдельно от URL:
-переживает переименования и передачу владения, на нём строится дедуп
-репозиториев ([dedup.md](dedup.md)).
+`repo.github_id` is GitHub's numeric id, stored apart from the URL. It survives
+renames and ownership transfers, and repository dedup is built on it
+([dedup.md](dedup.md)).
 
-## Люди за репозиторием — не здесь
+## The people behind a repository are not collected here
 
-Владелец и коммитеры собираются отдельным стейджем `repo_people`, у него
-свой `processing`-статус. Причина и замеры — в
-[repo-people.md](repo-people.md). Здесь остаётся только заглушка профиля
-владельца: вложенный объект `owner` в ответе GitHub несёт логин, тип и
-ссылку, и они дозаполняют существующий `GitHubProfile`, а не переписывают
-его — иначе стёрлись бы адреса и имена, которые тот же человек оставил на
-других репозиториях.
+The owner and the committers are collected by the separate `repo_people` stage,
+which has its own `processing` status; the reasoning is in
+[repo-people.md](repo-people.md). This stage keeps only the owner's profile
+stub: the nested `owner` object in the GitHub response carries a login, a type
+and a URL, and these fill in the existing `GitHubProfile` instead of replacing
+it, which would erase addresses and names the same person left on other
+repositories. For an owner of type `organization` it additionally makes one
+`GET /users/{login}` call per organization per run, filling name, description,
+location and company, which `social_graph` reads to recognize an ITMO lab.
 
-## Два источника работы
+## Two sources of work
 
-Список работы — объединение двух наборов:
+The work list is the union of two sets:
 
-1. **строки `repo_links`** — так репозитории *находятся*: из ссылки
-   выводится `github_{owner}_{name}`, и если такой строки ещё нет, она
-   заводится;
-2. **уже существующие строки `repositories` группы** — так они
-   *обогащаются* дальше.
+1. **`repo_links` rows**: this is how repositories are *found*. The id
+   `github_{owner}_{name}` is derived from the link, and a row is created if it
+   does not exist;
+2. **existing `repositories` rows of the group**: this is how they are
+   *enriched* further.
 
-Второго прохода долго не было, и строки, заведённые импортом напрямую в
-коллекцию без ссылки в `repo_links`, были недостижимы навсегда: на данных
-за август 2026 это 78 строк из 452, а четыре curated-группы целиком давали
-`repositories=0`.
+The second pass exists because rows imported straight into the collection with
+no link in `repo_links` (for example curated groups) would otherwise never be
+reached.
 
-Второй проход ключуется по id, выведенному из **собственного URL строки**,
-а не по `repo.id`: после перекейвания на каноническую идентичность эти два
-расходятся, и без общего ключа `--force` брал бы такую строку дважды —
-один раз по цитируемой ссылке, второй раз вторым проходом.
+The second pass is keyed by the id derived from the **row's own URL**, not by
+`repo.id`: after re-keying to the canonical identity the two differ, and
+without a shared key `--force` would take such a row twice, once by the cited
+link and once in the second pass.
 
-Набор второго прохода снимается **до первого запроса** (`_url_repo_id`
-считает ключи один раз, в начале `run()`). Успешный запрос переписывает
-`repo.url` на канонический, на который редиректит GitHub, — пересчёт ключей
-после первого прохода дал бы той же строке новый ключ, не нашёл бы его в
-`attempted_repo_ids` и сходил бы за ней ещё раз. По той же причине первый
-проход занимает не только ключ цитируемой ссылки, но и ключ собственного
-URL строки — тоже до запроса.
+The second-pass set is taken **before the first request** (`_url_repo_id`
+computes the keys once, at the start of `run()`). A successful request rewrites
+`repo.url` to the canonical URL GitHub redirects to; recomputing keys after the
+first pass would give the same row a new key, miss it in `attempted_repo_ids`
+and fetch it again. For the same reason the first pass claims not only the key
+of the cited link but also the key of the row's own URL, before the request.
 
-Один ключ может держать **несколько строк**: curated-импорт приносит свой
-id, а проход по ссылкам выводит id из цитируемого URL, и оба указывают на
-один owner/name. Это один репозиторий, поэтому строки не перетираются по
-ключу, а складываются (`_fold_duplicates`): выигрывает та, у которой уже
-есть `github_id` — значит она была в API и её url с name канонические;
-при равенстве — меньшая по id, чтобы победитель не зависел от порядка
-чтения. Проигравшие отдают `publication_ids` и `cited_urls` и оставляют
-свой id в `merged_ids` победителя, по которому граф-загрузчик разрешит
-ссылку на старый узел. Перетирание по ключу означало бы, что одна и та же
-строка проигрывает на каждом прогоне — порядок чтения стабилен — и не
-обогащается никогда.
+One key can hold **several rows**: a curated import brings its own id, while
+the link pass derives an id from the cited URL, and both point to the same
+owner/name. It is one repository, so the rows are folded rather than
+overwritten by key (`_fold_duplicates`). The row that already has a `github_id`
+wins (it was seen by the API, so its url and name are canonical); on a tie the
+smaller id wins, so the winner does not depend on read order. Losers hand over
+`publication_ids` and `cited_urls` and leave their id in the winner's
+`merged_ids`, which the graph loader uses to resolve links to the old node.
 
-## Ошибка — `FAILED`, не потеря ссылки
+## An error means `FAILED`, not a lost link
 
-Неуспешный запрос (404, rate limit, сетевая ошибка) — `Repository.processing["repositories"]
-= FAILED` с текстом причины. Сам объект `Repository`-заглушка (только url
-и name) всё равно пишется в `repositories.jsonl`, но граф-загрузчик его
-не грузит, пока стейдж не завершится успешно (`jsonl_loader.py::_stage_failed`)
-— ссылка при этом не пропадает из графа, она остаётся видна как
-`LinkCandidate` до успешного ретрая.
+A failed request (404, rate limit, network error) sets
+`Repository.processing["repositories"] = FAILED` with the reason. The stub
+`Repository` (only url and name) is still stored, but the graph loader does not
+load it until the stage succeeds (`jsonl_loader.py::_stage_failed`). The link
+stays visible in the graph as a `LinkCandidate` until a retry succeeds.
 
-## Пере-ключевание на каноническую идентичность
+## Re-keying to the canonical identity
 
-После основного цикла — отдельный проход `_canonical_repo_id`: строки,
-изначально заведённые под цитируемым URL, перекладываются под
-`github_{owner}_{name}` из **полученного от API** payload (не из
-исходного URL) — переименованный на GitHub репозиторий или упомянутый в
-другом регистре не должен разъезжаться на два узла графа с одним и тем же
-`Repository.url`-констрейнтом.
+After the main loop, a separate pass (`_canonical_repo_id`) moves rows that were
+created under the cited URL to `github_{owner}_{name}` built from the payload
+**returned by the API** (not from the original URL). A repository renamed on
+GitHub, or cited in a different letter case, must not split into two graph
+nodes that share one `Repository.url` constraint.
 
-Перекейвание — это тоже слияние, поэтому id, под которым строка лежала,
-уезжает в `merged_ids`, а не затирается: на него могут указывать уже
-опубликованные рёбра, и разрешает их граф-загрузчик именно по этому списку.
-То же для проигравшей строки — в `merged_ids` победителя переезжают и её
-собственный id, и всё, что она успела вобрать раньше. Сам канонический id из
-списка исключается: строка не должна числиться слитой сама в себя.
+Re-keying is also a merge, so the id a row was stored under goes into
+`merged_ids` rather than being overwritten: already published edges may point
+to it, and the graph loader resolves them through that list. The same holds for
+a losing row: its own id and everything it had already absorbed move into the
+winner's `merged_ids`. The canonical id itself is excluded, so a row is never
+listed as merged into itself.

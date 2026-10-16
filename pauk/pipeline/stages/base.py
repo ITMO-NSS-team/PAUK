@@ -14,9 +14,8 @@ from pauk.storage import PreparedStore, RawStore
 
 T = TypeVar("T")
 
-#: Told where a stage has got to, by label and by how many of how many. The
-#: worker passes its own reporter, which raises when somebody has asked the
-#: run to stop, so this is also where a stage can be given up.
+#: Receives (label, done, total). The worker's reporter raises when a stop is
+#: requested, so this is also where a stage can be cancelled.
 OnProgress = Callable[[str, int, int], None]
 
 
@@ -30,9 +29,8 @@ class EnrichmentStage(ABC):
     name: str
     progress_label: str | None = None
 
-    #: How often `progress` may call the hook. A stage can run through
-    #: thousands of cheap rows a second and every call is two round trips
-    #: to Mongo, so it is throttled by the clock rather than by a count.
+    #: Minimum seconds between hook calls; each call costs two Mongo round trips,
+    #: so it is throttled by the clock rather than by row count.
     REPORT_SECONDS = 1.0
 
     def __init__(self, prepared: PreparedStore, raw: RawStore,
@@ -57,7 +55,7 @@ class EnrichmentStage(ABC):
         that does not name this one.
 
         Unlike `selected`, a selection aimed at another entity does not filter
-        here — a stage that reaches its rows through several entities decides
+        here: a stage that reaches its rows through several entities decides
         for itself what a publication-scoped run means for each of them.
         """
         return (self.selection is None
@@ -79,10 +77,8 @@ class EnrichmentStage(ABC):
                  label: str | None = None, unit: str = "item") -> Iterator[T]:
         """Iterate with a throttled progress bar when stderr is interactive.
 
-        Also where a run under the worker says how far it has got and finds
-        out it has been asked to stop. Between two items is the safe place
-        for both: the one just handed out has been dealt with, and the next
-        has not been touched.
+        Also reports progress to the worker and checks for a stop request,
+        which is safe between two items.
         """
         said = 0.0
         described = label or self.progress_label or self.name

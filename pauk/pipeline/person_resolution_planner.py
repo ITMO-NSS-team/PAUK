@@ -41,8 +41,7 @@ def plan_person_merges_resolved(
 ) -> tuple[list[tuple[Person, list[Person]]], list[dict]]:
     """Plan folds with LogReg and two independent model verdicts."""
     # Imported lazily to avoid a module cycle: DedupStage calls this adapter,
-    # while these helpers remain the shared source of candidate generation and
-    # transitive component safety checks.
+    # and these helpers are the shared candidate generation and component safety checks.
     from pauk.pipeline.stages.dedup import (
         _group_conflict,
         _grouped,

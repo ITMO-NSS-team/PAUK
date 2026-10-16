@@ -3,7 +3,7 @@
 Loading is strictly nodes-first, relationships-second: if a relationship
 targets a node that hasn't been loaded, Cypher's MATCH simply won't find it
 and the relationship doesn't get created (see client.py, which logs a
-warning with the exact count instead of silently dropping it — missing
+warning with the exact count instead of silently dropping it; missing
 target nodes are never auto-created as stubs).
 """
 
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 #: Told which part of the load is under way and how far it has got. The
 #: worker passes its own reporter, which raises when somebody has asked the
-#: run to stop — see pauk/jobs/worker.py.
+#: run to stop; see pauk/jobs/worker.py.
 Progress = Callable[[str, int, int], None]
 
 
@@ -34,8 +34,8 @@ def _tick(report: Progress | None, step: str, done: int, total: int) -> None:
 
     Also the only seam where a publish can be given up: between two chunks,
     with everything before them already written. What is left behind is a
-    group loaded in part, which the next publish finishes — every write here
-    is a MERGE, so repeating it costs time and changes nothing else.
+    group loaded in part, which the next publish finishes: upserts and
+    synchronization are idempotent, so repeating them is safe.
     """
     if report is not None:
         report(step, done, total)
@@ -75,14 +75,13 @@ def extract_repo_links(
 ]:
     """Extract MENTIONS_LINK edges from one repo_links.jsonl row.
 
-    A row here (PubLinks) is not a node — it's a flat list of candidate code
+    A row here (PubLinks) is not a node: it is a flat list of candidate code
     links for one publication, and unlike Publication.mentions_links it
-    carries no target_kind discriminator. The rule (matching the old
-    graph_loader.py): if a link's url matches an already-known Repository.url
+    carries no target_kind discriminator. The rule: if a link's url matches an already-known Repository.url
     (compared via normalize_repo_url), create a MENTIONS_LINK edge to that
     Repository, matched by the repository's *stored* url; otherwise create a
-    LinkCandidate node on the fly, using the url itself as its id —
-    repo_links.jsonl carries no other stable id for a candidate.
+    LinkCandidate node on the fly, using the url itself as its id
+    (repo_links.jsonl carries no other stable id for a candidate).
 
     Args:
         pub_links_row: One decoded repo_links.jsonl line
@@ -91,8 +90,8 @@ def extract_repo_links(
             URL as stored on the Repository node, built while loading
             repositories.jsonl in this run.
         dropped_candidates: Candidate urls deleted by hand. A LinkCandidate
-            has no prepared row of its own — it is made up here from a
-            link — so the tombstone filter the loader runs over the files
+            has no prepared row of its own; it is made up here from a
+            link, so the tombstone filter the loader runs over the files
             never sees it, and without this every publish would recreate
             the node for apply_overrides to delete again.
         synchronize_relevance: True makes the incoming verdict authoritative
@@ -152,6 +151,11 @@ def extract_repo_links(
         if occurrences:
             props["context"] = [o.get("context") or "" for o in occurrences]
             props["page_number"] = [o.get("page_number") or 0 for o in occurrences]
+            props["pdf_id"] = [o.get("pdf_id") or "" for o in occurrences]
+            if any(o.get("source") for o in occurrences):
+                props["context_source"] = [o.get("source") or "" for o in occurrences]
+            if any(o.get("reference_label") for o in occurrences):
+                props["reference_label"] = [o.get("reference_label") or "" for o in occurrences]
         stored_url = known_repository_urls.get(normalize_repo_url(url))
         if stored_url is not None:
             repo_edges.append((publication_id, stored_url, props))
@@ -166,8 +170,8 @@ def extract_repo_links(
 def _keep_graph_merges(client, label: str, nodes: list[tuple[str, dict]]) -> int:
     """Add back the folded-away ids the graph knows and the rows do not.
 
-    A fold made on the graph — the graph-wide dedup pass, or a pair
-    confirmed in the review queue — writes `merged_ids` onto the surviving
+    A fold made on the graph (the graph-wide dedup pass, or a pair
+    confirmed in the review queue) writes `merged_ids` onto the surviving
     node and nowhere else. Publishing that node from its row would replace
     the list with the row's own, `fetch_merged_id_map` would stop resolving
     the folded id, and the duplicate below would be recreated with all of
@@ -200,13 +204,14 @@ def load_prepared_rows(
     dropped_relationships: set[tuple[str, str, str, str, str]] | None = None,
     dropped_candidates: set[str] | None = None,
     report: Progress | None = None,
+    claimed_relationships: set[tuple[str, str, str, str, str]] | None = None,
 ) -> None:
     """Load prepared entity rows into Neo4j, however they were sourced.
 
     Reads every entity's rows first, accumulating nodes and relationships in
     memory (the dataset is thousands of rows, not millions, so this is
     simpler than interleaving reads with uploads), then uploads all nodes,
-    then all relationships — both in chunks of client.CHUNK_SIZE.
+    then all relationships, both in chunks of client.CHUNK_SIZE.
 
     Args:
         client: An open Neo4jClient, AuditedNeo4jClient, or a compatible
@@ -214,7 +219,7 @@ def load_prepared_rows(
         rows_by_file: Rows for each of the six prepared entities, keyed by
             the same filenames as the on-disk group layout (departments.jsonl,
             publications.jsonl, repositories.jsonl, github_profiles.jsonl,
-            persons.jsonl, repo_links.jsonl) — a missing key is the same as
+            persons.jsonl, repo_links.jsonl). A missing key is the same as
             an empty list, i.e. "this group has none of this entity".
         dropped_relationships: Edges unlinked by hand, as
             (src_label, rel_type, tgt_label, src_id, tgt_id). They are
@@ -223,12 +228,21 @@ def load_prepared_rows(
         dropped_candidates: LinkCandidate ids deleted by hand. Passed on to
             extract_repo_links, which is where a candidate is invented in
             the first place.
+        claimed_relationships: Edges added by hand, protected from automatic cleanup.
     """
     node_batches: dict[str, list[tuple[str, dict]]] = defaultdict(list)
     person_nodes: list[tuple[str, dict]] = []
     rel_batches: dict[tuple[str, str, str, str], list[tuple[str, str, dict]]] = defaultdict(list)
     known_repository_urls: dict[str, str] = {}
     candidate_promotions: dict[str, str] = {}
+    repository_ids_by_url: dict[str, str] = {}
+    mentions_scope = {
+        row["id"] for row in rows_by_file.get("publications.jsonl") or []
+        if _stage_succeeded(row, "code_links")
+    } & {
+        row["publication_id"] for row in rows_by_file.get("repo_links.jsonl") or []
+        if isinstance(row.get("links"), list)
+    }
     node_merges: dict[str, list[tuple[str, str]]] = defaultdict(list)
     implements_scope = {
         row["id"]
@@ -253,11 +267,12 @@ def load_prepared_rows(
         skipped_failed = 0
         for row in rows:
             if spec_key == "repository":
+                repository_ids_by_url[row["url"]] = row["id"]
                 for publication_id in row.get("publication_ids") or []:
                     if publication_id in implements_scope:
                         desired_implements[publication_id].add(row["id"])
             if spec_key == "repository" and _stage_failed(row, "repositories"):
-                # Never enriched successfully — a name/url stub would pollute
+                # Never enriched successfully: a name/url stub would pollute
                 # the graph; it gets loaded once a retry succeeds.
                 skipped_failed += 1
                 continue
@@ -279,11 +294,14 @@ def load_prepared_rows(
             if spec_key == "repository":
                 # url is required on Repository, not Optional. cited_urls are
                 # the URLs the repo was referenced by before canonicalization
-                # (renames, case variants) — map them to the stored url too.
+                # (renames, case variants), so map them to the stored url too.
                 known_repository_urls[normalize_repo_url(row["url"])] = row["url"]
                 for cited in row.get("cited_urls") or []:
                     known_repository_urls.setdefault(normalize_repo_url(cited), row["url"])
             for key, rels in extract_relationships(row, spec).items():
+                if key[2] == "MENTIONS_LINK" and row["id"] in mentions_scope:
+                    # A completed extraction supersedes the legacy publication field.
+                    continue
                 rel_batches[key].extend(rels)
         if skipped_failed:
             logger.info("%s: skipped %d failed (never enriched) row(s)", filename, skipped_failed)
@@ -357,16 +375,6 @@ def load_prepared_rows(
     for chunk in chunked(list(candidate_promotions.items())):
         client.promote_link_candidates_batch(chunk)
 
-    # A previous publish may still hold nodes that the dedup stage has since
-    # folded into a canonical row — migrate their relationships and remove
-    # them before the canonical relationships are loaded.
-    for chunk in chunked(person_merges):
-        client.merge_person_nodes_batch(chunk)
-    for chunk in chunked(node_merges["publication"]):
-        client.merge_publication_nodes_batch(chunk)
-    for chunk in chunked(node_merges["repository"]):
-        client.merge_repository_nodes_batch(chunk)
-
     rel_total = sum(len(rels) for rels in rel_batches.values())
     linked = 0
     for (src_label, tgt_label, rel_type, tgt_match_prop), rels in rel_batches.items():
@@ -386,8 +394,17 @@ def load_prepared_rows(
             _tick(report, "выкладка связей", linked, rel_total)
         logger.info("relationships (:%s)-[:%s]->(:%s): requested %d", src_label, rel_type, tgt_label, len(rels))
 
+    # Fold only after upserts: an incoming relationship may still name an
+    # alias present in this batch. Deleting it earlier makes MATCH lose that edge.
+    for chunk in chunked(person_merges):
+        client.merge_person_nodes_batch(chunk)
+    for chunk in chunked(node_merges["publication"]):
+        client.merge_publication_nodes_batch(chunk)
+    for chunk in chunked(node_merges["repository"]):
+        client.merge_repository_nodes_batch(chunk)
+
     # A group published before a graph-wide dedup still carries rows for
-    # ids that were since folded into another group's canonical node — the
+    # ids that were since folded into another group's canonical node: the
     # upserts above just resurrected them, relationships included. Fold
     # them right back using the merged_ids maps stored on canonical nodes.
     merged_id_maps: dict[str, dict[str, str]] = {}
@@ -408,6 +425,49 @@ def load_prepared_rows(
 
     publication_aliases = merged_id_maps["Publication"]
     repository_aliases = merged_id_maps["Repository"]
+    desired_mentions: dict[str, tuple[set[str], set[str]]] = {}
+    for publication_id in mentions_scope:
+        canonical_id = publication_aliases.get(publication_id, publication_id)
+        desired_mentions.setdefault(canonical_id, (set(), set()))
+    # A folded publication with an incomplete result must not lose its evidence.
+    for row in rows_by_file.get("publications.jsonl") or []:
+        if row["id"] not in mentions_scope:
+            desired_mentions.pop(publication_aliases.get(row["id"], row["id"]), None)
+
+    def keep_mention(publication_id: str, target_label: str, target_id: str) -> None:
+        canonical_id = publication_aliases.get(publication_id, publication_id)
+        if canonical_id not in desired_mentions:
+            return
+        repositories, candidates = desired_mentions[canonical_id]
+        if target_label == "LinkCandidate" and target_id in candidate_promotions:
+            target_label, target_id = "Repository", candidate_promotions[target_id]
+        if target_label == "Repository":
+            repository_id = repository_ids_by_url.get(target_id, target_id)
+            repositories.add(repository_aliases.get(repository_id, repository_id))
+        elif target_label == "LinkCandidate":
+            candidates.add(target_id)
+
+    for (src_label, tgt_label, rel_type, _), rels in rel_batches.items():
+        if src_label == "Publication" and rel_type == "MENTIONS_LINK":
+            for src_id, tgt_id, _ in rels:
+                keep_mention(src_id, tgt_label, tgt_id)
+    for src_label, rel_type, tgt_label, src_id, tgt_id in claimed_relationships or ():
+        if src_label == "Publication" and rel_type == "MENTIONS_LINK":
+            keep_mention(src_id, tgt_label, tgt_id)
+    mentions_rows = [
+        (publication_id, sorted(repositories), sorted(candidates))
+        for publication_id, (repositories, candidates) in sorted(desired_mentions.items())
+    ]
+    removed_mentions = 0
+    synchronized_mentions = 0
+    for chunk in chunked(mentions_rows):
+        removed_mentions += client.sync_mentions_links_batch(chunk)
+        synchronized_mentions += len(chunk)
+        _tick(report, "синхронизация упоминаний", synchronized_mentions, len(mentions_rows))
+    if mentions_rows:
+        logger.info("MENTIONS_LINK: synchronized %d publication(s), removed %d stale edge(s)",
+                    len(mentions_rows), removed_mentions)
+
     resolved_implements: dict[str, set[str]] = defaultdict(set)
     for publication_id, repository_ids in desired_implements.items():
         canonical_publication_id = publication_aliases.get(publication_id, publication_id)
@@ -415,6 +475,13 @@ def load_prepared_rows(
             repository_aliases.get(repository_id, repository_id)
             for repository_id in repository_ids
         )
+    # Manual claims are independent provenance, not stale model verdicts.
+    for src_label, rel_type, tgt_label, src_id, tgt_id in claimed_relationships or ():
+        if (src_label, rel_type, tgt_label) != ("Repository", "IMPLEMENTS", "Publication"):
+            continue
+        canonical_publication_id = publication_aliases.get(tgt_id, tgt_id)
+        if canonical_publication_id in resolved_implements:
+            resolved_implements[canonical_publication_id].add(repository_aliases.get(src_id, src_id))
     implements_rows = [
         (publication_id, sorted(repository_ids))
         for publication_id, repository_ids in sorted(resolved_implements.items())
