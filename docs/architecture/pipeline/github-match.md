@@ -1,101 +1,100 @@
-# `github_match` — стейдж
+# `github_match` stage
 
-**Что здесь:** как собранный GitHub-аккаунт связывается с автором ИТМО.
+**What this covers:** how a collected GitHub account is linked to an ITMO
+author.
 
-**Какие файлы задействует:** `pauk/pipeline/stages/github_match.py`.
+**Files involved:** `pauk/pipeline/stages/github_match.py`.
 
-Читает `github_profiles.jsonl` (аккаунты, собранные `repositories` и
-`social_graph`), `persons.jsonl` и `repositories.jsonl`. Пишет
-`Person.github`, `Person.email` и `Person.contributed_to`, плюс журнал
-решений `github_matches.jsonl` рядом с prepared-данными.
+Reads the `github_profiles` collection (accounts collected by `repositories`,
+`repo_people` and `social_graph`), `persons` and `repositories`. Writes
+`Person.github`, `Person.email` and `Person.contributed_to`, plus a decision
+journal `github_matches.jsonl` in `data/audit/<group>/`.
 
-## Кого с кем сравнивать
+## What gets compared
 
-Каждый аккаунт против каждого автора — это миллионы пар, из которых
-подавляющее большинство не даёт ни одного сигнала. Рассматриваются
-только три группы, и все три — это уже существующая связь:
+Every account against every author would be millions of pairs, nearly all with
+no signal at all. Only three groups are considered, each an existing
+relationship:
 
-- **мост** — аккаунт найден на репозитории, который процитировала
-  публикация, а у той есть авторы из ИТМО;
-- **почта** — адрес аккаунта совпал с адресом автора;
-- **имя** — полное имя (не одно слово) совпало с именем автора.
+- **bridge**: the account was found on a repository cited by a publication that
+  has ITMO authors;
+- **email**: the account's address equals the author's address;
+- **name**: the full name (not a single word) equals the author's name.
 
-Имя из одного слова в индекс не идёт: половина выборки делит фамилию, и
-такое совпадение не значит ничего.
+A single-word name does not enter the index: half the sample shares a surname,
+and such a match means nothing.
 
-## Сигналы и веса
+## Signals and weights
 
-`score_account` выдаёт список сработавших сигналов и суммарный вес:
+`score_account` returns the list of signals that fired and their total weight:
 
-| сигнал | вес | откуда |
+| signal | weight | source |
 |---|---|---|
-| `email_exact` | 1.0 | общий адрес у аккаунта и автора |
-| `name_exact` | 0.6 | одинаковый набор слов имени |
-| `name_fuzzy` | 0.4 | похожее имя, порог `NAME_FUZZY = 0.86` |
-| `itmo_email` | 0.3 | адрес аккаунта на `@itmo.ru` |
-| `login_surname` | 0.3 | фамилия автора внутри логина |
-| `owner` | 0.3 | репозиторий принадлежит аккаунту |
-| `org_itmo` | 0.3 | репозиторий под организацией ИТМО |
-| `itmo_profile` | 0.2 | ИТМО или Петербург в профиле |
+| `email_exact` | 1.0 | account and author share an address |
+| `name_exact` | 0.6 | same set of name words |
+| `name_fuzzy` | 0.4 | similar name, threshold `NAME_FUZZY = 0.86` |
+| `itmo_email` | 0.3 | account address on `@itmo.ru` |
+| `login_surname` | 0.3 | author's surname inside the login |
+| `owner` | 0.3 | the repository belongs to the account |
+| `org_itmo` | 0.3 | the repository is under an ITMO organization |
+| `itmo_profile` | 0.2 | ITMO or Saint Petersburg in the profile |
 
-`itmo_profile` — регекс `ITMO_IN_TEXT` по `company`, `location` и
-описанию: `itmo` как отдельное слово (граница слова важна, иначе
-норвежский RITMO становится нашим), город во всех написаниях, которые
-встречаются у лабораторий — `Saint Petersburg`, `St. Petersburg`,
-`St-Petersburg`, `Sankt Petersburg`, и кириллическое `Санкт-Петербург` с дефисом или
-пробелом.
+`itmo_profile` uses the regex `ITMO_IN_TEXT` over `company`, `location` and the
+description: `itmo` as a separate word (the word boundary matters, otherwise
+the Norwegian RITMO becomes ours), and the city in every spelling labs use:
+`Saint Petersburg`, `St. Petersburg`, `St-Petersburg`, `Sankt Petersburg`, and
+the Cyrillic `Санкт-Петербург` (St. Petersburg) with a hyphen or a space.
 
-Паттерны разделены: `ITMO_IDENTITY_PATTERN` — явное упоминание ИТМО,
-`PETERSBURG_PATTERN` — слабый географический сигнал. `github_match`
-объединяет их для `itmo_profile`, а `social_graph` использует только
-первый, потому что город не подтверждает принадлежность организации.
+The patterns are separate: `ITMO_IDENTITY_PATTERN` is an explicit mention of
+ITMO, `PETERSBURG_PATTERN` a weak geographic signal. `github_match` combines
+them for `itmo_profile`. `social_graph` treats only the first as confirming an
+organization, because a city does not establish membership.
 
-`org_itmo` — репозиторий принадлежит организации, у которой ИТМО в самом
-логине (`ITMO-NCCR`, `ITMO-PTDC-Team`): используется только
-`ITMO_IDENTITY_PATTERN`, без географического сигнала. Более широкое правило
-есть в `social_graph`: там учитываются также каталог и явное упоминание
-ИТМО в профиле организации. Подтверждённый участник даёт лишь диагностический
-статус `possible`, поскольку сотрудник ИТМО мог коммитить в чужую лабораторию.
+`org_itmo` means the repository belongs to an organization with ITMO in its
+login itself (`ITMO-NCCR`, `ITMO-PTDC-Team`): only `ITMO_IDENTITY_PATTERN` is
+used, without the geographic signal. `social_graph` has a broader rule that
+also counts the catalog and an explicit ITMO mention in the organization's
+profile. A confirmed ITMO contributor only yields the diagnostic status
+`possible`, since an ITMO employee may commit to someone else's lab.
 
-Порядок слов в имени ничего не значит: `Petrov Ivan` и `Ivan Petrov` —
-одно имя. Сравниваются все известные написания с обеих сторон — то, как
-автор публиковался (`name_variants`, `other_names` из ORCID), против
-того, чем подписан аккаунт (`name`, `login`, имена из коммитов).
+Word order in a name means nothing: `Petrov Ivan` and `Ivan Petrov` are the same
+name. All known spellings on both sides are compared: how the author published
+(`name_variants`, ORCID `other_names`) against what the account is signed with
+(`name`, `login`, names from commits).
 
-## Три исхода
+## Three outcomes
 
-`decide` не складывает веса, а смотрит на состав:
+`decide` does not sum weights; it looks at the composition:
 
-- адрес — совпадение само по себе, `matched` без условий;
-- точное имя — `matched`, если есть мост или хоть один подтверждающий
-  сигнал (`CORROBORATING`), иначе `review`;
-- похожее имя — `matched` только при мосте вместе с подтверждением, без
-  моста — `rejected`;
-- всё остальное — `rejected`. Подтверждающие сигналы сами по себе никого
-  не опознают: «работает в ИТМО и владеет репозиторием» — это тысячи
-  человек.
+- an address match decides by itself: `matched`, unconditionally;
+- an exact name is `matched` if there is a bridge or at least one corroborating
+  signal (`CORROBORATING`), otherwise `review`;
+- a similar name is `matched` only with a bridge together with corroboration,
+  and `rejected` without a bridge;
+- everything else is `rejected`. Corroborating signals identify nobody on their
+  own: "works at ITMO and owns a repository" fits thousands of people.
 
-Пара `review` не пишется в `Person`, а остаётся в журнале с полным
-составом сигналов — это то, что смотрит человек.
+A `review` pair is not written to `Person`; it stays in the journal with its
+full set of signals, which is what a person looks at.
 
-Отдельно понижается до `review` случай, когда на аккаунт с одинаковым
-весом претендуют двое (`evidence.ambiguous`): выбрать любого — значит
-угадать. На практике это обычно один и тот же человек, разложенный
-OpenAlex на два узла, которые `dedup` ещё не схлопнул, — поэтому имеет
-смысл сначала прогнать `dedup`, а `github_match` следом.
+A match is also downgraded to `review` when two authors claim an account with
+equal weight (`evidence.ambiguous`): picking either would be a guess. This is
+usually one person split by OpenAlex into two nodes that `dedup` has not yet
+folded, which is why `dedup` should run before `github_match`.
 
-## `confidence` — на чём держится связь
+## `confidence`
 
-`high`, если в основе лежит что-то, принадлежащее лично этому человеку:
-его адрес, фамилия в логине, владение репозиторием (`STRONG`) или мост
-от его же статьи. Иначе `probable` — совпало имя плюс признак, общий для
-всей организации. Это не сомнение в решении (сомнительные уходят в
-`review`), а пометка для того, кто потом смотрит граф.
+`high` when the match rests on something that belongs to this person alone:
+their address, a surname in the login, ownership of the repository (`STRONG`),
+or a bridge from their own paper. Otherwise `probable`: the name matched plus a
+signal shared by the whole organization. This is not doubt about the decision
+(doubtful ones go to `review`), only a note for whoever looks at the graph
+later.
 
-## Что попадает в `Person`
+## What goes into `Person`
 
-Логин, адрес (если у автора не было своего — тогда берётся тот, которым
-подписаны коммиты аккаунта) и `contributed_to` с ролью `owner` или
-`contributor` — это ребро `CONTRIBUTED_TO`. Ребро создаётся только на
-репозиторий, который есть в `repositories.jsonl`; репозитории, пройденные
-`social_graph`, туда не сохраняются, и ссылаться на них нельзя.
+The login, the address (if the author had none, the one the account's commits
+are signed with) and `contributed_to` with the role `owner` or `contributor`,
+which is the `CONTRIBUTED_TO` edge. The edge is created only to a repository
+present in the `repositories` collection; repositories walked by `social_graph`
+are not stored there, so they cannot be referenced.

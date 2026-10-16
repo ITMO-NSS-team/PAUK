@@ -277,12 +277,8 @@ class NormalizeTest(unittest.TestCase):
         self.assertEqual({a.publication_id for a in person.authored}, {"W1", "W2"})
 
     def test_null_or_missing_title_becomes_untitled(self):
-        # OpenAlex may serve "title": null. The pre-pauk populate_publications.py
-        # used work.get("title", "No title"), which keeps None on an explicit null
-        # (the default only fills a *missing* key) and later crashed on len(None)
-        # — the bug PR #45 patched. The pauk normalizer uses
-        # `_clean_markup(work.get("title")) or "Untitled"`, so every falsy title
-        # (null, empty string, absent) resolves to "Untitled" without a crash.
+        # OpenAlex may serve "title": null, which `.get("title", "No title")`
+        # keeps and crashes on later. Falsy titles become "Untitled".
         raw = RawStore(self.db, "sample")
         raw.append("openalex_works", {"id": "https://openalex.org/W1", "title": None, "authorships": []},
                    {"work_id": "W1"})
@@ -331,7 +327,7 @@ class NormalizeTest(unittest.TestCase):
 
     def test_a_formula_keeps_a_space_that_is_its_own_element(self):
         # Publishers spell "ab initio" out letter by letter, with the gap
-        # carried by <mml:mo> </mml:mo> — that space is content, not layout.
+        # carried by <mml:mo> </mml:mo> - that space is content, not layout.
         raw = RawStore(self.db, "sample")
         raw.append("openalex_works", {
             "id": "https://openalex.org/W1", "authorships": [],
@@ -369,7 +365,7 @@ class NormalizeTest(unittest.TestCase):
 
     def test_a_contact_address_in_an_author_slot_is_not_a_person(self):
         # A submission form's contact field reaching the author's name.
-        # Nothing downstream can do anything sane with it — the russian
+        # Nothing downstream can do anything sane with it - the russian
         # names stage would dutifully render it "василинетк.ира@гмаил.ком".
         raw = RawStore(self.db, "sample")
         raw.append("openalex_works", {
@@ -390,9 +386,8 @@ class NormalizeTest(unittest.TestCase):
         self.assertEqual(person.name_raw, "Real Person")
 
     def test_renormalization_drops_a_non_person_row_admitted_earlier(self):
-        # The row an older filter let through: it knew organizations, not
-        # contact addresses. Its work is still in raw, so nothing but the
-        # current rule can retire it.
+        # A stored row whose author name is a contact address. Its work is still
+        # in raw, so nothing but the current rule can retire it.
         raw = RawStore(self.db, "sample")
         raw.append("openalex_works", {
             "id": "https://openalex.org/W1", "title": "Demo paper",

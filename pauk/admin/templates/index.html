@@ -61,4 +61,50 @@
   </a>
   {% endfor %}
 </div>
+{% if summary %}
+<h2 class="section-title" style="margin-top:30px">Сводка по панели</h2>
+<div class="summary">
+  <a class="card" href="/jobs">
+    <span class="label">Пайплайн</span>
+    {% if summary.running %}
+    <b class="headline"><span class="pulse"></span>{{ summary.running[0].kind|job_words }}</b>
+    {% else %}
+    <b class="headline quiet">ничего не запущено</b>
+    {% endif %}
+    <span class="under">
+      {% if summary.last_run %}последний прогон {{ summary.last_run.at|ago }}{% if
+        summary.last_run.failed %}, <span class="kind kind-deleted">с ошибкой</span>{% endif %}
+      {% else %}прогонов ещё не было{% endif %}
+    </span>
+    {% if not summary.workers %}
+    <span class="under"><span class="kind kind-deleted">воркер не работает</span>
+      задачи будут ждать в очереди</span>
+    {% endif %}
+  </a>
+
+  <a class="card" href="/review">
+    <span class="label">Спорные случаи</span>
+    <b class="headline{% if not summary.pressing %} quiet{% endif %}">{{
+      summary.pressing if summary.pressing else "разобраны" }}</b>
+    <span class="under">
+      {%- if summary.pressing %}приоритетных {{ summary.pressing|plural("вопрос ждёт", "вопроса ждут",
+        "вопросов ждут") }} ответа
+      {%- else %}вопросов не осталось{% endif %}</span>
+  </a>
+
+  <a class="card" href="/health">
+    <span class="label">Здоровье БД</span>
+    {% if summary.health %}
+    <div class="verdict">
+      <span class="tally bad"><b>{{ summary.health.fail }}</b> плохо</span>
+      <span class="tally mid"><b>{{ summary.health.warn }}</b> внимание</span>
+      <span class="tally good"><b>{{ summary.health.ok }}</b> в порядке</span>
+    </div>
+    <span class="under">Посчитано {{ summary.health.at|ago }}</span>
+    {% else %}
+    <b class="headline quiet">Ещё не считали</b>
+    {% endif %}
+  </a>
+</div>
+{% endif %}
 {% endblock %}

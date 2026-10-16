@@ -4,6 +4,7 @@ import html
 import logging
 import re
 from collections import OrderedDict
+from copy import deepcopy
 from datetime import date
 from hashlib import sha1
 from typing import TypeVar
@@ -19,13 +20,8 @@ _PreparedModel = TypeVar("_PreparedModel", Publication, Person)
 
 ITMO_ROR_ID = "04txgxn49"
 
-# Metadata sometimes puts something that is not a person in an author slot:
-# ACL Anthology deposits name the venue there ("Association for Computational
-# Linguistics 2026"), consortium papers name their collaborator group, and a
-# submission form's contact field leaks through as the author's name
-# ("vasilinetc.ira@gmail.com"). OpenAlex mints author entities for all of
-# them; they are not people and never become persons. An address or a link is
-# also a name no transliteration should ever be asked to render.
+# An author slot sometimes holds a venue, a collaborator group or a contact
+# address. OpenAlex mints author entities for all of them; persons they are not.
 NOT_A_PERSON_NAME = re.compile(
     r"\b(association|conference|proceedings|workshop|committee|consortium"
     r"|collaborat\w*|society)\b"
@@ -41,14 +37,13 @@ EXTERNAL_AUTHORS_LIMIT = 500
 
 MATH_BLOCK = re.compile(r"<mml:math\b[^>]*>.*?</mml:math>", re.DOTALL | re.IGNORECASE)
 MATH_LEAF = re.compile(r"<mml:(mi|mn|mo|mtext)\b[^>]*>(.*?)</mml:\1>", re.DOTALL | re.IGNORECASE)
-# "CaF <sub>2</sub>" — the subscript belongs to the formula before it.
+# "CaF <sub>2</sub>": the subscript belongs to the formula before it.
 SUBSUP_OPEN = re.compile(r"\s+(<(?:sub|sup)\b[^>]*>)", re.IGNORECASE)
-# "Ag <sub>2</sub> B <sub>5</sub>" — an element symbol between two
+# "Ag <sub>2</sub> B <sub>5</sub>": an element symbol between two
 # subscripts continues the same formula, unlike a following word.
 SUBSUP_CHAIN = re.compile(r"(</(?:sub|sup)>)\s+(?=[A-Za-z]{1,2}\s*<(?:sub|sup)\b)", re.IGNORECASE)
-# "CaCO-=SUB=-3-=/SUB=-" — elibrary-style markup, which some Russian
-# journals deposit instead of HTML. Rewritten into the tags it stands for
-# so the rules above apply to it too, then dropped with everything else.
+# "CaCO-=SUB=-3-=/SUB=-": elibrary-style markup that some Russian journals
+# deposit instead of HTML. Rewritten into tags so the rules above apply to it.
 PSEUDO_TAG = re.compile(r"-=(/?)([A-Za-z][A-Za-z0-9]*)=-")
 TAG = re.compile(r"<[^>]+>")
 SPACE_AFTER_OPEN = re.compile(r"([(\[])\s+")
@@ -63,12 +58,10 @@ def _short_id(value: str | None) -> str | None:
 def _math_text(match: re.Match) -> str:
     """The text of one MathML formula.
 
-    Only leaf elements carry content, and the whitespace between them is
-    layout rather than text, so leaves are concatenated with nothing in
-    between: "<mml:mi>WSe</mml:mi> <mml:mn>2</mml:mn>" is "WSe2". A space
-    that is a leaf of its own survives — that is how publishers encode the
-    gap in "<mml:mi>a</mml:mi><mml:mi>b</mml:mi><mml:mo> </mml:mo>…",
-    which reads "ab initio".
+    Only leaf elements carry content and whitespace between them is layout,
+    so leaves are concatenated directly: "<mml:mi>WSe</mml:mi> <mml:mn>2</mml:mn>"
+    is "WSe2". A space that is a leaf of its own survives; publishers use that
+    to encode the gap in "ab initio".
     """
     leaves = MATH_LEAF.findall(match.group(0))
     if not leaves:
@@ -79,14 +72,11 @@ def _math_text(match: re.Match) -> str:
 def _clean_markup(text: str | None) -> str | None:
     """Drop the publisher markup OpenAlex passes through from Crossref.
 
-    Physics and chemistry publishers deposit formulas as MathML or HTML
-    (<sub>, <sup>) and species names in <i>, and OpenAlex serves the title
-    verbatim — "monolayer <mml:math>…<mml:mi>WSe</mml:mi><mml:mn>2</mml:mn>…"
-    where the title reads "monolayer WSe2". A formula collapses to its own
-    text with the inner spacing removed and stays attached to what it
-    subscripts; everything else just loses its tags. Journals published
-    through elibrary deposit the same formulas in its own markup
-    ("CaCO-=SUB=-3-=/SUB=-"), which is normalized to tags first.
+    Publishers deposit formulas as MathML or HTML (<sub>, <sup>) and OpenAlex
+    serves the title verbatim, e.g. "monolayer <mml:math>...</mml:math>" where
+    the title reads "monolayer WSe2". A formula collapses to its own text with
+    inner spacing removed and stays attached to what it subscripts; everything
+    else just loses its tags. elibrary markup is normalized to tags first.
     """
     if not text:
         return text
@@ -108,13 +98,11 @@ def _authorship_person_id(author: dict) -> str | None:
 def _fallback_person_id(author: dict) -> str | None:
     """Local identity for an author OpenAlex has not disambiguated yet.
 
-    Fresh records arrive with author.id null but the display name — and
-    often the ORCID — filled in. Keying on the OpenAlex id alone would drop
-    those authorships and leave the publication with no authors at all, so
-    they get a deterministic local id instead: the ORCID when there is one,
-    otherwise a hash of the name, which keeps one node per distinct name.
-    Either way the dedup stage can fold the person into the real author once
-    OpenAlex assigns an id, by ORCID or by name.
+    Fresh records arrive with author.id null but the display name (and often
+    the ORCID) filled in. Keying on the OpenAlex id alone would drop those
+    authorships, so they get a deterministic local id: the ORCID when there is
+    one, otherwise a hash of the name. The dedup stage can later fold the
+    person into the real author by ORCID or name.
     """
     orcid = _short_id(author.get("orcid"))
     if orcid:
@@ -169,9 +157,8 @@ def _funding(work: dict) -> list[Funding]:
 def _canonical_person_id(person: Person) -> str:
     """A person's id is their bare OpenAlex author ID.
 
-    Older prepared files used affiliation-dependent ids ("itmo_A5X" /
-    "external_A5X"), which split one author into two graph nodes whenever
-    OpenAlex missed the ITMO affiliation on some of their works.
+    Legacy prepared files used affiliation-dependent ids ("itmo_A5X" /
+    "external_A5X"), which split one author into two graph nodes.
     """
     return person.openalex_id or person.id.removeprefix("itmo_").removeprefix("external_")
 
@@ -185,29 +172,19 @@ def _merge_person(base: Person, extra: Person) -> Person:
     come from extra.
     """
     base.is_itmo = base.is_itmo or extra.is_itmo
-    base.name_variants = list(dict.fromkeys([*base.name_variants, *extra.name_variants]))
-    base.department_ids = list(dict.fromkeys([*base.department_ids, *extra.department_ids]))
-    base.merged_ids = list(dict.fromkeys([*base.merged_ids, *extra.merged_ids]))
-    for authorship in extra.authored:
-        if authorship not in base.authored:
-            base.authored.append(authorship)
-    for contribution in extra.contributed_to:
-        if contribution not in base.contributed_to:
-            base.contributed_to.append(contribution)
-    for field in (
-        "orcid",
-        "name_raw",
-        "email",
-        "first_name_ru",
-        "second_name_ru",
-        "surname_ru",
-        "degree",
-        "github",
-        "google_scholar",
-        "thesis",
-    ):
-        if getattr(base, field) is None:
-            setattr(base, field, getattr(extra, field))
+    for field in Person.model_fields:
+        if field in {"id", "openalex_id", "is_itmo", "processing"}:
+            continue
+        current, incoming = getattr(base, field), getattr(extra, field)
+        if isinstance(current, list):
+            for value in incoming:
+                if value not in current:
+                    current.append(deepcopy(value))
+        elif current is None and incoming is not None:
+            setattr(base, field, incoming)
+    for address in (base.email, extra.email):
+        if address and address not in base.emails:
+            base.emails.append(address)
     for stage, state in extra.processing.items():
         base.processing.setdefault(stage, state)
     return base
@@ -219,15 +196,12 @@ class OpenAlexNormalizer:
         self.prepared = prepared
 
     def _seed(self, entity: str, model: type[_PreparedModel], ids: set[str]) -> list[_PreparedModel]:
-        """This group's own rows for `entity`, plus any of `ids` it hasn't
-        touched yet, looked up across every group.
+        """This group's own rows for `entity`, plus any of `ids` found in other groups.
 
-        The group's own rows come first (and always) so a legacy/renamed
-        row already sitting in this group's own state still gets
-        canonicalized on every re-run, even when nothing in fresh raw data
-        references it any more. The cross-group lookup is additive: a work
-        or author already enriched by a different, overlapping run is
-        found by id instead of re-created from scratch.
+        Own rows always come first so a legacy or renamed row is
+        canonicalized on every re-run even when no fresh raw data references
+        it. The cross-group lookup is additive: a work or author already
+        enriched by an overlapping run is found by id, not re-created.
         """
         known = list(self.prepared.read_models(entity, model))
         missing = ids - {row.id for row in known}
@@ -249,10 +223,8 @@ class OpenAlexNormalizer:
         )
         persons: OrderedDict[str, Person] = OrderedDict()
         for row in self._seed("persons", Person, person_ids):
-            # A row an earlier, narrower filter let through (the check below
-            # only knew about organizations, not contact addresses) is not a
-            # person now either. Re-normalization is where the current rule
-            # reaches rows already on disk.
+            # Re-normalization applies the current non-person rule to rows an
+            # earlier, narrower filter let through.
             if NOT_A_PERSON_NAME.search(row.name_raw or ""):
                 logger.info("normalize: dropping an author row that is not a person: %s", row.name_raw)
                 continue
@@ -367,7 +339,9 @@ class OpenAlexNormalizer:
                 if existing_authorship is None:
                     person.authored.append(authorship_record)
                     continue
-                existing_authorship.is_corresponding = authorship_record.is_corresponding
+                existing_authorship.is_corresponding = (
+                    existing_authorship.is_corresponding or authorship_record.is_corresponding
+                )
                 if authorship_record.affiliation:
                     # What the work states always wins over a filled-in value.
                     existing_authorship.affiliation = authorship_record.affiliation

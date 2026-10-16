@@ -22,6 +22,8 @@ def artifact(feature_names=MODEL_FEATURES, *, intercept=0.0):
         "scales": (1.0,) * size,
         "coefficients": (0.0,) * size,
         "intercept": intercept,
+        "feature_contract": "roles_v3_raw56",
+        "surname_counts": {},
     }
 
 
@@ -49,7 +51,7 @@ class PersonResolutionModelTest(unittest.TestCase):
             surname_occurrences_b=5,
         )
 
-        self.assertAlmostEqual(logistic_probability(evidence, model), 0.9006393934, places=9)
+        self.assertAlmostEqual(logistic_probability(evidence, model), 0.9819791912082376, places=12)
 
     def test_model_can_be_replaced_without_changing_code(self):
         model = load_logistic_model(self.write_artifact(artifact(intercept=0.0)), MODEL_FEATURES)
@@ -84,6 +86,32 @@ class PersonResolutionModelTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ModelArtifactError, "unsafe"):
             load_logistic_model(path, MODEL_FEATURES)
+
+    def test_role_artifact_requires_its_frequency_contract(self):
+        for missing in ("feature_contract", "surname_counts"):
+            with self.subTest(missing=missing):
+                payload = artifact()
+                del payload[missing]
+                with self.assertRaisesRegex(ModelArtifactError, "feature contract"):
+                    load_logistic_model(self.write_artifact(payload), MODEL_FEATURES)
+
+    def test_invalid_frequency_values_are_rejected(self):
+        for value in (-1, True, 1.5, "1"):
+            with self.subTest(value=value), self.assertRaisesRegex(ModelArtifactError, "surname_counts"):
+                load_logistic_model(
+                    self.write_artifact(artifact() | {"surname_counts": {"petrov": value}}), MODEL_FEATURES
+                )
+
+    def test_old_alignment_contract_is_rejected(self):
+        payload = artifact() | {"feature_contract": "roles_v2_raw56"}
+        with self.assertRaisesRegex(ModelArtifactError, "feature contract"):
+            load_logistic_model(self.write_artifact(payload), MODEL_FEATURES)
+
+    def test_loaded_frequencies_are_immutable(self):
+        model = load_logistic_model(DEFAULT_MODEL_PATH, MODEL_FEATURES)
+        self.assertGreater(len(model.surname_counts), 0)
+        with self.assertRaises(TypeError):
+            model.surname_counts["petrov"] = 0
 
 
 if __name__ == "__main__":

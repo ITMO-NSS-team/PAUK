@@ -19,8 +19,7 @@ from tests.unit.test_admin_nodes import FakePanelGraph
 class JobsPageTest(unittest.TestCase):
     """The queue and the history, read-only.
 
-    Starting a run is a later step; until then the page exists so that a
-    person looking at a field can tell whether a publish is rewriting it.
+    The page lets a person looking at a field tell whether a publish is rewriting it.
     """
 
     def setUp(self):
@@ -41,7 +40,7 @@ class JobsPageTest(unittest.TestCase):
         return job
 
     def under_way(self, kind=JobKind.MAP, payload=None):
-        job = store.enqueue(self.db, kind, payload or {"public": True})
+        job = store.enqueue(self.db, kind, payload or {"seed": 42})
         store.claim(self.db, "worker-1")
         store.start(self.db, job.id)
         return job
@@ -50,6 +49,32 @@ class JobsPageTest(unittest.TestCase):
         page = self.client.get("/jobs")
         self.assertEqual(page.status_code, 200)
         self.assertIn("задач ещё не было", page.text.lower())
+
+    def test_the_page_says_nobody_is_taking_jobs(self):
+        # The buttons queue work silently, and "nothing is happening" looked
+        # exactly like "no worker was ever started".
+        page = self.client.get("/jobs").text
+        self.assertIn("Воркер не работает", page)
+        self.assertIn("pauk admin worker", page)
+
+    def test_and_says_so_when_one_is_there(self):
+        store.mark_present(self.db, "worker-1")
+        page = self.client.get("/jobs").text
+        self.assertIn("Воркер работает", page)
+        self.assertNotIn("Воркер не работает", page)
+
+    def test_a_worker_that_stopped_saying_so_does_not_count(self):
+        # The mark is refreshed every few seconds; a stale one belongs to a
+        # process that is gone, and showing it would be worse than nothing.
+        self.db[store.WORKERS].insert_one({
+            "_id": "worker-1",
+            "seen_at": now() - timedelta(seconds=store.PRESENT_SECONDS + 5)})
+        self.assertIn("Воркер не работает", self.client.get("/jobs").text)
+
+    def test_a_worker_that_left_takes_its_mark_with_it(self):
+        store.mark_present(self.db, "worker-1")
+        store.mark_gone(self.db, "worker-1")
+        self.assertIn("Воркер не работает", self.client.get("/jobs").text)
 
     def test_a_finished_run_shows_its_counts(self):
         self.finished(result={"rows_persons": 12})
@@ -114,16 +139,16 @@ class JobsPageTest(unittest.TestCase):
         self.assertIn('href="/jobs"', self.client.get("/").text)
 
 
-#: Устойчивая часть полосы-предупреждения. Формулировку вокруг правят,
-#: и тест на неё целиком ломается на каждой редактуре.
+#: The steady part of the warning banner: the wording around it is edited
+#: often, and a test matching the whole line breaks on every rewrite.
 BANNER = "переписывается"
 
 
 class GraphBusyBannerTest(unittest.TestCase):
     """The strip that warns an editor, on whatever page they are on.
 
-    Decided deliberately: warn, do not block. The edit goes through, and if
-    the publish covers it the disagreement shows up on the decisions screen.
+    It warns and does not block: the edit goes through, and if the publish covers it the disagreement
+    shows up on the decisions screen.
     """
 
     def setUp(self):
@@ -155,8 +180,8 @@ class GraphBusyBannerTest(unittest.TestCase):
         self.assertIn("Идёт пересборка карты", self.client.get("/nodes/Person/A1").text)
 
     def test_it_shows_up_on_pages_that_know_nothing_about_jobs(self):
-        # The strip lives in the layout, so a screen written before jobs
-        # existed warns too.
+        # The strip lives in the layout, so every screen warns, including
+        # ones that know nothing about jobs.
         self.start()
         for path in ("/", "/audit", "/overrides", "/nodes/Person"):
             with self.subTest(path=path):
@@ -208,7 +233,7 @@ class SchedulingTest(unittest.TestCase):
     """Putting a run in the queue from the panel.
 
     The form writes a document and nothing else: the worker does the work,
-    so there is no ordering to get wrong here — the run was either asked
+    so there is no ordering to get wrong here - the run was either asked
     for or it was not.
     """
 
@@ -236,7 +261,7 @@ class SchedulingTest(unittest.TestCase):
         """The complaint a mis-filled form comes back with.
 
         A wrong period sends somebody back to the form with everything they
-        typed still there, not to a page with a status code on it — so the
+        typed still there, not to a page with a status code on it - so the
         answer is a redirect carrying the reason, not a 400.
         """
         response = self.post(**data)
@@ -265,9 +290,11 @@ class SchedulingTest(unittest.TestCase):
         self.assertEqual(self.post(client, csrf, kind="dedup").status_code, 403)
 
     def test_only_an_admin_is_offered_the_forms(self):
-        self.assertIn("Запустить", self.client.get("/jobs").text)
+        # By the form, not by the word on its button: the line telling
+        # anybody how to start the worker carries that word too.
+        self.assertIn('action="/jobs"', self.client.get("/jobs").text)
         client, _ = self.sign_in("petrov")
-        self.assertNotIn("Запустить", client.get("/jobs").text)
+        self.assertNotIn('action="/jobs"', client.get("/jobs").text)
 
     def test_a_forged_form_is_refused(self):
         self.assertEqual(self.post(csrf="not-the-token", kind="dedup").status_code, 403)
@@ -318,7 +345,7 @@ class SchedulingTest(unittest.TestCase):
 
     def test_an_empty_form_says_what_to_fill_in(self):
         # The commonest mistake: press the button without touching the
-        # dates. It used to answer with raw JSON and lose the form.
+        # dates. The form must survive it.
         self.assertIn("укажите период", self.refused(kind="collect"))
 
     def test_the_complaint_is_shown_on_the_page_it_returns_to(self):
@@ -342,13 +369,9 @@ class SchedulingTest(unittest.TestCase):
             kind="collect", date_from="вчера", date_to="2024-01-01"))
 
     def test_rebuilding_the_map(self):
-        self.post(kind="map", seed="7", public="on")
+        self.post(kind="map", seed="7")
         payload = store.recent(self.db)[0].payload
-        self.assertEqual(payload, {"public": True, "seed": 7})
-
-    def test_the_map_defaults_to_keeping_the_names(self):
-        self.post(kind="map", seed="42")
-        self.assertFalse(store.recent(self.db)[0].payload["public"])
+        self.assertEqual(payload, {"seed": 7})
 
     def test_deduplicating_takes_no_arguments(self):
         self.assertEqual(self.post(kind="dedup").status_code, 303)
@@ -432,8 +455,8 @@ class CancelTest(unittest.TestCase):
     def offered(self, action):
         """Job ids the page offers a given button for.
 
-        Read per form, not off the whole page: several buttons carry a
-        job_id now, and looking for the id alone finds any of them.
+        Read per form, not off the whole page: several buttons carry a job_id, and looking for the id
+        alone finds any of them.
         """
         body = self.client.get("/jobs").text
         return re.findall(
@@ -507,8 +530,8 @@ class DedupConfirmationTest(unittest.TestCase):
 class PipelineOrderTest(unittest.TestCase):
     """The four buttons are not four equal choices.
 
-    Three of them are a sequence — nothing reaches the graph until it is
-    published, and nothing reaches the map until it is rebuilt — and the
+    Three of them are a sequence - nothing reaches the graph until it is
+    published, and nothing reaches the map until it is rebuilt - and the
     page has to say so, or a person picks one at random.
     """
 
@@ -574,8 +597,7 @@ class PipelineOrderTest(unittest.TestCase):
                 self.assertIn(marker, page)
 
     def test_the_cards_are_not_glued_together(self):
-        # Three cards run one after another, and the gap used to be an
-        # inline style on each — it went with the card that carried it.
+        # Three cards run one after another and need a gap between them.
         from pathlib import Path
         css = Path("pauk/admin/static/panel.css").read_text(encoding="utf-8")
         self.assertIn(".card + .card", css)
@@ -620,7 +642,7 @@ class PipelineOrderTest(unittest.TestCase):
 class MapOptionsTest(unittest.TestCase):
     """The seed and the flag are checked by the payload model, not converted
     by hand: `int("null")` raises ValueError, and nothing above the route
-    turns that into an answer — the request ended in a 500."""
+    turns that into an answer, so the request would end in a 500."""
 
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
@@ -659,21 +681,12 @@ class MapOptionsTest(unittest.TestCase):
         self.post(kind="map", seed="7")
         self.assertEqual(store.recent(self.db)[0].payload["seed"], 7)
 
-    def test_an_unticked_box_means_the_names_stay(self):
-        self.post(kind="map", seed="42")
-        self.assertFalse(store.recent(self.db)[0].payload["public"])
-
-    def test_a_ticked_box_drops_them(self):
-        self.post(kind="map", seed="42", public="on")
-        self.assertTrue(store.recent(self.db)[0].payload["public"])
-
 
 class SilentJobOnThePageTest(unittest.TestCase):
     """A run whose worker went away, seen from the panel.
 
-    Clearing it needs a worker, and the complaint came from a panel with no
-    worker running at all: the page has to say so on its own, or the row
-    sits under "under way" claiming to be in progress for ever.
+    Clearing it needs a worker. With none running the page has to say so on its own, or the row sits
+    under "under way" claiming to be in progress for ever.
     """
 
     def setUp(self):
@@ -706,9 +719,8 @@ class SilentJobOnThePageTest(unittest.TestCase):
         self.assertIn("не отвечает", self.page())
 
     def test_it_is_marked_even_after_somebody_asked_it_to_stop(self):
-        # This is the shape the complaint arrived in: cancelled, and then
-        # sitting there saying it had been asked to stop, with nothing
-        # ever moving it on.
+        # Cancelled, and then sitting there saying it had been asked to
+        # stop, with nothing ever moving it on.
         store.request_cancel(self.db, self.job.id)
         self.go_quiet()
         self.assertIn("не отвечает", self.page())

@@ -17,3 +17,7 @@ jobs:
         run: uv sync
       - name: Run unit and bench tests
         run: uv run --with pytest pytest tests/ -q
+      - name: Run integration tests against a real Neo4j
+        run: >
+          uv run --with pytest --with mongomock --with "testcontainers[neo4j]"
+          pytest tests/integration -q

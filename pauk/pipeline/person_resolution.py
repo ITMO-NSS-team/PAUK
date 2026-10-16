@@ -1,7 +1,7 @@
 """OpenRouter execution for the duplicate-person resolution cascade.
 
 The inference contract lives in :mod:`pauk.graph.person_resolution`.  This
-module is the operational adapter: it runs both model stages concurrently,
+module is the operational adapter: it runs model requests concurrently,
 validates every response, records the calls and reuses successful answers
 for identical evidence on later pipeline runs.
 """
@@ -12,9 +12,10 @@ import hashlib
 import json
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from typing import Any
 
 from pymongo.database import Database
 
@@ -28,6 +29,7 @@ from pauk.graph.person_resolution import (
     parse_first_stage_response,
     parse_second_stage_response,
 )
+from pauk.graph.person_resolution_single import SYSTEM_PROMPT, SingleVerdict, full_payload, parse_response
 from pauk.settings import Settings
 from pauk.sources import OpenRouterClient
 from pauk.storage import LlmLogStore
@@ -36,6 +38,10 @@ logger = logging.getLogger(__name__)
 
 CACHE_COLLECTION = "llm_person_resolution_cache"
 LOG_COLLECTION = "llm_logs_person_resolution"
+FIRST_STAGE = "qwen_first"
+SECOND_STAGE = "qwen_second"
+SINGLE_STAGE = "qwen_single"
+Verdict = ModelVerdict | SingleVerdict
 
 
 @dataclass(frozen=True)
@@ -45,13 +51,13 @@ class _Request:
     system_prompt: str
     payload: dict
     max_tokens: int
-    parser: Callable[[dict, int], ModelVerdict]
+    parser: Callable[[dict, int], Verdict]
 
 
 @dataclass(frozen=True)
 class _Result:
     request: _Request
-    verdict: ModelVerdict | None
+    verdict: Verdict | None
     raw_response: dict | None
     parsed: dict | None
     usage: dict | None
@@ -59,8 +65,34 @@ class _Result:
     cache_hit: bool
 
 
+def cache_payload(stage: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    """The request as the cache keys it.
+
+    A pair's number is where the answer comes back, not evidence about
+    anybody: it is handed out by counting pairs, so one merge upstream
+    renumbers the rest and every stored verdict stops matching. The person
+    ids inside each side stay: they do say who is being compared.
+    """
+    if stage == FIRST_STAGE:
+        pairs = payload.get("pairs")
+        if not isinstance(pairs, list):
+            return dict(payload)
+        return {**payload, "pairs": [{**pair, "id": 0} for pair in pairs]}
+    return {**payload, "id": 0}
+
+
+def _renumbered(stage: str, parsed: Mapping[str, Any], pair_id: int) -> dict[str, Any]:
+    """A stored answer, addressed to the number this run uses."""
+    if stage == FIRST_STAGE:
+        results = parsed.get("results")
+        if not isinstance(results, list) or len(results) != 1 or not isinstance(results[0], Mapping):
+            return dict(parsed)
+        return {**parsed, "results": [{**results[0], "id": pair_id}]}
+    return {**parsed, "id": pair_id}
+
+
 class OpenRouterResolutionModels:
-    """Runs the two Qwen stages with bounded concurrency and a Mongo cache."""
+    """Runs full-context Qwen requests with bounded concurrency and a Mongo cache."""
 
     def __init__(self, config: Settings, db: Database, group: str) -> None:
         self.config = config
@@ -72,11 +104,21 @@ class OpenRouterResolutionModels:
         self._cache = db[CACHE_COLLECTION]
         self._log = LlmLogStore(db, LOG_COLLECTION)
 
+    def single_many(self, items: list[tuple[SecondStageContext, PairEvidence]]) -> dict[int, SingleVerdict | None]:
+        return self._run(
+            [
+                _Request(
+                    context.pair_id, SINGLE_STAGE, SYSTEM_PROMPT, full_payload(context, evidence), 260, parse_response
+                )
+                for context, evidence in items
+            ]
+        )
+
     def first_many(self, items: list[tuple[int, PairEvidence]]) -> dict[int, ModelVerdict | None]:
         requests = [
             _Request(
                 pair_id=pair_id,
-                stage="qwen_first",
+                stage=FIRST_STAGE,
                 system_prompt=FIRST_STAGE_SYSTEM_PROMPT,
                 payload=first_stage_payload(pair_id, evidence),
                 max_tokens=160,
@@ -90,9 +132,9 @@ class OpenRouterResolutionModels:
         requests = [
             _Request(
                 pair_id=context.pair_id,
-                stage="qwen_second",
+                stage=SECOND_STAGE,
                 system_prompt=SECOND_STAGE_SYSTEM_PROMPT,
-                payload=context.as_payload(),
+                payload=context.as_judge_payload(),
                 max_tokens=220,
                 parser=parse_second_stage_response,
             )
@@ -118,7 +160,7 @@ class OpenRouterResolutionModels:
                 "model": self.model,
                 "stage": request.stage,
                 "system": request.system_prompt,
-                "payload": request.payload,
+                "payload": cache_payload(request.stage, request.payload),
             },
             ensure_ascii=False,
             sort_keys=True,
@@ -130,8 +172,9 @@ class OpenRouterResolutionModels:
         fingerprint = self._fingerprint(request)
         cached = self._cache.find_one({"_id": fingerprint, "model": self.model})
         if cached and isinstance(cached.get("parsed"), dict):
+            parsed = _renumbered(request.stage, cached["parsed"], request.pair_id)
             try:
-                verdict = request.parser(cached["parsed"], request.pair_id)
+                verdict = request.parser(parsed, request.pair_id)
             except ValueError:
                 verdict = None
             else:
@@ -139,7 +182,7 @@ class OpenRouterResolutionModels:
                     request,
                     verdict,
                     cached.get("raw_response"),
-                    cached["parsed"],
+                    parsed,
                     cached.get("usage"),
                     None,
                     True,
@@ -201,24 +244,35 @@ class OpenRouterResolutionModels:
             )
         return result
 
-    def _run(self, requests: list[_Request]) -> dict[int, ModelVerdict | None]:
+    def _run(self, requests: list[_Request]) -> dict[int, Verdict | None]:
         if not requests:
             return {}
         results: list[_Result] = []
         if not self.config.openrouter_api_key:
             results = [self._invoke(request) for request in requests]
         else:
-            with ThreadPoolExecutor(max_workers=min(self.workers, len(requests))) as pool:
-                futures = [pool.submit(self._invoke, request) for request in requests]
-                for number, future in enumerate(as_completed(futures), 1):
-                    results.append(future.result())
-                    if number % 50 == 0 or number == len(futures):
-                        logger.info(
-                            "person resolution %s: %d/%d",
-                            requests[0].stage,
-                            number,
-                            len(futures),
-                        )
+            done = 0
+            for start in range(0, len(requests), self.workers * 8):
+                block = requests[start : start + self.workers * 8]
+                with ThreadPoolExecutor(max_workers=min(self.workers, len(block))) as pool:
+                    futures = [pool.submit(self._invoke, request) for request in block]
+                    try:
+                        for future in as_completed(futures):
+                            results.append(future.result())
+                            done += 1
+                            if done % 50 == 0 or done == len(requests):
+                                logger.info(
+                                    "person resolution %s: %d/%d",
+                                    requests[0].stage,
+                                    done,
+                                    len(requests),
+                                )
+                    except BaseException:
+                        # Ctrl-C has to drop what is still queued: leaving it
+                        # to the pool's own shutdown would pay for a whole
+                        # block of answers nobody is going to read.
+                        pool.shutdown(wait=False, cancel_futures=True)
+                        raise
 
         for result in results:
             self._log.record(

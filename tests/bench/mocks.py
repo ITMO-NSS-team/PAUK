@@ -9,7 +9,7 @@ from collections import defaultdict
 
 import requests
 
-from pauk.graph.client import _merge_duplicate_properties
+from pauk.graph.client import _merge_duplicate_properties, _preserve_merged_person_lists, flatten_merges
 from pauk.models import Person
 from pauk.pipeline.stages.author_names import (
     _CYR_TO_LAT,
@@ -27,15 +27,12 @@ def _http_404(url: str) -> requests.HTTPError:
 class NetworkAccessDenied(BaseException):
     """A bench test reached for a live socket.
 
-    Deliberately not an Exception subclass - see conftest.py, which raises
-    this from every requests.Session.send as a backstop against stages
-    whose client nobody patched. Several stages wrap their client calls in
-    `except Exception` to turn a real failure into a FAILED row instead of
-    crashing the run (repositories.py's per-organization lookup, emails.py's
-    _from_homepage, code_links.py's _pdf_pages), so an Exception subclass
-    raised here would be caught by that same code and silently swallowed -
-    the suite would stay green while quietly making a live call.
-    BaseException passes straight through instead.
+    Deliberately not an Exception subclass: conftest.py raises this from
+    every requests.Session.send as a backstop, and several stages wrap their
+    client calls in `except Exception` to turn a failure into a FAILED row
+    (repositories.py, emails.py, code_links.py). An Exception subclass would
+    be swallowed there and the suite would stay green while making a live
+    call. BaseException passes straight through.
     """
 
 
@@ -88,17 +85,8 @@ class MockGitHubClient:
     def has_readme(self, owner: str, name: str) -> bool:
         return True
 
-    # The people half of the GitHub API, used by repo_people. These answer
-    # empty, and that is not coverage of that stage: the universe models no
-    # contributors and no commits, so nothing in repo_people below the owner
-    # is exercised — bot filtering, git identities, the noreply-email skip.
-    # Modelling the people behind a repository moves GitHubProfile counts and
-    # the github_match candidate pool, so it is its own change.
-    #
-    # What they are here for is the bench's first promise, "no network": until
-    # repo_people was split out of repositories it reached the API through a
-    # patched client, and unpatched it fetches contributors, three pages of
-    # commits and a profile for each of the 80 repositories in the fixture.
+    # Empty answers, because the universe models no contributors: these are
+    # here for the bench's first promise, "no network".
     def contributors(self, owner: str, name: str) -> list[dict]:
         self.calls.append((owner, name))
         return []
@@ -135,24 +123,23 @@ class MockOrcidClient:
 class MockOpenRouterClient:
     """Fakes author_names.py's LLM name-split call for the bench run.
 
-    Model output *quality* was already validated separately against the real
-    API - this mock isn't re-testing that, it's testing that the pipeline
-    wires the LLM step in and consumes its reply correctly, without a real
-    network call. It answers the way the real prompt asks a model to: copy a
-    catalog candidate verbatim when the folded surname matches (reusing
-    RussianNamesCatalog.match(), the same trusted logic the deterministic
-    degree lookup in author_names.py itself uses), otherwise a plain
-    transliteration (reusing to_cyrillic) - "reasonable" here means the same
-    thing it means there.
+    Answers the way the real prompt asks a model to: copy a catalog
+    candidate verbatim when the folded surname matches (via
+    RussianNamesCatalog.match()), otherwise transliterate (via to_cyrillic).
+    Output quality is validated elsewhere; this checks that the pipeline
+    wires the step in and consumes its reply.
     """
 
     _RAW_NAME_RE = re.compile(r"mixed:\n {2}(.+)")
 
     def __init__(self, catalog_rows: list[str]) -> None:
-        """catalog_rows: the same "name_ru,surname,name,patronymic,degree"
-        strings the bench fixture writes to russian_names.csv (see
-        tests.bench.universe.RUSSIAN_NAMES_CATALOG) - not part of the
-        `universe` dict itself, which build_universe() doesn't touch."""
+        """Build the double from the strings of the bench's russian_names.csv.
+
+        Args:
+            catalog_rows: "name_ru,surname,name,patronymic,degree" strings, as
+                the bench fixture writes them (see
+                tests.bench.universe.RUSSIAN_NAMES_CATALOG).
+        """
         self.last_response = None
         self.last_usage = None
         self.last_error = None
@@ -240,13 +227,10 @@ class MockOpenRouterClient:
 class MockPdfHttpClient:
     """Stands in for code_links.py's raw HttpClient.
 
-    The stage's own PDF-fetch fallback (used when a publication carries a
-    pdf_urls but the universe models no actual PDF bytes for it, e.g. W020's
-    "https://example.org/w20.pdf") always fails, the same way the real
-    HttpClient would on a 404 - code_links._pdf_pages already treats that as
-    an ordinary, expected failure and falls back to the abstract. Reaching
-    example.org for that verdict is a real network call in every bench run
-    that just happened to be harmless; this makes the same outcome local.
+    The stage's PDF-fetch fallback, used when a publication carries a
+    pdf_url but the universe models no PDF bytes for it (e.g. W020), always
+    fails here like a real 404, and code_links._pdf_pages falls back to the
+    abstract. This keeps that outcome local instead of reaching example.org.
     """
 
     def __init__(self, *args, **kwargs) -> None:
@@ -279,7 +263,6 @@ class RecordingNeo4jClient:
             else:
                 target[key] = value
 
-    # --- Neo4jClient interface -------------------------------------------------
     def upsert_nodes_batch(self, labels, nodes) -> None:
         label_str = ":".join(labels) if isinstance(labels, list) else labels
         primary = label_str.split(":")[0]
@@ -291,6 +274,7 @@ class RecordingNeo4jClient:
         for node_id, props in nodes:
             clean = {k: v for k, v in props.items() if k not in ("id", "created_at", "updated_at")}
             existing = self.nodes["Person"].get(node_id, {})
+            clean = _preserve_merged_person_lists(existing, clean)
             clean["is_itmo"] = bool(existing.get("is_itmo")) or bool(clean.get("is_itmo"))
             self.nodes["Person"].setdefault(node_id, {}).update(clean)
 
@@ -308,11 +292,48 @@ class RecordingNeo4jClient:
                              for node in self.nodes.get(tgt_primary, {}).values())
             if src_ok and tgt_ok:
                 key = (src_primary, rel_type, tgt_primary, src_id, tgt_id)
-                self._set_properties(self.edges.setdefault(key, {}), props)
+                edge = self.edges.setdefault(key, {})
+                corresponding = edge.get("is_corresponding") or props.get("is_corresponding")
+                has_corresponding = any(value is not None for value in (
+                    edge.get("is_corresponding"), props.get("is_corresponding")
+                ))
+                self._set_properties(edge, props)
+                if rel_type == "AUTHORED" and has_corresponding:
+                    edge["is_corresponding"] = bool(corresponding)
                 matched += 1
             else:
                 self.unresolved.append((src_label, rel_type, tgt_label, src_id, tgt_id))
         return matched
+
+    def set_relationship_properties_batch(self, src_label, tgt_label, rel_type, relationships,
+                                         tgt_match_prop="id") -> int:
+        matched = 0
+        for src, tgt, props in relationships:
+            edge = self.edges.get((src_label, rel_type, tgt_label, src, tgt))
+            if edge is not None:
+                self._set_properties(edge, props)
+                matched += 1
+        return matched
+
+    def sync_mentions_links_batch(self, publications) -> int:
+        removed = 0
+        for publication_id, repository_keys, candidate_ids in publications:
+            for key in list(self.edges):
+                src_label, rel_type, tgt_label, src_id, tgt_id = key
+                if src_label != "Publication" or rel_type != "MENTIONS_LINK" or src_id != publication_id:
+                    continue
+                if tgt_label == "Repository":
+                    repository_id = next((node_id for node_id, props in self.nodes[tgt_label].items()
+                                          if props.get("url") == tgt_id), tgt_id)
+                    keep = repository_id in repository_keys or tgt_id in repository_keys
+                elif tgt_label == "LinkCandidate":
+                    keep = tgt_id in candidate_ids
+                else:
+                    continue
+                if not keep:
+                    del self.edges[key]
+                    removed += 1
+        return removed
 
     def sync_implements_relationships_batch(self, publications) -> int:
         removed = 0
@@ -358,23 +379,35 @@ class RecordingNeo4jClient:
         duplicate. On both nodes and edges the canonical's own values win,
         but anything only the duplicate knew fills the gap."""
         removed = 0
-        for dup_id, canonical_id in merges:
+        for dup_id, canonical_id in flatten_merges(merges):
             if dup_id == canonical_id:
                 continue
             if dup_id not in self.nodes.get(label, {}):
                 continue
             if canonical_id not in self.nodes.get(label, {}):
                 continue
+            duplicate_url = self.nodes[label][dup_id].get("url") if label == "Repository" else None
+            canonical_url = self.nodes[label][canonical_id].get("url") if label == "Repository" else None
             for key, props in list(self.edges.items()):
                 src_primary, rel_type, tgt_primary, src_id, tgt_id = key
                 if src_primary == label and src_id == dup_id:
                     moved_key = (src_primary, rel_type, tgt_primary, canonical_id, tgt_id)
                 elif tgt_primary == label and tgt_id == dup_id:
                     moved_key = (src_primary, rel_type, tgt_primary, src_id, canonical_id)
+                elif tgt_primary == label and duplicate_url is not None and tgt_id == duplicate_url:
+                    moved_key = (src_primary, rel_type, tgt_primary, src_id, canonical_url)
                 else:
                     continue
                 del self.edges[key]
-                self.edges[moved_key] = {**props, **self.edges.get(moved_key, {})}
+                existing = self.edges.get(moved_key, {})
+                merged = {**props, **existing}
+                if rel_type == "AUTHORED" and any(value is not None for value in (
+                    props.get("is_corresponding"), existing.get("is_corresponding")
+                )):
+                    merged["is_corresponding"] = bool(
+                        props.get("is_corresponding") or existing.get("is_corresponding")
+                    )
+                self.edges[moved_key] = merged
             dup_props = self.nodes[label].pop(dup_id)
             canonical_props = self.nodes[label][canonical_id]
             canonical_props.update(_merge_duplicate_properties(label, canonical_props, dup_props))
@@ -462,7 +495,6 @@ class RecordingNeo4jClient:
     def close(self) -> None:
         pass
 
-    # --- assertion helpers -------------------------------------------------------
     def edge_pairs(self, rel_type: str) -> set[tuple[str, str]]:
         return {(src_id, tgt_id) for (_, rel, _, src_id, tgt_id) in self.edges if rel == rel_type}
 
@@ -476,12 +508,10 @@ class RecordingNeo4jClient:
 class MockLinkRelevanceClient:
     """A fixed link-relevance verdict, so the bench never calls a real model.
 
-    Every link is judged the authors' own. The bench measures structure — how
-    many edges of each kind the pipeline builds — and a live model would make
-    those counts depend on its mood: run against a real endpoint, this
-    universe's synthetic URLs are judged someone else's tool 81 times out of
-    86, and the IMPLEMENTS count moves with the model. Whether the judgment
-    itself is right is settled in tests/unit/test_stages.py.
+    Every link is judged the authors' own. The bench measures structure, and
+    a live model would make counts such as IMPLEMENTS depend on its
+    judgments. Whether the judgment itself is right is settled in
+    tests/unit/test_stages.py.
     """
 
     def __init__(self, *args, **kwargs) -> None:

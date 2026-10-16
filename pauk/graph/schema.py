@@ -20,11 +20,8 @@ CONSTRAINTS: list[tuple[str, str]] = [
 def create_constraints(client: Neo4jClient | AuditedNeo4jClient) -> None:
     """Create all uniqueness constraints listed in CONSTRAINTS.
 
-    Must be called explicitly before loading any data — it is not a side
-    effect of constructing Neo4jClient.
-
-    Args:
-        client: An open Neo4jClient to run the constraint statements on.
+    Must be called explicitly before loading any data; constructing
+    Neo4jClient does not do it.
     """
     with client.driver.session() as session:
         for label, prop in CONSTRAINTS:

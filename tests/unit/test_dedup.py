@@ -18,12 +18,17 @@ from pauk.graph.load import ENTITY_FILES
 from pauk.graph.person_resolution import ModelVerdict
 from pauk.models import (
     Affiliation,
+    ClassificationStatus,
+    CodeLink,
+    LinkOccurrence,
     Person,
     Publication,
     PublicationVersion,
     RepoLink,
     Repository,
 )
+from pauk.models.processing import ProcessingState, ProcessingStatus
+from pauk.models.relations import Contribution
 from pauk.pipeline.stages.author_names import RussianNamesCatalog
 from pauk.pipeline.stages.dedup import CANDIDATES_FILENAME, DedupStage, _paired_persons
 from pauk.settings import Settings
@@ -68,8 +73,7 @@ def load_group(client: RecordingNeo4jClient, prepared: PreparedStore) -> None:
 class DedupStageTest(unittest.TestCase):
     def setUp(self):
         self.db = mongomock.MongoClient()["pauk_test"]
-        # The dedup audit journal still writes a real file - unrelated to
-        # the raw/prepared Mongo migration.
+        # The dedup audit journal is a real file, not Mongo.
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.config = Settings(data_dir=Path(tmp.name), person_resolution_enabled=False)
@@ -207,7 +211,7 @@ class DedupStageTest(unittest.TestCase):
         self.assertEqual((result["dedup_merged"], len(people)), (0, 3))
 
     def test_one_cyrillic_letter_does_not_split_a_name(self):
-        # The А of the second name is Cyrillic. Both spellings are one name
+        # The second name starts with Cyrillic A; both spellings identify one name.
         # to a reader, and casefold() alone keeps them apart.
         result, people = self.run_stage(
             [person("A1", "Alexander Shtil", ["W1"], departments=["d1"]),
@@ -256,7 +260,7 @@ class DedupStageTest(unittest.TestCase):
     def test_a_staff_record_is_not_claimed_by_initials_alone(self):
         # "A. V. Dukhanov" fits every Dukhanov whose given name starts with
         # an A, including the ones no catalog lists. It still gets named
-        # from the record — it just cannot be folded onto it.
+        # from the record - it just cannot be folded onto it.
         result, people = self.run_stage(
             [person("A1", "Alexey Dukhanov", ["W1"]),
              person("A2", "A. V. Dukhanov", ["W2"])],
@@ -352,7 +356,7 @@ class DedupStageTest(unittest.TestCase):
             person("A1", "Li Li", ["W1"], itmo=False, orcid="0000-0001"),
             person("A2", "Li Li", ["W2"], itmo=False, orcid="0000-0001"),
         ])
-        # Without raw records prepared orcids are trusted — they merge...
+        # Without raw records prepared orcids are trusted - they merge...
         self.assertEqual(result["dedup_merged"], 1)
         # ...but with raw author records showing different ORCIDs they must
         # not. A fresh db: same group name "sample", but isolated from the
@@ -376,7 +380,7 @@ class DedupStageTest(unittest.TestCase):
 
     def test_transitive_bridge_between_different_orcids_blocks_the_group(self):
         # A and B each legitimately pair with the no-ORCID bridge M, but the
-        # resulting group would span two distinct ORCIDs — refuse it whole.
+        # resulting group would span two distinct ORCIDs - refuse it whole.
         result, people = self.run_stage([
             person("A1", "Anna Ivanova", ["W1", "W2"], orcid="0000-0001",
                    variants=["A. Ivanova"]),
@@ -385,6 +389,7 @@ class DedupStageTest(unittest.TestCase):
             person("A4", "Shared Coauthor", ["W1", "W3", "W4"]),
         ])
         self.assertEqual(result["dedup_merged"], 0)
+        self.assertEqual(result["dedup_component_conflicts"], 1)
         self.assertEqual(len(people), 4)
         (group_row,) = self.journal("held")
         self.assertEqual(sorted(group_row["persons"]), ["A1", "A2", "A3"])
@@ -421,7 +426,7 @@ class PublicationDedupTest(unittest.TestCase):
 
     def test_same_doi_under_two_work_ids_is_one_publication(self):
         # OpenAlex re-indexing leaves a second record for one DOI, often
-        # without any authors at all — the documented one must survive.
+        # without any authors at all - the documented one must survive.
         result, publications = self.run_stage(
             [
                 publication("W1", "A study", doi="https://doi.org/10.1/x", journal="Journal"),
@@ -579,6 +584,90 @@ class PublicationDedupTest(unittest.TestCase):
         self.assertEqual({link.url for link in links.links},
                          {"https://github.com/org/repo", "https://github.com/org/other"})
 
+    def test_same_repository_keeps_occurrences_from_every_publication_version(self):
+        older = publication("W1", "One work", doi="10.1/x", day="2026-01-01")
+        older.has_code = True
+        older.code_url = '["https://github.com/Org/Repo/"]'
+        newer = publication("W2", "One work", doi="10.1/x", day="2026-02-01")
+        newer.has_code = True
+        newer.code_url = (
+            '["https://github.com/org/repo", "https://github.com/org/other"]'
+        )
+
+        _, publications = self.run_stage(
+            [older, newer],
+            repo_links=[
+                RepoLink(publication_id="W1", links=[CodeLink(
+                    url="https://github.com/Org/Repo",
+                    classification_status=ClassificationStatus.CLASSIFIED,
+                    is_relevant=True,
+                    occurrences=[LinkOccurrence(context="Preprint context", page_number=2)],
+                )]),
+                RepoLink(publication_id="W2", links=[CodeLink(
+                    url="https://github.com/org/repo",
+                    classification_status=ClassificationStatus.CLASSIFIED,
+                    is_relevant=True,
+                    occurrences=[LinkOccurrence(context="Journal context", page_number=5)],
+                )]),
+            ],
+        )
+
+        (links,) = self.prepared.read_models("repo_links", RepoLink)
+        self.assertEqual(len(links.links), 1)
+        self.assertEqual(
+            [occurrence.context for occurrence in links.links[0].occurrences],
+            ["Preprint context", "Journal context"],
+        )
+        self.assertEqual(json.loads(publications["W2"].code_url), [
+            "https://github.com/org/repo",
+            "https://github.com/org/other",
+        ])
+
+    def test_conflicting_version_verdicts_are_retried_without_losing_last_claim(self):
+        older = publication("W1", "One work", doi="10.1/x", day="2026-01-01")
+        older.has_code = True
+        older.code_url = '["https://github.com/org/repo"]'
+        newer = publication("W2", "One work", doi="10.1/x", day="2026-02-01")
+        for row in (older, newer):
+            row.processing["link_relevance"] = ProcessingState(
+                status=ProcessingStatus.COMPLETED,
+            )
+
+        self.run_stage(
+            [older, newer],
+            repositories=[Repository(
+                id="github_org_repo",
+                name="repo",
+                url="https://github.com/org/repo",
+                cited_urls=["https://github.com/org/repo"],
+                publication_ids=["W1"],
+            )],
+            repo_links=[
+                RepoLink(publication_id="W1", links=[CodeLink(
+                    url="https://github.com/org/repo",
+                    classification_status=ClassificationStatus.CLASSIFIED,
+                    is_relevant=True,
+                    occurrences=[LinkOccurrence(context="Our implementation")],
+                )]),
+                RepoLink(publication_id="W2", links=[CodeLink(
+                    url="https://github.com/org/repo",
+                    classification_status=ClassificationStatus.CLASSIFIED,
+                    is_relevant=False,
+                    occurrences=[LinkOccurrence(context="We use this library")],
+                )]),
+            ],
+        )
+
+        [publication_row] = self.prepared.read_models("publications", Publication)
+        [links] = self.prepared.read_models("repo_links", RepoLink)
+        [repository_row] = self.prepared.read_models("repositories", Repository)
+        self.assertNotIn("link_relevance", publication_row.processing)
+        self.assertTrue(publication_row.has_code)
+        self.assertEqual(json.loads(publication_row.code_url), ["https://github.com/org/repo"])
+        self.assertEqual(links.links[0].classification_status, ClassificationStatus.PENDING)
+        self.assertEqual(len(links.links[0].occurrences), 2)
+        self.assertEqual(repository_row.publication_ids, ["W2"])
+
     def test_second_run_is_a_no_op(self):
         self.run_stage([
             publication("W1", "One work", doi="10.1/x", day="2026-01-01"),
@@ -632,6 +721,54 @@ class RepositoryDedupTest(unittest.TestCase):
         ])
         self.assertEqual(result["dedup_repositories_merged"], 1)
         self.assertEqual(set(repositories), {"github_org_alpha-renamed"})
+
+    def test_renamed_repository_republish_resolves_old_citations_and_contributions(self):
+        prepared = PreparedStore(self.db, "sample")
+        raw = RawStore(self.db, "sample")
+        cited_url = "https://github.com/previous-owner/old-name"
+        older = repository("github_org_old-name", "old-name", "https://github.com/org/old-name",
+                           github_id=42, cited=[cited_url], day="2026-01-01")
+        older.merged_ids = ["github_previous-owner_old-name"]
+        older.contributors = ["contributor"]
+        older.processing["repo_people"] = ProcessingState(
+            status=ProcessingStatus.COMPLETED, attempts=1, result_count=1)
+        newer = repository("github_org_new-name", "new-name", "https://github.com/org/new-name",
+                           github_id=42, cited=[cited_url], publications=["W1"], day="2026-06-01")
+        author = person("A1", "Author One", ["W1"])
+        author.contributed_to = [Contribution(repository_id=older.id, role="contributor")]
+        prepared.write_models("persons", [author])
+        prepared.write_models("publications", [publication("W1", "One work")])
+        prepared.write_models("repositories", [older, newer])
+        links = RepoLink(publication_id="W1", links=[CodeLink(
+            url=cited_url, is_relevant=True,
+            occurrences=[LinkOccurrence(context="Our implementation", source="abstract")],
+        )])
+        prepared.write_models("repo_links", [links])
+        client = RecordingNeo4jClient()
+        load_group(client, prepared)
+        self.assertEqual(client.edge_pairs("MENTIONS_LINK"), {("W1", older.url)})
+
+        stage = DedupStage(prepared, raw, self.config)
+        self.assertEqual(stage._dedup_repositories(), {older.id: newer.id})
+        survivor, = prepared.read_models("repositories", Repository)
+        self.assertEqual(set(survivor.cited_urls), {cited_url, older.url})
+        self.assertEqual(set(survivor.merged_ids), {older.id, *older.merged_ids})
+        self.assertEqual(survivor.contributors, older.contributors)
+        self.assertEqual(survivor.processing["repo_people"], older.processing["repo_people"])
+        saved_author, = prepared.read_models("persons", Person)
+        self.assertEqual(saved_author.contributed_to[0].repository_id, newer.id)
+        self.assertEqual(list(prepared.read_models("repo_links", RepoLink)), [links])
+
+        for _ in range(2):
+            self.assertEqual(stage._dedup_repositories(), {})
+            load_group(client, prepared)
+            self.assertEqual(set(client.nodes["Repository"]), {newer.id})
+            self.assertEqual(client.edge_pairs("MENTIONS_LINK"), {("W1", newer.url)})
+            self.assertEqual(client.edge_pairs("IMPLEMENTS"), {(newer.id, "W1")})
+            self.assertEqual(client.edge_pairs("CONTRIBUTED_TO"), {("A1", newer.id)})
+            mention = client.edges["Publication", "MENTIONS_LINK", "Repository", "W1", newer.url]
+            self.assertEqual(mention["context"], ["Our implementation"])
+        self.assertEqual(client.unresolved, [])
 
     def test_distinct_repositories_are_left_alone(self):
         result, repositories = self.run_stage([
@@ -1016,12 +1153,116 @@ class BlockingTest(unittest.TestCase):
         ]
         self.assertEqual(self.pairs(people), set())
 
+    def test_shared_given_name_does_not_make_a_pair(self):
+        people = [
+            person("A1", "Sergey Borisov", ["W1"]),
+            person("A2", "Sergey Petrov", ["W2"]),
+            person("A3", "Sergey Ivanov", ["W3"]),
+        ]
+        self.assertEqual(self.pairs(people), set())
+
     def test_a_shared_surname_still_makes_a_pair(self):
         people = [
             person("A1", "Ivan Petrov", ["W1"]),
             person("A2", "I. Petrov", ["W2"]),
         ]
         self.assertEqual(self.pairs(people), {frozenset(("A1", "A2"))})
+
+    def test_a_close_surname_spelling_makes_a_pair(self):
+        people = [
+            person("A1", "Aleksey Grigorev", ["W1"]),
+            person("A2", "A. S. Grigoriev", ["W2"]),
+            person("A3", "E. A. Zernitskaya", ["W3"]),
+            person("A4", "Ekaterina Zernitckaia", ["W4"]),
+        ]
+        self.assertEqual(
+            self.pairs(people),
+            {
+                frozenset(("A1", "A2")),
+                frozenset(("A3", "A4")),
+            },
+        )
+
+    def test_comma_marks_a_surname_first_variant(self):
+        people = [
+            person("A1", "Valentin Malykh", ["W1"]),
+            person("A2", "Malykh, Valentin", ["W2"]),
+        ]
+        self.assertEqual(self.pairs(people), {frozenset(("A1", "A2"))})
+
+    def test_parsed_surname_overrides_ambiguous_name_order(self):
+        first = person("A1", "Valentin Malykh", ["W1"])
+        second = person("A2", "Malykh Valentin", ["W2"])
+        second.surname_en = "Malykh"
+
+        self.assertEqual(self.pairs([first, second]), {frozenset(("A1", "A2"))})
+
+    def test_reversed_unparsed_names_keep_the_surname_candidate(self):
+        people = [
+            person("A1", "Igor Konyakhin", ["W1"]),
+            person("A2", "Konyakhin Igor", ["W2"]),
+            person("A3", "Dmitry Fedorov", ["W3"]),
+            person("A4", "Fedorov Dmitriy Alekseevich", ["W4"]),
+        ]
+        self.assertEqual(
+            self.pairs(people),
+            {
+                frozenset(("A1", "A2")),
+                frozenset(("A3", "A4")),
+            },
+        )
+
+    def test_identical_unparsed_surname_first_names_remain_candidates(self):
+        people = [
+            person("A1", "Fadeev Sergey", ["W1"]),
+            person("A2", "Fadeev Sergey", ["W2"]),
+        ]
+        self.assertEqual(self.pairs(people), {frozenset(("A1", "A2"))})
+
+    def test_common_given_name_stays_out_of_reversed_name_buckets(self):
+        people = [
+            person("A1", "Sergey Borisov", ["W1"]),
+            person("A2", "Petrov Sergey", ["W2"]),
+            *[
+                person(f"B{index}", f"Sergey Surname{index}", [f"X{index}"])
+                for index in range(64)
+            ],
+        ]
+        self.assertNotIn(frozenset(("A1", "A2")), self.pairs(people))
+
+    def test_one_contaminated_name_variant_does_not_create_a_surname_pair(self):
+        people = [
+            person("A1", "Lianshe Fu", ["W1"]),
+            person(
+                "A2",
+                "Leila V. Sharipova",
+                ["W2"],
+                variants=["Leila V. Sharipova", "Hao-Bin Fu", "Jui-Yin Lin"],
+            ),
+        ]
+        self.assertEqual(self.pairs(people), set())
+
+    def test_a_shared_deletion_key_does_not_bridge_different_surname_initials(self):
+        people = [
+            person("A1", "Hui Hwang Goh", ["W1"]),
+            person("A2", "Jingwei Zhang", ["W2"]),
+        ]
+        self.assertEqual(self.pairs(people), set())
+
+    def test_extended_transliteration_and_compound_surnames_make_pairs(self):
+        people = [
+            person("A1", "Ilya Gosudarev", ["W1"]),
+            person("A2", "Ilia Gossoudarev", ["W2"]),
+            person("A3", "Aleksandra A. Mekhova", ["W3"]),
+            person("A4", "Mekhova-Caramalac Aleksandra", ["W4"]),
+        ]
+        self.assertEqual(
+            self.pairs(people),
+            {
+                frozenset(("A1", "A2")),
+                frozenset(("A3", "A4")),
+            },
+        )
 
     def test_a_name_variant_still_makes_a_pair(self):
         people = [
@@ -1041,10 +1282,9 @@ class BlockingTest(unittest.TestCase):
 class ReviewDecisionsTest(unittest.TestCase):
     """What a person decided outranks the rules, and outlives the run.
 
-    The rules hold a pair back when the evidence runs out, and until now
-    every later run held the same pair back again. An answer has to reach
-    the rules themselves: undoing a merge afterwards means rebuilding the
-    record from its prepared row, and this stage deletes that row when it
+    The rules hold a pair back when the evidence runs out, and without a stored answer every later run
+    would hold the same pair back again. An answer has to reach the rules themselves: undoing a merge
+    afterwards means rebuilding the record from its prepared row, and this stage deletes that row when it
     folds a pair.
     """
 
@@ -1126,7 +1366,7 @@ class ReviewDecisionsTest(unittest.TestCase):
     def test_the_queue_learns_the_merge_has_happened(self):
         # Otherwise the page goes on promising "will merge on the next run"
         # for a pair the last run already merged, and offers to take the
-        # answer back — which would leave the records folded and the
+        # answer back - which would leave the records folded and the
         # question open.
         self.run_stage(self.namesakes())
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)
@@ -1145,7 +1385,7 @@ class ReviewDecisionsTest(unittest.TestCase):
         self.assertNotIn("applied_at", answer)
 
     def test_a_merge_nobody_would_have_paired_still_happens(self):
-        # _paired_persons only offers people who share a name token, an
+        # _paired_persons only offers people with matching surname blocks,
         # ORCID or a staff record. An answer must not depend on whether a
         # blocking heuristic happened to put the two in one bucket.
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)
@@ -1251,7 +1491,7 @@ class GraphPassReviewTest(unittest.TestCase):
 
     def test_and_writes_down_that_it_carried_them_out(self):
         # This pass leaves the prepared rows alone, so the pair it folds can
-        # still be taken apart — but only if the queue knows it was folded.
+        # still be taken apart - but only if the queue knows it was folded.
         self.publish(self.namesakes())
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME,
                               actor="user:roman")
@@ -1336,9 +1576,8 @@ class DisputedAnswerTest(unittest.TestCase):
 class SplitGroupEndToEndTest(unittest.TestCase):
     """A group refused by the rules, resolved by a person, applied by the rules.
 
-    The case the panel was a dead end for: three records under one name,
-    two addresses between them, and a bridge record carrying no address at
-    all — which is how the group forms in the first place.
+    Three records under one name, two addresses between them, and a bridge record carrying no address at
+    all, which is how the group forms in the first place.
     """
 
     def setUp(self):
@@ -1499,7 +1738,7 @@ class StaffCatalogQuestionTest(unittest.TestCase):
     def test_a_person_the_catalog_already_places_is_not_asked(self):
         # One spelling names the patronymic and resolves to a single record;
         # another is ambiguous. The catalog knows who this is, so there is
-        # nothing to ask — and asking anyway would put a settled person in
+        # nothing to ask - and asking anyway would put a settled person in
         # the queue for somebody to puzzle over.
         self.run_stage([person("A1", "Andrei Gennadevich Kuznetsov", ["W1"],
                                variants=["Andrei Kuznetsov"])])

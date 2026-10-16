@@ -40,7 +40,7 @@ def ensure_compression(db: Database) -> list[str]:
 
     Only ones that do not exist yet. WiredTiger takes the compressor when
     the collection is created, and changing it afterwards applies to new
-    blocks alone — an existing collection needs `collMod` and a rewrite,
+    blocks alone; an existing collection needs `collMod` and a rewrite,
     which is an operator's decision with a lock attached, not something a
     command does on startup.
 
@@ -67,17 +67,20 @@ def ensure_compression(db: Database) -> list[str]:
 
 
 def ensure_indexes(db: Database) -> None:
-    """Create indexes the storage layer relies on. Idempotent - safe to call
-    on every command startup, same spot as Neo4j's create_constraints()."""
+    """Create indexes the storage layer relies on.
+
+    Idempotent, so safe to call on every command startup.
+    """
     ensure_compression(db)
     db.revisions.create_index([("entity_type", 1), ("entity_id", 1), ("version", 1)])
+    db.person_merge_sources.create_index([("person_id", 1), ("saved_at", -1)])
     db.raw.create_index([("source", 1), ("group", 1), ("fetched_at", 1)])
     db.raw.create_index([("source", 1), ("fetched_at", 1)])
     # The panel's change feed reads the audit two ways: the history of one
     # entity, and everything one person did.
     db.audit.create_index([("entity_type", 1), ("entity_id", 1), ("timestamp", -1)])
     db.audit.create_index([("actor", 1), ("timestamp", -1)])
-    # The unfiltered feed — the page the panel opens on — sorts by time
+    # The unfiltered feed (the page the panel opens on) sorts by time
     # alone. Without this it is a collection scan plus an in-memory sort,
     # over a collection nothing ever trims.
     db.audit.create_index([("timestamp", -1)])
@@ -88,7 +91,13 @@ def ensure_indexes(db: Database) -> None:
     # the panel warns an editor whenever a run is under way.
     db.jobs.create_index([("state", 1), ("created_at", 1)])
     db.jobs.create_index([("created_at", -1)])
+    # A restarted worker leaves its old name behind; Mongo drops the stale
+    # marks itself.
+    db.job_workers.create_index([("seen_at", 1)], expireAfterSeconds=3600)
     # The review queue is opened on the unanswered questions, oldest first,
     # and every dedup run reads back every answer given so far.
     db.review_pairs.create_index([("verdict", 1), ("seen_at", 1)])
     db.review_pairs.create_index([("members", 1)])
+    # Without these, every tab count walks the collection that grows fastest.
+    db.review_pairs.create_index([("kind", 1), ("verdict", 1)])
+    db.review_pairs.create_index([("evidence.held_because", 1), ("verdict", 1)])

@@ -1,16 +1,14 @@
 """The panel itself: a FastAPI service, separate from the public map.
 
-`pauk/gui/serve.py` keeps serving the map as read-only static files on its
-own port. This service is the only one with routes that write, and it runs
-next to the database rather than on the public interface — Neo4j is not
-exposed, so there is no other way in and nothing to guard on the map side.
+The map is a static site (`pauk/gui/web`) served read-only on its own port.
+This service holds the only routes that write and runs next to the database,
+not on the public interface.
 
 Start it with:
 
     uv run uvicorn pauk.admin.app:build --factory --port 8600
 
-Accounts come from `pauk admin user add`; there is no default login and no
-way to create one from the browser.
+Accounts come from `pauk admin user add`; there is no default login.
 """
 
 from __future__ import annotations
@@ -36,6 +34,7 @@ from pauk.admin import (
     job_routes,
     nodes,
     review_routes,
+    summary,
 )
 from pauk.admin.auth import (
     COOKIE,
@@ -55,6 +54,7 @@ from pauk.admin.deps import (
     CurrentUser,
     Db,
     Session,
+    safe_path,
     templates,
 )
 from pauk.graph.audit import SharedGraph
@@ -71,17 +71,12 @@ COUNT_TIMEOUT = 2.0
 class _LazyGraph:
     """The shared driver, opened on first use and kept afterwards.
 
-    Not opened at startup: an unreachable graph must not stop the panel
-    from starting, and a service that cannot sign anyone in is worse than
-    one whose node screens say the database is quiet.
+    Not opened at startup so an unreachable graph cannot stop sign-in.
     """
 
     def __init__(self, config: Settings, db) -> None:
         self._config, self._db, self._shared = config, db, None
-        # Routes are sync, so they run in a threadpool and the first two
-        # requests really do arrive together. Without the lock both see no
-        # driver, both build one, and the loser's connection pool is left
-        # open with nothing holding it.
+        # Sync routes run in a threadpool: two first requests really do race.
         self._lock = threading.Lock()
 
     def audited(self, **who):
@@ -100,13 +95,7 @@ class _LazyGraph:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Hand the driver back when the service stops.
-
-    One driver serves the whole panel and no caller closes it — that is the
-    point of sharing it. Which leaves exactly one place where it has to be
-    closed, and this is it: without this the pool outlives the application
-    object, and a reload leaves the previous one holding its connections.
-    """
+    """Close the shared driver when the service stops."""
     yield
     app.state.graph.close()
 
@@ -114,31 +103,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 def _node_counts(graph: _LazyGraph) -> dict[str, int] | None:
     """How many nodes of each label there are, or None if the graph is silent.
 
-    The count is a nicety on an overview page, so the driver is told to
-    connect quickly and not to retry: retries suit a batch job, while a
-    person waiting for a page should be told at once that the graph is not
-    answering. Without this the page blocks for as long as the database
-    stays unreachable — the driver backs off for tens of seconds.
+    The driver is told to connect quickly and not retry, so a person waiting
+    for the page is not blocked while the database backs off.
     """
     try:
-        # The same shared driver every other page uses: the overview used to
-        # open a second one, so landing on the front page cost two pools.
+        # The shared driver, so the overview does not open a pool of its own.
         return count_nodes(graph.audited(actor="panel", source="admin-ui"))
     except Exception as error:  # the overview works without a graph
         logger.info("overview without counts: %s", error)
         return None
-
-
-def _safe_next(target: str) -> str:
-    """Where to go after signing in, refusing anywhere but this site.
-
-    Without the check, `?next=https://evil.example` would turn the login
-    into an open redirect — a link that looks like ours and lands
-    somewhere else.
-    """
-    if not target.startswith("/") or target.startswith("//"):
-        return "/"
-    return target
 
 
 def build(config: Settings | None = None, db: Database | None = None) -> FastAPI:
@@ -152,26 +125,19 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
     config = config or Settings()
     app = FastAPI(title="PAUK admin", docs_url=None, redoc_url=None, lifespan=_lifespan)
     app.state.config = config
-    # A short server-selection timeout, unlike the pipeline's: a command
-    # that waits half a minute for a database to appear is being patient,
-    # a web request doing it is hanging. The panel would rather say Mongo
-    # is not answering while somebody is still looking at the page.
+    # Short timeout, unlike the pipeline's: a waiting web request reads as hung.
     app.state.db = (db if db is not None
                     else get_mongo_client(config, timeout_ms=MONGO_TIMEOUT_MS)
                     [config.mongo_db])
-    # One driver for the whole service, opened lazily: the panel has to
-    # start without a graph, since signing in and the accounts live in
-    # Mongo. `_lifespan` closes it when the service stops.
+    # One driver for the service, opened lazily: signing in needs only Mongo.
     app.state.graph = _LazyGraph(config, app.state.db)
 
     @app.exception_handler(status.HTTP_401_UNAUTHORIZED)
     async def unauthorized(request: Request, exc: HTTPException):
         """Send a browser to the login page instead of showing it raw JSON.
 
-        A 401 is the right answer for a fetch or a script; a person who
-        typed the address wants the form. The two are told apart by what
-        the request says it accepts, and the page they wanted is carried
-        along so the login can return them to it.
+        Browsers are told apart by their Accept header; the wanted page is
+        carried along so the login can return to it.
         """
         if "text/html" in request.headers.get("accept", ""):
             target = request.url.path
@@ -186,9 +152,7 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
         """Show a person what is broken instead of a stack trace."""
         if "text/html" not in request.headers.get("accept", ""):
             return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
-        # Guarded: an unreachable Mongo is one of the things this page is
-        # here to report, and reading the session to draw the header would
-        # raise again and turn the answer back into a stack trace.
+        # An unreachable Mongo is what this page reports; reading it would raise.
         try:
             session = read_session(request.app.state.db, request.cookies.get(COOKIE))
         except PyMongoError:
@@ -202,31 +166,27 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
     @app.get("/login", response_class=HTMLResponse)
     def login_form(request: Request, session: Session, next: str = "/"):
         if session is not None:
-            return RedirectResponse(_safe_next(next), status_code=status.HTTP_303_SEE_OTHER)
+            return RedirectResponse(safe_path(next), status_code=status.HTTP_303_SEE_OTHER)
         return templates.TemplateResponse(request, "login.html",
-                                          {"user": None, "next": _safe_next(next)})
+                                          {"user": None, "next": safe_path(next)})
 
     @app.post("/login")
     def login(request: Request, db: Db,
               login: Annotated[str, Form()], password: Annotated[str, Form()],
               next: Annotated[str, Form()] = "/"):
-        # No CSRF check here on purpose: there is no session yet to carry a
-        # token, and a forged login only ever logs the victim in as the
-        # attacker — the thing to prevent is a forged *edit*.
+        # No CSRF check: no session yet, and a forged login costs the attacker.
         def refused(message: str, *, denied: bool, code: int):
             return templates.TemplateResponse(
                 request, "login.html",
                 {"user": None, "error": message, "denied": denied,
-                 "next": _safe_next(next)},
+                 "next": safe_path(next)},
                 status_code=code)
 
         try:
             user = authenticate(db, login, password)
             token = open_session(db, user)
         except TooManyAttempts as error:
-            # Told plainly, unlike a wrong password: which half was wrong is
-            # free information for an attacker, but how long the lock lasts
-            # is not, and somebody who mistyped needs to know to wait.
+            # Told plainly, unlike a wrong password: the wait is not a secret.
             logger.info("locked-out login attempt for %r", login)
             return refused(f"Слишком много попыток. Попробуйте через {error.minutes} мин.",
                            denied=False, code=status.HTTP_429_TOO_MANY_REQUESTS)
@@ -234,13 +194,11 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
             logger.info("failed login for %r", login)
             return refused("", denied=True, code=status.HTTP_401_UNAUTHORIZED)
         except PyMongoError as error:
-            # Accounts and sessions live in Mongo, so there is no signing in
-            # without it. Said plainly, in the form, rather than as a stack
-            # trace: this is a service that is down, not a wrong password.
+            # Accounts live in Mongo: this is a service down, not a bad password.
             logger.warning("mongo is not answering, cannot sign anybody in: %s", error)
             return refused(MONGO_SILENT, denied=False,
                            code=status.HTTP_503_SERVICE_UNAVAILABLE)
-        response = RedirectResponse(_safe_next(next), status_code=status.HTTP_303_SEE_OTHER)
+        response = RedirectResponse(safe_path(next), status_code=status.HTTP_303_SEE_OTHER)
         response.set_cookie(
             COOKIE, token,
             max_age=SESSION_HOURS * 3600,
@@ -252,62 +210,47 @@ def build(config: Settings | None = None, db: Database | None = None) -> FastAPI
 
     @app.post("/logout")
     def logout(request: Request, db: Db, _: CsrfChecked):
-        """End the session.
-
-        Checked like every other form. Logging somebody out from another
-        site is a nuisance rather than a loss, but the template has always
-        sent the token and the route quietly ignored it — a guard that
-        looks present and is not is worse than none.
-        """
+        """End the session; the CSRF token is checked like on every other form."""
         close_session(db, request.cookies.get(COOKIE))
         response = RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
         response.delete_cookie(COOKIE, path="/")
         return response
 
     @app.get("/", response_class=HTMLResponse)
-    def index(request: Request, user: CurrentUser, session: Session):
+    def index(request: Request, user: CurrentUser, session: Session, db: Db):
         counts = _node_counts(app.state.graph)
         labels = [(label, len(NODE_FIELDS[label]), (counts or {}).get(label))
                   for label in sorted(NODE_FIELDS)]
         return templates.TemplateResponse(request, "index.html", {
             "user": user, "csrf": session["csrf"], "counted": counts is not None,
-            "labels": labels, "relationships": len(RELATIONSHIPS)})
+            "labels": labels, "relationships": len(RELATIONSHIPS),
+            "summary": summary.collect(db)})
 
     app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
-    # The stylesheet's version is its own mtime. Browsers hold CSS in cache
-    # firmly, and a layout fix could fail to reach an open tab: the header
-    # and the filters stayed in the old arrangement although the file had
-    # already changed.
+    # Version by mtime: browsers hold CSS until the address changes.
     def stylesheet() -> str:
         css = Path(__file__).parent / "static" / "panel.css"
         return f"/static/panel.css?v={int(css.stat().st_mtime) if css.is_file() else 0}"
 
     templates.env.globals["stylesheet"] = stylesheet
 
-    # The logo and the fonts come from the map's own files instead of being
-    # copied here: one place to update, and the panel looks like the same
-    # product. Only these two paths are exposed — mounting the whole web
-    # directory would serve the map's data dump from the admin port too.
-    web = Path(__file__).resolve().parents[1] / "gui" / "web"
+    # The logo and fonts live in the panel's own static/ folder.
+    static = Path(__file__).parent / "static"
     for name in ("fonts", "icons"):
-        source = web / "vendor" / name
+        source = static / name
         if source.is_dir():
             app.mount(f"/assets/{name}", StaticFiles(directory=str(source)), name=name)
 
     @app.get("/favicon.ico", include_in_schema=False)
     def favicon():
-        """The map's own tab icon, served as a file.
+        """The map's tab icon, served as a file.
 
-        The same image the <link> tag points at, and that matters: a browser
-        asks for /favicon.ico on its own for the site root, and answering
-        with a different picture there than on every other page is exactly
-        how the icon ends up showing on /nodes/... but not on /.
-
-        Served as a file rather than a redirect — a 301 gets cached hard
-        enough to outlive the fix.
+        Browsers request /favicon.ico on their own, so it must be the same
+        image the <link> tag points at. A file rather than a redirect, since a
+        301 is cached too hard.
         """
-        path = web / "vendor" / "icons" / "pauk-frame.png"
+        path = static / "icons" / "pauk-frame.png"
         if not path.is_file():
             raise HTTPException(status.HTTP_404_NOT_FOUND, "the icon is missing")
         return FileResponse(path, media_type="image/png",

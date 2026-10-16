@@ -109,10 +109,8 @@ class DecideTest(unittest.TestCase):
 class ScoreAccountTest(unittest.TestCase):
     """Every signal the matcher can raise, raised from the fields it reads.
 
-    decide() is tested on signal lists written by hand. This covers the
-    step before it: turning a harvested account and an author into that
-    list. A signal that stopped being raised would leave decide() correct
-    and the matcher blind.
+    decide() is tested on hand-written signal lists; this covers turning a
+    harvested account and an author into that list.
     """
 
     @staticmethod
@@ -441,9 +439,9 @@ class ItmoInTextTest(unittest.TestCase):
 class GitHubReviewTest(unittest.TestCase):
     """Accounts the signals cannot settle, and what a person decides about them.
 
-    The rules already produce a "review" verdict; until now nobody read it.
-    An answer has to reach them on the next run, both ways round: applying a
-    match they would only have shown, and stopping one they would have made.
+    An answer has to reach the rules on the next run, both ways round:
+    applying a match they would only have shown, and stopping one they would
+    have made.
     """
 
     def setUp(self):
@@ -505,8 +503,8 @@ class GitHubReviewTest(unittest.TestCase):
         self.assertEqual(review.count(self.db, answered=False), 0)
 
     def test_a_rejection_holds_against_a_match_the_rules_would_now_make(self):
-        # The signals grew: the account turns out to carry the surname and
-        # to own the repository, which on their own would settle it.
+        # The account carries the surname and owns the repository, which on
+        # their own would settle it.
         self.run_stage(*self.unsure())
         review.record_verdict(self.db, review.GITHUB, ["A1", "shtuka"], review.DIFFERENT,
                               actor="user:roman")
@@ -541,8 +539,8 @@ class GitHubReviewTest(unittest.TestCase):
 
     def test_an_answer_survives_its_person_being_folded(self):
         # The dedup merges B into A. The answer is stored about B, and an id
-        # nothing carries any more used to lose it — silently linking an
-        # account somebody had refused.
+        # nothing carries any more must not lose it, or an account somebody had
+        # refused gets linked silently.
         self.run_stage(*self.unsure())
         review.record_verdict(self.db, review.GITHUB, ["A1", "XieN-N"], review.DIFFERENT,
                               actor="user:katya")

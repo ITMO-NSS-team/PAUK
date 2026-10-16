@@ -1,13 +1,13 @@
 """Taking a fold apart again.
 
-Every test here folds two people the way the panel folds them — through
-`merge_nodes`, against a double that moves edges and fills fields the way
-the real client does — and then asks for it back. Building the fold by hand
-would prove nothing: what has to come back is exactly what a real merge
-takes away.
+Every test here folds two people through `merge_nodes`, against a double
+that moves edges and fills fields the way the real client does, and then
+asks for it back. Building the fold by hand would prove nothing: what has
+to come back is exactly what a real merge takes away.
 """
 
 import unittest
+from copy import deepcopy
 
 import mongomock
 
@@ -142,7 +142,7 @@ class HandWorkTest(UnmergeTest):
                      person("A2", "I. Smirnov", works=["W2"]))
 
     def test_an_unlinked_edge_is_never_offered_back(self):
-        # Not just absent at the end — `apply_overrides` would delete it
+        # Not just absent at the end - `apply_overrides` would delete it
         # again anyway. It must not be created in the first place, or every
         # undo writes a creation and a deletion into the journal.
         record_relationship_override(self.db, "Person", "AUTHORED", "Publication",
@@ -186,7 +186,7 @@ class RefusalTest(UnmergeTest):
             split_person(self.graph, self.db, ["A1", "A2"])
 
     def test_a_fold_that_happened_somewhere_else(self):
-        # A2 is gone, but not into A1 — undoing "the fold" would be undoing
+        # A2 is gone, but not into A1 - undoing "the fold" would be undoing
         # one that never happened.
         self.publish(person("A1", "Ivan Smirnov"), person("A2", "I. Smirnov"),
                      person("A3", "Ivan S."))
@@ -261,3 +261,25 @@ class ChainTest(UnmergeTest):
         split_person(self.graph, self.db, ["A1", "A2"])
         self.assertEqual(self.graph.nodes[("Person", "A1")]["merged_ids"], [])
         self.assertEqual(self.graph.nodes[("Person", "A2")]["merged_ids"], ["A9"])
+
+    def test_an_aggregate_row_covers_its_deleted_members(self):
+        self.publish(
+            person("A1", "Ivan Smirnov", works=["W1"], merged_ids=["A3"], other_names=["Kept"]),
+            person("A2", "I. Smirnov", works=["W2"], other_names=["Returning"]),
+        )
+        self.fold()
+        split_person(self.graph, self.db, ["A1", "A2"])
+        self.assertEqual(self.edges("A1"), {("AUTHORED", "W1")})
+        self.assertEqual(self.edges("A2"), {("AUTHORED", "W2")})
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["other_names"], ["Kept"])
+        self.assertEqual(self.graph.nodes[("Person", "A1")]["merged_ids"], ["A3"])
+
+    def test_contaminated_prepared_aggregate_refuses_before_any_write(self):
+        self.publish(person("A1", "Ivan Smirnov", works=["W1"]),
+                     person("A2", "I. Smirnov", works=["W2"]))
+        self.fold()
+        self.db.persons.update_one({"id": "A1"}, {"$set": {"merged_ids": ["A2"]}})
+        before = deepcopy((self.graph.nodes, self.graph.relationships))
+        with self.assertRaisesRegex(NothingToRebuild, "already aggregates"):
+            split_person(self.graph, self.db, ["A1", "A2"])
+        self.assertEqual((self.graph.nodes, self.graph.relationships), before)

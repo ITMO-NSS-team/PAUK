@@ -1,19 +1,15 @@
 """Collect the people behind chosen repositories, on demand.
 
-Written when `RepositoriesStage` walked `repo_links` alone, so a repository
-created by any other route — the curated CSV import, a manual addition — had
-no link row pointing at it and was never visited, with or without `--force`.
-The `repo_people` stage now walks every row in the collection and closes that
-gap on its own, which leaves this a manual tool for a single targeted run.
+A manual tool for a single targeted run: the `repo_people` stage walks every row
+in the collection, but a repository created by another route (the curated CSV
+import, a manual addition) may have no `repo_links` row pointing at it.
 
-The harvest itself is `RepoPeopleStage._harvest`: reusing it is the point. A
-second implementation of "who is behind this repository" would drift from the
-one the pipeline actually runs, and the difference would show up as data, not
-as a failing test.
+The harvest itself is `RepoPeopleStage._harvest`, reused so that "who is behind
+this repository" has one implementation.
 
-Writes with `upsert_models`, never `write_models`. The latter sets a group's
+Writes with `upsert_models`, never `write_models`: the latter sets a group's
 complete membership, so handing it a subset would retract the group's claim on
-every repository not in that subset and delete the ones no other group holds.
+every repository outside that subset.
 """
 
 from __future__ import annotations
@@ -50,9 +46,8 @@ def repo_id_from_url(url: str) -> str | None:
 def reachable_ids(db) -> set[str]:
     """Repository ids some `repo_links` row names, across every group.
 
-    Group-wide and not per-group on purpose: a repository the stage reaches
-    while running a different group is not an orphan, it is merely harvested
-    later.
+    Group-wide because a repository reached while running a different group is
+    not an orphan, only harvested later.
     """
     found: set[str] = set()
     for row in db[PreparedStore.COLLECTIONS["repo_links"]].find({}, {"links": 1}):
@@ -149,8 +144,8 @@ def main() -> int:
                     continue
                 owner, name = target
                 before = list(repo.contributors)
-                # The owner's stored type is no longer passed in: _harvest
-                # reads it off the owner's own profile in `profiles`.
+                # The owner's stored type is read by _harvest off the owner's own
+                # profile in `profiles`.
                 stage._harvest(github, repo, owner, name, profiles)
                 touched.append(repo)
                 processed.append({"group": group, "id": repo.id, "url": repo.url,

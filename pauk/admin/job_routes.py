@@ -1,11 +1,7 @@
 """Scheduled runs as a page: what is under way, what has been, starting one.
 
-Nothing here performs work. A form writes a job document and a separate
-process picks it up, so no request waits on a publish.
-
-Every value a form can carry is checked against a closed set: the kind
-against `JobKind`, the group against the groups that have prepared rows,
-the dates against the selectors the CLI uses. No command line is assembled.
+A form only writes a job document; a separate worker performs it. Every form
+value is checked against a closed set, and no command line is assembled.
 """
 
 from __future__ import annotations
@@ -31,13 +27,10 @@ logger = logging.getLogger("pauk.admin")
 
 router = APIRouter()
 
-#: How many numbers of a run's result are shown open. Past that they fold
-#: under a summary: a full pipeline hands back forty, and a column forty
-#: lines tall pushes every other cell of the history out of sight.
+#: How many numbers of a result are shown open; a full pipeline hands back forty.
 RESULT_OPEN_UPTO = 12
 
-# What each kind and state is called on the page. `JobKind.PUBLISH` is a
-# name for the code, not for a reader.
+# What each kind and state is called on the page.
 KINDS = {
     JobKind.PIPELINE: "весь конвейер",
     JobKind.COLLECT: "сбор",
@@ -74,13 +67,10 @@ def _shown(job) -> dict:
         "resource": job.resource,
         "error": job.error,
         "cancel_requested": job.cancel_requested,
-        # Показывается, даже когда подбирать брошенные некому: без воркера
-        # такая задача так и висела бы «идёт» без всяких оговорок.
+        # Shown even with no worker to reap it: it would hang on "under way".
         "stale": store.is_quiet(job),
         "progress": job.progress,
-        # One segment per pipeline phase: the ones behind filled, the one
-        # under way marked. A single-step job gets none — there is nothing
-        # to divide.
+        # One segment per pipeline phase; a single-step job gets none.
         "phases": _phases(job),
         # Sorted so two renders list the counts the same way.
         "result": sorted((job.result or {}).items()),
@@ -88,9 +78,7 @@ def _shown(job) -> dict:
     }
 
 
-#: Payload fields in the page's words. A bare `seed=42` beside a finished
-#: run says nothing, and `public=False` reads as the opposite of what it
-#: means.
+#: Payload fields in the page's words: `public=False` reads as its opposite.
 PAYLOAD_WORDS = {
     "group": "группа",
     "date_from": "с",
@@ -101,14 +89,9 @@ PAYLOAD_WORDS = {
 
 
 def _payload_lines(kind, payload: dict) -> list[str]:
-    """What a run was started with, one line per setting.
-
-    Empty fields are left out: `work_id=None` on a run over a period is not
-    a setting but the absence of one.
-    """
+    """What a run was started with, one line per setting; empty fields are left out."""
     if JobKind(kind) is JobKind.PRUNE:
-        # "apply=False" beside a finished run reads as "found nothing",
-        # when it means "found it and left it alone".
+        # "apply=False" would read as "found nothing", not "left it alone".
         return ["убрать найденное" if payload.get("apply")
                 else "только посчитать, ничего не удалять"]
     lines = []
@@ -133,12 +116,7 @@ def _phases(job) -> list[str] | None:
 
 
 def _last_done(db) -> dict[str, object]:
-    """When each kind of run last finished.
-
-    Shown beside its step, because the question a person opens this page
-    with is usually "has anybody published since the last collection", and
-    counting rows in the history to answer it is work the page can do.
-    """
+    """When each kind of run last finished."""
     found = {}
     for kind in JobKind:
         row = db[store.COLLECTION].find_one(
@@ -152,18 +130,13 @@ def _last_done(db) -> dict[str, object]:
 @router.get("/jobs", response_class=HTMLResponse)
 def jobs(request: Request, user: CurrentUser, session: Session, db: Db,
          kind: str = "", state: str = "", actor: str = "", page: int = 1):
-    """The queue and the history of runs.
-
-    Readable by anyone who can sign in, viewers included. Whether a publish
-    is under way explains what somebody is looking at.
-    """
+    """The queue and the history of runs, readable by anyone who can sign in."""
     page = max(page, 1)
     filters = {"kind": kind, "state": state, "actor": actor}
     total = store.count(db, **filters)
     return templates.TemplateResponse(request, "jobs.html", {
         "user": user, "csrf": session["csrf"],
-        # Apart from the history and above it. A run under way is what the
-        # page is opened for, and it need not be the newest row.
+        # Above the history: a run under way need not be the newest row.
         "under_way": [_shown(job) for job in store.running(db)],
         "rows": [_shown(job) for job in
                  store.recent(db, **filters, skip=(page - 1) * store.PAGE)],
@@ -173,12 +146,12 @@ def jobs(request: Request, user: CurrentUser, session: Session, db: Db,
         "final": {str(name) for name in FINAL},
         "actors": sorted(db[store.COLLECTION].distinct("actor")),
         "last_done": _last_done(db),
+        # Nobody taking jobs is the difference between "running" and "queued forever".
+        "workers": store.workers_present(db),
         "result_open_upto": RESULT_OPEN_UPTO,
-        # Read off the pipeline, not written out here: a stage added to the
-        # registry would otherwise leave the page describing the old one.
+        # Read off the pipeline: a new stage must not leave the page stale.
         "stages": [stage.name for stage in ALL_STAGES],
-        # Only groups with prepared rows. Publishing an empty one loads
-        # nothing and looks like a broken publish.
+        # Only groups with prepared rows: an empty one looks like a broken publish.
         "groups": PreparedStore.known_groups(db),
         "today": date.today().isoformat()})
 
@@ -186,8 +159,7 @@ def jobs(request: Request, user: CurrentUser, session: Session, db: Db,
 def _collect_payload(form) -> dict:
     """One collection run, from a work id or a date range.
 
-    The group is derived with `group_name`, the same as `pauk run`. A name
-    invented here would be a second rule to keep in step with the first.
+    The group comes from `group_name`, as in `pauk run`, so there is one naming rule.
     """
     work_id = str(form.get("work_id", "")).strip()
     date_from = str(form.get("date_from", "")).strip()
@@ -202,9 +174,7 @@ def _collect_payload(form) -> dict:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "период задаётся двумя датами, вторая пустая")
     if date_from:
-        # PeriodSelector raises ValueError both for a value that is not a
-        # date and for a range the wrong way round, and one message for the
-        # two would be wrong half the time.
+        # PeriodSelector raises the same error for a bad date and a bad range.
         for what, value in (("начало", date_from), ("конец", date_to)):
             try:
                 date.fromisoformat(value)
@@ -212,8 +182,7 @@ def _collect_payload(form) -> dict:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST,
                                     f"{what} периода — не дата: {value!r}") from None
         try:
-            # The ordering rule stays where `pauk run` reads it. Only the
-            # wording is the panel's, since the selector talks about flags.
+            # The ordering rule stays in the selector; only the wording is here.
             PeriodSelector(date_from, date_to)
         except ValueError:
             raise HTTPException(status.HTTP_400_BAD_REQUEST,
@@ -233,13 +202,11 @@ def _payload_from(kind: JobKind, db, form) -> dict:
     if kind is JobKind.COLLECT:
         return _collect_payload(form)
     if kind is JobKind.PIPELINE:
-        # The group is not checked against the ones that exist here, unlike
-        # a plain publish: this run is the thing that creates it.
+        # Not checked against existing groups: this run creates one.
         return _collect_payload(form) | _map_options(form)
     if kind is JobKind.PUBLISH:
         group = str(form.get("group", "")).strip()
-        # Checked against the groups that exist, not only the shape of a
-        # name: a request arriving without the form meets the same list.
+        # Against the groups that exist: a request without the form meets it too.
         if group not in PreparedStore.known_groups(db):
             raise HTTPException(status.HTTP_400_BAD_REQUEST,
                                 f"нет подготовленных строк для группы {group!r}")
@@ -255,14 +222,10 @@ def _payload_from(kind: JobKind, db, form) -> dict:
 def _map_options(form) -> dict:
     """How to rebuild the map, left for the payload model to check.
 
-    Converting here meant `int(...)` on whatever arrived, and `int("null")`
-    raises ValueError, which nothing above turns into an answer — the
-    request ended in a 500. An absent key is left out rather than passed as
-    an empty string, so the model's own default applies.
+    Values are not converted here (`int("null")` would end in a 500), and an
+    absent key is left out so the model's default applies.
     """
     options: dict = {}
-    if form.get("public") is not None:
-        options["public"] = str(form.get("public"))
     seed = str(form.get("seed", "")).strip()
     if seed:
         options["seed"] = seed
@@ -273,9 +236,8 @@ def _map_options(form) -> dict:
 async def cancel(request: Request, user: Admin, db: Db, _: CsrfChecked):
     """Ask a run to stop.
 
-    A queued job is cancelled outright. One already under way is only asked:
-    the worker looks at the request between steps, so a half-written batch
-    is never abandoned. A publish has no steps inside it and runs to the end.
+    A queued job is cancelled outright; a running one is only asked, and the
+    worker checks between steps. A publish has no inner steps and runs to the end.
     """
     form = await request.form()
     job_id = str(form.get("job_id", "")).strip()
@@ -290,10 +252,8 @@ async def cancel(request: Request, user: Admin, db: Db, _: CsrfChecked):
 async def give_up(request: Request, user: Admin, db: Db, _: CsrfChecked):
     """Close a run nothing is performing any more.
 
-    The worker settles abandoned jobs on its own, but only a running worker
-    does, and only after the lock lease has run out. A job cancelled before
-    it ever started holds nothing and is doing nothing; leaving it in "under
-    way" for a quarter of an hour tells everybody a lie.
+    The worker settles abandoned jobs only while running and after the lock
+    lease expires; this closes e.g. a job cancelled before it ever started.
     """
     form = await request.form()
     job_id = str(form.get("job_id", "")).strip()
@@ -319,11 +279,7 @@ async def repeat(request: Request, user: Admin, db: Db, _: CsrfChecked):
 
 @router.post("/jobs")
 async def schedule(request: Request, user: Admin, db: Db, _: CsrfChecked):
-    """Put a run in the queue.
-
-    The job document is the whole of it and the worker does the rest, so
-    there is no ordering to get wrong here.
-    """
+    """Put a run in the queue."""
     form = await request.form()
     try:
         kind = JobKind(str(form.get("kind", "")))
@@ -333,15 +289,12 @@ async def schedule(request: Request, user: Admin, db: Db, _: CsrfChecked):
     try:
         job = store.enqueue(db, kind, _payload_from(kind, db, form), actor=user.actor)
     except HTTPException as error:
-        # A form filled in wrongly goes back to the form, not to a page with
-        # a status code on it: everything typed is still there to correct,
-        # and an error page loses it.
+        # Back to the form, not to an error page that loses what was typed.
         if error.status_code != status.HTTP_400_BAD_REQUEST:
             raise
         return RedirectResponse(f"/jobs?problem={quote(str(error.detail))}",
                                 status_code=status.HTTP_303_SEE_OTHER)
     except ValidationError as error:
-        # The payload models refuse it before anything is stored.
         first = error.errors()[0]
         detail = (f"{'.'.join(str(part) for part in first['loc'])}: {first['msg']}")
         return RedirectResponse(f"/jobs?problem={quote(detail)}",

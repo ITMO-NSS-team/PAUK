@@ -47,7 +47,7 @@ class GetTextTest(unittest.TestCase):
 
     @mock.patch("pauk.sources.base.time.sleep", lambda *_: None)
     def test_retries_transient_status(self):
-        # 503 is retryable — the second attempt's body must be returned.
+        # 503 is retryable - the second attempt's body must be returned.
         client = self._client([_Resp(503), _Resp(200, text="recovered")])
         self.assertEqual(client.get_text("https://example.org/page"), "recovered")
         self.assertEqual(client.session.calls, 2)

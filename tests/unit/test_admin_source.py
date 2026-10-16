@@ -1,8 +1,7 @@
 """Reading the archive of what the source said about a record.
 
-Every real change to a prepared row files the whole previous document. The
-archive has been filling up since versioning landed and nothing could open
-it: the only way to look was a query by hand.
+Every real change to a prepared row files the whole previous document,
+and the archive page is the way to look at that history.
 """
 
 import unittest
@@ -50,14 +49,14 @@ class HistoryTest(unittest.TestCase):
         self.assertEqual([row["group"] for row in rows], ["период-2", "период-1"])
 
     def test_the_newest_change_is_against_the_row_as_it_stands(self):
-        # Without the live row the last change — the one somebody is
-        # usually asking about — would be the one missing.
+        # Without the live row the last change - the one somebody is
+        # usually asking about - would be the one missing.
         self.fill()
         newest = source.history(self.db, "Person", "A1")[0]
         self.assertEqual(newest["changes"], [("name_raw", ("Ivan", "Ivan Smirnov"))])
 
     def test_a_row_that_is_gone_is_not_read_as_every_field_wiped(self):
-        # Rows are deleted — a fold removes the ones it swallows — while
+        # Rows are deleted - a fold removes the ones it swallows - while
         # their archive stays. What replaced the last version is not known,
         # and comparing it with nothing reported a run that emptied the
         # record.
@@ -83,8 +82,8 @@ class HistoryTest(unittest.TestCase):
         self.assertEqual(source.history(self.db, "Person", "A2")[0]["changes"], [])
 
     def test_the_pipelines_own_notes_are_not_changes(self):
-        # `_processing` moves on every pass — which stage ran, how many
-        # attempts — and is not something the source said about the person.
+        # `_processing` moves on every pass - which stage ran, how many
+        # attempts - and is not something the source said about the person.
         self.db[source.REVISIONS].insert_one(
             archived("persons", "A5", 1,
                      {"id": "A5", "_processing": {"pdf": {"status": "completed"}}},
