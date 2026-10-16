@@ -33,11 +33,9 @@ rag = [
     "rapidfuzz>=3.9",
 ]
 
-[project.optional-dependencies]
-# The embedding model for `pauk search` (pulls in torch, several GB). Without
-# it the search still works, in BM25 mode only.
 search = [
     "sentence-transformers>=5.0",
+    "rank-bm25>=0.2.2"
 ]
 
 [project.scripts]

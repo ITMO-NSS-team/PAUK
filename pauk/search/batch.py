@@ -12,6 +12,7 @@ after adding a few questions costs tokens only for the new ones.
 
 from __future__ import annotations
 
+from datetime import datetime
 import csv
 import json
 import logging
@@ -96,13 +97,33 @@ def run(questions_path: Path, out_dir: Path, options: AskOptions, *, force: bool
         engine: Engine | None = None, config: Settings | None = None) -> dict[str, Any]:
     questions = read_questions(questions_path)
     out_dir.mkdir(parents=True, exist_ok=True)
-    results_path = out_dir / "results.jsonl"
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    file_prefix = f"{questions_path.stem}_{timestamp}"
+    results_path = out_dir / f"results_{file_prefix}.jsonl"
+    review_path = out_dir / f"review_{file_prefix}.csv"
+
+    log_path = out_dir / f"log_{file_prefix}.log"
+    root_logger = logging.getLogger()
+
+    # Создаем файловый обработчик
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    file_handler.setFormatter(formatter)
+    root_logger.addHandler(file_handler)
+
+
     cached = {} if force else _load_cached(results_path, options)
     own_engine = engine is None
     results = []
     try:
         for number, meta in enumerate(questions, 1):
             question = meta["question"]
+            expected_template = meta["type"]
             if question in cached:
                 result = cached[question]
             else:
@@ -110,7 +131,7 @@ def run(questions_path: Path, out_dir: Path, options: AskOptions, *, force: bool
                     engine = Engine(config)
                 logger.info("[%d/%d] %s", number, len(questions), question)
                 try:
-                    result = engine.ask(question, options)
+                    result = engine.ask(question, expected_template, options)
                 except Exception as exc:  # one broken question must not lose the whole batch
                     logger.exception("question failed: %s", question)
                     result = {"question": question, "error": f"{type(exc).__name__}: {exc}"}
@@ -120,18 +141,21 @@ def run(questions_path: Path, out_dir: Path, options: AskOptions, *, force: bool
     finally:
         if own_engine and engine is not None:
             engine.close()
+        root_logger.removeHandler(file_handler)
+        file_handler.close()
 
     with results_path.open("w", encoding="utf-8") as fh:
         for result in results:
             fh.write(json.dumps(result, ensure_ascii=False, default=str) + "\n")
-    review_path = out_dir / "review.csv"
+    # review_path = out_dir / "review.csv"
     write_review(results, review_path)
     return {
         "questions": len(results),
-        "reused": sum(1 for r in results if r["question"] in cached),
+        # "reused": sum(1 for r in results if r["question"] in cached),
         "errors": sum(1 for r in results if "error" in r),
         "results": str(results_path),
         "review": str(review_path),
+        "log": str(log_path),
     }
 
 
@@ -141,41 +165,44 @@ def _labels(items: list[dict[str, Any]] | None) -> str:
 
 
 def review_row(number: int, result: dict[str, Any]) -> dict[str, Any]:
+    # logger.info("Result.answer: %s", result.get("answer"))
     meta = result.get("meta") or {}
     row: dict[str, Any] = {
         "n": number,
         "type": meta.get("type", ""),
         "question": result["question"],
-        "expected": meta.get("expected", ""),
+        "expected": meta.get("type", ""),
     }
     if "error" in result:
         row["notes"] = result["error"]
         return row
     plan = result.get("plan") or {}
     parse = (result.get("trace") or {}).get("parse") or {}
-    sections = result.get("sections") or {}
-    counts = sections.get("counts") or {}
+    # sections = result.get("sections") or {}
+    # counts = sections.get("counts") or {}
+
     row.update({
-        "plan_type": plan.get("type"),
-        "graph_type": plan.get("graph_type"),
-        "core": " | ".join(plan.get("core") or []),
-        "entities": "; ".join(f"{e['kind']}: {e['name']}" for e in plan.get("entities") or []),
-        "filter": json.dumps({k: v for k, v in (plan.get("filter") or {}).items() if v not in (None, True)},
-                             ensure_ascii=False) if plan.get("filter") else "",
-        "sections": ", ".join(plan.get("expected_values") or []),
-        "resolved": "; ".join(
-            f"{e['query']} → {e['candidates'][0]['label'] if e['candidates'] else 'не найдено'}"
-            + (" (неоднозначно)" if e.get("ambiguous") else "")
-            for e in result.get("entities") or []
-        ),
+        "plan_type": plan.type,
+        "template": plan.template,
+        "graph_type": plan.graph_type,
+        "core": " | ".join(plan.core or []),
+        "entities": "; ".join(f"{e.kind}: {e.name}" for e in plan.entities or []),
+        # "filter": json.dumps({k: v for k, v in plan.filter.items() if v not in (None)},
+        #                  ensure_ascii=False) if plan.filter else "",
+        # "sections": ", ".join(plan.expected_values or []),
+        # "resolved": "; ".join(
+        #     f"{e['query']} → {e.candidates[0].label if e.candidates else 'не найдено'}"
+        #     + (" (неоднозначно)" if e.get("ambiguous") else "")
+        #     for e in result.get("entities") or []
+        # ),
         "llm_fallback": parse.get("fallback", ""),
-        "top_entry_points": "\n".join(f"{h['title']} ({h['score']:.2f})" for h in (result.get("entry_points") or [])[:TOP]),
-        "persons": _labels(sections.get("persons")),
-        "departments": _labels(sections.get("departments")),
-        "publications": _labels(sections.get("publications")),
-        "repositories": _labels(sections.get("repositories")),
-        "counts": json.dumps({k: v for k, v in counts.items() if k != "by_year"}, ensure_ascii=False)
-        if counts else "",
+        # "top_entry_points": "\n".join(f"{h['title']} ({h['score']:.2f})" for h in (result.get("entry_points") or [])[:TOP]),
+        # "persons": _labels(sections.get("persons")),
+        # "departments": _labels(sections.get("departments")),
+        # "publications": _labels(sections.get("publications")),
+        # "repositories": _labels(sections.get("repositories")),
+        # "counts": json.dumps({k: v for k, v in counts.items() if k != "by_year"}, ensure_ascii=False)
+        # if counts else "",
         "answer": result.get("answer") or "",
         "notes": "\n".join(result.get("notes") or []),
         "seconds": round(sum((result.get("timings") or {}).values()), 2),

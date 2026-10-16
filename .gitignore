@@ -49,7 +49,6 @@ graphify-out/
 
 # Database dumps and pre-write snapshots — large, never committed.
 data/backups/
-data/search/*
 # Script output: plans, verdicts, unmatched rows. Regenerated from the data,
 # so it is never the record of anything. What is worth keeping — a runbook, a
 # list someone decided on — goes to docs/reports/ by hand.
@@ -60,3 +59,4 @@ docs/reports/
 
 test_questions.csv
 test_questions.migrated.csv
+pauk/search/tests
