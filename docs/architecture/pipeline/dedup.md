@@ -105,6 +105,10 @@ Unresolved reversed names use the more frequent surname interpretation; missing
 surname frequencies provide no rarity evidence. Identical or reordered full names
 without shared publications or collaborators require Qwen even above the local
 merge threshold, unless a matching trusted identifier establishes identity.
+Shared publications without independent small-team collaborators likewise require
+Qwen instead of a local high-score merge. A shared work, its coauthors and its
+topic labels are not independent confirmations; the prompt requests review when
+compatible names have no support beyond that shared source.
 
 Matching identifiers with incompatible primary names require review. Initials-only
 matches without independent small-team collaborators also require review unless
@@ -123,6 +127,12 @@ number. Retries are reserved for failed or invalid responses.
 Held pairs are stored in `review_pairs` with their input route and model verdict
 for the admin panel. Automatically separated pairs retire obsolete unanswered
 questions. Existing operator decisions remain authoritative.
+
+Before prepared-person merges, complete source rows are preserved in
+`person_merge_sources`. Failure to preserve any participant aborts before the
+merge writes. Unmerge uses these durable copies when live rows were removed or
+already aggregate the returning person, and restores prepared rows as well as
+the graph so the next publish keeps the split.
 
 ## Publications
 

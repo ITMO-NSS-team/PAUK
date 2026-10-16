@@ -33,6 +33,8 @@ Evaluate identity, not whether two researchers could collaborate:
   Snapshot name rarity is not global rarity. Initials plus a common surname alone cannot identify someone.
 - Distinguish independent corroboration from joint authorship. Two records on one publication can be
   distinct coauthors; a shared work by itself does not prove identity OR nonidentity.
+  That work, its coauthor list and its topic labels are one source, not independent confirmations.
+  Compatible names supported only by that shared source require REVIEW, not MERGE or SEPARATE.
   Prefer independent small-team coauthors over raw consortium overlap. Broad shared fields are weak.
   Department labels can differ over time or language. Sparse/disjoint coauthor lists, broad topic
   differences, missing ORCID and zero overlap are NOT evidence that the people differ.

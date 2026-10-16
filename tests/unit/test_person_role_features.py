@@ -93,7 +93,7 @@ class PersonRoleFeaturesTest(unittest.TestCase):
         pair = self.pair("Sergey Makarov", "Sergey Makarov")
         for changes in (
             {"shared_coauthors": 1},
-            {"shared_publications": 1},
+            {"shared_publications": 1, "shared_coauthors": 1},
             {"staff_id_a": "42", "staff_id_b": "42"},
             {"orcid_a": "0000-1", "orcid_b": "0000-1"},
         ):
@@ -106,3 +106,37 @@ class PersonRoleFeaturesTest(unittest.TestCase):
         with patch("pauk.graph.person_resolution.logistic_probability", return_value=0.999):
             result = resolve_pair(self.pair("Sergey Makarov", "Sergey Makarov", orcid_a="0000-1", orcid_b="0000-2"))
         self.assertEqual(result.decision, Decision.SEPARATE)
+
+    def test_shared_work_does_not_bypass_independent_evidence(self):
+        for first, second in (("Huadong Wang", "Huadong Wang"), ("Ivan Petrov", "I. Petrov")):
+            for shared_works in (1, 3):
+                for coauthors, small_team in ((0, None), (0, 0), (50, 0)):
+                    with self.subTest(names=(first, second), works=shared_works, coauthors=coauthors), patch(
+                        "pauk.graph.person_resolution.logistic_probability", return_value=0.999
+                    ):
+                        result = resolve_pair(self.pair(
+                            first, second, shared_publications=shared_works,
+                            shared_coauthors=coauthors, small_team_shared_coauthors=small_team,
+                            shared_fields=2, shared_departments=1,
+                        ))
+                        self.assertEqual(result.decision, Decision.FIRST_MODEL)
+                        self.assertEqual(result.route, "joint_publication_without_independent_support")
+
+    def test_shared_work_guard_preserves_identifiers_and_independent_support(self):
+        pair = self.pair("Huadong Wang", "Huadong Wang", shared_publications=1, small_team_shared_coauthors=0)
+        for changes in (
+            {"orcid_a": "same", "orcid_b": "same"},
+            {"staff_id_a": "42", "staff_id_b": "42"},
+            {"shared_coauthors": 1, "small_team_shared_coauthors": 1},
+        ):
+            with self.subTest(changes=changes), patch(
+                "pauk.graph.person_resolution.logistic_probability", return_value=0.999
+            ):
+                self.assertEqual(resolve_pair(replace(pair, **changes)).decision, Decision.MERGE)
+
+    def test_shared_work_guard_does_not_override_low_score_or_identifier_conflict(self):
+        pair = self.pair("Huadong Wang", "Huadong Wang", shared_publications=1)
+        with patch("pauk.graph.person_resolution.logistic_probability", return_value=0.01):
+            self.assertEqual(resolve_pair(pair).decision, Decision.SEPARATE)
+        with patch("pauk.graph.person_resolution.logistic_probability", return_value=0.999):
+            self.assertEqual(resolve_pair(replace(pair, orcid_a="one", orcid_b="two")).decision, Decision.SEPARATE)

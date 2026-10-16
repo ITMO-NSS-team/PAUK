@@ -12,8 +12,10 @@ Skipped unless testcontainers is installed and Docker is reachable:
 
 from __future__ import annotations
 
+import tempfile
 import unittest
 from itertools import permutations, product
+from pathlib import Path
 from types import SimpleNamespace
 
 import mongomock
@@ -24,7 +26,9 @@ from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.mutations import merge_nodes
 from pauk.graph.unmerge import split_person
 from pauk.models import Person
-from pauk.storage import PreparedStore
+from pauk.pipeline.stages.dedup import DedupStage
+from pauk.settings import Settings
+from pauk.storage import PreparedStore, RawStore
 
 try:
     from testcontainers.community.neo4j import Neo4jContainer
@@ -317,6 +321,38 @@ class MergePreservationAgainstRealGraphTest(unittest.TestCase):
                                "RETURN p.id AS id, w.id AS work, r.is_corresponding AS flag ORDER BY id").data()
         self.assertEqual(rows, [{"id": "A1", "work": "W2", "flag": False},
                                 {"id": "A2", "work": "W2", "flag": True}])
+
+    def test_prepared_dedup_archive_restores_deleted_person_and_survives_republish(self):
+        db = mongomock.MongoClient().dedup_test
+        prepared = PreparedStore(db, "test")
+        people = [
+            Person(id=f"A{i}", name_raw="Ivan Smirnov", is_itmo=True, orcid="same",
+                   emails=[f"person{i}@example.org"],
+                   authored=[{"publication_id": "W1", "is_corresponding": i == 2}])
+            for i in (1, 2)
+        ]
+        prepared.write_models("persons", people)
+        _client.upsert_nodes_batch("Publication", [("W1", {})])
+        with tempfile.TemporaryDirectory() as directory:
+            stage = DedupStage(prepared, RawStore(db, "test"), Settings(
+                data_dir=Path(directory), person_resolution_enabled=False,
+            ))
+            stage._dedup_persons()
+        load_prepared_rows(_client, {"persons.jsonl": list(prepared.read_rows("persons"))})
+        self.assertEqual(_client.count_nodes("Person"), 1)
+        self.assertIsNone(db.persons.find_one({"id": "A2"}))
+        split_person(_client, db, ["A1", "A2"])
+        load_prepared_rows(_client, {"persons.jsonl": list(prepared.read_rows("persons"))})
+        self.assertEqual(_client.count_nodes("Person"), 2)
+        self.assertFalse(self.corresponding())
+        for i in (1, 2):
+            node = _client.fetch_node_properties("Person", f"A{i}")
+            self.assertEqual(node["emails"], [f"person{i}@example.org"])
+            self.assertEqual(node["merged_ids"], [])
+        with _client.driver.session() as session:
+            self.assertTrue(session.run(
+                "MATCH (:Person {id:'A2'})-[r:AUTHORED]->(:Publication {id:'W1'}) RETURN r.is_corresponding"
+            ).single()[0])
 
     def test_cycle_is_rejected_without_deleting_nodes(self):
         _client.upsert_person_nodes_batch([("A1", {}), ("A2", {})])

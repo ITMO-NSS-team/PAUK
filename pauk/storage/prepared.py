@@ -162,10 +162,14 @@ class PreparedStore:
         Enrichment stages use this after an external request completes. Unlike
         write_models(), it never removes the group marker from untouched rows.
         """
+        self.upsert_rows(entity, (model.model_dump(mode="json", by_alias=True) for model in rows))
+
+    def upsert_rows(self, entity: str, rows: Iterable[dict]) -> None:
+        """Persist complete changed rows without retracting other group members."""
         collection = self._collection(entity)
         revisions = self.db[REVISIONS]
-        for model in rows:
-            self._upsert_row(entity, model.model_dump(mode="json", by_alias=True), collection, revisions)
+        for row in rows:
+            self._upsert_row(entity, row, collection, revisions)
 
     def _upsert_row(self, entity: str, row: dict, collection, revisions) -> None:
         key_field = self._key_field(entity)

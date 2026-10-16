@@ -2,8 +2,8 @@
 
 `merge_nodes` moves the duplicate's relationships onto the survivor and
 deletes it, and the graph keeps no record of which edge came from where.
-The prepared rows do. A person's edges are declared by that person's own
-row and by nothing else (no spec in the registry points *at* a Person),
+The prepared rows and durable pre-merge snapshots do. A person's edges are
+declared by that person's own row and by nothing else (no spec in the registry points *at* a Person),
 so the row says exactly what node the merge removed and exactly what the
 survivor took from it.
 
@@ -26,6 +26,9 @@ from collections.abc import Iterable
 
 from pymongo.database import Database
 
+from pauk.models import Person
+from pauk.pipeline.normalize import _merge_person
+from pauk.storage.person_merge_sources import snapshots
 from pauk.storage.prepared import PreparedStore
 
 from .client import _merge_duplicate_properties, chunked
@@ -40,6 +43,33 @@ class NothingToRebuild(MutationError):
     """The folded record cannot be put back: there is no row describing it."""
 
 
+def _check_archived_aggregate(current: dict | None, sources: list[dict]) -> None:
+    """Do not roll later enrichment back to an older source snapshot."""
+    if current is None:
+        return
+    expected = Person.model_validate(sources[0])
+    for row in sources[1:]:
+        _merge_person(expected, Person.model_validate(row))
+        if row.get("name_raw") and row["name_raw"] not in expected.name_variants:
+            expected.name_variants.append(row["name_raw"])
+    before = expected.model_dump(mode="json")
+    after = Person.model_validate(current).model_dump(mode="json")
+    for field, value in after.items():
+        if field in {"processing", "merged_ids"}:
+            continue
+        original = before[field]
+        equal = (all(item in original for item in value) and all(item in value for item in original)
+                 if isinstance(value, list) else value == original)
+        if not equal:
+            raise NothingToRebuild(
+                f"{current['id']} has changes in {field} beyond its pre-merge sources; "
+                "reconcile the later changes before undoing this fold")
+    known = set(expected.model_dump(by_alias=True)) | {"_id", "_version", "groups"}
+    for field, value in current.items():
+        if field not in known and value != sources[0].get(field):
+            raise NothingToRebuild(f"{current['id']} has later changes in {field}; source reconciliation is required")
+
+
 #: Edges of one person, keyed the way `extract_relationships` keys them.
 Edges = dict[tuple[str, str, str, str], list[tuple[str, str, dict]]]
 
@@ -50,15 +80,16 @@ def _prepared_persons(db: Database, ids: list[str]) -> dict[str, dict]:
     `get_rows` looks across groups, so the store's own group is not used
     here (and the panel has no group to name anyway).
     """
-    return {row["id"]: row for row in PreparedStore(db, group="").get_rows("persons", ids)}
+    rows = {row["id"]: row for row in PreparedStore(db, group="").get_rows("persons", ids)}
+    for person_id, versions in snapshots(db, set(ids) - rows.keys()).items():
+        rows[person_id] = versions[0]
+    return rows
 
 
 def rebuildable(db: Database, ids: Iterable[str]) -> set[str]:
     """Which of these people still have a row to be rebuilt from.
 
-    What the panel asks before offering to take a fold apart: the
-    collection stage deletes the rows it folds, and a button that can only
-    fail is worse than saying why there is none.
+    Live rows and durable pre-merge snapshots both support rebuilding.
     """
     return set(_prepared_persons(db, list(ids)))
 
@@ -209,14 +240,23 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
     Raises:
         NotFound: Neither id is a node any more, or the surviving node does
             not name the other among its `merged_ids`.
-        NothingToRebuild: The folded person has no prepared row left, or
-            was deleted by hand afterwards. The collection stage deletes
-            the rows it folds, and there is no other copy of what the node
-            held.
+        NothingToRebuild: No independent source rows or pre-merge snapshots
+            remain, or the person was deleted by hand afterwards.
         MutationError: Nothing was folded: both ids are live nodes.
     """
     duplicate_id, canonical_id, canonical = _folded_side(client, members)
-    rows = _prepared_persons(db, [duplicate_id, canonical_id, *(canonical.get("merged_ids") or [])])
+    ids = [duplicate_id, canonical_id, *(canonical.get("merged_ids") or [])]
+    live = {row["id"]: row for row in PreparedStore(db, group="").get_rows("persons", ids)}
+    archives = snapshots(db, ids)
+    rows = dict(live)
+    used_archive = False
+    for person_id, versions in archives.items():
+        if person_id not in rows:
+            allowed = set(canonical.get("merged_ids") or []) - {person_id}
+            compatible = next((row for row in versions if set(row.get("merged_ids") or []) <= allowed), None)
+            if compatible is not None:
+                rows[person_id] = compatible
+            used_archive = True
     duplicate_row = rows.get(duplicate_id)
     if duplicate_row is None:
         raise NothingToRebuild(
@@ -232,6 +272,16 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
 
     returning = {duplicate_id, *(duplicate_row.get("merged_ids") or [])}
     remaining = {canonical_id, *(canonical.get("merged_ids") or [])} - returning
+    for person_id in remaining:
+        row = rows.get(person_id)
+        if row is not None and not {person_id, *(row.get("merged_ids") or [])} <= remaining:
+            replacement = next(
+                (version for version in archives.get(person_id, [])
+                 if {person_id, *(version.get("merged_ids") or [])} <= remaining), None,
+            )
+            if replacement is not None:
+                rows[person_id] = replacement
+                used_archive = True
     sources = []
     covered: set[str] = set()
     for person_id in [canonical_id, *sorted(remaining - {canonical_id})]:
@@ -239,7 +289,7 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
         if row is None or person_id in covered:
             continue
         coverage = {person_id, *(row.get("merged_ids") or [])}
-        if coverage & returning:
+        if not coverage <= remaining:
             raise NothingToRebuild(
                 f"{person_id} already aggregates the returning record in prepared data; "
                 "independent source rows are required before undoing this fold")
@@ -261,6 +311,10 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
     # Undoing one member must not retract facts supplied by another member
     # which remains folded. Missing source rows are not evidence of false.
     complete = remaining <= covered
+    if used_archive and not complete:
+        raise NothingToRebuild("independent source rows for all remaining people are required to restore prepared data")
+    if used_archive:
+        _check_archived_aggregate(live.get(canonical_id), [*sources, duplicate_row])
     for row in sources:
         if row["id"] == canonical_id:
             continue
@@ -285,6 +339,33 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
 
     patch = _survivor_patch(canonical, canonical_props, duplicate_props,
                             duplicate_id, duplicate_row.get("merged_ids") or [])
+    prepared_updates = []
+    if used_archive:
+        survivor = Person.model_validate(canonical_row)
+        for row in sources:
+            if row["id"] != canonical_id:
+                _merge_person(survivor, Person.model_validate(row))
+                if row.get("name_raw") and row["name_raw"] not in survivor.name_variants:
+                    survivor.name_variants.append(row["name_raw"])
+        survivor.merged_ids = [identifier for identifier in (canonical.get("merged_ids") or [])
+                               if identifier not in returning]
+        for row, restored in (
+            (canonical_row, survivor.model_dump(mode="json", by_alias=True)),
+            (duplicate_row, Person.model_validate(duplicate_row).model_dump(mode="json", by_alias=True)),
+        ):
+            current = db.persons.find_one({"id": row["id"]}) or {}
+            content = {key: value for key, value in row.items() if key not in {"_id", "_version", "groups"}}
+            archived_groups = next(
+                (version.get("groups") or [] for version in archives.get(row["id"], [])
+                 if {key: value for key, value in version.items() if key not in {"_id", "_version", "groups"}} == content),
+                [],
+            )
+            groups = list(dict.fromkeys([
+                *(current.get("groups") or []), *(row.get("groups") or []), *archived_groups,
+            ]))
+            if not groups:
+                raise NothingToRebuild(f"{row['id']} has no source group for restoring prepared data")
+            prepared_updates.append((groups, content | restored))
     if patch:
         # The plain upsert: `is_itmo` is sticky in the person one.
         client.upsert_nodes_batch("Person", [(canonical_id, patch)])
@@ -292,6 +373,11 @@ def split_person(client, db: Database, members: list[str]) -> dict[str, int | st
     taken_off = _take_off(client, canonical_id, duplicate_edges, canonical_edges) if complete else 0
     if complete:
         _restore_corresponding(client, canonical_id, duplicate_edges, canonical_edges)
+    # Publishing must see the split too, otherwise the surviving aggregate
+    # would silently fold the restored person again on the next publish.
+    for groups, row in prepared_updates:
+        for group in groups:
+            PreparedStore(db, group).upsert_rows("persons", [row])
     # Last, as in a publish: rebuilding a node from its source row is the
     # one thing that can bury a hand-made correction under what the source
     # says.

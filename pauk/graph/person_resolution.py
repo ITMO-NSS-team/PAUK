@@ -786,6 +786,12 @@ def resolve_pair(
     resolution = _resolve_pair(evidence, policy, model)
     if resolution.decision is Decision.MERGE and (reason := merge_review_reason(evidence)):
         return replace(resolution, decision=Decision.REVIEW, route="merge_safety_review", reason=reason)
+    independent_coauthors = (
+        evidence.small_team_shared_coauthors
+        if evidence.small_team_shared_coauthors is not None else evidence.shared_coauthors
+    )
+    if resolution.route == "logreg_high" and evidence.shared_publications > 0 and independent_coauthors == 0:
+        return replace(resolution, decision=Decision.FIRST_MODEL, route="joint_publication_without_independent_support")
     return resolution
 
 

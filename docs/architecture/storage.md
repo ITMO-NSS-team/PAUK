@@ -6,7 +6,7 @@ stored in MongoDB. `data/static/` stays file-based: it is a versioned
 reference catalog, not intermediate pipeline data.
 
 **Files:** `pauk/storage/raw.py`, `prepared.py`, `mongo.py`, `review.py`,
-`atomic.py`, `naming.py`, `static.py`, `llm_log.py`, `pdf.py`.
+`atomic.py`, `naming.py`, `static.py`, `llm_log.py`, `pdf.py`, `person_merge_sources.py`.
 
 PDF bytes live on disk (`Settings.pdf_dir`); Mongo holds only a pointer (the
 `pdfs` collection). `pauk/pipeline/stages/code_links.py` reads and writes
@@ -123,6 +123,19 @@ separate Mongo requests (`find_one` + `update_one`, not an atomic
 groups can race. In practice runs are started by hand and do not overlap. A
 pipeline run holds its group (`PipelineRunner.run`) and publishing holds the
 graph, but nothing guards a single document across groups.
+
+### Durable person merge sources
+
+`person_merge_sources` stores complete prepared-person rows before deduplication
+changes or removes them, including source groups. Content hashes make repeated
+preservation idempotent; `(person_id, saved_at)` supports newest-first lookup.
+These snapshots are separate from `revisions` and are not removed by revision
+trimming. Unmerge prefers independent live rows, falling back to compatible
+pre-merge snapshots for deleted or aggregated rows. It also restores prepared
+rows and their groups so a later publish does not silently reapply the fold.
+If the live aggregate contains later content changes not explained by its source
+snapshots, undo refuses before mutation rather than overwriting that enrichment.
+Missing historical originals cannot be reconstructed without a surviving copy.
 
 ## `mongo.py`
 

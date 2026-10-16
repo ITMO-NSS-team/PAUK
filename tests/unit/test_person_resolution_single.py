@@ -179,6 +179,26 @@ class SingleResolutionTest(unittest.TestCase):
         review.record_held(db, report, source=review.STAGE)
         self.assertEqual(len(review.questions(db)), 1)
 
+    def test_joint_work_only_reaches_judge_and_waits_if_unavailable(self):
+        people = [
+            Person(id="A1", name_raw="Huadong Wang", is_itmo=True, authored=[{"publication_id": "W1"}]),
+            Person(id="A2", name_raw="Huadong Wang", is_itmo=True, authored=[{"publication_id": "W1"}]),
+            Person(id="A3", name_raw="Jane Smith", is_itmo=True, authored=[{"publication_id": "W1"}]),
+        ]
+        models = SingleModels(None)
+        with patch("pauk.graph.person_resolution.logistic_probability", return_value=0.999):
+            groups, report = plan_person_merges_resolved(people, {}, models=models)
+        self.assertEqual(len(models.calls), 1)
+        _, pair = models.calls[0]
+        self.assertEqual(pair.shared_publications, 1)
+        self.assertEqual(pair.shared_coauthors, 0)
+        self.assertEqual(pair.small_team_shared_coauthors, 0)
+        self.assertEqual(groups, [])
+        self.assertEqual(report[0]["status"], "held")
+        db = mongomock.MongoClient().db
+        review.record_held(db, report, source=review.STAGE)
+        self.assertEqual(len(review.questions(db)), 1)
+
     def test_single_response_is_cached_across_pair_renumbering(self):
         models = OpenRouterResolutionModels(
             Settings(openrouter_api_key="test-key"), mongomock.MongoClient().db, "test"

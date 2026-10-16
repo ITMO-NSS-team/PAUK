@@ -83,6 +83,7 @@ from pauk.pipeline.normalize import (
 )
 from pauk.storage import review
 from pauk.storage.atomic import AtomicWriter
+from pauk.storage.person_merge_sources import preserve as preserve_person_sources
 from pauk.storage.review import DIFFERENT, SAME
 from pauk.urls import deduplicate_repo_urls, normalize_repo_url
 
@@ -1322,6 +1323,10 @@ class DedupStage(EnrichmentStage):
                 decisions=answers,
             )
 
+        preserve_person_sources(
+            self.prepared.db,
+            [person.id for canonical, duplicates in groups for person in (canonical, *duplicates)],
+        )
         removed: set[str] = set()
         for canonical, duplicates in groups:
             for duplicate in duplicates:
