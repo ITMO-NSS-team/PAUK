@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from pauk.models import ClassificationStatus, CodeLink, LinkOccurrence, Publication, RepoLink
 from pauk.models.processing import ProcessingState, ProcessingStatus
-from pauk.sources import OpenRouterClient
+from pauk.sources.llm import llm_client
 from pauk.storage import LlmLogStore
 from pauk.urls import deduplicate_repo_urls
 
@@ -211,16 +211,17 @@ class LinkRelevanceStage(EnrichmentStage):
     def run(self) -> dict[str, int]:
         publications = {pub.id: pub for pub in self.prepared.read_models("publications", Publication)}
         links_by_publication = list(self.prepared.read_models("repo_links", RepoLink))
-        client = OpenRouterClient(
-            self.config.request_timeout,
-            self.config.openrouter_api_key,
-            self.config.llm_model,
-            self.config.openrouter_proxy_url,
+        client = llm_client(
+            self.config.provider_for("link_relevance"),
+            timeout=self.config.request_timeout,
+            api_key=self.config.openrouter_api_key,
+            openrouter_model=self.config.llm_model,
+            proxy_url=self.config.openrouter_proxy_url,
         )
         llm_log = LlmLogStore(self.prepared.db, "llm_logs_link_relevance")
         logger.info(
             "link_relevance: model=%s, %d publication(s) with links to consider",
-            self.config.llm_model,
+            client.model,
             len(links_by_publication),
         )
         candidates: list[tuple[RepoLink, Publication, list[CodeLink]]] = []
@@ -266,7 +267,7 @@ class LinkRelevanceStage(EnrichmentStage):
                         llm_error = str(exc)
                 llm_log.record(
                     group=self.prepared.group,
-                    model=self.config.llm_model,
+                    model=client.model,
                     prompt=prompt,
                     raw_response=client.last_response,
                     parsed=result,
@@ -285,7 +286,7 @@ class LinkRelevanceStage(EnrichmentStage):
                         pub.id,
                         link.url,
                         llm_error,
-                        self.config.llm_model,
+                        client.model,
                     )
                     continue
                 link.classification_status = ClassificationStatus.CLASSIFIED

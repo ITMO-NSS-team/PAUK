@@ -545,7 +545,9 @@ class ResolverCacheTest(unittest.TestCase):
     the number they were handed this run."""
 
     def setUp(self):
-        self.config = Settings(openrouter_api_key="test-key")
+        self.config = Settings(
+            openrouter_api_key="test-key", person_resolution_provider="openrouter", person_resolution_batch_size=1
+        )
         self.db = mongomock.MongoClient()["pauk_test"]
         self.models = OpenRouterResolutionModels(self.config, self.db, "sample")
 
@@ -594,7 +596,12 @@ class ResolverBatchingTest(unittest.TestCase):
     and counted exactly once across block boundaries."""
 
     def models(self, workers):
-        config = Settings(openrouter_api_key="test-key", person_resolution_concurrency=workers)
+        config = Settings(
+            openrouter_api_key="test-key",
+            person_resolution_concurrency=workers,
+            person_resolution_provider="openrouter",
+            person_resolution_batch_size=1,
+        )
         db = mongomock.MongoClient()["pauk_test"]
         return OpenRouterResolutionModels(config, db, "sample")
 

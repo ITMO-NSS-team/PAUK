@@ -54,7 +54,7 @@ from pathlib import Path
 
 from pauk.models import Person
 from pauk.models.processing import ProcessingState, ProcessingStatus
-from pauk.sources import OpenRouterClient
+from pauk.sources.llm import LlmClient, llm_client
 from pauk.storage import LlmLogStore
 
 from .base import EnrichmentStage
@@ -896,7 +896,7 @@ class AuthorNamesStage(EnrichmentStage):
 
     def _request_name_split(
         self,
-        client: OpenRouterClient,
+        client: LlmClient,
         llm_log: LlmLogStore,
         person: Person,
         candidates: list[dict],
@@ -922,7 +922,7 @@ class AuthorNamesStage(EnrichmentStage):
 
             llm_log.record(
                 group=self.prepared.group,
-                model=self.config.llm_model,
+                model=client.model,
                 prompt=request_prompt,
                 raw_response=client.last_response,
                 parsed=raw_parsed,
@@ -963,15 +963,16 @@ class AuthorNamesStage(EnrichmentStage):
         llm_log = LlmLogStore(self.prepared.db, "llm_logs_author_names")
         local = threading.local()
 
-        def client_for_thread() -> OpenRouterClient:
+        def client_for_thread() -> LlmClient:
             # One client per worker: chat_json() leaves the response, usage and
             # error on the instance, so a shared one would mix up threads' answers.
             if not hasattr(local, "client"):
-                local.client = OpenRouterClient(
-                    self.config.request_timeout,
-                    self.config.openrouter_api_key,
-                    self.config.llm_model,
-                    self.config.openrouter_proxy_url,
+                local.client = llm_client(
+                    self.config.provider_for("author_names"),
+                    timeout=self.config.request_timeout,
+                    api_key=self.config.openrouter_api_key,
+                    openrouter_model=self.config.llm_model,
+                    proxy_url=self.config.openrouter_proxy_url,
                 )
             return local.client
 

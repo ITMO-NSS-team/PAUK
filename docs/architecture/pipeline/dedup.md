@@ -117,12 +117,22 @@ and Qwen merge proposals. Missing evidence alone is not a separation rule.
 
 Settings: `PAUK_PERSON_RESOLUTION_ENABLED`,
 `PAUK_PERSON_RESOLUTION_MODEL`, `PAUK_PERSON_RESOLUTION_LOGREG_MODEL_PATH`,
-`PAUK_PERSON_RESOLUTION_CONCURRENCY`, `PAUK_PERSON_RESOLUTION_SEPARATE_BELOW`
-and `PAUK_PERSON_RESOLUTION_MERGE_FROM`. Defaults are defined in
+`PAUK_PERSON_RESOLUTION_CONCURRENCY`, `PAUK_PERSON_RESOLUTION_SEPARATE_BELOW`,
+`PAUK_PERSON_RESOLUTION_MERGE_FROM`, `PAUK_PERSON_RESOLUTION_PROVIDER` and
+`PAUK_PERSON_RESOLUTION_BATCH_SIZE`. Defaults are defined in
 `pauk/person_resolution_defaults.py`. Qwen confidence is descriptive; it is
 not an additional merge threshold. Missing/invalid responses go to review.
 Cache keys include the model, prompt and evidence, but not the transient pair
 number. Retries are reserved for failed or invalid responses.
+
+`PAUK_PERSON_RESOLUTION_PROVIDER` selects OpenRouter (default) or a
+subscription CLI (see `docs/full-run.md`); `PAUK_LLM_PROVIDER` does not switch it.
+`PAUK_PERSON_RESOLUTION_BATCH_SIZE` (default 1) sends that many uncached pairs
+in one request `{"pairs": [...]}` and expects `{"results": [...]}`. A pair
+missing from the reply, repeated or invalid is asked again alone; a failed
+batch request is retried once, then its pairs go to review. Batch answers are
+cached under the batch prompt: batch mode reuses single answers, single mode
+does not reuse batch answers. Keep 1 for production runs.
 
 Held pairs are stored in `review_pairs` with their input route and model verdict
 for the admin panel. Automatically separated pairs retire obsolete unanswered
