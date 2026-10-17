@@ -125,8 +125,8 @@ not an additional merge threshold. Missing/invalid responses go to review.
 Cache keys include the model, prompt and evidence, but not the transient pair
 number. Retries are reserved for failed or invalid responses.
 
-`PAUK_PERSON_RESOLUTION_PROVIDER` selects OpenRouter (default) or a Claude
-subscription (see `docs/full-run.md`); `PAUK_LLM_PROVIDER` does not switch it.
+`PAUK_PERSON_RESOLUTION_PROVIDER` selects OpenRouter (default) or a
+subscription CLI (see `docs/full-run.md`); `PAUK_LLM_PROVIDER` does not switch it.
 `PAUK_PERSON_RESOLUTION_BATCH_SIZE` (default 1) sends that many uncached pairs
 in one request `{"pairs": [...]}` and expects `{"results": [...]}`. A pair
 missing from the reply, repeated or invalid is asked again alone; a failed

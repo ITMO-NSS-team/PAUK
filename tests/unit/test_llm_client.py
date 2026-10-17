@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import requests
 
 from pauk.settings import Settings
-from pauk.sources.llm import ClaudeCliClient, OpenRouterClient, _run_cli, llm_client
+from pauk.sources.llm import ClaudeCli, CodexCli, OpenRouterClient, SubscriptionCliClient, _run_cli, llm_client
 
 
 class OpenRouterClientLastResponseTest(unittest.TestCase):
@@ -146,7 +146,7 @@ class OpenRouterClientLastResponseTest(unittest.TestCase):
 
 
 @patch("pauk.sources.llm.shutil.which", return_value="/usr/bin/claude")
-class ClaudeCliClientTest(unittest.TestCase):
+class ClaudeCliTest(unittest.TestCase):
     @staticmethod
     def reply(result, **extra):
         return {
@@ -159,10 +159,10 @@ class ClaudeCliClientTest(unittest.TestCase):
         }
 
     def run_client(self, outcome, returncode=0, **kwargs):
-        client = ClaudeCliClient(timeout=5)
+        client = SubscriptionCliClient(5, ClaudeCli())
         seen = {}
 
-        def run_cli(command, prompt, env, timeout):
+        def run_cli(command, prompt, env, timeout, cwd):
             seen.update(command=command, prompt=prompt, env=env)
             seen["system"] = Path(command[command.index("--system-prompt-file") + 1]).read_text(encoding="utf-8")
             if isinstance(outcome, Exception):
@@ -231,12 +231,96 @@ class ClaudeCliClientTest(unittest.TestCase):
 
     def test_a_missing_cli_makes_no_call(self, which):
         which.return_value = None
-        client = ClaudeCliClient(timeout=5)
+        client = SubscriptionCliClient(5, ClaudeCli())
 
         with patch("pauk.sources.llm._run_cli") as run_cli:
             self.assertIsNone(client.chat_json("prompt"))
         run_cli.assert_not_called()
         self.assertEqual(client.unavailable_reason(), "claude CLI not found")
+
+
+@patch("pauk.sources.llm.shutil.which", return_value="/usr/bin/codex")
+class CodexCliTest(unittest.TestCase):
+    EVENTS = [
+        {"type": "thread.started"},
+        {"type": "turn.completed", "usage": {"input_tokens": 900, "cached_input_tokens": 100, "output_tokens": 30}},
+    ]
+
+    def run_client(self, reply, returncode=0, events=EVENTS, stderr="", model=None):
+        client = SubscriptionCliClient(5, CodexCli(), model)
+        seen = {}
+
+        def run_cli(command, prompt, env, timeout, cwd):
+            seen.update(command=command, prompt=prompt, env=env)
+            if reply is not None:
+                Path(command[command.index("--output-last-message") + 1]).write_text(reply, encoding="utf-8")
+            return returncode, "\n".join(json.dumps(event) for event in events), stderr
+
+        with patch("pauk.sources.llm._run_cli", side_effect=run_cli):
+            result = client.chat_json("user prompt", system_prompt="judge pairs")
+        return client, result, seen
+
+    def test_reads_the_last_message_and_token_usage(self, _which):
+        client, result, seen = self.run_client('{"ok": true}')
+
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(client.last_usage, {"prompt_tokens": 900, "completion_tokens": 30})
+        self.assertTrue(seen["prompt"].startswith("judge pairs"))
+        self.assertTrue(seen["prompt"].endswith("user prompt"))
+        self.assertEqual(seen["command"][-1], "-")
+        for flag in ("--json", "--ephemeral", "--skip-git-repo-check", "--output-last-message"):
+            self.assertIn(flag, seen["command"])
+        self.assertEqual(seen["command"][seen["command"].index("--sandbox") + 1], "read-only")
+
+    def test_model_is_passed_only_when_set(self, _which):
+        _, _, default = self.run_client('{"ok": true}')
+        _, _, chosen = self.run_client('{"ok": true}', model="gpt-x")
+
+        self.assertNotIn("--model", default["command"])
+        self.assertEqual(chosen["command"][chosen["command"].index("--model") + 1], "gpt-x")
+
+    def test_the_api_key_is_dropped_so_the_subscription_is_billed(self, _which):
+        parent = {"OPENAI_API_KEY": "sk-x", "OPENAI_BASE_URL": "https://proxy", "CODEX_API_KEY": "sk-y", "KEEP": "1"}
+        with patch.dict("os.environ", parent):
+            _, _, seen = self.run_client('{"ok": true}')
+
+        self.assertEqual({name for name in parent if name in seen["env"]}, {"KEEP"})
+        self.assertEqual(seen["env"]["KEEP"], "1")
+
+    def test_a_usage_limit_is_reported_as_such(self, _which):
+        events = [{"type": "error", "message": "You've hit your usage limit. Try again later."}]
+        client, result, _ = self.run_client(None, returncode=1, events=events)
+
+        self.assertIsNone(result)
+        self.assertTrue(client.last_error.startswith("subscription limit reached"))
+
+    def test_a_failed_call_reports_stderr(self, _which):
+        client, result, _ = self.run_client(None, returncode=2, events=[], stderr="Not logged in")
+
+        self.assertIsNone(result)
+        self.assertEqual(client.last_error, "CLI error: Not logged in")
+
+    def test_an_empty_last_message_is_a_failure(self, _which):
+        client, result, _ = self.run_client("")
+
+        self.assertIsNone(result)
+        self.assertEqual(client.last_error, "empty model response")
+
+    def test_an_error_event_without_a_reply_is_classified_even_on_exit_zero(self, _which):
+        events = [
+            {"type": "turn.failed", "error": {"message": "exceeded retry limit, last status: 429 Too Many Requests"}}
+        ]
+        client, result, _ = self.run_client(None, events=events)
+
+        self.assertIsNone(result)
+        self.assertTrue(client.last_error.startswith("subscription limit reached"))
+
+    def test_a_timeout_is_a_failure_not_a_crash(self, _which):
+        client = SubscriptionCliClient(5, CodexCli(), "gpt-x")
+
+        with patch("pauk.sources.llm._run_cli", side_effect=subprocess.TimeoutExpired("codex", 5)):
+            self.assertIsNone(client.chat_json("prompt"))
+        self.assertIn("timed out", client.last_error)
 
 
 class RunCliTest(unittest.TestCase):
@@ -258,12 +342,18 @@ class RunCliTest(unittest.TestCase):
 class LlmProviderTest(unittest.TestCase):
     def test_provider_picks_the_client_and_model(self):
         self.assertIsInstance(llm_client("openrouter", timeout=5, api_key="k", openrouter_model="m"), OpenRouterClient)
-        self.assertEqual(llm_client("claude", timeout=5, api_key="", openrouter_model="m").model, "claude-cli/haiku")
+        models = {
+            provider: llm_client(provider, timeout=5, api_key="", openrouter_model="m").model
+            for provider in ("claude", "claude:sonnet", "codex:gpt-x")
+        }
+
         self.assertEqual(
-            llm_client("claude:sonnet", timeout=5, api_key="", openrouter_model="m").model, "claude-cli/sonnet"
+            models,
+            {"claude": "claude-cli/haiku", "claude:sonnet": "claude-cli/sonnet", "codex:gpt-x": "codex-cli/gpt-x"},
         )
-        with self.assertRaises(ValueError):
-            llm_client("codex", timeout=5, api_key="", openrouter_model="m")
+        for provider in ("gemini", "codex"):
+            with self.subTest(provider=provider), self.assertRaises(ValueError):
+                llm_client(provider, timeout=5, api_key="", openrouter_model="m")
 
     def test_a_stage_setting_wins_and_dedup_switches_only_by_its_own(self):
         config = Settings(llm_provider="claude", author_names_provider="openrouter", person_resolution_provider="")

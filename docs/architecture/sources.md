@@ -6,7 +6,7 @@ per external API.
 **Files:** `pauk/sources/base.py`, `openalex.py`, `github.py`, `crossref.py`,
 `orcid.py`, `llm.py`.
 
-Thin wrappers, each knowing only its own API. All except `ClaudeCliClient`,
+Thin wrappers, each knowing only its own API. All except `SubscriptionCliClient`,
 which runs a local CLI, inherit from `base.py::HttpClient`.
 
 ## `base.py::HttpClient`
@@ -35,7 +35,7 @@ which runs a local CLI, inherit from `base.py::HttpClient`.
 | `crossref.py` | `CrossrefClient` | `get_work(doi)`, used by `PersonsStage` to backfill ORCID by surname |
 | `orcid.py` | `OrcidClient` | `get_record(orcid)` |
 | `llm.py` | `OpenRouterClient` | `chat_json(...)`: OpenRouter chat completions in JSON-object mode. `last_usage` and `last_response` hold the usage and raw body of the latest call |
-| `llm.py` | `ClaudeCliClient` | The same `chat_json(...)` through the local `claude -p` CLI, billed to its logged-in Claude subscription. `llm_client(provider, ...)` picks the client from a provider setting (`openrouter`, `claude`, `claude:<model>`) |
+| `llm.py` | `SubscriptionCliClient` | The same `chat_json(...)` through a local subscription CLI: `ClaudeCli` runs `claude -p`, `CodexCli` runs `codex exec`. `llm_client(provider, ...)` picks the client from a provider setting (`openrouter`, `claude[:<model>]`, `codex:<model>`) |
 
 ## PDF-Crawler-Service is not in this package
 
