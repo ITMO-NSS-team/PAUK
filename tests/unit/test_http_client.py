@@ -154,6 +154,23 @@ class WaitLogTest(unittest.TestCase):
         sleep.assert_called_once_with(1.0)
 
     @mock.patch("pauk.sources.base.time.sleep")
+    def test_secondary_limit_sent_as_429_without_headers_waits_a_minute(self, sleep):
+        throttled = _Resp(429, payload={"message": "You have exceeded a secondary rate limit."})
+        client = self._github([throttled, _Resp(200, text="{}")])
+        with self.assertLogs(self.LOGGER, level="WARNING") as logs:
+            client.get_text("https://api.github.com/repos/o/r")
+        sleep.assert_called_once_with(60.0)
+        self.assertIn("HTTP 429, GitHub secondary rate limit", logs.output[0])
+
+    @mock.patch("pauk.sources.base.time.sleep")
+    def test_reset_already_passed_keeps_the_backoff(self, sleep):
+        past = str(int(time.time()) - 5)
+        stale = {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": past}
+        client = self._github([_Resp(429, headers=stale), _Resp(429, headers=stale), _Resp(200, text="{}")])
+        client.get_text("https://api.github.com/repos/o/r")
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [1.0, 2.0])
+
+    @mock.patch("pauk.sources.base.time.sleep")
     def test_short_backoff_is_not_logged(self, sleep):
         client = HttpClient(timeout=5)
         client.session = _FakeSession([_Resp(503), _Resp(200, text="ok")])

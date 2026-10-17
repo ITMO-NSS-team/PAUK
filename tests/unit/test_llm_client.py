@@ -61,7 +61,7 @@ class OpenRouterClientLastResponseTest(unittest.TestCase):
         )
         self.assertEqual(body["max_tokens"], 321)
 
-    @patch("pauk.sources.llm.time.sleep", return_value=None)
+    @patch("pauk.sources.base.time.sleep", return_value=None)
     def test_retries_a_network_failure_then_succeeds(self, sleep):
         client = OpenRouterClient(timeout=5, api_key="key", model="test-model")
         payload = {"choices": [{"message": {"content": '{"ok": true}'}}]}
@@ -73,7 +73,7 @@ class OpenRouterClientLastResponseTest(unittest.TestCase):
         self.assertEqual(client.session.post.call_count, 2)
         sleep.assert_called_once_with(1.0)
 
-    @patch("pauk.sources.llm.time.sleep", return_value=None)
+    @patch("pauk.sources.base.time.sleep", return_value=None)
     def test_retries_a_transient_status_then_succeeds(self, sleep):
         client = OpenRouterClient(timeout=5, api_key="key", model="test-model")
         payload = {"choices": [{"message": {"content": '{"ok": true}'}}]}
@@ -88,7 +88,7 @@ class OpenRouterClientLastResponseTest(unittest.TestCase):
         self.assertEqual(client.session.post.call_count, 2)
         sleep.assert_called_once_with(1.0)
 
-    @patch("pauk.sources.llm.time.sleep", return_value=None)
+    @patch("pauk.sources.base.time.sleep", return_value=None)
     def test_stops_after_three_transient_http_attempts(self, sleep):
         client = OpenRouterClient(timeout=5, api_key="key", model="test-model")
         responses = [
@@ -103,7 +103,7 @@ class OpenRouterClientLastResponseTest(unittest.TestCase):
         self.assertEqual(client.last_response, {"error": {"message": "busy 3"}})
         self.assertEqual(client.last_error, "HTTP 503")
 
-    @patch("pauk.sources.llm.time.sleep", return_value=None)
+    @patch("pauk.sources.base.time.sleep", return_value=None)
     def test_honors_retry_after_for_rate_limits(self, sleep):
         client = OpenRouterClient(timeout=5, api_key="key", model="test-model")
         payload = {"choices": [{"message": {"content": '{"ok": true}'}}]}
@@ -117,7 +117,26 @@ class OpenRouterClientLastResponseTest(unittest.TestCase):
         self.assertEqual(client.chat_json("some prompt"), {"ok": True})
         sleep.assert_called_once_with(3.0)
 
-    @patch("pauk.sources.llm.time.sleep", return_value=None)
+    @patch("pauk.sources.base.time.sleep", return_value=None)
+    def test_long_rate_limit_wait_is_logged_without_the_key(self, sleep):
+        client = OpenRouterClient(timeout=5, api_key="sk-or-SECRET", model="test-model")
+        payload = {"choices": [{"message": {"content": '{"ok": true}'}}]}
+        client.session.post = MagicMock(
+            side_effect=[
+                self.response(429, {"error": {"message": "rate limited"}}, headers={"Retry-After": "30"}),
+                self.response(200, payload),
+            ]
+        )
+
+        with self.assertLogs("pauk.sources.base", level="WARNING") as logs:
+            self.assertEqual(client.chat_json("some prompt"), {"ok": True})
+        sleep.assert_called_once_with(30.0)
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("waiting 30s", logs.output[0])
+        self.assertIn("POST https://openrouter.ai/api/v1/chat/completions (HTTP 429", logs.output[0])
+        self.assertNotIn("SECRET", logs.output[0])
+
+    @patch("pauk.sources.base.time.sleep", return_value=None)
     def test_does_not_retry_a_non_transient_client_error(self, sleep):
         client = OpenRouterClient(timeout=5, api_key="key", model="test-model")
         client.session.post = MagicMock(

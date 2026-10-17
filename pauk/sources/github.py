@@ -58,12 +58,12 @@ class GitHubClient(HttpClient):
                 reset_at = float(response.headers["X-RateLimit-Reset"])
             except (KeyError, TypeError, ValueError):
                 return self._backoff_delay(attempt)
-            return max(0.0, reset_at - time.time())
+            return max(reset_at - time.time(), self._backoff_delay(attempt))
 
-        if response.status_code == 429:
-            return self._backoff_delay(attempt)
         if self._rate_limit_message(response):
             return max(60.0, self._backoff_delay(attempt))
+        if response.status_code == 429:
+            return self._backoff_delay(attempt)
         return None
 
     def get_repository(self, owner: str, name: str) -> dict:
