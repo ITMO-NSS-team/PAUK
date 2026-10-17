@@ -18,14 +18,37 @@ class GitHubClient(HttpClient):
         super().__init__(timeout, headers)
 
     @staticmethod
-    def _rate_limit_message(response: requests.Response) -> bool:
+    def _error_message(response: requests.Response) -> str:
         try:
             payload = response.json()
         except ValueError:
-            return False
-        message = payload.get("message", "") if isinstance(payload, dict) else ""
-        normalized = str(message).casefold()
-        return "rate limit" in normalized or "abuse detection" in normalized
+            return ""
+        return str(payload.get("message", "") if isinstance(payload, dict) else "").casefold()
+
+    @classmethod
+    def _rate_limit_message(cls, response: requests.Response) -> bool:
+        message = cls._error_message(response)
+        return "rate limit" in message or "abuse detection" in message
+
+    def _retry_reason(self, response: requests.Response) -> str:
+        """Tell the primary rate limit apart from the secondary (abuse) one.
+
+        GitHub answers both with 403 or 429, and a secondary-limit response may
+        also carry X-RateLimit-Remaining: 0, so the message body is read first.
+        """
+        status = f"HTTP {response.status_code}"
+        if response.status_code not in (403, 429):
+            return status
+        message = self._error_message(response)
+        if "secondary rate limit" in message or "abuse detection" in message:
+            return f"{status}, GitHub secondary rate limit"
+        if response.headers.get("X-RateLimit-Remaining") == "0":
+            return f"{status}, GitHub rate limit exhausted"
+        if response.headers.get("Retry-After") is not None:
+            return f"{status}, GitHub secondary rate limit"
+        if "rate limit" in message:
+            return f"{status}, GitHub rate limit"
+        return status
 
     def _retry_delay(self, response: requests.Response, attempt: int) -> float | None:
         delay = super()._retry_delay(response, attempt)
