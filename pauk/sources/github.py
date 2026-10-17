@@ -51,9 +51,14 @@ class GitHubClient(HttpClient):
         return status
 
     def _retry_delay(self, response: requests.Response, attempt: int) -> float | None:
-        delay = super()._retry_delay(response, attempt)
-        if delay is not None or response.status_code != 403:
-            return delay
+        """Wait out GitHub's rate limits, which arrive as either 403 or 429.
+
+        An exhausted primary limit resets at X-RateLimit-Reset, often an hour
+        away; the short 429 backoff of the base client would spend every retry
+        before that and fail.
+        """
+        if response.status_code not in (403, 429):
+            return super()._retry_delay(response, attempt)
 
         retry_after = self._parse_retry_after(response.headers.get("Retry-After"))
         if retry_after is not None:
@@ -66,6 +71,8 @@ class GitHubClient(HttpClient):
                 return self._backoff_delay(attempt)
             return max(0.0, reset_at - time.time())
 
+        if response.status_code == 429:
+            return self._backoff_delay(attempt)
         if self._rate_limit_message(response):
             return max(60.0, self._backoff_delay(attempt))
         return None

@@ -140,6 +140,22 @@ class WaitLogTest(unittest.TestCase):
         self.assertIn("HTTP 429, GitHub secondary rate limit", logs.output[0])
 
     @mock.patch("pauk.sources.base.time.sleep")
+    def test_exhausted_limit_sent_as_429_waits_for_the_reset(self, sleep):
+        reset = str(int(time.time()) + 3600)
+        exhausted = _Resp(429, headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": reset})
+        client = self._github([exhausted, _Resp(200, text="{}")])
+        with self.assertLogs(self.LOGGER, level="WARNING") as logs:
+            client.get_text("https://api.github.com/repos/o/r")
+        self.assertIn("HTTP 429, GitHub rate limit exhausted", logs.output[0])
+        self.assertGreater(sleep.call_args.args[0], 3500)
+
+    @mock.patch("pauk.sources.base.time.sleep")
+    def test_plain_github_429_keeps_the_short_backoff(self, sleep):
+        client = self._github([_Resp(429), _Resp(200, text="{}")])
+        client.get_text("https://api.github.com/repos/o/r")
+        sleep.assert_called_once_with(1.0)
+
+    @mock.patch("pauk.sources.base.time.sleep")
     def test_short_backoff_is_not_logged(self, sleep):
         client = HttpClient(timeout=5)
         client.session = _FakeSession([_Resp(503), _Resp(200, text="ok")])
