@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import time
 from typing import Any
 
 import requests
@@ -97,7 +96,10 @@ class OpenRouterClient(HttpClient):
                 )
             except requests.RequestException as exc:
                 if attempt < _TRANSIENT_RETRIES:
-                    time.sleep(self._backoff_delay(attempt))
+                    self._wait(
+                        self._backoff_delay(attempt), type(exc).__name__, "POST", OPENROUTER_URL,
+                        attempt, _TRANSIENT_RETRIES,
+                    )
                     continue
                 self.last_error = type(exc).__name__
                 logger.warning("OpenRouter: request to %s failed: %s", self.model, exc)
@@ -105,7 +107,7 @@ class OpenRouterClient(HttpClient):
 
             delay = self._retry_delay(response, attempt)
             if delay is not None and attempt < _TRANSIENT_RETRIES:
-                time.sleep(delay)
+                self._wait(delay, self._retry_reason(response), "POST", OPENROUTER_URL, attempt, _TRANSIENT_RETRIES)
                 continue
             break
 
