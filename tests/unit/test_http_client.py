@@ -93,8 +93,6 @@ class GetTextTest(unittest.TestCase):
 
 
 class WaitLogTest(unittest.TestCase):
-    """A long retry wait must be announced; a short backoff stays quiet."""
-
     LOGGER = "pauk.sources.base"
 
     def _github(self, responses: list[_Resp]) -> GitHubClient:

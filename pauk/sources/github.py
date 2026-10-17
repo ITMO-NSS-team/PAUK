@@ -31,11 +31,6 @@ class GitHubClient(HttpClient):
         return "rate limit" in message or "abuse detection" in message
 
     def _retry_reason(self, response: requests.Response) -> str:
-        """Tell the primary rate limit apart from the secondary (abuse) one.
-
-        GitHub answers both with 403 or 429, and a secondary-limit response may
-        also carry X-RateLimit-Remaining: 0, so the message body is read first.
-        """
         status = f"HTTP {response.status_code}"
         if response.status_code not in (403, 429):
             return status
@@ -51,12 +46,6 @@ class GitHubClient(HttpClient):
         return status
 
     def _retry_delay(self, response: requests.Response, attempt: int) -> float | None:
-        """Wait out GitHub's rate limits, which arrive as either 403 or 429.
-
-        An exhausted primary limit resets at X-RateLimit-Reset, often an hour
-        away; the short 429 backoff of the base client would spend every retry
-        before that and fail.
-        """
         if response.status_code not in (403, 429):
             return super()._retry_delay(response, attempt)
 

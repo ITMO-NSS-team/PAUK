@@ -110,11 +110,7 @@ class HttpClient:
 
     @staticmethod
     def _wait(delay: float, reason: str, method: str, safe_url: str, attempt: int, retries: int) -> None:
-        """Sleep before a retry, announcing any wait long enough to look like a hang.
-
-        A rate-limit reset can keep a request silent for up to an hour, which from
-        outside is indistinguishable from a stuck socket or a dead process.
-        """
+        """Sleep before a retry, logging any wait of LONG_WAIT_SECONDS or more."""
         if delay >= LONG_WAIT_SECONDS:
             resume_at = (datetime.now().astimezone() + timedelta(seconds=delay)).isoformat(timespec="seconds")
             logger.warning(
@@ -124,7 +120,6 @@ class HttpClient:
         time.sleep(delay)
 
     def _retry_reason(self, response: requests.Response) -> str:
-        """Short cause of a retry, for the wait log line."""
         return f"HTTP {response.status_code}"
 
     def _retry_delay(self, response: requests.Response, attempt: int) -> float | None:
