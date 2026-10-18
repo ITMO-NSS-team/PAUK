@@ -123,7 +123,7 @@ def run(questions_path: Path, out_dir: Path, options: AskOptions, *, force: bool
     try:
         for number, meta in enumerate(questions, 1):
             question = meta["question"]
-            expected_template = meta["type"]
+            expected_template = meta.get("type", "none")
             if question in cached:
                 result = cached[question]
             else:
@@ -151,7 +151,7 @@ def run(questions_path: Path, out_dir: Path, options: AskOptions, *, force: bool
     write_review(results, review_path)
     return {
         "questions": len(results),
-        # "reused": sum(1 for r in results if r["question"] in cached),
+        "reused": sum(1 for r in results if r["question"] in cached),
         "errors": sum(1 for r in results if "error" in r),
         "results": str(results_path),
         "review": str(review_path),
