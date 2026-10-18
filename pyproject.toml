@@ -22,6 +22,8 @@ dependencies = [
     "jinja2>=3.1.6",
     "python-multipart>=0.0.32",
     "numpy>=2.0",
+    "rank-bm25>=0.2.2",
+    "rapidfuzz>=3.9",
 ]
 
 [project.optional-dependencies]
@@ -30,13 +32,13 @@ dependencies = [
 rag = [
     "sentence-transformers>=5.0",
     "numpy>=2.0",
-    "rank-bm25>=0.2.2",
-    "rapidfuzz>=3.9",
+#    "rank-bm25>=0.2.2",
+#    "rapidfuzz>=3.9",
 ]
 
 search = [
     "sentence-transformers>=5.0",
-    "rank-bm25>=0.2.2"
+#    "rank-bm25>=0.2.2"
 ]
 
 [project.scripts]
