@@ -16,18 +16,25 @@ PORT="${PORT:-8501}"
 root="$(git rev-parse --show-toplevel)"
 data_dir="$root/data/gui/private"
 
-if [[ -n "$(git status --porcelain)" ]]; then
-    echo "There are uncommitted changes - they will end up in the build."
+# The map can't render without graph-data.json; everything else only leaves
+# parts of it empty, so those are a warning the deployer can accept.
+if [[ ! -f "$data_dir/graph-data.json" ]]; then
+    echo "Missing $data_dir/graph-data.json - run 'pauk gui build' first." >&2
+    exit 1
+fi
+
+warnings=()
+[[ -z "$(git status --porcelain)" ]] || warnings+=("uncommitted changes will end up in the build")
+for file in authors-detail.json repos-detail.json pubs-detail.json; do
+    [[ -f "$data_dir/$file" ]] || warnings+=("missing $file: cards show no details (run 'pauk gui build')")
+done
+[[ -f "$data_dir/reports/index.json" ]] \
+    || warnings+=("missing reports/index.json: no OSA reports (run 'pauk reports build')")
+if (( ${#warnings[@]} > 0 )); then
+    printf '  - %s\n' "${warnings[@]}"
     read -r -p "Continue? [y/N] " reply
     [[ "$reply" =~ ^[Yy]$ ]] || exit 1
 fi
-
-for file in graph-data.json authors-detail.json repos-detail.json pubs-detail.json; do
-    if [[ ! -f "$data_dir/$file" ]]; then
-        echo "Missing $data_dir/$file - run 'pauk gui build' first." >&2
-        exit 1
-    fi
-done
 
 echo "==> build pauk/gui/web"
 (cd "$root/pauk/gui/web" && npm run build)

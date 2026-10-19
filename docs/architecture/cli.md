@@ -233,6 +233,18 @@ tables from Neo4j, taking the rest from the newest snapshot.
 rows from it. The snapshot defaults to the newest in `cache_dir`. See
 [cache.md](cache.md).
 
+## `reports build`
+
+```
+pauk reports build [<repo id> ...] [--cache <snapshot>] [--force] [--workers 8]
+```
+
+Runs OSA on every repository of the snapshot that has no report yet and
+writes `data/gui/private/reports/<lang>/<repo id>.pdf` plus the site's
+`reports/index.json`. Repository ids limit the run, `--force` regenerates
+existing reports. Needs `OPENROUTER_API_KEY` and internet, not the lab VPN.
+Exits non-zero if any report failed. See [reports.md](reports.md).
+
 ## `gui build`
 
 ```

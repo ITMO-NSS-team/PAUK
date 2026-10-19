@@ -17,6 +17,8 @@ data/pdf/*
 data/audit/*
 data/reports/*
 data/backups/*
+# pauk reports build: OSA working copies and per-run logs.
+data/osa/
 !data/cache/.gitkeep
 !data/audit/.gitkeep
 

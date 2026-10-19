@@ -746,6 +746,37 @@ describe("mountPanel", () => {
     });
   });
 
+  describe("OSA report of a repository", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("links the report in the interface language by key, without waiting for repos-detail, and hides it in a language it lacks", async () => {
+      const data = await loadSampleGraphData();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((url: string) =>
+          Promise.resolve(
+            url.includes("reports/index.json")
+              ? new Response(JSON.stringify({ en: ["R1"] }))
+              : new Response(null, { status: 404 }),
+          ),
+        ),
+      );
+      const store = new Store<AppState>({
+        ...initialState({ lang: "en" }),
+        selection: { kind: "node", key: "R1" },
+      });
+      mountPanel(store, data, NO_PUB_DETAILS, NO_AUTHOR_DETAILS, NO_REPO_DETAILS);
+      await vi.waitFor(() =>
+        expect(panel.querySelector("a[href='/reports/en/R1.pdf']")?.textContent).toBe("PDF"),
+      );
+
+      store.set({ lang: "ru" });
+      expect(panel.querySelector("a[href$='.pdf']")).toBeNull();
+    });
+  });
+
   it("a long abstract shows the first N words and \"читать полностью\"; a click expands it fully, another click collapses it again", async () => {
     const data = await loadSampleGraphData();
     const [detail] = await loadSamplePubDetails();

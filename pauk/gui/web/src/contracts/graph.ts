@@ -91,6 +91,9 @@ export interface RepoDetail {
   owner_type: string;
 }
 
+// reports/index.json, written by `pauk reports build`: language -> repository keys with a PDF.
+export type ReportsIndex = Record<string, string[]>;
+
 export interface PubNode {
   key: string;
   kind: "pub";

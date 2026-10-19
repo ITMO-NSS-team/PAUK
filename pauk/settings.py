@@ -89,5 +89,9 @@ class Settings:
     def gui_dir(self) -> Path:
         return self.data_dir / "gui"
 
+    @property
+    def osa_dir(self) -> Path:
+        return self.data_dir / "osa"
+
 
 settings = Settings()

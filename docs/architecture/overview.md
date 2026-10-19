@@ -35,8 +35,8 @@ Neo4j                                        accumulates across runs, MERGE
 Neo4j                                        folds duplicates across groups
   |  pauk cache export
 data/cache/graph_snapshot_<dd-mm-yyyy>.json  snapshot on disk
-  |  pauk gui build
-data/gui/{public,private}/*.json             data for the pauk/gui/web site
+  |  pauk gui build                             pauk reports build (OSA, outside the VPN)
+data/gui/{public,private}/*.json             data/gui/private/reports/<lang>/<repo id>.pdf
 ```
 
 `<group>` is the name of one run: `<date>__<work_id>` for a single
@@ -64,6 +64,7 @@ graph, not files on disk.
 | `pauk/graph/` | prepared rows to Neo4j, graph-level dedup | [neo4j-graph.md](neo4j-graph.md) |
 | `pauk/gui/` | snapshot to layout to static site | [gui.md](gui.md) |
 | `pauk/cache/` | graph snapshot to disk, which gui then reads | [cache.md](cache.md) |
+| `pauk/reports/` | OSA PDF reports on the snapshot's repositories, for the site | [reports.md](reports.md) |
 | `pauk/cli.py` | `pauk ...` commands | [cli.md](cli.md) |
 | `pauk/admin/` | admin panel and worker | [../admin-panel.md](../admin-panel.md) |
 | `scripts/` | one-off and operations utilities | [scripts.md](scripts.md) |
