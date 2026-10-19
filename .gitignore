@@ -17,6 +17,10 @@ data/pdf/*
 data/audit/*
 data/reports/*
 data/backups/*
+# Search index: vectors, texts, READMEs and a name index of people.
+data/search/*
+# RAG: cached READMEs, index manifests and validation runs (pool, judgments).
+data/rag/*
 !data/cache/.gitkeep
 !data/audit/.gitkeep
 
@@ -58,3 +62,7 @@ data/reports/
 docs/reports/
 
 *.log
+
+test_questions.csv
+test_questions.migrated.csv
+pauk/search/tests

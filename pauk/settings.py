@@ -42,10 +42,10 @@ class Settings:
     )
     author_names_concurrency: int = int(os.getenv("PAUK_AUTHOR_NAMES_CONCURRENCY", "8"))
     person_resolution_separate_below: float = float(
-        os.getenv("PAUK_PERSON_RESOLUTION_SEPARATE_BELOW", str(SEPARATE_BELOW))
+        os.getenv("PAUK_PERSON_RESOLUTION_SEPARATE_BELOW", "0.05")
     )
     person_resolution_merge_from: float = float(
-        os.getenv("PAUK_PERSON_RESOLUTION_MERGE_FROM", str(MERGE_FROM))
+        os.getenv("PAUK_PERSON_RESOLUTION_MERGE_FROM", "0.99")
     )
     openrouter_proxy_url: str = os.getenv("OPENROUTER_PROXY_URL", "")
     neo4j_uri: str = os.getenv("NEO4J_URI", "bolt://localhost:7687")
@@ -90,6 +90,10 @@ class Settings:
     @property
     def gui_dir(self) -> Path:
         return self.data_dir / "gui"
+
+    @property
+    def search_dir(self) -> Path:
+        return self.data_dir / "search"
 
 
 settings = Settings()

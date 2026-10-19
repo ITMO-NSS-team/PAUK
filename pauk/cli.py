@@ -11,7 +11,7 @@ from pymongo.errors import ServerSelectionTimeoutError
 
 from pauk.admin import cli as admin_cli
 from pauk.jobs.locks import Busy
-from pauk.logging import configure_logging
+from pauk.log_setup import configure_logging
 from pauk.pipeline.collect import Collector
 from pauk.pipeline.enrich import Enricher
 from pauk.pipeline.normalize import OpenAlexNormalizer
@@ -19,6 +19,7 @@ from pauk.pipeline.runner import PipelineRunner
 from pauk.pipeline.selectors import PeriodSelector, WorkSelector, WorksFileSelector
 from pauk.pipeline.stages import ALL_STAGES, OPTIONAL_STAGES
 from pauk.pipeline.stages.base import PreparedSelection
+from pauk.search import cli as search_cli
 from pauk.settings import settings
 from pauk.sources import OpenAlexClient
 from pauk.storage import PreparedStore, RawStore, ensure_indexes, get_mongo_client
@@ -54,6 +55,9 @@ def _selection_from_input(path: str, entity: str) -> PreparedSelection:
         line.strip() for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()
     )
     return PreparedSelection(entity, ids)
+
+
+logger = logging.getLogger("pauk.cli")
 
 
 def _log_result(action: str, group: str | None, result: dict) -> None:
@@ -176,6 +180,8 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_cache_parsers(sub)
     _add_gui_parsers(sub)
     admin_cli.add_parser(sub)
+
+    search_cli.add_parser(sub)
     return parser
 
 
@@ -328,6 +334,9 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> None:
         _cmd_enrich(args, parser)
     elif args.command == "publish":
         _cmd_publish(args)
+    elif args.command == "search":
+        # Reads the graph only; never opens Mongo.
+        search_cli.run(args, settings)
     elif args.command == "dedup":
         _cmd_dedup()
     elif args.command == "cache":
