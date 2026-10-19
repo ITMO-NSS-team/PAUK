@@ -47,7 +47,7 @@ slowest of the first 399 real runs took 13, the median 25 seconds) is stopped
 with SIGTERM, which `uvx` forwards to OSA.
 
 The file on disk is the only state: an existing PDF is skipped, a failed one
-is retried by the next run. `reports/index.json` (`{"en": [ids]}`, the
+is retried by the next run. `reports/index.json` (`{"en": [ids], "ru": [ids]}`, the
 site's `contracts/graph.ts::ReportsIndex`) is
 rebuilt from the disk at the end of every run, failed or interrupted.
 `WORKERS` (8) runs go in parallel; the clones, not the LLM, set the pace.
@@ -60,8 +60,8 @@ seconds late.
 
 ## Languages
 
-`LANGUAGES` maps the site language to OSA's `--artefacts-language`. The
-pinned 0.3.1 has no such flag, so only `en` is generated; `ru` is one entry
-and a version bump away once an OSA release ships the flag. The site shows
+`LANGUAGES` maps each site language to OSA's `--artefacts-language`
+(`en` -> `English`, `ru` -> `Russian`, the `language` of OSA's locale files),
+so every repository gets one report per language and run. The site shows
 the report of the interface language only: a repository without one gets no
 button rather than a report in a language the reader didn't pick.

@@ -24,9 +24,8 @@ from .osa import MODEL, OsaRunner
 
 logger = logging.getLogger(__name__)
 
-# Site language -> OSA's --artefacts-language; None keeps OSA's default
-# (English). The pinned OSA has no such flag: "ru" waits for a release with it.
-LANGUAGES: dict[str, str | None] = {"en": None}
+# Site language -> OSA's --artefacts-language, the languages the site has.
+LANGUAGES = {"en": "English", "ru": "Russian"}
 # 8 like the project's other LLM stages; the clones, not the LLM, are the
 # bottleneck, and 8 parallel runs stayed within GitHub's limits.
 WORKERS = 8

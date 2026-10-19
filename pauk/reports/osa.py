@@ -15,7 +15,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # Pinned so a rerun reproduces the reports.
-OSA_PACKAGE = "osa_tool==0.3.1"
+OSA_PACKAGE = "osa_tool==0.3.2"
 # Cheap enough for every repository of the map, and its probe report was
 # clearly more specific than the gpt-4o ones it replaces.
 MODEL = "anthropic/claude-haiku-5.5"
@@ -66,7 +66,7 @@ class OsaRunner:
         self.env = {**os.environ, "LLM_SERVICE_KEY": api_key, "COLUMNS": "400", **git_config_env(NO_LFS_GIT_CONFIG)}
 
     @staticmethod
-    def command(url: str, osa_language: str | None) -> list[str]:
+    def command(url: str, osa_language: str) -> list[str]:
         """The OSA command line for one repository.
 
         Report only: the basic mode also writes a README, docs and docstrings,
@@ -75,19 +75,17 @@ class OsaRunner:
 
         Args:
             url: GitHub URL OSA clones.
-            osa_language: OSA's `--artefacts-language`; None keeps its default (English).
+            osa_language: OSA's `--artefacts-language`, the `language` of one of its locale files.
         """
-        command = [
+        return [
             "uvx", "--from", OSA_PACKAGE, "osa-tool", "-r", url,
             "--mode", "advanced", "--report", "--web-mode",
             "--no-fork", "--no-pull-request", "--delete-dir",
             "--api", "openai", "--model", MODEL, "--context-window", str(CONTEXT_WINDOW),
+            "--artefacts-language", osa_language,
         ]
-        if osa_language:
-            command += ["--artefacts-language", osa_language]
-        return command
 
-    def run(self, key: str, url: str, lang: str, osa_language: str | None, target: Path) -> bool:
+    def run(self, key: str, url: str, lang: str, osa_language: str, target: Path) -> bool:
         """Generates the report of one repository into `target`.
 
         Args:

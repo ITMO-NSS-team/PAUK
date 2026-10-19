@@ -77,7 +77,7 @@ class GitConfigEnvTest(unittest.TestCase):
 
 class OsaCommandTest(unittest.TestCase):
     def test_report_only_through_openrouter_with_the_pinned_tool_model_and_window(self):
-        command = osa.OsaRunner.command("https://github.com/a/one", None)
+        command = osa.OsaRunner.command("https://github.com/a/one", "English")
         self.assertEqual(command[:4], ["uvx", "--from", osa.OSA_PACKAGE, "osa-tool"])
         self.assertTrue(osa.OSA_PACKAGE.startswith("osa_tool=="))
         for flag in ("--report", "--web-mode", "--no-fork", "--no-pull-request", "--delete-dir"):
@@ -87,10 +87,7 @@ class OsaCommandTest(unittest.TestCase):
         self.assertEqual(command[command.index("--api") + 1], "openai")
         self.assertEqual(command[command.index("--model") + 1], osa.MODEL)
         self.assertEqual(command[command.index("--context-window") + 1], str(osa.CONTEXT_WINDOW))
-        self.assertNotIn("--artefacts-language", command)
-
-    def test_language_flag_only_when_given(self):
-        self.assertEqual(osa.OsaRunner.command("u", "Russian")[-2:], ["--artefacts-language", "Russian"])
+        self.assertEqual(command[command.index("--artefacts-language") + 1], "English")
 
     def test_context_window_stays_under_the_haiku_price_step(self):
         self.assertLess(osa.CONTEXT_WINDOW, 100_000)
@@ -99,7 +96,7 @@ class OsaCommandTest(unittest.TestCase):
 class OsaRunnerTest(FakeOsaTestCase):
     def run_osa(self):
         runner = osa.OsaRunner("secret", self.osa_dir)
-        return runner.run("github_a_one", "https://github.com/a/one", "en", None, self.out_dir / "en" / "a.pdf")
+        return runner.run("github_a_one", "https://github.com/a/one", "en", "English", self.out_dir / "en" / "a.pdf")
 
     def test_a_successful_run_moves_only_the_report_and_cleans_up(self):
         self.assertTrue(self.run_osa())
@@ -149,8 +146,8 @@ class IndexTest(unittest.TestCase):
             self.assertEqual(index, {"en": ["a", "b"], "ru": ["a"]})
             self.assertEqual(json.loads((out / "index.json").read_text()), index)
 
-    def test_only_english_until_osa_releases_a_language_flag(self):
-        self.assertEqual(builder.LANGUAGES, {"en": None})
+    def test_every_site_language_maps_to_an_osa_locale(self):
+        self.assertEqual(builder.LANGUAGES, {"en": "English", "ru": "Russian"})
 
 
 class ReportsBuilderTest(FakeOsaTestCase):
@@ -164,7 +161,9 @@ class ReportsBuilderTest(FakeOsaTestCase):
             {"id": "github_c_nourl", "url": None},
         ]})
         self.spend = [0.0, 0.5]
+        # One language keeps the counts below readable; both are covered separately.
         for target, value in (
+            ("LANGUAGES", {"en": "English"}),
             ("shutil.which", lambda name: f"/usr/bin/{name}"),
             ("OpenRouterClient.usage", lambda client: self.spend.pop(0)),
         ):
@@ -190,6 +189,13 @@ class ReportsBuilderTest(FakeOsaTestCase):
         result = self.build(keys=frozenset({"github_a_one"}), force=True)
         self.assertEqual((result["generated"], result["skipped"]), (1, 0))
         self.assertEqual(existing.read_bytes(), b"%PDF-1.4 report")
+
+    def test_each_language_gets_its_own_folder_and_index_entry(self):
+        with patch.object(builder, "LANGUAGES", {"en": "English", "ru": "Russian"}):
+            result = self.build()
+        self.assertEqual(result["generated"], 4)
+        index = json.loads((self.out_dir / "index.json").read_text())
+        self.assertEqual(index, {"en": ["github_a_one", "github_b_two"], "ru": ["github_a_one", "github_b_two"]})
 
     def test_reports_go_to_the_site_data_by_default(self):
         builder.ReportsBuilder(self.config).build(self.snapshot, keys=frozenset({"github_a_one"}))
