@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import logging
 import math
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Any
 
 import requests
 
 from pauk.redaction import redact_url
+
+logger = logging.getLogger(__name__)
+
+LONG_WAIT_SECONDS = 10.0
 
 
 class HttpRequestError(requests.RequestException):
@@ -75,12 +80,12 @@ class HttpClient:
             except requests.RequestException as exc:
                 if attempt == retries:
                     raise HttpRequestError(method, safe_url, cause_type=type(exc).__name__) from None
-                time.sleep(self._backoff_delay(attempt))
+                self._wait(self._backoff_delay(attempt), type(exc).__name__, method, safe_url, attempt, retries)
                 continue
 
             delay = self._retry_delay(response, attempt)
             if delay is not None and attempt < retries:
-                time.sleep(delay)
+                self._wait(delay, self._retry_reason(response), method, safe_url, attempt, retries)
                 continue
             try:
                 response.raise_for_status()
@@ -102,6 +107,20 @@ class HttpClient:
             return redact_url(prepared.url or url)
         except requests.RequestException:
             return redact_url(url)
+
+    @staticmethod
+    def _wait(delay: float, reason: str, method: str, safe_url: str, attempt: int, retries: int) -> None:
+        """Sleep before a retry, logging any wait of LONG_WAIT_SECONDS or more."""
+        if delay >= LONG_WAIT_SECONDS:
+            resume_at = (datetime.now().astimezone() + timedelta(seconds=delay)).isoformat(timespec="seconds")
+            logger.warning(
+                "waiting %.0fs until %s before retrying %s %s (%s, retry %d/%d)",
+                delay, resume_at, method, safe_url, reason, attempt + 1, retries,
+            )
+        time.sleep(delay)
+
+    def _retry_reason(self, response: requests.Response) -> str:
+        return f"HTTP {response.status_code}"
 
     def _retry_delay(self, response: requests.Response, attempt: int) -> float | None:
         """Return the response retry delay, or None if it must not be retried."""

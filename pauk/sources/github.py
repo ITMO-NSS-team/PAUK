@@ -18,19 +18,36 @@ class GitHubClient(HttpClient):
         super().__init__(timeout, headers)
 
     @staticmethod
-    def _rate_limit_message(response: requests.Response) -> bool:
+    def _error_message(response: requests.Response) -> str:
         try:
             payload = response.json()
         except ValueError:
-            return False
-        message = payload.get("message", "") if isinstance(payload, dict) else ""
-        normalized = str(message).casefold()
-        return "rate limit" in normalized or "abuse detection" in normalized
+            return ""
+        return str(payload.get("message", "") if isinstance(payload, dict) else "").casefold()
+
+    @classmethod
+    def _rate_limit_message(cls, response: requests.Response) -> bool:
+        message = cls._error_message(response)
+        return "rate limit" in message or "abuse detection" in message
+
+    def _retry_reason(self, response: requests.Response) -> str:
+        status = f"HTTP {response.status_code}"
+        if response.status_code not in (403, 429):
+            return status
+        message = self._error_message(response)
+        if "secondary rate limit" in message or "abuse detection" in message:
+            return f"{status}, GitHub secondary rate limit"
+        if response.headers.get("X-RateLimit-Remaining") == "0":
+            return f"{status}, GitHub rate limit exhausted"
+        if response.headers.get("Retry-After") is not None:
+            return f"{status}, GitHub secondary rate limit"
+        if "rate limit" in message:
+            return f"{status}, GitHub rate limit"
+        return status
 
     def _retry_delay(self, response: requests.Response, attempt: int) -> float | None:
-        delay = super()._retry_delay(response, attempt)
-        if delay is not None or response.status_code != 403:
-            return delay
+        if response.status_code not in (403, 429):
+            return super()._retry_delay(response, attempt)
 
         retry_after = self._parse_retry_after(response.headers.get("Retry-After"))
         if retry_after is not None:
@@ -41,10 +58,12 @@ class GitHubClient(HttpClient):
                 reset_at = float(response.headers["X-RateLimit-Reset"])
             except (KeyError, TypeError, ValueError):
                 return self._backoff_delay(attempt)
-            return max(0.0, reset_at - time.time())
+            return max(reset_at - time.time(), self._backoff_delay(attempt))
 
         if self._rate_limit_message(response):
             return max(60.0, self._backoff_delay(attempt))
+        if response.status_code == 429:
+            return self._backoff_delay(attempt)
         return None
 
     def get_repository(self, owner: str, name: str) -> dict:
