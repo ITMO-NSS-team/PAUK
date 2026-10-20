@@ -296,15 +296,17 @@ kinds:
 |---|---|---|
 | are these two records one person? | person dedup: collect stage and whole-graph pass | "один человек" (one person) or "разные" (different) |
 | a group rejected as a whole | same dedup, when a group has two ORCIDs, two emails or two staff-catalog records | mark who in the group is the same person |
-| whose GitHub account is this? | `github_match` stage | "это его аккаунт" (this is their account) or "не его" (not theirs) |
+| whose GitHub account is this? | `github_match` stage | choose the author ("это его аккаунт", this is their account) or "никто из них" (none of them); with a single author, "это его аккаунт" or "не его" (not theirs) |
 | which catalog record? | dedup, when the staff catalog has several people with that name | choose a record ("это выбранная запись") or "никто из них" (none of them) |
 
 Questions live in the Mongo collection `review_pairs`, one document per
 question. If a later run hits the same question, it updates the evidence in the
-existing document instead of creating a second one. An unanswered account
-question that a later run settles by itself (it linked the account, or the
-person no longer fits it) is closed without an answer; "не его" moves the
-question on to the next author that fits. The
+existing document instead of creating a second one. An account is asked about
+once, with every author that fits it. An unanswered account question that a
+later run settles by itself (it linked the account, nobody fits it any more, or
+a new namesake joined the question) is closed without an answer. An old "это
+его аккаунт" about one author does not link the account when another author
+fits as well or better: the account is asked about again, with all of them. The
 default tab is
 "Приоритетные" (Priority): identical names without confirmation, groups,
 accounts and the catalog. The rest is under "Все нерешенные" (All unresolved).

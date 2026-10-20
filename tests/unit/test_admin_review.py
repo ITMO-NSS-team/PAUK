@@ -197,7 +197,8 @@ class ReviewPageTest(unittest.TestCase):
 
     def test_every_reason_the_account_matcher_gives_is_in_russian(self):
         for reason in (hold_reason(["name_exact"]), hold_reason(["name_fuzzy"]),
-                       hold_reason(["name_exact"], ambiguous=True)):
+                       hold_reason(["name_exact"], ambiguous=True),
+                       hold_reason(["name_exact"], contested=True)):
             self.assertNotEqual(_reason_words(reason), reason, reason)
 
     def test_the_reason_is_shown_in_russian(self):
@@ -606,6 +607,71 @@ class GitHubQuestionTest(unittest.TestCase):
             "members": "A5140754163,XieN-N", "verdict": "same"})
         self.assertIn("привяжется на следующем сборе",
                       self.client.get("/review", params={"tab": "answered"}).text)
+
+
+class GitHubChoiceTest(unittest.TestCase):
+    """An account several authors fit, answered by naming the one it belongs to."""
+
+    def setUp(self):
+        self.db = mongomock.MongoClient()["pauk_test"]
+        create_user(self.db, "roman", "hunter2", role="editor")
+        review.record_held(self.db, [{
+            "status": "held", "login": "coder42", "person": "A1", "name_raw": "Ivan Petrov",
+            "url": "https://github.com/coder42", "signals": ["name_exact"], "repos": [],
+            "candidates": [{"person": "A1", "name_raw": "Ivan Petrov", "signals": ["name_exact"]},
+                           {"person": "A2", "name_raw": "Ivan Petrov", "signals": ["name_exact"]}],
+            "held_because": ["the name matches exactly and nothing else backs it"],
+        }])
+        self.client = TestClient(build(Settings(), self.db), follow_redirects=False)
+        self.client.post("/login", data={"login": "roman", "password": "hunter2"})
+
+    def csrf(self):
+        return self.client.get("/review").text.split('name="csrf" value="')[1].split('"')[0]
+
+    def answer(self, verdict, chosen="", login="coder42"):
+        return self.client.post("/review/answer", data={
+            "csrf": self.csrf(), "kind": review.GITHUB, "members": "A1,A2,coder42",
+            "login": login, "verdict": verdict, "chosen": chosen})
+
+    def test_the_authors_are_offered_and_the_account_is_not(self):
+        body = self.client.get("/review").text
+        offered = re.findall(r'name="chosen" value="([^"]+)"', body)
+        self.assertEqual(offered, ["A1", "A2"])
+        self.assertIn('name="login" value="coder42"', body)
+        self.assertNotIn('value="same"', body)
+
+    def test_the_account_comes_before_the_people(self):
+        body = self.client.get("/review").text
+        account = body.index('href="https://github.com/coder42"')
+        self.assertLess(account, body.index("/nodes/Person/A1"))
+        self.assertLess(account, body.index("/nodes/Person/A2"))
+
+    def test_choosing_records_the_author(self):
+        self.assertEqual(self.answer("choose", "A2").status_code, 303)
+        self.assertEqual(review.github_decisions(self.db),
+                         {frozenset({"coder42", "A2"}): review.SAME,
+                          frozenset({"coder42", "A1"}): review.DIFFERENT})
+
+    def test_choosing_nobody_sends_the_form_back(self):
+        self.assertIn("problem=", self.answer("choose").headers["location"])
+        self.assertEqual(review.count(self.db, answered=True), 0)
+
+    def test_an_author_outside_the_question_is_refused(self):
+        self.assertEqual(self.answer("choose", "A9").status_code, 400)
+        self.assertEqual(review.github_decisions(self.db), {})
+
+    def test_the_account_has_to_be_one_of_the_members(self):
+        self.assertEqual(self.answer("choose", "A2", login="").status_code, 400)
+        self.assertEqual(review.github_decisions(self.db), {})
+
+    def test_none_of_them_refuses_every_author(self):
+        self.assertEqual(self.answer("different").status_code, 303)
+        self.assertEqual(review.github_decisions(self.db),
+                         {frozenset({"coder42", "A1", "A2"}): review.DIFFERENT})
+
+    def test_a_yes_naming_nobody_is_refused(self):
+        self.assertEqual(self.answer("same").status_code, 400)
+        self.assertEqual(review.github_decisions(self.db), {})
 
 
 class StaffChoiceTest(unittest.TestCase):

@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 
 import mongomock
@@ -664,14 +665,90 @@ class GitHubReviewTest(unittest.TestCase):
         (question,) = review.questions(self.db, answered=False)
         self.assertEqual(question["members"], ["A2", "XieN-N"])
 
-    def test_moving_to_a_tied_author_does_not_close_the_first_question(self):
-        self.run_stage([person("A2", "Ivan Petrov")], [profile("coder42", name="Ivan Petrov")])
-        self.run_stage([person("A1", "Ivan Petrov"), person("A2", "Ivan Petrov")],
-                       [profile("coder42", name="Ivan Petrov")])
+    def namesakes(self, *ids, name="Ivan Petrov"):
+        """One account and several authors its name fits equally well."""
+        return ([person(pid, "Ivan Petrov") for pid in ids], [profile("coder42", name=name)])
+
+    def test_every_author_in_the_running_is_asked_about_at_once(self):
+        self.run_stage(*self.namesakes("A1", "A2"))
+        (question,) = review.questions(self.db, answered=False)
+        self.assertEqual(question["members"], ["A1", "A2", "coder42"])
+        self.assertEqual(question["evidence"]["names"], ["Ivan Petrov", "Ivan Petrov", "coder42"])
+
+    def test_a_namesake_arriving_later_joins_the_question(self):
+        self.run_stage(*self.namesakes("A2"))
+        self.run_stage(*self.namesakes("A1", "A2"))
         open_members = [question["members"] for question in review.questions(self.db, answered=False)]
-        self.assertIn(["A2", "coder42"], open_members)
+        self.assertEqual(open_members, [["A1", "A2", "coder42"]])
+
+    def test_choosing_an_author_links_that_author(self):
+        self.run_stage(*self.namesakes("A1", "A2"))
+        review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A2")
+        _, people = self.run_stage(*self.namesakes("A1", "A2"))
+        self.assertEqual(people["A2"].github, "coder42")
+        self.assertIsNone(people["A1"].github)
+        self.assertEqual(review.count(self.db, answered=False), 0)
+
+    def test_a_choice_survives_the_chosen_author_being_folded(self):
+        self.run_stage(*self.namesakes("A1", "A2"))
+        review.record_account_choice(self.db, "coder42", ["A1", "A2"], "A2")
+        survivor = person("A3", "Ivan Petrov")
+        survivor.merged_ids = ["A2"]
+        _, people = self.run_stage([person("A1", "Ivan Petrov"), survivor],
+                                   [profile("coder42", name="Ivan Petrov")])
+        self.assertEqual(people["A3"].github, "coder42")
+
+    def test_none_of_them_links_nobody_and_asks_nothing(self):
+        self.run_stage(*self.namesakes("A1", "A2"))
+        review.record_verdict(self.db, review.GITHUB, ["A1", "A2", "coder42"], review.DIFFERENT)
+        result, _ = self.run_stage(*self.namesakes("A1", "A2"))
+        self.assertEqual((result["github_matched"], result["github_review"]), (0, 0))
+        self.assertEqual(review.count(self.db, answered=False), 0)
+
+    def test_after_none_of_them_only_a_new_author_is_asked(self):
+        self.run_stage(*self.namesakes("A1", "A2"))
+        review.record_verdict(self.db, review.GITHUB, ["A1", "A2", "coder42"], review.DIFFERENT)
+        self.run_stage(*self.namesakes("A1", "A2", "A3"))
+        open_members = [question["members"] for question in review.questions(self.db, answered=False)]
+        self.assertEqual(open_members, [["A3", "coder42"]])
+
+    def test_none_of_them_is_flagged_when_the_rules_would_now_link_one(self):
+        self.run_stage(*self.namesakes("A1", "A2"))
+        review.record_verdict(self.db, review.GITHUB, ["A1", "A2", "coder42"], review.DIFFERENT)
+        _, people = self.run_stage(
+            [person("A1", "Ivan Petrov", email="ivan@itmo.ru"), person("A2", "Ivan Petrov")],
+            [profile("coder42", name="Ivan Petrov", emails=["ivan@itmo.ru"])])
+        self.assertIsNone(people["A1"].github)
+        (disputed,) = review.questions(self.db, disputed=True)
+        self.assertEqual(disputed["members"], ["A1", "A2", "coder42"])
+
+    def test_none_of_them_over_a_tie_is_not_flagged(self):
+        # The rules alone would ask about a tie, not link either author.
+        self.run_stage(*self.namesakes("A1", "A2"))
+        review.record_verdict(self.db, review.GITHUB, ["A1", "A2", "coder42"], review.DIFFERENT)
+        self.run_stage([person("A1", "Ivan Petrov"), person("A2", "Ivan Petrov")],
+                       [profile("coder42", name="Ivan Petrov", company="ITMO University")])
+        self.assertEqual(review.count(self.db, disputed=True), 0)
+
+    def test_the_later_of_two_answers_about_one_author_wins(self):
+        # A page left open can answer the single-author question after the joint one.
+        early, late = datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 1, 2, tzinfo=UTC)
+        for yes_at, linked in ((early, None), (late, "coder42")):
+            with self.subTest(linked=linked):
+                self.db[review.COLLECTION].delete_many({})
+                review.record_verdict(self.db, review.GITHUB, ["A1", "coder42"], review.SAME)
+                review.record_verdict(self.db, review.GITHUB, ["A1", "A2", "coder42"],
+                                      review.DIFFERENT)
+                self.db[review.COLLECTION].update_one(
+                    {"_id": "github_person:A1:coder42"}, {"$set": {"decided_at": yes_at}})
+                self.db[review.COLLECTION].update_one(
+                    {"_id": "github_person:A1:A2:coder42"},
+                    {"$set": {"decided_at": late if yes_at == early else early}})
+                _, people = self.run_stage(*self.namesakes("A1", "A2"))
+                self.assertEqual(people["A1"].github, linked)
 
     def test_after_a_no_the_next_author_is_asked(self):
+        # The answer was given when the account was asked about one author at a time.
         both = ([person("A1", "Ivan Petrov"), person("A2", "Ivan Petrov")],
                 [profile("coder42", name="Ivan Petrov")])
         self.run_stage(*both)
@@ -700,6 +777,72 @@ class GitHubReviewTest(unittest.TestCase):
             [repository("lab", "tool", works=["W1"])])
         self.assertEqual(people["A1"].github, "nick")
 
+    def kokorin(self):
+        """Two namesakes; the account shares an address with the second."""
+        return ([person("A1", "Ilya Kokorin"), person("A2", "Ilya Kokorin", email="ilya@itmo.ru")],
+                [profile("KokorinIlya", name="Ilya Kokorin", emails=["ilya@itmo.ru"])])
+
+    def nikitin(self):
+        """Namesakes the rules like equally, one only through an OpenAlex spelling."""
+        return ([person("A1", "N. V. Nikitin", variants=["Nikolay Nikitin"]),
+                 person("A2", "Nikolay O. Nikitin", variants=["Nikolay Nikitin"])],
+                [profile("nicl-nno", name="Nikolay Nikitin", company="ITMO University")])
+
+    def said_yes_long_ago(self, members):
+        """A "yes" from when the account was asked about one author only."""
+        review.record_verdict(self.db, review.GITHUB, members, review.SAME)
+        self.db[review.COLLECTION].update_one(
+            {"_id": review.question_id(review.GITHUB, members)},
+            {"$set": {"decided_at": datetime(2026, 1, 1, tzinfo=UTC)}})
+
+    def test_a_yes_does_not_beat_an_author_the_rules_like_better(self):
+        # Live case: the yes named a namesake at Leiden; the address points at the ITMO one.
+        self.said_yes_long_ago(["A1", "KokorinIlya"])
+        _, people = self.run_stage(*self.kokorin())
+        self.assertEqual((people["A1"].github, people["A2"].github), (None, None))
+        (question,) = review.questions(self.db, answered=False)
+        self.assertEqual(question["members"], ["A1", "A2", "KokorinIlya"])
+        self.assertEqual(question["evidence"]["held_because"],
+                         ["answered before, but the question did not name every author that fits"])
+
+    def test_a_yes_does_not_beat_an_author_the_rules_like_as_much(self):
+        # Live case: the yes named Nikolay V. Nikitin of Moscow, the account is Nikolay O.'s.
+        self.said_yes_long_ago(["A1", "nicl-nno"])
+        _, people = self.run_stage(*self.nikitin())
+        self.assertEqual((people["A1"].github, people["A2"].github), (None, None))
+        (question,) = review.questions(self.db, answered=False)
+        self.assertEqual(question["members"], ["A1", "A2", "nicl-nno"])
+
+    def test_choosing_settles_what_the_yes_left_open(self):
+        for chosen in ("A1", "A2"):
+            with self.subTest(chosen=chosen):
+                self.db[review.COLLECTION].delete_many({})
+                self.said_yes_long_ago(["A1", "KokorinIlya"])
+                self.run_stage(*self.kokorin())
+                review.record_account_choice(self.db, "KokorinIlya", ["A1", "A2"], chosen)
+                _, people = self.run_stage(*self.kokorin())
+                self.assertEqual({pid for pid in ("A1", "A2") if people[pid].github}, {chosen})
+                self.assertEqual(review.count(self.db, answered=False), 0)
+
+    def test_choosing_against_the_rules_is_flagged(self):
+        self.run_stage(*self.kokorin())
+        review.record_account_choice(self.db, "KokorinIlya", ["A1", "A2"], "A1")
+        self.run_stage(*self.kokorin())
+        (disputed,) = review.questions(self.db, disputed=True)
+        self.assertEqual(disputed["members"], ["A1", "A2", "KokorinIlya"])
+
+    def test_a_choice_of_the_refused_author_is_not_flagged(self):
+        # Chosen first, refused later: only the refusal disagrees with the rules.
+        review.record_account_choice(self.db, "KokorinIlya", ["A1", "A2"], "A2")
+        review.record_verdict(self.db, review.GITHUB, ["A2", "KokorinIlya"], review.DIFFERENT)
+        for members, day in ((["A1", "A2", "KokorinIlya"], 1), (["A2", "KokorinIlya"], 2)):
+            self.db[review.COLLECTION].update_one(
+                {"_id": review.question_id(review.GITHUB, members)},
+                {"$set": {"decided_at": datetime(2026, 1, day, tzinfo=UTC)}})
+        self.run_stage(*self.kokorin())
+        (disputed,) = review.questions(self.db, disputed=True)
+        self.assertEqual(disputed["members"], ["A2", "KokorinIlya"])
+
     def test_a_scoped_run_does_not_close_a_question_it_did_not_apply(self):
         # The rules would now link A1, but a run limited to B1 writes nothing to A1.
         self.run_stage(*self.unsure())
@@ -719,6 +862,22 @@ class GitHubReviewTest(unittest.TestCase):
                        selection=PreparedSelection("persons", frozenset({"B1"})))
         (question,) = review.questions(self.db, answered=False)
         self.assertEqual(question["members"], ["A1", "XieN-N"])
+
+    def test_a_scoped_run_that_writes_no_link_keeps_the_accounts_questions(self):
+        # The rules now give the account to A1, but a run limited to B1 writes nothing to A1.
+        self.run_stage(*self.namesakes("B1"))
+        self.run_stage([person("A1", "Ivan Petrov", email="ivan@itmo.ru"), person("B1", "Ivan Petrov")],
+                       [profile("coder42", name="Ivan Petrov", emails=["ivan@itmo.ru"])],
+                       selection=PreparedSelection("persons", frozenset({"B1"})))
+        (question,) = review.questions(self.db, answered=False)
+        self.assertEqual(question["members"], ["B1", "coder42"])
+
+    def test_a_scoped_run_keeps_a_question_naming_someone_outside_it(self):
+        self.run_stage(*self.namesakes("A1", "A2"))
+        self.run_stage(*self.namesakes("A1", "A2", name="Boris Ivanov"),
+                       selection=PreparedSelection("persons", frozenset({"A1"})))
+        (question,) = review.questions(self.db, answered=False)
+        self.assertEqual(question["members"], ["A1", "A2", "coder42"])
 
     def test_a_question_about_someone_the_run_never_saw_stays(self):
         self.run_stage(*self.unsure())

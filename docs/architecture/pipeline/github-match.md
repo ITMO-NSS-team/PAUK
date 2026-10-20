@@ -66,9 +66,9 @@ name. All known spellings on both sides are compared: how the author published
 OpenAlex lumps namesakes into one author, so `name_variants` also holds other
 people's names. A variant counts as `name_exact` only when all its words are in
 the main name (`Daniil Razdyakonov` for `Daniil S. Razdyakonov`) or there is no
-main name. Otherwise
-(`Pavel Gulyaev` for `P. V. Gulyaev`, `Xin Zhang` for `Xi Zhang`) it gives
-`name_alternative`. ORCID names are the author's own and always count.
+main name. Otherwise (`Pavel Gulyaev` for `P. V. Gulyaev`, `Xin Zhang` for
+`Xi Zhang`) it gives `name_alternative`. ORCID names are the author's own and
+always count.
 
 ## Three outcomes
 
@@ -97,19 +97,32 @@ order, so a tie names the same author on every run.
 
 ## Questions
 
-Each `review` pair becomes a question in the review queue. People's answers
-come before the choice. An author somebody confirmed wins it, even where the
-signals alone would reject the pair. An author somebody answered "not theirs"
-is left out of it, so the next run asks about the next author that fits; if the
-rules would now link the refused one, the pair goes to the disputes instead.
+An account the rules cannot place becomes one question in the review queue. It
+names every author still in the running, best first (`candidates` on the row),
+and is answered by choosing the author the account belongs to, or "none of
+them". An account with a single author is answered "theirs" or "not theirs".
 
-A run also closes the open questions it has settled itself, for a login it
-looked at and a person it covers (a scoped run covers its selection only),
-directly or through the record that person was folded into: it linked the
-account to somebody, or the person no longer fits it. A question about an author
-who still fits an unlinked account stays open, even when the run now asks about
-a tied one. A closed question gets `auto_resolved_at` and no verdict, so it
-leaves the queue and comes back if a later run holds it again. Answered
+People's answers come before the choice. An author somebody confirmed or chose
+wins it, even where the signals alone would reject the pair, unless another
+author the rules would link fits as well or better. Such a "yes" was given
+without that author in view (a namesake at another university, a record the
+account shares an address with), so the account is asked about again, naming
+all of them (reason "answered before, but the question did not name every
+author that fits"). Choosing one author is a "no" to the others in the question.
+Authors somebody refused, one by one or all at once, are left out of the choice,
+so the next question names only authors nobody has refused. If the rules alone
+would now link a refused author, the answer goes to the disputes instead.
+Answers given when an account was asked about one author at a time keep
+applying; where two answers cover one pair, the later one counts.
+
+A run also closes the open questions it has settled itself. Only for an account
+whose decision it wrote: a link a scoped run does not write leaves the account's
+questions alone. And only questions whose authors it covers (a scoped run covers
+its selection only), directly or through the record a person was folded into.
+Such a question is settled when the account was linked, when nobody fits it any
+more, or when the question asked now names other authors, for instance after a
+namesake appeared. A closed question gets `auto_resolved_at` and no verdict, so
+it leaves the queue and comes back if a later run holds it again. Answered
 questions are never touched.
 
 ## `confidence`

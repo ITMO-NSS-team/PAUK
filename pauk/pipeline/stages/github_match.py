@@ -157,8 +157,10 @@ def confidence(signals: list[str], in_bridge: bool) -> str:
     return "high" if in_bridge or any(signal in signals for signal in STRONG) else "probable"
 
 
-def hold_reason(signals: list[str], ambiguous: bool = False) -> str:
+def hold_reason(signals: list[str], ambiguous: bool = False, contested: bool = False) -> str:
     """Why a pair sent to review goes to a person, in the words the queue files it under."""
+    if contested:
+        return "answered before, but the question did not name every author that fits"
     if ambiguous:
         return "several authors fit this account equally well"
     if "name_exact" in signals:
@@ -198,12 +200,14 @@ class Match(NamedTuple):
 
     Attributes:
         best: The author to link or to ask about, or None when nobody fits.
-        candidates: Every author still in the running, `best` among them.
-        refused: Authors a person said the account is not theirs, as the rules see them now.
+        candidates: Every author still in the running, best first; the one question
+            about the account names them all.
+        refused: Authors a person said the account is not theirs, as the rules see them
+            now; "matched" only where the rules alone would link that author.
     """
 
     best: Fit | None
-    candidates: frozenset[str]
+    candidates: list[Fit]
     refused: list[Fit]
 
 
@@ -215,8 +219,10 @@ def match_account(account: dict, authors: dict[str, dict], email_index: dict[str
     Only authors reachable by publication, address or full name are scored. A
     tie on score goes to a shared address, then to a bridge; a tie on all three
     goes to a person. What people answered about this account (`verdicts`, by
-    author) comes first: a "yes" wins the choice, a "no" leaves the author out of
-    it, so the question moves on to the next one.
+    author) comes first. A "no" leaves the author out. A "yes" wins the choice,
+    even where the signals alone would reject the pair, unless an author the
+    rules would link fits as well or better: the "yes" was given without that
+    author in view, so the account is asked about again, with all of them.
     """
     verdicts = verdicts or {}
     bridge_ids: set[str] = set()
@@ -228,10 +234,8 @@ def match_account(account: dict, authors: dict[str, dict], email_index: dict[str
         if len(name.split()) >= 2:
             name_ids |= name_index.get(name, set())
 
-    best: tuple[tuple[bool, bool, float, bool, bool], Fit] | None = None
-    candidates: set[str] = set()
-    refusals: list[Fit] = []
-    matched: list[tuple[bool, bool, float, bool, bool]] = []
+    ranked: list[tuple[tuple[bool, float, bool, bool], Fit]] = []
+    refusals: list[tuple[tuple[bool, float, bool, bool], Fit]] = []
     # Sorted: on a tie the question must name the same author on every run.
     for author_id in sorted(bridge_ids | email_ids | name_ids):
         author = authors.get(author_id)
@@ -245,50 +249,63 @@ def match_account(account: dict, authors: dict[str, dict], email_index: dict[str
             continue
         evidence["in_bridge"] = in_bridge
         fit = Fit(author_id, score, signals, evidence, decision)
-        if said == review.DIFFERENT:
-            refusals.append(fit)
-            continue
-        candidates.add(author_id)
-        rank = (said == review.SAME, decision == "matched", score, "email_exact" in signals, in_bridge)
-        if best is None or rank > best[0]:
-            best = (rank, fit)
-        if decision == "matched":
-            matched.append(rank)
+        rank = (decision == "matched", score, "email_exact" in signals, in_bridge)
+        (refusals if said == review.DIFFERENT else ranked).append((rank, fit))
 
-    if best is None:
-        return Match(None, frozenset(), refusals)
-    rank, fit = best
-    if fit.decision == "matched" and matched.count(rank) > 1:
+    everyone = sorted([*ranked, *refusals], key=lambda item: item[0], reverse=True)
+    lone = (everyone[0][1] if everyone and (len(everyone) == 1 or everyone[1][0] < everyone[0][0])
+            else None)
+    # A refusal disagrees with the rules only where they alone would link that author.
+    refused = [fit if fit is lone or fit.decision != "matched" else fit._replace(decision="review")
+               for _, fit in refusals]
+    if not ranked:
+        return Match(None, [], refused)
+    # Stable: equal ranks keep the id order they were scored in.
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    best = ranked[0][1]
+    confirmed = next(((rank, fit) for rank, fit in ranked
+                      if verdicts.get(fit.author_id) == review.SAME), None)
+    if confirmed is not None:
+        yes_rank, yes_fit = confirmed
+        if any(other is not yes_fit and other.decision == "matched" and other_rank >= yes_rank
+               for other_rank, other in ranked):
+            # The "yes" was given without this rival in view: the person has to see both.
+            best.evidence["contested"] = True
+            best = best._replace(decision="review")
+        else:
+            best = yes_fit._replace(decision="matched")
+    elif best.decision == "matched" and len(ranked) > 1 and ranked[1][0] == ranked[0][0]:
         # Two authors fit equally well; picking either would be a guess.
-        fit.evidence["ambiguous"] = True
-        fit = fit._replace(decision="review")
-    return Match(fit, frozenset(candidates), refusals)
+        best.evidence["ambiguous"] = True
+        best = best._replace(decision="review")
+    return Match(best, [best, *(fit for _, fit in ranked if fit.author_id != best.author_id)],
+                 refused)
 
 
 class GitHubMatchStage(EnrichmentStage):
     name = "github_match"
 
     @staticmethod
-    def _answered(decisions: list[dict], answers: dict[frozenset[str], str]) -> list[dict]:
-        """Apply people's answers over the rules, both ways.
+    def _answered(decisions: list[dict], verdicts: dict[str, dict[str, str]]) -> list[dict]:
+        """Apply people's refusals and pick out what goes to the queue.
+
+        A "yes" has already chosen its author in `match_account`.
 
         Args:
             decisions: The rows the rules produced, changed in place.
-            answers: What people said, keyed by the login and the person.
+            verdicts: What people said, by login and then by person.
 
         Returns:
-            Rows for the queue: unanswered pairs a person has to settle, and
+            Rows for the queue: unanswered accounts a person has to settle, and
             answered ones the rules now dispute.
         """
         questions: list[dict] = []
         for row in decisions:
-            answered = answers.get(frozenset((row["login"], row["person"])))
+            answered = verdicts.get(row["login"], {}).get(row["person"])
             if answered is not None:
                 # So the journal shows a person overruled the signals, not the rules themselves.
                 row["rule"] = "manual"
-            if answered == review.SAME:
-                row["decision"] = "matched"
-            elif answered == review.DIFFERENT:
+            if answered == review.DIFFERENT:
                 if row["decision"] == "matched":
                     # The answer stands; the rules now disagreeing is worth a look.
                     questions.append({**row, "status": "disputed",
@@ -298,7 +315,8 @@ class GitHubMatchStage(EnrichmentStage):
                 questions.append({
                     **row, "status": "held",
                     "held_because": [hold_reason(row["signals"],
-                                                 row["evidence"].get("ambiguous", False))],
+                                                 row["evidence"].get("ambiguous", False),
+                                                 row["evidence"].get("contested", False))],
                 })
         return questions
 
@@ -430,18 +448,20 @@ class GitHubMatchStage(EnrichmentStage):
 
         decisions: list[dict] = []
         chosen: dict[str, dict] = {}
-        candidates: dict[str, frozenset[str]] = {}
         # Sorted: two runs over the same data must reach the same decisions.
         for login in sorted(accounts):
             match = match_account(accounts[login], authors, email_index, name_index, bridge,
                                   verdicts.get(login))
-            candidates[login] = match.candidates
             decisions += [row_of(login, fit) for fit in match.refused]
             if match.best is not None:
                 chosen[login] = row_of(login, match.best)
+                chosen[login]["candidates"] = [
+                    {"person": fit.author_id, "name_raw": by_id[fit.author_id].name_raw,
+                     "signals": fit.signals}
+                    for fit in match.candidates]
                 decisions.append(chosen[login])
 
-        questions = self._answered(decisions, answers)
+        questions = self._answered(decisions, verdicts)
 
         stats = {"matched": 0, "review": 0}
         filled_emails = 0
@@ -481,9 +501,9 @@ class GitHubMatchStage(EnrichmentStage):
         review.record_disputed(self.prepared.db, questions)
         # A link counts only where it was written: a scoped run leaves the others alone.
         covered = {person.id for person in people if self.selected("persons", person.id)}
-        still_asked = {login: frozenset() if login in linked else candidates[login] for login in accounts}
-        review.retire_github(self.prepared.db, dict.fromkeys(accounts) | chosen, still_asked,
-                             covered, aliases)
+        settled = {login: chosen.get(login) for login in accounts
+                   if login in linked or chosen.get(login, {}).get("decision") != "matched"}
+        review.retire_github(self.prepared.db, settled, covered, aliases)
         # A file beside dedup's journal: it is read by people, not by the pipeline.
         journal_path = self.config.audit_dir / self.prepared.group / MATCHES_FILENAME
         with AtomicWriter(journal_path) as handle:
