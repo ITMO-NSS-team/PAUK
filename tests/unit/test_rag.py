@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import tempfile
 import unittest
@@ -304,6 +305,23 @@ class AskTest(unittest.TestCase):
         self.assertEqual(result["notes"], [])
         self.assertEqual(graph.terms, r"RT\-DETR object detection")
 
+    def test_given_keywords_replace_the_extraction(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        config = _Config(Path(tmp.name))
+        manifest = index.manifest_path(config, "full", "bge")
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(json.dumps({"profile": PRESETS["full"].to_dict(), "embedding_model": "BAAI/bge-m3"}))
+        graph, embedder, llm = _AskGraph(), _Embedder(), _CountingLlm()
+        rag = Rag(config, graph=graph, embedder=embedder, llm=llm)
+        result = rag.ask("Кто занимается RT-DETR?", query_keywords=" RT-DETR detector ", with_answer=False)
+        self.assertEqual(llm.calls, 0)  # the planner already paid for them
+        self.assertEqual(graph.terms, r"RT\-DETR detector")
+        self.assertEqual(embedder.calls, [["RT-DETR detector"]])
+        self.assertEqual(result["options"]["keywords_source"], "given")
+        rag.ask("Кто занимается RT-DETR?", query_keywords="  ", with_answer=False)
+        self.assertEqual(llm.calls, 1)  # blank keywords are none: extract as usual
+
     def test_dense_keywords_replace_the_question_for_the_encoder(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -368,6 +386,40 @@ class MetricsTest(unittest.TestCase):
         with self.assertRaises(ValueError):  # the pool holds each variant's top 10 only
             evaluation.compute_metrics(self.run, cutoffs=(20,))
 
+    def test_calibration_takes_the_quantile_of_off_topic_matches(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        questions = Path(tmp.name) / "offtopic.csv"
+        questions.write_text("question,type,targets\n" + "".join(f"q{i},offtopic,persons\n" for i in range(5)),
+                             encoding="utf-8")
+
+        class _Rag:
+            scores = iter([0.70, 0.72, 0.74, 0.76, 0.90])
+
+            def retrieve(self, question, **kwargs):
+                return {"Publication": [Hit("W", "Publication", 1.0, dense=next(self.scores))]}
+
+        result = evaluation.calibrate(_Rag(), questions, "full@qwen3:dense", quantile=0.75)
+        self.assertEqual(result["min_score"], 0.76)
+        self.assertEqual([s["question"] for s in result["above"]], ["q4", "q3"])
+
+    def test_auc_and_best_threshold(self):
+        self.assertEqual(evaluation._auc([0.9, 0.8], [0.5, 0.6]), 1.0)
+        self.assertEqual(evaluation._auc([0.5], [0.5]), 0.5)
+        cut = evaluation._best_threshold([0.9, 0.8, 0.4], [0.5, 0.3])
+        self.assertEqual((cut["threshold"], cut["answered"], cut["false_answers"]), (0.8, 0.667, 0.0))
+
+    def test_empty_answers_are_counted_against_the_model_threshold(self):
+        def entry(kind, top):
+            return {"meta": {"type": kind, "targets": "persons,publications"},
+                    "rankings": {"full@qwen3:dense": {"top_dense": {"Publication": top}}}}
+        pool = {"variants": {"full@qwen3:dense": evaluation.parse_variant("full@qwen3:dense")},
+                "questions": [entry("no_answer", 0.70), entry("no_answer", 0.80), entry("topic", 0.90),
+                              entry("topic", 0.70)]}
+        row = evaluation.abstention(pool)[0]
+        self.assertEqual((row["empty_right"], row["unanswerable"]), (1, 2))
+        self.assertEqual((row["empty_wrong"], row["answerable"]), (1, 2))
+
     def test_grades_are_checked_and_seeded_without_overwriting(self):
         self._pool()
         with self.assertRaises(KeyError):
@@ -383,6 +435,79 @@ class MetricsTest(unittest.TestCase):
     def test_kappa(self):
         self.assertEqual(evaluation.kappa([(0, 0), (1, 1), (2, 2)], weighted=False), 1.0)
         self.assertLess(evaluation.kappa([(0, 2), (2, 0), (1, 1)], weighted=True), 0.5)
+
+    def test_agreement_has_a_question_bootstrap_interval(self):
+        self._pool()
+        for n in range(3):
+            evaluation.save_judgment(self.run, f"q{n}", "persons", "x", 2, judge="a")
+            evaluation.save_judgment(self.run, f"q{n}", "persons", "x", 2, judge="b")
+            evaluation.save_judgment(self.run, f"q{n}", "persons", "y", n % 2, judge="a")
+            evaluation.save_judgment(self.run, f"q{n}", "persons", "y", 0, judge="b")
+        rows = {r["kind"]: r for r in evaluation.agreement(self.run, "b", "a", resamples=50)}
+        self.assertEqual((rows["all"]["items"], rows["all"]["questions"]), (6, 3))
+        self.assertEqual(len(rows["all"]["weighted_kappa_ci"]), 2)
+
+    def test_person_context_finds_works_by_person_and_title(self):
+        class _Graph:
+            def read(self, query, rows):
+                self.rows = rows
+                return [{"person": "a", "id": "W1", "title": "GNN", "year": 2024, "abstract": "graphs " * 200}]
+
+        pool = {"questions": [{"items": {"persons": {"a": {"evidence": ["GNN", "Lost title"]},
+                                                     "b": {"evidence": []}}}}]}
+        graph = _Graph()
+        self.assertEqual(evaluation.add_person_context(graph, pool), 1)
+        entry = pool["questions"][0]
+        self.assertEqual(graph.rows, [{"person": "a", "titles": ["GNN", "Lost title"]}])
+        self.assertEqual(entry["items"]["persons"]["a"]["evidence_ids"], ["W1"])
+        self.assertEqual(entry["items"]["persons"]["b"]["evidence_ids"], [])
+        self.assertLessEqual(len(entry["context"]["publications"]["W1"]["abstract"]), evaluation.SNIPPET_CHARS + 1)
+
+    def test_judge_pool_grades_one_item_per_request_and_logs_it(self):
+        entry = {"question": "q", "meta": {"expected": "rule"},
+                 "rankings": {"v": {"publications": ["a", "b", "c"], "repositories": [], "persons": ["p"]}},
+                 "items": {"persons": {"p": {}}, "repositories": {},
+                           "publications": {i: {"title": i, "abstract": "", "full_text": ""} for i in "abc"}},
+                 "order": {"persons": ["p"], "publications": ["a", "b", "c"], "repositories": []}}
+        (self.run / "pool.json").write_text(json.dumps({"k": 3, "variants": {"v": {}}, "kinds": list(evaluation.KINDS),
+                                                        "questions": [entry]}))
+
+        class _Llm:
+            model = "m"
+            last_error = None
+            last_usage = {"prompt_tokens": 10, "completion_tokens": 1}
+
+            def chat_json(self, prompt, system_prompt=None, max_tokens=None, reasoning=None):
+                item = json.loads(prompt)["элемент"]["название"]
+                return {"grade": {"a": 2, "b": 0}.get(item, "high")}  # "c" gets no valid grade
+
+        result = evaluation.judge_pool(self.run, _Llm, "q1", workers=2)
+        self.assertEqual((result["graded"], result["failed"], result["prompt_tokens"]), (2, 1, 30))
+        self.assertEqual(evaluation.load_judgments(self.run, "q1")["q"], {"publications:a": 2, "publications:b": 0})
+        log = [json.loads(line) for line in (self.run / "judge_q1.log.jsonl").read_text().splitlines()]
+        self.assertEqual(len(log), 3)  # every request, failed ones included; people are never asked
+        config = json.loads((self.run / "judge_q1.config.json").read_text())
+        self.assertEqual(config["prompt_id"], hashlib.sha1(evaluation.judge_system(3).encode()).hexdigest()[:8])
+        rows = evaluation.tails(evaluation.load_pool(self.run), evaluation.load_judgments(self.run, "q1"))
+        self.assertEqual([(r["last_relevant"], r["unjudged"]) for r in rows], [(1, 1)])
+        self.assertIn("первые 3 элементов", config["system_prompt"])  # the pool depth is stated
+
+        class _Other(_Llm):
+            model = "other"
+
+        with self.assertRaises(ValueError):  # one judgments file, one judge
+            evaluation.judge_pool(self.run, _Other, "q1")
+
+    def test_person_grade_is_the_best_grade_of_their_works(self):
+        pool = {"questions": [{"question": "q", "items": {"persons": {
+            "a": {"works": {"publications": ["w1", "w2"], "repositories": ["r1"]}},
+            "b": {"works": {"publications": ["w2"], "repositories": []}},
+            "c": {"works": {"publications": ["lost"], "repositories": []}}}}}]}
+        judgments = {"q": {"publications:w1": 1, "publications:w2": 0, "repositories:r1": 2}}
+        counts = evaluation.person_grades(pool, judgments)
+        self.assertEqual((judgments["q"]["persons:a"], judgments["q"]["persons:b"]), (2, 0))
+        self.assertNotIn("persons:c", judgments["q"])  # resting on an ungraded work only: no grade
+        self.assertEqual((counts["no_grade"], counts["ungraded_works"]), (1, 1))
 
     def test_questions_csv_keeps_extra_columns(self):
         path = self.run / "q.csv"

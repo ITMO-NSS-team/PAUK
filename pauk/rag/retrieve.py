@@ -286,6 +286,18 @@ class Rag:
                 break
         return people
 
+    def weak_labels(self, hits: dict[str, list[Hit]], model: str) -> dict[str, float]:
+        """Labels whose best raw dense score falls below the model's `min_score`, with that score."""
+        threshold = get_model(model).min_score
+        if threshold is None:
+            return {}
+        weak = {}
+        for label, items in hits.items():
+            scores = [h.dense for h in items if h.dense is not None]
+            if scores and max(scores) < threshold:
+                weak[label] = max(scores)
+        return weak
+
     def describe(self, hits: dict[str, list[Hit]], profile: str, model: str | None = None) -> None:
         """Titles, years, authors and the indexed text, for the answer and for judges."""
         spec = self.profile(profile, model)
@@ -342,10 +354,18 @@ class Rag:
     def ask(self, question: str, *, profile: str = "full", model: str | None = None, mode: Mode = "hybrid",
             k: int = 50,
             top_n: int = 10, fusion: str = "minmax", keywords: bool = True, dense_keywords: bool = True,
-            only_itmo: bool = True, with_answer: bool = True) -> dict:
+            query_keywords: str | None = None,
+            abstain: bool = True, only_itmo: bool = True, with_answer: bool = True) -> dict:
         """One answer. `keywords` gives BM25 the extracted keywords, `dense_keywords` gives them to
         the encoder too; both are on by default - with Qwen3-Embedding, the default model, that is
         the best variant of the 2026-10-15 validation.
+
+        `query_keywords` are keywords the caller already has - the planner
+        of the text-to-Cypher pipeline asks for them in its own LLM call,
+        following KEYWORDS_RULES - and replace the extraction, saving a call.
+        Without them the keywords are extracted here, as the validation does:
+        its metrics hold for `extract_keywords`, so planner keywords should
+        be checked against them before they are trusted to the same degree.
 
         A failed extraction (no API key, network) degrades to the question
         as written instead of failing the answer, and says so.
@@ -353,11 +373,13 @@ class Rag:
         timings: dict[str, float] = {}
         notes: list[str] = []
         start = time.perf_counter()
-        extracted = None
+        extracted = query_keywords.strip() if query_keywords and query_keywords.strip() else None
+        source = "given" if extracted else None
         wanted = (keywords and mode != "dense") or (dense_keywords and mode != "bm25")
-        if wanted:
+        if wanted and extracted is None:
             try:
                 extracted = self.extract_keywords(question)
+                source = "extracted"
             except Exception as exc:  # the answer is still worth giving without it
                 notes.append(f"Ключевые слова вопроса не получены ({exc}); поиск по вопросу как есть.")
                 keywords = dense_keywords = False
@@ -365,20 +387,32 @@ class Rag:
         hits = self.retrieve(question, profile=profile, model=model, mode=mode, k=k, fusion=fusion,
                              bm25_query=extracted if keywords else None,
                              dense_query=extracted if dense_keywords else None)
+        if abstain:
+            # Nearest neighbours always exist; a weak best match means the
+            # graph has nothing on the topic, and an empty answer is the right one.
+            for label, weak in self.weak_labels(hits, model).items():
+                hits[label] = []
+                notes.append(f"{'Публикаций' if label == 'Publication' else 'Репозиториев'} по теме не найдено: "
+                             f"лучшее совпадение {weak:.3f} ниже порога модели.")
         timings["retrieve"] = round(time.perf_counter() - start, 3)
         people = self.experts(hits, top_n=top_n, only_itmo=only_itmo)
         timings["experts"] = round(time.perf_counter() - start - timings["retrieve"], 3)
         shown = {label: items[:top_n] for label, items in hits.items()}
         self.describe(shown, profile, model)
         answer = None
-        if with_answer:
+        if not any(shown.values()):
+            notes.append("По теме вопроса в графе ничего не найдено.")
+        elif with_answer:
             mark = time.perf_counter()
             answer = self.answer(question, shown, people)
             timings["answer"] = round(time.perf_counter() - mark, 3)
         return {
             "question": question,
             "options": {"profile": profile, "model": model, "mode": mode, "k": k, "top_n": top_n, "fusion": fusion,
-                        "keywords": keywords, "dense_keywords": dense_keywords, "only_itmo": only_itmo},
+                        "keywords": keywords, "dense_keywords": dense_keywords,
+                        "query_keywords": extracted if wanted else None, "keywords_source": source if wanted else None,
+                        "abstain": abstain,
+                        "only_itmo": only_itmo},
             "persons": people,
             "publications": [asdict(h) for h in shown.get("Publication", [])],
             "repositories": [asdict(h) for h in shown.get("Repository", [])],
@@ -399,12 +433,16 @@ ANSWER_SYSTEM = """Ты отвечаешь на вопрос о науке в У
 # A cap keeps a looping model from running for minutes; 900 tokens hold 200 words with citations.
 ANSWER_MAX_TOKENS = 900
 
-KEYWORDS_SYSTEM = """Extract English search keywords from the user's question about research. They are used to
+# The rules alone, without the reply format: a caller that plans the question
+# with its own LLM call (the text-to-Cypher planner) puts them into its prompt,
+# so its keywords follow the rules the validation measured.
+KEYWORDS_RULES = """English search keywords from the user's question about research. They are used to
 retrieve scientific papers and code repositories, both by word matching and by meaning, so give the topic in
 the terms papers use. Keep names of models, methods, datasets, software and people exactly as written.
 Drop question words and filler ("who", "is there", "where", "works on"). Drop the names of the university and
 its units (ITMO, institutes, centres, laboratories): they appear in the affiliations of most texts and say
-nothing about the topic. Return a JSON object {"query": "<keywords>"}."""
+nothing about the topic."""
+KEYWORDS_SYSTEM = f"""Extract {KEYWORDS_RULES} Return a JSON object {{"query": "<keywords>"}}."""
 KEYWORDS_MAX_TOKENS = 120
 # Part of the cache key: editing the prompt must not reuse keywords it no longer produces.
 KEYWORDS_PROMPT_ID = hashlib.sha1(KEYWORDS_SYSTEM.encode()).hexdigest()[:8]

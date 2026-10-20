@@ -5,6 +5,10 @@
 // Built from DOM nodes only: names and abstracts come from the graph.
 
 const KIND_TITLES = { persons: "Люди", publications: "Публикации", repositories: "Репозитории" };
+// People last: a person is judged by their works, and by then the judge has
+// graded most of those works among the publications and sees the grades.
+const DISPLAY_ORDER = ["publications", "repositories", "persons"];
+const kinds = () => DISPLAY_ORDER.filter(kind => state.pool.kinds.includes(kind));
 const GRADE_TITLES = { 0: "не по теме", 1: "частично", 2: "точно по теме" };
 const state = { run: null, judge: "", pool: null, judgments: {}, index: 0, focus: 0 };
 const $ = id => document.getElementById(id);
@@ -30,7 +34,7 @@ const grades = () => state.judgments[entry().question] || {};
 
 function items() {
   const e = entry();
-  return state.pool.kinds.flatMap(kind => e.order[kind].map(id => ({ kind, id, info: e.items[kind][id] })));
+  return kinds().flatMap(kind => e.order[kind].map(id => ({ kind, id, info: e.items[kind][id] })));
 }
 
 async function api(url, options) {
@@ -82,12 +86,32 @@ function renderQuestions() {
   }));
 }
 
+// A person's works with their abstracts (pauk rag context) and the grade the
+// judge already gave each one; without the context, the titles alone.
+function works(info) {
+  const context = (entry().context || {}).publications || {};
+  const ids = (info.evidence_ids || []).filter(id => id in context);
+  if (!ids.length) {
+    return (info.evidence || []).length ? el("div", { class: "small" }, "Работы: " + info.evidence.join(" · ")) : null;
+  }
+  const g = grades();
+  return el("div", { class: "works" }, ids.map(id => {
+    const work = context[id];
+    const grade = g[`publications:${id}`];
+    // Opening a work must not refocus the item: that re-renders and closes it.
+    return el("details", { onclick: ev => ev.stopPropagation() },
+      el("summary", { class: "small" }, [work.title, work.year].filter(Boolean).join(" · "),
+        grade !== undefined ? el("span", { class: `mark v${grade}` }, ` оценка ${grade}`) : null),
+      el("div", { class: "small" }, work.abstract || "аннотации нет"));
+  }));
+}
+
 function describe(kind, info) {
   if (kind === "persons") {
     return [
       el("div", {}, link(info.label, info.url), info.is_itmo === false ? el("span", { class: "small" }, " · не ИТМО") : null),
       (info.departments || []).length ? el("div", { class: "small" }, info.departments.join("; ")) : null,
-      (info.evidence || []).length ? el("div", { class: "small" }, "Работы: " + info.evidence.join(" · ")) : null,
+      works(info),
       (info.code || []).length ? el("div", { class: "small" }, "Код: " + info.code.join(" · ")) : null,
     ];
   }
@@ -116,7 +140,7 @@ function renderDetail() {
     e.meta.expected ? el("div", { class: "expected" }, el("b", {}, "Правило: "), e.meta.expected) : null,
   ];
   let position = 0;
-  for (const kind of state.pool.kinds) {
+  for (const kind of kinds()) {
     const ids = e.order[kind];
     blocks.push(el("h2", {}, `${KIND_TITLES[kind]} (${ids.length})`));
     if (!ids.length) blocks.push(el("div", { class: "small" }, "пусто"));
