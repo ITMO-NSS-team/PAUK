@@ -12,6 +12,7 @@ import re
 import unicodedata
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
+from typing import NamedTuple
 
 from pauk.models import Contribution, GitHubProfile, Person, Publication, Repository
 from pauk.models.processing import ProcessingState, ProcessingStatus
@@ -176,13 +177,39 @@ def decide(signals: list[str], in_bridge: bool) -> str:
     return "rejected"
 
 
+class Fit(NamedTuple):
+    """One author scored against one account."""
+
+    author_id: str
+    score: float
+    signals: list[str]
+    evidence: dict
+    decision: str
+
+
+class Match(NamedTuple):
+    """What the rules make of one account.
+
+    Attributes:
+        best: The author to link or to ask about, or None when nobody fits.
+        candidates: Every author still in the running, `best` among them.
+        refused: Authors a person said the account is not theirs, as the rules see them now.
+    """
+
+    best: Fit | None
+    candidates: frozenset[str]
+    refused: list[Fit]
+
+
 def match_account(account: dict, authors: dict[str, dict], email_index: dict[str, str],
-                  name_index: dict[str, set[str]], bridge: dict[str, set[str]]):
-    """The author this account belongs to, or None if nobody fits.
+                  name_index: dict[str, set[str]], bridge: dict[str, set[str]],
+                  refused: frozenset[str] = frozenset()) -> Match:
+    """The author this account belongs to, and every other author it could be.
 
     Only authors reachable by publication, address or full name are scored. A
     tie on score goes to a shared address, then to a bridge; a tie on all three
-    goes to a person.
+    goes to a person. A refused author is left out of the choice, so a "no"
+    moves the question on to the next one.
     """
     bridge_ids: set[str] = set()
     for publication_id in account["publication_ids"]:
@@ -193,7 +220,9 @@ def match_account(account: dict, authors: dict[str, dict], email_index: dict[str
         if len(name.split()) >= 2:
             name_ids |= name_index.get(name, set())
 
-    best = None
+    best: tuple[tuple[bool, float, bool, bool], Fit] | None = None
+    candidates: set[str] = set()
+    refusals: list[Fit] = []
     matched: list[tuple[bool, float, bool, bool]] = []
     # Sorted: on a tie the question must name the same author on every run.
     for author_id in sorted(bridge_ids | email_ids | name_ids):
@@ -206,35 +235,42 @@ def match_account(account: dict, authors: dict[str, dict], email_index: dict[str
         if decision == "rejected":
             continue
         evidence["in_bridge"] = in_bridge
+        fit = Fit(author_id, score, signals, evidence, decision)
+        if author_id in refused:
+            refusals.append(fit)
+            continue
+        candidates.add(author_id)
         rank = (decision == "matched", score, "email_exact" in signals, in_bridge)
         if best is None or rank > best[0]:
-            best = (rank, author_id, score, signals, evidence, decision)
+            best = (rank, fit)
         if decision == "matched":
             matched.append(rank)
 
     if best is None:
-        return None
-    rank, author_id, score, signals, evidence, decision = best
-    if decision == "matched" and matched.count(rank) > 1:
+        return Match(None, frozenset(), refusals)
+    rank, fit = best
+    if fit.decision == "matched" and matched.count(rank) > 1:
         # Two authors fit equally well; picking either would be a guess.
-        decision = "review"
-        evidence["ambiguous"] = True
-    return author_id, score, signals, evidence, decision
+        fit.evidence["ambiguous"] = True
+        fit = fit._replace(decision="review")
+    return Match(fit, frozenset(candidates), refusals)
 
 
 class GitHubMatchStage(EnrichmentStage):
     name = "github_match"
 
-    def _answered(self, decisions: list[dict]) -> list[dict]:
+    @staticmethod
+    def _answered(decisions: list[dict], answers: dict[frozenset[str], str]) -> list[dict]:
         """Apply people's answers over the rules, both ways.
+
+        Args:
+            decisions: The rows the rules produced, changed in place.
+            answers: What people said, keyed by the login and the person.
 
         Returns:
             Rows for the queue: unanswered pairs a person has to settle, and
             answered ones the rules now dispute.
         """
-        # Through folded ids: an answer about a since-merged person keeps applying.
-        answers = review.github_decisions(
-            self.prepared.db, folded_ids(self.prepared.read_models("persons", Person)))
         questions: list[dict] = []
         for row in decisions:
             answered = answers.get(frozenset((row["login"], row["person"])))
@@ -349,33 +385,51 @@ class GitHubMatchStage(EnrichmentStage):
         logger.info("github_match: %d accounts against %d ITMO authors",
                     len(accounts), len(authors))
 
+        aliases = folded_ids(people)
+        # Through folded ids: an answer about a since-merged person keeps applying.
+        answers = review.github_decisions(self.prepared.db, aliases)
+        refusals: dict[str, set[str]] = {}
+        for members, verdict in answers.items():
+            if verdict == review.DIFFERENT:
+                for login in (member for member in members if member in accounts):
+                    refusals.setdefault(login, set()).update(members - {login})
+
         by_id = {person.id: person for person in people}
         repositories_by_url = {repository.url: repository for repository in repositories}
-        decisions: list[dict] = []
-        # Sorted: two runs over the same data must reach the same decisions.
-        for login in sorted(accounts):
-            result = match_account(accounts[login], authors, email_index, name_index, bridge)
-            if result is None:
-                continue
-            author_id, score, signals, evidence, decision = result
-            decisions.append({
+
+        def row_of(login: str, fit: Fit) -> dict:
+            return {
                 "login": login,
                 "url": accounts[login]["url"],
                 "profile": accounts[login]["profile"],
-                "person": author_id,
-                "name_raw": by_id[author_id].name_raw,
-                "score": round(score, 2),
-                "signals": signals,
-                "evidence": evidence,
-                "decision": decision,
-                "confidence": confidence(signals, evidence.get("in_bridge", False)),
+                "person": fit.author_id,
+                "name_raw": by_id[fit.author_id].name_raw,
+                "score": round(fit.score, 2),
+                "signals": fit.signals,
+                "evidence": fit.evidence,
+                "decision": fit.decision,
+                "confidence": confidence(fit.signals, fit.evidence.get("in_bridge", False)),
                 "repos": sorted(accounts[login]["repos"]),
-            })
+            }
 
-        questions = self._answered(decisions)
+        decisions: list[dict] = []
+        chosen: dict[str, dict] = {}
+        candidates: dict[str, frozenset[str]] = {}
+        # Sorted: two runs over the same data must reach the same decisions.
+        for login in sorted(accounts):
+            match = match_account(accounts[login], authors, email_index, name_index, bridge,
+                                  frozenset(refusals.get(login, ())))
+            candidates[login] = match.candidates
+            decisions += [row_of(login, fit) for fit in match.refused]
+            if match.best is not None:
+                chosen[login] = row_of(login, match.best)
+                decisions.append(chosen[login])
+
+        questions = self._answered(decisions, answers)
 
         stats = {"matched": 0, "review": 0}
         filled_emails = 0
+        linked: set[str] = set()
         for row in decisions:
             stats[row["decision"]] = stats.get(row["decision"], 0) + 1
             if row["decision"] != "matched":
@@ -383,6 +437,7 @@ class GitHubMatchStage(EnrichmentStage):
             person = by_id[row["person"]]
             if not self.selected("persons", person.id):
                 continue
+            linked.add(row["login"])
             state = person.processing.get(self.name)
             person.github = person.github or row["login"]
             # Only an author without an address takes the account's: ORCID's stays.
@@ -408,8 +463,11 @@ class GitHubMatchStage(EnrichmentStage):
         self.prepared.write_models("persons", people)
         review.record_held(self.prepared.db, questions, source=review.STAGE)
         review.record_disputed(self.prepared.db, questions)
-        outcomes = dict.fromkeys(accounts) | {row["login"]: row for row in decisions}
-        review.retire_github(self.prepared.db, outcomes, set(by_id), folded_ids(people))
+        # A link counts only where it was written: a scoped run leaves the others alone.
+        covered = {person.id for person in people if self.selected("persons", person.id)}
+        still_asked = {login: frozenset() if login in linked else candidates[login] for login in accounts}
+        review.retire_github(self.prepared.db, dict.fromkeys(accounts) | chosen, still_asked,
+                             covered, aliases)
         # A file beside dedup's journal: it is read by people, not by the pipeline.
         journal_path = self.config.audit_dir / self.prepared.group / MATCHES_FILENAME
         with AtomicWriter(journal_path) as handle:

@@ -7,6 +7,7 @@ import mongomock
 
 from pauk.models import GitHubProfile, Person, Repository
 from pauk.pipeline.stages import social_graph
+from pauk.pipeline.stages.base import PreparedSelection
 from pauk.pipeline.stages.github_match import (
     ITMO_IN_TEXT,
     MATCHES_FILENAME,
@@ -483,11 +484,11 @@ class GitHubReviewTest(unittest.TestCase):
         self.prepared = PreparedStore(self.db, "sample")
         self.raw = RawStore(self.db, "sample")
 
-    def run_stage(self, people, profiles, repositories=()):
+    def run_stage(self, people, profiles, repositories=(), selection=None):
         self.prepared.write_models("persons", people)
         self.prepared.write_models("github_profiles", profiles)
         self.prepared.write_models("repositories", repositories)
-        result = GitHubMatchStage(self.prepared, self.raw, self.config).run()
+        result = GitHubMatchStage(self.prepared, self.raw, self.config, selection=selection).run()
         return result, {p.id: p for p in self.prepared.read_models("persons", Person)}
 
     def unsure(self):
@@ -625,11 +626,39 @@ class GitHubReviewTest(unittest.TestCase):
         (question,) = review.questions(self.db, answered=False)
         self.assertEqual(question["members"], ["A2", "XieN-N"])
 
-    def test_one_open_question_per_account(self):
-        self.run_stage([person("A2", "Stanislav Shtuka")],
-                       [profile("XieN-N", name="Stanislav Shtuka")])
-        self.run_stage([person("A1", "Stanislav Shtuka"), person("A2", "Stanislav Shtuka")],
-                       [profile("XieN-N", name="Stanislav Shtuka")])
+    def test_moving_to_a_tied_author_does_not_close_the_first_question(self):
+        self.run_stage([person("A2", "Ivan Petrov")], [profile("coder42", name="Ivan Petrov")])
+        self.run_stage([person("A1", "Ivan Petrov"), person("A2", "Ivan Petrov")],
+                       [profile("coder42", name="Ivan Petrov")])
+        open_members = [question["members"] for question in review.questions(self.db, answered=False)]
+        self.assertIn(["A2", "coder42"], open_members)
+
+    def test_after_a_no_the_next_author_is_asked(self):
+        both = ([person("A1", "Ivan Petrov"), person("A2", "Ivan Petrov")],
+                [profile("coder42", name="Ivan Petrov")])
+        self.run_stage(*both)
+        review.record_verdict(self.db, review.GITHUB, ["A1", "coder42"], review.DIFFERENT)
+        self.run_stage(*both)
+        open_members = [question["members"] for question in review.questions(self.db, answered=False)]
+        self.assertEqual(open_members, [["A2", "coder42"]])
+
+    def test_a_scoped_run_does_not_close_a_question_it_did_not_apply(self):
+        # The rules would now link A1, but a run limited to B1 writes nothing to A1.
+        self.run_stage(*self.unsure())
+        _, people = self.run_stage(
+            [person("A1", "Stanislav Shtuka"), person("B1", "Boris Ivanov")],
+            [profile("XieN-N", name="Stanislav Shtuka", company="ITMO University")],
+            selection=PreparedSelection("persons", frozenset({"B1"})))
+        self.assertIsNone(people["A1"].github)
+        (question,) = review.questions(self.db, answered=False)
+        self.assertEqual(question["members"], ["A1", "XieN-N"])
+
+    def test_a_scoped_run_leaves_questions_about_others_alone(self):
+        # The account no longer fits A1, but a run limited to B1 does not speak for A1.
+        self.run_stage(*self.unsure())
+        self.run_stage([person("A1", "Stanislav Shtuka"), person("B1", "Boris Ivanov")],
+                       [profile("XieN-N", name="Ivan Petrov")],
+                       selection=PreparedSelection("persons", frozenset({"B1"})))
         (question,) = review.questions(self.db, answered=False)
         self.assertEqual(question["members"], ["A1", "XieN-N"])
 

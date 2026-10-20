@@ -302,8 +302,9 @@ kinds:
 Questions live in the Mongo collection `review_pairs`, one document per
 question. If a later run hits the same question, it updates the evidence in the
 existing document instead of creating a second one. An unanswered account
-question that a later run settles by itself (it matched the account, asks about
-another author, or finds no author for it) is closed without an answer. The
+question that a later run settles by itself (it linked the account, or the
+person no longer fits it) is closed without an answer; "не его" moves the
+question on to the next author that fits. The
 default tab is
 "Приоритетные" (Priority): identical names without confirmation, groups,
 accounts and the catalog. The rest is under "Все нерешенные" (All unresolved).

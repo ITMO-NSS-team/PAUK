@@ -245,17 +245,21 @@ def record_disputed(db: Database, report: list[dict]) -> int:
     return noted
 
 
-def retire_github(db: Database, outcomes: dict[str, dict | None], people: set[str],
+def retire_github(db: Database, outcomes: dict[str, dict | None],
+                  still_asked: dict[str, frozenset[str]], people: set[str],
                   aliases: dict[str, str] | None = None) -> int:
     """Close open account questions a run has settled without a person.
 
-    Only pairs the run could judge: a login it looked at and a person it saw,
-    directly or through a fold. Closed by `auto_resolved_at`, never a verdict.
+    Only pairs the run could judge: a login it looked at and a person it covers,
+    directly or through a fold. A question stays while its person is still in
+    the running for an account nobody was linked to: moving on to a tied author
+    settles nothing. Closed by `auto_resolved_at`, never a verdict.
 
     Args:
         outcomes: Each login the run looked at, with its decision row, or None
             when no author fitted.
-        people: Every person the run could pair an account with.
+        still_asked: For each such login, the authors whose questions stay open.
+        people: The persons the run covers; a scoped run covers its selection only.
         aliases: Folded-away person id to the id that survived.
 
     Returns:
@@ -270,13 +274,12 @@ def retire_github(db: Database, outcomes: dict[str, dict | None], people: set[st
         login, person = question["evidence"]["login"], question["evidence"]["person"]
         if aliases.get(person, person) not in people:
             continue
-        row = outcomes[login]
-        if row is not None and row["decision"] == "review" and row["person"] == person:
+        if person in still_asked.get(login, frozenset()):
             continue
         result = db[COLLECTION].update_one(
             {"_id": question["_id"], "verdict": {"$exists": False}},
             {"$set": {"auto_resolved_at": moment,
-                      "auto_resolution": row or {"login": login, "decision": "rejected"}}})
+                      "auto_resolution": outcomes[login] or {"login": login, "decision": "rejected"}}})
         retired += result.modified_count
     if retired:
         logger.info("review: %d account question(s) settled by the rules", retired)

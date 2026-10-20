@@ -87,12 +87,19 @@ order, so a tie names the same author on every run.
 
 ## Questions
 
-Each `review` pair becomes a question in the review queue. A run also closes
-the open questions it has settled itself: for a login it looked at and a person
-it could score (directly or through the record that person was folded into),
-it matched the account, held another author for it, or found nobody. Such a
-question gets `auto_resolved_at` and no verdict, so it leaves the queue and
-comes back if a later run holds it again. Answered questions are never touched.
+Each `review` pair becomes a question in the review queue. An author somebody
+answered "not theirs" is left out of the choice, so the next run asks about the
+next author that fits; if the rules would now link the refused one, the pair goes
+to the disputes instead.
+
+A run also closes the open questions it has settled itself, for a login it
+looked at and a person it covers (a scoped run covers its selection only),
+directly or through the record that person was folded into: it linked the
+account to somebody, or the person no longer fits it. A question about an author
+who still fits an unlinked account stays open, even when the run now asks about
+a tied one. A closed question gets `auto_resolved_at` and no verdict, so it
+leaves the queue and comes back if a later run holds it again. Answered
+questions are never touched.
 
 ## `confidence`
 
