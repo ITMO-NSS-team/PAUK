@@ -1,10 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Граф</h1>
-<p class="muted" style="margin:-8px 0 20px">
-  Правке доступны {{ labels|length }} видов узлов и {{ relationships }} типов связей.
-  {% if not counted %}Граф сейчас не отвечает.{% endif %}
-</p>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-Person" viewBox="0 0 24 24">
@@ -72,14 +68,14 @@
     <b class="headline quiet">ничего не запущено</b>
     {% endif %}
     <span class="under">
-      {% if summary.last_run %}последний прогон {{ summary.last_run.at|ago }}{% if
-        summary.last_run.failed %}, <span class="kind kind-deleted">с ошибкой</span>{% endif %}
-      {% else %}прогонов ещё не было{% endif %}
+      {% if summary.workers %}<span class="state ok">воркер работает</span>
+      {% else %}<span class="state bad">воркер не работает</span>, задачи будут ждать в очереди{% endif %}
     </span>
-    {% if not summary.workers %}
-    <span class="under"><span class="kind kind-deleted">воркер не работает</span>
-      задачи будут ждать в очереди</span>
-    {% endif %}
+    <span class="foot">
+      {% if summary.last_run %}Последний прогон {{ summary.last_run.at|ago }}{% if
+        summary.last_run.failed %}, <span class="kind kind-deleted">с ошибкой</span>{% endif %}
+      {% else %}Прогонов ещё не было{% endif %}
+    </span>
   </a>
 
   <a class="card" href="/review">
@@ -90,17 +86,33 @@
       {%- if summary.pressing %}приоритетных {{ summary.pressing|plural("вопрос ждёт", "вопроса ждут",
         "вопросов ждут") }} ответа
       {%- else %}вопросов не осталось{% endif %}</span>
+    {% if summary.open %}<span class="foot">Всего нерешённых: {{ summary.open }}</span>{% endif %}
   </a>
 
   <a class="card" href="/health">
     <span class="label">Здоровье БД</span>
-    {% if summary.health %}
-    <div class="verdict">
-      <span class="tally bad"><b>{{ summary.health.fail }}</b> плохо</span>
-      <span class="tally mid"><b>{{ summary.health.warn }}</b> внимание</span>
-      <span class="tally good"><b>{{ summary.health.ok }}</b> в порядке</span>
-    </div>
-    <span class="under">Посчитано {{ summary.health.at|ago }}</span>
+    {% set health = summary.health %}
+    {% if health %}
+    {% if health.fail %}
+    <b class="headline">{{ health.fail }}</b>
+    <span class="under">{{ health.fail|plural("проверка не прошла", "проверки не прошли", "проверок не прошли") }}</span>
+    {% elif health.warn %}
+    <b class="headline">{{ health.warn }}</b>
+    <span class="under">{{ health.warn|plural("проверка требует внимания", "проверки требуют внимания",
+      "проверок требуют внимания") }}</span>
+    {% else %}
+    <b class="headline quiet">всё в порядке</b>
+    {% endif %}
+    <span class="meter" aria-hidden="true">
+      {%- for state in ("fail", "warn", "ok", "error") %}{% for _ in range(health[state]) %}<i class="{{ state }}"></i>{% endfor %}{% endfor -%}
+    </span>
+    <span class="legend">
+      <span class="fail"><b>{{ health.fail }}</b> плохо</span>
+      <span class="warn"><b>{{ health.warn }}</b> внимание</span>
+      <span class="ok"><b>{{ health.ok }}</b> в порядке</span>
+      {% if health.error %}<span class="error"><b>{{ health.error }}</b> не выполнились</span>{% endif %}
+    </span>
+    <span class="foot">Посчитано {{ health.at|ago }}</span>
     {% else %}
     <b class="headline quiet">Ещё не считали</b>
     {% endif %}

@@ -48,9 +48,9 @@ NODE_COUNTS = [
     ("Персоны всего", "People total", "MATCH (p:Person) RETURN count(p)"),
     # Not a label: the loader writes one :Person and carries ITMO membership
     # as a sticky property (see checks.py).
-    ("— сотрудники ИТМО", "— ITMO staff",
+    ("– сотрудники ИТМО", "– ITMO staff",
      "MATCH (p:Person) WHERE p.is_itmo RETURN count(p)"),
-    ("— внешние соавторы", "— external co-authors",
+    ("– внешние соавторы", "– external co-authors",
      "MATCH (p:Person) WHERE NOT coalesce(p.is_itmo, false) RETURN count(p)"),
     ("Департаменты", "Departments", "MATCH (d:Department) RETURN count(d)"),
     ("Репозитории", "Repositories", "MATCH (r:Repository) RETURN count(r)"),

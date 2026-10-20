@@ -221,20 +221,20 @@ class AnsweredTabTest(unittest.TestCase):
 
     def test_a_merge_says_when_it_will_happen(self):
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)
-        self.assertIn("сольётся на следующем прогоне", self.body())
+        self.assertIn("склеится при следующем прогоне", self.body())
 
     def test_a_merge_that_happened_says_so_instead(self):
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.SAME)
         review.mark_applied(self.db, review.PAIR, ["A1", "A2"])
         body = self.body()
-        self.assertIn("слито", body)
-        self.assertNotIn("сольётся на следующем прогоне", body)
+        self.assertIn("склеено", body)
+        self.assertNotIn("склеится при следующем прогоне", body)
 
     def test_keeping_two_people_apart_promises_no_merge(self):
         # There is nothing to apply: the answer only stops the rules from
         # merging the pair later.
         review.record_verdict(self.db, review.PAIR, ["A1", "A2"], review.DIFFERENT)
-        self.assertNotIn("сольётся", self.body())
+        self.assertNotIn("склеится", self.body())
 
 
 class FoldNowTest(unittest.TestCase):
@@ -397,7 +397,7 @@ class DisputedTabTest(unittest.TestCase):
         # Nothing was merged. Saying otherwise would send somebody looking
         # for a merge that never happened.
         self.assertIn("user:andrey", self.body())
-        self.assertNotIn("сольётся", self.body())
+        self.assertNotIn("склеится", self.body())
 
     def test_confirming_it_again_clears_the_disagreement(self):
         response = self.client.post("/review/answer", data={
@@ -660,7 +660,7 @@ class StaffChoiceTest(unittest.TestCase):
         self.choose(self.RECORDS[0])
         body = self.body("answered")
         self.assertIn("запись выбрана", body)
-        self.assertIn("сведёт записи на следующем прогоне", body)
+        self.assertIn("склеит записи при следующем прогоне", body)
 
 
 class ChoiceFormGuardTest(unittest.TestCase):
@@ -783,7 +783,7 @@ class ColumnsSayWhoSpeaksTest(unittest.TestCase):
     def test_what_the_rules_say_now_sits_by_the_old_reason(self):
         # It is the rules changing their mind, not part of the answer.
         why = self.cells()[2]
-        self.assertIn("теперь связывают", why)
+        self.assertIn("правила теперь склеивают", why)
 
     def test_a_viewer_sees_the_answer_without_the_buttons(self):
         # The column is shown to a viewer too, who has to see what had
@@ -828,7 +828,7 @@ class QuestionWithNoEvidenceTest(unittest.TestCase):
             "name_b": "B", "rule": "same_name"}])
         why = self.cells()[2]
         self.assertIn("–", why)
-        self.assertIn("теперь связывают", why)
+        self.assertIn("правила теперь склеивают", why)
 
 
 class SkippedTabTest(unittest.TestCase):

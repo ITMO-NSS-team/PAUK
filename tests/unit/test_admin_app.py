@@ -2,14 +2,17 @@ import re
 import struct
 import threading
 import unittest
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 import mongomock
 from fastapi.testclient import TestClient
+from neo4j.time import DateTime
 
 from pauk.admin import app as app_module
 from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key, set_active
+from pauk.admin.deps import stamp
 from pauk.settings import Settings
 
 
@@ -189,7 +192,8 @@ class PanelTest(unittest.TestCase):
         self.assertIn('class="pulse"', body)
         self.assertIn("пересборка карты", body)
         self.assertIn("вопрос ждёт ответа", body)
-        self.assertIn('class="tally bad"', body)
+        self.assertIn("Всего нерешённых: 1", body)
+        self.assertIn('<i class="fail"></i>', body)
         self.assertNotIn("воркер не работает", body)
 
     def test_and_says_when_nobody_is_running_anything(self):
@@ -313,6 +317,12 @@ class OverviewTest(unittest.TestCase):
         self.assertEqual(plural(5, "узел", "узла", "узлов"), "узлов")
         self.assertEqual(plural(11, "узел", "узла", "узлов"), "узлов")
         self.assertEqual(plural(21, "узел", "узла", "узлов"), "узел")
+
+    def test_a_graph_timestamp_reads_as_a_date(self):
+        moment = datetime(2026, 9, 23, 18, 23, 56, tzinfo=UTC)
+        self.assertEqual(stamp(DateTime.from_native(moment)), f"{moment.astimezone():%d.%m.%Y %H:%M}")
+        self.assertEqual(stamp("A5000009339"), "A5000009339")
+        self.assertEqual(stamp(None), "")
 
     def test_the_overview_asks_the_driver_not_to_wait_or_retry(self):
         # Retries suit a batch job: the driver backs off for tens of seconds
