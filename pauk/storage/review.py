@@ -245,6 +245,44 @@ def record_disputed(db: Database, report: list[dict]) -> int:
     return noted
 
 
+def retire_github(db: Database, outcomes: dict[str, dict | None], people: set[str],
+                  aliases: dict[str, str] | None = None) -> int:
+    """Close open account questions a run has settled without a person.
+
+    Only pairs the run could judge: a login it looked at and a person it saw,
+    directly or through a fold. Closed by `auto_resolved_at`, never a verdict.
+
+    Args:
+        outcomes: Each login the run looked at, with its decision row, or None
+            when no author fitted.
+        people: Every person the run could pair an account with.
+        aliases: Folded-away person id to the id that survived.
+
+    Returns:
+        How many questions were closed.
+    """
+    aliases = aliases or {}
+    moment = _now()
+    retired = 0
+    for question in db[COLLECTION].find({"kind": GITHUB, "verdict": {"$exists": False},
+                                         "auto_resolved_at": {"$exists": False},
+                                         "evidence.login": {"$in": list(outcomes)}}):
+        login, person = question["evidence"]["login"], question["evidence"]["person"]
+        if aliases.get(person, person) not in people:
+            continue
+        row = outcomes[login]
+        if row is not None and row["decision"] == "review" and row["person"] == person:
+            continue
+        result = db[COLLECTION].update_one(
+            {"_id": question["_id"], "verdict": {"$exists": False}},
+            {"$set": {"auto_resolved_at": moment,
+                      "auto_resolution": row or {"login": login, "decision": "rejected"}}})
+        retired += result.modified_count
+    if retired:
+        logger.info("review: %d account question(s) settled by the rules", retired)
+    return retired
+
+
 def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
                    actor: str = "unknown", note: str = "",
                    names: list[str | None] | None = None) -> dict:

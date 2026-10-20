@@ -72,6 +72,7 @@ WORDS = {
         "имя совпадает целиком, больше ничего не подтверждает",
     "a similar name and a shared publication, nothing more":
         "похожее имя и общая публикация, больше ничего",
+    "several authors fit this account equally well": "одинаково подходят несколько авторов",
     "the catalog holds several people under this name":
         "каталог знает нескольких человек с таким именем",
 }

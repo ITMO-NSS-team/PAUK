@@ -12,6 +12,7 @@ from pauk.graph.jsonl_loader import load_prepared_rows
 from pauk.graph.load import ENTITY_FILES
 from pauk.graph.mutations import merge_nodes
 from pauk.models import Person, Publication
+from pauk.pipeline.stages.github_match import hold_reason
 from pauk.settings import Settings
 from pauk.storage import PreparedStore, review
 from tests.unit.test_admin_nodes import FakePanelGraph
@@ -193,6 +194,11 @@ class ReviewPageTest(unittest.TestCase):
     def test_the_count_agrees_with_its_noun(self):
         self.assertEqual(_reason_words("group spans 5 distinct email values"),
                          "в группе 5 разных значений поля email")
+
+    def test_every_reason_the_account_matcher_gives_is_in_russian(self):
+        for reason in (hold_reason(["name_exact"]), hold_reason(["name_fuzzy"]),
+                       hold_reason(["name_exact"], ambiguous=True)):
+            self.assertNotEqual(_reason_words(reason), reason, reason)
 
     def test_the_reason_is_shown_in_russian(self):
         self.sign_in()

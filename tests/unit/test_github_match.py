@@ -299,6 +299,37 @@ class GitHubMatchStageTest(unittest.TestCase):
         self.assertTrue(self.journal()[0]["evidence"]["ambiguous"])
         self.assertIsNone(people["A1"].github)
 
+    def test_a_tie_goes_to_the_author_whose_paper_cites_the_repository(self):
+        result, people = self.run_stage(
+            [person("A1", "Ivan Petrov", works=["W1"]), person("A2", "Ivan Petrov")],
+            [profile("ipetrov", name="Ivan Petrov", company="ITMO University",
+                     repos=["https://github.com/lab/tool"])],
+            [repository("lab", "tool", works=["W1"])],
+        )
+        self.assertEqual((result["github_matched"], result["github_review"]), (1, 0))
+        self.assertEqual(people["A1"].github, "ipetrov")
+        self.assertIsNone(people["A2"].github)
+
+    def test_a_shared_address_settles_a_tie_before_the_paper_does(self):
+        _, people = self.run_stage(
+            [person("A1", "Ivan Petrov", works=["W1"]),
+             person("A2", "Ivan Petrov", email="ivan@example.org")],
+            [profile("ipetrov", name="Ivan Petrov", emails=["ivan@example.org"],
+                     company="ITMO University", repos=["https://github.com/lab/tool"])],
+            [repository("lab", "tool", works=["W1"])],
+        )
+        self.assertEqual(people["A2"].github, "ipetrov")
+        self.assertIsNone(people["A1"].github)
+
+    def test_a_tie_names_the_same_author_on_every_run(self):
+        # A set iterates in a different order in every process.
+        self.run_stage(
+            [person(pid, "Ivan Petrov", works=["W1"]) for pid in ("A4", "A2", "A3", "A1")],
+            [profile("ipetrov", name="Ivan Petrov", repos=["https://github.com/ipetrov/tool"])],
+            [repository("ipetrov", "tool", works=["W1"])],
+        )
+        self.assertEqual(self.journal()[0]["person"], "A1")
+
     def test_an_external_author_is_never_matched(self):
         result, people = self.run_stage(
             [person("A1", "Ivan Petrov", itmo=False, email="ivan@itmo.ru")],
@@ -556,6 +587,58 @@ class GitHubReviewTest(unittest.TestCase):
         survivor.merged_ids = ["A1"]
         self.run_stage([survivor], [profile("XieN-N", name="Stanislav Shtuka")])
         self.assertEqual(review.count(self.db, answered=False), 0)
+
+    def test_a_tie_says_so_in_the_question(self):
+        self.run_stage([person("A1", "Stanislav Shtuka"), person("A2", "Stanislav Shtuka")],
+                       [profile("XieN-N", name="Stanislav Shtuka", company="ITMO University")])
+        (question,) = review.questions(self.db)
+        self.assertEqual(question["evidence"]["held_because"],
+                         ["several authors fit this account equally well"])
+
+    def test_a_question_asked_again_stays_open(self):
+        self.run_stage(*self.unsure())
+        self.run_stage(*self.unsure())
+        self.assertEqual(review.count(self.db, answered=False), 1)
+
+    def test_a_question_the_rules_now_settle_leaves_the_queue(self):
+        self.run_stage(*self.unsure())
+        self.run_stage([person("A1", "Stanislav Shtuka")],
+                       [profile("XieN-N", name="Stanislav Shtuka", company="ITMO University")])
+        self.assertEqual(review.count(self.db, answered=False), 0)
+        (closed,) = self.db[review.COLLECTION].find()
+        self.assertNotIn("verdict", closed)
+        self.assertEqual(closed["auto_resolution"]["decision"], "matched")
+
+    def test_a_question_about_a_folded_person_moves_to_the_survivor(self):
+        self.run_stage(*self.unsure())
+        survivor = person("A2", "Stanislav Shtuka")
+        survivor.merged_ids = ["A1"]
+        self.run_stage([survivor], [profile("XieN-N", name="Stanislav Shtuka")])
+        (question,) = review.questions(self.db, answered=False)
+        self.assertEqual(question["members"], ["A2", "XieN-N"])
+
+    def test_one_open_question_per_account(self):
+        self.run_stage([person("A2", "Stanislav Shtuka")],
+                       [profile("XieN-N", name="Stanislav Shtuka")])
+        self.run_stage([person("A1", "Stanislav Shtuka"), person("A2", "Stanislav Shtuka")],
+                       [profile("XieN-N", name="Stanislav Shtuka")])
+        (question,) = review.questions(self.db, answered=False)
+        self.assertEqual(question["members"], ["A1", "XieN-N"])
+
+    def test_a_question_about_someone_the_run_never_saw_stays(self):
+        self.run_stage(*self.unsure())
+        other = PreparedStore(self.db, "other")
+        other.write_models("persons", [person("B1", "Ivan Petrov")])
+        other.write_models("github_profiles", [profile("XieN-N", name="Stanislav Shtuka")])
+        GitHubMatchStage(other, RawStore(self.db, "other"), self.config).run()
+        self.assertEqual(review.count(self.db, answered=False), 1)
+
+    def test_an_answered_question_is_never_closed(self):
+        self.run_stage(*self.unsure())
+        review.record_verdict(self.db, review.GITHUB, ["A1", "XieN-N"], review.SAME)
+        self.run_stage([person("A1", "Stanislav Shtuka")], [profile("XieN-N", name="Ivan Petrov")])
+        (answered,) = review.questions(self.db, answered=True)
+        self.assertNotIn("auto_resolved_at", answered)
 
 
 if __name__ == "__main__":

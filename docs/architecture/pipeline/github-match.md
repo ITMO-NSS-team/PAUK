@@ -77,10 +77,22 @@ name. All known spellings on both sides are compared: how the author published
 A `review` pair is not written to `Person`; it stays in the journal with its
 full set of signals, which is what a person looks at.
 
-A match is also downgraded to `review` when two authors claim an account with
-equal weight (`evidence.ambiguous`): picking either would be a guess. This is
-usually one person split by OpenAlex into two nodes that `dedup` has not yet
-folded, which is why `dedup` should run before `github_match`.
+When several authors claim an account with equal weight, a shared address wins,
+then a bridge from the author's own paper. Only a tie on all three downgrades
+the match to `review` (`evidence.ambiguous`, reason "several authors fit this
+account equally well"): picking either would be a guess. This is usually one
+person split by OpenAlex into two nodes that `dedup` has not yet folded, which
+is why `dedup` should run before `github_match`. Authors are compared in id
+order, so a tie names the same author on every run.
+
+## Questions
+
+Each `review` pair becomes a question in the review queue. A run also closes
+the open questions it has settled itself: for a login it looked at and a person
+it could score (directly or through the record that person was folded into),
+it matched the account, held another author for it, or found nobody. Such a
+question gets `auto_resolved_at` and no verdict, so it leaves the queue and
+comes back if a later run holds it again. Answered questions are never touched.
 
 ## `confidence`
 
