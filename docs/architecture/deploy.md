@@ -1,7 +1,7 @@
 # Deploying to the lab server
 
-**What it covers:** how the map is deployed to the lab server, and how the
-external PDF-Crawler-Service is wired in.
+**What it covers:** how the map is deployed to the lab server, where PAUK
+keeps its files there, and how the external PDF-Crawler-Service is wired in.
 
 **Files:** `scripts/deploy.sh`, `scripts/serve_static.py`,
 `scripts/mongo-up.sh`, `.env`/`.env.example` (`PAUK_PDF_CRAWLER_URL`).
@@ -16,6 +16,36 @@ The static server has no systemd unit. A `screen` session does not survive a
 server reboot, so after one the map must be brought back with `deploy.sh`.
 (The admin panel and worker do have units; see
 [../admin-panel.md](../admin-panel.md).)
+
+## Storage layout
+
+Diagram: [`../diagrams/server-storage.md`](../diagrams/server-storage.md).
+
+The server has two places to keep files, and they are not interchangeable:
+
+- **The local disk** (ext4, 30 GB, nearly full) holds databases, secrets and
+  personal data, under `/home/asteb/pauk/`. Databases stay here because
+  small synced writes on the network share measured about 4.5 times slower,
+  and Mongo and Neo4j are not meant to run on NFS.
+- **`/var/essdata`** is an NFS4 share on the lab's GPFS storage, with
+  hundreds of terabytes free and no quota. Many more people can read it
+  than can log into the server, so it holds no `.env` files and no scripts
+  with passwords. Everything bulky goes to `/var/essdata/pauk/`, grouped by
+  type first and then by stand (`itmo` is the main one):
+
+| Folder | Holds |
+|---|---|
+| `dumps/<stand>/<date>/` | database dumps |
+| `pdf/<stand>/` | publication PDFs; only files that start with `%PDF` |
+| `runs/<stand>/<group>/` | logs of a run, with the `audit/` journals inside |
+| `snapshots/<stand>/<date>/` | graph snapshots from `pauk cache export` |
+| `releases/<stand>/` | built site versions |
+| `to-review/` | leftovers waiting for someone to decide on them |
+
+`~/PAUK/data/pdf` is a symlink to `/var/essdata/pauk/pdf/itmo`: the pipeline
+reads and writes PDFs through it. Secrets taken out of old dumps and runs are
+in `~/pauk/secrets/` (directory `700`, files `600`); one-off scripts and logs
+are in `~/pauk/scratch/<source>-<date>/`.
 
 ## MongoDB
 
