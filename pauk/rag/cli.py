@@ -276,7 +276,7 @@ def run(args, config: Settings) -> None:
         _write_json(run_dir / f"tails_{args.judge}.json", summary)
         print(json.dumps(summary, ensure_ascii=False, indent=2))
     elif command == "metrics":
-        from .evaluation import abstention, agreement, compute_metrics, load_pool
+        from .evaluation import abstention, agreement, agreement_by_question, compute_metrics, load_pool
 
         run_dir = runs_dir(config) / args.run
         cutoffs = tuple(int(k) for k in _csv(args.k)) if args.k else None
@@ -294,3 +294,6 @@ def run(args, config: Settings) -> None:
             for row in agreement(run_dir, args.judge, args.against):
                 print(f"agreement with {against}, {row['kind']}: {row['items']} items, exact {row['exact']}, "
                       f"kappa {row['kappa']}, weighted {row['weighted_kappa']} {row.get('weighted_kappa_ci', '')}")
+            for row in agreement_by_question(run_dir, args.judge, args.against):
+                print(f"agreement with {against}, question: {row['items']} items, exact {row['exact']}, "
+                      f"weighted {row['weighted_kappa']} - {row['question']}")

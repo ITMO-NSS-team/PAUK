@@ -35,7 +35,7 @@ import numpy as np
 
 from .models import get as get_model
 from .readme import clean_readme, load_readme
-from .retrieve import MODES, Hit, Rag
+from .retrieve import KEYWORDS_PROMPT_ID, MODES, Hit, Rag
 
 K = 10
 # The model of a variant written without `@model`; see parse_variant.
@@ -191,12 +191,24 @@ def build_pool(run_dir: Path, rag: Rag, questions_path: Path, variants: list[str
             p["evidence"] = [titles.get(i) or i for i in p["evidence"][:5]]
             p["code"] = [names.get(i) or i for i in p["code"][:5]]
         entries.append({"question": question, "meta": meta, "rankings": rankings, "items": items, "extra": extra,
-                        "order": {kind: _shuffled(question, list(items[kind])) for kind in KINDS}})
+                        "order": {kind: _shuffled(question, list(items[kind])) for kind in KINDS},
+                        "keywords": _keywords_used(rag, question, specs)})
     pool = {"k": k, "variants": specs, "kinds": list(KINDS), "questions": entries}
     add_person_context(rag.graph, pool)
     run_dir.mkdir(parents=True, exist_ok=True)
     _write_json(run_dir / "pool.json", pool)
     return pool
+
+
+def _keywords_used(rag: Rag, question: str, specs: dict[str, dict[str, Any]]) -> dict[str, str] | None:
+    """The keywords the variants searched with, and what made them, so the pool stands without the cache.
+
+    They come from the cache the variants just used; the judges never see
+    them - a judge reading the system's own rewrite would grade by it.
+    """
+    if not any(spec["bm25_keywords"] or spec["dense_keywords"] for spec in specs.values()):
+        return None
+    return {"text": rag.extract_keywords(question), "llm": rag.llm.model, "prompt_id": KEYWORDS_PROMPT_ID}
 
 
 def _item_details(rag: Rag, rankings: dict[str, dict[str, list[str]]]) -> dict[str, dict[str, dict[str, Any]]]:
@@ -744,6 +756,23 @@ def agreement(run_dir: Path, judge: str, other: str | None = None,
                             for p in by_question[n]], weighted=True) for _ in range(resamples)]
             row["weighted_kappa_ci"] = [round(float(q), 3) for q in np.quantile(draws, [0.025, 0.975])]
         rows.append(row)
+    return rows
+
+
+def agreement_by_question(run_dir: Path, judge: str, other: str | None = None) -> list[dict[str, Any]]:
+    """The same agreement per question, to see which questions the judges read differently.
+
+    No interval here: one question is a few dozen items of one topic, and a
+    kappa over them is a pointer to look at, not an estimate to report.
+    """
+    a, b = load_judgments(run_dir, other), load_judgments(run_dir, judge)
+    rows = []
+    for question, grades in a.items():
+        pairs = [(grade, b[question][key]) for key, grade in grades.items() if key in b.get(question, {})]
+        if pairs:
+            rows.append({"question": question, "items": len(pairs),
+                         "exact": round(sum(x == y for x, y in pairs) / len(pairs), 3),
+                         "weighted_kappa": round(kappa(pairs, weighted=True), 3)})
     return rows
 
 

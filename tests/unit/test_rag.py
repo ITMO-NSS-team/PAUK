@@ -446,6 +446,8 @@ class MetricsTest(unittest.TestCase):
         rows = {r["kind"]: r for r in evaluation.agreement(self.run, "b", "a", resamples=50)}
         self.assertEqual((rows["all"]["items"], rows["all"]["questions"]), (6, 3))
         self.assertEqual(len(rows["all"]["weighted_kappa_ci"]), 2)
+        per_question = evaluation.agreement_by_question(self.run, "b", "a")
+        self.assertEqual([r["items"] for r in per_question], [2, 2, 2])
 
     def test_person_context_finds_works_by_person_and_title(self):
         class _Graph:
