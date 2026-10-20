@@ -1,3 +1,4 @@
+import re
 import struct
 import threading
 import unittest
@@ -113,6 +114,14 @@ class PanelTest(unittest.TestCase):
             self.client.get("/assets/fonts/golos-text-cyrillic.woff2").status_code, 200)
         self.assertEqual(self.client.get("/assets/icons/pauk-frame.png").status_code, 200)
         self.assertEqual(self.client.get("/favicon.ico").status_code, 200)
+
+    def test_every_asset_a_page_asks_for_is_served(self):
+        # A file left out of a commit still renders the page, only without the picture.
+        self.sign_in()
+        assets = set(re.findall(r"/assets/[\w./-]+", self.client.get("/").text))
+        self.assertTrue(assets)
+        for path in sorted(assets):
+            self.assertEqual(self.client.get(path).status_code, 200, path)
 
     def test_the_admin_port_serves_nothing_else_from_the_map(self):
         # Only the two asset paths are mounted. Mounting the whole web
@@ -404,14 +413,12 @@ class StylesheetVersionTest(unittest.TestCase):
         self.assertRegex(body, r'href="/static/panel\.css\?v=\d+"')
 
     def test_the_versioned_address_is_served(self):
-        import re
         body = self.client.get("/").text
         href = re.search(r'href="(/static/panel\.css\?v=\d+)"', body).group(1)
         self.assertEqual(self.client.get(href).status_code, 200)
 
     def test_the_version_follows_the_file(self):
         import pathlib
-        import re
 
         from pauk.admin.app import build as build_app
         css = pathlib.Path("pauk/admin/static/panel.css")
