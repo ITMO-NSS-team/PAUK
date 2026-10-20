@@ -73,10 +73,14 @@
           <a href="{{ who.href }}"
              {% if who.account %}target="_blank" rel="noopener"{% endif %}>{{ who.name }}</a>
           {% endif %}
-          <br><span class="muted val">{{ who.id }}{% if who.account %} на GitHub{% endif %}</span>
+          {% if not who.account %}<br><span class="muted val">{{ who.id }}</span>{% endif %}
           {% set facts = who.facts or {} %}
-          {% if facts.orcid or facts.email or facts.department or facts.works %}
+          {% if facts.orcid or facts.email or facts.department or facts.works
+                or facts.name or facts.company or facts.location %}
           <div class="facts">
+            {% if facts.name %}<span title="имя в профиле GitHub">{{ facts.name }}</span>{% endif %}
+            {% if facts.company %}<span title="компания">{{ facts.company }}</span>{% endif %}
+            {% if facts.location %}<span title="город">{{ facts.location }}</span>{% endif %}
             {% if facts.orcid %}<span title="ORCID">{{ facts.orcid }}</span>{% endif %}
             {% if facts.email %}<span title="почта">{{ facts.email }}</span>{% endif %}
             {% if facts.department %}<span title="подразделение">{{ facts.department }}</span>{% endif %}

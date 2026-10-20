@@ -57,8 +57,8 @@ TABS = {
 RULES = {
     "orcid": "совпал ORCID",
     "staff_catalog": "одна запись в каталоге сотрудников",
-    "name_variant": "имя одного значится вариантом имени другого",
-    "same_name": "одинаковое имя, и есть чем подтвердить",
+    "name_variant": "имя одного есть среди вариантов имени другого",
+    "same_name": "одинаковое имя и есть подтверждение",
     "manual": "решение человека",
 }
 
@@ -66,15 +66,15 @@ WORDS = {
     "only one person is ITMO-affiliated": "только один из двоих в ИТМО",
     "no shared coauthors": "нет общих соавторов",
     "single-token display name": "имя из одного слова",
-    "name is given as initials": "имя дано инициалами",
+    "name is given as initials": "имя указано инициалами",
     "identical name with nothing corroborating it": "одинаковое имя, ничем не подтверждено",
-    "the name matches exactly and nothing else backs it":
-        "имя совпадает целиком, больше ничего не подтверждает",
+    # Beside the signals column, which already says the name matched.
+    "the name matches exactly and nothing else backs it": "кроме имени, подтверждений нет",
     "a similar name and a shared publication, nothing more":
-        "похожее имя и общая публикация, больше ничего",
+        "кроме похожего имени и общей статьи, подтверждений нет",
     "several authors fit this account equally well": "одинаково подходят несколько авторов",
     "the catalog holds several people under this name":
-        "каталог знает нескольких человек с таким именем",
+        "каталог имеет нескольких человек с таким именем",
 }
 
 
@@ -99,13 +99,13 @@ def _reason_words(reason: str) -> str:
 
 #: What each github signal says, for the column that explains a match.
 SIGNALS = {
-    "email_exact": "тот же адрес",
+    "email_exact": "совпала почта",
     "name_exact": "имя совпадает целиком",
     "name_fuzzy": "имя похоже",
-    "itmo_email": "адрес в домене ИТМО",
+    "itmo_email": "почта на itmo.ru",
     "login_surname": "фамилия в логине",
     "owner": "владелец репозитория",
-    "org_itmo": "состоит в организации ИТМО",
+    "org_itmo": "репозиторий организации ИТМО",
     "itmo_profile": "ИТМО указан в профиле",
 }
 
@@ -146,6 +146,8 @@ def _people(row: dict, evidence: dict, back: str = "") -> list[dict]:
                      else f"/nodes/Person/{quote(member)}?back={quote(back, safe='')}"),
             "account": account,
             "record": record,
+            # A person's facts come from the graph; an account's from its profile.
+            "facts": (evidence.get("profile") or {}) if account else {},
         })
     return shown
 
@@ -236,7 +238,8 @@ def _with_facts(graph, rows: list[dict]) -> list[dict]:
         return rows
     for row in rows:
         for person in row["people"]:
-            person["facts"] = facts.get(person["id"], {})
+            if not person["account"] and not person["record"]:
+                person["facts"] = facts.get(person["id"], {})
     return rows
 
 

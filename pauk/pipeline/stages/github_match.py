@@ -311,6 +311,9 @@ class GitHubMatchStage(EnrichmentStage):
             accounts[profile.login] = {
                 "login": profile.login,
                 "url": profile.html_url or f"https://github.com/{profile.login}",
+                # Shown beside the question: a different name or a far city settles most at a glance.
+                "profile": {"name": profile.name, "company": profile.company,
+                            "location": profile.location},
                 "names": {name for name in names if name},
                 "emails": {_norm_email(email) for email in profile.emails if _norm_email(email)},
                 "itmo_text": bool(ITMO_IN_TEXT.search(text)),
@@ -358,6 +361,7 @@ class GitHubMatchStage(EnrichmentStage):
             decisions.append({
                 "login": login,
                 "url": accounts[login]["url"],
+                "profile": accounts[login]["profile"],
                 "person": author_id,
                 "name_raw": by_id[author_id].name_raw,
                 "score": round(score, 2),

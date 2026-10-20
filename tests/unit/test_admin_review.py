@@ -396,7 +396,7 @@ class DisputedTabTest(unittest.TestCase):
 
     def test_the_tab_shows_what_the_rules_now_say(self):
         body = self.body()
-        self.assertIn("одинаковое имя, и есть чем подтвердить", body)
+        self.assertIn("одинаковое имя и есть подтверждение", body)
         self.assertIn("разные люди", body)
 
     def test_the_answer_is_shown_as_still_in_force(self):
@@ -525,6 +525,7 @@ class GitHubQuestionTest(unittest.TestCase):
         review.record_held(self.db, [{
             "status": "held", "login": "XieN-N", "person": "A5140754163",
             "name_raw": "Stanislav Shtuka", "url": "https://github.com/XieN-N",
+            "profile": {"name": "Stanislav Shtuka", "company": None, "location": "Vladivostok"},
             "score": 0.6, "signals": ["name_exact"],
             "repos": ["https://github.com/screemix/Wikontic"],
             "held_because": ["the name matches exactly and nothing else backs it"],
@@ -551,6 +552,18 @@ class GitHubQuestionTest(unittest.TestCase):
         body = self.body()
         self.assertIn("%23q-github_person-A5140754163-XieN-N", body)
         self.assertIn('<tr id="q-github_person-A5140754163-XieN-N">', body)
+
+    def test_the_account_shows_its_profile_and_its_login_once(self):
+        body = self.body()
+        self.assertIn("Vladivostok", body)
+        self.assertNotIn("XieN-N на GitHub", body)
+
+    def test_the_graph_does_not_wipe_the_accounts_profile(self):
+        app = build(Settings(), self.db)
+        app.dependency_overrides[deps.graph_if_up] = lambda: FakePanelGraph()
+        client = TestClient(app, follow_redirects=False)
+        client.post("/login", data={"login": "roman", "password": "hunter2"})
+        self.assertIn("Vladivostok", client.get("/review").text)
 
     def test_the_account_points_at_github_and_the_person_at_their_card(self):
         # Sending a login to /nodes/Person would open a card for a node that

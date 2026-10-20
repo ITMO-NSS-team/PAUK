@@ -588,6 +588,14 @@ class GitHubReviewTest(unittest.TestCase):
         self.run_stage([survivor], [profile("XieN-N", name="Stanislav Shtuka")])
         self.assertEqual(review.count(self.db, answered=False), 0)
 
+    def test_the_question_carries_the_accounts_profile(self):
+        self.run_stage([person("A1", "Stanislav Shtuka")],
+                       [profile("XieN-N", name="Stanislav Shtuka", company="FEFU",
+                                location="Vladivostok")])
+        (question,) = review.questions(self.db)
+        self.assertEqual(question["evidence"]["profile"],
+                         {"name": "Stanislav Shtuka", "company": "FEFU", "location": "Vladivostok"})
+
     def test_a_tie_says_so_in_the_question(self):
         self.run_stage([person("A1", "Stanislav Shtuka"), person("A2", "Stanislav Shtuka")],
                        [profile("XieN-N", name="Stanislav Shtuka", company="ITMO University")])
