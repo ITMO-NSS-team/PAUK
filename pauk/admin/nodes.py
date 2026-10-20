@@ -340,14 +340,13 @@ def _links_for(label: str) -> dict[str, list[dict]]:
     for (src_label, rel_type, tgt_label), match_prop in sorted(RELATIONSHIPS.items()):
         forward, backward = LINK_WORDS.get((src_label, rel_type, tgt_label), (rel_type, rel_type))
         entry = {"src_label": src_label, "rel_type": rel_type, "tgt_label": tgt_label,
-                 "match_prop": match_prop, "field": _FIELD_WORDS.get(match_prop, match_prop),
-                 "forward": forward, "backward": backward,
+                 "match_prop": match_prop, "forward": forward, "backward": backward,
                  "key": f"{src_label}|{rel_type}|{tgt_label}"}
         if src_label == label:
             outgoing.append(entry)
         if tgt_label == label:
             # The source is what gets typed here, and it is addressed by id.
-            incoming.append({**entry, "match_prop": "id", "field": "id"})
+            incoming.append({**entry, "match_prop": "id"})
     return {"outgoing": outgoing, "incoming": incoming}
 
 
@@ -379,8 +378,6 @@ LINK_WORDS = {
 }
 
 _FIELD_HINTS = {"url": "адрес репозитория целиком", "login": "логин аккаунта на GitHub"}
-# What to type for the other end, as the choice of link says it.
-_FIELD_WORDS = {"id": "id", "url": "адрес репозитория", "login": "логин"}
 
 
 def _hint(match_prop: str) -> str:

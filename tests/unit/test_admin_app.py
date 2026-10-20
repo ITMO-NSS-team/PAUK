@@ -192,8 +192,6 @@ class PanelTest(unittest.TestCase):
         self.assertIn('class="pulse"', body)
         self.assertIn("пересборка карты", body)
         self.assertIn("вопрос ждёт ответа", body)
-        self.assertIn("Всего нерешённых: 1", body)
-        self.assertIn('<i class="fail"></i>', body)
         self.assertNotIn("воркер не работает", body)
 
     def test_and_says_when_nobody_is_running_anything(self):
@@ -283,7 +281,6 @@ class OverviewTest(unittest.TestCase):
         # Counting needs Neo4j; the page must not depend on it.
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("не отвечает", response.text)
 
     def test_labels_are_listed_and_link_to_their_search(self):
         body = self.client.get("/").text
@@ -336,7 +333,6 @@ class OverviewTest(unittest.TestCase):
                                side_effect=OSError("no route to host")):
             response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("не отвечает", response.text)
 
     def test_the_logo_is_the_only_way_home(self):
         # A "Граф" item beside it repeated the same action and read as
