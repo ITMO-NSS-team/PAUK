@@ -642,6 +642,26 @@ class GitHubReviewTest(unittest.TestCase):
         open_members = [question["members"] for question in review.questions(self.db, answered=False)]
         self.assertEqual(open_members, [["A2", "coder42"]])
 
+    def test_a_yes_about_a_tied_author_links_that_author(self):
+        self.run_stage([person("A2", "Ivan Petrov")], [profile("coder42", name="Ivan Petrov")])
+        both = ([person("A1", "Ivan Petrov"), person("A2", "Ivan Petrov")],
+                [profile("coder42", name="Ivan Petrov")])
+        self.run_stage(*both)
+        review.record_verdict(self.db, review.GITHUB, ["A2", "coder42"], review.SAME)
+        _, people = self.run_stage(*both)
+        self.assertEqual(people["A2"].github, "coder42")
+        self.assertIsNone(people["A1"].github)
+        self.assertEqual(review.count(self.db, answered=False), 0)
+
+    def test_a_yes_holds_where_the_signals_alone_would_reject(self):
+        # Found only through the author's paper, under a nickname: the rules see no name.
+        review.record_verdict(self.db, review.GITHUB, ["A1", "nick"], review.SAME)
+        _, people = self.run_stage(
+            [person("A1", "Ivan Petrov", works=["W1"])],
+            [profile("nick", name="Night Owl", repos=["https://github.com/lab/tool"])],
+            [repository("lab", "tool", works=["W1"])])
+        self.assertEqual(people["A1"].github, "nick")
+
     def test_a_scoped_run_does_not_close_a_question_it_did_not_apply(self):
         # The rules would now link A1, but a run limited to B1 writes nothing to A1.
         self.run_stage(*self.unsure())

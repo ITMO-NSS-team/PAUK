@@ -87,10 +87,11 @@ order, so a tie names the same author on every run.
 
 ## Questions
 
-Each `review` pair becomes a question in the review queue. An author somebody
-answered "not theirs" is left out of the choice, so the next run asks about the
-next author that fits; if the rules would now link the refused one, the pair goes
-to the disputes instead.
+Each `review` pair becomes a question in the review queue. People's answers
+come before the choice. An author somebody confirmed wins it, even where the
+signals alone would reject the pair. An author somebody answered "not theirs"
+is left out of it, so the next run asks about the next author that fits; if the
+rules would now link the refused one, the pair goes to the disputes instead.
 
 A run also closes the open questions it has settled itself, for a login it
 looked at and a person it covers (a scoped run covers its selection only),

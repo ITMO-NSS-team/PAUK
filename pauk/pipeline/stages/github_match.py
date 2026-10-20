@@ -203,14 +203,16 @@ class Match(NamedTuple):
 
 def match_account(account: dict, authors: dict[str, dict], email_index: dict[str, str],
                   name_index: dict[str, set[str]], bridge: dict[str, set[str]],
-                  refused: frozenset[str] = frozenset()) -> Match:
+                  verdicts: dict[str, str] | None = None) -> Match:
     """The author this account belongs to, and every other author it could be.
 
     Only authors reachable by publication, address or full name are scored. A
     tie on score goes to a shared address, then to a bridge; a tie on all three
-    goes to a person. A refused author is left out of the choice, so a "no"
-    moves the question on to the next one.
+    goes to a person. What people answered about this account (`verdicts`, by
+    author) comes first: a "yes" wins the choice, a "no" leaves the author out of
+    it, so the question moves on to the next one.
     """
+    verdicts = verdicts or {}
     bridge_ids: set[str] = set()
     for publication_id in account["publication_ids"]:
         bridge_ids |= bridge.get(publication_id, set())
@@ -220,10 +222,10 @@ def match_account(account: dict, authors: dict[str, dict], email_index: dict[str
         if len(name.split()) >= 2:
             name_ids |= name_index.get(name, set())
 
-    best: tuple[tuple[bool, float, bool, bool], Fit] | None = None
+    best: tuple[tuple[bool, bool, float, bool, bool], Fit] | None = None
     candidates: set[str] = set()
     refusals: list[Fit] = []
-    matched: list[tuple[bool, float, bool, bool]] = []
+    matched: list[tuple[bool, bool, float, bool, bool]] = []
     # Sorted: on a tie the question must name the same author on every run.
     for author_id in sorted(bridge_ids | email_ids | name_ids):
         author = authors.get(author_id)
@@ -232,15 +234,16 @@ def match_account(account: dict, authors: dict[str, dict], email_index: dict[str
         in_bridge = author_id in bridge_ids
         score, signals, evidence = score_account(account, author, author_id in email_ids)
         decision = decide(signals, in_bridge)
-        if decision == "rejected":
+        said = verdicts.get(author_id)
+        if decision == "rejected" and said != review.SAME:
             continue
         evidence["in_bridge"] = in_bridge
         fit = Fit(author_id, score, signals, evidence, decision)
-        if author_id in refused:
+        if said == review.DIFFERENT:
             refusals.append(fit)
             continue
         candidates.add(author_id)
-        rank = (decision == "matched", score, "email_exact" in signals, in_bridge)
+        rank = (said == review.SAME, decision == "matched", score, "email_exact" in signals, in_bridge)
         if best is None or rank > best[0]:
             best = (rank, fit)
         if decision == "matched":
@@ -388,11 +391,11 @@ class GitHubMatchStage(EnrichmentStage):
         aliases = folded_ids(people)
         # Through folded ids: an answer about a since-merged person keeps applying.
         answers = review.github_decisions(self.prepared.db, aliases)
-        refusals: dict[str, set[str]] = {}
+        verdicts: dict[str, dict[str, str]] = {}
         for members, verdict in answers.items():
-            if verdict == review.DIFFERENT:
-                for login in (member for member in members if member in accounts):
-                    refusals.setdefault(login, set()).update(members - {login})
+            for login in (member for member in members if member in accounts):
+                for person_id in members - {login}:
+                    verdicts.setdefault(login, {})[person_id] = verdict
 
         by_id = {person.id: person for person in people}
         repositories_by_url = {repository.url: repository for repository in repositories}
@@ -418,7 +421,7 @@ class GitHubMatchStage(EnrichmentStage):
         # Sorted: two runs over the same data must reach the same decisions.
         for login in sorted(accounts):
             match = match_account(accounts[login], authors, email_index, name_index, bridge,
-                                  frozenset(refusals.get(login, ())))
+                                  verdicts.get(login))
             candidates[login] = match.candidates
             decisions += [row_of(login, fit) for fit in match.refused]
             if match.best is not None:
