@@ -36,6 +36,7 @@ NAME_FUZZY = 0.86
 SIGNAL_WEIGHTS = {
     "email_exact": 1.0,
     "name_exact": 0.6,
+    "name_alternative": 0.6,
     "name_fuzzy": 0.4,
     "itmo_email": 0.3,
     "login_surname": 0.3,
@@ -121,11 +122,15 @@ def score_account(account: dict, author: dict, email_hit: bool) -> tuple[float, 
         signals.append("email_exact")
         evidence["email"] = sorted(account["emails"] & author["emails"])
 
-    similarity, pair = best_name_similarity(account["names"], author["names"])
+    similarity, pair = best_name_similarity(account["names"], author["trusted"])
     if similarity >= NAME_EXACT:
         signals.append("name_exact")
-    elif similarity >= NAME_FUZZY:
-        signals.append("name_fuzzy")
+    else:
+        similarity, pair = best_name_similarity(account["names"], author["names"])
+        if similarity >= NAME_EXACT:
+            signals.append("name_alternative")
+        elif similarity >= NAME_FUZZY:
+            signals.append("name_fuzzy")
     if similarity >= NAME_FUZZY:
         evidence["name_pair"], evidence["name_similarity"] = pair, round(similarity, 2)
 
@@ -166,10 +171,11 @@ def decide(signals: list[str], in_bridge: bool) -> str:
     if "email_exact" in signals:
         return "matched"
     corroborated = any(signal in signals for signal in CORROBORATING)
-    if "name_exact" in signals:
+    if "name_exact" in signals or "name_alternative" in signals:
         if in_bridge or corroborated:
             return "matched"
-        return "review"
+        # OpenAlex lumps namesakes together: a spelling the main name does not back asks nobody alone.
+        return "review" if "name_exact" in signals else "rejected"
     if "name_fuzzy" in signals:
         if not in_bridge:
             return "rejected"
@@ -305,8 +311,15 @@ class GitHubMatchStage(EnrichmentStage):
             # ORCID spellings too: an account may be signed with any of them.
             names = {_norm_name(name) for name in
                      (person.name_raw, *person.name_variants, *person.other_names)}
+            main = _norm_name(person.name_raw)
+            # An OpenAlex spelling stands alone only when it says no more than the main name.
+            variants = {_norm_name(name) for name in person.name_variants}
+            trusted = {main, *(_norm_name(name) for name in person.other_names),
+                       *(name for name in variants
+                         if not person.name_raw or set(name.split()) <= set(main.split()))}
             authors[person.id] = {
                 "names": {name for name in names if name},
+                "trusted": {name for name in trusted if name},
                 # Every known address: an account is recognised by whichever it used.
                 "emails": {email for email in
                            {_norm_email(address) for address in (person.email, *person.emails)}

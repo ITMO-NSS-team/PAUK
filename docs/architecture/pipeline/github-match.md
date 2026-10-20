@@ -32,6 +32,7 @@ and such a match means nothing.
 |---|---|---|
 | `email_exact` | 1.0 | account and author share an address |
 | `name_exact` | 0.6 | same set of name words |
+| `name_alternative` | 0.6 | the same, but only through an OpenAlex spelling the main name does not back |
 | `name_fuzzy` | 0.4 | similar name, threshold `NAME_FUZZY = 0.86` |
 | `itmo_email` | 0.3 | account address on `@itmo.ru` |
 | `login_surname` | 0.3 | author's surname inside the login |
@@ -62,6 +63,13 @@ name. All known spellings on both sides are compared: how the author published
 (`name_variants`, ORCID `other_names`) against what the account is signed with
 (`name`, `login`, names from commits).
 
+OpenAlex lumps namesakes into one author, so `name_variants` also holds other
+people's names. A variant counts as `name_exact` only when all its words are in
+the main name (`Daniil Razdyakonov` for `Daniil S. Razdyakonov`) or there is no
+main name. Otherwise
+(`Pavel Gulyaev` for `P. V. Gulyaev`, `Xin Zhang` for `Xi Zhang`) it gives
+`name_alternative`. ORCID names are the author's own and always count.
+
 ## Three outcomes
 
 `decide` does not sum weights; it looks at the composition:
@@ -69,6 +77,8 @@ name. All known spellings on both sides are compared: how the author published
 - an address match decides by itself: `matched`, unconditionally;
 - an exact name is `matched` if there is a bridge or at least one corroborating
   signal (`CORROBORATING`), otherwise `review`;
+- `name_alternative` is `matched` on the same terms, otherwise `rejected`: a
+  spelling that may belong to a namesake is not worth a question on its own;
 - a similar name is `matched` only with a bridge together with corroboration,
   and `rejected` without a bridge;
 - everything else is `rejected`. Corroborating signals identify nobody on their

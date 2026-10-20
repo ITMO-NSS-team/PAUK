@@ -106,6 +106,11 @@ class DecideTest(unittest.TestCase):
     def test_corroboration_alone_identifies_nobody(self):
         self.assertEqual(decide(["owner", "itmo_profile", "org_itmo"], in_bridge=True), "rejected")
 
+    def test_an_unbacked_spelling_links_with_support_and_asks_nobody_alone(self):
+        self.assertEqual(decide(["name_alternative"], in_bridge=True), "matched")
+        self.assertEqual(decide(["name_alternative", "itmo_profile"], in_bridge=False), "matched")
+        self.assertEqual(decide(["name_alternative"], in_bridge=False), "rejected")
+
 
 class ScoreAccountTest(unittest.TestCase):
     """Every signal the matcher can raise, raised from the fields it reads.
@@ -122,11 +127,18 @@ class ScoreAccountTest(unittest.TestCase):
                 "publication_ids": set(), "repos": set()}
 
     @staticmethod
-    def author(*, names=(), emails=(), surnames=()):
-        return {"names": set(names), "emails": set(emails), "surnames": set(surnames)}
+    def author(*, names=(), emails=(), surnames=(), trusted=None):
+        return {"names": set(names), "emails": set(emails), "surnames": set(surnames),
+                "trusted": set(names if trusted is None else trusted)}
 
     def signals(self, account, author, email_hit=False):
         return score_account(account, author, email_hit)[1]
+
+    def test_a_spelling_the_main_name_does_not_back_is_marked_apart(self):
+        signals = self.signals(self.account(names={"xin zhang"}),
+                               self.author(names={"xi zhang", "xin zhang"}, trusted={"xi zhang"}))
+        self.assertIn("name_alternative", signals)
+        self.assertNotIn("name_exact", signals)
 
     def test_a_shared_address_is_the_strongest_signal(self):
         score, signals, evidence = score_account(
@@ -596,6 +608,32 @@ class GitHubReviewTest(unittest.TestCase):
         (question,) = review.questions(self.db)
         self.assertEqual(question["evidence"]["profile"],
                          {"name": "Stanislav Shtuka", "company": "FEFU", "location": "Vladivostok"})
+
+    def test_a_name_only_an_unbacked_spelling_gives_asks_nobody(self):
+        # Cases from the live queue: an initial expanded by OpenAlex, a namesake lumped in, Cyrillic.
+        for main, variant in (("P. V. Gulyaev", "Pavel Gulyaev"), ("Xi Zhang", "Xin Zhang"),
+                              ("М. С. Иванов", "Mikhail Ivanov")):
+            with self.subTest(main=main):
+                self.db[review.COLLECTION].delete_many({})
+                result, people = self.run_stage([person("A1", main, variants=[variant])],
+                                                [profile("someone", name=variant)])
+                self.assertEqual(result["github_review"], 0)
+                self.assertIsNone(people["A1"].github)
+
+    def test_a_name_the_main_name_backs_is_still_asked_about(self):
+        for main, variants, other in (("Daniil S. Razdyakonov", ["Daniil Razdyakonov"], []),
+                                      (None, ["Daniil Razdyakonov"], []),
+                                      ("D. S. Razdyakonov", [], ["Daniil Razdyakonov"])):
+            with self.subTest(main=main, other=other):
+                self.db[review.COLLECTION].delete_many({})
+                result, _ = self.run_stage([person("A1", main, variants=variants, other=other)],
+                                           [profile("someone", name="Daniil Razdyakonov")])
+                self.assertEqual(result["github_review"], 1)
+
+    def test_an_unbacked_spelling_still_links_with_support(self):
+        _, people = self.run_stage([person("A1", "A.P. Lapin", variants=["Alexey Lapin"])],
+                                   [profile("lapin", name="Alexey Lapin", company="ITMO University")])
+        self.assertEqual(people["A1"].github, "lapin")
 
     def test_a_tie_says_so_in_the_question(self):
         self.run_stage([person("A1", "Stanislav Shtuka"), person("A2", "Stanislav Shtuka")],

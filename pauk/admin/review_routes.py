@@ -101,6 +101,7 @@ def _reason_words(reason: str) -> str:
 SIGNALS = {
     "email_exact": "совпала почта",
     "name_exact": "имя совпадает целиком",
+    "name_alternative": "имя совпадает с вариантом из OpenAlex",
     "name_fuzzy": "имя похоже",
     "itmo_email": "почта на itmo.ru",
     "login_surname": "фамилия в логине",
