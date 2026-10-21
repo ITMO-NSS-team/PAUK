@@ -281,6 +281,7 @@ class OverviewTest(unittest.TestCase):
         # Counting needs Neo4j; the page must not depend on it.
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
+        self.assertIn("Граф не отвечает", response.text)
 
     def test_labels_are_listed_and_link_to_their_search(self):
         body = self.client.get("/").text
@@ -333,6 +334,16 @@ class OverviewTest(unittest.TestCase):
                                side_effect=OSError("no route to host")):
             response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
+        self.assertIn("Граф не отвечает", response.text)
+
+    def test_a_graph_that_answers_raises_no_alarm(self):
+        from unittest import mock
+
+        from pauk.graph.mutations import NODE_FIELDS
+        with mock.patch.object(self.client.app.state.graph, "audited"), \
+             mock.patch("pauk.admin.app.count_nodes", return_value=dict.fromkeys(NODE_FIELDS, 0)):
+            body = self.client.get("/").text
+        self.assertNotIn("Граф не отвечает", body)
 
     def test_the_logo_is_the_only_way_home(self):
         # A "Граф" item beside it repeated the same action and read as

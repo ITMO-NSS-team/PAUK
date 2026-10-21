@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Граф</h1>
+{% if not counted %}<p class="note bad">Граф не отвечает</p>{% endif %}
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-Person" viewBox="0 0 24 24">
