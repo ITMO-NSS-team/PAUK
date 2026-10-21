@@ -66,8 +66,9 @@ leaves exactly one `*_report.pdf` that starts with `%PDF-`, and its log shows
 no degraded run (`degraded_run_markers`: a switch to one of OSA's fallback
 models, or an unparsable reply replaced by an "Unknown" report); it is then moved
 into place with `os.replace`, so the site never sees half a file. The work
-summary OSA also writes is dropped. A run past `run_timeout` (15 minutes; the
-slowest of the first 399 real runs took 13, the median 25 seconds) is logged
+summary OSA also writes is dropped. A run past `run_timeout` (30 minutes; the
+slowest of the first 399 real runs, on a local disk, took 13, the median 25
+seconds; on the lab server the clones sit on NFS and are several times slower) is logged
 at once and stopped: each run has its own process group, which gets SIGTERM
 and, if anything of it is still alive after `stop_grace`, SIGKILL, so the git
 and Python children of uvx never outlive it. An interrupted build (Ctrl+C)
@@ -78,7 +79,7 @@ The file on disk is the only state: an existing PDF is skipped, a failed one
 is retried by the next run. `reports/index.json` (`{"en": [ids], "ru": [ids]}`, the
 site's `contracts/graph.ts::ReportsIndex`) is
 rebuilt from the disk at the end of every run, failed or interrupted.
-`workers` (8) runs go in parallel; the clones, not the LLM, set the pace.
+`workers` (6) runs go in parallel; the clones, not the LLM, set the pace.
 
 When every report already exists the step only rebuilds the index, with no
 key, uvx or network. Otherwise, before the first OSA run, it reads the key's

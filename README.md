@@ -133,7 +133,7 @@ cd pauk/gui/web && npm install && npm run dev
   `data/gui/private/reports/<lang>/<repo id>.pdf` (`en` and `ru`) plus
   `reports/index.json`; the repository card links the report in the interface
   language. `--force` regenerates existing reports, `--workers` sets the
-  parallel runs (default 8). It needs `OPENROUTER_API_KEY` and `uv`; when every
+  parallel runs (default 6). It needs `OPENROUTER_API_KEY` and `uv`; when every
   report exists it only rebuilds the index, offline. `PAUK_REPORTS_DIR` moves
   the PDFs elsewhere.
 - The Vite dev server serves `data/gui/private`.

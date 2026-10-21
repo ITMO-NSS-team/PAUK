@@ -15,8 +15,10 @@ class ReportsSettings:
     model: str = "anthropic/claude-haiku-5.5"
     context_window: int = 80_000
     languages: dict[str, str] = field(default_factory=lambda: {"en": "English", "ru": "Russian"})
-    workers: int = 8
-    run_timeout: int = 15 * 60
+    # On the lab server the clones sit on NFS: fewer at once keeps the peak space
+    # down, and each one takes several times longer than on a local disk.
+    workers: int = 6
+    run_timeout: int = 30 * 60
     stop_grace: int = 30
     degraded_run_markers: tuple[str, ...] = ("Falling back to model", "Parsing failed, fallback applied")
     no_lfs_git_config: dict[str, str] = field(

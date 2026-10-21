@@ -236,7 +236,7 @@ rows from it. The snapshot defaults to the newest in `cache_dir`. See
 ## `reports build`
 
 ```
-pauk reports build [<repo id> ...] [--cache <snapshot>] [--force] [--workers 8]
+pauk reports build [<repo id> ...] [--cache <snapshot>] [--force] [--workers 6]
 ```
 
 Runs OSA on every repository of the snapshot that has no report yet, except
