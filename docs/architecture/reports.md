@@ -43,8 +43,12 @@ no degraded run (`DEGRADED_RUN_MARKERS`: a switch to one of OSA's fallback
 models, or an unparsable reply replaced by an "Unknown" report); it is then moved
 into place with `os.replace`, so the site never sees half a file. The work
 summary OSA also writes is dropped. A run past `RUN_TIMEOUT` (15 minutes; the
-slowest of the first 399 real runs took 13, the median 25 seconds) is stopped
-with SIGTERM, which `uvx` forwards to OSA.
+slowest of the first 399 real runs took 13, the median 25 seconds) is logged
+at once and stopped: each run has its own process group, which gets SIGTERM
+and, if anything of it is still alive after `STOP_GRACE`, SIGKILL, so the git
+and Python children of uvx never outlive it. An interrupted build (Ctrl+C)
+stops every run in flight the same way (`OsaRunner.stop`) and drops the
+queued ones; a run that is stopped never moves its PDF into place.
 
 The file on disk is the only state: an existing PDF is skipped, a failed one
 is retried by the next run. `reports/index.json` (`{"en": [ids], "ru": [ids]}`, the
@@ -52,7 +56,9 @@ site's `contracts/graph.ts::ReportsIndex`) is
 rebuilt from the disk at the end of every run, failed or interrupted.
 `WORKERS` (8) runs go in parallel; the clones, not the LLM, set the pace.
 
-Before the first OSA run the step reads the key's spend from OpenRouter:
+When every report already exists the step only rebuilds the index, with no
+key, uvx or network. Otherwise, before the first OSA run, it reads the key's
+spend from OpenRouter:
 without a working key OSA does not fail but retries through its fallback
 models for minutes, and the lab VPN looks the same. The summary reports the
 dollars the run cost, a lower bound: OpenRouter books the last calls a few

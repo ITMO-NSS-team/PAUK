@@ -9,7 +9,10 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import signal
 import subprocess
+import threading
+from contextlib import suppress
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -24,6 +27,8 @@ MODEL = "anthropic/claude-haiku-5.5"
 CONTEXT_WINDOW = 80_000
 # The slowest of 399 real runs took 13 minutes, the median 25 seconds.
 RUN_TIMEOUT = 15 * 60
+# Time OSA gets to exit after SIGTERM before its process group is killed.
+STOP_GRACE = 30
 # OSA exits 0 with a PDF in both cases: after switching to one of its
 # fallback models, and after an unparsable reply, with an "Unknown" report.
 DEGRADED_RUN_MARKERS = ("Falling back to model", "Parsing failed, fallback applied")
@@ -61,6 +66,9 @@ class OsaRunner:
             osa_dir: Working copies go to `<osa_dir>/tmp`, logs to `<osa_dir>/logs`.
         """
         self.osa_dir = osa_dir
+        self._running: set[subprocess.Popen] = set()
+        self._lock = threading.Lock()
+        self._stopped = threading.Event()
         # The GitHub token is already in os.environ (settings loads .env).
         # A wide console keeps OSA's rich log lines unwrapped, so the markers stay greppable.
         self.env = {**os.environ, "LLM_SERVICE_KEY": api_key, "COLUMNS": "400", **git_config_env(NO_LFS_GIT_CONFIG)}
@@ -85,6 +93,29 @@ class OsaRunner:
             "--artefacts-language", osa_language,
         ]
 
+    def stop(self) -> None:
+        """Stops every run in flight and refuses new ones; for an interrupted build."""
+        self._stopped.set()
+        with self._lock:
+            running = list(self._running)
+        for proc in running:
+            self._terminate(proc)
+
+    @staticmethod
+    def _terminate(proc: subprocess.Popen) -> None:
+        """SIGTERM the run's process group, SIGKILL whatever is left after `STOP_GRACE`.
+
+        The whole group, so the git and Python children of uvx go too.
+        """
+        with suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGTERM)
+        try:
+            proc.wait(timeout=STOP_GRACE)
+        except subprocess.TimeoutExpired:
+            with suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+
     def run(self, key: str, url: str, lang: str, osa_language: str, target: Path) -> bool:
         """Generates the report of one repository into `target`.
 
@@ -97,25 +128,36 @@ class OsaRunner:
 
         Returns:
             True if OSA exited 0, left exactly one PDF report and logged no
-            degraded run (`DEGRADED_RUN_MARKERS`); the reason is logged otherwise.
+            degraded run (`DEGRADED_RUN_MARKERS`), and the runner was not
+            stopped; the reason is logged otherwise.
         """
+        if self._stopped.is_set():
+            return False
         work = self.osa_dir / "tmp" / lang / key
         log_path = self.osa_dir / "logs" / lang / f"{key}.log"
         shutil.rmtree(work, ignore_errors=True)
         work.mkdir(parents=True)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         try:
+            # Its own session, so a stop reaches the whole process tree and the
+            # terminal's Ctrl+C reaches only pauk, which then calls `stop()`.
             with log_path.open("w", encoding="utf-8") as log, subprocess.Popen(
                 self.command(url, osa_language), cwd=work, env=self.env, stdout=log, stderr=subprocess.STDOUT,
+                start_new_session=True,
             ) as proc:
+                with self._lock:
+                    self._running.add(proc)
                 try:
                     code = proc.wait(timeout=RUN_TIMEOUT)
                 except subprocess.TimeoutExpired:
-                    # SIGTERM, not SIGKILL: uvx forwards it to OSA, a kill would orphan it.
-                    proc.terminate()
-                    proc.wait()
                     logger.warning("reports %s/%s: OSA timed out after %ss, see %s", lang, key, RUN_TIMEOUT, log_path)
+                    self._terminate(proc)
                     return False
+                finally:
+                    with self._lock:
+                        self._running.discard(proc)
+            if self._stopped.is_set():
+                return False
             pdfs = list(work.glob("*_report.pdf"))
             if code != 0 or len(pdfs) != 1 or not pdfs[0].read_bytes().startswith(b"%PDF-"):
                 logger.warning(

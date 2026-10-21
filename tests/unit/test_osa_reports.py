@@ -3,8 +3,11 @@
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -19,8 +22,13 @@ from pauk.sources.base import HttpRequestError
 # Stands in for OSA: prints what OSA logs and writes what a real run leaves
 # in its working directory, by mode.
 FAKE_OSA = """
-import os, sys, time
+import os, signal, subprocess, sys, time
 mode = sys.argv[1]
+if mode == "stubborn":
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    open(sys.argv[2], "w").write(str(child.pid))
+    time.sleep(60)
 git = {os.environ[f"GIT_CONFIG_KEY_{i}"]: os.environ[f"GIT_CONFIG_VALUE_{i}"]
        for i in range(int(os.environ.get("GIT_CONFIG_COUNT", 0)))}
 print("key=" + os.environ.get("LLM_SERVICE_KEY", ""), "lfs=" + git.get("filter.lfs.smudge", ""))
@@ -53,11 +61,12 @@ class FakeOsaTestCase(unittest.TestCase):
         script.write_text(FAKE_OSA)
         self.mode = "ok"
         patcher = patch.object(
-            osa.OsaRunner, "command", staticmethod(lambda url, language: [sys.executable, str(script), self.mode])
+            osa.OsaRunner, "command", staticmethod(lambda url, language: [sys.executable, str(script), self.mode, str(self.child_pid_file)])
         )
         patcher.start()
         self.addCleanup(patcher.stop)
         self.osa_dir = self.root / "osa"
+        self.child_pid_file = self.root / "child.pid"
         self.out_dir = self.root / "reports"
 
 
@@ -122,11 +131,51 @@ class OsaRunnerTest(FakeOsaTestCase):
             self.run_osa()
         self.assertIn(osa.DEGRADED_RUN_MARKERS[0], logs.output[0])
 
-    def test_a_hung_run_is_stopped_at_the_timeout(self):
+    def test_a_hung_run_is_stopped_at_the_timeout_and_reported_before_the_stop(self):
         self.mode = "hang"
-        with patch.object(osa, "RUN_TIMEOUT", 1), self.assertLogs("pauk.reports.osa", "WARNING") as logs:
+        terminate = osa.OsaRunner._terminate
+
+        def reported_first(proc):
+            self.assertTrue(logs.output, "the timeout must be logged before waiting on the stop")
+            terminate(proc)
+
+        with patch.object(osa, "RUN_TIMEOUT", 1), patch.object(osa.OsaRunner, "_terminate", staticmethod(reported_first)), \
+                self.assertLogs("pauk.reports.osa", "WARNING") as logs:
             self.assertFalse(self.run_osa())
         self.assertIn("timed out", logs.output[0])
+
+    def test_a_run_ignoring_sigterm_is_killed_with_its_children_after_the_grace(self):
+        self.mode = "stubborn"
+        started = time.monotonic()
+        with patch.object(osa, "RUN_TIMEOUT", 1), patch.object(osa, "STOP_GRACE", 1), \
+                self.assertLogs("pauk.reports.osa", "WARNING"):
+            self.assertFalse(self.run_osa())
+        self.assertLess(time.monotonic() - started, 10)
+        child = int(self.child_pid_file.read_text())
+        for _ in range(50):
+            try:
+                os.kill(child, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.1)
+        else:
+            self.fail("the OSA child process survived the stop")
+
+    def test_stop_ends_runs_in_flight_and_refuses_new_ones(self):
+        self.mode = "hang"
+        runner = osa.OsaRunner("secret", self.osa_dir)
+        results = []
+        worker = threading.Thread(target=lambda: results.append(
+            runner.run("github_a_one", "u", "en", "English", self.out_dir / "en" / "a.pdf")
+        ))
+        worker.start()
+        while not runner._running:
+            time.sleep(0.05)
+        runner.stop()
+        worker.join(timeout=10)
+        self.assertEqual(results, [False])
+        self.assertFalse(runner.run("github_b_two", "u", "en", "English", self.out_dir / "en" / "b.pdf"))
+        self.assertFalse((self.osa_dir / "logs" / "en" / "github_b_two.log").exists())
 
     def test_the_timeout_leaves_room_for_the_slowest_real_run(self):
         self.assertGreater(osa.RUN_TIMEOUT, 13 * 60)
@@ -213,9 +262,22 @@ class ReportsBuilderTest(FakeOsaTestCase):
         done = self.out_dir / "en" / "github_a_one.pdf"
         done.parent.mkdir(parents=True)
         done.write_bytes(b"%PDF-old")
-        with patch.object(osa.OsaRunner, "run", side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
+        with patch.object(osa.OsaRunner, "run", side_effect=KeyboardInterrupt), \
+                patch.object(osa.OsaRunner, "stop") as stop, self.assertRaises(KeyboardInterrupt):
             self.build(force=True)
+        stop.assert_called_once()
         self.assertEqual(json.loads((self.out_dir / "index.json").read_text()), {"en": ["github_a_one"]})
+
+    def test_nothing_to_generate_needs_no_key_uvx_or_network(self):
+        for key in ("github_a_one", "github_b_two"):
+            (self.out_dir / "en").mkdir(parents=True, exist_ok=True)
+            (self.out_dir / "en" / f"{key}.pdf").write_bytes(b"%PDF")
+        self.config = replace(self.config, openrouter_api_key="")
+        with patch("pauk.reports.builder.shutil.which", lambda name: None), \
+                patch("pauk.reports.builder.OpenRouterClient.usage", side_effect=AssertionError("network")):
+            result = self.build()
+        self.assertEqual(result, {"generated": 0, "skipped": 2, "failed": 0, "spent_usd": 0.0})
+        self.assertEqual(json.loads((self.out_dir / "index.json").read_text()), {"en": ["github_a_one", "github_b_two"]})
 
     def test_an_unreadable_final_spend_still_returns_the_counts(self):
         spends = iter([0.0])

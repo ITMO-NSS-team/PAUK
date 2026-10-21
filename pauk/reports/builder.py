@@ -101,26 +101,12 @@ class ReportsBuilder:
             (key, lang) for lang in LANGUAGES for key in selected
             if force or not report_path(out_dir, lang, key).exists()
         ]
-        spent_before = self._preflight()
-
-        runner = OsaRunner(self.llm.api_key, self.config.osa_dir)
+        # Nothing to generate needs no key or network: the index is rebuilt offline.
+        spent_before = self._preflight() if jobs else None
         generated = failed = 0
         try:
-            with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-                futures = [
-                    pool.submit(runner.run, key, repos[key], lang, LANGUAGES[lang], report_path(out_dir, lang, key))
-                    for key, lang in jobs
-                ]
-                try:
-                    for future in tqdm(as_completed(futures), total=len(futures), desc="OSA reports",
-                                       unit="report", dynamic_ncols=True, disable=None):
-                        if future.result():
-                            generated += 1
-                        else:
-                            failed += 1
-                except BaseException:
-                    pool.shutdown(wait=False, cancel_futures=True)
-                    raise
+            if jobs:
+                generated, failed = self._run_all(jobs, repos, out_dir, workers)
         finally:
             out_dir.mkdir(parents=True, exist_ok=True)
             write_index(out_dir)
@@ -130,8 +116,34 @@ class ReportsBuilder:
             "generated": generated,
             "skipped": len(selected) * len(LANGUAGES) - len(jobs),
             "failed": failed,
-            "spent_usd": self._spent_since(spent_before),
+            "spent_usd": 0.0 if spent_before is None else self._spent_since(spent_before),
         }
+
+    def _run_all(
+        self, jobs: list[tuple[str, str]], repos: dict[str, str], out_dir: Path, workers: int
+    ) -> tuple[int, int]:
+        """Runs OSA for every `(key, lang)` job in parallel; returns (generated, failed)."""
+        runner = OsaRunner(self.llm.api_key, self.config.osa_dir)
+        generated = failed = 0
+        with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+            futures = [
+                pool.submit(runner.run, key, repos[key], lang, LANGUAGES[lang], report_path(out_dir, lang, key))
+                for key, lang in jobs
+            ]
+            try:
+                for future in tqdm(as_completed(futures), total=len(futures), desc="OSA reports",
+                                   unit="report", dynamic_ncols=True, disable=None):
+                    if future.result():
+                        generated += 1
+                    else:
+                        failed += 1
+            except BaseException:
+                # Cancelling only drops queued runs; the running ones are stopped
+                # here, or leaving the pool would wait for them to finish.
+                pool.shutdown(wait=False, cancel_futures=True)
+                runner.stop()
+                raise
+        return generated, failed
 
     def _preflight(self) -> float:
         """Checks what OSA would otherwise fail on slowly; returns the key's spend so far.
