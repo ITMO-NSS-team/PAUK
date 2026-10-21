@@ -38,6 +38,7 @@ from pauk.jobs.models import GRAPH
 from pauk.storage.prepared import PreparedStore
 
 from .client import chunked
+from .extract import GRAPH_OWNED_RELATIONSHIPS
 from .jsonl_loader import load_prepared_rows
 from .load import ENTITY_FILES, FILE_LABELS, _drop_tombstoned
 from .mutations import RELATIONSHIPS
@@ -219,6 +220,8 @@ def plan(client, mongo_db: Database) -> Plan:
 
     for (src_label, rel_type, tgt_label), match_prop in sorted(RELATIONSHIPS.items()):
         triple = (src_label, rel_type, tgt_label)
+        if triple in GRAPH_OWNED_RELATIONSHIPS:
+            continue
         live = client.fetch_relationship_pairs(src_label, rel_type, tgt_label, match_prop)
         stale = live - _through_folds(would.edges.get(triple, set()),
                                       aliases.get(src_label, {}),

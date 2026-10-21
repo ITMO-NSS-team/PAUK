@@ -1,20 +1,18 @@
-"""Report publication pairs that look like versions of one work but were not
-folded by the exact-DOI / exact-title dedup stage (pauk/pipeline/stages/
-dedup.py, see docs/architecture/pipeline/dedup.md): a preprint whose title
+"""Find publication pairs that look like versions of one work: records the
+dedup stage keeps apart because their DOIs differ (pauk/pipeline/stages/
+dedup.py, see docs/architecture/pipeline/dedup.md) - a preprint whose title
 was polished for the journal, a conference paper extended into a journal
 article, a Russian original and its Pleiades/MAIK English translation, or an
 eLife-style `.v2` revision minted under its own DOI.
 
-Read-only and report-only. Nothing here merges nodes, writes `merged_ids`,
-or touches the graph - every pair is journalled with status "held", the same
-as a person-dedup pair the review journal could not resolve on its own
-(pauk/pipeline/stages/dedup.py). The reason is precision: unlike an exact
-DOI or title match, a fuzzy title plus author overlap is corroborating
-evidence, not proof - "Cliques and Constructors in 'Hats' Game. I" and "...
-II" score a near-perfect title similarity and share every author with their
-sequel, and are two different papers. A human confirms before anything here
-becomes a merge; see docs/architecture/pipeline/version-candidates.md for
-the full precision/recall picture per bucket.
+The rules and buckets live here and only read; `version_link.py` turns the
+pairs into IS_VERSION edges, and `pauk versions report` into a journal.
+Nothing merges nodes or writes `merged_ids`: a version is not a duplicate,
+and a fuzzy title plus author overlap is corroborating evidence, not proof -
+"Cliques and Constructors in 'Hats' Game. I" and "... II" score a
+near-perfect title similarity and share every author with their sequel, and
+are two different papers. See docs/architecture/pipeline/version-candidates.md
+for the precision/recall picture per bucket.
 """
 
 from __future__ import annotations
@@ -40,13 +38,27 @@ logger = logging.getLogger(__name__)
 
 CANDIDATES_FILENAME = "version_candidates.jsonl"
 
+# MEDIUM_FUZZY is a third versions and two thirds sibling papers of one
+# group, and its title similarity does not tell them apart (the bucket study
+# in docs/architecture/pipeline/version-candidates.md). It is split further by
+# `route_medium_fuzzy`: a shared abstract or a preprint is kept as is, the
+# rest goes to an LLM and the venue pair decides what it declines.
+MEDIUM_FUZZY = "MEDIUM_FUZZY"
+MEDIUM_FUZZY_STRONG = "MEDIUM_FUZZY_STRONG"
+MEDIUM_FUZZY_LLM_SAME = "MEDIUM_FUZZY_LLM_SAME"
+MEDIUM_FUZZY_CONF_JOURNAL = "MEDIUM_FUZZY_CONF_JOURNAL"
+MEDIUM_FUZZY_RELATED = "MEDIUM_FUZZY_RELATED"
+
 # Buckets corroborated enough to be worth a human's time; the rest
-# (ERRATUM, SERIES_NOT_VERSION, SUPPLEMENT_OR_REVIEW) are look-alike pairs
-# reported so they are explained rather than silently dropped, but are
-# never a version relationship.
+# (ERRATUM, SERIES_NOT_VERSION, SUPPLEMENT_OR_REVIEW, COVER and the sibling
+# papers MEDIUM_FUZZY_RELATED) are look-alike pairs kept so they are
+# explained rather than silently dropped, but are never one work.
+# MEDIUM_FUZZY itself stays here: unrouted (no LLM verdict yet) it is
+# still the old bucket a human used to see whole.
 MERGE_BUCKETS = frozenset({
     "MISSED_BY_NORM", "DOI_SIBLING", "PREPRINT_PUBLISHED",
-    "RU_EN_TRANSLATION", "STRONG_FUZZY", "MEDIUM_FUZZY",
+    "RU_EN_TRANSLATION", "STRONG_FUZZY", MEDIUM_FUZZY,
+    MEDIUM_FUZZY_STRONG, MEDIUM_FUZZY_LLM_SAME, MEDIUM_FUZZY_CONF_JOURNAL,
 })
 
 # Repository/preprint hosts, matched against either the DOI or the venue
@@ -69,7 +81,9 @@ _VERSION_TAG = re.compile(r"\.v?\d{1,3}$", re.I)
 
 _ERRATUM_PREFIX = re.compile(
     r"^(correction|corrigendum|erratum|retraction(?:\s+(?:note|notice))?|retracted|"
-    r"notice of retraction|publisher correction|author correction|expression of concern|addendum)"
+    r"notice of retraction|publisher correction|author correction|expression of concern|addendum|"
+    # Leading, too: APL prints "Publisher's Note: \u201c<title>\u201d" for a correction.
+    r"publisher['\u2019]?s\s+note)"
     # The separator is required: "Correction of chromatic aberration" is a
     # paper, "Correction to: ..." / "Erratum: ..." is a notice. "for" counts
     # only with a colon and a hyphen only between spaces, or "Correction for
@@ -81,6 +95,20 @@ _ERRATUM_SUFFIX = re.compile(
 # OpenAlex types of a notice about another record - never a version of it,
 # even when the notice reuses the original title verbatim.
 _NOTICE_TYPES = frozenset({"erratum", "retraction"})
+
+# The publisher's own record for an issue cover or a note about the article:
+# a DOI of its own, the article's authors and title, and not a version of it.
+# Wiley prints these as "Front Cover: <title>", "Cover Feature: <title>",
+# "<title> (Adv. Mater. 13/2022)" or a frontispiece rubric
+# "Polymer Coatings: <title>" in the article's own journal.
+_COVER_PREFIX = re.compile(
+    r"^(?:(?:front|back|inside(?:\s+(?:front|back))?)\s+cover(?:\s+(?:picture|image|art|feature))?|"
+    r"cover\s+(?:feature|picture|image|art|profile|story)|frontispiece)\s*[:\u2014\u2013-]\s*", re.I)
+# "(Adv. Mater. 13/2022)", "(Small 18/2021)": a journal abbreviation and an
+# issue number. Case-sensitive: the abbreviation is capitalised.
+_COVER_ISSUE_SUFFIX = re.compile(r"\s*\(\s*[A-Z][\w.&\s-]{0,40}?\s+\d{1,2}\s*/\s*\d{4}\s*\)\s*$")
+_RUBRIC = re.compile(r"^([^:]{2,40}):\s+(.+)$")
+_RUBRIC_MAX_WORDS = 4
 
 # A record whose title only makes sense next to another paper's - a
 # supplementary file, a dataset deposit, a peer-review report - not a
@@ -141,7 +169,17 @@ _GENERIC_TITLES = PLACEHOLDER_TITLES | {
 # Software releases and data deposits form their own version series
 # (repository/entity dedup already handles them); a paper title heuristic
 # has nothing useful to say about "asl/BandageNG: Release v2026.4.1".
-_NON_PAPER_TYPES = frozenset({"software", "dataset", "peer-review", "grant", "other"})
+_NON_PAPER_TYPES = frozenset({"software", "dataset", "peer-review", "grant", "other", "paratext"})
+
+# Proceedings typed as journals or book series by OpenAlex count as
+# conferences by their name: "Journal of Physics: Conference Series",
+# IFAC-PapersOnLine, LNCS, Procedia, MEDINFO's "Studies in Health Technology
+# and Informatics", or an IEEE event named after its year.
+_CONFERENCE_VENUE = re.compile(
+    r"conference|proceedings|symposium|workshop|congress|colloquium|\bconf\b|\bproc\.|"
+    r"papersonline|lecture notes in|procedia|advances in intelligent systems|"
+    r"communications in computer and information science|studies in health technology|"
+    r"web of conferences|\bceur\b|\bspie\b|^\d{4}\s", re.I)
 
 _MIN_TITLE_TOKENS = 4
 # Caps on how large a shared-author or shared-title-token bucket may be
@@ -312,6 +350,48 @@ def _erratum_of(a: dict, b: dict) -> tuple[dict, dict] | None:
     return None
 
 
+def _cover_of(a: dict, b: dict) -> tuple[dict, dict] | None:
+    """(cover, article) if one record is the publisher's cover or note for
+    the other: a cover marker around the other's title, a `paratext` record
+    carrying it, or a short rubric before it in the same journal."""
+    for cover, article in ((a, b), (b, a)):
+        title = cover.get("title") or ""
+        base = _fold_title(article.get("title"))
+        if not base:
+            continue
+        stripped = _COVER_ISSUE_SUFFIX.sub("", _COVER_PREFIX.sub("", title, count=1))
+        if stripped != title or (cover.get("type") or "").lower() == "paratext":
+            folded = _fold_title(stripped)
+            if folded and (folded == base or _title_similarity(
+                    folded, base, _jaccard(_title_tokens(stripped), _title_tokens(article.get("title"))),
+                    floor=0.9) >= 0.9):
+                return cover, article
+            continue
+        # A rubric alone is not a marker: "Review: <title>" in another venue
+        # can be a paper of its own. Only the article's own journal, and only
+        # the article's exact title after it.
+        rubric = _RUBRIC.match(title)
+        venue_a, venue_b = (cover.get("journal") or "").casefold(), (article.get("journal") or "").casefold()
+        if rubric and venue_a and venue_a == venue_b \
+                and len(rubric.group(1).split()) <= _RUBRIC_MAX_WORDS \
+                and _fold_title(rubric.group(2)) == base:
+            return cover, article
+    return None
+
+
+def _venue_kind(row: dict) -> str | None:
+    """"conference", "journal" or None (a repository, a book, nothing known)."""
+    name = row.get("journal") or ""
+    venue_type = (row.get("venue_type") or "").lower()
+    if venue_type == "repository" or _PREPRINT_VENUE.search(name):
+        return None
+    if venue_type == "conference" or _CONFERENCE_VENUE.search(name):
+        return "conference"
+    if venue_type == "journal" or (not venue_type and name):
+        return "journal"
+    return None
+
+
 def _date_gap_days(a: dict, b: dict) -> int | None:
     date_a, date_b = a.get("publication_date"), b.get("publication_date")
     if date_a and date_b:
@@ -330,6 +410,7 @@ def _signals(a: dict, b: dict, **extra) -> dict:
         "record_b": b["id"], "title_b": b.get("title"),
         "venue_a": a.get("journal"), "venue_b": b.get("journal"),
         "type_a": a.get("type"), "type_b": b.get("type"),
+        "venue_kind_a": _venue_kind(a), "venue_kind_b": _venue_kind(b),
         **extra,
     }
 
@@ -345,8 +426,9 @@ def classify_pair(a: dict, b: dict) -> tuple[str, dict] | None:
     Returns:
         (bucket, signals) or None. `bucket` is one of MERGE_BUCKETS (a
         version link worth a human's confirmation) or one of ERRATUM /
-        SERIES_NOT_VERSION / SUPPLEMENT_OR_REVIEW (a look-alike explained,
-        not a version). `signals` carries every number the decision used,
+        SERIES_NOT_VERSION / SUPPLEMENT_OR_REVIEW / COVER (a look-alike
+        explained, not a version). MEDIUM_FUZZY is returned whole;
+        `route_medium_fuzzy` splits it. `signals` carries every number the decision used,
         for the review journal.
     """
     title_a, title_b = a.get("title") or "", b.get("title") or ""
@@ -361,6 +443,10 @@ def classify_pair(a: dict, b: dict) -> tuple[str, dict] | None:
         # A correction/retraction notice about some third record: whatever
         # its title resembles here, it is not a version of it.
         return None
+
+    cover = _cover_of(a, b)
+    if cover:
+        return "COVER", _signals(a, b, cover=cover[0]["id"], article=cover[1]["id"])
 
     if _series_variant(title_a, title_b, folded_a, folded_b):
         return "SERIES_NOT_VERSION", _signals(a, b)
@@ -432,8 +518,45 @@ def classify_pair(a: dict, b: dict) -> tuple[str, dict] | None:
         return "STRONG_FUZZY", signals
     if title_sim >= 0.78 and (author_jaccard >= 0.50 or (abstract_sim is not None and abstract_sim >= 0.45)) \
             and (gap is None or gap <= 365 * 4):
-        return "MEDIUM_FUZZY", signals
+        return MEDIUM_FUZZY, signals
     return None
+
+
+def route_medium_fuzzy(a: dict, b: dict, signals: dict, judge=None) -> str:
+    """Which part of MEDIUM_FUZZY a pair belongs to.
+
+    The study behind it (172 hand-labelled pairs) found three signals the
+    title similarity misses: a shared abstract or a preprint in the pair
+    (0.81 precision on their own), the venue pair (conference to journal is
+    the usual extension, two conferences or two journals almost never a
+    version), and an LLM reading both records. Two talks on one result at
+    two conferences are two works; that is what the prompt says, and why
+    the conservative model is the one used.
+
+    Args:
+        a, b: The pair, shaped as for `classify_pair`.
+        signals: What `classify_pair` returned with MEDIUM_FUZZY.
+        judge: Callable (a, b) -> {"same_work": bool, "reason": str} or
+            None when it has no verdict. None skips the LLM step and leaves
+            the pair as MEDIUM_FUZZY.
+
+    Returns:
+        One of the MEDIUM_FUZZY_* buckets, or MEDIUM_FUZZY unrouted. The
+        verdict, when there is one, is added to `signals`.
+    """
+    abstract_sim = signals.get("abstract_sim")
+    if signals.get("preprint_split") or (abstract_sim is not None and abstract_sim >= 0.45):
+        return MEDIUM_FUZZY_STRONG
+    verdict = judge(a, b) if judge is not None else None
+    if verdict is None:
+        return MEDIUM_FUZZY
+    signals["llm_verdict"] = verdict["same_work"]
+    signals["llm_reason"] = verdict.get("reason")
+    if verdict["same_work"]:
+        return MEDIUM_FUZZY_LLM_SAME
+    if {signals.get("venue_kind_a"), signals.get("venue_kind_b")} == {"conference", "journal"}:
+        return MEDIUM_FUZZY_CONF_JOURNAL
+    return MEDIUM_FUZZY_RELATED
 
 
 def _prolific_author_pairs(members: list[str], titles: dict[str, str | None]) -> set[tuple[str, str]]:
@@ -491,12 +614,14 @@ def _candidate_pairs(rows: list[dict]) -> set[tuple[str, str]]:
     return pairs
 
 
-def find_version_candidates(client) -> list[dict]:
+def find_version_candidates(client, judge=None, rows: list[dict] | None = None) -> list[dict]:
     """Every candidate version pair the graph currently holds, as review-
     journal rows (status "held", never "merged" - see the module
     docstring). `client` is a Neo4jClient (or a compatible double, e.g.
-    tests.bench.mocks.RecordingNeo4jClient)."""
-    rows = client.fetch_publications_for_dedup()
+    tests.bench.mocks.RecordingNeo4jClient). `judge` routes MEDIUM_FUZZY,
+    see `route_medium_fuzzy`. `rows` skips the fetch when the caller has
+    the publications already."""
+    rows = client.fetch_publications_for_dedup() if rows is None else rows
     by_id = {row["id"]: row for row in rows}
     report = []
     # Sorted, so two runs over one graph write the same journal and can be
@@ -506,6 +631,8 @@ def find_version_candidates(client) -> list[dict]:
         if result is None:
             continue
         bucket, signals = result
+        if bucket == MEDIUM_FUZZY:
+            bucket = route_medium_fuzzy(by_id[a_id], by_id[b_id], signals, judge)
         report.append({
             "status": "held",
             "entity": "publication",

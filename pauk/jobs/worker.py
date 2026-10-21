@@ -70,6 +70,13 @@ def _dedup(config: Settings, db: Database, payload, stop: Stop,
     return run_graph_dedup(config, db)
 
 
+def _versions(config: Settings, db: Database, payload, stop: Stop,
+              report: Report) -> dict[str, int]:
+    from pauk.graph.version_link import run_version_link
+    report("связи версий публикаций по всему графу")
+    return run_version_link(config, db, llm=payload.llm)
+
+
 def _prune(config: Settings, db: Database, payload, stop: Stop,
            report: Report) -> dict[str, int]:
     from pauk.graph import prune
@@ -166,6 +173,7 @@ STEPS: dict[JobKind, Callable[[Settings, Database, BaseModel, Stop, Report], dic
     JobKind.MAP: _rebuild_map,
     JobKind.PRUNE: _prune,
     JobKind.HEALTH: _health,
+    JobKind.VERSIONS: _versions,
     JobKind.PIPELINE: _pipeline,
 }
 

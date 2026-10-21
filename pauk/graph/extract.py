@@ -51,6 +51,12 @@ class RelSpec:
     guard: Callable[[dict], bool] | None = None
 
 
+# Relationships a graph-level command derives from the graph itself rather
+# than a publish from prepared rows. A loader replay never asks for them, so
+# `pauk admin prune` must not read their absence there as staleness.
+GRAPH_OWNED_RELATIONSHIPS = frozenset({("Publication", "IS_VERSION", "Publication")})
+
+
 @dataclass(frozen=True)
 class NodeSpec:
     """Describes how to turn one prepared-JSONL row into a Neo4j node.
@@ -215,6 +221,7 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
             "type",
             "fields",
             "journal",
+            "venue_type",
             "doi",
             "publication_date",
             "year",
@@ -245,6 +252,17 @@ NODE_REGISTRY: dict[str, NodeSpec] = {
                 ),
                 tgt_match_field="url",
                 guard=lambda item: item.get("target_kind") == "repository",
+            ),
+            # Written by `pauk versions link`, never by a publish: no prepared
+            # row has a `version_of` field. Registered so the admin pages,
+            # overrides and schema checks know the triple; see
+            # GRAPH_OWNED_RELATIONSHIPS for why prune leaves it alone.
+            RelSpec(
+                "version_of",
+                "IS_VERSION",
+                "Publication",
+                "publication_id",
+                ("bucket", "mergeable", "status", "title_sim", "llm_verdict", "llm_reason"),
             ),
             RelSpec(
                 "mentions_links",

@@ -105,19 +105,29 @@ Neo4j from different runs and never sat side by side in one group. It is not
 part of `run`; run it by hand once several groups have accumulated. See
 [pipeline/dedup.md](pipeline/dedup.md).
 
-## `versions report`
+## `versions link` / `versions report`
 
 ```
+pauk versions link [--llm] [--force]
 pauk versions report [--output <path>]
 ```
 
-Finds publication pairs that look like versions of one work but that `dedup`
-missed because their DOIs differ and the title was edited (preprint →
-publication, original → translation, a revision under its own DOI). Only
-reads the graph; MongoDB is not needed. Writes a journal (by default
-`data/cache/version_candidates.jsonl`) and merges nothing: every pair has
-`status: "held"`, and a person confirms it. See
-[pipeline/version-candidates.md](pipeline/version-candidates.md).
+Both find publication pairs that look like versions of one work under
+different DOIs, which `dedup` keeps as separate nodes (preprint → publication,
+original → translation, conference paper → journal article, a revision under
+its own DOI), plus look-alikes explained by their bucket (an erratum, a cover,
+a series entry). Neither merges anything.
+
+`link` takes the graph lock and writes every pair as an
+`(:Publication)-[:IS_VERSION {bucket, ...}]->(:Publication)` edge, removes
+edges the rules no longer produce, and puts mergeable pairs into the review
+queue (`/review`, "Версии публикаций"). `--llm` asks the LLM
+(the standard `PAUK_LLM_MODEL`) about MEDIUM_FUZZY pairs no earlier run asked
+about; `--force` asks again. The admin panel runs it as the `versions` job.
+
+`report` only reads the graph (MongoDB is not needed) and writes the journal
+(by default `data/cache/version_candidates.jsonl`); `link` writes it too.
+See [pipeline/version-candidates.md](pipeline/version-candidates.md).
 
 ## `admin`: manual graph edits
 

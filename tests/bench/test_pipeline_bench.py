@@ -18,6 +18,7 @@ import pytest
 
 from pauk.graph.jsonl_loader import load_prepared_rows, normalize_repo_url
 from pauk.graph.load import ENTITY_FILES
+from pauk.graph.version_candidates import find_version_candidates
 from pauk.models import GitHubProfile, Person, Publication, RepoLink, Repository
 from pauk.models.processing import ProcessingState, ProcessingStatus
 from pauk.pipeline.collect import Collector
@@ -48,6 +49,7 @@ from tests.bench.universe import (
     CONSORTIUM_ORG_NAME,
     CONSORTIUM_WORK,
     DEDUP_MERGES,
+    DEPOSIT_RELEASES,
     MARKUP_TITLE_CLEAN,
     MARKUP_WORK,
     ORG_CHILD_UID,
@@ -55,6 +57,7 @@ from tests.bench.universe import (
     ORG_UID,
     PHANTOM_URLS,
     PUBLICATION_MERGES,
+    PUBLICATION_VERSIONS,
     REPO_OWNERS,
     RUSSIAN_NAMES_CATALOG,
     STALE_REPO_CANONICAL_ID,
@@ -366,25 +369,22 @@ def test_one_doi_re_indexed_twice_is_one_publication(bench):
     assert {v.openalex_id for v in survivor.versions} == {"W70000000111", "W70000000112"}
 
 
-def test_preprint_folds_into_version_of_record_keeping_both_venues(bench):
-    assert "W70000000113" not in bench.publications
-    survivor = bench.publications["W70000000114"]
-    assert survivor.type == "article"
-    assert (survivor.journal, survivor.doi) == ("Synthetic Journal", "https://doi.org/10.7777/vor.114")
-    assert {(v.journal, v.doi) for v in survivor.versions} == {
-        ("Synthetic Journal", "https://doi.org/10.7777/vor.114"),
-        ("Synthetic Preprint Server", "https://doi.org/10.7777/preprint.113"),
-    }
+def test_preprint_and_version_of_record_stay_two_publications(bench):
+    preprint, vor = (bench.publications[work_id] for work_id in PUBLICATION_VERSIONS)
+    assert (preprint.journal, preprint.type) == ("Synthetic Preprint Server", "preprint")
+    assert (vor.journal, vor.doi) == ("Synthetic Journal", "https://doi.org/10.7777/vor.114")
+    assert preprint.merged_ids == [] and vor.merged_ids == []
 
 
-def test_repeated_deposits_collapse_into_the_newest_one(bench):
-    survivor = bench.publications["W70000000117"]
-    assert sorted(survivor.merged_ids) == ["W70000000115", "W70000000116"]
-    assert {v.doi for v in survivor.versions} == {
-        "https://doi.org/10.7777/deposit.115",
-        "https://doi.org/10.7777/deposit.116",
-        "https://doi.org/10.7777/deposit.117",
-    }
+def test_the_version_rules_relate_preprint_and_version_of_record(bench):
+    report = find_version_candidates(bench.graph)
+    pairs = {(row["record_a"], row["record_b"]): row["bucket"] for row in report}
+    assert pairs[PUBLICATION_VERSIONS] == "MISSED_BY_NORM"
+
+
+def test_deposits_under_their_own_dois_stay_apart(bench):
+    for work_id in DEPOSIT_RELEASES:
+        assert bench.publications[work_id].merged_ids == []
 
 
 def test_untitled_works_are_never_merged_with_each_other(bench):
@@ -398,14 +398,17 @@ def test_title_case_and_spacing_variants_are_one_publication(bench):
 
 
 def test_authorships_follow_the_surviving_publication(bench):
-    for author_id in ("A5000000024", "A5000000025"):
+    for author_id in ("A5000000028", "A5000000029"):
         works = [
             a.publication_id
             for a in bench.persons[author_id].authored
-            if a.publication_id in {"W70000000113", "W70000000114"}
+            if a.publication_id in {"W70000000119", "W70000000120"}
         ]
         # One authorship, not one per merged record.
-        assert works == ["W70000000114"]
+        assert works == ["W70000000119"]
+    # A version under its own DOI keeps its own authorship.
+    works = {a.publication_id for a in bench.persons["A5000000024"].authored}
+    assert set(PUBLICATION_VERSIONS) <= works
 
 
 def test_merged_publications_leave_no_graph_node(bench):
@@ -414,12 +417,12 @@ def test_merged_publications_leave_no_graph_node(bench):
 
 
 def test_versions_are_json_text(bench):
-    props = bench.graph.nodes["Publication"]["W70000000114"]
+    props = bench.graph.nodes["Publication"]["W70000000111"]
     assert isinstance(props["versions"], str)
-    assert "Synthetic Preprint Server" in props["versions"]
     # Each version entry records the author list that record itself carried.
     versions = {entry["openalex_id"]: entry for entry in json.loads(props["versions"])}
-    assert {a["person_id"] for a in versions["W70000000113"]["authors"]} == {"A5000000024", "A5000000025"}
+    assert {a["person_id"] for a in versions["W70000000111"]["authors"]} == {"A5000000021", "A5000000022"}
+    assert versions["W70000000112"]["authors"] == []
 
 
 
@@ -552,11 +555,12 @@ def test_graph_edge_counts(bench):
     graph = bench.graph
     expected_authored = {(person.id, a.publication_id) for person in bench.persons.values() for a in person.authored}
     assert graph.edge_pairs("AUTHORED") == expected_authored
-    # 228 from works W001..W110, 9 from the duplicate-record works (two
-    # authors each on W111, W114, W117 and W119, one on W118), 2 keyable
-    # authors on W121, 2 on W122, the lone depositor of W123, and the
-    # consortium paper's 3 fillers + ITMO participant.
-    assert len(expected_authored) == 246
+    # 228 from works W001..W110, 15 from the duplicate-record works (two
+    # authors each on W111, the preprint W113 and its version of record
+    # W114, the three deposit releases W115..W117 and W119, one on W118),
+    # 2 keyable authors on W121, 2 on W122, the lone depositor of W123, and
+    # the consortium paper's 3 fillers + ITMO participant.
+    assert len(expected_authored) == 252
 
     assert len(graph.edge_pairs("MENTIONS_LINK")) == 83 + 3  # repos + candidates
     # 82 plus the publication inherited from the pre-rename repository row

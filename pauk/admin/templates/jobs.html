@@ -180,6 +180,25 @@
     </script>
   </div>
 </div>
+
+<div class="pair">
+  <div class="card aside">
+    <div class="head">
+      <b>Версии публикаций</b>
+      {% if last_done.versions %}<span class="ago">последний раз {{ last_done.versions|moment }}</span>{% endif %}
+    </div>
+    <p class="muted">Связывает препринты, переводы, журнальные версии докладов
+      и похожие записи связью IS_VERSION с бакетом. Ничего не сливает: пары-версии
+      уходят в «Спорные случаи», ответ «разные» убирает связь.</p>
+    <form method="post" action="/jobs">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="kind" value="versions">
+      <div><label><input type="checkbox" name="llm" value="true"> спросить LLM о новых
+        парах MEDIUM_FUZZY</label></div>
+      <div style="margin-top:8px"><button type="submit">Запустить</button></div>
+    </form>
+  </div>
+</div>
 {% endif %}
 
 {% if under_way %}

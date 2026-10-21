@@ -4,8 +4,10 @@ from pauk.graph.version_candidates import (
     MERGE_BUCKETS,
     _candidate_pairs,
     _is_preprint,
+    _venue_kind,
     classify_pair,
     find_version_candidates,
+    route_medium_fuzzy,
 )
 
 
@@ -397,6 +399,77 @@ class CandidatePairsTest(unittest.TestCase):
         ]
         rows[1]["pdf_urls"] = ["https://example.org/a.pdf", "https://arxiv.org/pdf/2107.01278"]
         self.assertEqual(_candidate_pairs(rows), {("W1", "W2")})
+
+
+class CoverTest(unittest.TestCase):
+    article = pub("W1", "Hydrogel Actuators by Autocatalytic Reaction Networks",
+                  doi="10.1002/adma.1", journal="Advanced Materials", authors=["A1", "A2"])
+
+    def cover(self, title, **kwargs):
+        return pub("W2", title, doi="10.1002/adma.2", authors=["A1", "A2"], **kwargs)
+
+    def test_cover_markers_are_their_own_bucket(self):
+        for title in ("Front Cover: Hydrogel Actuators by Autocatalytic Reaction Networks",
+                      "Cover Feature: Hydrogel Actuators by Autocatalytic Reaction Networks",
+                      "Hydrogel Actuators by Autocatalytic Reaction Networks (Adv. Mater. 13/2022)"):
+            with self.subTest(title=title):
+                bucket, signals = classify_pair(self.article, self.cover(title))
+                self.assertEqual(bucket, "COVER")
+                self.assertEqual((signals["cover"], signals["article"]), ("W2", "W1"))
+                self.assertNotIn(bucket, MERGE_BUCKETS)
+
+    def test_paratext_with_the_articles_title_is_a_cover(self):
+        bucket, _ = classify_pair(self.article, self.cover(self.article["title"], type="paratext"))
+        self.assertEqual(bucket, "COVER")
+
+    def test_a_rubric_counts_only_in_the_articles_own_journal(self):
+        title = "Polymer Coatings: Hydrogel Actuators by Autocatalytic Reaction Networks"
+        bucket, _ = classify_pair(self.article, self.cover(title, journal="Advanced Materials"))
+        self.assertEqual(bucket, "COVER")
+        result = classify_pair(self.article, self.cover(title, journal="Soft Matter"))
+        self.assertNotEqual(result and result[0], "COVER")
+
+    def test_leading_publishers_note_is_an_erratum(self):
+        bucket, _ = classify_pair(
+            pub("W1", "Alpha-MoO3 SiC metasurface for tunable infrared emission", doi="10.1/a"),
+            pub("W2", "Publisher's Note: \u201cAlpha-MoO3 SiC metasurface for tunable infrared emission\u201d",
+                doi="10.1/b"))
+        self.assertEqual(bucket, "ERRATUM")
+
+
+class RouteMediumFuzzyTest(unittest.TestCase):
+    signals = {"abstract_sim": 0.03, "preprint_split": False,
+               "venue_kind_a": "conference", "venue_kind_b": "journal"}
+
+    def route(self, verdict=None, **overrides):
+        judge = (lambda a, b: verdict) if verdict is not None else None
+        return route_medium_fuzzy({}, {}, {**self.signals, **overrides}, judge)
+
+    def test_shared_abstract_or_preprint_skips_the_llm(self):
+        self.assertEqual(self.route(abstract_sim=0.5), "MEDIUM_FUZZY_STRONG")
+        self.assertEqual(self.route(preprint_split=True), "MEDIUM_FUZZY_STRONG")
+
+    def test_without_a_verdict_the_bucket_stays_whole(self):
+        self.assertEqual(self.route(), "MEDIUM_FUZZY")
+
+    def test_verdict_and_venues_split_the_rest(self):
+        self.assertEqual(self.route({"same_work": True}), "MEDIUM_FUZZY_LLM_SAME")
+        self.assertEqual(self.route({"same_work": False}), "MEDIUM_FUZZY_CONF_JOURNAL")
+        self.assertEqual(self.route({"same_work": False}, venue_kind_a="journal"), "MEDIUM_FUZZY_RELATED")
+        self.assertNotIn("MEDIUM_FUZZY_RELATED", MERGE_BUCKETS)
+
+    def test_proceedings_typed_as_journal_count_as_conference(self):
+        self.assertEqual(_venue_kind({"journal": "Journal of Physics: Conference Series",
+                                      "venue_type": "journal"}), "conference")
+        self.assertEqual(_venue_kind({"journal": "arXiv", "venue_type": "repository"}), None)
+        self.assertEqual(_venue_kind({"journal": "Nano Letters"}), "journal")
+        for name in ("IFAC-PapersOnLine", "Lecture notes in computer science", "Procedia Computer Science",
+                     "Studies in health technology and informatics", "2022 International Conference Laser Optics (ICLO)"):
+            with self.subTest(name=name):
+                self.assertEqual(_venue_kind({"journal": name}), "conference")
+        # A repository is no venue kind at all, whatever its name looks like.
+        self.assertIsNone(_venue_kind({"journal": "Zenodo (CERN European Organization for Nuclear Research)"}))
+        self.assertIsNone(_venue_kind({"journal": "SSRN Electronic Journal"}))
 
 
 class IsPreprintTest(unittest.TestCase):

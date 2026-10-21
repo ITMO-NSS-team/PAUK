@@ -357,6 +357,9 @@ class RecordingNeo4jClient:
                 else:
                     continue
                 del self.edges[key]
+                if src_primary == tgt_primary and moved_key[3] == moved_key[4]:
+                    # An edge between the two halves of a fold goes with the duplicate.
+                    continue
                 self.edges[moved_key] = {**props, **self.edges.get(moved_key, {})}
             dup_props = self.nodes[label].pop(dup_id)
             canonical_props = self.nodes[label][canonical_id]
@@ -407,7 +410,7 @@ class RecordingNeo4jClient:
             rows.append({
                 "id": publication_id,
                 **{field: props.get(field) for field in (
-                    "type", "doi", "title", "journal", "publication_date", "year",
+                    "type", "doi", "title", "journal", "venue_type", "publication_date", "year",
                     "openalex_url", "pdf_urls", "abstract", "versions", "merged_ids")},
                 "author_count": len(authors),
                 "authors": authors,
@@ -424,6 +427,19 @@ class RecordingNeo4jClient:
                 1 for (src_primary, rel_type, _tgt, src_id, _tid) in self.edges
                 if rel_type == "IMPLEMENTS" and src_primary == "Repository" and src_id == repository_id),
         } for repository_id, props in self.nodes.get("Repository", {}).items()]
+
+    def fetch_relationship_pairs(self, src_label, rel_type, tgt_label, tgt_match_prop="id"):
+        """Mirror of Neo4jClient.fetch_relationship_pairs (id-matched targets only)."""
+        return {(src_id, tgt_id) for (src, rel, tgt, src_id, tgt_id) in self.edges
+                if (src, rel, tgt) == (src_label, rel_type, tgt_label)}
+
+    def delete_relationships_batch(self, src_label, tgt_label, rel_type, pairs,
+                                   tgt_match_prop="id") -> int:
+        removed = 0
+        for src_id, tgt_id in pairs:
+            if self.edges.pop((src_label, rel_type, tgt_label, src_id, tgt_id), None) is not None:
+                removed += 1
+        return removed
 
     def fetch_merged_id_map(self, label: str) -> dict[str, str]:
         """Mirror of Neo4jClient.fetch_merged_id_map over recorded state."""

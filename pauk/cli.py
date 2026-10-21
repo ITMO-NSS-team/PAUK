@@ -169,11 +169,15 @@ def _add_gui_parsers(sub: argparse._SubParsersAction) -> None:
 
 
 def _add_versions_parsers(sub: argparse._SubParsersAction) -> None:
-    """Register `versions report`: candidate version pairs, report only."""
+    """Register `versions report` (journal only) and `versions link` (IS_VERSION edges)."""
     p = sub.add_parser("versions")
     versions_sub = p.add_subparsers(dest="versions_command", required=True)
     p = versions_sub.add_parser("report", help="report candidate version pairs the dedup stage did not catch")
     p.add_argument("--output", type=Path, help="default: cache_dir/version_candidates.jsonl")
+    p = versions_sub.add_parser("link", help="write candidate version pairs into the graph as IS_VERSION")
+    p.add_argument("--llm", action="store_true",
+                   help="ask the LLM about MEDIUM_FUZZY pairs no earlier run asked about")
+    p.add_argument("--force", action="store_true", help="with --llm: ask again about every MEDIUM_FUZZY pair")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -289,6 +293,12 @@ def _cmd_gui(args, parser: argparse.ArgumentParser) -> None:
 
 
 def _cmd_versions(args) -> None:
+    if args.versions_command == "link":
+        from pauk.graph.version_link import run_version_link
+
+        with _mongo_db() as db:
+            _log_result("versions link", None, run_version_link(settings, db, args.llm, args.force))
+        return
     # Read-only against Neo4j: no Mongo connection, no lock. The journal path
     # is logged by run_version_report itself.
     from pauk.graph.version_candidates import run_version_report

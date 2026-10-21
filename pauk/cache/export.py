@@ -28,6 +28,7 @@ SNAPSHOT_GROUPS: dict[str, tuple[str, ...]] = {
         "repo_pubs",
         "mentions_repos",
         "mentions_candidates",
+        "pub_versions",
     ),
     "repos": ("repositories", "repo_pubs", "repo_persons", "repo_depts", "mentions_repos"),
     "departments": ("departments", "person_depts", "pub_depts", "repo_depts"),
@@ -107,10 +108,10 @@ def load_db(driver, tables: Collection[str] | None = None) -> dict[str, list]:
         tables: Only these tables (names as in the result); `None` - all of them.
 
     Returns:
-        A flat dict of thirteen tables. The first ten are what
+        A flat dict of fourteen tables. The first ten are what
         `pauk/gui/graph_builder/builder.py::GraphDataBuilder` expects;
-        `organizations`, `mentions_repos` and `mentions_candidates` have no
-        consumer yet.
+        `organizations`, `mentions_repos`, `mentions_candidates` and
+        `pub_versions` have no consumer yet.
     """
     # Deferred so `tables` can pick a subset without running the rest.
     queries: dict[str, Callable[[], list[dict]]] = {}
@@ -324,6 +325,20 @@ def load_db(driver, tables: Collection[str] | None = None) -> dict[str, list]:
         "r.id AS rid, "
         "d.id AS did "
         "ORDER BY d.id",
+    )
+
+    queries["pub_versions"] = partial(
+        cypher_dict,
+        driver,
+        "MATCH (version:Publication)-[rel:IS_VERSION]->(pub:Publication) "
+        "RETURN "
+        # required
+        "version.id AS version_pid, "
+        "pub.id AS pid, "
+        # public
+        "rel.bucket AS bucket, "
+        "rel.mergeable AS mergeable, "
+        "rel.status AS status",
     )
 
     unknown = set(tables or ()) - queries.keys()

@@ -28,14 +28,21 @@ the relation-like models.
     graph goes through `repo_links` (`RepoLink`/`CodeLink`); see
     [neo4j-graph.md](neo4j-graph.md).
   - `versions` and `merged_ids` are the merge ledger (below).
+  - `venue_type` is the OpenAlex source type of the primary venue
+    (`journal`, `conference`, `repository`, ...); the version rules use it
+    to tell a conference paper's journal extension from two talks.
   - `pdf_urls` are unique candidates from `best_oa_location` and `locations`,
     in load order; they are combined on re-normalization and dedup.
 - **`PublicationVersion`**: one OpenAlex record folded into this publication
-  by dedup: a preprint, a record version, or a duplicate from OpenAlex
-  reindexing. It keeps the title, DOI, journal, date, abstract and authors of
+  by dedup: a duplicate of the same DOI from OpenAlex reindexing, or a record
+  with the same title and no DOI of its own. A version under its own DOI (a
+  preprint, a translation) is not folded: it is a Publication of its own,
+  related by `IS_VERSION` ([pipeline/version-candidates.md](pipeline/version-candidates.md)).
+  It keeps the title, DOI, journal, date, abstract and authors of
   **that specific record**, so merging loses no source; everything stays
   available through `versions` even if the surviving publication took other
-  field values.
+  field values. It is not enough to rebuild the record as a node (no type,
+  fields, funding or departments); the raw OpenAlex payload is.
 - **`VersionAuthor`**: an author of one version as OpenAlex listed them
   (`person_id`, `name`, `position`). It is not the publication's current
   author list, which comes from `Authorship` relations to `Person`.

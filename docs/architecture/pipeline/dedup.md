@@ -107,11 +107,21 @@ the full audit of the run.
 ## Publications
 
 One work reaches OpenAlex by several routes: a preprint and a version of
-record, a dataset or software deposit, a re-indexed duplicate of one DOI. Rows
-sharing a DOI or a title are one publication. The merge is lossless: each
-record is folded into `versions` (`PublicationVersion`: the title, DOI,
-journal, date, abstract and authors of that particular record), so every place
-the work appeared stays available on the surviving row.
+record, a dataset or software deposit, a re-indexed duplicate of one DOI. Only
+the last is a duplicate. Rows sharing a DOI are one publication, and so are
+rows sharing a title where one of them has no DOI
+(`publication_buckets()`). Rows with one title under two different DOIs stay
+apart: they are versions, not duplicates, and `pauk versions link` relates
+them with `IS_VERSION` ([version-candidates.md](version-candidates.md)). A
+record without a DOI folds into the one DOI its title carries; where the
+title carries several, it folds only with the other DOI-less records, so a
+transitive fold can never put two DOIs into one node. The same rule applies
+graph-wide (`dedup_graph_publications`).
+
+The merge is lossless: each record is folded into `versions`
+(`PublicationVersion`: the title, DOI, journal, date, abstract and authors of
+that particular record), so every place the work appeared stays available on
+the surviving row.
 
 The representative of the surviving row: `article` > other types (including a
 missing type) > `preprint`; on a tie, the newer date, then more authors, then
@@ -123,13 +133,15 @@ would describe the merged state (the union of authors of all merged records)
 instead of what that record carried. Only the raw `openalex_works` collection
 remains a correct per-record source.
 
-### What exact matching misses
+### Versions under their own DOI
 
-The DOI/title match above is exact: two records of one work with different
-DOIs **and** an edited title (a preprint whose title was polished for the
-journal, a translation into another language, a revision under its own DOI)
-stay separate publications. The heuristic search for such pairs is a
-separate, report-only tool; see [version-candidates.md](version-candidates.md).
+Two records of one work with different DOIs stay separate publications,
+whether the title is the same or edited (a preprint whose title was polished
+for the journal, a translation into another language, a revision under its
+own DOI). The heuristic search that relates them is a separate graph-level
+command; see [version-candidates.md](version-candidates.md). Records the
+older title rule had folded are taken apart by
+`scripts/split_publication_versions.py`.
 
 ## Repositories
 

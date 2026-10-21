@@ -1,18 +1,23 @@
-# `pauk versions report`: version candidates that dedup did not catch
+# Publication versions: `IS_VERSION` and `pauk versions`
 
-**What this covers:** why an exact DOI/title match ([dedup.md](dedup.md)) is
-not enough, which signals the heuristic search uses, and why it only reports
-and never merges.
+**What this covers:** why one work can be several Publication nodes, which
+signals relate them, how MEDIUM_FUZZY is split further, and how a pair becomes
+an `IS_VERSION` edge and a question in the review queue. Nothing here merges.
 
-**Files involved:** `pauk/graph/version_candidates.py`; the CLI wiring is in
-`pauk/cli.py`.
+**Files involved:** `pauk/graph/version_candidates.py` (rules and buckets),
+`pauk/graph/version_judge.py` (LLM verdict for MEDIUM_FUZZY),
+`pauk/graph/version_link.py` (edges, `pauk versions link`); the CLI wiring is
+in `pauk/cli.py`, the job in `pauk/jobs/worker.py`, the answers in
+`pauk/storage/review.py` (`publication_version`) and `pauk/admin/review_routes.py`.
 
 ## Why this is separate from `dedup`
 
-The `dedup` stage ([dedup.md](dedup.md)) folds publications whose DOI or
-normalized title matches. That is enough for an OpenAlex duplicate and for
-many "preprint + version of record" pairs, but not for cases where one work
-has several DOIs **and** a different title:
+The `dedup` stage ([dedup.md](dedup.md)) folds publications that share a DOI,
+and records with one title only where one of them has no DOI. Two records
+under two DOIs are two nodes even with one title: a preprint and its article,
+an original and its translation. What relates them is an `IS_VERSION` edge,
+and the same goes for the cases where one work has several DOIs **and** a
+different title:
 
 - a preprint whose title was edited for the journal (words reordered, the
   subtitle changed);
@@ -28,15 +33,19 @@ The same analysis over unfolded publications found ≈400 more likely pairs
 (details and method are in the discussion of the `feature/papers-versions`
 branch; the numbers are not stored in the repository).
 
-## Why only `held`, never `merged`
+## Why an edge, never a merge
 
 `dedup` treats a name as evidence, not proof (see "Merge policy" in
 `pipeline/stages/dedup.py`), and exactly the same holds for a title:
 `"Cliques and Constructors in 'Hats' Game. I"` and `"... II"` have an almost
 perfect title similarity and share their authors, yet they are two different
-papers. So `find_version_candidates` **never** writes `merged_ids` and never
-touches the graph: every pair goes to the journal with `status: "held"`, like
-an unresolved pair in `dedup_candidates.jsonl`. A person confirms it.
+papers. And a version is not a duplicate even when it is right: a preprint, a
+translation and a journal extension each have their own DOI, venue, text and
+sometimes authors. So nothing here writes `merged_ids`: every version keeps
+its node, and the pair becomes an `IS_VERSION` edge with the bucket on it. A
+mergeable pair also becomes a `publication_version` question in the review
+queue (`status: "held"` on the edge); a person confirms it (`"same"`) or
+removes the edge for good (`"different"`).
 
 ## Signals and buckets
 
@@ -55,7 +64,7 @@ at all.
 | `PREPRINT_PUBLISHED` | one record on a preprint server, the other not · title similarity ≥0.80 · a shared author · date gap ≤3 years | preprint ↔ publication |
 | `RU_EN_TRANSLATION` | Cyrillic in the journal/title of one record and not the other · similarity ≥0.75 · a shared author or abstract similarity ≥0.4 | original ↔ translation (only when the original has an English title: titles are compared as text, not translated) |
 | `STRONG_FUZZY` | similarity ≥0.90 · author overlap (Jaccard ≥0.30 or ≥2 shared) · gap ≤1100 days | a reworded title, strong corroboration |
-| `MEDIUM_FUZZY` | similarity ≥0.78 · author overlap ≥0.50 or abstract similarity ≥0.45 · gap ≤4 years | the same, weaker: the noisiest bucket |
+| `MEDIUM_FUZZY` | similarity ≥0.78 · author overlap ≥0.50 or abstract similarity ≥0.45 · gap ≤4 years | the same, weaker: the noisiest bucket, split further below |
 
 Title similarity is `max(word Jaccard, difflib.SequenceMatcher.ratio())` over
 the title after NFKD normalization (diacritics removed, Cyrillic kept;
@@ -65,12 +74,13 @@ The first catches reordered words, the second point edits (a hyphen, an
 ending). A Russian title and its English translation share no letters, so
 such a pair is not found by the title alone.
 
-Three buckets are not versions but explained look-alike pairs. They are
-journalled too, but are never in `MERGE_BUCKETS`:
+Four buckets are not versions but explained look-alike pairs. They get an
+edge too, but are never in `MERGE_BUCKETS` and never asked about:
 
 - `ERRATUM`: `"Correction to: …"` / `"Erratum to: …"` / `"RETRACTED: …"` /
-  `"Retraction notice to …"`, `"Erratum for: …"`, `"Correction — …"`, the
-  suffixes `"(Erratum)"` and `": publisher's note"`, and records with the
+  `"Retraction notice to …"`, `"Erratum for: …"`, `"Correction — …"`,
+  `"Publisher's Note: …"`, the suffixes `"(Erratum)"` and
+  `": publisher's note"`, and records with the
   OpenAlex type `erratum`/`retraction`. The original is matched by the title
   without the marker, and a close one (≥0.75) counts too: an erratum often
   repeats the wording of the translated edition. `for` counts as a separator
@@ -93,39 +103,122 @@ journalled too, but are never in `MERGE_BUCKETS`:
 - `SUPPLEMENT_OR_REVIEW`: `"Additional file N of …"`, `"Data from: …"`,
   `"Peer Review #…"` whose title actually tracks the other record's title
   (otherwise it is not a pair at all; else every deposit sharing an author
-  would land here).
+  would land here);
+- `COVER`: the publisher's record for an issue cover or a frontispiece, with
+  the article's title and authors and a DOI of its own. `"Front Cover: …"`,
+  `"Cover Feature: …"`, `"Frontispiece: …"`, the suffix
+  `"(Adv. Mater. 13/2022)"`, a record of type `paratext`, or a rubric of up to
+  four words before the other record's exact title in the same journal
+  (`"Polymer Coatings: <title>"`). Checked before every bucket below it.
 
-The types `software`/`dataset`/`peer-review`/`grant`/`other` reach neither
+The types `software`/`dataset`/`peer-review`/`grant`/`other`/`paratext` reach neither
 `MISSED_BY_NORM`, nor `DOI_SIBLING` (a `.N` component of such a type is
 `SUPPLEMENT_OR_REVIEW`), nor the fuzzy buckets: software releases and data
 deposits have their own versioning (repository dedup handles it), and a
 paper-title heuristic says nothing about them.
 
+## Splitting MEDIUM_FUZZY
+
+172 hand-labelled MEDIUM_FUZZY pairs from a copy of the graph: 16 (9%) were
+strictly one work (preprint, translation, duplicate record), 53 more a
+conference paper and its journal extension, 62 sibling papers of one group, 29
+different works, 12 covers. Title similarity does not separate them (median
+0.80–0.84 in every class). `route_medium_fuzzy()` uses the signals that do,
+in this order:
+
+| Sub-bucket | Condition | Mergeable |
+|---|---|---|
+| `MEDIUM_FUZZY_STRONG` | abstract similarity ≥0.45, or a preprint in the pair (precision 0.81, no LLM call) | yes |
+| `MEDIUM_FUZZY_LLM_SAME` | the LLM says one work (precision 0.94) | yes |
+| `MEDIUM_FUZZY_CONF_JOURNAL` | the LLM says two works, but the pair is conference ↔ journal (precision 0.59: the usual journal extension of a talk) | yes |
+| `MEDIUM_FUZZY_RELATED` | everything else: two conferences or two journals the LLM declined (precision 0.03) | no |
+| `MEDIUM_FUZZY` | no verdict yet: run without `--llm`, or the call failed | yes |
+
+Covers left this bucket for `COVER` (above). The venue kind comes from the
+OpenAlex source type (`Publication.venue_type`), and a venue named like
+proceedings (`conference`, `proceedings`, `symposium`, …) counts as a
+conference whatever its type: OpenAlex types "Journal of Physics: Conference
+Series" as a journal.
+
+The model is the project's standard one (`PAUK_LLM_MODEL`), as for every
+other LLM stage. The routing was measured with `qwen/qwen3-next-80b-a3b-instruct`:
+precision 0.96 against 0.76 for `claude-haiku-4.5`, at $0.03 for the whole
+bucket against $0.23; another standard model routes differently, so check
+its split on a copy before trusting it. Haiku's extra recall is almost all "one result at two
+conferences", which the policy counts as **two works**; the prompt says so.
+The prompt sends both records' title, venue, type, date, DOI, up to 8 authors
+and up to 1200 characters of abstract; every call is logged in Mongo
+`llm_logs_version_candidates`. Every verdict, a "different" included, is kept
+in Mongo `version_llm_verdicts` and reused by later runs, with or without
+`--llm`, so the routing an earlier run paid for does not regress; `--force`
+asks again, and a forced call that fails keeps the old verdict. Verdicts are
+looked up through the publications' `merged_ids`, so a fold does not make a
+paid-for pair new again.
+
 ## Running
 
 ```
+pauk versions link [--llm] [--force]
 pauk versions report [--output <path>]
 ```
 
-Only reads the graph (`Neo4jClient.fetch_publications_for_dedup()`), needs no
-MongoDB and takes no graph lock, since there is nothing to write to the
-graph. The journal (`data/cache/version_candidates.jsonl` by default) is
+`link` takes the graph lock, like `pauk dedup graph`, and rebuilds every
+`IS_VERSION` edge from the current graph. With `--llm` the model is asked
+first, before the lock: a few hundred sequential calls would otherwise keep
+every publish waiting on Busy. Then:
+
+- the edge points from the version to the work's face: the notice or the cover
+  to its article, otherwise the record dedup's ranking would not keep
+  (a preprint to the article, the older to the newer);
+- edge properties: `bucket`, `mergeable`, `status` (`held` for a mergeable
+  pair, `same` once confirmed, absent for a look-alike), `title_sim`,
+  `llm_verdict`, `llm_reason`;
+- a pair answered `"different"` gets no edge; an edge the rules no longer
+  produce is removed, unless somebody added it by hand (`graph_overrides`,
+  `op: "link"`) or confirmed it (`"same"`); an edge deleted by hand
+  (`op: "delete"`) is not written again and its pair is not asked about;
+- mergeable pairs become `publication_version` questions (the "Версии
+  публикаций" tab of `/review`); an answer there changes the edge at once.
+  An open question the rules no longer ask is dropped; an answered or
+  skipped one stays.
+
+The edges belong to this command: no prepared row carries them, so a publish
+never writes them, and `pauk admin prune` leaves them alone
+(`GRAPH_OWNED_RELATIONSHIPS`). A fold moves them onto the survivor and drops
+an edge between the two halves of the fold rather than turning it into a loop.
+The admin panel runs it as the `versions` job.
+
+`report` only reads the graph, needs no MongoDB and takes no lock. It writes
+the same pairs to the journal and leaves MEDIUM_FUZZY unrouted: the verdicts
+live in Mongo. `link` writes the journal too.
+
+The journal (`data/cache/version_candidates.jsonl` by default) is
 line-delimited JSON, like `dedup_candidates_graph.jsonl`: `status`,
 `entity`, `bucket`, `mergeable`, `record_a`/`record_b` and the signals the
 decision was based on. Lines are ordered by the `(record_a, record_b)` pair,
 so the journals of two runs can be diffed.
 
-It is not part of `run`/`enrich`; run it by hand, like `pauk dedup graph`.
+Neither is part of `run`/`enrich`; run them by hand, like `pauk dedup graph`,
+after publishing.
+
+## Records the old rule folded
+
+Before DOI-only folding, dedup folded one title under two DOIs into one node
+and kept the second record only as an entry of `Publication.versions`. That
+ledger lacks what a node needs (type, fields, funding, departments), so the
+record is rebuilt from its raw OpenAlex payload instead:
+`scripts/split_publication_versions.py` takes the id out of the survivor's
+`merged_ids` and `versions` (Mongo and graph) where `classify_pair` gives the
+pair a bucket and the raw payload is still there (without it the ledger entry
+is the last copy, and the record stays folded), and prints the `normalize` → `enrich` → `publish` → `prune` →
+`versions link` sequence that recreates the record as its own node and runs
+every stage, the code-link classifier included, on it. See
+[../scripts.md](../scripts.md).
 
 ## Where this goes next
 
-The first version is report-only. The "found → confirmed → merged" loop can be
-closed in several ways later; none of them is implemented here:
-
-- manual confirmation through `pauk admin merge` using `record_a`/`record_b`
-  from the journal;
-- moving `MISSED_BY_NORM`/`DOI_SIBLING` (deterministic, high precision) into
-  the `dedup` stage itself as automatic merges;
 - a level-B signal: `relation` from the Crossref response (`is-preprint-of`,
   `has-version`, `is-translation-of`) as authoritative confirmation instead
-  of the heuristic for `PREPRINT_PUBLISHED`/`RU_EN_TRANSLATION`.
+  of the heuristic for `PREPRINT_PUBLISHED`/`RU_EN_TRANSLATION`;
+- the map: versions are separate points today; drawing a confirmed cluster as
+  one is left to `pauk/gui/` (the snapshot already carries `pub_versions`).

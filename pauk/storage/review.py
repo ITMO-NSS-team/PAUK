@@ -8,7 +8,7 @@ rather than patched over its result. A fold can be taken apart afterwards
 (`pauk.graph.unmerge`), but only by rebuilding the record from the prepared
 row it was published from, and only for as long as that row is there.
 
-Four shapes of question:
+Five shapes of question:
 
 - a **pair** the person merge rules would not fold, answered "same" or
   "different";
@@ -19,7 +19,11 @@ Four shapes of question:
   them) or "different";
 - a **catalog record**, where the staff directory holds several people under
   one name. Both namesakes are plausible and exactly one is right, so
-  `record_choice` names the record instead of taking a side.
+  `record_choice` names the record instead of taking a side;
+- a **publication version**, two Publication records the version rules
+  linked with IS_VERSION (`pauk.graph.version_candidates`), answered "same"
+  (one work) or "different". Nothing is folded either way: the answer only
+  confirms the link or removes it.
 
 Storage sits beside the prepared rows rather than in `pauk/graph/`: these are
 written long before anything is published, and `pauk/pipeline/` imports
@@ -44,7 +48,9 @@ GROUP = "person_group"
 GITHUB = "github_person"
 #: A person against the catalog records their name matches; answered by choice.
 STAFF = "staff_record"
-KINDS = (PAIR, GROUP, GITHUB, STAFF)
+#: Two publications linked as versions of one work.
+PUB_VERSION = "publication_version"
+KINDS = (PAIR, GROUP, GITHUB, STAFF, PUB_VERSION)
 
 #: What the merge rules read: the kinds that pair two records of one person.
 PERSON_KINDS = (PAIR, GROUP)
@@ -99,12 +105,14 @@ def members_of(row: dict) -> list[str]:
 
     Not always people: a catalog question pairs a person with directory
     rows, and a github question with an account. Callers should not have to
-    know which shape they are holding, so the four are read in one place,
+    know which shape they are holding, so the five are read in one place,
     together with `kind_of` and `names_of` just below, which split on the
     same fields.
     """
     if "records" in row:
         return sorted({row["person"], *row["records"]})
+    if row.get("entity") == "publication":
+        return sorted({row["record_a"], row["record_b"]})
     if "login" in row:
         return sorted({row["login"], row["person"]})
     if "persons" in row:
@@ -118,10 +126,13 @@ def kind_of(row: dict) -> str:
     Each producer names its subjects its own way: the catalog check a
     `person` and `records`, the github matcher a `login` and a `person`, a
     refused group a list of `persons`, a held pair a `person_a` and a
-    `person_b`.
+    `person_b`, the version rules a `record_a` and a `record_b` with
+    `entity: "publication"`.
     """
     if "records" in row:
         return STAFF
+    if row.get("entity") == "publication":
+        return PUB_VERSION
     if "login" in row:
         return GITHUB
     if "persons" in row:
@@ -141,6 +152,9 @@ def names_of(row: dict, members: list[str]) -> list[str | None]:
     if "records" in row:
         by_id = {row["person"]: row.get("name_raw"),
                  **dict(zip(row["records"], row.get("record_names") or [], strict=False))}
+    elif row.get("entity") == "publication":
+        # A publication is named by its title.
+        by_id = {row["record_a"]: row.get("title_a"), row["record_b"]: row.get("title_b")}
     elif "login" in row:
         # The account is named by its login; there is nothing else to call it.
         by_id = {row["login"]: row["login"], row["person"]: row.get("name_raw")}
@@ -522,6 +536,46 @@ def github_decisions(db: Database, aliases: dict[str, str] | None = None
     return {frozenset(aliases.get(member, member) for member in row["members"]): row["verdict"]
             for row in db[COLLECTION].find({"kind": GITHUB,
                                             "verdict": {"$exists": True}})}
+
+
+def version_decisions(db: Database, aliases: dict[str, str] | None = None
+                      ) -> dict[frozenset[str], str]:
+    """Answers about publication versions, keyed by the two publications.
+
+    Args:
+        aliases: Merged-away id to the id that survived, as for `decisions`.
+            A publication folded since keeps its answers under the survivor.
+    """
+    aliases = aliases or {}
+    found: dict[frozenset[str], str] = {}
+    for row in db[COLLECTION].find({"kind": PUB_VERSION, "verdict": {"$exists": True}}):
+        members = frozenset(aliases.get(member, member) for member in row["members"])
+        if len(members) == 2:
+            found[members] = row["verdict"]
+    return found
+
+
+def retire_versions(db: Database, asked: list[dict]) -> int:
+    """Drop open version questions the rules no longer ask.
+
+    Unlike a person pair, a version question is about an edge: once the
+    rules stop linking the pair (the evidence moved, or the LLM routed it out
+    of the mergeable buckets) there is nothing left for an answer to
+    confirm. Answered and skipped questions stay, so a decision is never lost.
+
+    Args:
+        asked: The rows this run held, as given to `record_held`.
+
+    Returns:
+        How many questions were dropped.
+    """
+    keep = [question_id(PUB_VERSION, members_of(row)) for row in asked]
+    result = db[COLLECTION].delete_many({
+        "kind": PUB_VERSION, "_id": {"$nin": keep},
+        "verdict": {"$exists": False}, "skipped_at": {"$exists": False}})
+    if result.deleted_count:
+        logger.info("review: %d version question(s) no longer asked", result.deleted_count)
+    return result.deleted_count
 
 
 def decisions(db: Database, aliases: dict[str, str] | None = None,

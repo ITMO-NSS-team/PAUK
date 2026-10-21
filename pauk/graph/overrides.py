@@ -259,6 +259,15 @@ def tombstoned_relationships(db: Database) -> set[tuple[str, str, str, str, str]
     }
 
 
+def claimed_relationships(db: Database) -> set[tuple[str, str, str, str, str]]:
+    """Edges added by hand that must outlive whatever rebuilds their kind,
+    in the same shape as `tombstoned_relationships`."""
+    return {
+        (row["src_label"], row["rel_type"], row["tgt_label"], row["src_id"], row["target_id"])
+        for row in db[COLLECTION].find({"active": True, "kind": "rel", "op": LINK})
+    }
+
+
 def deactivate_override(db: Database, label: str, target_id: str,
                         only_op: str | None = None) -> bool:
     """Stop applying an override without losing the record of it.

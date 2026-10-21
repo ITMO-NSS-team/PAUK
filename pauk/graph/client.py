@@ -300,6 +300,9 @@ class Neo4jClient:
                 UNWIND $batch AS row
                 MATCH (dup:{label} {{id: row.dup_id}})-[old:{rel_type}]->(other:{other_label})
                 MATCH (canonical:{label} {{id: row.canonical_id}})
+                // An edge between the two halves of a fold would become a
+                // loop; it goes with the duplicate instead.
+                WHERE other <> canonical
                 MERGE (canonical)-[new:{rel_type}]->(other)
                 ON CREATE SET new.created_at = coalesce(old.created_at, datetime())
                 WITH new, old, properties(new) AS keep
@@ -317,6 +320,7 @@ class Neo4jClient:
                 UNWIND $batch AS row
                 MATCH (other:{other_label})-[old:{rel_type}]->(dup:{label} {{id: row.dup_id}})
                 MATCH (canonical:{label} {{id: row.canonical_id}})
+                WHERE other <> canonical
                 MERGE (other)-[new:{rel_type}]->(canonical)
                 ON CREATE SET new.created_at = coalesce(old.created_at, datetime())
                 WITH new, old, properties(new) AS keep
@@ -428,7 +432,8 @@ class Neo4jClient:
             MATCH (p:Publication)
             OPTIONAL MATCH (a:Person)-[authored:AUTHORED]->(p)
             RETURN p.id AS id, p.type AS type, p.doi AS doi, p.title AS title,
-                   p.journal AS journal, p.publication_date AS publication_date,
+                   p.journal AS journal, p.venue_type AS venue_type,
+                   p.publication_date AS publication_date,
                    p.year AS year, p.openalex_url AS openalex_url,
                    p.pdf_urls AS pdf_urls, p.abstract AS abstract,
                    p.versions AS versions,
@@ -591,9 +596,11 @@ class Neo4jClient:
             ("PRODUCED_BY", "Department"),
             ("MENTIONS_LINK", "Repository"),
             ("MENTIONS_LINK", "LinkCandidate"),
+            ("IS_VERSION", "Publication"),
         ), incoming=(
             ("Person", "AUTHORED"),
             ("Repository", "IMPLEMENTS"),
+            ("Publication", "IS_VERSION"),
         ))
 
     def merge_repository_nodes_batch(self, merges: list[tuple[str, str]]) -> int:

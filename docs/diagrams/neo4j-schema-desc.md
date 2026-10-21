@@ -75,6 +75,7 @@ graph even if the pydantic model has them (see
 * **`type`** (`String`): work type.
 * **`fields`** (`List[String]`): fields of knowledge.
 * **`journal`** (`String`): publication venue.
+* **`venue_type`** (`String`): OpenAlex source type of the venue (`journal`, `conference`, `repository`, ...).
 * **`doi`** (`String`): DOI.
 * **`publication_date`** (`Date`): publication date.
 * **`year`** (`Integer`): publication year.
@@ -85,7 +86,7 @@ graph even if the pydantic model has them (see
 * **`pdf_urls`** (`List[String]`): ordered unique PDF links.
 * **`abstract`** (`String`): abstract.
 * **`full_text`** (`String`): full text (if extracted from a PDF).
-* **`versions`** (`JSON`): publication versions.
+* **`versions`** (`JSON`): the records folded into this one (same DOI, or a title with no DOI on one side).
 * **`merged_ids`** (`List[String]`): ids folded in by dedup.
 
 ---
@@ -259,3 +260,18 @@ edge up the hierarchy.
 ### 9. `OWNED_BY`
 
 > **Connects:** `Repository` -> `GitHubProfile`. The repository's owner. No properties.
+
+---
+
+### 10. `IS_VERSION`
+
+> **Connects:** `Publication` -> `Publication`. The source is a version of the
+> target (a preprint, a translation, a conference paper extended into a journal
+> article), or a look-alike explained by its bucket (an erratum, a cover, a
+> series entry). Written by `pauk versions link`, never by a publish.
+
+* **`bucket`** (`String`): the rule that paired them (`PREPRINT_PUBLISHED`, `RU_EN_TRANSLATION`, `MEDIUM_FUZZY_LLM_SAME`, `ERRATUM`, `COVER`, ...).
+* **`mergeable`** (`Boolean`): whether the bucket means one work (as opposed to a look-alike).
+* **`status`** (`String`): `held` (waits for a person), `same` (confirmed); absent for a look-alike.
+* **`title_sim`** (`Float`): title similarity.
+* **`llm_verdict`** (`Boolean`), **`llm_reason`** (`String`): the LLM verdict for a MEDIUM_FUZZY pair.
