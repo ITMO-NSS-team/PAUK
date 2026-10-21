@@ -94,7 +94,11 @@
     <span class="label">Здоровье БД</span>
     {% set health = summary.health %}
     {% if health %}
-    {% if health.fail %}
+    {% if health.error %}
+    <b class="headline">{{ health.error }}</b>
+    <span class="under">{{ health.error|plural("проверка не выполнилась", "проверки не выполнились",
+      "проверок не выполнились") }}</span>
+    {% elif health.fail %}
     <b class="headline">{{ health.fail }}</b>
     <span class="under">{{ health.fail|plural("проверка не прошла", "проверки не прошли", "проверок не прошли") }}</span>
     {% elif health.warn %}

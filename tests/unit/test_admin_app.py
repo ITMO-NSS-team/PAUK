@@ -194,6 +194,14 @@ class PanelTest(unittest.TestCase):
         self.assertIn("вопрос ждёт ответа", body)
         self.assertNotIn("воркер не работает", body)
 
+    def test_checks_that_did_not_run_are_not_reported_as_fine(self):
+        from pauk.admin import health
+        health.save(self.db, {"checks": [{"status": "error"}, {"status": "ok"}]})
+        self.sign_in()
+        card = self.client.get("/").text.split('class="card" href="/health"')[1].split("</a>")[0]
+        self.assertIn('<b class="headline">1</b>', card)
+        self.assertNotIn("всё в порядке", card)
+
     def test_and_says_when_nobody_is_running_anything(self):
         self.sign_in()
         body = self.client.get("/").text
