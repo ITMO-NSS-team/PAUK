@@ -7,17 +7,17 @@
 
 {% set done = request.query_params.get("done") %}
 {% if done == "merged" %}
-<p class="note">Записи слиты, связи перешли на оставшуюся.
+<p class="note">Записи склеены, связи перешли на оставшуюся.
    Если это ошибка, в отвеченных есть «разделить обратно».</p>
 {% elif done == "apart" %}
 <p class="note">Записи разделены. Запись вернулась со своими связями,
    и вопрос теперь отвечен как «разные люди».</p>
 {% elif done == "chosen" %}
-<p class="note">Запись выбрана. Сведёт на следующем прогоне дедупликации.</p>
+<p class="note">Запись выбрана. Записи склеятся при следующей дедупликации.</p>
 {% elif done == "split" %}
-<p class="note">Группа разобрана. Отмеченные сольются на следующем прогоне.</p>
+<p class="note">Группа разобрана. Отмеченные склеятся при следующем прогоне.</p>
 {% elif done == "waiting" %}
-<p class="note">Решение записано. Слияние на следующем прогоне.</p>
+<p class="note">Ответ сохранён. Записи склеятся при следующем прогоне.</p>
 {% endif %}
 
 <div class="tabs">
@@ -39,7 +39,7 @@
   {% elif tab == "answered" %}Пока никто ничего не решил.
   {% elif tab == "disputed" %}Расхождений нет. Правила пайплайна не конфликтуют ни с одним ответом.
   {% elif tab == "skipped" %}Отложенных нет.
-  {% else %}Вопросов нет. Очередь наполняется дедупликацией.{% endif %}</p>
+  {% else %}Вопросов нет. Новые появляются после дедупликации и сопоставления аккаунтов GitHub.{% endif %}</p>
 {% else %}
 <div class="card scroll">
   <table class="fixed">
@@ -130,7 +130,7 @@
         {% else %}<span class="muted">–</span>{% endif %}
         {% if row.disputed_at %}
         <div class="change" style="margin-top:6px">
-          <span class="now">теперь связывают: {{ row.disputed_rule }}</span>
+          <span class="now">правила теперь склеивают: {{ row.disputed_rule }}</span>
         </div>
         {% endif %}
       </td>
@@ -143,12 +143,12 @@
             {% elif row.verdict == "same" %}один человек{% else %}разные люди{% endif %}</span>
           <br><span class="muted">{{ row.actor }}{% if row.note %} · {{ row.note }}{% endif %}</span>
           {% if row.is_staff %}
-            {% if row.chosen %}<br><span class="muted">сведёт записи на следующем прогоне</span>{% endif %}
+            {% if row.chosen %}<br><span class="muted">склеит записи при следующем прогоне</span>{% endif %}
           {% elif row.is_github and row.verdict == "same" %}
             <br><span class="muted">привяжется на следующем сборе</span>
           {% elif row.verdict == "same" %}
-            {% if row.applied_at %}<br><span class="muted">слито {{ row.applied_at|moment }}</span>
-            {% else %}<br><span class="muted">сольётся на следующем прогоне</span>{% endif %}
+            {% if row.applied_at %}<br><span class="muted">склеено {{ row.applied_at|moment }}</span>
+            {% else %}<br><span class="muted">склеится при следующем прогоне</span>{% endif %}
           {% endif %}
         </div>
         {% elif row.skipped_by %}

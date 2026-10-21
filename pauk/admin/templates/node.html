@@ -5,21 +5,21 @@
 <p class="muted">{% if back %}<a href="{{ back }}"><- к спорному случаю</a> / {% endif %}<a href="/nodes/{{ label }}"><- к поиску</a></p>
 
 {% if folded %}
-<p class="note">Записи <span class="val">{{ folded }}</span> в графе нет, её свели с этой.</p>
+<p class="note">Записи <span class="val">{{ folded }}</span> больше нет, её склеили с этой.</p>
 {% endif %}
 {% if request.query_params.get("error") %}
 <p class="note bad">{{ request.query_params.get("error") }}</p>
 {% endif %}
 {% if request.query_params.get("created") %}<p class="note">Узел создан. Если на нём была пометка об удалении, она снята.</p>{% endif %}
 {% if request.query_params.get("restored") %}<p class="note">Запись восстановлена из журнала, пометка об удалении снята.</p>{% endif %}
-{% if request.query_params.get("saved") %}<p class="note">Сохранено. Правка записана.</p>{% endif %}
+{% if request.query_params.get("saved") %}<p class="note">Сохранено. Следующая публикация эту правку не перезапишет.</p>{% endif %}
 {% if request.query_params.get("stale") %}
 <p class="note bad">Пока вы правили, запись изменил кто-то ещё, поэтому сохранение отклонено,
    чтобы не потерять его правку. Ниже уже новые значения, внесите своё поверх и сохраните снова.</p>
 {% endif %}
 {% if request.query_params.get("unchanged") %}<p class="note">Ничего не изменилось.</p>{% endif %}
 {% if request.query_params.get("linked") %}<p class="note">Связь создана.</p>{% endif %}
-{% if request.query_params.get("unlinked") %}<p class="note">Связь удалена и помечена удаленной.</p>{% endif %}
+{% if request.query_params.get("unlinked") %}<p class="note">Связь удалена. Следующая публикация её не вернёт.</p>{% endif %}
 
 <form method="post" action="/nodes/{{ label }}/{{ node_id | urlencode }}">
   <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -35,7 +35,7 @@
       </tr>
       {% endfor %}
       {% for name in reserved %}
-      <tr class="ro"><td>{{ name }}</td><td class="val">{{ props.get(name, "") }} <span class="muted">– не редактируется</span></td></tr>
+      <tr class="ro"><td>{{ name }}</td><td class="val">{{ props.get(name)|stamp }}</td></tr>
       {% endfor %}
     </table>
     {% if user.can_write %}
@@ -80,7 +80,7 @@
   {% else %}<p class="muted">Связей нет.</p>{% endif %}
 </div>
 
-<h1 style="margin-top:32px">Что с ней делали <span class="muted">{{ history|length }}</span></h1>
+<h1 style="margin-top:32px">Изменения в графе <span class="muted">{{ history|length }}</span></h1>
 <div class="card">
   {% if history %}
   <table>
@@ -101,14 +101,13 @@
   <p class="muted" style="margin:12px 0 0">
     <a href="/audit?entity_type={{ label }}&entity_id={{ node_id }}">вся история этой записи -></a>
   </p>
-  {% else %}<p class="muted">Правок не было.</p>{% endif %}
+  {% else %}<p class="muted">Изменений не было.</p>{% endif %}
 </div>
 
-<h1 style="margin-top:32px">Что говорил источник
+<h1 style="margin-top:32px">Изменения при сборе данных
   <span class="muted">{{ source_versions }}</span></h1>
 <p class="muted" style="margin:-8px 0 14px">
-  Не правки в графе, а решения самого пайплайна: как менялась строка в Mongo,
-  из которой эта запись публикуется, и какой прогон её переписал.
+  Здесь не ручные правки, а то, как запись менялась при сборе: какой прогон и что в ней поменял.
 </p>
 <div class="card">
   {% if source_history %}
@@ -120,18 +119,16 @@
       <td class="val">{{ row.group }}</td>
       <td>
         {% for field, pair in row.changes %}{{ show.change(field, pair[0], pair[1]) }}
-        {% else %}<span class="muted">только служебные поля</span>
+        {% else %}<span class="muted">изменились только служебные поля</span>
         {% endfor %}
       </td>
     </tr>
     {% endfor %}
   </table>
   {% elif source_versions %}
-  <p class="muted">История есть, но разобрать её нечем: строки этой записи
-    в Mongo уже нет.</p>
+  <p class="muted">История есть, но показать её нельзя: исходной строки этой записи в Mongo уже нет.</p>
   {% else %}
-  <p class="muted">Источник эту запись ни разу не переписывал.
-    Либо её собрали один раз, либо завели вручную, и строки в Mongo у неё нет.</p>
+  <p class="muted">При сборе данных запись не менялась: её собрали один раз или завели вручную.</p>
   {% endif %}
 </div>
 
@@ -155,7 +152,7 @@
     <div class="grow">
       <label for="other_id">Вторая сторона</label>
       <input type="text" id="other_id" name="other_id" required
-             placeholder="для репозитория – адрес, для аккаунта – логин, иначе идентификатор">
+             placeholder="что указано в скобках у связи">
     </div>
     <button type="submit">Связать</button>
   </form>
@@ -165,8 +162,8 @@
 {% if user.can_write %}
 <div class="card danger" style="margin-top:32px">
   <b>Удалить узел</b>
-  <p class="muted">Узел будет помечен как удалённый, иначе следующая публикация создаст его заново.
-     {% if relationships %}У узла есть связи. Без галочки удаление будет отклонено.{% endif %}</p>
+  <p class="muted">Узел пометится как удалённый, чтобы следующая публикация не создала его заново.
+     {% if relationships %}У узла есть связи: без галочки удалить не получится.{% endif %}</p>
   <form method="post" action="/nodes/{{ label }}/delete/{{ node_id | urlencode }}" id="delete-form">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     {% if relationships %}

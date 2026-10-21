@@ -35,7 +35,7 @@ KINDS = {
     JobKind.PIPELINE: "весь конвейер",
     JobKind.COLLECT: "сбор",
     JobKind.PUBLISH: "публикация",
-    JobKind.DEDUP: "дедуп",
+    JobKind.DEDUP: "дедупликация",
     JobKind.MAP: "пересборка карты",
     JobKind.PRUNE: "сверка с источником",
     JobKind.HEALTH: "проверки по графу",
@@ -43,7 +43,7 @@ KINDS = {
 
 STATES = {
     JobState.QUEUED: "в очереди",
-    JobState.CLAIMED: "принята",
+    JobState.CLAIMED: "взята воркером",
     JobState.RUNNING: "идёт",
     JobState.DONE: "готово",
     JobState.FAILED: "ошибка",
@@ -84,7 +84,7 @@ PAYLOAD_WORDS = {
     "date_from": "с",
     "date_to": "по",
     "work_id": "одна работа",
-    "seed": "зерно раскладки",
+    "seed": "вариант раскладки карты",
 }
 
 
@@ -92,8 +92,8 @@ def _payload_lines(kind, payload: dict) -> list[str]:
     """What a run was started with, one line per setting; empty fields are left out."""
     if JobKind(kind) is JobKind.PRUNE:
         # "apply=False" would read as "found nothing", not "left it alone".
-        return ["убрать найденное" if payload.get("apply")
-                else "только посчитать, ничего не удалять"]
+        return ["удалить найденное" if payload.get("apply")
+                else "только показать список, ничего не удалять"]
     lines = []
     for name, value in sorted(payload.items()):
         if value is None or value == "":
@@ -166,7 +166,7 @@ def _collect_payload(form) -> dict:
     date_to = str(form.get("date_to", "")).strip()
     if work_id and (date_from or date_to):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "выберите либо одну работу, либо период — не оба сразу")
+                            "выберите либо одну работу, либо период – не оба сразу")
     if not work_id and not date_from and not date_to:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "укажите период или одну работу по идентификатору")
@@ -180,7 +180,7 @@ def _collect_payload(form) -> dict:
                 date.fromisoformat(value)
             except ValueError:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                                    f"{what} периода — не дата: {value!r}") from None
+                                    f"{what} периода – не дата: {value!r}") from None
         try:
             # The ordering rule stays in the selector; only the wording is here.
             PeriodSelector(date_from, date_to)

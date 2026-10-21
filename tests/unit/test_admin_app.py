@@ -1,14 +1,18 @@
+import re
 import struct
 import threading
 import unittest
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 import mongomock
 from fastapi.testclient import TestClient
+from neo4j.time import DateTime
 
 from pauk.admin import app as app_module
 from pauk.admin.app import build
 from pauk.admin.auth import COOKIE, SESSIONS, create_user, session_key, set_active
+from pauk.admin.deps import stamp
 from pauk.settings import Settings
 
 
@@ -114,6 +118,14 @@ class PanelTest(unittest.TestCase):
         self.assertEqual(self.client.get("/assets/icons/pauk-frame.png").status_code, 200)
         self.assertEqual(self.client.get("/favicon.ico").status_code, 200)
 
+    def test_every_asset_a_page_asks_for_is_served(self):
+        # A file left out of a commit still renders the page, only without the picture.
+        self.sign_in()
+        assets = set(re.findall(r"/assets/[\w./-]+", self.client.get("/").text))
+        self.assertTrue(assets)
+        for path in sorted(assets):
+            self.assertEqual(self.client.get(path).status_code, 200, path)
+
     def test_the_admin_port_serves_nothing_else_from_the_map(self):
         # Only the two asset paths are mounted. Mounting the whole web
         # directory would put the map's data dump on the admin port too.
@@ -180,8 +192,15 @@ class PanelTest(unittest.TestCase):
         self.assertIn('class="pulse"', body)
         self.assertIn("пересборка карты", body)
         self.assertIn("вопрос ждёт ответа", body)
-        self.assertIn('class="tally bad"', body)
         self.assertNotIn("воркер не работает", body)
+
+    def test_checks_that_did_not_run_are_not_reported_as_fine(self):
+        from pauk.admin import health
+        health.save(self.db, {"checks": [{"status": "error"}, {"status": "ok"}]})
+        self.sign_in()
+        card = self.client.get("/").text.split('class="card" href="/health"')[1].split("</a>")[0]
+        self.assertIn('<b class="headline">1</b>', card)
+        self.assertNotIn("всё в порядке", card)
 
     def test_and_says_when_nobody_is_running_anything(self):
         self.sign_in()
@@ -270,7 +289,7 @@ class OverviewTest(unittest.TestCase):
         # Counting needs Neo4j; the page must not depend on it.
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("не отвечает", response.text)
+        self.assertIn("Граф не отвечает", response.text)
 
     def test_labels_are_listed_and_link_to_their_search(self):
         body = self.client.get("/").text
@@ -305,6 +324,12 @@ class OverviewTest(unittest.TestCase):
         self.assertEqual(plural(11, "узел", "узла", "узлов"), "узлов")
         self.assertEqual(plural(21, "узел", "узла", "узлов"), "узел")
 
+    def test_a_graph_timestamp_reads_as_a_date(self):
+        moment = datetime(2026, 9, 23, 18, 23, 56, tzinfo=UTC)
+        self.assertEqual(stamp(DateTime.from_native(moment)), f"{moment.astimezone():%d.%m.%Y %H:%M}")
+        self.assertEqual(stamp("A5000009339"), "A5000009339")
+        self.assertEqual(stamp(None), "")
+
     def test_the_overview_asks_the_driver_not_to_wait_or_retry(self):
         # Retries suit a batch job: the driver backs off for tens of seconds
         # on an unreachable host, and a page rendered for a person cannot.
@@ -317,7 +342,16 @@ class OverviewTest(unittest.TestCase):
                                side_effect=OSError("no route to host")):
             response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("не отвечает", response.text)
+        self.assertIn("Граф не отвечает", response.text)
+
+    def test_a_graph_that_answers_raises_no_alarm(self):
+        from unittest import mock
+
+        from pauk.graph.mutations import NODE_FIELDS
+        with mock.patch.object(self.client.app.state.graph, "audited"), \
+             mock.patch("pauk.admin.app.count_nodes", return_value=dict.fromkeys(NODE_FIELDS, 0)):
+            body = self.client.get("/").text
+        self.assertNotIn("Граф не отвечает", body)
 
     def test_the_logo_is_the_only_way_home(self):
         # A "Граф" item beside it repeated the same action and read as
@@ -404,14 +438,12 @@ class StylesheetVersionTest(unittest.TestCase):
         self.assertRegex(body, r'href="/static/panel\.css\?v=\d+"')
 
     def test_the_versioned_address_is_served(self):
-        import re
         body = self.client.get("/").text
         href = re.search(r'href="(/static/panel\.css\?v=\d+)"', body).group(1)
         self.assertEqual(self.client.get(href).status_code, 200)
 
     def test_the_version_follows_the_file(self):
         import pathlib
-        import re
 
         from pauk.admin.app import build as build_app
         css = pathlib.Path("pauk/admin/static/panel.css")
