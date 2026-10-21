@@ -244,7 +244,8 @@ third-party ones (cited, never `IMPLEMENTS`, no ITMO contributor), and
 writes `data/gui/private/reports/<lang>/<repo id>.pdf` plus the site's
 `reports/index.json`. Repository ids limit the run, `--force` regenerates
 existing reports. Needs `OPENROUTER_API_KEY` and internet, not the lab VPN.
-Exits non-zero if any report failed. See [reports.md](reports.md).
+Exits non-zero if any report failed. `PAUK_REPORTS_DIR` sets another folder.
+See [reports.md](reports.md).
 
 ## `gui build`
 

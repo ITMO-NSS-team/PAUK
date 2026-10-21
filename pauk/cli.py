@@ -170,7 +170,7 @@ def _add_gui_parsers(sub: argparse._SubParsersAction) -> None:
 
 def _add_reports_parsers(sub: argparse._SubParsersAction) -> None:
     """Register `reports build`: OSA PDF reports on the snapshot's repositories, for the site."""
-    from pauk.reports.builder import WORKERS
+    from pauk.reports.settings import reports_settings
 
     p = sub.add_parser("reports")
     reports_sub = p.add_subparsers(dest="reports_command", required=True)
@@ -178,7 +178,7 @@ def _add_reports_parsers(sub: argparse._SubParsersAction) -> None:
     p.add_argument("keys", nargs="*", help="repository ids to limit the run to (default: every repository)")
     p.add_argument("--cache", type=Path, help="snapshot file (default: newest in cache_dir)")
     p.add_argument("--force", action="store_true", help="regenerate reports that already exist")
-    p.add_argument("--workers", type=int, default=WORKERS, help="OSA runs in parallel")
+    p.add_argument("--workers", type=int, default=reports_settings.workers, help="OSA runs in parallel")
 
 
 def _build_parser() -> argparse.ArgumentParser:

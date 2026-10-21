@@ -19,6 +19,15 @@ pauk reports build              # every repository without a report
 pauk reports build github_a_b   # just these ids; --force regenerates
 ```
 
+## Settings
+
+`pauk/reports/settings.py::ReportsSettings`, apart from the project-wide
+`Settings`: the pinned OSA version, the model and its context window, the
+languages, parallel runs, timeouts, degraded-run markers, the LFS and proxy
+bypass config, and `out_dir` from `PAUK_REPORTS_DIR` (relative to the repository root; unset
+means `data/gui/private/reports`). Where the PDFs live elsewhere, link that
+folder as `data/gui/private/reports`, so the site build and `deploy.sh` find it.
+
 ## Which repositories
 
 Every repository of the snapshot except the third-party ones
@@ -42,21 +51,25 @@ The key goes to OSA as `LLM_SERVICE_KEY`, the name `protollm` reads for
 OpenRouter.
 
 Git LFS is switched off for OSA's git through `GIT_CONFIG_*` env
-(`NO_LFS_GIT_CONFIG`): the report needs the tree, not the large files, and a
+(`ReportsSettings.no_lfs_git_config`): the report needs the tree, not the large files, and a
 gitconfig that names the LFS filter without `git-lfs` installed fails the
 checkout. OSA then retries the clone into the same, now non-empty directory,
 so such a repository would fail every run.
 
+Where OpenRouter is blocked (the lab server answers 403), `OPENROUTER_PROXY_URL`
+goes to OSA as `HTTPS_PROXY`/`HTTP_PROXY` and to the spend check; GitHub stays
+off the proxy (`proxy_bypass`), so clones of several gigabytes go direct.
+
 Each run works in `data/osa/tmp/<lang>/<id>/` and logs to
 `data/osa/logs/<lang>/<id>.log`. A report counts only when OSA exits 0,
 leaves exactly one `*_report.pdf` that starts with `%PDF-`, and its log shows
-no degraded run (`DEGRADED_RUN_MARKERS`: a switch to one of OSA's fallback
+no degraded run (`degraded_run_markers`: a switch to one of OSA's fallback
 models, or an unparsable reply replaced by an "Unknown" report); it is then moved
 into place with `os.replace`, so the site never sees half a file. The work
-summary OSA also writes is dropped. A run past `RUN_TIMEOUT` (15 minutes; the
+summary OSA also writes is dropped. A run past `run_timeout` (15 minutes; the
 slowest of the first 399 real runs took 13, the median 25 seconds) is logged
 at once and stopped: each run has its own process group, which gets SIGTERM
-and, if anything of it is still alive after `STOP_GRACE`, SIGKILL, so the git
+and, if anything of it is still alive after `stop_grace`, SIGKILL, so the git
 and Python children of uvx never outlive it. An interrupted build (Ctrl+C)
 stops every run in flight the same way (`OsaRunner.stop`) and drops the
 queued ones; a run that is stopped never moves its PDF into place.
@@ -65,7 +78,7 @@ The file on disk is the only state: an existing PDF is skipped, a failed one
 is retried by the next run. `reports/index.json` (`{"en": [ids], "ru": [ids]}`, the
 site's `contracts/graph.ts::ReportsIndex`) is
 rebuilt from the disk at the end of every run, failed or interrupted.
-`WORKERS` (8) runs go in parallel; the clones, not the LLM, set the pace.
+`workers` (8) runs go in parallel; the clones, not the LLM, set the pace.
 
 When every report already exists the step only rebuilds the index, with no
 key, uvx or network. Otherwise, before the first OSA run, it reads the key's
@@ -77,7 +90,7 @@ seconds late.
 
 ## Languages
 
-`LANGUAGES` maps each site language to OSA's `--artefacts-language`
+`languages` maps each site language to OSA's `--artefacts-language`
 (`en` -> `English`, `ru` -> `Russian`, the `language` of OSA's locale files),
 so every repository gets one report per language and run. The site shows
 the report of the interface language only: a repository without one gets no

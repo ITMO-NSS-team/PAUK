@@ -20,15 +20,11 @@ from pauk.sources.base import HttpRequestError
 from pauk.sources.llm import OpenRouterClient
 from pauk.storage import AtomicWriter
 
-from .osa import MODEL, OsaRunner
+from .osa import OsaRunner
+from .settings import ReportsSettings, reports_settings
 
 logger = logging.getLogger(__name__)
 
-# Site language -> OSA's --artefacts-language, the languages the site has.
-LANGUAGES = {"en": "English", "ru": "Russian"}
-# 8 like the project's other LLM stages; the clones, not the LLM, are the
-# bottleneck, and 8 parallel runs stayed within GitHub's limits.
-WORKERS = 8
 
 
 def report_path(out_dir: Path, lang: str, key: str) -> Path:
@@ -78,32 +74,38 @@ def write_index(out_dir: Path) -> dict[str, list[str]]:
 class ReportsBuilder:
     """Entry point for `pauk reports build`: snapshot -> one OSA report per repository and language."""
 
-    def __init__(self, config: Settings) -> None:
+    def __init__(self, config: Settings, settings: ReportsSettings = reports_settings) -> None:
         """Stores the config; nothing is checked or run until `build()`.
 
         Args:
-            config: Project settings, in particular `openrouter_api_key` and `osa_dir`.
+            config: Project settings, in particular `openrouter_api_key`,
+                `openrouter_proxy_url` and `osa_dir`.
+            settings: OSA version, model, context window and the reports folder.
         """
         self.config = config
-        self.llm = OpenRouterClient(config.request_timeout, config.openrouter_api_key, MODEL)
+        self.settings = settings
+        self.llm = OpenRouterClient(
+            config.request_timeout, config.openrouter_api_key, settings.model, config.openrouter_proxy_url
+        )
 
     def build(
         self, snapshot: Path, out_dir: Path | None = None, *,
-        keys: frozenset[str] = frozenset(), force: bool = False, workers: int = WORKERS,
+        keys: frozenset[str] = frozenset(), force: bool = False, workers: int | None = None,
     ) -> dict[str, int | float | None]:
         """Generates the missing reports and rewrites the index.
 
         An existing PDF counts as done, a failed one is retried by the next
-        run: the files are the only state.
+        run: the files are the only state. With nothing to generate the index
+        is rebuilt offline, without the key, uvx or network.
 
         Args:
             snapshot: Graph snapshot taken by `pauk cache export`.
             out_dir: Site folder for the reports, `<out_dir>/<lang>/<id>.pdf`;
-                defaults to `reports/` in the site data the map is built from.
-            keys: Limit the run to these repository ids; empty means all of them
-                but the third-party ones (`third_party_repos`).
+                defaults to `PAUK_REPORTS_DIR`, else `reports/` in the site data.
+            keys: Limit the run to these repository ids, third-party or not; empty
+                means all of them but the third-party ones (`third_party_repos`).
             force: Regenerate reports that already exist.
-            workers: OSA runs in parallel.
+            workers: OSA runs in parallel; None is `settings.workers`.
 
         Returns:
             Counts of generated, skipped (already there) and failed reports,
@@ -114,24 +116,22 @@ class ReportsBuilder:
             ValueError: an id is not in the snapshot, or the key is not set.
             RuntimeError: uvx is missing, or OpenRouter is unreachable with the key.
         """
-        out_dir = out_dir or self.config.gui_dir / "private" / "reports"
+        out_dir = out_dir or self.settings.out_dir or self.config.gui_dir / "private" / "reports"
         graph = read_snapshot(snapshot)
         repos = {row["id"]: row["url"] for row in graph["repositories"] if row.get("url")}
         if unknown := keys - repos.keys():
             raise ValueError(f"not in the snapshot: {', '.join(sorted(unknown))}")
-        # Ids named explicitly are generated whatever they are.
         third_party = set() if keys else third_party_repos(graph) & repos.keys()
         selected = sorted(keys or repos.keys() - third_party)
         jobs = [
-            (key, lang) for lang in LANGUAGES for key in selected
+            (key, lang) for lang in self.settings.languages for key in selected
             if force or not report_path(out_dir, lang, key).exists()
         ]
-        # Nothing to generate needs no key or network: the index is rebuilt offline.
         spent_before = self._preflight() if jobs else None
         generated = failed = 0
         try:
             if jobs:
-                generated, failed = self._run_all(jobs, repos, out_dir, workers)
+                generated, failed = self._run_all(jobs, repos, out_dir, workers or self.settings.workers)
         finally:
             out_dir.mkdir(parents=True, exist_ok=True)
             write_index(out_dir)
@@ -139,7 +139,7 @@ class ReportsBuilder:
             logger.warning("reports: %d failed, see %s", failed, self.config.osa_dir / "logs")
         return {
             "generated": generated,
-            "skipped": len(selected) * len(LANGUAGES) - len(jobs),
+            "skipped": len(selected) * len(self.settings.languages) - len(jobs),
             "failed": failed,
             "third_party": len(third_party),
             "spent_usd": 0.0 if spent_before is None else self._spent_since(spent_before),
@@ -149,11 +149,13 @@ class ReportsBuilder:
         self, jobs: list[tuple[str, str]], repos: dict[str, str], out_dir: Path, workers: int
     ) -> tuple[int, int]:
         """Runs OSA for every `(key, lang)` job in parallel; returns (generated, failed)."""
-        runner = OsaRunner(self.llm.api_key, self.config.osa_dir)
+        runner = OsaRunner(self.llm.api_key, self.config.osa_dir, self.config.openrouter_proxy_url, self.settings)
         generated = failed = 0
         with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
             futures = [
-                pool.submit(runner.run, key, repos[key], lang, LANGUAGES[lang], report_path(out_dir, lang, key))
+                pool.submit(
+                    runner.run, key, repos[key], lang, self.settings.languages[lang], report_path(out_dir, lang, key)
+                )
                 for key, lang in jobs
             ]
             try:
@@ -164,8 +166,7 @@ class ReportsBuilder:
                     else:
                         failed += 1
             except BaseException:
-                # Cancelling only drops queued runs; the running ones are stopped
-                # here, or leaving the pool would wait for them to finish.
+                # cancel_futures drops only queued runs; leaving the pool would wait for the rest.
                 pool.shutdown(wait=False, cancel_futures=True)
                 runner.stop()
                 raise
@@ -187,7 +188,7 @@ class ReportsBuilder:
             raise RuntimeError(f"OpenRouter is not reachable with this key: {error}") from None
 
     def _spent_since(self, before: float) -> float | None:
-        # Read after hours of work: a failure here must not cost the summary.
+        """Dollars spent since `before`; None rather than losing the summary after hours of work."""
         try:
             return round(self.llm.usage() - before, 4)
         except HttpRequestError as error:

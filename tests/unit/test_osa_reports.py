@@ -1,6 +1,7 @@
 """`pauk reports build`: one OSA run per repository, atomic PDFs, the site index, the CLI."""
 
 import contextlib
+import importlib
 import io
 import json
 import os
@@ -16,7 +17,9 @@ from unittest.mock import patch
 from pauk.cache.graph_snapshot import write_snapshot
 from pauk.cli import _build_parser, _cmd_reports
 from pauk.reports import builder, osa
-from pauk.settings import Settings
+from pauk.reports import settings as reports_settings_module
+from pauk.reports.settings import ReportsSettings
+from pauk.settings import ROOT_DIR, Settings
 from pauk.sources.base import HttpRequestError
 
 # Stands in for OSA: prints what OSA logs and writes what a real run leaves
@@ -61,7 +64,8 @@ class FakeOsaTestCase(unittest.TestCase):
         script.write_text(FAKE_OSA)
         self.mode = "ok"
         patcher = patch.object(
-            osa.OsaRunner, "command", staticmethod(lambda url, language: [sys.executable, str(script), self.mode, str(self.child_pid_file)])
+            osa.OsaRunner, "command",
+            lambda runner, url, language: [sys.executable, str(script), self.mode, str(self.child_pid_file)],
         )
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -79,32 +83,74 @@ class GitConfigEnvTest(unittest.TestCase):
         )
 
     def test_no_lfs_config_replaces_the_filter_with_a_plain_copy(self):
-        self.assertEqual(osa.NO_LFS_GIT_CONFIG["filter.lfs.process"], "")
-        self.assertEqual(osa.NO_LFS_GIT_CONFIG["filter.lfs.smudge"], "cat")
-        self.assertEqual(osa.NO_LFS_GIT_CONFIG["filter.lfs.required"], "false")
+        lfs = ReportsSettings().no_lfs_git_config
+        self.assertEqual(lfs["filter.lfs.process"], "")
+        self.assertEqual(lfs["filter.lfs.smudge"], "cat")
+        self.assertEqual(lfs["filter.lfs.required"], "false")
+
+
+class ReportsSettingsTest(unittest.TestCase):
+    def reload(self, env):
+        with patch.dict(os.environ, env, clear=False):
+            if "PAUK_REPORTS_DIR" not in env:
+                os.environ.pop("PAUK_REPORTS_DIR", None)
+            return importlib.reload(reports_settings_module).ReportsSettings()
+
+    def tearDown(self):
+        importlib.reload(reports_settings_module)
+
+    def test_reports_dir_comes_from_the_environment_relative_to_the_repository(self):
+        self.assertIsNone(self.reload({}).out_dir)
+        self.assertEqual(self.reload({"PAUK_REPORTS_DIR": "/essdata/reports"}).out_dir, Path("/essdata/reports"))
+        self.assertEqual(self.reload({"PAUK_REPORTS_DIR": "data/x"}).out_dir, ROOT_DIR / "data" / "x")
+
+
+class ProxyEnvTest(unittest.TestCase):
+    def test_no_proxy_configured_adds_nothing(self):
+        self.assertEqual(osa.proxy_env("", "github.com"), {})
+
+    def test_every_client_goes_through_the_proxy_except_github(self):
+        env = osa.proxy_env("http://proxy:3128", ReportsSettings().proxy_bypass)
+        for name in ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"):
+            self.assertEqual(env[name], "http://proxy:3128")
+        self.assertEqual(env["NO_PROXY"], env["no_proxy"])
+        self.assertIn("github.com", env["NO_PROXY"].split(","))
+
+    def test_the_runner_and_the_spend_check_get_the_proxy_from_settings(self):
+        self.assertEqual(osa.OsaRunner("k", Path("o"), "http://proxy:3128").env["https_proxy"], "http://proxy:3128")
+        config = replace(Settings(), openrouter_proxy_url="http://proxy:3128")
+        self.assertEqual(builder.ReportsBuilder(config).llm.session.proxies["https"], "http://proxy:3128")
 
 
 class OsaCommandTest(unittest.TestCase):
     def test_report_only_through_openrouter_with_the_pinned_tool_model_and_window(self):
-        command = osa.OsaRunner.command("https://github.com/a/one", "English")
-        self.assertEqual(command[:4], ["uvx", "--from", osa.OSA_PACKAGE, "osa-tool"])
-        self.assertTrue(osa.OSA_PACKAGE.startswith("osa_tool=="))
+        defaults = ReportsSettings()
+        command = osa.OsaRunner("k", Path("o")).command("https://github.com/a/one", "English")
+        self.assertEqual(command[:4], ["uvx", "--from", defaults.osa_package, "osa-tool"])
+        self.assertTrue(defaults.osa_package.startswith("osa_tool=="))
         for flag in ("--report", "--web-mode", "--no-fork", "--no-pull-request", "--delete-dir"):
             self.assertIn(flag, command)
         self.assertEqual(command[command.index("-r") + 1], "https://github.com/a/one")
         self.assertEqual(command[command.index("--mode") + 1], "advanced")
         self.assertEqual(command[command.index("--api") + 1], "openai")
-        self.assertEqual(command[command.index("--model") + 1], osa.MODEL)
-        self.assertEqual(command[command.index("--context-window") + 1], str(osa.CONTEXT_WINDOW))
+        self.assertEqual(command[command.index("--model") + 1], defaults.model)
+        self.assertEqual(command[command.index("--context-window") + 1], str(defaults.context_window))
         self.assertEqual(command[command.index("--artefacts-language") + 1], "English")
 
     def test_context_window_stays_under_the_haiku_price_step(self):
-        self.assertLess(osa.CONTEXT_WINDOW, 100_000)
+        self.assertLess(ReportsSettings().context_window, 100_000)
+
+    def test_the_command_follows_the_settings(self):
+        settings = ReportsSettings(osa_package="osa_tool==9.9", model="m", context_window=1000)
+        command = osa.OsaRunner("k", Path("o"), settings=settings).command("u", "English")
+        self.assertEqual(command[2], "osa_tool==9.9")
+        self.assertEqual(command[command.index("--model") + 1], "m")
+        self.assertEqual(command[command.index("--context-window") + 1], "1000")
 
 
 class OsaRunnerTest(FakeOsaTestCase):
-    def run_osa(self):
-        runner = osa.OsaRunner("secret", self.osa_dir)
+    def run_osa(self, settings=None):
+        runner = osa.OsaRunner("secret", self.osa_dir, settings=settings or ReportsSettings())
         return runner.run("github_a_one", "https://github.com/a/one", "en", "English", self.out_dir / "en" / "a.pdf")
 
     def test_a_successful_run_moves_only_the_report_and_cleans_up(self):
@@ -129,27 +175,26 @@ class OsaRunnerTest(FakeOsaTestCase):
         self.mode = "fallback"
         with self.assertLogs("pauk.reports.osa", "WARNING") as logs:
             self.run_osa()
-        self.assertIn(osa.DEGRADED_RUN_MARKERS[0], logs.output[0])
+        self.assertIn(ReportsSettings().degraded_run_markers[0], logs.output[0])
 
     def test_a_hung_run_is_stopped_at_the_timeout_and_reported_before_the_stop(self):
         self.mode = "hang"
         terminate = osa.OsaRunner._terminate
 
-        def reported_first(proc):
+        def reported_first(runner, proc):
             self.assertTrue(logs.output, "the timeout must be logged before waiting on the stop")
-            terminate(proc)
+            terminate(runner, proc)
 
-        with patch.object(osa, "RUN_TIMEOUT", 1), patch.object(osa.OsaRunner, "_terminate", staticmethod(reported_first)), \
+        with patch.object(osa.OsaRunner, "_terminate", reported_first), \
                 self.assertLogs("pauk.reports.osa", "WARNING") as logs:
-            self.assertFalse(self.run_osa())
+            self.assertFalse(self.run_osa(ReportsSettings(run_timeout=1)))
         self.assertIn("timed out", logs.output[0])
 
     def test_a_run_ignoring_sigterm_is_killed_with_its_children_after_the_grace(self):
         self.mode = "stubborn"
         started = time.monotonic()
-        with patch.object(osa, "RUN_TIMEOUT", 1), patch.object(osa, "STOP_GRACE", 1), \
-                self.assertLogs("pauk.reports.osa", "WARNING"):
-            self.assertFalse(self.run_osa())
+        with self.assertLogs("pauk.reports.osa", "WARNING"):
+            self.assertFalse(self.run_osa(ReportsSettings(run_timeout=1, stop_grace=1)))
         self.assertLess(time.monotonic() - started, 10)
         child = int(self.child_pid_file.read_text())
         for _ in range(50):
@@ -178,7 +223,7 @@ class OsaRunnerTest(FakeOsaTestCase):
         self.assertFalse((self.osa_dir / "logs" / "en" / "github_b_two.log").exists())
 
     def test_the_timeout_leaves_room_for_the_slowest_real_run(self):
-        self.assertGreater(osa.RUN_TIMEOUT, 13 * 60)
+        self.assertGreater(ReportsSettings().run_timeout, 13 * 60)
 
 
 class IndexTest(unittest.TestCase):
@@ -196,7 +241,7 @@ class IndexTest(unittest.TestCase):
             self.assertEqual(json.loads((out / "index.json").read_text()), index)
 
     def test_every_site_language_maps_to_an_osa_locale(self):
-        self.assertEqual(builder.LANGUAGES, {"en": "English", "ru": "Russian"})
+        self.assertEqual(ReportsSettings().languages, {"en": "English", "ru": "Russian"})
 
 
 class ThirdPartyReposTest(unittest.TestCase):
@@ -231,8 +276,8 @@ class ReportsBuilderTest(FakeOsaTestCase):
         ]})
         self.spend = [0.0, 0.5]
         # One language keeps the counts below readable; both are covered separately.
+        self.reports = ReportsSettings(languages={"en": "English"})
         for target, value in (
-            ("LANGUAGES", {"en": "English"}),
             ("shutil.which", lambda name: f"/usr/bin/{name}"),
             ("OpenRouterClient.usage", lambda client: self.spend.pop(0)),
         ):
@@ -241,7 +286,7 @@ class ReportsBuilderTest(FakeOsaTestCase):
             self.addCleanup(patcher.stop)
 
     def build(self, **kwargs):
-        return builder.ReportsBuilder(self.config).build(self.snapshot, self.out_dir, workers=2, **kwargs)
+        return builder.ReportsBuilder(self.config, self.reports).build(self.snapshot, self.out_dir, workers=2, **kwargs)
 
     def test_skips_existing_reports_unless_forced_and_indexes_the_disk(self):
         existing = self.out_dir / "en" / "github_a_one.pdf"
@@ -260,8 +305,8 @@ class ReportsBuilderTest(FakeOsaTestCase):
         self.assertEqual(existing.read_bytes(), b"%PDF-1.4 report")
 
     def test_each_language_gets_its_own_folder_and_index_entry(self):
-        with patch.object(builder, "LANGUAGES", {"en": "English", "ru": "Russian"}):
-            result = self.build()
+        self.reports = ReportsSettings()
+        result = self.build()
         self.assertEqual(result["generated"], 4)
         index = json.loads((self.out_dir / "index.json").read_text())
         self.assertEqual(index, {"en": ["github_a_one", "github_b_two"], "ru": ["github_a_one", "github_b_two"]})
@@ -290,8 +335,16 @@ class ReportsBuilderTest(FakeOsaTestCase):
         self.assertEqual((result["generated"], result["third_party"]), (1, 0))
         self.assertEqual(old.read_bytes(), b"%PDF-1.4 report")
 
+    def test_reports_go_to_the_configured_folder(self):
+        elsewhere = self.root / "essdata" / "reports"
+        builder.ReportsBuilder(self.config, replace(self.reports, out_dir=elsewhere)).build(
+            self.snapshot, keys=frozenset({"github_a_one"})
+        )
+        self.assertTrue((elsewhere / "en" / "github_a_one.pdf").exists())
+        self.assertEqual(json.loads((elsewhere / "index.json").read_text()), {"en": ["github_a_one"]})
+
     def test_reports_go_to_the_site_data_by_default(self):
-        builder.ReportsBuilder(self.config).build(self.snapshot, keys=frozenset({"github_a_one"}))
+        builder.ReportsBuilder(self.config, self.reports).build(self.snapshot, keys=frozenset({"github_a_one"}))
         self.assertTrue((self.config.gui_dir / "private" / "reports" / "en" / "github_a_one.pdf").exists())
 
     def test_failures_are_counted_logged_with_the_log_folder_and_the_index_still_written(self):
@@ -361,7 +414,7 @@ class ReportsCliTest(unittest.TestCase):
 
     def test_defaults_and_scoping(self):
         args = self.parse()
-        self.assertEqual((args.keys, args.force, args.workers), ([], False, builder.WORKERS))
+        self.assertEqual((args.keys, args.force, args.workers), ([], False, ReportsSettings().workers))
         args = self.parse("github_a_b", "--force", "--workers", "2")
         self.assertEqual((args.keys, args.force, args.workers), (["github_a_b"], True, 2))
 
