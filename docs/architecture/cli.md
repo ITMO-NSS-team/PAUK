@@ -239,7 +239,8 @@ rows from it. The snapshot defaults to the newest in `cache_dir`. See
 pauk reports build [<repo id> ...] [--cache <snapshot>] [--force] [--workers 8]
 ```
 
-Runs OSA on every repository of the snapshot that has no report yet and
+Runs OSA on every repository of the snapshot that has no report yet, except
+third-party ones (cited, never `IMPLEMENTS`, no ITMO contributor), and
 writes `data/gui/private/reports/<lang>/<repo id>.pdf` plus the site's
 `reports/index.json`. Repository ids limit the run, `--force` regenerates
 existing reports. Needs `OPENROUTER_API_KEY` and internet, not the lab VPN.

@@ -36,6 +36,26 @@ def report_path(out_dir: Path, lang: str, key: str) -> Path:
     return out_dir / lang / f"{key}.pdf"
 
 
+def third_party_repos(graph: dict[str, list]) -> set[str]:
+    """Repositories the map only cites as someone else's code.
+
+    Never `IMPLEMENTS`, every `MENTIONS_LINK` judged `is_relevant=false`, no
+    ITMO contributor: a report on them rates code nobody here wrote. An
+    undecided mention (`null`) or an ITMO contributor keeps the repository,
+    since the classifier can be wrong about the authors' own code.
+
+    Args:
+        graph: Snapshot tables `repo_pubs`, `mentions_repos` and `repo_persons`.
+
+    Returns:
+        Their repository ids.
+    """
+    ours = {edge["rid"] for edge in graph.get("repo_pubs", []) + graph.get("repo_persons", [])}
+    mentions = graph.get("mentions_repos", [])
+    undecided = {edge["rid"] for edge in mentions if edge.get("is_relevant") is not False}
+    return {edge["rid"] for edge in mentions} - ours - undecided
+
+
 def write_index(out_dir: Path) -> dict[str, list[str]]:
     """Writes `<out_dir>/index.json` from what is on disk.
 
@@ -80,23 +100,28 @@ class ReportsBuilder:
             snapshot: Graph snapshot taken by `pauk cache export`.
             out_dir: Site folder for the reports, `<out_dir>/<lang>/<id>.pdf`;
                 defaults to `reports/` in the site data the map is built from.
-            keys: Limit the run to these repository ids; empty means all of them.
+            keys: Limit the run to these repository ids; empty means all of them
+                but the third-party ones (`third_party_repos`).
             force: Regenerate reports that already exist.
             workers: OSA runs in parallel.
 
         Returns:
-            Counts of generated, skipped and failed reports, plus the dollars
-            OpenRouter charged for the run (None if it could not be read).
+            Counts of generated, skipped (already there) and failed reports,
+            of third-party repositories left out, plus the dollars OpenRouter
+            charged for the run (None if it could not be read).
 
         Raises:
             ValueError: an id is not in the snapshot, or the key is not set.
             RuntimeError: uvx is missing, or OpenRouter is unreachable with the key.
         """
         out_dir = out_dir or self.config.gui_dir / "private" / "reports"
-        repos = {row["id"]: row["url"] for row in read_snapshot(snapshot)["repositories"] if row.get("url")}
+        graph = read_snapshot(snapshot)
+        repos = {row["id"]: row["url"] for row in graph["repositories"] if row.get("url")}
         if unknown := keys - repos.keys():
             raise ValueError(f"not in the snapshot: {', '.join(sorted(unknown))}")
-        selected = sorted(keys or repos)
+        # Ids named explicitly are generated whatever they are.
+        third_party = set() if keys else third_party_repos(graph) & repos.keys()
+        selected = sorted(keys or repos.keys() - third_party)
         jobs = [
             (key, lang) for lang in LANGUAGES for key in selected
             if force or not report_path(out_dir, lang, key).exists()
@@ -116,6 +141,7 @@ class ReportsBuilder:
             "generated": generated,
             "skipped": len(selected) * len(LANGUAGES) - len(jobs),
             "failed": failed,
+            "third_party": len(third_party),
             "spent_usd": 0.0 if spent_before is None else self._spent_since(spent_before),
         }
 

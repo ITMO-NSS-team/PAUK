@@ -199,6 +199,26 @@ class IndexTest(unittest.TestCase):
         self.assertEqual(builder.LANGUAGES, {"en": "English", "ru": "Russian"})
 
 
+class ThirdPartyReposTest(unittest.TestCase):
+    def test_only_repositories_judged_foreign_everywhere_and_without_itmo_people(self):
+        graph = {
+            "repo_pubs": [{"rid": "implements", "pid": "P1"}],
+            "repo_persons": [{"rid": "itmo_contributor", "per": "A1", "role": "owner"}],
+            "mentions_repos": [
+                {"rid": "implements", "pid": "P2", "is_relevant": False},
+                {"rid": "foreign", "pid": "P1", "is_relevant": False},
+                {"rid": "foreign", "pid": "P2", "is_relevant": False},
+                {"rid": "undecided", "pid": "P1", "is_relevant": False},
+                {"rid": "undecided", "pid": "P2", "is_relevant": None},
+                {"rid": "itmo_contributor", "pid": "P1", "is_relevant": False},
+            ],
+        }
+        self.assertEqual(builder.third_party_repos(graph), {"foreign"})
+
+    def test_a_snapshot_without_edge_tables_has_none(self):
+        self.assertEqual(builder.third_party_repos({"repositories": []}), set())
+
+
 class ReportsBuilderTest(FakeOsaTestCase):
     def setUp(self):
         super().setUp()
@@ -228,7 +248,7 @@ class ReportsBuilderTest(FakeOsaTestCase):
         existing.parent.mkdir(parents=True)
         existing.write_bytes(b"%PDF-old")
 
-        self.assertEqual(self.build(), {"generated": 1, "skipped": 1, "failed": 0, "spent_usd": 0.5})
+        self.assertEqual(self.build(), {"generated": 1, "skipped": 1, "failed": 0, "third_party": 0, "spent_usd": 0.5})
         self.assertEqual(existing.read_bytes(), b"%PDF-old")
         self.assertEqual(
             json.loads((self.out_dir / "index.json").read_text()), {"en": ["github_a_one", "github_b_two"]}
@@ -245,6 +265,30 @@ class ReportsBuilderTest(FakeOsaTestCase):
         self.assertEqual(result["generated"], 4)
         index = json.loads((self.out_dir / "index.json").read_text())
         self.assertEqual(index, {"en": ["github_a_one", "github_b_two"], "ru": ["github_a_one", "github_b_two"]})
+
+    def test_third_party_repositories_are_left_out_unless_named_and_their_old_reports_stay(self):
+        write_snapshot(self.snapshot, {
+            "repositories": [
+                {"id": "github_a_one", "url": "https://github.com/a/one"},
+                {"id": "github_b_two", "url": "https://github.com/b/two"},
+            ],
+            "repo_pubs": [{"rid": "github_a_one", "pid": "P1"}],
+            "repo_persons": [],
+            "mentions_repos": [{"rid": "github_b_two", "pid": "P1", "is_relevant": False}],
+        })
+        old = self.out_dir / "en" / "github_b_two.pdf"
+        old.parent.mkdir(parents=True)
+        old.write_bytes(b"%PDF-old")
+
+        result = self.build()
+        self.assertEqual((result["generated"], result["skipped"], result["third_party"]), (1, 0, 1))
+        self.assertEqual(old.read_bytes(), b"%PDF-old")
+        self.assertEqual(json.loads((self.out_dir / "index.json").read_text()), {"en": ["github_a_one", "github_b_two"]})
+
+        self.spend = [0.5, 0.75]
+        result = self.build(keys=frozenset({"github_b_two"}), force=True)
+        self.assertEqual((result["generated"], result["third_party"]), (1, 0))
+        self.assertEqual(old.read_bytes(), b"%PDF-1.4 report")
 
     def test_reports_go_to_the_site_data_by_default(self):
         builder.ReportsBuilder(self.config).build(self.snapshot, keys=frozenset({"github_a_one"}))
@@ -276,7 +320,7 @@ class ReportsBuilderTest(FakeOsaTestCase):
         with patch("pauk.reports.builder.shutil.which", lambda name: None), \
                 patch("pauk.reports.builder.OpenRouterClient.usage", side_effect=AssertionError("network")):
             result = self.build()
-        self.assertEqual(result, {"generated": 0, "skipped": 2, "failed": 0, "spent_usd": 0.0})
+        self.assertEqual(result, {"generated": 0, "skipped": 2, "failed": 0, "third_party": 0, "spent_usd": 0.0})
         self.assertEqual(json.loads((self.out_dir / "index.json").read_text()), {"en": ["github_a_one", "github_b_two"]})
 
     def test_an_unreadable_final_spend_still_returns_the_counts(self):

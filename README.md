@@ -114,7 +114,7 @@ graph, build the site data, and start the dev server:
 ```bash
 pauk cache export
 pauk gui build
-pauk reports build   # optional: OSA PDF reports, needs OpenRouter, not the lab VPN
+pauk reports build   # optional
 cd pauk/gui/web && npm install && npm run dev
 ```
 
@@ -128,7 +128,8 @@ cd pauk/gui/web && npm install && npm run dev
   the base folder). `--seed` sets the layout seed (default 42). `authors-detail.json`,
   which holds personal fields, is written only to `private/`.
 - `pauk reports build [<repo id> ...]` runs [OSA](https://github.com/aimclub/OSA)
-  on every repository of the newest snapshot that has no report yet and writes
+  on every repository of the newest snapshot that has no report yet, except
+  repositories only cited as third-party code, and writes
   `data/gui/private/reports/<lang>/<repo id>.pdf` (`en` and `ru`) plus
   `reports/index.json`; the repository card links the report in the interface
   language. `--force` regenerates existing reports, `--workers` sets the

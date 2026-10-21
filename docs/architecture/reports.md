@@ -19,6 +19,17 @@ pauk reports build              # every repository without a report
 pauk reports build github_a_b   # just these ids; --force regenerates
 ```
 
+## Which repositories
+
+Every repository of the snapshot except the third-party ones
+(`third_party_repos`): no `IMPLEMENTS`, every `MENTIONS_LINK` judged
+`is_relevant=false`, and no ITMO contributor (`CONTRIBUTED_TO`). A report on
+those rates code nobody here wrote. A mention the classifier left undecided
+(`null`) or an ITMO contributor keeps the repository, since the classifier can
+miss the authors' own code. In the 14.10 snapshot that leaves out 119 of 400.
+Reports that already exist are not deleted and stay linked; ids named on the
+command line are generated whatever they are.
+
 ## One run per repository and language
 
 OSA runs through `uvx --from osa_tool==<pinned>`, in its own cached
