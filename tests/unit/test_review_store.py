@@ -1,4 +1,5 @@
 import unittest
+from datetime import UTC, datetime
 
 import mongomock
 
@@ -502,6 +503,29 @@ class AnswersSurviveAMergeTest(unittest.TestCase):
         review.record_verdict(self.db, review.GITHUB, ["B", "ivanov"], review.DIFFERENT)
         self.assertEqual(review.github_decisions(self.db, {"B": "A"}),
                          {frozenset({"A", "ivanov"}): review.DIFFERENT})
+
+    def test_an_account_choice_follows_the_person(self):
+        review.record_account_choice(self.db, "ivanov", ["B", "C"], "B")
+        self.assertEqual(review.github_decisions(self.db, {"B": "A"}),
+                         {frozenset({"A", "ivanov"}): review.SAME,
+                          frozenset({"C", "ivanov"}): review.DIFFERENT})
+
+    def test_a_choice_stays_a_yes_when_the_others_fold_into_the_chosen(self):
+        review.record_account_choice(self.db, "ivanov", ["B", "C"], "B")
+        self.assertEqual(review.github_decisions(self.db, {"C": "B"}),
+                         {frozenset({"B", "ivanov"}): review.SAME})
+
+    def test_the_later_answer_about_an_account_comes_last(self):
+        # C was folded into A: both answers are about A now, the later one has to win.
+        review.record_verdict(self.db, review.GITHUB, ["A", "ivanov"], review.SAME)
+        review.record_verdict(self.db, review.GITHUB, ["A", "D", "ivanov"], review.DIFFERENT)
+        review.record_verdict(self.db, review.GITHUB, ["C", "ivanov"], review.DIFFERENT)
+        for day, key in enumerate(["github_person:A:ivanov", "github_person:A:D:ivanov",
+                                   "github_person:C:ivanov"], start=1):
+            self.db[review.COLLECTION].update_one(
+                {"_id": key}, {"$set": {"decided_at": datetime(2026, 1, day, tzinfo=UTC)}})
+        answers = review.github_decisions(self.db, {"C": "A"})
+        self.assertEqual(list(answers.items())[-1], (frozenset({"A", "ivanov"}), review.DIFFERENT))
 
     def test_a_catalog_choice_follows_the_person(self):
         review.record_choice(self.db, "B", self.RECORDS, self.RECORDS[0])

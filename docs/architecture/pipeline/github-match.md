@@ -32,6 +32,7 @@ and such a match means nothing.
 |---|---|---|
 | `email_exact` | 1.0 | account and author share an address |
 | `name_exact` | 0.6 | same set of name words |
+| `name_alternative` | 0.6 | the same, but only through an OpenAlex spelling the main name does not back |
 | `name_fuzzy` | 0.4 | similar name, threshold `NAME_FUZZY = 0.86` |
 | `itmo_email` | 0.3 | account address on `@itmo.ru` |
 | `login_surname` | 0.3 | author's surname inside the login |
@@ -62,6 +63,13 @@ name. All known spellings on both sides are compared: how the author published
 (`name_variants`, ORCID `other_names`) against what the account is signed with
 (`name`, `login`, names from commits).
 
+OpenAlex lumps namesakes into one author, so `name_variants` also holds other
+people's names. A variant counts as `name_exact` only when all its words are in
+the main name (`Daniil Razdyakonov` for `Daniil S. Razdyakonov`) or there is no
+main name. Otherwise (`Pavel Gulyaev` for `P. V. Gulyaev`, `Xin Zhang` for
+`Xi Zhang`) it gives `name_alternative`. ORCID names are the author's own and
+always count.
+
 ## Three outcomes
 
 `decide` does not sum weights; it looks at the composition:
@@ -69,6 +77,8 @@ name. All known spellings on both sides are compared: how the author published
 - an address match decides by itself: `matched`, unconditionally;
 - an exact name is `matched` if there is a bridge or at least one corroborating
   signal (`CORROBORATING`), otherwise `review`;
+- `name_alternative` is `matched` on the same terms, otherwise `rejected`: a
+  spelling that may belong to a namesake is not worth a question on its own;
 - a similar name is `matched` only with a bridge together with corroboration,
   and `rejected` without a bridge;
 - everything else is `rejected`. Corroborating signals identify nobody on their
@@ -77,10 +87,43 @@ name. All known spellings on both sides are compared: how the author published
 A `review` pair is not written to `Person`; it stays in the journal with its
 full set of signals, which is what a person looks at.
 
-A match is also downgraded to `review` when two authors claim an account with
-equal weight (`evidence.ambiguous`): picking either would be a guess. This is
-usually one person split by OpenAlex into two nodes that `dedup` has not yet
-folded, which is why `dedup` should run before `github_match`.
+When several authors claim an account with equal weight, a shared address wins,
+then a bridge from the author's own paper. Only a tie on all three downgrades
+the match to `review` (`evidence.ambiguous`, reason "several authors fit this
+account equally well"): picking either would be a guess. This is usually one
+person split by OpenAlex into two nodes that `dedup` has not yet folded, which
+is why `dedup` should run before `github_match`. Authors are compared in id
+order, so a tie names the same author on every run.
+
+## Questions
+
+An account the rules cannot place becomes one question in the review queue. It
+names every author still in the running, best first (`candidates` on the row),
+and is answered by choosing the author the account belongs to, or "none of
+them". An account with a single author is answered "theirs" or "not theirs".
+
+People's answers come before the choice. An author somebody confirmed or chose
+wins it, even where the signals alone would reject the pair, unless another
+author the rules would link fits as well or better. Such a "yes" was given
+without that author in view (a namesake at another university, a record the
+account shares an address with), so the account is asked about again, naming
+all of them (reason "answered before, but the question did not name every
+author that fits"). Choosing one author is a "no" to the others in the question.
+Authors somebody refused, one by one or all at once, are left out of the choice,
+so the next question names only authors nobody has refused. If the rules alone
+would now link a refused author, the answer goes to the disputes instead.
+Answers given when an account was asked about one author at a time keep
+applying; where two answers cover one pair, the later one counts.
+
+A run also closes the open questions it has settled itself. Only for an account
+whose decision it wrote: a link a scoped run does not write leaves the account's
+questions alone. And only questions whose authors it covers (a scoped run covers
+its selection only), directly or through the record a person was folded into.
+Such a question is settled when the account was linked, when nobody fits it any
+more, or when the question asked now names other authors, for instance after a
+namesake appeared. A closed question gets `auto_resolved_at` and no verdict, so
+it leaves the queue and comes back if a later run holds it again. Answered
+questions are never touched.
 
 ## `confidence`
 

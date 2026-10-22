@@ -15,8 +15,10 @@ Four shapes of question:
 - a **group** those rules refused whole, because it spans two ORCIDs or two
   addresses. It is answered by naming which of its records are one person,
   and `record_split` turns that into the pair answers the rules read;
-- a **github account** the matcher could not place, answered "same" (this is
-  them) or "different";
+- a **github account** the matcher could not place, asked once with every
+  author still in the running. It is answered by choosing the author it
+  belongs to (`record_account_choice`) or "different" for none of them; with
+  a single author, "same" or "different";
 - a **catalog record**, where the staff directory holds several people under
   one name. Both namesakes are plausible and exactly one is right, so
   `record_choice` names the record instead of taking a side.
@@ -106,7 +108,8 @@ def members_of(row: dict) -> list[str]:
     if "records" in row:
         return sorted({row["person"], *row["records"]})
     if "login" in row:
-        return sorted({row["login"], row["person"]})
+        return sorted({row["login"], row["person"],
+                       *(candidate["person"] for candidate in row.get("candidates") or [])})
     if "persons" in row:
         return sorted(set(row["persons"]))
     return sorted({row["person_a"], row["person_b"]})
@@ -116,9 +119,9 @@ def kind_of(row: dict) -> str:
     """Which question a report row is, read off the fields it carries.
 
     Each producer names its subjects its own way: the catalog check a
-    `person` and `records`, the github matcher a `login` and a `person`, a
-    refused group a list of `persons`, a held pair a `person_a` and a
-    `person_b`.
+    `person` and `records`, the github matcher a `login`, a `person` and the
+    `candidates` beside them, a refused group a list of `persons`, a held
+    pair a `person_a` and a `person_b`.
     """
     if "records" in row:
         return STAFF
@@ -143,7 +146,9 @@ def names_of(row: dict, members: list[str]) -> list[str | None]:
                  **dict(zip(row["records"], row.get("record_names") or [], strict=False))}
     elif "login" in row:
         # The account is named by its login; there is nothing else to call it.
-        by_id = {row["login"]: row["login"], row["person"]: row.get("name_raw")}
+        by_id = {row["login"]: row["login"], row["person"]: row.get("name_raw"),
+                 **{candidate["person"]: candidate.get("name_raw")
+                    for candidate in row.get("candidates") or []}}
     elif "persons" in row:
         by_id = dict(zip(row["persons"], row.get("names") or [], strict=False))
     else:
@@ -235,14 +240,61 @@ def record_disputed(db: Database, report: list[dict]) -> int:
     for row in report:
         if row.get("status") != "disputed":
             continue
-        members = members_of(row)
-        result = db[COLLECTION].update_one(
-            {"_id": question_id(kind_of(row), members)},
-            {"$set": {"disputed_at": moment, "disputed_rule": row.get("rule")}})
+        kind, members = kind_of(row), members_of(row)
+        # Refused under a question naming several: "none of them", or somebody else chosen.
+        found = ({"kind": GITHUB, "members": {"$all": members},
+                  "$or": [{"verdict": DIFFERENT}, {"chosen": {"$nin": [None, row.get("person")]}}]}
+                 if kind == GITHUB else {"_id": question_id(kind, members)})
+        result = db[COLLECTION].update_many(
+            found, {"$set": {"disputed_at": moment, "disputed_rule": row.get("rule")}})
         noted += result.matched_count
     if noted:
         logger.warning("review: %d answered pair(s) the rules would now merge", noted)
     return noted
+
+
+def retire_github(db: Database, outcomes: dict[str, dict | None], people: set[str],
+                  aliases: dict[str, str] | None = None) -> int:
+    """Close open account questions a run has settled without a person.
+
+    An account is asked about once, so any other open question about it is
+    either answered by the rules or replaced by the one asked now, which
+    names a new set of authors. Only questions the run could judge: a login
+    it settled and authors it covers, directly or through a fold. Closed by
+    `auto_resolved_at`, never a verdict.
+
+    Args:
+        outcomes: Each login the run settled, with its decision row, or None
+            when no author fitted. A row still for review is the question
+            asked now, and stays open.
+        people: The persons the run covers; a scoped run covers its selection only.
+        aliases: Folded-away person id to the id that survived.
+
+    Returns:
+        How many questions were closed.
+    """
+    aliases = aliases or {}
+    moment = _now()
+    asked = {question_id(GITHUB, members_of(row))
+             for row in outcomes.values() if row and row["decision"] == "review"}
+    retired = 0
+    for question in db[COLLECTION].find({"kind": GITHUB, "verdict": {"$exists": False},
+                                         "auto_resolved_at": {"$exists": False},
+                                         "evidence.login": {"$in": list(outcomes)}}):
+        if question["_id"] in asked:
+            continue
+        login = question["evidence"]["login"]
+        if any(aliases.get(member, member) not in people
+               for member in question["members"] if member != login):
+            continue
+        result = db[COLLECTION].update_one(
+            {"_id": question["_id"], "verdict": {"$exists": False}},
+            {"$set": {"auto_resolved_at": moment,
+                      "auto_resolution": outcomes[login] or {"login": login, "decision": "rejected"}}})
+        retired += result.modified_count
+    if retired:
+        logger.info("review: %d account question(s) settled by the rules", retired)
+    return retired
 
 
 def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
@@ -269,6 +321,9 @@ def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
         # "Yes" names nobody: the queue would look answered and change nothing.
         raise ReviewError("a catalog question is answered by choosing a record; "
                           "see record_choice")
+    if kind == GITHUB and verdict == SAME and len(set(members)) > 2:
+        raise ReviewError("an account asked about several authors is answered by "
+                          "choosing one; see record_account_choice")
     key = question_id(kind, members)
     moment = _now()
     db[COLLECTION].update_one(
@@ -504,6 +559,36 @@ def record_choice(db: Database, person: str, records: list[str], chosen: str | N
     return db[COLLECTION].find_one({"_id": key})
 
 
+def record_account_choice(db: Database, login: str, persons: list[str], chosen: str,
+                          actor: str = "unknown", note: str = "") -> dict:
+    """Say which of the authors asked about an account it belongs to.
+
+    Like `record_choice`: several authors fit and at most one is right. "None
+    of them" is a plain "different" on the same question, see `record_verdict`.
+
+    Raises:
+        ReviewError: The chosen author is not one of the ones asked about.
+    """
+    if chosen not in persons:
+        raise ReviewError("that author is not one of the ones asked about")
+    members = [login, *persons]
+    key = question_id(GITHUB, members)
+    moment = _now()
+    db[COLLECTION].update_one(
+        {"_id": key},
+        # The login is kept on the document: the members alone do not say which one it is.
+        {"$set": {"verdict": SAME, "chosen": chosen, "login": login,
+                  "actor": actor, "note": note, "decided_at": moment},
+         "$unset": {"skipped_at": "", "skipped_by": "",
+                    "auto_resolved_at": "", "auto_resolution": "",
+                    "disputed_at": "", "disputed_rule": ""},
+         "$setOnInsert": {"kind": GITHUB, "members": sorted(set(members)),
+                          "evidence": {}, "seen_at": moment, "source": STAGE}},
+        upsert=True)
+    logger.info("review: %s belongs to %s, said %s", login, chosen, actor)
+    return db[COLLECTION].find_one({"_id": key})
+
+
 def staff_choices(db: Database, aliases: dict[str, str] | None = None) -> dict[str, str]:
     """The catalog record each person was said to be, where somebody said.
 
@@ -525,12 +610,16 @@ def staff_choices(db: Database, aliases: dict[str, str] | None = None) -> dict[s
 
 def github_decisions(db: Database, aliases: dict[str, str] | None = None
                      ) -> dict[frozenset[str], str]:
-    """Answers about accounts, keyed by the login and person they are about.
+    """Answers about accounts, keyed by the login and the persons they are about.
 
     Read off `members`, not off the evidence. An answer can be given before
     the question exists (from the CLI, or about an account this run has not
     reached yet), and such a document carries no evidence at all, so keying
     on it would lose the answer exactly when it mattered.
+
+    The caller knows which member is the account, so the members need no
+    order. A "different" about several authors refuses each of them; a choice
+    is a "yes" to the author chosen and a "no" to the others it was chosen over.
 
     Args:
         aliases: Merged-away id to the id that survived, as for `decisions`.
@@ -539,12 +628,26 @@ def github_decisions(db: Database, aliases: dict[str, str] | None = None
             not found, and the matcher goes on to link an account a person
             had refused.
 
-    The caller knows which half is the account, so the pair needs no order.
+    Returns:
+        Members to verdict, oldest answer first: where two answers cover one
+        pair, a caller applying them in order keeps the later one.
     """
     aliases = aliases or {}
-    return {frozenset(aliases.get(member, member) for member in row["members"]): row["verdict"]
-            for row in db[COLLECTION].find({"kind": GITHUB,
-                                            "verdict": {"$exists": True}})}
+    found: dict[frozenset[str], str] = {}
+    for row in db[COLLECTION].find({"kind": GITHUB, "verdict": {"$exists": True}}
+                                   ).sort("decided_at", 1):
+        answers = [(row["members"], row["verdict"])]
+        if row.get("chosen"):
+            # The "yes" last: an author folded into the chosen one is the chosen one.
+            answers = [*(([row["login"], member], DIFFERENT) for member in row["members"]
+                         if member not in (row["login"], row["chosen"])),
+                       ([row["login"], row["chosen"]], SAME)]
+        for members, verdict in answers:
+            key = frozenset(aliases.get(member, member) for member in members)
+            # Popped first, so a repeated key moves to the place of its later answer.
+            found.pop(key, None)
+            found[key] = verdict
+    return found
 
 
 def decisions(db: Database, aliases: dict[str, str] | None = None,
