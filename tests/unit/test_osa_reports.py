@@ -5,6 +5,7 @@ import importlib
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import threading
@@ -205,6 +206,36 @@ class OsaRunnerTest(FakeOsaTestCase):
             time.sleep(0.1)
         else:
             self.fail("the OSA child process survived the stop")
+
+    def test_a_stop_while_osa_is_being_started_still_reaches_it(self):
+        self.mode = "hang"
+        runner = osa.OsaRunner("secret", self.osa_dir, settings=ReportsSettings(run_timeout=20))
+        popen = subprocess.Popen
+        stopper = threading.Thread(target=runner.stop)
+
+        def stop_during_start(*args, **kwargs):
+            stopper.start()
+            time.sleep(0.3)
+            return popen(*args, **kwargs)
+
+        started = time.monotonic()
+        with patch.object(osa.subprocess, "Popen", stop_during_start):
+            self.assertFalse(runner.run("github_a_one", "u", "en", "English", self.out_dir / "en" / "a.pdf"))
+        stopper.join(timeout=10)
+        self.assertLess(time.monotonic() - started, 10)
+
+    def test_a_stop_before_osa_is_started_starts_nothing(self):
+        runner = osa.OsaRunner("secret", self.osa_dir)
+        rmtree = osa.shutil.rmtree
+
+        def stop_while_preparing(*args, **kwargs):
+            runner.stop()
+            rmtree(*args, **kwargs)
+
+        with patch.object(osa.shutil, "rmtree", stop_while_preparing), \
+                patch.object(osa.subprocess, "Popen") as popen:
+            self.assertFalse(runner.run("github_a_one", "u", "en", "English", self.out_dir / "en" / "a.pdf"))
+        popen.assert_not_called()
 
     def test_stop_ends_runs_in_flight_and_refuses_new_ones(self):
         self.mode = "hang"

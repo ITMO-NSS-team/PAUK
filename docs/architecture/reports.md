@@ -73,7 +73,9 @@ at once and stopped: each run has its own process group, which gets SIGTERM
 and, if anything of it is still alive after `stop_grace`, SIGKILL, so the git
 and Python children of uvx never outlive it. An interrupted build (Ctrl+C)
 stops every run in flight the same way (`OsaRunner.stop`) and drops the
-queued ones; a run that is stopped never moves its PDF into place.
+queued ones; a run that is stopped never moves its PDF into place. The
+stop check, the start and the registration of a run share one lock, so a
+Ctrl+C that lands while OSA is being started still reaches it.
 
 The file on disk is the only state: an existing PDF is skipped, a failed one
 is retried by the next run. `reports/index.json` (`{"en": [ids], "ru": [ids]}`, the

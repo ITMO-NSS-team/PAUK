@@ -99,8 +99,8 @@ class OsaRunner:
 
     def stop(self) -> None:
         """Stops every run in flight and refuses new ones; for an interrupted build."""
-        self._stopped.set()
         with self._lock:
+            self._stopped.set()
             running = list(self._running)
         for proc in running:
             self._terminate(proc)
@@ -142,12 +142,17 @@ class OsaRunner:
         work.mkdir(parents=True)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            # Own process group: a stop kills the whole tree, Ctrl+C reaches only pauk.
-            with log_path.open("w", encoding="utf-8") as log, subprocess.Popen(
-                self.command(url, osa_language), cwd=work, env=self.env, stdout=log, stderr=subprocess.STDOUT,
-                start_new_session=True,
-            ) as proc:
+            with log_path.open("w", encoding="utf-8") as log:
+                # Checked, started and registered under one lock, or a stop could
+                # land in between and miss the process.
                 with self._lock:
+                    if self._stopped.is_set():
+                        return False
+                    # Own process group: a stop kills the whole tree, Ctrl+C reaches only pauk.
+                    proc = subprocess.Popen(
+                        self.command(url, osa_language), cwd=work, env=self.env, stdout=log,
+                        stderr=subprocess.STDOUT, start_new_session=True,
+                    )
                     self._running.add(proc)
                 try:
                     code = proc.wait(timeout=self.settings.run_timeout)
