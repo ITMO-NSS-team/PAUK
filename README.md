@@ -114,6 +114,7 @@ graph, build the site data, and start the dev server:
 ```bash
 pauk cache export
 pauk gui build
+pauk reports build   # optional
 cd pauk/gui/web && npm install && npm run dev
 ```
 
@@ -126,7 +127,17 @@ cd pauk/gui/web && npm install && npm run dev
   the site data into `data/gui/public` and `data/gui/private` (`--out-dir` changes
   the base folder). `--seed` sets the layout seed (default 42). `authors-detail.json`,
   which holds personal fields, is written only to `private/`.
+- `pauk reports build [<repo id> ...]` runs [OSA](https://github.com/aimclub/OSA)
+  on every repository of the newest snapshot that has no report yet, except
+  repositories only cited as third-party code, and writes
+  `data/gui/private/reports/<lang>/<repo id>.pdf` (`en` and `ru`) plus
+  `reports/index.json`; the repository card links the report in the interface
+  language. `--force` regenerates existing reports, `--workers` sets the
+  parallel runs (default 6). It needs `OPENROUTER_API_KEY` and `uv`; when every
+  report exists it only rebuilds the index, offline. `PAUK_REPORTS_DIR` moves
+  the PDFs elsewhere.
 - The Vite dev server serves `data/gui/private`.
 
-Details: [`docs/architecture/gui.md`](docs/architecture/gui.md) and
-[`docs/architecture/cache.md`](docs/architecture/cache.md).
+Details: [`docs/architecture/gui.md`](docs/architecture/gui.md),
+[`docs/architecture/cache.md`](docs/architecture/cache.md) and
+[`docs/architecture/reports.md`](docs/architecture/reports.md).
