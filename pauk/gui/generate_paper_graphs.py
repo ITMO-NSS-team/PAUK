@@ -49,7 +49,28 @@ def _claim_payload(claim) -> dict:
     payload["files"] = [
         {"path": f.path, **({"url": f.url} if f.url else {})} for f in claim.files
     ]
+    payload["sources"] = [
+        {"id": s.source_id, "kind": s.kind,
+         **{k: v for k, v in (("text", s.text), ("page", s.page), ("label", s.label))
+            if v not in (None, "")}}
+        for s in claim.sources
+    ]
     return payload
+
+
+def _document_payload(document) -> dict:
+    """Elements keyed by id, edges as rows - the shape the profile walks."""
+    return {
+        "nodes": {
+            n.node_id: {k: v for k, v in (("name", n.name), ("page", n.page), ("text", n.text))
+                        if v not in (None, "")}
+            for n in document.nodes
+        },
+        "edges": [
+            [e.source, e.target, e.edge_type, *([e.label] if e.label else [])]
+            for e in document.edges
+        ],
+    }
 
 
 def build_paper_graphs(graphs: list[PaperGraph]) -> dict[str, dict]:
@@ -67,6 +88,8 @@ def build_paper_graphs(graphs: list[PaperGraph]) -> dict[str, dict]:
             ],
             "claims": [_claim_payload(c) for c in graph.claims],
         }
+        if graph.document and graph.document.edges:
+            out[graph.publication_id]["doc"] = _document_payload(graph.document)
     return out
 
 
@@ -88,10 +111,13 @@ def write_paper_graphs(src_dir: Path, out_dir: Path) -> dict[str, int]:
     )
     claims = sum(len(g.claims) for g in graphs)
     files = sum(len(c.files) for g in graphs for c in g.claims)
+    sources = sum(len(c.sources) for g in graphs for c in g.claims)
     logger.info(
-        "Wrote %s: %d paper(s), %d claim(s), %d file link(s)", path, len(graphs), claims, files
+        "Wrote %s: %d paper(s), %d claim(s), %d file link(s), %d source(s)",
+        path, len(graphs), claims, files, sources,
     )
-    return {"paper_graphs": len(graphs), "paper_claims": claims, "paper_claim_files": files}
+    return {"paper_graphs": len(graphs), "paper_claims": claims, "paper_claim_files": files,
+            "paper_claim_sources": sources}
 
 
 def main():

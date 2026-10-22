@@ -748,3 +748,18 @@ a:hover .pg-file rect { stroke: var(--accent); }
 }
 .pg-files { margin: 0; padding-left: 18px; font-size: 12px; }
 .pg-files li { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: 3px 0; word-break: break-all; }
+
+/* Where a picked claim was extracted from — hangs under the claim itself. */
+.pg-link-source { stroke-dasharray: 2 3; }
+.pg-source rect { fill: var(--bg); stroke: var(--faint); stroke-dasharray: 3 2; }
+.pg-source .pg-source-badge { fill: var(--faint); }
+.pg-source .pg-source-text { font-size: 11px; fill: var(--muted); font-style: italic; }
+/* Document-graph neighbours: the paper's own text, not evidence - solid, not dashed. */
+.pg-source-doc rect { stroke-dasharray: none; }
+.pg-source-doc .pg-source-text { font-style: normal; }
+.pg-expandable { cursor: pointer; }
+.pg-expandable:hover rect, .pg-open rect { stroke: var(--accent-2); }
+.pg-expandable .pg-source-badge { fill: var(--muted); }
+.pg-source-list { margin: 0; padding-left: 18px; font-size: 12px; color: var(--muted); }
+.pg-source-list li { margin: 3px 0; }
+.pg-source-list b { color: var(--text); font-weight: 600; }

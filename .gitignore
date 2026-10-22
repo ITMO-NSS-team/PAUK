@@ -20,6 +20,8 @@ data/paper_graphs/*
 !data/cache/.gitkeep
 !data/audit/.gitkeep
 !data/paper_graphs/.gitkeep
+# Map build of scripts/preview_paper_graphs.py - regenerated, never committed.
+data/preview_map/
 
 pauk/gui/data/private/*
 !pauk/gui/data/private/.gitkeep

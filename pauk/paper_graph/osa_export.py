@@ -15,6 +15,12 @@ Accepted layouts under the paper-graphs directory, one publication each:
                                             its headings when there is no
                                             sections.json
         experiments.json                    optional, claim -> repo files
+        layout.json | report.json |         optional, the parsed layout of the
+        elements.json                       PDF: locates a claim's sentence on
+                                            a page
+        graph.json                          optional, the document graph, for
+                                            the figures and tables that
+                                            sentence points at
         meta.json                           optional, title/repository_url
     <publication_id>.json             a PaperGraph written out verbatim
 
@@ -28,10 +34,20 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections import defaultdict
 from pathlib import Path
 from urllib.parse import quote
 
-from pauk.models import ClaimFile, PaperClaim, PaperGraph, PaperSection
+from pauk.models import (
+    ClaimFile,
+    ClaimSource,
+    DocEdge,
+    DocNode,
+    DocumentGraph,
+    PaperClaim,
+    PaperGraph,
+    PaperSection,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +56,22 @@ SECTIONS_FILE = "sections.json"
 DOCUMENT_FILE = "document.md"
 EXPERIMENTS_FILE = "experiments.json"
 META_FILE = "meta.json"
+DOC_GRAPH_FILE = "graph.json"
+# One layout report under any of the names OSA's paper parsing writes it as.
+LAYOUT_FILES = ("layout.json", "report.json", "elements.json")
+# Enough of a sentence to find the element it sits in, short enough to
+# survive the paragraph being broken across two elements.
+MATCH_PREFIX = 80
+MAX_REFERENCES = 3
+CAPTION_CHARS = 200
+# How far from a claim's origin the map can step through the document
+# graph. Every paper ships in one map file, so the whole parsed PDF does
+# not come along - just the neighbourhood a reader walks from a claim.
+DOC_HOPS = 2
+DOC_TEXT_CHARS = 400
+# Page structure says nothing about how two elements relate: every element
+# is on some page, and pages follow each other.
+DOC_EDGE_TYPES = ("reading_order", "section_member", "caption_of", "text_references")
 
 _FENCE = re.compile(r"^\s*(?:```|~~~)")
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
@@ -123,22 +155,16 @@ def _read_json(path: Path):
         raise ValueError(f"{path} is not valid JSON: {exc}") from exc
 
 
-def _claim_rows(payload) -> list[dict]:
-    """The claim list out of any of the three shapes OSA writes."""
+def _rows_of(payload, *keys: str) -> list[dict]:
+    """The rows of an export, whether it is a bare list or wrapped in a key.
+
+    Every OSA artifact is one list of dicts written one of two ways, so the
+    unwrapping is the same everywhere - only the key it hides behind differs.
+    """
     if isinstance(payload, list):
         rows = payload
     elif isinstance(payload, dict):
-        rows = payload.get("claims") or payload.get("result") or []
-    else:
-        rows = []
-    return [row for row in rows if isinstance(row, dict)]
-
-
-def _experiment_rows(payload) -> list[dict]:
-    if isinstance(payload, list):
-        rows = payload
-    elif isinstance(payload, dict):
-        rows = payload.get("experiments") or payload.get("result") or []
+        rows = next((payload[key] for key in keys if payload.get(key)), [])
     else:
         rows = []
     return [row for row in rows if isinstance(row, dict)]
@@ -270,6 +296,200 @@ def _attach_experiments(claims: list[PaperClaim], rows: list[dict],
     return claims
 
 
+# ---------- where a claim came from ----------
+
+
+def _element_id(row: dict) -> str:
+    return str(row.get("node_id") or f"elem_{row.get('bbox_idx')}")
+
+
+def _element_text(row: dict) -> str:
+    return " ".join(f"{row.get('text') or ''} {row.get('description') or ''}".split())
+
+
+def _page_of(row: dict) -> int | None:
+    """The element's page, 1-based.
+
+    OSA numbers pages from zero (`page_0` is the first page); a reader
+    counts from one, and the number is only ever displayed.
+    """
+    page = row.get("page_num")
+    return int(page) + 1 if isinstance(page, int) else None
+
+
+def _load_layout_elements(directory: Path) -> list[dict]:
+    for name in LAYOUT_FILES:
+        path = directory / name
+        if not path.is_file():
+            continue
+        return _rows_of(_read_json(path), "elements", "report")
+    return []
+
+
+def _read_doc_graph(directory: Path) -> dict:
+    path = directory / DOC_GRAPH_FILE
+    if not path.is_file():
+        return {}
+    payload = _read_json(path)
+    return payload if isinstance(payload, dict) else {}
+
+
+def _doc_graph_index(payload: dict) -> dict:
+    """Which figures an element points at, and what captions they carry."""
+    if not payload:
+        return {}
+    nodes = {n["node_id"]: n for n in payload.get("nodes", [])
+             if isinstance(n, dict) and n.get("node_id")}
+    references, captions = defaultdict(list), defaultdict(list)
+    for edge in payload.get("edges", []):
+        if not isinstance(edge, dict):
+            continue
+        if edge.get("edge_type") == "text_references":
+            references[edge.get("source")].append(edge)
+        elif edge.get("edge_type") == "caption_of":
+            captions[edge.get("target")].append(edge.get("source"))
+    return {"nodes": nodes, "references": references, "captions": captions}
+
+
+def _document_graph(payload: dict, elements: list[dict],
+                     claims: list[PaperClaim]) -> DocumentGraph | None:
+    """The document graph within `DOC_HOPS` of any claim's origin."""
+    edges = [e for e in payload.get("edges", [])
+             if isinstance(e, dict) and e.get("edge_type") in DOC_EDGE_TYPES
+             and e.get("source") and e.get("target") and e.get("source") != e.get("target")]
+    origins = {s.source_id for c in claims for s in c.sources if s.kind != "quote"}
+    if not edges or not origins:
+        return None
+    around = defaultdict(set)
+    for edge in edges:
+        around[edge["source"]].add(edge["target"])
+        around[edge["target"]].add(edge["source"])
+    keep, frontier = set(origins), set(origins)
+    for _ in range(DOC_HOPS):
+        frontier = {n for node in frontier for n in around[node]} - keep
+        keep |= frontier
+
+    # The layout pass may carry text the graph's own nodes lack, or the
+    # other way round; either one is better than an empty box.
+    by_id = {_element_id(row): row for row in elements}
+    graph_nodes = {n["node_id"]: n for n in payload.get("nodes", [])
+                   if isinstance(n, dict) and n.get("node_id")}
+    nodes = []
+    for node_id in sorted(keep):
+        row = graph_nodes.get(node_id) or by_id.get(node_id)
+        if row is None:
+            continue
+        text = str(row.get("text") or "").strip() or _element_text(by_id.get(node_id, {})) \
+            or str(row.get("description") or "").strip()
+        text = " ".join(text.split())
+        nodes.append(DocNode(
+            node_id=node_id,
+            name=row.get("name"),
+            page=_page_of(row),
+            text=text[:DOC_TEXT_CHARS] or None,
+        ))
+    kept = {n.node_id for n in nodes}
+    return DocumentGraph(
+        nodes=nodes,
+        edges=[
+            DocEdge(source=e["source"], target=e["target"], edge_type=e["edge_type"],
+                    label=e.get("matched_pattern"))
+            for e in edges if e["source"] in kept and e["target"] in kept
+        ],
+    )
+
+
+def _match_element(quote: str, elements: list[tuple[str, dict]]) -> dict | None:
+    """The layout element a claim's evidence sentence sits in.
+
+    Substring on normalized text, because the sentence in `claims.json`
+    came from Marker's Markdown while the element text came from the
+    layout pass: the same words, not the same whitespace or line breaks.
+    Falls back to the opening of the sentence, which is what survives when
+    a paragraph is split across two elements.
+    """
+    needle = _norm(quote)
+    if not needle:
+        return None
+    for probe in (needle, needle[:MATCH_PREFIX]):
+        if len(probe) < 12:
+            continue
+        for text, row in elements:
+            if probe in text:
+                return row
+    return None
+
+
+def _caption_text(target_id: str, index: dict, by_id: dict[str, dict]) -> str | None:
+    for caption_id in index["captions"].get(target_id, []):
+        text = _element_text(by_id.get(caption_id, {}))
+        if text:
+            return text[:CAPTION_CHARS]
+    return None
+
+
+def _reference_sources(element_id: str, index: dict, by_id: dict[str, dict]) -> list[ClaimSource]:
+    sources = []
+    for edge in index["references"].get(element_id, [])[:MAX_REFERENCES]:
+        target_id = edge.get("target")
+        node = index["nodes"].get(target_id) or by_id.get(target_id) or {}
+        label = edge.get("matched_pattern") or node.get("name") or edge.get("reference_category")
+        sources.append(
+            ClaimSource(
+                source_id=str(target_id),
+                kind="reference",
+                text=_caption_text(target_id, index, by_id),
+                page=_page_of(node),
+                label=str(label) if label else None,
+            )
+        )
+    return sources
+
+
+def _attach_sources(claims: list[PaperClaim], sections: list[PaperSection],
+                    elements: list[dict], index: dict) -> None:
+    """Give every claim the nodes it was extracted from.
+
+    The sentence itself is always one, with or without a layout export -
+    it is the evidence the claim stands on. The element and the figures it
+    references are the parts only a parsed PDF can say.
+    """
+    section_name = {s.section_id: s.name for s in sections}
+    by_id = {_element_id(row): row for row in elements}
+    # Both sides normalized the same way, or the match is decided by
+    # whitespace and capitalisation rather than by the words.
+    searchable = [(_norm(_element_text(row)), row) for row in elements]
+    searchable = [(text, row) for text, row in searchable if text]
+    for claim in claims:
+        quote = (claim.original_text or "").strip()
+        if not quote:
+            continue
+        match = _match_element(quote, searchable) if searchable else None
+        page = _page_of(match) if match else None
+        sources = [
+            ClaimSource(
+                source_id=f"{claim.claim_id}:quote",
+                kind="quote",
+                text=quote,
+                page=page,
+                label=section_name.get(claim.section_id),
+            )
+        ]
+        if match:
+            element_id = _element_id(match)
+            sources.append(
+                ClaimSource(
+                    source_id=element_id,
+                    kind="element",
+                    page=page,
+                    label=str(match.get("name") or "element"),
+                )
+            )
+            if index:
+                sources.extend(_reference_sources(element_id, index, by_id))
+        claim.sources = sources
+
+
 def load_export(directory: Path, publication_id: str | None = None) -> PaperGraph | None:
     """One OSA export directory as a `PaperGraph`, or None if it has no claims."""
     meta = {}
@@ -299,16 +519,22 @@ def load_export(directory: Path, publication_id: str | None = None) -> PaperGrap
         sections = []
 
     repository_url = meta.get("repository_url") or meta.get("repo_url")
-    claims = _claims_from_rows(_claim_rows(claims_payload), sections, repository_url)
+    claims = _claims_from_rows(_rows_of(claims_payload, "claims", "result"), sections, repository_url)
 
     experiments_path = directory / EXPERIMENTS_FILE
     if experiments_path.is_file():
         claims = _attach_experiments(
-            claims, _experiment_rows(_read_json(experiments_path)), repository_url
+            claims,
+            _rows_of(_read_json(experiments_path), "experiments", "result"),
+            repository_url,
         )
     if not claims:
         logger.info("%s: claims file holds no usable claim, skipped", directory)
         return None
+
+    elements = _load_layout_elements(directory)
+    doc_payload = _read_doc_graph(directory)
+    _attach_sources(claims, sections, elements, _doc_graph_index(doc_payload))
 
     used = {claim.section_id for claim in claims}
     return PaperGraph(
@@ -320,6 +546,7 @@ def load_export(directory: Path, publication_id: str | None = None) -> PaperGrap
         # on the map; the paper's text is not lost, it is just not a node.
         sections=[s for s in sections if s.section_id in used],
         claims=claims,
+        document=_document_graph(doc_payload, elements, claims) if doc_payload else None,
     )
 
 

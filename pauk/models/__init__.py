@@ -1,6 +1,15 @@
 from .department import Department
 from .organization import Organization
-from .paper_graph import ClaimFile, PaperClaim, PaperGraph, PaperSection
+from .paper_graph import (
+    ClaimFile,
+    ClaimSource,
+    DocEdge,
+    DocNode,
+    DocumentGraph,
+    PaperClaim,
+    PaperGraph,
+    PaperSection,
+)
 from .person import Affiliation, Person
 from .publication import Funding, Publication, PublicationVersion, VersionAuthor
 from .relations import Authorship, Contribution, MentionsLink
@@ -10,9 +19,13 @@ __all__ = [
     "Affiliation",
     "Authorship",
     "ClaimFile",
+    "ClaimSource",
     "CodeLink",
     "Contribution",
     "Department",
+    "DocEdge",
+    "DocNode",
+    "DocumentGraph",
     "Funding",
     "GitHubProfile",
     "LinkCandidate",
