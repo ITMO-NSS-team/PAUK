@@ -143,8 +143,6 @@ class OsaRunner:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             with log_path.open("w", encoding="utf-8") as log:
-                # Checked, started and registered under one lock, or a stop could
-                # land in between and miss the process.
                 with self._lock:
                     if self._stopped.is_set():
                         return False
