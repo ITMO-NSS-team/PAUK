@@ -24,6 +24,7 @@ from pauk.settings import settings
 from pauk.sources import OpenAlexClient
 from pauk.storage import PreparedStore, RawStore, ensure_indexes, get_mongo_client
 from pauk.storage.naming import group_name, validate_group
+from pauk.rag import cli as rag_cli
 
 logger = logging.getLogger("pauk.cli")
 
@@ -182,6 +183,7 @@ def _build_parser() -> argparse.ArgumentParser:
     admin_cli.add_parser(sub)
 
     search_cli.add_parser(sub)
+    rag_cli.add_parser(sub)
     return parser
 
 
@@ -337,6 +339,8 @@ def _dispatch(args, parser: argparse.ArgumentParser) -> None:
     elif args.command == "search":
         # Reads the graph only; never opens Mongo.
         search_cli.run(args, settings)
+    elif args.command == "rag":  # <-- Добавить этот блок
+        rag_cli.run(args, settings)
     elif args.command == "dedup":
         _cmd_dedup()
     elif args.command == "cache":
