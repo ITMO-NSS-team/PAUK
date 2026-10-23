@@ -42,8 +42,8 @@ class DedupReviewRegressionTest(unittest.TestCase):
         for field in ("orcid", "email"):
             with self.subTest(field=field):
                 people = {identifier: Person(id=identifier, is_itmo=True) for identifier in ("A", "B", "M", "N")}
-                setattr(people["A"], field, "one")
-                setattr(people["B"], field, "two")
+                setattr(people["A"], field, "0000-0002-1825-0097" if field == "orcid" else "one")
+                setattr(people["B"], field, "0000-0001-5109-3700" if field == "orcid" else "two")
                 edges = [("A", "M"), ("M", "B"), ("A", "N"), ("N", "B"), ("M", "N")]
                 rules = {frozenset(edge): "qwen_second_merge" for edge in edges}
                 orcids = {identifier: person.orcid for identifier, person in people.items()}

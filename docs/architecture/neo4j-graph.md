@@ -66,6 +66,9 @@ Person merges and repeated publication preserve accumulated names, emails and
 affiliations. An aggregated `AUTHORED.is_corresponding` stays true if any source
 record is true. Explicit edits and verified unmerge operations can restore or
 remove values; a partial source record cannot erase another merged record's data.
+For an ordinary edge with neither endpoint merged, a later source correction
+can change `is_corresponding` from true to false. Duplicate AUTHORED rows within
+one write batch are still combined by OR; graph folds also retain any true value.
 
 For links extracted with line-break alternatives, `MENTIONS_LINK` also
 stores `url_ambiguous`, `candidate_urls` (a flat list of strings) and
@@ -160,6 +163,13 @@ an id that graph dedup had already folded into another node, it is folded
 again immediately, without waiting for the next `pauk dedup graph`.
 Folding runs after relationship upserts: deleting an alias earlier would
 prevent `MATCH` from creating a relationship from the current batch.
+
+Person alias conflicts found by publish or graph dedup are recorded in the
+admin review queue as `merge_alias_conflict`, with the affected component and
+its alias edges. Conflicting targets and cycles still stop the operation;
+the loader does not select a survivor or silently discard the conflicting
+data. Existing alias corruption needs repair before retrying. A review answer
+alone does not rewrite historical `merged_ids`.
 
 `sync_mentions_links_batch` removes stale `MENTIONS_LINK` edges to
 `Repository` and `LinkCandidate` that are absent from the current `RepoLink`.
@@ -287,6 +297,9 @@ next publish would create it again. The operation is irreversible: the
 duplicate is deleted with its relationships, and the audit diff covers node
 properties only, so there is nothing to restore the edges from. The CLI
 therefore asks for confirmation.
+
+The graph fold itself also records each removed ID and inherited aliases, so
+direct callers retain provenance even without a prepared canonical row.
 
 ## `overrides.py`: edits that survive publishing
 

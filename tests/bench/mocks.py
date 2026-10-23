@@ -283,7 +283,24 @@ class RecordingNeo4jClient:
         src_primary = src_label.split(":")[0]
         tgt_primary = tgt_label.split(":")[0]
         matched = 0
+        batch = []
+        authored = {}
         for src_id, tgt_id, props in relationships:
+            key = (src_id, tgt_id)
+            if rel_type == "AUTHORED" and key in authored:
+                row = authored[key]
+                previous = row[2].get("is_corresponding")
+                incoming = props.get("is_corresponding")
+                row[2].update(props)
+                if previous is not None or incoming is not None:
+                    row[2]["is_corresponding"] = bool(previous or incoming)
+                row[3] += 1
+            else:
+                row = [src_id, tgt_id, dict(props), 1]
+                batch.append(row)
+                if rel_type == "AUTHORED":
+                    authored[key] = row
+        for src_id, tgt_id, props, input_count in batch:
             src_ok = src_id in self.nodes.get(src_primary, {})
             if tgt_match_prop == "id":
                 tgt_ok = tgt_id in self.nodes.get(tgt_primary, {})
@@ -298,11 +315,15 @@ class RecordingNeo4jClient:
                     edge.get("is_corresponding"), props.get("is_corresponding")
                 ))
                 self._set_properties(edge, props)
-                if rel_type == "AUTHORED" and has_corresponding:
+                preserve = bool(
+                    self.nodes[src_primary][src_id].get("merged_ids")
+                    or self.nodes[tgt_primary].get(tgt_id, {}).get("merged_ids")
+                )
+                if rel_type == "AUTHORED" and has_corresponding and preserve:
                     edge["is_corresponding"] = bool(corresponding)
-                matched += 1
+                matched += input_count
             else:
-                self.unresolved.append((src_label, rel_type, tgt_label, src_id, tgt_id))
+                self.unresolved.extend([(src_label, rel_type, tgt_label, src_id, tgt_id)] * input_count)
         return matched
 
     def set_relationship_properties_batch(self, src_label, tgt_label, rel_type, relationships,
@@ -411,6 +432,10 @@ class RecordingNeo4jClient:
             dup_props = self.nodes[label].pop(dup_id)
             canonical_props = self.nodes[label][canonical_id]
             canonical_props.update(_merge_duplicate_properties(label, canonical_props, dup_props))
+            canonical_props["merged_ids"] = list(dict.fromkeys(
+                alias for alias in [*(canonical_props.get("merged_ids") or []), dup_id]
+                if alias != canonical_id
+            ))
             removed += 1
         return removed
 

@@ -355,7 +355,7 @@ def load_prepared_rows(
     # Validate the complete alias graph before writes and before splitting it
     # into chunks: a chain can span two different chunks or source groups.
     merge_plans = {
-        label: flatten_merges([*pairs, *known_merges[label].items()])
+        label: flatten_merges([*pairs, *known_merges[label].items()], label=label)
         for label, pairs in (
             ("Person", person_merges),
             ("Publication", node_merges["publication"]),

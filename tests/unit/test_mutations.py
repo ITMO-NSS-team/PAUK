@@ -75,14 +75,44 @@ class FakeGraph:
                                    tgt_match_prop="id"):
         self.calls.append("upsert_relationships_batch")
         matched = 0
+        batch = []
+        authored = {}
         for src_id, tgt_id, props in relationships:
+            key = (src_id, tgt_id)
+            if rel_type == "AUTHORED" and key in authored:
+                row = authored[key]
+                previous = row[2].get("is_corresponding")
+                incoming = props.get("is_corresponding")
+                row[2].update(props)
+                if previous is not None or incoming is not None:
+                    row[2]["is_corresponding"] = bool(previous or incoming)
+                row[3] += 1
+            else:
+                row = [src_id, tgt_id, dict(props), 1]
+                batch.append(row)
+                if rel_type == "AUTHORED":
+                    authored[key] = row
+        for src_id, tgt_id, props, input_count in batch:
             target_exists = any(
                 key[0] == tgt_label and value.get(tgt_match_prop) == tgt_id
                 for key, value in self.nodes.items())
             if (src_label, src_id) not in self.nodes or not target_exists:
                 continue
-            self.relationships[(src_label, rel_type, tgt_label, src_id, tgt_id)] = dict(props)
-            matched += 1
+            key = (src_label, rel_type, tgt_label, src_id, tgt_id)
+            edge = self.relationships.setdefault(key, {})
+            previous = edge.get("is_corresponding")
+            preserve = bool(
+                self.nodes[(src_label, src_id)].get("merged_ids")
+                or self.nodes.get((tgt_label, tgt_id), {}).get("merged_ids")
+            )
+            for field, value in props.items():
+                if value is None:
+                    edge.pop(field, None)
+                else:
+                    edge[field] = value
+            if rel_type == "AUTHORED" and preserve and (previous is not None or props.get("is_corresponding") is not None):
+                edge["is_corresponding"] = bool(previous or props.get("is_corresponding"))
+            matched += input_count
         return matched
 
     def set_relationship_properties_batch(self, src_label, tgt_label, rel_type, relationships,
@@ -121,6 +151,10 @@ class FakeGraph:
             canonical = self.nodes.get(("Person", canonical_id))
             if duplicate is not None and canonical is not None:
                 canonical.update(_merge_duplicate_properties("Person", canonical, duplicate))
+                canonical["merged_ids"] = list(dict.fromkeys(
+                    alias for alias in [*(canonical.get("merged_ids") or []), duplicate_id]
+                    if alias != canonical_id
+                ))
             if self.nodes.pop(("Person", duplicate_id), None) is None:
                 continue
             removed += 1

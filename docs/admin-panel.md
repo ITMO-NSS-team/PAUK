@@ -305,6 +305,14 @@ existing document instead of creating a second one. The default tab is
 "Приоритетные" (Priority): identical names without confirmation, groups,
 accounts and the catalog. The rest is under "Все нерешенные" (All unresolved).
 
+Conflicting historical person aliases are separate `person_alias_conflict`
+diagnostics in the priority queue, not identity questions. The page shows the
+competing alias edges, the failing operation and a repair warning. Ordinary
+answers, splits and skips are disabled for these incidents and rejected by the
+server, including identity questions wholly inside the affected component.
+Existing identity answers remain intact. No review action repairs aliases or
+closes the incident; repair and validated incident closure need a separate workflow.
+
 **An answer beats the rules, both ways.** Rules read answers before deciding
 anything. "One person" merges the pair even with no evidence; "different"
 blocks the merge even if a shared coauthor appears later. An answered question

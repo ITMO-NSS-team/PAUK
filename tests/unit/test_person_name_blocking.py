@@ -29,7 +29,7 @@ class PersonNameBlockingTest(unittest.TestCase):
     def test_missing_names_do_not_block_exact_identifiers(self):
         for first_name, second_name in ((None, None), (None, "John Smith"), ("", "")):
             with self.subTest(names=(first_name, second_name)):
-                people = [person("a", first_name, orcid="0000-0001"), person("b", second_name, orcid="0000-0001")]
+                people = [person("a", first_name, orcid="0000-0002-1825-0097"), person("b", second_name, orcid="0000-0002-1825-0097")]
                 self.assertEqual(pairs(people), {("a", "b")})
                 for entry in people:
                     entry.orcid = None
@@ -37,7 +37,7 @@ class PersonNameBlockingTest(unittest.TestCase):
 
     def test_orcid_url_and_bare_identifier_share_a_channel(self):
         self.assertEqual(
-            pairs([person("a", orcid="https://orcid.org/0000-0001/"), person("b", orcid="0000-0001")]), {("a", "b")}
+            pairs([person("a", orcid="https://orcid.org/0000-0002-1825-0097/"), person("b", orcid="0000-0002-1825-0097")]), {("a", "b")}
         )
 
     def test_missing_names_without_evidence_do_not_make_a_pair(self):
@@ -137,8 +137,8 @@ class PersonNameBlockingTest(unittest.TestCase):
     def test_no_self_pairs_duplicates_or_input_order_effect(self):
         people = [
             person("a", "Ivan Petrov", surname_en="Petrov", name_variants=["Petrov, Ivan", "I. Petrov"]),
-            person("b", "I. Petrov", orcid="one"),
-            person("c", None, orcid="one"),
+            person("b", "I. Petrov", orcid="0000-0002-1825-0097"),
+            person("c", None, orcid="0000-0002-1825-0097"),
         ]
         expected = list((a.id, b.id) for a, b in candidate_person_pairs(people, None))
         self.assertEqual(len(expected), len(set(expected)))

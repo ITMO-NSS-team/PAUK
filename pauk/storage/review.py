@@ -44,7 +44,8 @@ GROUP = "person_group"
 GITHUB = "github_person"
 #: A person against the catalog records their name matches; answered by choice.
 STAFF = "staff_record"
-KINDS = (PAIR, GROUP, GITHUB, STAFF)
+ALIAS = "person_alias_conflict"
+KINDS = (PAIR, GROUP, GITHUB, STAFF, ALIAS)
 
 #: What the merge rules read: the kinds that pair two records of one person.
 PERSON_KINDS = (PAIR, GROUP)
@@ -120,6 +121,8 @@ def kind_of(row: dict) -> str:
     refused group a list of `persons`, a held pair a `person_a` and a
     `person_b`.
     """
+    if row.get("kind") == ALIAS:
+        return ALIAS
     if "records" in row:
         return STAFF
     if "login" in row:
@@ -127,6 +130,15 @@ def kind_of(row: dict) -> str:
     if "persons" in row:
         return GROUP
     return PAIR
+
+
+def require_answerable(db: Database, kind: str, members: list[str]) -> None:
+    """Integrity incidents cannot become identity decisions through a forged form."""
+    question_id(kind, members)
+    if kind == ALIAS or (kind in PERSON_KINDS and db[COLLECTION].find_one(
+        {"kind": ALIAS, "members": {"$all": sorted(set(members))}}, {"_id": 1}
+    ) is not None):
+        raise ReviewError("repair conflicting aliases before answering identity questions")
 
 
 def names_of(row: dict, members: list[str]) -> list[str | None]:
@@ -260,6 +272,7 @@ def record_verdict(db: Database, kind: str, members: list[str], verdict: str,
             so "these are all one person" would be a decision to ignore
             two different ORCIDs, which the merge itself would refuse.
     """
+    require_answerable(db, kind, members)
     if verdict not in VERDICTS:
         raise ReviewError(f"unknown verdict: {verdict!r} (known: {', '.join(VERDICTS)})")
     if kind == GROUP and verdict == SAME:
@@ -296,6 +309,7 @@ def skip(db: Database, kind: str, members: list[str], actor: str = "unknown") ->
     could not tell", which is the difference between a queue that can be
     worked through and one that cannot.
     """
+    require_answerable(db, kind, members)
     result = db[COLLECTION].update_one(
         {"_id": question_id(kind, members)},
         {"$set": {"skipped_at": _now(), "skipped_by": actor}})
@@ -330,6 +344,7 @@ def record_split(db: Database, members: list[str], same: list[str],
             pair, or is the whole group, which is the answer the conflict
             rules out.
     """
+    require_answerable(db, GROUP, members)
     members = sorted(set(members))
     same = sorted(set(same))
     if not set(same) <= set(members):
@@ -340,6 +355,12 @@ def record_split(db: Database, members: list[str], same: list[str],
         raise ReviewError("the group was refused precisely because all of it "
                           "cannot be one person")
     rest = [member for member in members if member not in same]
+    answers = [(first, second, SAME) for first, second in combinations(same, 2)]
+    answers.extend((first, second, DIFFERENT) for first in same for second in rest)
+    # A larger submitted group can contain an unresolved alias component.
+    # Validate every resulting answer before any unrelated pair is persisted.
+    for first, second, _ in answers:
+        require_answerable(db, PAIR, [first, second])
     # The group knows the names; without them the pairs are rows of bare ids.
     asked = db[COLLECTION].find_one({"_id": question_id(GROUP, members)}) or {}
     known = dict(zip(members, (asked.get("evidence") or {}).get("names") or [],
@@ -350,15 +371,10 @@ def record_split(db: Database, members: list[str], same: list[str],
 
     # Inside the subset first: a write that stops halfway merges nothing.
     written = 0
-    for first, second in combinations(same, 2):
-        record_verdict(db, PAIR, [first, second], SAME, actor=actor, note=note,
+    for first, second, verdict in answers:
+        record_verdict(db, PAIR, [first, second], verdict, actor=actor, note=note,
                        names=named(first, second))
         written += 1
-    for first in same:
-        for second in rest:
-            record_verdict(db, PAIR, [first, second], DIFFERENT, actor=actor,
-                           note=note, names=named(first, second))
-            written += 1
     record_verdict(db, GROUP, members, DIFFERENT, actor=actor, note=note)
     logger.info("review: group %s split by %s, %d pair(s) written",
                 members, actor, written)
@@ -379,6 +395,7 @@ def withdraw(db: Database, kind: str, members: list[str]) -> bool:
     Raises:
         ReviewError: The answer has already folded two records into one.
     """
+    require_answerable(db, kind, members)
     key = question_id(kind, members)
     asked = db[COLLECTION].find_one({"_id": key})
     if asked is not None and asked.get("applied_at"):
@@ -569,7 +586,7 @@ def decisions(db: Database, aliases: dict[str, str] | None = None,
     """
     aliases = aliases or {}
     found: dict[frozenset[str], str] = {}
-    for row in db[COLLECTION].find({"kind": {"$in": list(kinds)},
+    for row in db[COLLECTION].find({"kind": {"$in": [kind for kind in kinds if kind != ALIAS]},
                                     "verdict": {"$exists": True}}):
         members = frozenset(aliases.get(member, member) for member in row["members"])
         if len(members) < 2:
@@ -592,7 +609,7 @@ def _query(*, pressing: bool = False, answered: bool | None = None,
     """
     query: dict = {}
     if pressing:
-        query["$or"] = [{"kind": {"$in": [GROUP, GITHUB, STAFF]}},
+        query["$or"] = [{"kind": {"$in": [GROUP, GITHUB, STAFF, ALIAS]}},
                         {"evidence.held_because": {"$in": list(PRESSING_REASONS)}}]
     if answered is not None:
         query["verdict"] = {"$exists": answered}
